@@ -1,6 +1,16 @@
 {
   "identifier": "main",
   "description": "Only the trusted DeliDev main window can bootstrap its local connection.",
-  "windows": ["main"],
-  "permissions": ["local-bootstrap", "saved-manage", "tray-presentation", "notification-presentation", "core:event:allow-listen", "core:event:allow-unlisten"]
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "local-bootstrap",
+    "saved-manage",
+    "tray-presentation",
+    "notification-presentation",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "github-presentation"
+  ]
 }

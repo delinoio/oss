@@ -107,6 +107,13 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	if remaining[0] == "version" || remaining[0] == "--version" {
 		return emit(map[string]any{"version": rpc.Version, "protocol_version": rpc.ProtocolVersion}, nil)
 	}
+	if remaining[0] == "presentation" {
+		if o.tokenStdin {
+			return emit(nil, domain.Fail(domain.InvalidArgument, "Local presentation does not accept server authentication input.", "Omit --token-stdin; no server connection is needed."))
+		}
+		value, err := githubPresentationCommand(ctx, remaining[1:], streams.In)
+		return emit(value, err)
+	}
 	if o.dataDir == "" {
 		o.dataDir, err = DefaultDataDir()
 		if err != nil {
@@ -795,10 +802,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   integration replace-token --id ID --revision N --pat-stdin
   integration validate|delete --id ID --revision N
   integration list|get|snapshot [--id ID]
+  integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]
   integration inspect-repository --repository-id ID
   github pr|issue list --repository-id ID [--state open|closed|all] [--page N --page-size N]
   github pr|issue search --repository-id ID --text TERMS [--state open|closed|all] [--page N]
-  github pr|issue get --repository-id ID --number N
+  github pr|issue get|open --repository-id ID --number N
   github pr diff --repository-id ID --number N
   github pr checks|statuses --repository-id ID --number N [--page N --page-size N]
   provider presets

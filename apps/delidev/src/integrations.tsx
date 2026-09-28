@@ -5,6 +5,7 @@ import { EntityKind, FailureCode, IntegrationQuery, ResourceQuery, clientFailure
 import { document, encode, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import { GitHubTokenForm } from "./github-opening";
 
 enum TokenKind { FineGrained = "fine-grained", Classic = "classic" }
 type MutationIdentity = { id: string; expectedRevision: bigint; requestId: string };
@@ -72,6 +73,7 @@ function IntegrationConnection({ initial, active, close }: { initial: Resource; 
   return <section><header><h3>{resourceName(current)}</h3><button disabled={replace.isPending} onClick={close}>Back to GitHub profiles</button></header><p>{text(data.token_kind)} · {text(data.resource_owner) || "No owner restriction declared"}</p>
     <p>Connection: {data.pending ? "Change pending; token use disabled" : data.connection ? "Stored on the server" : "No token connected"}</p><p>Identity validation: {text(validation.state) || "Not verified"}{text(validation.checked_at) ? ` · ${text(validation.checked_at)}` : ""}</p>
     {text(identity.login) ? <p>Authenticated as {text(identity.login)} · GitHub ID {text(identity.id)}</p> : null}<p>Identity validation does not verify access to repositories, pull requests, issues, checks or rulesets.</p>
+    {active ? <GitHubTokenForm key={`${current.id}:${current.revision}`} profile={current} active={active} disabled={blocked || Boolean(retryIdentity || data.pending || result.error)} /> : null}
     <form onSubmit={(event) => { event.preventDefault(); void sendToken(); }}><fieldset disabled={blocked || deleting || Boolean(result.error)}><label>GitHub personal access token<input type="password" autoComplete="off" spellCheck={false} maxLength={512} value={token} onChange={(event) => setToken(event.target.value)} /></label><p>The selected server stores this token in its OS credential store. Saved tokens cannot be displayed.</p>{retryIdentity || pending.operation === "replace-token" ? <p>Reenter the same token to retry the original replacement. Delete this profile if that token is no longer available.</p> : null}<button disabled={!/^[!-~]{1,512}$/.test(token) || (pending.operation === "replace-token" && !original)}>{retryIdentity || pending.operation === "replace-token" ? "Retry original token replacement" : "Save and validate token"}</button></fieldset></form>
     {retryIdentity ? <p>Pending request: {retryIdentity.requestId}</p> : null}
     <div className="actions"><button disabled={blocked || Boolean(retryIdentity || data.pending || !data.connection || result.error)} onClick={() => void validate.send({ mutation: mutation() })}>Validate profile</button><button disabled={blocked || Boolean(result.error) || (deleting && !original)} onClick={() => deleting && original ? void remove.send({ mutation: original }) : setConfirm(true)}>{deleting ? "Retry original profile deletion" : "Delete profile"}</button></div>

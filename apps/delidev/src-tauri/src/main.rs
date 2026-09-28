@@ -42,6 +42,28 @@ fn trusted_url(url: &tauri::Url) -> bool {
 }
 
 #[tauri::command]
+async fn open_github(
+    window: WebviewWindow<Wry>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    url: String,
+) -> Result<(), NativeFailure> {
+    if window.label() == "main" {
+        trusted_main(&window)?;
+    } else {
+        saved_binding(&window, &windows)?;
+    }
+    let connector = Arc::clone(connector.inner());
+    let result = tauri::async_runtime::spawn_blocking(move || connector.open_github(&url))
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+    if let Err(code) = result {
+        tracing::warn!(operation = "github_open", ?code);
+    }
+    result
+}
+
+#[tauri::command]
 async fn connect_local(
     window: WebviewWindow<Wry>,
     connector: tauri::State<'_, Arc<Connector>>,
@@ -610,6 +632,7 @@ fn run() -> Result<(), NativeFailure> {
         .manage(connector)
         .manage(Arc::clone(&supervision))
         .invoke_handler(tauri::generate_handler![
+            open_github,
             connect_local,
             local_server_status,
             local_worker_proof,

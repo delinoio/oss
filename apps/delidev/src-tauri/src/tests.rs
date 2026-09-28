@@ -1,5 +1,39 @@
 use super::*;
 
+#[test]
+#[cfg(unix)]
+fn github_presentation_uses_closed_sidecar_and_checks_acknowledgment() {
+    use std::os::unix::fs::PermissionsExt;
+    let temporary = tempfile::tempdir().unwrap();
+    for (index, response) in [
+        r#"{"dispatched":true}"#,
+        r#"{"dispatched":false}"#,
+        r#"{"dispatched":true,"token":"unexpected"}"#,
+    ]
+    .iter()
+    .enumerate()
+    {
+        let executable = temporary.path().join(format!("sidecar-{index}"));
+        fs::write(&executable, format!("#!/bin/sh\n[ \"$3\" = presentation ] && [ \"$4\" = open-github ] && [ \"$5\" = --url-stdin ] && [ \"$#\" = 5 ] || exit 2\naddress=$(/bin/cat)\n[ \"$address\" = https://github.com/owner/repo/pull/1 ] || exit 3\nprintf '%s' '{{\"version\":1,\"result\":{response}}}'\n")).unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let connector = Connector::new(executable, temporary.path().join("state")).unwrap();
+        assert_eq!(
+            connector
+                .open_github("https://github.com/owner/repo/pull/1")
+                .is_ok(),
+            index == 0
+        );
+        assert_eq!(
+            connector.open_github("file:///tmp/unsafe"),
+            Err(NativeFailure::InvalidInput)
+        );
+        assert!(
+            !connector.root.exists(),
+            "presentation cannot bootstrap server state"
+        );
+    }
+}
+
 fn metadata() -> DeviceMetadata {
     DeviceMetadata {
         version: 1,

@@ -37,6 +37,9 @@ func integrationCommand(ctx context.Context, c client, o options, args []string,
 		return nil, usage()
 	}
 	operation := args[0]
+	if operation == "token-form" {
+		return githubTokenFormCommand(ctx, c, args[1:])
+	}
 	if operation == "inspect-repository" {
 		f := flags("integration inspect-repository")
 		id := f.String("repository-id", "", "")

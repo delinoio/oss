@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/presentation"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -27,7 +28,7 @@ func githubCommand(ctx context.Context, c client, args []string) (any, error) {
 		query.Operation = domain.RepositoryList
 	case "search":
 		query.Operation = domain.RepositorySearch
-	case "get":
+	case "get", "open":
 		query.Operation = domain.RepositoryDetail
 	case "diff":
 		query.Operation = domain.RepositoryDiff
@@ -86,6 +87,12 @@ func githubCommand(ctx context.Context, c client, args []string) (any, error) {
 	}
 	if value.RepositoryID != domain.ID(*repository) || value.Query != query {
 		return nil, domain.Fail(domain.RecoveryRequired, "The result belongs to another repository query.", "Repeat the selected query explicitly.")
+	}
+	if args[1] == "open" {
+		if err := presentation.OpenGitHub(ctx, value.Items[0].URL); err != nil {
+			return nil, err
+		}
+		return map[string]any{"observation": value, "dispatched": true}, nil
 	}
 	return value, nil
 }

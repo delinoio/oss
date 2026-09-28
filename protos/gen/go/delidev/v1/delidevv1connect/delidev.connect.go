@@ -184,6 +184,9 @@ const (
 	// IntegrationServiceQueryRepositoryIntegrationProcedure is the fully-qualified name of the
 	// IntegrationService's QueryRepositoryIntegration RPC.
 	IntegrationServiceQueryRepositoryIntegrationProcedure = "/delidev.v1.IntegrationService/QueryRepositoryIntegration"
+	// IntegrationServiceGetGitHubTokenFormProcedure is the fully-qualified name of the
+	// IntegrationService's GetGitHubTokenForm RPC.
+	IntegrationServiceGetGitHubTokenFormProcedure = "/delidev.v1.IntegrationService/GetGitHubTokenForm"
 	// ProviderServiceListProviderPresetsProcedure is the fully-qualified name of the ProviderService's
 	// ListProviderPresets RPC.
 	ProviderServiceListProviderPresetsProcedure = "/delidev.v1.ProviderService/ListProviderPresets"
@@ -1584,6 +1587,7 @@ type IntegrationServiceClient interface {
 	DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error)
 	InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error)
 	QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error)
+	GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error)
 }
 
 // NewIntegrationServiceClient constructs a client for the delidev.v1.IntegrationService service. By
@@ -1633,6 +1637,12 @@ func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(integrationServiceMethods.ByName("QueryRepositoryIntegration")),
 			connect.WithClientOptions(opts...),
 		),
+		getGitHubTokenForm: connect.NewClient[v1.GetGitHubTokenFormRequest, v1.GetGitHubTokenFormResponse](
+			httpClient,
+			baseURL+IntegrationServiceGetGitHubTokenFormProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("GetGitHubTokenForm")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1644,6 +1654,7 @@ type integrationServiceClient struct {
 	deleteIntegrationProfile     *connect.Client[v1.DeleteIntegrationProfileRequest, v1.DeleteIntegrationProfileResponse]
 	inspectRepositoryIntegration *connect.Client[v1.InspectRepositoryIntegrationRequest, v1.InspectRepositoryIntegrationResponse]
 	queryRepositoryIntegration   *connect.Client[v1.QueryRepositoryIntegrationRequest, v1.QueryRepositoryIntegrationResponse]
+	getGitHubTokenForm           *connect.Client[v1.GetGitHubTokenFormRequest, v1.GetGitHubTokenFormResponse]
 }
 
 // SaveIntegrationProfile calls delidev.v1.IntegrationService.SaveIntegrationProfile.
@@ -1676,6 +1687,11 @@ func (c *integrationServiceClient) QueryRepositoryIntegration(ctx context.Contex
 	return c.queryRepositoryIntegration.CallUnary(ctx, req)
 }
 
+// GetGitHubTokenForm calls delidev.v1.IntegrationService.GetGitHubTokenForm.
+func (c *integrationServiceClient) GetGitHubTokenForm(ctx context.Context, req *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error) {
+	return c.getGitHubTokenForm.CallUnary(ctx, req)
+}
+
 // IntegrationServiceHandler is an implementation of the delidev.v1.IntegrationService service.
 type IntegrationServiceHandler interface {
 	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
@@ -1684,6 +1700,7 @@ type IntegrationServiceHandler interface {
 	DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error)
 	InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error)
 	QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error)
+	GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error)
 }
 
 // NewIntegrationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -1729,6 +1746,12 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 		connect.WithSchema(integrationServiceMethods.ByName("QueryRepositoryIntegration")),
 		connect.WithHandlerOptions(opts...),
 	)
+	integrationServiceGetGitHubTokenFormHandler := connect.NewUnaryHandler(
+		IntegrationServiceGetGitHubTokenFormProcedure,
+		svc.GetGitHubTokenForm,
+		connect.WithSchema(integrationServiceMethods.ByName("GetGitHubTokenForm")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.IntegrationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IntegrationServiceSaveIntegrationProfileProcedure:
@@ -1743,6 +1766,8 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 			integrationServiceInspectRepositoryIntegrationHandler.ServeHTTP(w, r)
 		case IntegrationServiceQueryRepositoryIntegrationProcedure:
 			integrationServiceQueryRepositoryIntegrationHandler.ServeHTTP(w, r)
+		case IntegrationServiceGetGitHubTokenFormProcedure:
+			integrationServiceGetGitHubTokenFormHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1774,6 +1799,10 @@ func (UnimplementedIntegrationServiceHandler) InspectRepositoryIntegration(conte
 
 func (UnimplementedIntegrationServiceHandler) QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.QueryRepositoryIntegration is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.GetGitHubTokenForm is not implemented"))
 }
 
 // ProviderServiceClient is a client for the delidev.v1.ProviderService service.

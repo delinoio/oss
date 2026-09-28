@@ -127,6 +127,31 @@ pub struct Connector {
 }
 
 impl Connector {
+    pub fn open_github(&self, url: &str) -> Result<()> {
+        // Go applies the complete closed destination contract. Bound this
+        // infrastructure argument before starting its credential-free sidecar.
+        if url.len() > 2048
+            || !url.starts_with("https://github.com/")
+            || url.chars().any(char::is_control)
+        {
+            return Err(NativeFailure::InvalidInput);
+        }
+        let value = self.run_with_input(
+            &[
+                "presentation".into(),
+                "open-github".into(),
+                "--url-stdin".into(),
+            ],
+            Some(Zeroizing::new(url.as_bytes().to_vec())),
+        )?;
+        if value.as_object().is_none_or(|v| {
+            v.len() != 1 || v.get("dispatched") != Some(&serde_json::Value::Bool(true))
+        }) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        Ok(())
+    }
+
     pub fn new(executable: PathBuf, root: PathBuf) -> Result<Self> {
         if !executable.is_absolute() || !root.is_absolute() {
             return Err(NativeFailure::InvalidEvidence);
@@ -307,6 +332,20 @@ impl Connector {
         }
         #[cfg(unix)]
         command.env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+        // Only the closed OS opener needs desktop-session display context.
+        // No renderer-controlled environment or provider credentials are used.
+        if arguments.first().is_some_and(|v| v == "presentation") {
+            for name in [
+                "DISPLAY",
+                "XAUTHORITY",
+                "XDG_CURRENT_DESKTOP",
+                "DESKTOP_SESSION",
+            ] {
+                if let Some(value) = std::env::var_os(name) {
+                    command.env(name, value);
+                }
+            }
+        }
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;

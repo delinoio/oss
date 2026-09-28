@@ -488,6 +488,23 @@ service IntegrationService {
   rpc DeleteIntegrationProfile(DeleteIntegrationProfileRequest) returns (DeleteIntegrationProfileResponse);
   rpc InspectRepositoryIntegration(InspectRepositoryIntegrationRequest) returns (InspectRepositoryIntegrationResponse);
   rpc QueryRepositoryIntegration(QueryRepositoryIntegrationRequest) returns (QueryRepositoryIntegrationResponse);
+  rpc GetGitHubTokenForm(GetGitHubTokenFormRequest) returns (GetGitHubTokenFormResponse);
+}
+enum GitHubTokenAccess {
+  GIT_HUB_TOKEN_ACCESS_UNSPECIFIED = 0;
+  GIT_HUB_TOKEN_ACCESS_SELECTED_REPOSITORIES = 1;
+  GIT_HUB_TOKEN_ACCESS_PUBLIC_REPOSITORIES = 2;
+  GIT_HUB_TOKEN_ACCESS_PRIVATE_REPOSITORIES = 3;
+}
+message GetGitHubTokenFormRequest {
+  string profile_id = 1;
+  uint64 expected_revision = 2;
+  GitHubTokenAccess access = 3;
+}
+message GetGitHubTokenFormResponse {
+  uint32 schema_version = 1;
+  // Non-secret official form configuration, never a token or access grant.
+  bytes document_json = 2;
 }
 message SaveIntegrationProfileRequest {
   Mutation mutation = 1;
