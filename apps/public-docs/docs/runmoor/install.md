@@ -39,11 +39,13 @@ install -m 755 runmoor "$HOME/.local/bin/runmoor"
 
 The download tag and signing identity must refer to the same release. Tag-triggered releases use the identity above. For a release explicitly signed by a manual run on `main`, use the exact identity `https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/heads/main` after checking its release run.
 
-Linux users select `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` and may use `sha256sum -c` instead of `shasum -a 256 -c`. Add your user binary directory to PATH yourself. No Homebrew package, automatic update, system-level service, or bundled Docker/Tart is installed.
+Linux users select `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` and may use `sha256sum -c` instead of `shasum -a 256 -c`. Running the manager on Linux requires Ubuntu 22.04 or newer on x86-64 or ARM64. Add your user binary directory to PATH yourself. No Homebrew package, automatic update, system-level service, or bundled Docker/Tart is installed.
 
 ## Linux APT and DNF
 
-Runmoor native packages are not published yet. Use the release archives above for now. After the first native package release, Runmoor will be available through the Delino stable repository; the commands below apply then. Installation does not register or start a service. Packages support x86-64 and ARM64 on Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, and RHEL-compatible 9/10 systems, including UBI, Rocky Linux and AlmaLinux.
+Runmoor `0.1.3` is available as native APT and DNF packages through the Delino stable repository. The release archives above remain available as well. Installation does not register or start a service.
+
+**Running the Runmoor manager on Linux requires Ubuntu 22.04 or newer**, on x86-64 or ARM64. Package installation and version/help commands have also been verified on Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, and RHEL-compatible 9/10 systems, including UBI, Rocky Linux and AlmaLinux. The non-Ubuntu checks establish package compatibility only; the manager cannot run on those distributions.
 
 The repository address is `https://pkgs.oss.delino.io`. Verify its public RSA 4096 key before registering it:
 
@@ -62,7 +64,7 @@ sudo apt-get install runmoor
 sudo apt-get install --only-upgrade runmoor
 sudo apt-get remove runmoor
 
-# DNF
+# DNF: package installation checks only; the manager requires Ubuntu
 sudo dnf install runmoor
 sudo dnf upgrade runmoor
 sudo dnf remove runmoor

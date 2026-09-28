@@ -4,9 +4,11 @@ Use the signed Delino repository at `https://pkgs.oss.delino.io` to install CLI 
 
 ## Supported systems
 
-Packages support x86-64 and ARM64 on Ubuntu 22.04, 24.04 and 26.04 LTS; Debian 12 and 13; Fedora 43 and 44; and RHEL-compatible 9 and 10 systems, including UBI, Rocky Linux and AlmaLinux.
+Package installation is verified on x86-64 and ARM64 for Ubuntu 22.04, 24.04 and 26.04 LTS; Debian 12 and 13; Fedora 43 and 44; and RHEL-compatible 9 and 10 systems, including UBI, Rocky Linux and AlmaLinux. This verifies package installation and version/help commands; each CLI may have narrower runtime requirements.
 
-**Native packages are not published yet.** The commands below apply after each CLI’s first native package release. `binpm`, `cargo-mono`, `nodeup`, `with-watch`, `derun`, `runmoor` and `clibox` will all use stable. Preview is reserved and currently has no CLI packages. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
+**Runmoor's manager runs only on Ubuntu 22.04 or newer on Linux**, on x86-64 or ARM64. Debian, Fedora, UBI, Rocky Linux and AlmaLinux can install the package and display its version, but cannot run the manager.
+
+**Runmoor `0.1.3` native packages are available in stable.** Other CLI examples apply after that CLI’s first verified native package release; check its installation guide for availability. `binpm`, `cargo-mono`, `nodeup`, `with-watch`, `derun`, `runmoor` and `clibox` all use the stable channel. Preview is reserved and currently has no CLI packages. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
 
 These APT and DNF repositories do not support Arch Linux or Alpine Linux and do not distribute DevHud.
 
@@ -44,15 +46,15 @@ Architectures: amd64 arm64
 Signed-By: /usr/share/keyrings/delino-packages.gpg
 EOF
 sudo apt-get update
-sudo apt-get install binpm
-binpm --version
+sudo apt-get install runmoor
+runmoor version
 ```
 
-The source uses `Signed-By` to restrict this key to the Delino repository. Replace `binpm` with any available stable CLI package from the list above. APT also installs `delino-archive-keyring`, which keeps this repository’s public certificate current through authenticated package updates.
+The source uses `Signed-By` to restrict this key to the Delino repository. The commands install the available Runmoor package; other stable CLI packages can use the same registration after their verified publication. APT also installs `delino-archive-keyring`, which keeps this repository’s public certificate current through authenticated package updates.
 
 ## DNF: stable
 
-After verifying the same key:
+After verifying the same key, use the commands below to check package installation. Runmoor's manager requires Ubuntu and cannot run on these DNF distributions.
 
 ```sh
 sudo rpm --import delino-packages.asc
@@ -67,8 +69,8 @@ gpgkey=https://pkgs.oss.delino.io/keys/delino-packages.asc
 metadata_expire=300
 sslverify=1
 EOF
-sudo dnf install binpm
-binpm --version
+sudo dnf install runmoor
+runmoor version
 ```
 
 The repository enables both `gpgcheck=1` and `repo_gpgcheck=1`. If DNF requests a key confirmation, compare the fingerprint above before accepting.
@@ -113,25 +115,25 @@ sudo dnf makecache
 
 ## Runmoor and clibox
 
-After their first native releases, use the stable registration above and install `runmoor` or `clibox` with APT or DNF. Check `runmoor version` or `clibox --version`. Native clibox installation does not require Node.js; desktop helpers remain optional user-installed tools.
+Use the stable registration above to install Runmoor `0.1.3` with APT or DNF. The same registration applies to `clibox` after its first verified native release. Check `runmoor version` or `clibox --version`. Native clibox installation does not require Node.js; desktop helpers remain optional user-installed tools.
 
 Installation does not register or start a Runmoor service, configure runners, or install Docker or Tart. Follow the [Runmoor guide](https://oss.delino.io/runmoor/) for explicit setup and service commands. Package installation checks do not certify live GitHub or Tart integration.
 
 ## Update and remove
 
-For APT, replace `binpm` with the installed package:
+For the installed Runmoor package with APT:
 
 ```sh
 sudo apt-get update
-sudo apt-get install --only-upgrade delino-archive-keyring binpm
-sudo apt-get remove binpm
+sudo apt-get install --only-upgrade delino-archive-keyring runmoor
+sudo apt-get remove runmoor
 ```
 
 For DNF:
 
 ```sh
-sudo dnf upgrade binpm
-sudo dnf remove binpm
+sudo dnf upgrade runmoor
+sudo dnf remove runmoor
 ```
 
 Removing a CLI package preserves its user configuration and data. Stop and unregister a Runmoor service with the documented Runmoor commands before removing the executable.

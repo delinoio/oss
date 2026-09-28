@@ -174,7 +174,7 @@
 - The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, `/clibox`, `/pnport`, and `/react-forge` prefixes.
 - Public native-package registration examples must spell out the complete repository configuration with a quoted heredoc, preserving APT Signed-By and both DNF signature checks. Do not bootstrap trust by installing an unverified configuration file downloaded from package storage.
 
-- Native package documentation must distinguish implemented release integration from published availability. No native packages have been published yet; mark every CLI package-manager example as unavailable until its own public installation verification completes. Runmoor and clibox use stable.
+- Native package documentation must distinguish implemented release integration from published availability. Runmoor `0.1.3` native packages have passed public installation verification on all package distribution/architecture pairs; executable installation/update/removal examples must use the published Runmoor package. Keep each other CLI package-manager example unavailable until its own public installation verification completes. Package compatibility does not expand runtime support: the Runmoor manager requires Ubuntu 22.04+ on Linux, and non-Ubuntu package checks cover installation and version/help only. Runmoor and clibox use stable.
 
 ### pnport Rules
 
