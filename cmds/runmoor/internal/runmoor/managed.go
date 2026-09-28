@@ -47,6 +47,9 @@ func initializeManaged(s *Snapshot, c Config) {
 		managed.Resources = p.Cost()
 		managed.MaxRunners = p.MaxRunners
 		if managed.DesiredHash != hash {
+			if recovery := s.ManagedRecovery[p.Name]; recovery != nil && recovery.DesiredHash != hash {
+				delete(s.ManagedRecovery, p.Name)
+			}
 			managed.DesiredHash = hash
 			managed.NextCheck = time.Time{}
 			managed.Phase = UpdatePending
@@ -73,6 +76,65 @@ func managedConfig(s Snapshot) Config {
 		}
 	}
 	return c
+}
+
+func recordValidatedManagedRecovery(s *Snapshot, c Config) {
+	if s.ManagedRecovery == nil {
+		s.ManagedRecovery = map[string]*ManagedRecovery{}
+	}
+	wanted := map[string]bool{}
+	for _, next := range c.Pools {
+		if !managesRunner(next) {
+			continue
+		}
+		wanted[next.Name] = true
+		var old *PoolState
+		for _, p := range s.Pools {
+			if p.Spec.Name == next.Name && p.Phase != Draining && p.Phase != Retired {
+				old = p
+				break
+			}
+		}
+		if old == nil || old.Phase != Suspended || old.Problem == nil {
+			delete(s.ManagedRecovery, next.Name)
+			continue
+		}
+		recovery := s.ManagedRecovery[next.Name]
+		if recovery == nil || recovery.PoolID != old.ID || recovery.ProblemHash != fingerprint(old.Problem) {
+			recovery = &ManagedRecovery{PoolID: old.ID, ProblemHash: fingerprint(old.Problem), BaselinePool: old.Spec, BaselineConnection: old.Connection, BaselineTimeouts: s.Config.Timeouts, BaselineDockerSocket: s.Config.DockerSocket, BaselineTartExecutable: s.Config.TartExecutable}
+		}
+		baseline := *old
+		baseline.Spec = recovery.BaselinePool
+		baseline.Connection = recovery.BaselineConnection
+		if old.Problem.Code == ErrImage || old.Problem.Code == ErrRunnerVersion || old.Problem.Code == ErrPreparation {
+			// Managed preparation resolves these fields from the requested image.
+			// A pinned version or resolved image in the committed pool is not
+			// itself a configuration correction; verified image replacement
+			// handles those failures separately.
+			baseline.Spec.Image = next.Image
+			baseline.Spec.ImageSource = next.ImageSource
+			baseline.Spec.RunnerPath = next.RunnerPath
+			baseline.Spec.RunnerVersion = next.RunnerVersion
+		}
+		oldConfig := Config{Timeouts: recovery.BaselineTimeouts, DockerSocket: recovery.BaselineDockerSocket, TartExecutable: recovery.BaselineTartExecutable}
+		if !suspensionCorrected(baseline, next, c.Connection(next.Connection), oldConfig, c) {
+			delete(s.ManagedRecovery, next.Name)
+			continue
+		}
+		recovery.DesiredHash = fingerprint(next)
+		s.ManagedRecovery[next.Name] = recovery
+	}
+	for name := range s.ManagedRecovery {
+		if !wanted[name] {
+			delete(s.ManagedRecovery, name)
+		}
+	}
+}
+
+func managedRecoveryMatches(s *Snapshot, old *PoolState) bool {
+	recovery := s.ManagedRecovery[old.Spec.Name]
+	managed := s.Managed[old.Spec.Name]
+	return recovery != nil && managed != nil && managed.Current != nil && managed.AppliedHash == recovery.DesiredHash && managed.DesiredHash == recovery.DesiredHash && recovery.PoolID == old.ID && old.Problem != nil && recovery.ProblemHash == fingerprint(old.Problem)
 }
 func (m *Manager) requestRunnerUpdate(name string) error {
 	return m.Store.Update(func(s *Snapshot) error {
@@ -426,7 +488,7 @@ func (m *Manager) validateManagedImage(ctx context.Context, c Config, p Pool, s 
 }
 
 func managedImageFailure(p *PoolState) bool {
-	return p.Phase == Suspended && p.Problem != nil && (p.Problem.Code == ErrImage || p.Problem.Code == ErrRunnerVersion)
+	return p.Phase == Suspended && p.Problem != nil && (p.Problem.Code == ErrImage || p.Problem.Code == ErrRunnerVersion || p.Problem.Code == ErrPreparation && p.PreparationFailures >= 3)
 }
 
 func recoverManagedImage(s *Snapshot, previous *Pool) {
@@ -437,7 +499,7 @@ func recoverManagedImage(s *Snapshot, previous *Pool) {
 		if fingerprint(p.Spec) != fingerprint(*previous) || !managedImageFailure(p) {
 			continue
 		}
-		// Only the verified replacement authorizes clearing an image failure.
+		// Only the verified replacement authorizes clearing an image or startup failure.
 		// Operator pauses, draining generations and unrelated failures survive.
 		p.Phase = Ready
 		p.Problem = nil

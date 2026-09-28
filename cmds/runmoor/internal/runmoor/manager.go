@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,7 @@ type Manager struct {
 	poolLoops       map[string]context.CancelFunc
 	poolLocks       map[string]*sync.Mutex
 	remotes         map[string]Remote
+	remoteKeys      map[string]string
 	wg              sync.WaitGroup
 	imageMu         sync.Mutex
 	reloadMu        sync.Mutex
@@ -36,7 +38,7 @@ type Manager struct {
 
 func NewManager(store *Store, path string, l *slog.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
-	m := &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, ctx: ctx, cancel: cancel}
+	m := &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, remoteKeys: map[string]string{}, ctx: ctx, cancel: cancel}
 	m.ResolveCapacity = resolveDockerCapacity
 	m.ReleaseClient = defaultReleaseClient()
 	m.RunnerBuilder = &ManagedImageBuilder{Store: store, Images: m.Images, Client: m.ReleaseClient, Log: l}
@@ -56,21 +58,45 @@ func (m *Manager) poolLock(id string) *sync.Mutex {
 func (m *Manager) remote(p PoolState) (Remote, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if current := m.Store.View().Pools[p.ID]; current == nil || current.Phase == Retired {
+	s := m.Store.View()
+	current := s.Pools[p.ID]
+	if current == nil || current.Phase == Retired {
 		return nil, problem(ErrRetry, "Pool generation has retired.", "Use the active pool generation shown by status.")
 	}
-	if r := m.remotes[p.ID]; r != nil {
-		return r, nil
+	connection := current.Connection
+	key := fingerprint(connection)
+	if current.Phase == Draining {
+		if replacement, ok := s.RetirementAuthority[p.ID]; ok && poolIdentity(current.Spec, replacement) == poolIdentity(current.Spec, current.Connection) {
+			connection = replacement
+			key = fingerprint(struct {
+				Connection Connection
+				Validation string
+			}{replacement, s.RetirementValidation[p.ID]})
+		}
 	}
-	r, e := m.RemoteFactory(p.Connection)
+	prior := m.remotes[p.ID]
+	if prior != nil && m.remoteKeys[p.ID] == key {
+		return prior, nil
+	}
+	r, e := m.RemoteFactory(connection)
 	if e == nil {
+		if prior != nil && current.Phase == Draining {
+			m.Log.Info("pool_cleanup_authority_switched", "pool", current.Spec.Name, "pool_id", p.ID)
+		}
 		m.remotes[p.ID] = r
+		m.remoteKeys[p.ID] = key
 	}
 	return r, e
 }
 func (m *Manager) activate(c Config) error { return m.accept(c, true) }
 func (m *Manager) accept(c Config, restart bool) error {
+	return m.acceptWithValidatedReload(c, restart, false)
+}
+func (m *Manager) acceptWithValidatedReload(c Config, restart, validatedReload bool) error {
 	return m.Store.Update(func(s *Snapshot) error {
+		if validatedReload {
+			recordValidatedManagedRecovery(s, c)
+		}
 		initializeManaged(s, c)
 		if restart {
 			s.ReleaseChecked = time.Time{}
@@ -78,10 +104,16 @@ func (m *Manager) accept(c Config, restart bool) error {
 				q.NextCheck = time.Time{}
 			}
 		}
-		return acceptSnapshot(s, managedConfig(*s), restart)
+		return acceptSnapshotWithValidatedReload(s, managedConfig(*s), restart, validatedReload)
 	})
 }
 func acceptSnapshot(s *Snapshot, c Config, restart bool) error {
+	return acceptSnapshotWithValidatedReload(s, c, restart, false)
+}
+func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validatedReload bool) error {
+	if validatedReload {
+		refreshRetirementAuthority(s, c)
+	}
 	if s.Generation != "" && fingerprint(s.Config) == fingerprint(c) {
 		if restart {
 			s.Stopping = false
@@ -94,19 +126,24 @@ func acceptSnapshot(s *Snapshot, c Config, restart bool) error {
 		wanted[p.Name] = p
 	}
 	matched := map[string]bool{}
-	phases := map[string]PoolPhase{}
+	previous := map[string]PoolState{}
 	for _, old := range s.Pools {
 		if old.Phase == Retired || old.Phase == Draining {
 			continue
 		}
 		p, ok := wanted[old.Spec.Name]
 		conn := c.Connection(p.Connection)
-		if ok && fingerprint(old.Spec) == fingerprint(p) && fingerprint(old.Connection) == fingerprint(conn) {
+		recover := ok && old.Phase == Suspended && !s.Paused && !s.Stopping && (validatedReload && suspensionCorrected(*old, p, conn, s.Config, c) || managedRecoveryMatches(s, old))
+		if ok && fingerprint(old.Spec) == fingerprint(p) && fingerprint(old.Connection) == fingerprint(conn) && !recover {
 			old.Generation = gen
 			matched[p.Name] = true
 			continue
 		}
-		phases[old.Spec.Name] = old.Phase
+		previous[old.Spec.Name] = *old
+		if validatedReload && poolIdentity(old.Spec, old.Connection) == poolIdentity(p, conn) && authChanged(old.Connection, conn) {
+			s.RetirementAuthority[old.ID] = conn
+			s.RetirementValidation[old.ID] = newID()
+		}
 		old.Phase = Draining
 		old.Demand = 0
 	}
@@ -115,13 +152,31 @@ func acceptSnapshot(s *Snapshot, c Config, restart bool) error {
 			continue
 		}
 		id := newID()
-		s.Pools[id] = &PoolState{ID: id, Generation: gen, Spec: p, Connection: c.Connection(p.Connection), Phase: Ready, OwnerLabel: "runmoor-owner-" + s.Installation}
-		if phases[p.Name] == Paused || phases[p.Name] == Suspended {
-			s.Pools[id].Phase = phases[p.Name]
+		conn := c.Connection(p.Connection)
+		next := &PoolState{ID: id, Generation: gen, Spec: p, Connection: conn, Phase: Ready, OwnerLabel: "runmoor-owner-" + s.Installation}
+		if old, ok := previous[p.Name]; ok {
+			switch old.Phase {
+			case Paused:
+				next.Phase = Paused
+			case Suspended:
+				if s.Paused || s.Stopping || !(validatedReload && suspensionCorrected(old, p, conn, s.Config, c) || managedRecoveryMatches(s, &old)) {
+					next.Phase = Suspended
+					next.PreparationFailures = old.PreparationFailures
+					next.SuspensionSource = old.SuspensionSource
+					if old.Problem != nil {
+						copy := *old.Problem
+						next.Problem = &copy
+					}
+				}
+			}
+			if recovery := s.ManagedRecovery[p.Name]; recovery != nil && recovery.PoolID == old.ID {
+				delete(s.ManagedRecovery, p.Name)
+			}
 		}
 		if q := s.Managed[p.Name]; q != nil && q.Paused {
-			s.Pools[id].Phase = Paused
+			next.Phase = Paused
 		}
+		s.Pools[id] = next
 	}
 	s.Config = c
 	s.Generation = gen
@@ -130,6 +185,86 @@ func acceptSnapshot(s *Snapshot, c Config, restart bool) error {
 		s.Stopping = false
 	}
 	return nil
+}
+
+func refreshRetirementAuthority(s *Snapshot, c Config) {
+	if s.RetirementAuthority == nil {
+		s.RetirementAuthority = map[string]Connection{}
+	}
+	if s.RetirementValidation == nil {
+		s.RetirementValidation = map[string]string{}
+	}
+	wanted := map[string]Pool{}
+	for _, p := range c.Pools {
+		wanted[p.Name] = p
+	}
+	for _, old := range s.Pools {
+		if old.Phase != Draining {
+			continue
+		}
+		next, ok := wanted[old.Spec.Name]
+		if !ok {
+			continue
+		}
+		conn := c.Connection(next.Connection)
+		if poolIdentity(old.Spec, old.Connection) != poolIdentity(next, conn) {
+			continue
+		}
+		// A new validation must supersede both a revoked replacement and a
+		// cached client for an older credential reference with the same name.
+		s.RetirementAuthority[old.ID] = conn
+		s.RetirementValidation[old.ID] = newID()
+	}
+}
+
+func suspensionCorrected(old PoolState, next Pool, conn Connection, oldConfig, newConfig Config) bool {
+	if old.Problem == nil {
+		return false
+	}
+	oldPool := old.Spec
+	switch old.Problem.Code {
+	case ErrAuth:
+		return authChanged(old.Connection, conn) || !strings.EqualFold(normalizedRunnerGroup(oldPool.RunnerGroup), normalizedRunnerGroup(next.RunnerGroup))
+	case ErrOwnership:
+		return old.SuspensionSource == SuspensionScaleSet && poolIdentity(oldPool, old.Connection) != poolIdentity(next, conn)
+	case ErrImage:
+		return imageChanged(oldPool, next)
+	case ErrRunnerVersion:
+		return runnerImageChanged(oldPool, next)
+	case ErrPlatform:
+		return oldPool.Backend != next.Backend || oldPool.Arch != next.Arch
+	case ErrPreparation:
+		if executionChanged(oldPool, next) {
+			return true
+		}
+		switch oldPool.Backend {
+		case Docker:
+			return oldConfig.DockerSocket != newConfig.DockerSocket || oldConfig.Timeouts.DockerPreparation != newConfig.Timeouts.DockerPreparation
+		case Tart:
+			return oldConfig.TartExecutable != newConfig.TartExecutable || oldConfig.Timeouts.TartPreparation != newConfig.Timeouts.TartPreparation
+		}
+	}
+	return old.PreparationFailures >= 3 && executionChanged(oldPool, next)
+}
+
+func normalizedRunnerGroup(group string) string {
+	if group == "" {
+		return "default"
+	}
+	return group
+}
+
+func authChanged(a, b Connection) bool {
+	return a.Target != b.Target || a.Auth != b.Auth || a.Credential != b.Credential || a.ClientID != b.ClientID || a.InstallationID != b.InstallationID
+}
+func imageChanged(a, b Pool) bool {
+	return runnerImageChanged(a, b) || a.DaemonImage != b.DaemonImage
+}
+func runnerImageChanged(a, b Pool) bool {
+	return a.Backend != b.Backend || a.Arch != b.Arch || a.Image != b.Image || fingerprint(a.ImageSource) != fingerprint(b.ImageSource) || a.RunnerPath != b.RunnerPath || a.RunnerVersion != b.RunnerVersion
+}
+func executionChanged(a, b Pool) bool {
+	return imageChanged(a, b) || a.Mode != b.Mode || a.Resources != b.Resources || a.DaemonResources != b.DaemonResources
 }
 func (m *Manager) Run(ctx context.Context, c Config) error {
 	defer func() {
@@ -413,6 +548,9 @@ func (m *Manager) ensurePoolLoop(id string) {
 	}()
 }
 func (m *Manager) poolProblem(id string, err error, suspend bool) {
+	m.poolProblemWithSource(id, err, suspend, SuspensionUnknown)
+}
+func (m *Manager) poolProblemWithSource(id string, err error, suspend bool, source SuspensionSource) {
 	p := classify(err, ErrRetry, "Pool dependency is unavailable.", "Inspect status and retry after restoring the dependency.")
 	_ = m.Store.Update(func(s *Snapshot) error {
 		v := s.Pools[id]
@@ -421,8 +559,12 @@ func (m *Manager) poolProblem(id string, err error, suspend bool) {
 		}
 		p.Pool = v.Spec.Name
 		v.Problem = p
+		v.SuspensionSource = SuspensionUnknown
 		if suspend && v.Phase != Draining {
 			v.Phase = Suspended
+			if p.Code == ErrOwnership {
+				v.SuspensionSource = source
+			}
 		}
 		return nil
 	})
@@ -469,10 +611,14 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 				cancel()
 			}
 		}
+		source := SuspensionUnknown
 		if e == nil {
 			probe, cancel := context.WithTimeout(ctx, 60*time.Second)
 			p, e = m.ensureScaleSet(probe, id, remote)
 			cancel()
+			if e != nil {
+				source = SuspensionScaleSet
+			}
 			if e == nil && (p == nil || p.ScaleSetID == 0) {
 				return
 			}
@@ -480,7 +626,7 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 		if e != nil {
 			code := classify(e, ErrRetry, "Pool initialization failed.", "Run doctor.").Code
 			suspend := code == ErrAuth || code == ErrOwnership || code == ErrImage || code == ErrPlatform || code == ErrRunnerVersion
-			m.poolProblem(id, e, suspend)
+			m.poolProblemWithSource(id, e, suspend, source)
 			if suspend {
 				return
 			}
@@ -762,6 +908,7 @@ func (m *Manager) failPreparation(id string, err error) {
 		if pool.Phase != Draining && (pool.PreparationFailures >= 3 || p.Code == ErrAuth || p.Code == ErrRunnerVersion || p.Code == ErrOwnership) {
 			pool.Phase = Suspended
 			pool.Problem = p
+			pool.SuspensionSource = SuspensionUnknown
 		}
 		return nil
 	})
@@ -1076,6 +1223,8 @@ func (m *Manager) retirePool(ctx context.Context, id string) {
 	if err := m.Store.Update(func(s *Snapshot) error {
 		p := s.Pools[id]
 		p.Phase, p.Session, p.Demand = Retired, "", 0
+		delete(s.RetirementAuthority, id)
+		delete(s.RetirementValidation, id)
 		return nil
 	}); err != nil {
 		m.poolProblem(id, err, false)
@@ -1085,6 +1234,7 @@ func (m *Manager) retirePool(ctx context.Context, id string) {
 	// Existing lock waiters retain this mutex until they see Retired. The
 	// current-state guards above prevent late work from recreating either cache.
 	delete(m.remotes, id)
+	delete(m.remoteKeys, id)
 	delete(m.poolLocks, id)
 	if cancel := m.poolLoops[id]; cancel != nil {
 		cancel()
@@ -1250,6 +1400,7 @@ func (m *Manager) Resume(ctx context.Context, name string) error {
 			s.Pools[id].Session = ""
 			s.Pools[id].PreparationFailures = 0
 			s.Pools[id].Problem = nil
+			s.Pools[id].SuspensionSource = SuspensionUnknown
 		}
 		return nil
 	})
@@ -1302,10 +1453,21 @@ func (m *Manager) Reload(ctx context.Context) error {
 			return e
 		}
 	}
-	if e = m.accept(c, false); e != nil {
+	if e = m.acceptWithValidatedReload(c, false, true); e != nil {
 		return e
 	}
-	m.Log.Info("configuration_accepted", "generation", m.Store.View().Generation)
+	committed := m.Store.View()
+	for _, old := range s.Pools {
+		if old.Phase != Suspended || old.Problem == nil {
+			continue
+		}
+		for _, next := range committed.Pools {
+			if next.Generation == committed.Generation && next.Spec.Name == old.Spec.Name && next.Phase == Ready && next.ID != old.ID {
+				m.Log.Info("pool_resumed_after_validated_reload", "pool", next.Spec.Name, "previous_error_code", old.Problem.Code, "generation", next.Generation)
+			}
+		}
+	}
+	m.Log.Info("configuration_accepted", "generation", committed.Generation)
 	return nil
 }
 func sortedPools(s Snapshot) []*PoolState {

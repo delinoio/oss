@@ -82,7 +82,7 @@ func statusOf(s Snapshot, running bool) *Status {
 		if q := s.Managed[p.Spec.Name]; q != nil {
 			mode = q.Mode
 		}
-		v.Pools = append(v.Pools, PoolStatus{ID: p.ID, Name: p.Spec.Name, Generation: p.Generation, Phase: p.Phase, Backend: p.Spec.Backend, ScaleSet: p.Spec.ScaleSet, Demand: p.Demand, Total: n, Busy: b, Problem: p.Problem, RunnerMode: mode, RunnerVersion: p.Spec.RunnerVersion, Resources: p.Spec.Cost(), MaxRunners: p.Spec.MaxRunners})
+		v.Pools = append(v.Pools, PoolStatus{ID: p.ID, Name: p.Spec.Name, Generation: p.Generation, Phase: p.Phase, Backend: p.Spec.Backend, ScaleSet: p.Spec.ScaleSet, Demand: p.Demand, Total: n, Busy: b, Problem: poolDiagnostic(p), RunnerMode: mode, RunnerVersion: p.Spec.RunnerVersion, Resources: p.Spec.Cost(), MaxRunners: p.Spec.MaxRunners})
 	}
 	for _, r := range s.Runners {
 		if r.Phase != Completed {
@@ -95,6 +95,18 @@ func statusOf(s Snapshot, running bool) *Status {
 	sort.Slice(v.Images, func(i, j int) bool { return v.Images[i].ID < v.Images[j].ID })
 	sort.Slice(v.Runners, func(i, j int) bool { return v.Runners[i].ID < v.Runners[j].ID })
 	return v
+}
+
+func poolDiagnostic(p *PoolState) *Problem {
+	if p.Problem != nil {
+		return p.Problem
+	}
+	if p.Phase != Suspended {
+		return nil
+	}
+	missing := problem(ErrRetry, "Pool is suspended, but its original failure reason is unavailable.", "Run doctor, correct any reported dependency failure, then resume this pool.")
+	missing.Pool = p.Spec.Name
+	return missing
 }
 func (m *Manager) ServeControl() (*http.Server, error) {
 	c := m.Store.View().Config

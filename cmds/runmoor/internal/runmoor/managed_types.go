@@ -63,6 +63,19 @@ type ManagedPool struct {
 	Paused           bool        `json:"paused"`
 	Problem          *Problem    `json:"error,omitempty"`
 }
+
+// ManagedRecovery is a private, durable decision from a validated reload.
+// It is kept outside ManagedPool so status JSON does not expose new fields.
+type ManagedRecovery struct {
+	PoolID                 string     `json:"pool_id"`
+	ProblemHash            string     `json:"problem_hash"`
+	DesiredHash            string     `json:"desired_hash"`
+	BaselinePool           Pool       `json:"baseline_pool"`
+	BaselineConnection     Connection `json:"baseline_connection"`
+	BaselineTimeouts       Timeouts   `json:"baseline_timeouts"`
+	BaselineDockerSocket   string     `json:"baseline_docker_socket"`
+	BaselineTartExecutable string     `json:"baseline_tart_executable"`
+}
 type RunnerArtifact struct {
 	ID              string        `json:"id"`
 	Pool            string        `json:"pool"`

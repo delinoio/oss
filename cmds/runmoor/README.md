@@ -248,7 +248,7 @@ runmoor stop --force
 
 Status and doctor JSON use `schema_version: 1`. Status includes image revisions and pending recovery. Doctor also reports the current state and briefly acquires/releases OS sleep inhibition to check permissions. Errors have stable codes, affected identifiers and a recovery action. English text is usable without color; use `--no-color` or `NO_COLOR` to disable ANSI logs. JSON never uses color.
 
-`pause` stops acquisition/new capacity and preserves running jobs. `drain` additionally waits for jobs/local cleanup. `stop` drains before exiting and waits for open image setup and pending image removal, including with `--force`. Finish setup by shutting down its VM or sealing the revision, and retry pending removal as needed. New image work requires restarting the manager after stop; `stop --pool NAME` drains that pool while the manager keeps serving other pools. Only explicit `--force` terminates owned work. `resume` revalidates the pool. Pool control commands without `--pool` apply to all pools. Resume a suspended pool after correcting credentials or preparation failures.
+`pause` stops acquisition/new capacity and preserves running jobs. `drain` additionally waits for jobs/local cleanup. `stop` drains before exiting and waits for open image setup and pending image removal, including with `--force`. Finish setup by shutting down its VM or sealing the revision, and retry pending removal as needed. New image work requires restarting the manager after stop; `stop --pool NAME` drains that pool while the manager keeps serving other pools. Only explicit `--force` terminates owned work. `resume` revalidates the pool. Pool control commands without `--pool` apply to all pools. A validated reload automatically resumes a suspended pool only when a setting related to its reported failure changed; a verified managed image can also recover image, version or repeated startup failures. Otherwise, correct the cause and use `resume`.
 
 Reload validates the entire candidate first. Existing jobs retain their original configuration and timeout. Removed/changed pools drain their previous generation; a new generation with the same GitHub scale-set identity waits until the old one retires. A failed reload leaves the last valid configuration active.
 
@@ -417,13 +417,14 @@ macOS and Xcode still use their existing manual/package-manager update workflows
 
 ## Troubleshooting and privacy
 
-- `AUTHENTICATION_FAILED`: correct the referenced credential/permissions, then resume the pool.
+- `AUTHENTICATION_FAILED`: correct the referenced credential/permissions. Reload can resume the pool when a changed credential reference or runner group passes validation; if the secret changed at the same reference, use `resume`.
 - `IMAGE_INVALID` or `RUNNER_VERSION_UNSUPPORTED`: pre-pull a correct digest or seal a compatible image. Managed pools retry runner preparation automatically; inspect status or request `runner update`. Exact pins require explicit replacement. GitHub generally requires replacement within 30 days and may require security updates sooner.
 - `CAPACITY_EXHAUSTED` or `DISK_LOW`: adjust explicit budgets/free disk, or remove an unused sealed image yourself. Do not delete active execution storage.
 - `OWNERSHIP_AMBIGUOUS`: preserve local state and investigate the exact resource. Use a different scale-set name when another installation owns it; restoring ownership requires the original matching backup.
 - `CLEANUP_PENDING`: restore Docker/Tart/GitHub connectivity and let reconciliation retry. A stopped manager reports pending cleanup until the next run.
 - `SLEEP_INHIBITION_UNAVAILABLE`: check OS utility/session permissions; work continues without a sleep guarantee.
 - Repeated preparation failures suspend the affected pool after three attempts. Unrelated healthy pools continue.
+- A suspended pool should show its reason in `runmoor status` and `runmoor doctor`. Older state may lack the original reason; Runmoor reports that gap without guessing or automatically resuming the pool. Run `doctor`, correct any reported dependency failure, then use `runmoor resume --pool NAME`.
 
 ### Ubuntu startup checks
 
