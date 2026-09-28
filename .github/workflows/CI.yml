@@ -272,7 +272,7 @@ jobs:
       - name: Install DevHUD Linux prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -320,7 +320,7 @@ jobs:
       - name: Install DevHUD Linux prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2

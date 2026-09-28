@@ -35,6 +35,8 @@ The shared checksum generator keeps sorted recursive paths, GNU filename escapin
 
 `.github/workflows/CI.yml` is a read-only validation workflow. It uses `contents: read` and `pull-requests: read`, does not consume repository secrets, and must not push tags, create or upload releases, submit stores, push OCI images, deploy documentation or infrastructure, promote updater state, or call any mutating release-controller operation. Release workflows and packaging inputs are tested as source and deterministic fixtures only.
 
+The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development files before compiling DevHud. Its package supplies the JavaScriptCoreGTK 4.1 pkg-config metadata required by the resolved all-features graph. PR #1041's Clippy job failed at this native prerequisite before linting source; the CI prerequisite repair does not claim a Rust source change.
+
 CI never builds a signed private candidate and never publishes.
 
 Changes to the shared checksum generator select the DevHud supply-chain fixture job that exercises it, including on pull requests where desktop packaging is skipped.
