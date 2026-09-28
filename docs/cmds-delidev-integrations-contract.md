@@ -273,3 +273,6 @@ Desktop detail validates and displays original source names and exact IDs with s
 
 
 The Worker workspace engine now accepts the original Git target through an explicit PR-only Worktree preparation profile. It verifies the selected base transport, exact current remote base/head refs and original fork before and after object fetch, then retains target provenance in the detached worktree manifest. No user ref, remote configuration or FETCH_HEAD is changed. The [workspace contract](cmds-delidev-workspace-contract.md) defines native authentication, cancellation and publication checks. Public remediation/session selection and later live Git preflight/direct-harness commit-push are still separate unfinished composition; the server does not yet issue this profile from a public Fix now action.
+
+
+Fresh first execution of the explicit PR-prepared Worktree now uses the common Worker lease's read-only original-head/base/remote/cleanliness preflight before native execution ownership is created. It preserves blocked files and requires new reads after a failed preflight; see the workspace contract. This does not supply reused-session authority, a public Fix now action or native Git write credentials.

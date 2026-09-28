@@ -84,7 +84,7 @@ for arg do
   case "$arg" in fetch) network=yes; fetch=yes;; ls-remote) network=yes;; --get-url) geturl=yes;; esac
 done
 if [ "$network" = yes ] && [ "$geturl" = no ]; then
-  printf 'network\n' >> %s
+  printf 'network:%%s\n' "$fetch" >> %s
   if [ -f %s ] && [ "$(cat %s)" = fail ]; then exit 128; fi
   for arg do
     case "$arg" in

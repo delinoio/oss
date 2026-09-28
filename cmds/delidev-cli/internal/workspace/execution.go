@@ -201,6 +201,11 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 	if previous != nil && (prior.ManifestDigest != manifestDigest || prior.WorkspaceDigest != identityDigest) {
 		return nil, ResultUncertain()
 	}
+	if previous == nil {
+		if err := m.preflightPreparedPRs(ctx, input, manifest); err != nil {
+			return nil, err
+		}
+	}
 	// Preparation's read-only Git checks have their own session process owner.
 	// Prove its cleanup before creating a distinct execution-job owner scope.
 	if err := process.ReconcileOwnerContext(ctx, m.Git.ProcessRoot, input.SessionID); err != nil {
