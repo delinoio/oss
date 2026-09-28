@@ -301,12 +301,12 @@ fn real_local_worker_registration_start_status_and_offline_stop() {
     struct Stop<'a>(&'a Connector);
     impl Drop for Stop<'_> {
         fn drop(&mut self) {
-            if let Ok(status) = self.0.local_worker(LocalWorkerAction::Status, None) {
-                if let Some(generation) = status.generation {
-                    let _ = self
-                        .0
-                        .local_worker(LocalWorkerAction::Stop, Some(&generation));
-                }
+            if let Ok(status) = self.0.local_worker(LocalWorkerAction::Status, None)
+                && let Some(generation) = status.generation
+            {
+                let _ = self
+                    .0
+                    .local_worker(LocalWorkerAction::Stop, Some(&generation));
             }
             let _ = self.0.run(&["server".into(), "stop".into()]);
         }

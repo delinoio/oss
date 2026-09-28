@@ -275,16 +275,16 @@ async fn remove_connection(
     };
     // The explicit UI confirmation includes losing this window's unsent drafts.
     // Block reopen and late token delivery before beginning private cleanup.
-    if let Some(saved) = app.get_webview_window(&label) {
-        if saved.destroy().is_err() {
-            let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
-            if let Some(original) = original {
-                values.insert(label, original);
-            } else {
-                values.remove(&label);
-            }
-            return Err(NativeFailure::SidecarFailed);
+    if let Some(saved) = app.get_webview_window(&label)
+        && saved.destroy().is_err()
+    {
+        let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
+        if let Some(original) = original {
+            values.insert(label, original);
+        } else {
+            values.remove(&label);
         }
+        return Err(NativeFailure::SidecarFailed);
     }
     let result = tauri::async_runtime::spawn_blocking(move || {
         connector.remove_saved(&id, &request_id, revision)
@@ -331,6 +331,10 @@ async fn retry_connection(
         .await
         .map_err(|_| NativeFailure::SidecarFailed)?
 }
+// Tauri maps these separate argument names into the renderer IPC contract.
+// Remove this exception when the command and callers use a validated request
+// object.
+#[expect(clippy::too_many_arguments)]
 #[tauri::command]
 async fn rename_connection(
     window: WebviewWindow<Wry>,
@@ -584,15 +588,13 @@ async fn open_connection(
         Ok(window) => {
             let windows = Arc::clone(windows.inner());
             window.on_window_event(move |event| {
-                if matches!(event, WindowEvent::Destroyed) {
-                    if let Ok(mut values) = windows.0.lock() {
-                        if values
-                            .get(&label)
-                            .is_some_and(|binding| binding.instance == instance && !binding.closing)
-                        {
-                            values.remove(&label);
-                        }
-                    }
+                if matches!(event, WindowEvent::Destroyed)
+                    && let Ok(mut values) = windows.0.lock()
+                    && values
+                        .get(&label)
+                        .is_some_and(|binding| binding.instance == instance && !binding.closing)
+                {
+                    values.remove(&label);
                 }
             });
             tracing::info!(operation = "saved_window", state = "opened");

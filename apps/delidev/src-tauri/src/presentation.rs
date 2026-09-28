@@ -82,8 +82,8 @@ fn timestamp(value: &str) -> bool {
 }
 impl TraySummary {
     pub fn validate(&self) -> Result<(), NativeFailure> {
-        if let Some(v) = &self.overview {
-            if !timestamp(&v.observed_at)
+        if let Some(v) = &self.overview
+            && (!timestamp(&v.observed_at)
                 || [
                     &v.active_sessions,
                     &v.pending_interactions,
@@ -93,15 +93,14 @@ impl TraySummary {
                 .iter()
                 .any(|v| !decimal(v, 20) || v.parse::<u64>().is_err())
                 || v.connected_workers.parse::<u64>().ok()
-                    > v.registered_workers.parse::<u64>().ok()
-            {
-                return Err(NativeFailure::InvalidEvidence);
-            }
+                    > v.registered_workers.parse::<u64>().ok())
+        {
+            return Err(NativeFailure::InvalidEvidence);
         }
-        if let Some(v) = &self.usage {
-            if v.known_tokens.as_deref().is_some_and(|v| !decimal(v, 80)) {
-                return Err(NativeFailure::InvalidEvidence);
-            }
+        if let Some(v) = &self.usage
+            && v.known_tokens.as_deref().is_some_and(|v| !decimal(v, 80))
+        {
+            return Err(NativeFailure::InvalidEvidence);
         }
         if let Some(v) = &self.accounts {
             if v.entries.len() > 20 {
