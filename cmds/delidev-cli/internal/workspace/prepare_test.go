@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -41,6 +42,20 @@ func manager(t *testing.T) *Manager {
 func requestFor(root string) (PrepareRequest, domain.ID) {
 	machine, repo := domain.NewID(), domain.NewID()
 	return PrepareRequest{SessionID: domain.NewID(), MachineID: machine, OriginMachineID: machine, Type: domain.Worktree, PrimaryRepository: repo, Repositories: []RepositorySpec{{ID: repo, Checkout: root, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}}}, repo
+}
+
+func TestRemotePreparationStructureDoesNotUseServerHostPathRules(t *testing.T) {
+	foreign := `C:\remote\source`
+	if runtime.GOOS == "windows" {
+		foreign = "/remote/source"
+	}
+	request, _ := requestFor(foreign)
+	if err := request.validateStructure(); err != nil {
+		t.Fatal("remote request structure was rejected by host path rules", err)
+	}
+	if request.validate() == nil {
+		t.Fatal("worker-local preparation accepted a foreign-OS path")
+	}
 }
 func TestInspectRootSubdirectoryLinkedWorktreeWithoutURLs(t *testing.T) {
 	root := repository(t)

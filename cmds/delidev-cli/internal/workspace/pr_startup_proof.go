@@ -40,7 +40,7 @@ func startupProofDigest(raw []byte) string {
 // ValidatePRStartupRejection is a pure comparison for server publication. It
 // cannot inspect Worker paths, invoke Git or infer a proof from absent events.
 func ValidatePRStartupRejection(input PrepareRequest, manifest Manifest, proof domain.PRStartupRejectionProof, workerOS string) error {
-	if input.validate() != nil || ValidateResult(input, manifest, workerOS) != nil || proof.Validate() != nil || proof.SessionID != input.SessionID || proof.PreparationDigest != preparationDigest(input) {
+	if input.validateStructure() != nil || ValidateResult(input, manifest, workerOS) != nil || proof.Validate() != nil || proof.SessionID != input.SessionID || proof.PreparationDigest != preparationDigest(input) {
 		return domain.StartupRejectionUncertain()
 	}
 	rawManifest, err := json.Marshal(manifest)

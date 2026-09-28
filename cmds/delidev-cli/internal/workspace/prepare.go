@@ -114,6 +114,20 @@ func (m *Manager) initialize() error {
 	return nil
 }
 func (r PrepareRequest) validate() error {
+	if err := r.validateStructure(); err != nil {
+		return err
+	}
+	for _, repo := range r.Repositories {
+		if !filepath.IsAbs(repo.Checkout) {
+			return domain.Fail(domain.InvalidArgument, "A checkout path must be absolute on this Worker.", "Use Worker repository inspection.")
+		}
+	}
+	return nil
+}
+
+// Server-side evidence validation cannot interpret a remote Worker's paths
+// with the server host OS. ValidateResult checks them against the Worker OS.
+func (r PrepareRequest) validateStructure() error {
 	if err := r.SessionID.Validate(); err != nil {
 		return err
 	}
@@ -151,9 +165,6 @@ func (r PrepareRequest) validate() error {
 		ids = append(ids, repo.ID)
 		if repo.ID == r.PrimaryRepository {
 			primary = true
-		}
-		if !filepath.IsAbs(repo.Checkout) {
-			return domain.Fail(domain.InvalidArgument, "A checkout path must be absolute on this Worker.", "Use Worker repository inspection.")
 		}
 	}
 	if err := domain.UniqueIDs(ids); err != nil {
