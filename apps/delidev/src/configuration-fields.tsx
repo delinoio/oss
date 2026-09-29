@@ -65,7 +65,7 @@ export function ResourceChoice({ label, kind, value, change, active, disabled = 
   const [page, setPage] = useState("");
   const [subscriptionPage, setSubscriptionPage] = useState("");
   const needsProviderCapability = activeApiOnly && (kind === EntityKind.PROVIDER || kind === EntityKind.MODEL);
-  const inventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 200, pageToken: page }, { enabled: active && needsProviderCapability });
+  const inventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 200, pageToken: kind === EntityKind.PROVIDER ? page : "" }, { enabled: active && needsProviderCapability });
   const ready = providerInventoryReady(inventory.data?.capabilities);
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: kind === EntityKind.PROVIDER && needsProviderCapability ? subscriptionPage : page } }, { enabled: active && (!needsProviderCapability || kind === EntityKind.PROVIDER) });
   const modelSearch = useQuery(ProviderQuery.searchModels, { query: "", providerId: "", includeHidden: true, pageSize: 50, pageToken: page, enabledProvidersOnly: true }, { enabled: active && kind === EntityKind.MODEL && needsProviderCapability && ready });

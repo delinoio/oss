@@ -12,7 +12,7 @@ import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string }; readProviderInventory?: (pageToken: string) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string } } = {}) {
+function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string }; readProviderInventory?: (pageToken: string) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -30,7 +30,7 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
         if (options.providerInventoryError) throw options.providerInventoryError;
         return options.readProviderInventory?.(request.pageToken) ?? ({ entries: options.providerEntries ?? [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ...(options.providerEntries ? [ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] : [])] });
       },
-      searchModels: () => ({ models: [], providers: [] }),
+      searchModels: (request) => options.readModelSearch?.(request.pageToken) ?? ({ models: [], providers: [] }),
     });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
@@ -52,6 +52,34 @@ it("pages native subscription providers independently of active API providers", 
   fireEvent.click(screen.getByRole("button", { name: "More subscription providers" }));
   await screen.findByRole("option", { name: "Subscription 51" });
   expect((screen.getByRole("button", { name: "More API providers" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("keeps model-search cursors out of provider inventory requests", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "API provider", enabled: true });
+  const firstModel = resource(EntityKind.MODEL, { name: "First model", provider_id: provider.id });
+  const secondModel = resource(EntityKind.MODEL, { name: "Second model", provider_id: provider.id });
+  const providerEntry = create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.UNSPECIFIED, providerId: provider.id, displayName: "API provider", enabled: true, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true, provider });
+  const inventoryTokens: string[] = [];
+  const searchTokens: string[] = [];
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
+  const value = fixture([provider], {
+    providerEntries: [providerEntry],
+    readProviderInventory: (pageToken) => {
+      inventoryTokens.push(pageToken);
+      if (pageToken) throw new ConnectError("Provider inventory received another query's cursor", Code.InvalidArgument);
+      return { entries: [providerEntry], capabilities };
+    },
+    readModelSearch: (pageToken) => {
+      searchTokens.push(pageToken);
+      return pageToken ? { models: [secondModel], providers: [provider] } : { models: [firstModel], providers: [provider], nextPageToken: "model-page-2" };
+    },
+  });
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />));
+  await screen.findByRole("option", { name: "First model" });
+  fireEvent.click(screen.getByRole("button", { name: "More choices" }));
+  await screen.findByRole("option", { name: "Second model" });
+  expect(searchTokens).toEqual(["", "model-page-2"]);
+  expect(inventoryTokens.every((pageToken) => pageToken === "")).toBe(true);
 });
 
 it("keeps API provider accounts optional when none are connected", async () => {
