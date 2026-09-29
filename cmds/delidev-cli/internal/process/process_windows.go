@@ -41,6 +41,7 @@ type managedProcess struct {
 	scope                     windowsScope
 	identity                  Process
 	job, process, thread      windows.Handle
+	pseudo                    windows.Handle
 	input, output, diagnostic *os.File
 	done                      chan struct{}
 	result, reconcileErr      error
@@ -142,7 +143,7 @@ func ownedJob(name string) (windows.Handle, error) {
 	}
 	return job, nil
 }
-func startProcess(command *exec.Cmd, dir string, owner domain.ID) (_ *managedProcess, returned error) {
+func startProcess(command *exec.Cmd, dir string, owner domain.ID, terminal *TerminalSize) (_ *managedProcess, returned error) {
 	if err := security.PrivateDir(dir); err != nil {
 		return nil, err
 	}
@@ -186,6 +187,17 @@ func startProcess(command *exec.Cmd, dir string, owner domain.ID) (_ *managedPro
 			errorRead.Close()
 		}
 	}()
+	var pseudo windows.Handle
+	if terminal != nil {
+		if err := windows.CreatePseudoConsole(windows.Coord{X: int16(terminal.Columns), Y: int16(terminal.Rows)}, windows.Handle(inputRead.Fd()), windows.Handle(outputWrite.Fd()), 0, &pseudo); err != nil {
+			return nil, launchFailure(windowsLaunchCode(err))
+		}
+		defer func() {
+			if !success {
+				windows.ClosePseudoConsole(pseudo)
+			}
+		}()
+	}
 	inherited := make([]windows.Handle, 3)
 	defer func() {
 		for _, handle := range inherited {
@@ -195,6 +207,9 @@ func startProcess(command *exec.Cmd, dir string, owner domain.ID) (_ *managedPro
 		}
 	}()
 	for i, file := range []*os.File{inputRead, outputWrite, errorWrite} {
+		if terminal != nil {
+			break
+		}
 		if err := windows.DuplicateHandle(windows.CurrentProcess(), windows.Handle(file.Fd()), windows.CurrentProcess(), &inherited[i], 0, true, windows.DUPLICATE_SAME_ACCESS); err != nil {
 			return nil, err
 		}
@@ -204,7 +219,11 @@ func startProcess(command *exec.Cmd, dir string, owner domain.ID) (_ *managedPro
 		return nil, err
 	}
 	defer attributes.Delete()
-	if err := attributes.Update(windows.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&inherited[0]), uintptr(len(inherited))*unsafe.Sizeof(inherited[0])); err != nil {
+	if terminal == nil {
+		if err := attributes.Update(windows.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&inherited[0]), uintptr(len(inherited))*unsafe.Sizeof(inherited[0])); err != nil {
+			return nil, err
+		}
+	} else if err := updatePseudoConsole(attributes, pseudo); err != nil {
 		return nil, err
 	}
 	if err := attributes.Update(processAttributeJobList, unsafe.Pointer(&job), unsafe.Sizeof(job)); err != nil {
@@ -212,7 +231,9 @@ func startProcess(command *exec.Cmd, dir string, owner domain.ID) (_ *managedPro
 	}
 	startup := windows.StartupInfoEx{}
 	startup.Cb = uint32(unsafe.Sizeof(startup))
-	startup.Flags = windows.STARTF_USESTDHANDLES
+	if terminal == nil {
+		startup.Flags = windows.STARTF_USESTDHANDLES
+	}
 	startup.StdInput = inherited[0]
 	startup.StdOutput = inherited[1]
 	startup.StdErr = inherited[2]
@@ -235,7 +256,10 @@ func startProcess(command *exec.Cmd, dir string, owner domain.ID) (_ *managedPro
 	}
 	var info windows.ProcessInformation
 	flags := uint32(windows.CREATE_SUSPENDED | windows.CREATE_UNICODE_ENVIRONMENT | windows.CREATE_NEW_PROCESS_GROUP | windows.EXTENDED_STARTUPINFO_PRESENT | windows.CREATE_NO_WINDOW)
-	if err := windows.CreateProcess(executable, arguments, nil, nil, true, flags, &env[0], cwd, &startup.StartupInfo, &info); err != nil {
+	if terminal != nil {
+		flags &^= windows.CREATE_NO_WINDOW | windows.CREATE_NEW_PROCESS_GROUP
+	}
+	if err := windows.CreateProcess(executable, arguments, nil, nil, terminal == nil, flags, &env[0], cwd, &startup.StartupInfo, &info); err != nil {
 		return nil, launchFailure(windowsLaunchCode(err))
 	}
 	runtime.KeepAlive(attributes)
@@ -258,7 +282,7 @@ func startProcess(command *exec.Cmd, dir string, owner domain.ID) (_ *managedPro
 	if err := saveWindowsScope(dir, scope); err != nil {
 		return nil, err
 	}
-	p := &managedProcess{scope: scope, identity: identity, job: job, process: info.Process, thread: info.Thread, input: inputWrite, output: outputRead, diagnostic: errorRead, done: make(chan struct{})}
+	p := &managedProcess{scope: scope, identity: identity, pseudo: pseudo, job: job, process: info.Process, thread: info.Thread, input: inputWrite, output: outputRead, diagnostic: errorRead, done: make(chan struct{})}
 	success = true
 	// Close the parent's child-side handles before readers wait for EOF.
 	inputRead.Close()
@@ -318,6 +342,12 @@ func (p *managedProcess) observe(stdout, stderr io.Writer) {
 	p.mu.Lock()
 	reconcile := drainJob(p.job)
 	_ = p.input.Close()
+	if p.pseudo != 0 {
+		// Drain output concurrently while ConPTY closes. ClosePseudoConsole can
+		// otherwise deadlock waiting for its synchronous output consumer.
+		windows.ClosePseudoConsole(p.pseudo)
+		p.pseudo = 0
+	}
 	p.mu.Unlock()
 	copied.Wait()
 	outputFailed := false
@@ -451,4 +481,26 @@ func windowsLaunchCode(err error) domain.Code {
 	default:
 		return domain.Unavailable
 	}
+}
+
+func (p *managedProcess) resize(size TerminalSize) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.pseudo == 0 {
+		return domain.Fail(domain.Unavailable, "The terminal is no longer open.", "Inspect the original terminal.")
+	}
+	return windows.ResizePseudoConsole(p.pseudo, windows.Coord{X: int16(size.Columns), Y: int16(size.Rows)})
+}
+
+func updatePseudoConsole(attributes *windows.ProcThreadAttributeListContainer, pseudo windows.Handle) error {
+	// This attribute takes the HPCON value, unlike JOB_LIST and HANDLE_LIST,
+	// which take pointers to handle arrays. Preserve its ABI without converting
+	// an integer to a Go pointer outside the syscall argument.
+	update := windows.NewLazySystemDLL("kernel32.dll").NewProc("UpdateProcThreadAttribute")
+	ok, _, err := update.Call(uintptr(unsafe.Pointer(attributes.List())), 0, windows.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, uintptr(pseudo), unsafe.Sizeof(pseudo), 0, 0)
+	runtime.KeepAlive(attributes)
+	if ok == 0 {
+		return err
+	}
+	return nil
 }
