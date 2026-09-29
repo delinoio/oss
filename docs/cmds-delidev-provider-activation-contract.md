@@ -12,7 +12,7 @@ The closed preset IDs are `vercel-ai-gateway`, `openrouter`, `openai`, `anthropi
 
 The legacy `ListProviderPresets` JSON preserves the top-level preset ID and editable provider defaults but omits nested `provider.preset_id`, so older desktop clients can continue editing or copying those values. Activation provenance comes from provider inventory and is attached to the provider only when the activation mutation is sent.
 
-The store enforces one saved provider for each nonempty preset ID with a durable unique index and a transactionally translated typed conflict. Concurrent first activation elects one request. Mutation receipts retain ordinary actor/request/revision semantics; exact replay is observational and cannot reapply a prior toggle. Do not backfill unrelated documents just to make defaults explicit.
+Fresh database creation and upgrades install the durable unique index enforcing one saved provider for each nonempty preset ID, with transactionally translated typed conflicts. Concurrent first activation elects one request. Mutation receipts retain ordinary actor/request/revision semantics; exact replay is observational and cannot reapply a prior toggle. Do not backfill unrelated documents just to make defaults explicit.
 
 ## Provider inventory and account scope
 

@@ -167,7 +167,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema); err == nil {
+		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema+providerActivationSchema); err == nil {
 			err = tx.Commit()
 		} else {
 			tx.Rollback()
