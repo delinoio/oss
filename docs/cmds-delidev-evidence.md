@@ -2989,3 +2989,20 @@ does not change production request deadlines or establish native latency.
 The complete desktop `pnpm test` passes 74 files / 894 tests, TypeScript
 checking, eight packaging verifier tests and the production build on macOS
 arm64. The Linux hosted CI rerun has not been observed.
+
+### PR #1063 bounded Git observation repair (2026-09-29)
+
+The Windows CLI failure's original private-fixture log shows repeated owned Git
+launches consuming the 15-second review observation deadline. Compatible Git
+administrative path and object-format reads now share a single owned invocation,
+removing eight launches from a two-repository working-tree comparison while
+retaining every before/after repository check, HEAD validation, filter refusal
+and process cleanup. No observation deadline or native authority was expanded.
+
+Real Git fixtures preserve distinct linked/common administration, spaces,
+SHA-1/SHA-256 object formats and the original index. Malformed record boundaries
+are rejected. Focused workspace read/diff/identity/continuation/recovery race
+tests pass (81.423s), and the complete CLI session/review/Archive scenario passes
+with race detection (46.590s) on macOS arm64. These are local results, not a
+Windows runtime result or a guarantee against arbitrary host starvation; the
+hosted Windows rerun still needs verification.
