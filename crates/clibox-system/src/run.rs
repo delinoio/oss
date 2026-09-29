@@ -2801,24 +2801,22 @@ fn nested_wrapper_state() -> bool {
         return true;
     }
 
-    // An installed Node launcher is an intermediate process: the outer
-    // wrapper creates a group for it, and every nested wrapper under that
-    // launcher must share the group. More launchers may be introduced by
-    // further supported wrappers, so walk the contiguous ancestor segment in
-    // that group until reaching its owning native wrapper. This is structural
-    // process state, rather than launcher arguments or environment values
-    // that workloads can control. Keep the walk bounded to fail closed if the
-    // process hierarchy changes while it is being examined.
-    const MAX_LAUNCHER_ANCESTORS: usize = 64;
+    // Node launchers and nested clibox wrappers can both occur within the
+    // outer wrapper's process group. Prove every same-group ancestor until
+    // reaching the matching native owner outside the group; arguments and
+    // environment values are not ownership evidence. Keep the walk bounded
+    // and fail closed when process metadata is unavailable or the hierarchy
+    // changes while it is being examined.
+    const MAX_SUPPORTED_ANCESTORS: usize = 64;
     let mut ancestor = parent;
-    for _ in 0..MAX_LAUNCHER_ANCESTORS {
+    for _ in 0..MAX_SUPPORTED_ANCESTORS {
         if ancestor <= 0 {
             return false;
         }
         if unsafe { libc::getpgid(ancestor) } != process_group {
             return executable_matches(ancestor, &current);
         }
-        if !supported_node_launcher(ancestor) {
+        if !executable_matches(ancestor, &current) && !supported_node_launcher(ancestor) {
             return false;
         }
         let Some(next) = parent_process(ancestor) else {
