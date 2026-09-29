@@ -39,6 +39,7 @@ Each project must have one project index document and one or more domain contrac
 ## Project Catalog
 
 ### delidev
+- [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Storage operations](cmds-delidev-storage-contract.md)
 - [Project index](project-delidev.md)

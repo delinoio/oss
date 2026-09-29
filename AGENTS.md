@@ -1,4 +1,5 @@
 ### Instructions
+- DeliDev native subagents follow `docs/cmds-delidev-subagents-contract.md`: publish original bounded observation-only trees, preserve independent child cleanup and exact source coverage, distinguish requested/observed models and nullable overlapping usage, and keep child controls and unproved continuation excluded.
 
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
 - License repository-owned source and future distributions under Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.

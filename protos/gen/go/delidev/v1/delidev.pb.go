@@ -51,6 +51,7 @@ const (
 	EntityKind_ENTITY_KIND_JOB          EntityKind = 24
 	EntityKind_ENTITY_KIND_PAIRING      EntityKind = 25
 	EntityKind_ENTITY_KIND_STEER        EntityKind = 26
+	EntityKind_ENTITY_KIND_SUBAGENT     EntityKind = 27
 )
 
 // Enum value maps for EntityKind.
@@ -83,6 +84,7 @@ var (
 		24: "ENTITY_KIND_JOB",
 		25: "ENTITY_KIND_PAIRING",
 		26: "ENTITY_KIND_STEER",
+		27: "ENTITY_KIND_SUBAGENT",
 	}
 	EntityKind_value = map[string]int32{
 		"ENTITY_KIND_UNSPECIFIED":  0,
@@ -112,6 +114,7 @@ var (
 		"ENTITY_KIND_JOB":          24,
 		"ENTITY_KIND_PAIRING":      25,
 		"ENTITY_KIND_STEER":        26,
+		"ENTITY_KIND_SUBAGENT":     27,
 	}
 )
 
@@ -148,6 +151,8 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED SystemCapability = 0
 	// Session creation can opt into server-owned, Worker-executed automatic titles.
 	SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 SystemCapability = 1
+	// Read-only native Codex and Claude child-agent observations.
+	SystemCapability_SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1 SystemCapability = 2
 )
 
 // Enum value maps for SystemCapability.
@@ -155,10 +160,12 @@ var (
 	SystemCapability_name = map[int32]string{
 		0: "SYSTEM_CAPABILITY_UNSPECIFIED",
 		1: "SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1",
+		2: "SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1",
 	}
 	SystemCapability_value = map[string]int32{
-		"SYSTEM_CAPABILITY_UNSPECIFIED":         0,
-		"SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1": 1,
+		"SYSTEM_CAPABILITY_UNSPECIFIED":             0,
+		"SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1":     1,
+		"SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1": 2,
 	}
 )
 
@@ -17682,7 +17689,7 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\x18GetBackupDeletionRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"L\n" +
 	"\x19GetBackupDeletionResponse\x12/\n" +
-	"\x03job\x18\x01 \x01(\v2\x1d.delidev.v1.BackupDeletionJobR\x03job*\xb9\x05\n" +
+	"\x03job\x18\x01 \x01(\v2\x1d.delidev.v1.BackupDeletionJobR\x03job*\xd3\x05\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -17712,10 +17719,12 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\x11ENTITY_KIND_USAGE\x10\x17\x12\x13\n" +
 	"\x0fENTITY_KIND_JOB\x10\x18\x12\x17\n" +
 	"\x13ENTITY_KIND_PAIRING\x10\x19\x12\x15\n" +
-	"\x11ENTITY_KIND_STEER\x10\x1a*`\n" +
+	"\x11ENTITY_KIND_STEER\x10\x1a\x12\x18\n" +
+	"\x14ENTITY_KIND_SUBAGENT\x10\x1b*\x8f\x01\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
-	"%SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1\x10\x01*{\n" +
+	"%SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1\x10\x01\x12-\n" +
+	")SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1\x10\x02*{\n" +
 	"\x11AccountTypeFilter\x12#\n" +
 	"\x1fACCOUNT_TYPE_FILTER_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17ACCOUNT_TYPE_FILTER_API\x10\x01\x12$\n" +

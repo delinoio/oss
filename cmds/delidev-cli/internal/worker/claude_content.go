@@ -14,6 +14,7 @@ type claudePublishedContent struct {
 }
 
 type claudeContentCommit struct {
+	child              *domain.SubagentObservation
 	tasksNext          *domain.ClaudeTasksState
 	replyEcho          domain.ID
 	interactionArrival domain.ID
@@ -32,6 +33,9 @@ type claudeContentCommit struct {
 // Its caller must reconcile child and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
+	children                   map[string]domain.SubagentObservation
+	childTools                 map[string]string
+	childProofs                map[string][]claude.HistoryMessageProof
 	citationHistoryUnsupported bool
 	tasks                      *domain.ClaudeTasksState
 	denial                     *domain.ClaudeDenialCompletion
@@ -120,6 +124,9 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 	}
 	if o.Kind != claude.ContentObserved {
 		return false, nil
+	}
+	if handled, err := c.publishChildContent(ctx, o); handled {
+		return true, err
 	}
 	if c.resultUsage || !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || c.seen[o.NativeID] || len(c.seen) >= 65536 || len(o.Content) == 0 || len(o.Content) > 128 {
 		return true, b.block()
@@ -313,6 +320,18 @@ func (c *ClaudeContentPublisher) commitHead() {
 	}
 	if u := item.event.ClaudeMessage; u != nil && u.Mutation == domain.ClaudeBlockCitation && c.binding.publisher.config.Logger != nil {
 		c.binding.publisher.config.Logger.Info("claude_citation_observed", "job_id", c.binding.journal.JobID, "sequence", item.event.Sequence, "kind", u.Citation.Kind)
+	}
+	if item.child != nil {
+		if c.children == nil {
+			c.children = map[string]domain.SubagentObservation{}
+		}
+		if c.childTools == nil {
+			c.childTools = map[string]string{}
+		}
+		c.children[item.child.NativeID] = *item.child
+		for _, tool := range item.child.Tools {
+			c.childTools[tool.NativeID] = item.child.NativeID
+		}
 	}
 	if item.tasksNext != nil {
 		c.tasks = item.tasksNext

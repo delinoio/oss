@@ -27,6 +27,8 @@ type Config struct {
 	API     *APIConfig
 }
 type Client struct {
+	subagents    map[string]domain.SubagentObservation
+	subagentTurn domain.ID
 	wire         *nativewire.Connection
 	version      string
 	ownerID      domain.ID

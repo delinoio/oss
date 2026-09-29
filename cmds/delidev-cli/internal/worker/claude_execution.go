@@ -274,7 +274,10 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			if o.Run != nil && (o.Run.State == claude.RunRunning || o.Run.State == claude.RunRequiresAction) {
 				handled = true
 			} else if display != nil {
-				handled, err = display.PublishBoundaryObservation(publicationContext, o)
+				err = display.PublishChildHistory(publicationContext, nativeConfig)
+				if err == nil {
+					handled, err = display.PublishBoundaryObservation(publicationContext, o)
+				}
 				if err == nil && handled {
 					if err := finishControls(); err != nil {
 						return nil, err

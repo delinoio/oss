@@ -10,6 +10,8 @@ TypeScript ES2022 modules run in the desktop renderer. Development uses the repo
 The DeliDev desktop client connects to one explicitly selected authenticated local/remote server. Maintainers generate bindings from the canonical protobuf and validate them against the actual Go server.
 
 ## Interfaces and Contracts
+Generated `EntityKind.SUBAGENT` and `SystemCapability.SUBAGENT_OBSERVATION_V1` support [session child-observation reads](cmds-delidev-subagents-contract.md) through existing Resource/System Connect Query descriptors. Preserve exact native IDs, independent requested/observed models, partial output and nullable string counters. Native usage reports are exact JSON strings. No client mutation or native control is derived from observations.
+
 
 Generated `ListResourcesRequest` exposes optional account-only provider and account-type selectors. Keep these fields in the list request and its query key/cursor input; do not move them into the shared `Filter` used by snapshots or event streams. The Go server performs filtering before pagination and binds both fields into continuation cursors. Provider inventory reports `ACCOUNT_TYPE_FILTER` separately from its activation/model/provider-filter capabilities; split account views require all of them.
 - `buf.gen.yaml` generates messages and Connect Query descriptors exclusively from `delidev.v1`. Root generation/freshness and Turbo input/output tracking include the package. Existing Go/DevHud/ach output remains reproducible.

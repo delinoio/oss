@@ -13,6 +13,8 @@ import (
 type EventKind string
 
 const (
+	SubagentEvent             EventKind = "subagent"
+	SubagentActivityEvent     EventKind = "subagent-activity"
 	TurnStartedEvent          EventKind = "turn-started"
 	TurnCompletedEvent        EventKind = "turn-completed"
 	ThreadStatusEvent         EventKind = "thread-status"
@@ -65,6 +67,8 @@ type Message struct {
 }
 
 type Event struct {
+	AgentThreadID    domain.ID
+	Subagents        []domain.SubagentObservation
 	Kind             EventKind
 	ThreadID         domain.ID
 	TurnID           domain.ID
@@ -167,6 +171,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 	if native.Kind != nativewire.Notification || c.execution == nil {
 		return privateNative(native), nil
 	}
+	if event, handled, err := c.observeChildNative(native); handled {
+		return event, err
+	}
 	switch native.Method {
 	case "rawResponse/completed":
 		return c.observeResponseUsageLocked(native)
@@ -223,6 +230,7 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 				return Event{}, err
 			}
 		}
+		c.subagentTurn = turn.ID
 		prior.Turn = turn
 		c.execution.turns[turn.ID] = prior
 		if turn.Status.terminal() {
@@ -390,6 +398,11 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "collabAgentToolCall":
+		c.subagentTurn = params.TurnID
+		return c.observeCollaboration(params.Item, c.thread, params.TurnID)
+	case "subAgentActivity":
+		return c.observeSubagentActivity(params.Item, params.TurnID)
 	case "plan", "reasoning":
 		artifact, err := decodeArtifact(params.Item, kind)
 		if err != nil {

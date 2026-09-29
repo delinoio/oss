@@ -243,6 +243,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}()
 	readContext, publicationContext := ctx, nativeCtx
 	stopping := false
+	var parentTerminal *codex.Event
 	for {
 		if ctx.Err() != nil && !stopping {
 			if err := nativeCtx.Err(); err != nil {
@@ -277,6 +278,23 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 			return nil, err
 		}
+		hasChildren, _ := mapper.childState()
+		if event.Kind == codex.SubagentActivityEvent || event.Kind == codex.TurnCompletedEvent && hasChildren {
+			inspection, err := client.InspectDescendants(publicationContext)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := mapper.PublishCore(publicationContext, inspection); err != nil {
+				return nil, err
+			}
+		}
+		if event.Kind == codex.SubagentActivityEvent {
+			activity, err := client.ObserveResolvedActivity(publicationContext, event)
+			if err != nil {
+				return nil, err
+			}
+			event = activity
+		}
 		handled, err := mapper.PublishCore(publicationContext, event)
 		if err != nil {
 			logger.WarnContext(publicationContext, "native_execution_publication_failed", "event_kind", event.Kind, "correlated", event.Correlated, "late", event.Late, "code", domain.SafeError(err).Code)
@@ -286,9 +304,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			logger.WarnContext(publicationContext, "native_execution_event_unhandled", "event_kind", event.Kind, "metadata", event.Metadata, "correlated", event.Correlated, "late", event.Late)
 			return nil, domain.Fail(domain.Unsupported, "The native execution produced an unsupported event family.", "Retain its native history for the required typed adapter; input is never replayed automatically.")
 		}
-		if event.Kind != codex.TurnCompletedEvent {
+		if event.Kind == codex.TurnCompletedEvent {
+			copy := event
+			parentTerminal = &copy
+		}
+		hasChildren, childrenClosed := mapper.childState()
+		if parentTerminal == nil || !childrenClosed {
 			continue
 		}
+		event = *parentTerminal
 		// A terminal event is not cleanup. Close/join the native scope, prove
 		// the workspace lease's process index, then form a completion result.
 		if err := client.Close(); err != nil {
@@ -314,6 +338,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), LastSequence: sequence, Outcome: outcome, CleanupVerified: true}
 		if err := completion.Validate(); err != nil {
 			return nil, err
+		}
+		if hasChildren {
+			return json.Marshal(completion)
 		}
 		// Preserve exact native continuation evidence before the operation
 		// journal/report can announce cleanup. This carries no prompt, answer or

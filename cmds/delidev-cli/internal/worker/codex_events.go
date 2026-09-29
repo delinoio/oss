@@ -13,6 +13,7 @@ import (
 // must route them to another typed adapter or stop with an unsupported result.
 // This component never sends prompts, answers interactions or owns cleanup.
 type CodexEventPublisher struct {
+	children          domain.SubagentState
 	mu                sync.Mutex
 	publisher         *ExecutionPublisher
 	thread, turn      domain.ID
@@ -34,7 +35,7 @@ func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher 
 }
 
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
-	if c.publisher == nil || c.blocked || c.finished {
+	if c.publisher == nil || c.blocked || c.finished && event.Kind != domain.ExecutionSubagentObserved {
 		return publicationUncertain()
 	}
 	event.NativeThreadID = string(c.thread)
@@ -120,7 +121,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			c.blocked = true
 		}
 	}()
-	if c.blocked || c.finished || c.publisher == nil || c.thread == "" || c.turn == "" {
+	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
 		return false, publicationUncertain()
 	}
 	if event.Kind == codex.LateTurnResponseEvent && event.Action == codex.SteerTurnAction {
@@ -148,6 +149,16 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return false, publicationUncertain()
 	}
 	switch event.Kind {
+	case codex.SubagentEvent:
+		next, err := domain.ApplySubagents(c.children, string(c.thread), event.Subagents)
+		if err != nil {
+			return true, err
+		}
+		if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionSubagentObserved, Subagents: event.Subagents}); err != nil {
+			return true, err
+		}
+		c.children = next
+		return true, nil
 	case codex.MetadataEvent:
 		switch event.Metadata {
 		case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent:
@@ -266,4 +277,10 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 	default:
 		return false, nil
 	}
+}
+
+func (c *CodexEventPublisher) childState() (bool, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.children) != 0, c.children.Closed()
 }

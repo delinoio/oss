@@ -10,6 +10,8 @@ Go and OS process primitives. No container, additional application sandbox, or r
 Each launch belongs to an immutable UUID-v7 execution/job/session owner and a private execution scope. An owner may have several distinct process scopes. Worker shutdown and explicit Stop act only on owned processes.
 
 ## Interfaces and Contracts
+The [subagent observation profile](cmds-delidev-subagents-contract.md) preserves cleanup ownership for every live/unavailable descendant after parent completion. The Worker keeps the original process open while native children settle, without sending child-control operations. History reads and closed tree state do not independently prove process cleanup; a failed, canceled or uncertain inspection retains the existing owned-process cleanup/report boundary.
+
 A launch creates durable ownership and reaches a start barrier before receiving the actual command. Explicit resume crosses that barrier once. Command arguments, environment, input and output never enter ownership journals. Native stdin, stdout and stderr remain distinct byte streams with bounded framing and backpressure, preserving partial multibyte sequences for the adapter to decode.
 
 Natural exit, cancellation and parent disconnection reconcile owned descendants before confirming resource release. PID absence alone is not proof; use start identity plus the execution owner and an OS ownership scope. Recovery never signals a PID whose recorded start identity differs. A missing or unreadable ownership journal for a launched process is an explicit recovery error. Uncertainty blocks replacement and credential/runtime destruction.

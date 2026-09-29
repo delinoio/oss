@@ -2,6 +2,14 @@
 
 Issue #964 is preserved in full in [requirements](cmds-delidev-requirements.md). This ledger distinguishes code, deterministic tests, and actual external/native evidence. It is not a reduction of the requirements.
 
+## Native subagent observations — issue #1094
+
+The [bounded child-observation profile](cmds-delidev-subagents-contract.md) is implemented for Codex `0.151.0` API and Claude `2.1.236` API. Authenticated session resources, the CLI `session subagents` read and the capability-gated desktop disclosure retain original ownership, nested parents, independent lifecycle, partial recent output, requested versus observed model, source coverage and exact nullable usage. Parent completion preserves live child cleanup; closed children still require the original cleanup report. No child controls, additive child billing or unproved history continuation are enabled.
+
+Controlled temporary native/provider fixtures pass under the Go race detector for two/nested children, late completion, foreign/cyclic/reused ownership, exact receipt replay, original Claude task/content ownership, unavailable versus observed models, overlapping native usage, read-only Codex descendant/history operations, client/Worker read authorization and live versus closed cleanup reports. The complete frontend workflow passes 75 files/942 tests plus bundle/launcher checks and production build. The first broad Go run exposed a history-reader assertion that compared new pointer fields by address; it now compares retained content. Concurrent-host timing failures in existing CLI/stream fixtures and one initial settings frontend wait are recorded in the validation logs; the settings test and full frontend rerun pass. Final full Go race, vet and protocol results are recorded with this change after completion.
+
+This is implementation and controlled-fixture evidence. No real provider/account subagent run, native desktop visual acceptance, cross-platform child runtime or release/distribution acceptance was performed. Complete issue #964 acceptance remains separate.
+
 ## Current implementation work
 The desktop/CLI/server/Worker implementation is in progress. The 2026-09-28 partial checkpoint was merged in PR #1041. On 2026-09-29 the owner requested implementation of the full remaining plan, including CEF desktop migration, while keeping real account/private-GitHub and platform distribution validation deferred. Completion work is active; the historical checkpoint is preserved below and is not a claim that the requirements are complete. No release or complete real-account harness integration claim is made; bounded native evidence is recorded separately below.
 

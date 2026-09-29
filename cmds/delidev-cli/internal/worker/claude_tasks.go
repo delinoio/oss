@@ -44,6 +44,9 @@ func (c *ClaudeContentPublisher) PublishTaskObservation(ctx context.Context, o c
 		return true, b.block()
 	}
 	n := o.Task
+	if handled, err := c.publishChildTask(ctx, o); handled {
+		return true, err
+	}
 	// Child/workflow semantics must have their own ownership composition. Do not
 	// discard fields to reinterpret an unsupported task as an ordinary Bash task.
 	if n.SubagentType != nil || n.Prompt != nil || n.WorkflowName != nil || n.SpawnDepth != nil {
