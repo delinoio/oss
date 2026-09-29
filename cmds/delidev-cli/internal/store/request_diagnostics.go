@@ -25,14 +25,16 @@ const MaxRequestDiagnostics = 10000
 func (t *Tx) RequestDiagnostic(id domain.ID) (domain.RequestDiagnostic, error) {
 	var value domain.RequestDiagnostic
 	var raw []byte
-	err := t.tx.QueryRowContext(t.ctx, "SELECT body FROM request_diagnostics WHERE id=?", id).Scan(&raw)
+	var session, execution domain.ID
+	var revision uint64
+	err := t.tx.QueryRowContext(t.ctx, "SELECT session_id,execution_id,revision,body FROM request_diagnostics WHERE id=?", id).Scan(&session, &execution, &revision, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, domain.Fail(domain.NotFound, "The request diagnostic is unavailable.", "Inspect retained observations for the original session.")
 	}
 	if err != nil {
 		return value, storageError(err)
 	}
-	if domain.Decode(raw, &value) != nil || value.Validate() != nil {
+	if domain.Decode(raw, &value) != nil || value.Validate() != nil || value.ID != id || value.SessionID != session || value.ExecutionID != execution || value.Revision != revision {
 		return value, corrupt()
 	}
 	return value, nil
@@ -125,7 +127,7 @@ func (t *Tx) ListRequestDiagnostics(session, execution, after domain.ID, limit i
 	if _, err := t.Get(domain.SessionKind, session); err != nil {
 		return nil, false, err
 	}
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT body FROM request_diagnostics WHERE session_id=? AND (?='' OR execution_id=?) AND id>? ORDER BY id LIMIT ?", session, execution, execution, after, limit+1)
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT id,execution_id,revision,body FROM request_diagnostics WHERE session_id=? AND (?='' OR execution_id=?) AND id>? ORDER BY id LIMIT ?", session, execution, execution, after, limit+1)
 	if err != nil {
 		return nil, false, storageError(err)
 	}
@@ -134,10 +136,12 @@ func (t *Tx) ListRequestDiagnostics(session, execution, after domain.ID, limit i
 	for rows.Next() {
 		var raw []byte
 		var value domain.RequestDiagnostic
-		if err := rows.Scan(&raw); err != nil {
+		var id, indexedExecution domain.ID
+		var revision uint64
+		if err := rows.Scan(&id, &indexedExecution, &revision, &raw); err != nil {
 			return nil, false, storageError(err)
 		}
-		if domain.Decode(raw, &value) != nil || value.Validate() != nil || value.SessionID != session || execution != "" && value.ExecutionID != execution {
+		if domain.Decode(raw, &value) != nil || value.Validate() != nil || value.ID != id || value.Revision != revision || value.ExecutionID != indexedExecution || value.SessionID != session || execution != "" && value.ExecutionID != execution {
 			return nil, false, corrupt()
 		}
 		values = append(values, value)

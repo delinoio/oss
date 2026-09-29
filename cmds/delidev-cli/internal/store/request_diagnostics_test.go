@@ -205,3 +205,49 @@ func TestRequestDiagnosticPublicationRollsBackStateEventAndReceipt(t *testing.T)
 		t.Fatal("retry did not publish exactly one atomic invalidation")
 	}
 }
+
+func TestRequestDiagnosticCorruptIndexNeverRelabelsOriginalBody(t *testing.T) {
+	for _, column := range []string{"id", "execution_id", "revision"} {
+		t.Run(column, func(t *testing.T) {
+			s, _ := openTest(t)
+			ctx := context.Background()
+			session := domain.NewID()
+			value := diagnosticFixture(session)
+			_, err := s.Mutate(ctx, domain.NewID(), "fixture.diagnostic", nil, func(tx *Tx) (any, error) {
+				if _, err := tx.Put(domain.SessionKind, session, 0, session, "", struct{}{}); err != nil {
+					return nil, err
+				}
+				return nil, tx.PutRequestDiagnostic(value, 0)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Deliberately corrupt only the controlled temporary SQLite image.
+			// Readers must reject provenance that disagrees with its own index.
+			indexedID := value.ID
+			switch column {
+			case "id":
+				indexedID = domain.NewID()
+				_, err = s.db.Exec("UPDATE request_diagnostics SET id=? WHERE id=?", indexedID, value.ID)
+			case "execution_id":
+				_, err = s.db.Exec("UPDATE request_diagnostics SET execution_id=? WHERE id=?", domain.NewID(), value.ID)
+			case "revision":
+				_, err = s.db.Exec("UPDATE request_diagnostics SET revision=9 WHERE id=?", value.ID)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Read(ctx, func(tx *Tx) error {
+				if _, err := tx.RequestDiagnostic(indexedID); domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("single read published inconsistent provenance", err)
+				}
+				if _, _, err := tx.ListRequestDiagnostics(session, "", "", 50); domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("page published inconsistent provenance", err)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

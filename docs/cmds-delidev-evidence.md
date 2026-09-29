@@ -3230,8 +3230,8 @@ failure, query disposal and draft-preserving closure. An initial Node 26 run had
 three timeouts and a profile-render assertion failure; the supported Node 24
 full run also passed before the final two validation cases were added.
 
-The root `go test -race -timeout=45m ./cmds/delidev-cli/...` run is still in
-progress at this evidence checkpoint and has already reported the existing
+The root `go test -race -timeout=45m ./cmds/delidev-cli/...` run was still in
+progress at the initial evidence checkpoint and has already reported the existing
 `TestCLISessionAcceptanceQueueAndArchive` workspace-diff failure at
 `sessions_test.go:239`. The same isolated race test fails on this branch
 and on a temporary source archive of the freshly fetched base
@@ -3253,3 +3253,29 @@ only guarded `Request-Id`. Duplicate, content-bearing, oversized and
 credential-matching header values remain unavailable. The simultaneous-request
 RPC fixture verifies each exact provider request ID alongside its response and
 correlation identities. Go vet passes again after this change.
+
+
+The broad race validation ended nonzero after more than an hour of wall time;
+the owned run was interrupted after its CLI and Grok fixture failures. Remaining
+server/store/worker/workspace package results were unreported or incomplete at
+termination. No complete root race pass is claimed. Grok reported
+`TestOriginalTextFootprintIsIndependentOfPublicationCopies` initialization
+unavailability and the inventory-nonempty subcase of
+`TestProbeOwnsBoundedInspectedInitialization` timing out. The two tests
+pass as an isolated base group (49.466s), and their source is unchanged in this
+PR; the broad-run cause remains unresolved. The CLI failure is independently
+reproduced on the fetched base as recorded above. CI and automatic review remain
+separate evidence: the first PR inventory had pending CI and no actionable
+review threads; the Codex connector reported its review quota exhausted.
+
+Final storage review adds fail-closed checks that the retained body agrees with
+its exact SQLite record/session/execution/revision columns before either a
+single read or page can publish it. Controlled image corruption tests alter
+identity, execution and revision indexes independently and reject both reads
+with `RecoveryRequired` instead of relabeling provenance.
+
+The final integrity/lifecycle race groups pass for store (14.826s), server
+(17.145s) and real temporary-server CLI (7.297s); Go vet passes again. Consumed
+LFS assets were hydrated before builds, required embedded/client/desktop output
+was generated explicitly, and repository-owned generated `dist` directories
+are removed after verification.
