@@ -50,6 +50,20 @@ func (f *exportingTartCommand) Run(ctx context.Context, name string, args, env [
 	}
 	return f.tartFixture.Run(ctx, name, args, env, in)
 }
+func (f *exportingTartCommand) RunPinned(ctx context.Context, name string, args, env []string, in io.Reader, dir *os.File) ([]byte, error) {
+	canonical, err := f.tartFixture.canonicalPinnedArgs(args, env, dir)
+	if err != nil {
+		return nil, err
+	}
+	return f.Run(ctx, name, canonical, env, in)
+}
+func (f *exportingTartCommand) StartPinned(name string, args, env []string, dir *os.File) (int, error) {
+	canonical, err := f.tartFixture.canonicalPinnedArgs(args, env, dir)
+	if err != nil {
+		return 0, err
+	}
+	return f.tartFixture.Start(name, canonical, env)
+}
 
 func TestLocalImportCleansExportAndReportsCleanupFailure(t *testing.T) {
 	for _, failure := range []string{"", "export", "import", "cleanup"} {

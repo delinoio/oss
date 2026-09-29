@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -14,45 +13,25 @@ func diffIsolationUnavailable() error {
 	return domain.Fail(domain.Unavailable, "The isolated Git comparison could not be prepared.", "Check temporary storage on the execution machine and retry.")
 }
 
-func (g Git) gitAdminPath(ctx context.Context, root, name string) (string, error) {
-	raw, err := g.run(ctx, root, "rev-parse", "--path-format=absolute", "--git-path", name)
-	if err != nil {
-		return "", err
-	}
-	path := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")
-	if !filepath.IsAbs(path) || strings.ContainsAny(path, "\r\n\x00") {
-		return "", diffIsolationUnavailable()
-	}
-	return path, nil
-}
-
 // An ordinary Git worktree diff can run a clean/process filter after a prior
 // attribute check. A private Git admin directory gives filter=unspecified the
 // highest precedence for every path, regardless of live attribute or index
 // changes. The real index and objects remain read-only inputs; remove this
 // isolation only if Git gains a documented per-command filter disable switch.
 func (g Git) filterFreeDiff(ctx context.Context, root string, args []string) (patch []byte, returned error) {
-	index, err := g.gitAdminPath(ctx, root, "index")
+	// Resolve all administration paths in one owned process. Each independent
+	// launch includes durable ownership setup; repeating it consumed much of
+	// the bounded observation on Windows before Git could compare any files.
+	fields, err := g.revParseFields(ctx, root, 5, "--git-path", "index", "--git-path", "objects", "--git-path", "config", "--git-path", "config.worktree", "--show-object-format")
 	if err != nil {
 		return nil, err
 	}
-	objects, err := g.gitAdminPath(ctx, root, "objects")
-	if err != nil {
-		return nil, err
+	for _, path := range fields[:4] {
+		if !filepath.IsAbs(path) {
+			return nil, diffIsolationUnavailable()
+		}
 	}
-	config, err := g.gitAdminPath(ctx, root, "config")
-	if err != nil {
-		return nil, err
-	}
-	worktreeConfig, err := g.gitAdminPath(ctx, root, "config.worktree")
-	if err != nil {
-		return nil, err
-	}
-	rawFormat, err := g.run(ctx, root, "rev-parse", "--show-object-format")
-	if err != nil {
-		return nil, err
-	}
-	format := strings.TrimSpace(string(rawFormat))
+	index, objects, config, worktreeConfig, format := fields[0], fields[1], fields[2], fields[3], fields[4]
 	if format != "sha1" && format != "sha256" {
 		return nil, diffIsolationUnavailable()
 	}

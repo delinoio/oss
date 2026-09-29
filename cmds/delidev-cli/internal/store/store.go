@@ -22,18 +22,20 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 23
+const SchemaVersion = 24
 const applicationID = 0x444c4456
 const MaxPage = 200
 
 type Store struct {
-	db       *sql.DB
-	root     string
-	lock     *security.Lock
-	gate     sync.RWMutex
-	notifyMu sync.Mutex
-	notify   chan struct{}
-	closed   bool
+	db                 *sql.DB
+	root               string
+	lock               *security.Lock
+	gate               sync.RWMutex
+	backupGate         sync.Mutex
+	backupCreationGate sync.Mutex
+	notifyMu           sync.Mutex
+	notify             chan struct{}
+	closed             bool
 }
 
 type Record struct {
@@ -100,7 +102,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			lock.Close()
 		}
 	}()
-	for _, name := range []string{"backups", "secrets"} {
+	for _, name := range []string{"backups", "secrets", "backup-deletions", "backup-removals"} {
 		if err := security.PrivateDir(filepath.Join(root, name)); err != nil {
 			return nil, storageError(err)
 		}
@@ -167,14 +169,14 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema+providerActivationSchema); err == nil {
+		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema+providerActivationSchema+backupDeletionSchema); err == nil {
 			err = seedHostedProviders(ctx, tx)
 		}
 		if err == nil {
-			_, err = tx.ExecContext(ctx, "PRAGMA user_version=22")
+			err = applySessionTitleSchema(ctx, tx)
 		}
 		if err == nil {
-			err = applySessionTitleSchema(ctx, tx)
+			_, err = tx.ExecContext(ctx, "PRAGMA user_version=24")
 		}
 		if err == nil {
 			err = tx.Commit()
@@ -254,6 +256,8 @@ func corrupt() error {
 }
 
 func (s *Store) Close() error {
+	s.backupGate.Lock()
+	defer s.backupGate.Unlock()
 	s.gate.Lock()
 	defer s.gate.Unlock()
 	if s.closed {
@@ -807,14 +811,34 @@ func (s *Store) Backup(ctx context.Context) (domain.ID, error) {
 }
 
 func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
+	if err := lockBackupContext(ctx, &s.backupGate); err != nil {
+		return "", err
+	}
+	defer s.backupGate.Unlock()
+	if err := s.backupNotDeleted(ctx, id); err != nil {
+		return "", err
+	}
 	if err := id.Validate(); err != nil {
 		return "", err
 	}
 	s.gate.Lock()
 	defer s.gate.Unlock()
+	// This lock also excludes revocation mutations. Check the original actor
+	// after acquiring it and retain it through VACUUM/publication, so revocation
+	// that committed first cannot leave a new private backup on disk.
+	if err := s.readLocked(ctx, func(tx *Tx) error { return tx.Authorize() }); err != nil {
+		return "", err
+	}
+	var owner domain.ID
+	if err := s.db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&owner); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", storageError(err)
+	}
 	path := filepath.Join(s.root, "backups", string(id)+".sqlite")
 	if _, err := os.Lstat(path); err == nil {
-		if err := ValidateBackup(ctx, path); err != nil {
+		if err := s.verifyBackupPublication(ctx, path, id); err != nil {
+			return "", err
+		}
+		if err := validateBackup(ctx, path, &owner); err != nil {
 			return "", err
 		}
 		// An earlier attempt may have renamed the file but failed to sync its
@@ -827,6 +851,7 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 		return "", storageError(err)
 	}
 	pending := path + ".pending"
+	defer os.Remove(pending)
 	if err := os.Remove(pending); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", storageError(err)
 	}
@@ -858,10 +883,15 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 	if closeErr != nil {
 		return "", storageError(closeErr)
 	}
-	if err := ValidateBackup(ctx, pending); err != nil {
+	if err := validateBackup(ctx, pending, &owner); err != nil {
 		return "", err
 	}
-	if err := os.Rename(pending, path); err != nil {
+	// Commit the exact private image's provenance before its public filename
+	// appears. A same-server image at that known name is not a retry receipt.
+	if err := s.recordBackupPublication(ctx, pending, id); err != nil {
+		return "", err
+	}
+	if err := claimBackupImage(pending, path); err != nil {
 		return "", storageError(err)
 	}
 	if err := security.SyncParent(path); err != nil {
@@ -869,16 +899,41 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 	}
 	return id, nil
 }
-func ValidateBackup(ctx context.Context, path string) error {
-	if err := security.RegularPrivate(path); err != nil {
-		return storageError(err)
+func ValidateBackup(ctx context.Context, path string) error { return validateBackup(ctx, path, nil) }
+
+func validateBackup(ctx context.Context, path string, owner *domain.ID) error {
+	info, err := backupInfo(path)
+	if err != nil {
+		return err
 	}
-	db, err := sql.Open("sqlite", databaseURI(path, true))
+	// Every published image, including a pre-migration image, must remain
+	// inspectable and deletable through the managed backup APIs.
+	if info.Size() > MaxBackupInspectionBytes {
+		return domain.Fail(domain.ResourceExhausted, "The backup exceeds the 8 GiB managed image limit.", "Reduce the live database size before retrying; the original database is unchanged.")
+	}
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		if _, err := os.Lstat(path + suffix); !errors.Is(err, os.ErrNotExist) {
+			return backupUnavailable()
+		}
+	}
+	db, err := sql.Open("sqlite", databaseURI(path, true)+"&immutable=1")
 	if err != nil {
 		return storageError(err)
 	}
 	defer db.Close()
-	return inspect(ctx, db, false)
+	if err := inspect(ctx, db, false); err != nil {
+		return err
+	}
+	if owner != nil {
+		var observed domain.ID
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&observed); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return storageError(err)
+		}
+		if observed != *owner {
+			return backupUnavailable()
+		}
+	}
+	return nil
 }
 
 // The schema declaration is kept literal for review; this check prevents the
@@ -894,6 +949,11 @@ func init() {
 func (s *Store) Read(ctx context.Context, read func(*Tx) error) error {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	return s.readLocked(ctx, read)
+}
+
+// Caller holds either gate mode for the entire transaction.
+func (s *Store) readLocked(ctx context.Context, read func(*Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return storageError(err)

@@ -1,0 +1,103 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { targets, selectTarget, binaryArchitecture, cefCredits, verifyNativePayload, verifyNotices, findOneFile } from "./native-package.mjs";
+import { nativeEnvironment } from "./bundle-native-dry-run.mjs";
+
+function fixture(t) {
+  const directory = mkdtempSync(join(tmpdir(), "delidev-package-test-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  return directory;
+}
+function write(root, name, bytes) {
+  const path = join(root, name);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, bytes);
+  return path;
+}
+function binary(platform, arch) {
+  const buffer = Buffer.alloc(256);
+  if (platform === "linux") {
+    buffer.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
+    buffer.writeUInt16LE(arch === "arm64" ? 183 : 62, 18);
+  } else {
+    buffer.write("MZ"); buffer.writeUInt32LE(128, 60);
+    buffer.writeUInt32LE(0x4550, 128); buffer.writeUInt16LE(arch === "arm64" ? 0xaa64 : 0x8664, 132);
+    buffer.writeUInt16LE(0x20b, 152);
+  }
+  return buffer;
+}
+
+test("all six native targets require the exact process platform and architecture", () => {
+  assert.equal(targets.length, 6);
+  assert.equal(new Set(targets.map(item => item.target)).size, 6);
+  for (const selected of targets) {
+    assert.equal(selectTarget(selected.target, selected.platform, selected.arch), selected);
+    assert.throws(() => selectTarget(selected.target, selected.platform, selected.arch === "arm64" ? "x64" : "arm64"));
+    assert.throws(() => selectTarget(selected.target, "foreign", selected.arch));
+  }
+  assert.throws(() => selectTarget("i686-pc-windows-msvc", "win32", "x64"));
+});
+
+test("Windows receives only bounded system/toolchain context and never signing or injection flags", () => {
+  const environment = nativeEnvironment({ Path: "tools", SystemRoot: "system", localappdata: "cache", INCLUDE: "headers", LIB: "libraries", SIGNTOOL_PATH: "signer", APPLE_PASSWORD: "secret", TAURI_SIGNING_PRIVATE_KEY: "secret", GH_TOKEN: "secret", NODE_OPTIONS: "injected", RUSTFLAGS: "injected", CARGO_TARGET_DIR: "elsewhere", CL: "injected", LINK: "injected", HTTP_PROXY: "credential" }, "win32");
+  assert.deepEqual(environment, { PATH: "tools", SystemRoot: "system", LOCALAPPDATA: "cache", INCLUDE: "headers", LIB: "libraries", CI: "true" });
+  assert.deepEqual(nativeEnvironment({ SystemRoot: "system", INCLUDE: "headers" }, "linux"), { CI: "true" });
+});
+
+test("bounded native header inspection rejects mixed, truncated and out-of-bound PE data", t => {
+  const root = fixture(t);
+  for (const platform of ["linux", "win32"]) for (const arch of ["x64", "arm64"]) {
+    const path = write(root, `${platform}-${arch}`, binary(platform, arch));
+    assert.equal(binaryArchitecture(path, platform), arch);
+    assert.throws(() => binaryArchitecture(path, platform === "linux" ? "win32" : "linux"));
+  }
+  assert.throws(() => binaryArchitecture(write(root, "short", "MZ"), "win32"), /Truncated/);
+  const malformed = binary("win32", "x64"); malformed.writeUInt32LE(0x7fffffff, 60);
+  assert.throws(() => binaryArchitecture(write(root, "offset", malformed), "win32"), /PE64/);
+  malformed.writeUInt32LE(128, 60); malformed.writeUInt16LE(0x10b, 152);
+  assert.throws(() => binaryArchitecture(write(root, "pe32", malformed), "win32"), /PE64/);
+});
+
+test("CEF credits retain the exact pinned distribution and original packaged bytes", t => {
+  const root = fixture(t), selected = targets[1];
+  const cache = "Library/Caches/tauri-cef/150.0.10/cef_macos_aarch64";
+  const manifest = { type: "minimal", name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosarm64_minimal.tar.bz2" };
+  write(root, `${cache}/archive.json`, JSON.stringify(manifest));
+  const credits = write(root, `${cache}/CREDITS.html`, "original credits");
+  assert.equal(cefCredits(selected, {}, root), credits);
+  write(root, "payload/notices/Chromium-CREDITS.html", "original credits");
+  verifyNotices(join(root, "payload"), { [credits]: "notices/Chromium-CREDITS.html" });
+  write(root, "payload/notices/Chromium-CREDITS.html", "changed credits");
+  assert.throws(() => verifyNotices(join(root, "payload"), { [credits]: "notices/Chromium-CREDITS.html" }), /notice/);
+  write(root, `${cache}/archive.json`, JSON.stringify({ ...manifest, name: manifest.name.replace("150.0.10", "151.0.0") }));
+  assert.throws(() => cefCredits(selected, {}, root), /pinned/);
+});
+
+test("extracted native packages need matching app, sidecar, CEF and complete resources", t => {
+  const root = fixture(t), selected = targets[3];
+  for (const name of ["delidev-desktop.exe", "delidev.exe", "libcef.dll"]) write(root, name, binary("win32", "arm64"));
+  for (const name of ["icudtl.dat", "resources.pak", "chrome_100_percent.pak", "chrome_200_percent.pak", "v8_context_snapshot.bin", "locales/en-US.pak"]) write(root, name, "resource");
+  verifyNativePayload(root, selected);
+  write(root, "delidev.exe", binary("win32", "x64"));
+  assert.throws(() => verifyNativePayload(root, selected), /foreign/);
+  write(root, "delidev.exe", binary("win32", "arm64"));
+  write(root, "locales/en-US.pak", "");
+  assert.throws(() => verifyNativePayload(root, selected), /resource/);
+  assert.equal(findOneFile(root, "delidev-desktop.exe"), join(root, "delidev-desktop.exe"));
+  write(root, "other/delidev-desktop.exe", "duplicate");
+  assert.throws(() => findOneFile(root, "delidev-desktop.exe"), /exactly one/);
+});
+
+test("Debian verification follows only the exact packaged CEF launcher", { skip: process.platform === "win32" }, t => {
+  const root = fixture(t), selected = targets[4];
+  for (const name of ["usr/share/DeliDev/delidev-desktop", "usr/bin/delidev", "usr/share/DeliDev/libcef.so"]) write(root, name, binary("linux", "x64"));
+  symlinkSync("../share/DeliDev/delidev-desktop", join(root, "usr/bin/delidev-desktop"));
+  for (const name of ["icudtl.dat", "resources.pak", "chrome_100_percent.pak", "chrome_200_percent.pak", "v8_context_snapshot.bin", "locales/en-US.pak"]) write(root, `usr/share/DeliDev/${name}`, "resource");
+  verifyNativePayload(root, selected);
+  rmSync(join(root, "usr/bin/delidev-desktop"));
+  symlinkSync("delidev", join(root, "usr/bin/delidev-desktop"));
+  assert.throws(() => verifyNativePayload(root, selected), /launcher/);
+});

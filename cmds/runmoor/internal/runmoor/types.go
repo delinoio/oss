@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "0.2.3"
+const Version = "0.2.4"
 
 // Revision is populated by release builds; development builds remain explicit.
 var Revision = "development"
@@ -176,12 +176,13 @@ type Runner struct {
 	Problem          *Problem    `json:"problem,omitempty"`
 }
 type Handle struct {
-	Container string   `json:"container,omitempty"`
-	Daemon    string   `json:"daemon,omitempty"`
-	Network   string   `json:"network,omitempty"`
-	Volumes   []string `json:"volumes,omitempty"`
-	VM        string   `json:"vm,omitempty"`
-	PID       int      `json:"pid,omitempty"`
+	Container        string   `json:"container,omitempty"`
+	Daemon           string   `json:"daemon,omitempty"`
+	Network          string   `json:"network,omitempty"`
+	Volumes          []string `json:"volumes,omitempty"`
+	VM               string   `json:"vm,omitempty"`
+	PID              int      `json:"pid,omitempty"`
+	tartProcessStart string
 }
 type Image struct {
 	ID               string     `json:"id"`
@@ -216,6 +217,9 @@ type Snapshot struct {
 	Pools                map[string]*PoolState       `json:"pools"`
 	Runners              map[string]*Runner          `json:"runners"`
 	Images               map[string]*Image           `json:"images"`
+	ImageTartPIDs        map[string]int              `json:"image_tart_pids,omitempty"`
+	RunnerTartStarts     map[string]string           `json:"runner_tart_starts,omitempty"`
+	ImageTartStarts      map[string]string           `json:"image_tart_starts,omitempty"`
 	Generations          map[string]Config           `json:"generations"`
 	Paused               bool                        `json:"paused"`
 	Stopping             bool                        `json:"stopping"`

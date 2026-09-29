@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func privateDir(path string) error {
@@ -62,6 +64,149 @@ func readPrivate(path string, limit int64) ([]byte, error) {
 	}
 	return b, nil
 }
+func privateVMDirectory(path string) (os.FileInfo, error) {
+	st, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if st.Mode()&os.ModeSymlink != 0 || !st.IsDir() || st.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		return nil, problem(ErrOwnership, "Tart VM directory is not an owned directory.", "Preserve the VM and its Runmoor record; do not adopt or delete it by name.")
+	}
+	return st, nil
+}
+func openTartVMDirectory(path string) (*os.File, error) {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), path)
+	info, err := f.Stat()
+	if err != nil || !info.IsDir() || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		_ = f.Close()
+		return nil, os.ErrPermission
+	}
+	return f, nil
+}
+func openTartVMFileAt(dir *os.File, name string) (*os.File, error) {
+	if dir == nil || name == "" || filepath.Base(name) != name || name == "." || name == ".." {
+		return nil, os.ErrInvalid
+	}
+	fd, err := unix.Openat(int(dir.Fd()), name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), name)
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		_ = f.Close()
+		return nil, os.ErrPermission
+	}
+	return f, nil
+}
+func readTartVMOwnerMarker(dir *os.File, limit int64) ([]byte, error) {
+	fd, err := unix.Openat(int(dir.Fd()), vmOwnerMarkerName, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), vmOwnerMarkerName)
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		return nil, os.ErrPermission
+	}
+	b, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil || int64(len(b)) > limit {
+		return nil, os.ErrInvalid
+	}
+	return b, nil
+}
+func publishTartVMOwnerMarker(dir *os.File, contents []byte) error {
+	name := ".runmoor-owner-" + newID() + ".tmp"
+	fd, err := unix.Openat(int(dir.Fd()), name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
+	if err != nil {
+		return err
+	}
+	tmp := os.NewFile(uintptr(fd), name)
+	_, writeErr := tmp.Write(contents)
+	syncErr := tmp.Sync()
+	closeErr := tmp.Close()
+	if writeErr != nil {
+		_ = unix.Unlinkat(int(dir.Fd()), name, 0)
+		return writeErr
+	}
+	if syncErr != nil {
+		_ = unix.Unlinkat(int(dir.Fd()), name, 0)
+		return syncErr
+	}
+	if closeErr != nil {
+		_ = unix.Unlinkat(int(dir.Fd()), name, 0)
+		return closeErr
+	}
+	if err = unix.Linkat(int(dir.Fd()), name, int(dir.Fd()), vmOwnerMarkerName, 0); err != nil {
+		_ = unix.Unlinkat(int(dir.Fd()), name, 0)
+		return err
+	}
+	return unix.Unlinkat(int(dir.Fd()), name, 0)
+}
+func syncPrivateDir(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	syncErr := dir.Sync()
+	closeErr := dir.Close()
+	if syncErr != nil {
+		return syncErr
+	}
+	return closeErr
+}
+func lockTartVMConfig(path string) (*os.File, error) {
+	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), path)
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		_ = f.Close()
+		return nil, os.ErrPermission
+	}
+	lock := unix.Flock_t{Type: unix.F_WRLCK, Whence: int16(io.SeekStart)}
+	if err = unix.FcntlFlock(f.Fd(), unix.F_SETLK, &lock); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+func lockTartVMConfigAt(dir *os.File) (*os.File, error) {
+	fd, err := unix.Openat(int(dir.Fd()), "config.json", unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), "config.json")
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		_ = f.Close()
+		return nil, os.ErrPermission
+	}
+	lock := unix.Flock_t{Type: unix.F_WRLCK, Whence: int16(io.SeekStart)}
+	if err = unix.FcntlFlock(f.Fd(), unix.F_SETLK, &lock); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+func lockTartCreationHome(home string) (*os.File, error) {
+	f, err := openPrivate(filepath.Join(home, ".runmoor-creation.lock"), os.O_RDWR|os.O_CREATE)
+	if err != nil {
+		return nil, err
+	}
+	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, problem(ErrRetry, "Tart VM creation is still in progress.", "Wait for the current creation or cleanup operation to finish; its reservation remains held.")
+	}
+	return f, nil
+}
 func lockState(path string) (*os.File, error) {
 	f, e := openPrivate(path, os.O_RDWR|os.O_CREATE)
 	if e != nil {
@@ -91,4 +236,30 @@ func interruptProcess(cmd *exec.Cmd) {
 	if cmd != nil && cmd.Process != nil {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 	}
+}
+
+func tartRunProcessAlive(pid int, processStart string) (bool, error) {
+	if pid <= 0 {
+		return false, syscall.EINVAL
+	}
+	err := unix.Kill(pid, 0)
+	if err == unix.ESRCH {
+		return false, nil
+	}
+	if err != nil && err != unix.EPERM {
+		return false, err
+	}
+	if processStart == "" {
+		// Older state has no process-start identity. Keep it conservatively
+		// reserved until the numeric PID is no longer present.
+		return true, nil
+	}
+	currentStart, err := tartRunProcessStartIdentity(pid)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return currentStart == processStart, nil
 }

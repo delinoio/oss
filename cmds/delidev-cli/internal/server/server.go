@@ -189,6 +189,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err := state.BindIdentity(ctx, identity.ServerID); err != nil {
 		return err
 	}
+	if err := state.RestoreBackupDeletionIntents(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}), identity.ServerID); err != nil {
+		return err
+	}
 	listener, err := net.Listen("tcp", config.Listen)
 	if err != nil {
 		return domain.Fail(domain.Unavailable, "The requested listener could not be bound.", "Free the configured port or explicitly select another listener; DeliDev never remaps it automatically.")
@@ -247,6 +250,14 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		service.runScheduleDispatch(scheduleCtx)
 	}()
 	defer func() { stopSchedules(); <-schedulesDone }()
+	creationsCtx, stopCreations := context.WithCancel(child)
+	creationsDone := make(chan struct{})
+	go func() { defer close(creationsDone); service.runBackupCreations(creationsCtx) }()
+	defer func() { stopCreations(); <-creationsDone }()
+	deletionsCtx, stopDeletions := context.WithCancel(child)
+	deletionsDone := make(chan struct{})
+	go func() { defer close(deletionsDone); service.runBackupDeletions(deletionsCtx) }()
+	defer func() { stopDeletions(); <-deletionsDone }()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)
 	if ready != nil {
 		ready(service.Endpoint)
@@ -277,6 +288,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	<-dispatchDone
 	stopSchedules()
 	<-schedulesDone
+	stopCreations()
+	<-creationsDone
+	stopDeletions()
+	<-deletionsDone
 	service.executionAuthority.close()
 	if err := service.closeAccountSecrets(); err != nil {
 		return domain.SafeError(err)

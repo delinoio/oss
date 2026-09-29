@@ -324,19 +324,15 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 		if err != nil {
 			return "", ResultUncertain()
 		}
-		prepared, err := git.run(ctx, repo.Path, "rev-parse", "--path-format=absolute", "--git-common-dir")
-		if err != nil || trimGit(source) != trimGit(prepared) {
+		prepared, err := git.revParseFields(ctx, repo.Path, 2, "--git-common-dir", "--absolute-git-dir")
+		if err != nil || !filepath.IsAbs(prepared[0]) || !filepath.IsAbs(prepared[1]) || trimGit(source) != prepared[0] {
 			return "", ResultUncertain()
 		}
-		common, err := filepath.EvalSymlinks(trimGit(prepared))
+		common, err := filepath.EvalSymlinks(prepared[0])
 		if err != nil {
 			return "", ResultUncertain()
 		}
-		administrative, err := git.run(ctx, repo.Path, "rev-parse", "--absolute-git-dir")
-		if err != nil {
-			return "", ResultUncertain()
-		}
-		gitDirectory, err := filepath.EvalSymlinks(trimGit(administrative))
+		gitDirectory, err := filepath.EvalSymlinks(prepared[1])
 		if err != nil {
 			return "", ResultUncertain()
 		}

@@ -11,7 +11,7 @@ import (
 )
 
 // seedHostedProviders runs only while creating a database or migrating it to
-// version 22. A stored provider, including one explicitly turned off, keeps
+// the hosted-defaults boundary (22 on main, 23 from the backup branch). A stored provider, including one explicitly turned off, keeps
 // its identity and availability. The version boundary prevents a later user
 // deletion from being undone on every server restart.
 func seedHostedProviders(ctx context.Context, sqlTx *sql.Tx) error {

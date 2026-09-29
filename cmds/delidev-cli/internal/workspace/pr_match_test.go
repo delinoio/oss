@@ -54,6 +54,9 @@ func TestPRWorkspaceMatchReadsCurrentHeadWithoutTakingExecutionOwnership(t *test
 			index := readPRStartupTestFile(t, indexPath)
 			fetchPath := filepath.Join(f.checkout, ".git", "FETCH_HEAD")
 			fetchHead, refs := readPRStartupTestFile(t, fetchPath), gitTest(t, root, "show-ref")
+			// The server starts the bounded read after workspace/execution setup.
+			// Native lease setup must not consume this fixture's observation budget.
+			request.Deadline = time.Now().UTC().Add(15 * time.Second)
 			result, err := f.manager.MatchPRWorkspace(context.Background(), request)
 			if err != nil || result.State != PRWorkspaceMatches || ValidatePRWorkspaceMatch(request, result) != nil {
 				t.Fatal("current native head did not match", err)
