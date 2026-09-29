@@ -9,9 +9,10 @@ use std::{
 };
 
 use delidev_desktop::{
-    Connection, Connector, LocalServerStatus, LocalWorkerAction, LocalWorkerProof,
-    LocalWorkerStatus, NativeFailure, RemovedConnections, SavedConnection, SavedConnectionState,
-    Supervision, bundled_sidecar, canonical_id, connection_origin, default_data_root,
+    Connection, Connector, DesktopRegistration, LocalServerStatus, LocalWorkerAction,
+    LocalWorkerProof, LocalWorkerStatus, NativeFailure, RemovedConnections, SavedConnection,
+    SavedConnectionState, Supervision, bundled_sidecar, canonical_id, connection_origin,
+    default_data_root,
 };
 use notification_host::{
     NotificationHost, begin_notifications, end_notifications, notification_permission,
@@ -80,6 +81,39 @@ async fn connect_local(
         .map_err(|_| NativeFailure::SidecarFailed)?;
     supervision.refresh();
     let connection = result?;
+    if connection.endpoint != "http://127.0.0.1:46310" {
+        return Err(NativeFailure::Incompatible);
+    }
+    Ok(connection)
+}
+
+#[tauri::command]
+async fn inspect_local_registration(
+    window: WebviewWindow<Wry>,
+    connector: tauri::State<'_, Arc<Connector>>,
+) -> Result<DesktopRegistration, NativeFailure> {
+    trusted_main(&window)?;
+    let connector = Arc::clone(connector.inner());
+    tauri::async_runtime::spawn_blocking(move || connector.inspect_desktop_registration())
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?
+}
+
+#[tauri::command]
+async fn recover_local_registration(
+    window: WebviewWindow<Wry>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    device_id: String,
+    revision: String,
+    request_id: String,
+) -> Result<Connection, NativeFailure> {
+    trusted_main(&window)?;
+    let connector = Arc::clone(connector.inner());
+    let connection = tauri::async_runtime::spawn_blocking(move || {
+        connector.recover_desktop_registration(&device_id, &revision, &request_id)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)??;
     if connection.endpoint != "http://127.0.0.1:46310" {
         return Err(NativeFailure::Incompatible);
     }
@@ -654,6 +688,8 @@ fn run() -> Result<(), NativeFailure> {
         .invoke_handler(tauri::generate_handler![
             open_github,
             connect_local,
+            inspect_local_registration,
+            recover_local_registration,
             local_server_status,
             local_worker_proof,
             local_worker_control,

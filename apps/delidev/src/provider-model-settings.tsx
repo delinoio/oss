@@ -112,7 +112,6 @@ export function ApiProviderSettings({
     return <article className="result provider-row" key={entry.providerId || `preset:${entry.presetId}`}>
       <div className="provider-row-heading"><div><h4>{entry.displayName}</h4><p>{entry.presetId === ProviderPresetId.UNSPECIFIED ? "Custom API provider" : local.includes(entry) ? "Local API server" : "Preset"}</p></div><ProviderToggle entry={entry} presets={presets} changed={changed} refresh={result.refetch} /></div>
       <p>Accounts: {accountState}. Connection state is separate from provider validation and model compatibility.</p>
-      {entry.enabled && entry.accountCountsAvailable && entry.connectedAccounts === 0n ? <p className="notice">Account required</p> : null}
       {!entry.enabled && entry.totalAccounts > 0n ? <p>Turning this provider off preserves its accounts, credentials, models and history.</p> : null}
       <div className="actions">
         <button type="button" disabled={!entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
@@ -172,7 +171,7 @@ export function ActiveModelSettings({ active, createModel, editModel, priceModel
     {!inventory.error && inventory.data && !ready ? <p role="alert">This server does not report the required provider and active-model filtering capabilities. Update the server before using model settings.</p> : null}
     {models.isFetching && models.data ? <p role="status">Refreshing active provider models.</p> : null}
     {ready && enabledProviders.length === 0 ? <p className="notice">No API providers are enabled. Turn on a provider in API Providers.</p> : null}
-    {ready && enabledProviders.length > 0 && providerInventoryComplete && accountCountsKnown && connectedAccounts === 0n && !models.data?.models.length ? <p className="notice">No connected accounts for enabled providers. Add an account in API Providers before discovering models.</p> : null}
+    {ready && enabledProviders.length > 0 && providerInventoryComplete && accountCountsKnown && connectedAccounts === 0n && !models.data?.models.length ? <p className="notice">You can add models manually. Connect an API account only when you want to discover models automatically.</p> : null}
     {ready && [...grouped.entries()].map(([providerID, entries]) => <section key={providerID} aria-label={`Models from ${resourceName(providers.get(providerID))}`}>
       <h3>{resourceName(providers.get(providerID))}</h3>
       {entries.map((model) => {

@@ -23,6 +23,12 @@ func credentialMetadata(c worker.Credential) any {
 	return map[string]any{"version": c.Version, "type": c.Type, "endpoint": c.Endpoint, "server_id": c.ServerID, "device_id": c.DeviceID, "machine_id": c.MachineID, "pairing_id": c.PairingID}
 }
 
+type localPairingAttempt struct {
+	RequestID domain.ID `json:"request_id"`
+	ServerID  domain.ID `json:"server_id"`
+	Endpoint  string    `json:"endpoint"`
+}
+
 // pairLocalDevice is an explicit local bootstrap operation, never server
 // startup. It uses the existing owner authority only inside Go and retains the
 // exact grant request before contacting the server. A retry cannot silently
@@ -44,6 +50,13 @@ func pairLocalDevice(ctx context.Context, o options, root string, kind domain.De
 	}
 	if err := security.CheckPrivateDir(o.dataDir); err != nil {
 		return nil, err
+	}
+	recoveryLock, err := lockDesktopClient(o.dataDir, root)
+	if err != nil {
+		return nil, err
+	}
+	if recoveryLock != nil {
+		defer recoveryLock.Close()
 	}
 	identity, err := security.LoadIdentity(o.dataDir)
 	if err != nil {
@@ -91,11 +104,7 @@ func pairLocalDevice(ctx context.Context, o options, root string, kind domain.De
 		return nil, err
 	}
 	path := filepath.Join(root, "local-pairing.json")
-	var attempt struct {
-		RequestID domain.ID `json:"request_id"`
-		ServerID  domain.ID `json:"server_id"`
-		Endpoint  string    `json:"endpoint"`
-	}
+	var attempt localPairingAttempt
 	raw, err := security.ReadPrivate(path, 4096)
 	if errors.Is(err, os.ErrNotExist) {
 		attempt.RequestID, attempt.ServerID, attempt.Endpoint = domain.NewID(), identity.ServerID, endpoint.URL
@@ -146,7 +155,17 @@ func pairLocalDevice(ctx context.Context, o options, root string, kind domain.De
 	if grant.ServerID != attempt.ServerID || grant.Endpoint != attempt.Endpoint {
 		return nil, domain.Fail(domain.Conflict, "The retained grant belongs to a different authority.", "Preserve the original local pairing attempt for inspection.")
 	}
-	credential, err := worker.Pair(ctx, root, grant, kind, name)
+	var credential worker.Credential
+	if kind == domain.ClientDevice && recoveryLock != nil {
+		credential, err = worker.PairWithCommitment(ctx, root, grant, kind, name, func(candidate worker.Credential) error {
+			if err := verifyDesktopCredential(ctx, o, candidate); err != nil {
+				return err
+			}
+			return retainDesktopCredential(o.dataDir, candidate)
+		})
+	} else {
+		credential, err = worker.Pair(ctx, root, grant, kind, name)
+	}
 	if err != nil {
 		return nil, err
 	}

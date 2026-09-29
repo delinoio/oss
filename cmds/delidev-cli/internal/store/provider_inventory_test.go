@@ -26,7 +26,7 @@ func TestProviderInventoryCountsAvailabilityOrderAndCursorEpoch(t *testing.T) {
 			}
 		}
 		presetProvider = domain.NewID()
-		managed := ordered[0].Provider
+		managed := ordered[6].Provider
 		managed.SetEnabled(false)
 		if _, err := tx.Put(domain.ProviderKind, presetProvider, 0, "", "", managed); err != nil {
 			return nil, err

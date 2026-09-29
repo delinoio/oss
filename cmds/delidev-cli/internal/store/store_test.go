@@ -50,6 +50,11 @@ func create(t *testing.T, s *Store, id domain.ID, value string) Record {
 func TestDurableDeduplicationConcurrentRetry(t *testing.T) {
 	s, root := openTest(t)
 	ctx := context.Background()
+	initial, err := s.Events(ctx, 0, "", 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialCursor := initial[len(initial)-1].Cursor
 	request, id := domain.NewID(), domain.NewID()
 	var applied atomic.Int32
 	var wg sync.WaitGroup
@@ -94,7 +99,7 @@ func TestDurableDeduplicationConcurrentRetry(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(ctx, root)
+	s, err = Open(ctx, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +110,7 @@ func TestDurableDeduplicationConcurrentRetry(t *testing.T) {
 	}
 	_, err = s.Mutate(ctx, request, "project.create", map[string]string{"name": "two"}, func(*Tx) (any, error) { t.Fatal("conflicting request executed"); return nil, nil })
 	assertCode(t, err, domain.Conflict)
-	events, err := s.Events(ctx, 0, "", 200)
+	events, err := s.Events(ctx, initialCursor, "", 200)
 	if err != nil || len(events) != 1 {
 		t.Fatalf("events: %+v %v", events, err)
 	}
@@ -114,8 +119,13 @@ func TestDurableDeduplicationConcurrentRetry(t *testing.T) {
 func TestStateEventReceiptRollback(t *testing.T) {
 	s, _ := openTest(t)
 	ctx := context.Background()
+	initial, err := s.Events(ctx, 0, "", 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialCursor := initial[len(initial)-1].Cursor
 	id, request := domain.NewID(), domain.NewID()
-	_, err := s.Mutate(ctx, request, "project.create", nil, func(tx *Tx) (any, error) {
+	_, err = s.Mutate(ctx, request, "project.create", nil, func(tx *Tx) (any, error) {
 		if _, err := tx.Put(domain.ProjectKind, id, 0, "", "", map[string]string{"name": "rollback"}); err != nil {
 			return nil, err
 		}
@@ -124,7 +134,7 @@ func TestStateEventReceiptRollback(t *testing.T) {
 	assertCode(t, err, domain.Conflict)
 	_, err = s.Get(ctx, domain.ProjectKind, id)
 	assertCode(t, err, domain.NotFound)
-	events, err := s.Events(ctx, 0, "", 100)
+	events, err := s.Events(ctx, initialCursor, "", 100)
 	if err != nil || len(events) != 0 {
 		t.Fatalf("rolled back events remain: %+v %v", events, err)
 	}
@@ -165,7 +175,7 @@ func TestCoherentSnapshotAndCursorValidation(t *testing.T) {
 	id := domain.NewID()
 	create(t, s, id, "first")
 	records, cursor, err := s.Snapshot(ctx, Filter{Kind: domain.ProjectKind, Limit: 10})
-	if err != nil || len(records) != 1 || cursor != 1 {
+	if err != nil || len(records) != 1 || cursor < 1 {
 		t.Fatalf("snapshot: %+v %d %v", records, cursor, err)
 	}
 	create(t, s, domain.NewID(), "second")
@@ -175,7 +185,7 @@ func TestCoherentSnapshotAndCursorValidation(t *testing.T) {
 	}
 	_, err = s.Events(ctx, 999, "", 10)
 	assertCode(t, err, domain.CursorExpired)
-	if _, err := s.db.Exec("UPDATE metadata SET value='2' WHERE key='event_floor'"); err != nil {
+	if _, err := s.db.Exec("UPDATE metadata SET value=? WHERE key='event_floor'", cursor+1); err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.Events(ctx, cursor, "", 10)
@@ -202,11 +212,11 @@ func TestBackupIncludesCommittedWAL(t *testing.T) {
 	}
 	defer db.Close()
 	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM entities").Scan(&count); err != nil || count != 1 {
+	if err := db.QueryRow("SELECT COUNT(*) FROM entities WHERE kind='project'").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("backup lost WAL state: %d %v", count, err)
 	}
 	create(t, s, domain.NewID(), "after backup")
-	if err := db.QueryRow("SELECT COUNT(*) FROM entities").Scan(&count); err != nil || count != 1 {
+	if err := db.QueryRow("SELECT COUNT(*) FROM entities WHERE kind='project'").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("backup not independent: %d %v", count, err)
 	}
 }

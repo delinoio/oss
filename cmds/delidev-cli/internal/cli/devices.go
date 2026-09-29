@@ -138,6 +138,15 @@ func deviceLocal(ctx context.Context, o options, command string, args []string, 
 		if err := parse(fs, args[1:]); err != nil {
 			return nil, err
 		}
+		if command == "device" {
+			lock, err := lockDesktopClient(o.dataDir, *root)
+			if err != nil {
+				return nil, err
+			}
+			if lock != nil {
+				defer lock.Close()
+			}
+		}
 		credential, err := worker.LoadCredential(*root)
 		if err != nil {
 			return nil, err

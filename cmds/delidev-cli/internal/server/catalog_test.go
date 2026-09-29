@@ -41,8 +41,9 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 		t.Fatalf("fresh inventory omitted account-type filtering capability: %+v", initial.Msg.Capabilities)
 	}
 	for _, entry := range initial.Msg.Entries {
-		if entry.Enabled || entry.Provider != nil || entry.ProviderId != "" || !entry.AccountCountsAvailable {
-			t.Fatalf("new preset materialized provider state or omitted counts: %+v", entry)
+		hosted := entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_OLLAMA && entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_LM_STUDIO && entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_VLLM
+		if entry.Enabled != hosted || (entry.Provider != nil) != hosted || (entry.ProviderId != "") != hosted || !entry.AccountCountsAvailable || entry.TotalAccounts != 0 || entry.ConnectedAccounts != 0 {
+			t.Fatalf("fresh preset state or zero account counts are wrong: %+v", entry)
 		}
 	}
 
@@ -51,24 +52,28 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	if err != nil || domain.Decode(listed.Msg.PresetsJson, &presets) != nil {
 		t.Fatalf("read provider presets: %v", err)
 	}
-	var openAI domain.Provider
+	var ollama, canonicalOllama domain.Provider
 	for _, preset := range providers.Presets() {
-		if preset.ID == domain.PresetOpenAI {
-			openAI = preset.Provider
+		if preset.ID == domain.PresetOllama {
+			canonicalOllama = preset.Provider
 		}
 	}
 	for _, preset := range presets {
 		if preset.Provider.PresetID != nil {
 			t.Fatalf("legacy editable preset payload included activation provenance: %+v", preset.Provider.PresetID)
 		}
-		if preset.ID == domain.PresetOpenAI {
-			if openAI.Name != preset.Provider.Name || openAI.Endpoint != preset.Provider.Endpoint {
+		if preset.ID == domain.PresetOllama {
+			ollama = preset.Provider
+			if canonicalOllama.Name != preset.Provider.Name || canonicalOllama.Endpoint != preset.Provider.Endpoint {
 				t.Fatal("legacy preset defaults do not match canonical activation defaults")
 			}
 		}
 	}
-	openAI.SetEnabled(true)
-	raw, _ := json.Marshal(openAI)
+	// Legacy preset reads omit nested provenance; activation fixtures use the
+	// canonical server preset so they exercise managed activation, not a custom copy.
+	ollama = canonicalOllama
+	ollama.SetEnabled(true)
+	raw, _ := json.Marshal(ollama)
 	save := func(request domain.ID) (*connect.Response[pb.SaveConfigurationResponse], error) {
 		return f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(request)}, Kind: pb.EntityKind_ENTITY_KIND_PROVIDER, SchemaVersion: 1, DocumentJson: raw}))
 	}
@@ -110,7 +115,7 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 			t.Fatal(err)
 		}
 		for _, entry := range response.Msg.Entries {
-			if entry.PresetId == pb.ProviderPresetId_PROVIDER_PRESET_ID_OPENAI {
+			if entry.PresetId == pb.ProviderPresetId_PROVIDER_PRESET_ID_OLLAMA {
 				return entry
 			}
 		}
@@ -129,14 +134,14 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	}
 
 	// Legacy writes that omit enabled or preset_id retain both stored values.
-	legacyUpdate := []byte(`{"name":"OpenAI","endpoint":"https://api.openai.com/v1","protocol":"openai-responses","authentication":"bearer","discovery":true,"enabled":false}`)
+	legacyUpdate := []byte(`{"name":"Ollama","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":true,"enabled":false}`)
 	updated, err := f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(created, domain.NewID()), Kind: created.Kind, SchemaVersion: 1, DocumentJson: legacyUpdate}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var updatedBody domain.Provider
 	err = domain.Decode(updated.Msg.Resource.DocumentJson, &updatedBody)
-	if err != nil || updatedBody.EnabledValue() || updatedBody.PresetID == nil || *updatedBody.PresetID != domain.PresetOpenAI || updated.Msg.Resource.Id != created.Id {
+	if err != nil || updatedBody.EnabledValue() || updatedBody.PresetID == nil || *updatedBody.PresetID != domain.PresetOllama || updated.Msg.Resource.Id != created.Id {
 		t.Fatalf("omitted provenance/disabled state was not preserved: %+v %v", updatedBody, err)
 	}
 	entry = check()
