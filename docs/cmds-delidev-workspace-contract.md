@@ -53,6 +53,13 @@ Chat directory without taking the agent lease. Independent read-only process
 ownership is reconciled after verification; a terminal receives its own native
 owner and never changes workspace deletion ownership or secondary roots.
 
+Directory-replacement fixtures retain each platform's actual protection: Unix
+allows renaming the opened directory and rejects its changed identity after
+launch; the pinned Go Windows root handle prevents that rename while anchored.
+The Windows fixture requires the specific sharing violation and verifies that
+renaming succeeds after the launch scope closes its anchor. Neither fixture
+weakens the complete original manifest or primary-directory checks.
+
 ## Storage
 The Worker owns private `workspaces`, `locks`, `execution-claims`, `execution-history`, and empty hook directories under its explicit data scope. UUID-v7 session/repository IDs derive managed paths. Manifests record original checkouts separately from deletion-owned paths. Cleanup recomputes owned paths from identities, reconciles Git registration even when a directory is absent, and never removes original Local checkouts. These local resources intentionally override the repository R2 default.
 

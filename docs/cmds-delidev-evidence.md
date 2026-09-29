@@ -3292,3 +3292,27 @@ natural exit and joined cleanup; it is not replaced by a structural test.
 Windows amd64 and arm64 process test binaries cross-compile, and the macOS arm64
 process race suite passes. These local checks do not establish native Windows
 acceptance of the repair; the next hosted run must execute the ConPTY fixture.
+
+### PR #1127 Windows workspace anchor fixture repair (2026-09-30)
+
+The hosted Windows directory-replacement fixture failed because the anchored
+primary directory could not be renamed while its Go root handle remained open.
+The fixture now checks the platform's actual protection: Unix still replaces
+the pathname and requires recovery, while Windows requires the specific sharing
+violation during launch and successful rename after the anchor closes. Complete
+original-manifest and primary-directory validation remain unchanged.
+
+Windows amd64 and arm64 workspace test binaries cross-compile. The macOS arm64
+terminal-directory race tests, complete DeliDev `go vet` on both macOS and the
+Windows amd64 target, and native CLI build pass. Windows native execution of the
+replacement fixture remains for the next hosted run; local cross-compilation
+does not prove its runtime behavior.
+
+The required root `go test -race ./cmds/delidev-cli/...` finishes unsuccessfully.
+CLI, server, store, Worker, terminal and process packages pass. Grok reaches the
+default ten-minute package budget while a question controller test is running;
+the workspace-diff creation-commit/live-execution fixture returns
+`recovery_required` for its working-tree read. Another native suite was running
+concurrently. Isolated race reruns pass for that workspace-diff test and the
+Grok `question-answer-mutation` case active at the package timeout. The full run
+remains unsuccessful, and production ownership checks and deadlines are retained.
