@@ -72,15 +72,18 @@ full Go race invocation fails the existing CLI workspace Git-diff observation
 deadline; an isolated rerun also fails a workspace file observation deadline.
 The same isolated Git-diff fixture also fails on the unchanged base revision
 `b741cec88d68ba84eaf918bbee22ca28bff57ec6` with retained workspace recovery
-required under concurrent host test load. No full-suite pass is claimed while
-the remaining workspace package run is unfinished. The same full race run also
-records Grok native-fixture initialization failures, 20-minute Grok and server
-package cutoffs, and a Worker stream-termination native-cleanup deadline failure.
+required under concurrent host test load. The complete
+`GOMAXPROCS=2 go test -race -p 2 -timeout=20m ./cmds/delidev-cli/...` run exits
+nonzero. It also records Grok native-fixture initialization failures, 20-minute
+Grok and server package cutoffs, a Worker stream-termination native-cleanup
+deadline failure, and `TestWorkspaceDiffUnbornAndBoundedResults` failing with
+`recovery_required` during its original workspace-preparation verification.
+The forwarding, security and store packages pass in that run; its log contains
+no reported data race. No full-suite pass is claimed.
 Those observations are retained separately from the passing focused forwarding
 fixtures; they are not all established as baseline failures. Required generated
 embedded assets were built for the root commit hook; generated repository-owned
-`dist` output is removed after
-validation. These temporary loopback fixtures do not establish remote TLS,
+`dist` output is removed after validation. These temporary loopback fixtures do not establish remote TLS,
 real-account/provider, supported native desktop or release acceptance.
 
 The first [Windows CI job](https://github.com/delinoio/oss/actions/runs/36626637271/job/109605298701)
