@@ -11,7 +11,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
-import { BudgetState, ProviderInventoryCapability, ProviderPresetId, ProviderService, SessionService, UsageService, ConfigurationService, EntityKind, ResourceService, ScheduleService, SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
+import { BudgetState, ProviderInventoryCapability, ProviderPresetId, ProviderService, SessionService, UsageService, ConfigurationService, EntityKind, IntegrationService, ResourceService, ScheduleService, SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
 import { SessionBudget } from "./session-budget";
 import { Usage } from "./usage";
 import { Schedules } from "./schedules";
@@ -499,17 +499,31 @@ it("persists native Claude permission selection through the desktop and real Go 
 }, 15000);
 
 it("saves and renames GitHub profiles through the real Go server and CLI", async () => {
+  // Real-server mutation and list publication exceed the default one-second
+  // observation deadline under CI load. Deliberately retain a delayed receipt
+  // and bounded five-second UI waits. Restore the default only if this fixture
+  // stops testing delayed replies and full CI reliably fits one second.
+  let delayedSave = false;
+  const profileTransport: Transport = { ...transport, async unary(method, signal, timeout, header, input, context) {
+    const response = await transport.unary(method, signal, timeout, header, input, context);
+    if (!delayedSave && method.parent.typeName === IntegrationService.typeName && method.name === "SaveIntegrationProfile") {
+      delayedSave = true;
+      await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+    }
+    return response;
+  } };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={profileTransport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
   fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Real server profile" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "fixture-owner" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }, { timeout: 5000 }));
+  expect(delayedSave).toBe(true);
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Renamed server profile" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  await screen.findByRole("button", { name: "Manage Renamed server profile" });
+  await screen.findByRole("button", { name: "Manage Renamed server profile" }, { timeout: 5000 });
   const output = JSON.parse(await runCLI(["integration", "list"]));
   const row = output.result.resources.find((value: { data: { name: string } }) => value.data.name === "Renamed server profile");
   expect(row).toBeTruthy();

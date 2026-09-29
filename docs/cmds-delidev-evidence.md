@@ -3255,3 +3255,15 @@ immutable original problem target rather than the current shared set. The same
 loopback test requires the entire activity response to remain byte-identical
 after that rename, including the proof entry; it passed under race in 5.686s.
 This is retained-source verification, not real provider rename acceptance.
+
+### PR #1118 CI profile publication observation
+
+CI run `36625885830`, job `109602722404`, failed the real-server GitHub
+profile create/rename fixture while waiting for `Rename Real server profile`.
+The existing default one-second DOM observation limit ended before mutation
+and refreshed-list publication. Delaying the first actual server save reply
+by 1.2 seconds reproduced that exact failure on Node 24. The fixture now
+uses a bounded five-second wait for the two post-save observations and asserts
+that the delayed reply was exercised; the focused real-server/CLI test passes.
+Runtime request deadlines, product persistence, receipts and the expected
+revision-two CLI result are unchanged. No user PAT or provider account is used.
