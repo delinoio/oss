@@ -75,7 +75,7 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	if _, err := client.AttachWorker(ctx, ownerRequest(two, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version})); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("foreign machine attached: %v", err)
 	}
-	attach := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version}
+	attach := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1}}
 	if _, err := client.AttachWorker(ctx, ownerRequest(one, attach)); err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +90,15 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	defer stream.Close()
 	if !stream.Receive() || !stream.Msg().Heartbeat {
 		t.Fatal("missing readiness heartbeat", stream.Err())
+	}
+	auxiliaryCtx, stopAuxiliary := context.WithCancel(ctx)
+	defer stopAuxiliary()
+	auxiliary, err := client.WatchAuxiliaryWork(auxiliaryCtx, ownerRequest(one, &pb.WatchAuxiliaryWorkRequest{MachineId: device.Machine.Id, InstanceId: instance}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !auxiliary.Receive() || !auxiliary.Msg().Heartbeat {
+		t.Fatal("paired Worker credential could not open its auxiliary work stream", auxiliary.Err())
 	}
 	inspect := &pb.InspectRepositoryRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, Path: "/example/checkout", PreferredRemote: "origin"}
 	if _, err := client.InspectRepository(ctx, ownerRequest(one, inspect)); connect.CodeOf(err) != connect.CodePermissionDenied {
