@@ -3274,3 +3274,22 @@ evidence but do not claim real-account, production platform or distribution
 acceptance. CI is distinct from the failed local race invocation. The Codex
 connector reported its review quota limit, so no completed review or approval
 is recorded.
+
+### PR #1114 real-server GitHub profile wait repair (2026-09-30)
+
+The protocol/client CI job on `5075c516` passed generated protocol freshness,
+then failed the desktop GitHub profile scenario while waiting for
+`Rename Real server profile`. That observation follows a real profile save and
+an invalidated inventory read; Testing Library's default one-second deadline
+expired before the sequence completed. Delaying each real `SaveIntegrationProfile`
+and integration `ListResources` RPC by 600 ms reproduced the same failed
+observation locally. Five-second per-observation waits now retain the real RPCs,
+both create/rename writes, CLI read-back and exact revision-2 assertion under
+the original 30-second scenario bound. Product RPC behavior is unchanged.
+
+The focused delayed scenario passed. Package-local `pnpm test` passed with the
+required Node.js 24 runtime: all 941 component tests across 74 files, typecheck,
+8 native package verifier tests, 6 desktop launcher tests and the production
+Rsbuild bundle. These are private fixture/build results, not native packaged
+or real-account acceptance. Generated frontend/client `dist` outputs were
+removed after validation. CI on the forthcoming repair commit remains pending.
