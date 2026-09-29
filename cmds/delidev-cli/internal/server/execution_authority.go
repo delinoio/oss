@@ -51,7 +51,13 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	job, err := store.Decode[domain.Job](jobRecord)
-	if err != nil || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed || job.InstanceID != grant.InstanceID || job.MachineID != grant.MachineID {
+	if err != nil {
+		return empty, executionDenied()
+	}
+	if job.Type == domain.GenerateSessionTitleJob {
+		return a.titleScope(tx, grant, jobRecord, job)
+	}
+	if job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed || job.InstanceID != grant.InstanceID || job.MachineID != grant.MachineID {
 		return empty, executionDenied()
 	}
 	canceled, err := tx.JobCancellationRequested(grant.JobID)
@@ -228,6 +234,14 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	}()
 	var once sync.Once
 	lease := &apiproxy.Lease{Scope: scope, Context: leaseContext}
+	if scope.Purpose == domain.SessionTitleUsage {
+		lease.BeforeSubmit = func(ctx context.Context, operation apiproxy.Operation) error {
+			if leaseContext.Err() != nil {
+				return executionDenied()
+			}
+			return a.claimTitleHTTPRequest(ctx, grant, operation)
+		}
+	}
 	lease.Release = func() {
 		once.Do(func() {
 			cancel()
@@ -369,11 +383,29 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 			return nil, executionDenied()
 		}
 		job, err := store.Decode[domain.Job](r)
-		var input domain.ExecutionJobInput
-		if err != nil || domain.Decode(job.Input, &input) != nil {
+		if err != nil {
 			return nil, executionDenied()
 		}
-		grant.ExecutionID = input.ExecutionID
+		if job.Type == domain.GenerateSessionTitleJob {
+			var input domain.AuxiliaryTitleInput
+			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil {
+				return nil, executionDenied()
+			}
+			grant.ExecutionID = input.OriginalExecutionID
+			claimed, err := tx.ClaimTitleInference(identity.Job)
+			if err != nil {
+				return nil, err
+			}
+			if !claimed {
+				return nil, executionDenied()
+			}
+		} else {
+			var input domain.ExecutionJobInput
+			if domain.Decode(job.Input, &input) != nil {
+				return nil, executionDenied()
+			}
+			grant.ExecutionID = input.ExecutionID
+		}
 		scope, err := s.executionAuthority.scope(tx, grant)
 		if err != nil {
 			return nil, err

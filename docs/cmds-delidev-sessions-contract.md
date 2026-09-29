@@ -19,6 +19,8 @@ Owner and paired clients may accept sessions and manage their inputs. Worker cre
 ## Interfaces and Contracts
 `session create --input FILE|- [--wait]` accepts the closed `domain.CreateSession` document. Every path selects exactly one Agent Worker, never separate harness/account/model overrides. Project sessions default to Worktree; projectless creation requires explicit `general-chat`. Initial mode defaults to `execute`; `plan` preserves the intended native mode for the pinned Codex first-turn profile. RPC creation defaults to `MANUAL`, while the CLI always supplies `EXTERNAL_CLI`.
 
+Optional `name_mode` is `manual` or `automatic`; omission remains the original manual JSON and receipt identity. Automatic mode rejects a supplied `name` and returns the server-owned `New session` placeholder immediately. The one title operation is queued only after the original first successful native turn and confirmed cleanup; its auxiliary Worker lane, exact original authority, status and separate usage purpose follow the [automatic title contract](cmds-delidev-session-titles-contract.md).
+
 ```json
 {
   "name": "Inspect the parser",

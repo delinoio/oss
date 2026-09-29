@@ -74,6 +74,17 @@ it("keeps equal-name projects separate, includes empty projects, and only reads 
   expect(value.openSession).not.toHaveBeenCalled();
 });
 
+it("includes the safe title reason in sidebar text and its accessible description", async () => {
+  const project = resource(EntityKind.PROJECT, "Title project");
+  const session = resource(EntityKind.SESSION, "New session", project.id, {
+    workspace: "worktree", outcome: "succeeded", archive: "active", name_mode: "automatic", title_state: "skipped", title_reason: "budget-reached",
+  });
+  mountSidebar({ projects: () => ({ resources: [project] }), sessions: () => ({ sessions: [session] }) });
+  fireEvent.click(await screen.findByRole("button", { name: `Title project. Project ID: ${project.id}` }));
+  const row = await screen.findByRole("button", { name: /Title skipped\. The session budget did not allow another request\./ });
+  expect(within(row).getByText("Skipped · Budget reached")).toBeTruthy();
+});
+
 it("keeps sparse global paging reachable and groups retained sessions by their original unknown project ID", async () => {
   const listedProject = resource(EntityKind.PROJECT, "Listed project");
   const missingParent = newRequestId();

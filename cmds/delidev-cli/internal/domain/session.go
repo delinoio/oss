@@ -10,6 +10,50 @@ const (
 	ScheduledSession   SessionSource = "SCHEDULED"
 )
 
+// SessionNameMode is deliberately omitted for manual creation so old receipt
+// identities keep their exact JSON representation.
+type SessionNameMode string
+
+const (
+	ManualSessionName    SessionNameMode = "manual"
+	AutomaticSessionName SessionNameMode = "automatic"
+)
+
+type SessionNameOwner string
+
+const (
+	ManualNameOwner    SessionNameOwner = "manual"
+	AutomaticNameOwner SessionNameOwner = "automatic"
+)
+
+type SessionTitleState string
+
+const (
+	TitleWaiting     SessionTitleState = "waiting"
+	TitleQueued      SessionTitleState = "queued"
+	TitleRunning     SessionTitleState = "running"
+	TitleSucceeded   SessionTitleState = "succeeded"
+	TitleSkipped     SessionTitleState = "skipped"
+	TitleFailed      SessionTitleState = "failed"
+	TitleUnsupported SessionTitleState = "unsupported"
+	TitleUncertain   SessionTitleState = "uncertain"
+)
+
+type SessionTitleReason string
+
+const (
+	TitleReasonNone             SessionTitleReason = ""
+	TitleReasonUnsupportedAgent SessionTitleReason = "unsupported-agent-profile"
+	TitleReasonCapabilityAbsent SessionTitleReason = "worker-capability-absent"
+	TitleReasonBudgetReached    SessionTitleReason = "budget-reached"
+	TitleReasonCanceled         SessionTitleReason = "canceled"
+	TitleReasonAuthorityLost    SessionTitleReason = "authority-lost"
+	TitleReasonInvalidOutput    SessionTitleReason = "invalid-output"
+	TitleReasonInferenceFailed  SessionTitleReason = "inference-failed"
+	TitleReasonCleanupUncertain SessionTitleReason = "cleanup-uncertain"
+	TitleReasonManualRename     SessionTitleReason = "manual-rename"
+)
+
 type SessionMode string
 
 const (
@@ -92,6 +136,7 @@ type RepositoryStart struct {
 type CreateSession struct {
 	EstimatedCostBudget *EstimatedCostBudget `json:"estimated_cost_budget,omitempty"`
 	Name                string               `json:"name"`
+	NameMode            SessionNameMode      `json:"name_mode,omitempty"`
 	AgentID             ID                   `json:"agent_id"`
 	MachineID           ID                   `json:"machine_id"`
 	ProjectID           ID                   `json:"project_id,omitempty"`
@@ -120,8 +165,17 @@ func (c CreateSession) Validate() error {
 			return err
 		}
 	}
-	if err := Text(c.Name, "session name", 256, true); err != nil {
-		return err
+	switch c.NameMode {
+	case "", ManualSessionName:
+		if err := Text(c.Name, "session name", 256, true); err != nil {
+			return err
+		}
+	case AutomaticSessionName:
+		if c.Name != "" {
+			return Fail(InvalidArgument, "Automatic session naming does not accept a caller title.", "Omit the name and let the selected Agent produce it after the first completed turn.")
+		}
+	default:
+		return Fail(InvalidArgument, "Unknown session naming mode.", "Select manual or automatic naming.")
 	}
 	for _, id := range []ID{c.AgentID, c.MachineID} {
 		if err := id.Validate(); err != nil {
@@ -186,6 +240,13 @@ type Session struct {
 	ScheduleOrigin         *ScheduleOrigin            `json:"schedule_origin,omitempty"`
 	LocalOrigin            *LocalOrigin               `json:"local_origin,omitempty"`
 	Name                   string                     `json:"name"`
+	NameMode               SessionNameMode            `json:"name_mode,omitempty"`
+	NameOwner              SessionNameOwner           `json:"name_owner,omitempty"`
+	NameGeneration         uint64                     `json:"name_generation,omitempty"`
+	TitleState             SessionTitleState          `json:"title_state,omitempty"`
+	TitleReason            SessionTitleReason         `json:"title_reason,omitempty"`
+	TitleOperationID       ID                         `json:"title_operation_id,omitempty"`
+	TitleJobID             ID                         `json:"title_job_id,omitempty"`
 	AgentID                ID                         `json:"agent_id"`
 	MachineID              ID                         `json:"machine_id"`
 	ProjectID              ID                         `json:"project_id,omitempty"`
