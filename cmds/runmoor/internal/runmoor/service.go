@@ -317,8 +317,22 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			}
 		} else {
 			// Recheck after draining in case the active service changed while
-			// control or offline cleanup was in progress.
+			// control or offline cleanup was in progress. Refresh systemd's
+			// cached ExecStop from the validated on-disk snapshot before --now
+			// can stop the unit, then verify that snapshot remained unchanged.
 			if runtime.GOOS == "linux" {
+				if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
+					return e
+				}
+				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
+					return e
+				}
+				if e := run("systemctl", "--user", "daemon-reload"); e != nil {
+					return e
+				}
+				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
+					return e
+				}
 				if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
 					return e
 				}

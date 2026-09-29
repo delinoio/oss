@@ -567,6 +567,22 @@ func TestMatchingServiceUninstallWaitsForJobsAndImages(t *testing.T) {
 	if len(commands.calls) == 0 {
 		t.Fatal("matching service was not unloaded after work drained")
 	}
+	if runtime.GOOS == "linux" {
+		reloadIndex, disableIndex := -1, -1
+		for i, call := range commands.calls {
+			switch call {
+			case "systemctl --user daemon-reload":
+				if reloadIndex < 0 {
+					reloadIndex = i
+				}
+			case "systemctl --user disable --now " + systemdServiceName:
+				disableIndex = i
+			}
+		}
+		if reloadIndex < 0 || disableIndex < 0 || reloadIndex >= disableIndex {
+			t.Fatalf("systemd must reload the validated unit before disabling it: %v", commands.calls)
+		}
+	}
 }
 
 func TestServiceUninstallRevalidatesDefinitionAfterDrain(t *testing.T) {
@@ -696,6 +712,13 @@ func TestServiceUninstallPreservesDefinitionReplacedDuringUnload(t *testing.T) {
 	requireCode(t, err, ErrConfig)
 	if len(commands.calls) == 0 {
 		t.Fatal("service unload was not reached")
+	}
+	if runtime.GOOS == "linux" {
+		for _, call := range commands.calls {
+			if call == "systemctl --user disable --now "+systemdServiceName {
+				t.Fatalf("systemd disabled a unit after its definition changed during reload: %v", commands.calls)
+			}
+		}
 	}
 	got, err := os.ReadFile(unit)
 	if err != nil || string(got) != replacement {
