@@ -23,6 +23,10 @@ import (
 
 func desktopFixture(t *testing.T) (string, worker.Credential) {
 	t.Helper()
+	return desktopFixtureEndpoint(t, nil)
+}
+func desktopFixtureEndpoint(t *testing.T, selectEndpoint func(string, server.Endpoint)) (string, worker.Credential) {
+	t.Helper()
 	root := filepath.Join(t.TempDir(), "server")
 	ctx, cancel := context.WithCancel(context.Background())
 	ready, done := make(chan struct{}), make(chan error, 1)
@@ -39,6 +43,13 @@ func desktopFixture(t *testing.T) (string, worker.Credential) {
 	case <-ready:
 	case <-time.After(10 * time.Second):
 		t.Fatal("fixture startup")
+	}
+	if selectEndpoint != nil {
+		endpoint, err := server.LoadEndpoint(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selectEndpoint(root, endpoint)
 	}
 	if code, result := cliRun(t, root, []string{"device", "pair-local", "--device-dir", filepath.Join(root, "desktop-client")}, ""); code != 0 {
 		t.Fatal(result)
@@ -58,6 +69,54 @@ func revokeDesktop(t *testing.T, root string, credential worker.Credential) {
 func recoveryArgs(original worker.Credential, request domain.ID) []string {
 	return []string{"--request-id", string(request), "device", "recover-local", "--id", string(original.DeviceID), "--revision", "2"}
 }
+
+func TestDesktopRecoveryRequiresOriginalCredentialCommitment(t *testing.T) {
+	for _, mutation := range []string{"token", "pairing", "missing-commitment", "damaged-commitment"} {
+		t.Run(mutation, func(t *testing.T) {
+			root, original := desktopFixture(t)
+			revokeDesktop(t, root, original)
+			changed := original
+			switch mutation {
+			case "token":
+				changed.Token, _ = worker.RandomToken()
+			case "pairing":
+				changed.PairingID = domain.NewID()
+			case "missing-commitment":
+				if err := os.Remove(filepath.Join(root, "desktop-registration.json")); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+			case "damaged-commitment":
+				if err := security.WriteAtomic(filepath.Join(root, "desktop-registration.json"), []byte("{}")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			clientRoot := filepath.Join(root, "desktop-client")
+			if err := writeRecoveryJSON(filepath.Join(clientRoot, "device.json"), changed); err != nil {
+				t.Fatal(err)
+			}
+			before, err := desktopHashes(clientRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, args := range [][]string{{"device", "inspect-local"}, recoveryArgs(original, domain.NewID())} {
+				if code, result := cliRun(t, root, args, ""); code == 0 || result["error"].(map[string]any)["code"] != "recovery_required" {
+					t.Fatal("unverified credential accepted", result)
+				}
+			}
+			if _, err := os.Lstat(filepath.Join(root, "desktop-recovery.json")); !os.IsNotExist(err) {
+				t.Fatal("unverified credential created recovery intent")
+			}
+			after, err := desktopHashes(clientRoot)
+			if err != nil || after != before {
+				t.Fatal("rejected recovery changed original files", err)
+			}
+			if code, result := cliRun(t, root, []string{"device", "list"}, ""); code != 0 || len(result["result"].(map[string]any)["resources"].([]any)) != 1 {
+				t.Fatal("unverified credential created a replacement", result)
+			}
+		})
+	}
+}
+
 func TestDesktopRecoveryRetainsOriginalAndUsesOneReplacement(t *testing.T) {
 	root, original := desktopFixture(t)
 	clientRoot := filepath.Join(root, "desktop-client")
@@ -101,6 +160,11 @@ func TestDesktopRecoveryRetainsOriginalAndUsesOneReplacement(t *testing.T) {
 	}
 	if code, result := cliRun(t, root, []string{"device", "pair-local", "--device-dir", clientRoot}, ""); code != 0 {
 		t.Fatal(result)
+	}
+	// A prior completed recovery independently binds the current credential,
+	// including scopes recovered before the first-pairing commitment existed.
+	if err := os.Remove(filepath.Join(root, "desktop-registration.json")); err != nil {
+		t.Fatal(err)
 	}
 	// Losing the final response cannot recreate the credential, even after the
 	// replacement itself is later revoked.
@@ -246,10 +310,8 @@ func TestDesktopRecoveryValidationAndMissingPairJournal(t *testing.T) {
 func TestDesktopRecoveryLostPairingResponsesReuseOriginalIdentity(t *testing.T) {
 	for _, method := range []string{"CreatePairing", "PairDevice"} {
 		t.Run(method, func(t *testing.T) {
-			root, original := desktopFixture(t)
-			revokeDesktop(t, root, original)
-			realEndpoint := original.Endpoint
-			var dropped atomic.Bool
+			var realEndpoint string
+			var dropped, capture atomic.Bool
 			var bodies [][]byte
 			var bodiesLock sync.Mutex
 			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +320,7 @@ func TestDesktopRecoveryLostPairingResponsesReuseOriginalIdentity(t *testing.T) 
 					t.Error(err)
 					return
 				}
-				if strings.HasSuffix(r.URL.Path, "/"+method) {
+				if capture.Load() && strings.HasSuffix(r.URL.Path, "/"+method) {
 					bodiesLock.Lock()
 					bodies = append(bodies, append([]byte(nil), raw...))
 					bodiesLock.Unlock()
@@ -280,7 +342,7 @@ func TestDesktopRecoveryLostPairingResponsesReuseOriginalIdentity(t *testing.T) 
 					t.Error(err)
 					return
 				}
-				if strings.HasSuffix(r.URL.Path, "/"+method) && response.StatusCode == 200 && dropped.CompareAndSwap(false, true) {
+				if capture.Load() && strings.HasSuffix(r.URL.Path, "/"+method) && response.StatusCode == 200 && dropped.CompareAndSwap(false, true) {
 					// The server committed, but the client receives only an incomplete frame.
 					w.Header().Set("Content-Type", "application/json")
 					w.Header().Set("Content-Length", "1000")
@@ -297,20 +359,17 @@ func TestDesktopRecoveryLostPairingResponsesReuseOriginalIdentity(t *testing.T) 
 				w.Write(body)
 			}))
 			defer proxy.Close()
-			endpoint, err := server.LoadEndpoint(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			endpoint.URL = proxy.URL
-			if err := writeRecoveryJSON(filepath.Join(root, "server.json"), endpoint); err != nil {
-				t.Fatal(err)
-			}
-			original.Endpoint = proxy.URL
-			// Forwarding retains the real endpoint separately from the private fixture's
-			// selected endpoint, so credentials never enter a query string or log.
-			if err := writeRecoveryJSON(filepath.Join(root, "desktop-client", "device.json"), original); err != nil {
-				t.Fatal(err)
-			}
+			// Pair through the proxy from the beginning so the original credential
+			// and its independent commitment are never rewritten for fault injection.
+			root, original := desktopFixtureEndpoint(t, func(root string, endpoint server.Endpoint) {
+				realEndpoint = endpoint.URL
+				endpoint.URL = proxy.URL
+				if err := writeRecoveryJSON(filepath.Join(root, "server.json"), endpoint); err != nil {
+					t.Fatal(err)
+				}
+			})
+			revokeDesktop(t, root, original)
+			capture.Store(true)
 			request := domain.NewID()
 			args := recoveryArgs(original, request)
 			if code, _ := cliRun(t, root, args, ""); code == 0 {

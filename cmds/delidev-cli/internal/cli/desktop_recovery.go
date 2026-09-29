@@ -66,6 +66,45 @@ type desktopRecovery struct {
 	Replacement [3]string            `json:"replacement"`
 }
 
+type desktopCredentialCommitment struct {
+	Version int    `json:"version"`
+	Digest  string `json:"digest"`
+}
+
+// Retain the exact credential only after a new local pairing is authenticated.
+// Revocation deletes the server's token verifier, so metadata alone cannot
+// reconstruct this proof for a legacy or damaged credential after revocation.
+func retainDesktopCredential(owner, root string) error {
+	raw, digest, err := desktopFile(root, "device.json")
+	clear(raw)
+	if err != nil {
+		return err
+	}
+	if digest == "" {
+		return recoveryRequired()
+	}
+	path := filepath.Join(owner, "desktop-registration.json")
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		return verifyOriginalDesktopCredential(owner, digest)
+	}
+	return writeRecoveryJSON(path, desktopCredentialCommitment{Version: 1, Digest: digest})
+}
+
+func verifyOriginalDesktopCredential(owner, digest string) error {
+	raw, err := security.ReadPrivate(filepath.Join(owner, "desktop-registration.json"), 4096)
+	if errors.Is(err, os.ErrNotExist) {
+		return recoveryRequired()
+	}
+	if err != nil {
+		return err
+	}
+	var commitment desktopCredentialCommitment
+	if domain.Decode(raw, &commitment) != nil || commitment.Version != 1 || digest == "" || commitment.Digest != digest {
+		return recoveryRequired()
+	}
+	return nil
+}
+
 func recoveryRequired() error {
 	return domain.Fail(domain.RecoveryRequired, "The original desktop recovery evidence is unavailable or changed.", "Preserve the original registration and private recovery files; do not reset the server.")
 }
@@ -317,6 +356,16 @@ func desktopRecoveryCommand(ctx context.Context, o options, args []string) (any,
 		}
 		state := desktopAuthorized
 		if device.Revoked {
+			if record == nil {
+				raw, digest, err := desktopFile(root, "device.json")
+				clear(raw)
+				if err != nil {
+					return nil, err
+				}
+				if err := verifyOriginalDesktopCredential(o.dataDir, digest); err != nil {
+					return nil, err
+				}
+			}
 			state = desktopRevoked
 		} else if err := verifyDesktopCredential(ctx, o, saved); err != nil {
 			return nil, err
@@ -382,6 +431,11 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 		}
 		if record != nil && hashes != record.Replacement {
 			return nil, recoveryRequired()
+		}
+		if record == nil {
+			if err := verifyOriginalDesktopCredential(o.dataDir, hashes[0]); err != nil {
+				return nil, err
+			}
 		}
 		record = &desktopRecovery{Version: 1, RequestID: o.requestID, ServerID: serverID, Endpoint: c.endpoint, DeviceID: id, Revision: revision, Phase: recoveryPrepared, Original: hashes}
 		if err := writeRecoveryJSON(filepath.Join(o.dataDir, "desktop-recovery.json"), record); err != nil {

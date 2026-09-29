@@ -157,5 +157,13 @@ func pairLocalDevice(ctx context.Context, o options, root string, kind domain.De
 	if err != nil {
 		return nil, err
 	}
+	if kind == domain.ClientDevice && recoveryLock != nil {
+		if err := verifyDesktopCredential(ctx, o, credential); err != nil {
+			return nil, err
+		}
+		if err := retainDesktopCredential(o.dataDir, root); err != nil {
+			return nil, err
+		}
+	}
 	return credentialMetadata(credential), nil
 }

@@ -2208,3 +2208,9 @@ native pointer/keyboard behavior and the 960×640, 1,099/1,100/1,101-wide, and
 also untested. Component coverage is not counted as native visual evidence. No
 Rust, RPC, schema, or generated source changed; generated `dist` output is
 removed from the worktree.
+
+## 2026-09-29: PR #1060 credential provenance repair
+
+- Merged current main while retaining both desktop recovery and sidebar validation records. The merged desktop frontend passed its full `pnpm test` command.
+- Added an independently retained credential commitment after fresh authenticated fixed-scope pairing. Revoked inspection and initial recovery reject altered tokens or pairing IDs and missing/damaged commitments before intent creation; completed recovery receipts continue to bind subsequent replacement credentials. Legacy already-revoked scopes without either original proof remain explicitly unsupported for replacement.
+- Temporary-server regression tests reproduce the previous acceptance of fabricated revoked credentials and verify rejection without modifying the credential files or registering another device. Lost-response fixtures now pair through their proxy from the outset instead of modifying original credential evidence. Focused recovery/local-pairing race tests passed.
