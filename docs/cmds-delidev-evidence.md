@@ -73,10 +73,27 @@ deadline; an isolated rerun also fails a workspace file observation deadline.
 The same isolated Git-diff fixture also fails on the unchanged base revision
 `b741cec88d68ba84eaf918bbee22ca28bff57ec6` with retained workspace recovery
 required under concurrent host test load. No full-suite pass is claimed while
-the remaining package run is unfinished. Required generated embedded assets were built for
-the root commit hook; generated repository-owned `dist` output is removed after
+the remaining workspace package run is unfinished. The same full race run also
+records Grok native-fixture initialization failures, 20-minute Grok and server
+package cutoffs, and a Worker stream-termination native-cleanup deadline failure.
+Those observations are retained separately from the passing focused forwarding
+fixtures; they are not all established as baseline failures. Required generated
+embedded assets were built for the root commit hook; generated repository-owned
+`dist` output is removed after
 validation. These temporary loopback fixtures do not establish remote TLS,
 real-account/provider, supported native desktop or release acceptance.
+
+The first [Windows CI job](https://github.com/delinoio/oss/actions/runs/36626637271/job/109605298701)
+on `6495ca6efe6f598137f5675361e503635697d213` exposed a Unix-only permission-bit
+assertion in the cleanup-journal test. The test now uses `security.RegularPrivate`,
+which checks Unix owner-only permissions or the current user's Windows DACL
+instead of interpreting Windows mode bits as ACL evidence. The complete
+forwarding and security package race tests and focused Go vet pass locally after
+this correction. The forwarding test binary also cross-compiles for Windows
+amd64; native Windows execution of the correction remains pending CI.
+The same job independently failed to download `golang.org/x/net@v0.58.0` from the
+Go module proxy with an HTTP/2 `INTERNAL_ERROR`. The new CI run retries that
+transport failure without changing dependency versions.
 
 ## Native interface discovery (not execution validation)
 - Installed read-only version/help checks: Codex CLI `0.151.0`, Claude Code `2.1.236`, OpenCode `1.18.20`. No `grok` executable was found on this machine. No user credential files were read and no inference was invoked by these checks.

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -42,7 +43,7 @@ func TestPrivateCleanupRequiresOriginalJoinedEvidence(t *testing.T) {
 	if json.Unmarshal(raw, &observed) != nil || !observed.Clean || observed.ReportID != journal.ReportID {
 		t.Fatal("positive closure changed original receipt")
 	}
-	if info, err := os.Stat(cleanupPath(c, c.Peer)); err != nil || info.Mode().Perm()&0077 != 0 {
+	if err := security.RegularPrivate(cleanupPath(c, c.Peer)); err != nil {
 		t.Fatal("private proof permissions", err)
 	}
 	wrong.Peer = &pb.ForwardPeer{ForwardId: string(domain.NewID()), SessionId: c.Peer.SessionId, RuntimeId: c.Peer.RuntimeId}
