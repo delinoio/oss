@@ -41,7 +41,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line
 .sidebar-new-session { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; height: 36px; min-height: 36px; padding: 5px 9px; border-color: #d5d9e0; border-radius: 7px; background: #fff; font-size: 13px; font-weight: 550; }
 .sidebar-new-session .sidebar-icon { width: 16px; height: 16px; }
 .sidebar-new-session[aria-current="page"] { border-color: #b5cbed; background: #edf4ff; color: #174da8; }
-.sidebar-session-title-state { flex: 0 0 auto; max-width: 98px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-session-title-state { min-width: 0; flex: 0 1 auto; max-width: 132px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .session-title-status { color: var(--muted); font-size: 12px; }
 .sidebar-list { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 1px 8px 0; }
 .sidebar-projects-heading { min-height: 30px; gap: 4px; }

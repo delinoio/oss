@@ -6,7 +6,7 @@ import { EntityKind, ResourceQuery, SessionQuery, SystemQuery, type Resource } f
 import { document, resourceName, text, Workspace, workspaceNames } from "./documents";
 import { Surface } from "./views";
 import { SettingsEntryDestination } from "./settings";
-import { sessionTitleLabel } from "./session-title";
+import { sessionTitlePresentation } from "./session-title";
 
 enum ExecutionStatus {
   NotStarted = "not-started",
@@ -114,8 +114,11 @@ function SessionRow({ row, selected, open }: { row: Resource; selected: boolean;
   const outcome = text(data.outcome);
   const archive = text(data.archive);
   const workspace = workspaceLabel(text(data.workspace));
-  const titleState = sessionTitleLabel(data);
-  const description = `Session: ${workspace} ${title}. Execution state: ${executionLabel(outcome)}. Archive state: ${archiveLabel(archive)}. Workspace: ${workspace}.${titleState ? ` ${titleState}.` : ""}`;
+  const titlePresentation = sessionTitlePresentation(data);
+  const titleState = titlePresentation?.label;
+  const titleStateDescription = titlePresentation ? [titleState, titlePresentation.detail].filter(Boolean).join(". ") : "";
+  const titleStateSummary = titlePresentation ? [titleState?.replace(/^Title /, "").replace(/^[a-z]/, (letter) => letter.toUpperCase()), titlePresentation.shortDetail].filter(Boolean).join(" · ") : "";
+  const description = `Session: ${workspace} ${title}. Execution state: ${executionLabel(outcome)}. Archive state: ${archiveLabel(archive)}. Workspace: ${workspace}.${titleStateDescription ? ` ${titleStateDescription}.` : ""}`;
   const showTooltip = () => {
     const rect = element.current?.getBoundingClientRect();
     if (!rect) return;
@@ -136,7 +139,7 @@ function SessionRow({ row, selected, open }: { row: Resource; selected: boolean;
     <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={showTooltip} onPointerLeave={() => setTooltip(undefined)} onFocus={showTooltip} onBlur={() => setTooltip(undefined)} onClick={() => open(row.id)}>
       <Icon name={workspaceIcon} className="sidebar-workspace-icon" />
       <span className="sidebar-session-title">{title}</span>
-      {titleState ? <span className="sidebar-session-title-state">{titleState.replace(/^Title /, "")}</span> : null}
+      {titleStateSummary ? <span className="sidebar-session-title-state" title={titlePresentation?.detail}>{titleStateSummary}</span> : null}
       <StatusGlyph outcome={outcome} archive={archive} />
     </button>
     <span className="sidebar-sr-only" id={tooltipId}>{description}</span>

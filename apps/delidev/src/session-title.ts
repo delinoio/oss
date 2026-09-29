@@ -34,7 +34,19 @@ const reasons: Record<string, string> = {
   "manual-rename": "A manual rename now owns this title.",
 };
 
-export function sessionTitlePresentation(value: unknown): { label: string; detail?: string } | undefined {
+const shortReasons: Record<string, string> = {
+  "unsupported-agent-profile": "Agent profile",
+  "worker-capability-absent": "Worker capability",
+  "budget-reached": "Budget reached",
+  canceled: "Canceled",
+  "authority-lost": "Authority lost",
+  "invalid-output": "Invalid output",
+  "inference-failed": "Inference failed",
+  "cleanup-uncertain": "Cleanup uncertain",
+  "manual-rename": "Manual rename",
+};
+
+export function sessionTitlePresentation(value: unknown): { label: string; detail?: string; shortDetail?: string } | undefined {
   const data = object(value);
   if (data.name_mode !== "automatic") return undefined;
   const state = text(data.title_state);
@@ -42,7 +54,11 @@ export function sessionTitlePresentation(value: unknown): { label: string; detai
     return { label: state ? `Unknown title state (${state})` : "Title state unavailable" };
   }
   const reason = text(data.title_reason);
-  return { label: labels[state as SessionTitleState], detail: reasons[reason] ?? (reason ? `Unknown title reason (${reason})` : undefined) };
+  return {
+    label: labels[state as SessionTitleState],
+    detail: reasons[reason] ?? (reason ? `Unknown title reason (${reason})` : undefined),
+    shortDetail: reason ? shortReasons[reason] ?? "Other reason" : undefined,
+  };
 }
 
 export function sessionTitleLabel(value: Document): string | undefined {
