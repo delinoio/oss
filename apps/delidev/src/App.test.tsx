@@ -16,7 +16,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = []) {
   const enqueues = vi.fn(async () => ({ change: { session } }));
   const controls = vi.fn(async () => ({ change: { session } }));
   const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1 }));
-  const githubQuery = vi.fn(async () => ({ schemaVersion: 1, documentJson: encode({}) }));
+  const githubQuery = vi.fn(async (_request: { queryJson: Uint8Array }) => ({ schemaVersion: 1, documentJson: encode({}) }));
   const preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status });
@@ -294,6 +294,29 @@ it("opens the PR shortcut in Repositories without reading GitHub until the repos
   expect(value.githubQuery).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
   await waitFor(() => expect(value.githubQuery).toHaveBeenCalledTimes(1));
+});
+
+it("keeps the repository GitHub browser open with its filters when changing settings categories", async () => {
+  const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository", integration_id: newRequestId(), github_owner: "owner", github_name: "repo" }) });
+  const value = fixture([], [repository]);
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Browse GitHub items" }));
+  fireEvent.change(screen.getByLabelText("GitHub item type"), { target: { value: "issue" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Search title and body" }), { target: { value: "retain this filter" } });
+
+  fireEvent.click(screen.getByRole("button", { name: "Models" }));
+  await screen.findByRole("heading", { name: "Models" });
+  fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+
+  expect((screen.getByLabelText("GitHub item type") as HTMLSelectElement).value).toBe("issue");
+  expect((screen.getByRole("textbox", { name: "Search title and body" }) as HTMLInputElement).value).toBe("retain this filter");
+  expect(screen.getByRole("button", { name: "Close GitHub items" }).getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Read GitHub items" }));
+  await waitFor(() => {
+    const queryJson = value.githubQuery.mock.calls.at(-1)?.[0].queryJson;
+    expect(queryJson && JSON.parse(new TextDecoder().decode(queryJson))).toEqual({ kind: "issue", operation: "search", state: "open", page: 1, page_size: 20, search: "retain this filter" });
+  });
 });
 
 it("defers the PR entry while a parent configuration editor draft is open", async () => {

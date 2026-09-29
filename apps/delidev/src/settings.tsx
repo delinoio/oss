@@ -4,7 +4,7 @@ import { Integrations } from "./integrations";
 import { ConfigurationTransfer } from "./configuration-transfer";
 import { ModelPricing } from "./pricing";
 import { NotificationSettings } from "./notification-settings";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { ConfigurationQuery, EntityKind, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -99,7 +99,8 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
 export function Settings({ close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }) {
   const [selectedCategory, setSelectedCategory] = useState(SettingsCategory.Providers);
   const [device, setDevice] = useState<Resource>();
-  const [page, setPage] = useState("");
+  const [pages, setPages] = useState<Partial<Record<SettingsCategory, string>>>({});
+  const cachedResources = useRef<Partial<Record<SettingsCategory, Resource[]>>>({});
   const [editing, setEditing] = useState<{ initial?: Resource; key: string }>();
   const [machine, setMachine] = useState<Resource>();
   const [deleting, setDeleting] = useState<Resource>();
@@ -111,11 +112,16 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   const selected = settingsCategories[selectedCategory];
   const area = selected.area;
   const kind = selected.kind ?? EntityKind.PROVIDER;
+  const page = pages[selectedCategory] ?? "";
   const categoryDescription = kind === EntityKind.DEVICE
     ? "Pair devices using a short-lived document. Local Worker registration is available in Execution Workers."
     : kind === EntityKind.MACHINE && !controlLocalWorker ? "Configure these entries through the DeliDev CLI."
     : selected.description;
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration });
+  useEffect(() => {
+    if (area !== SettingsArea.Configuration || !result.data || result.isPending || result.data.resources.some((resource) => resource.kind !== kind)) return;
+    cachedResources.current[selectedCategory] = result.data.resources;
+  }, [area, kind, result.data, result.isPending, selectedCategory]);
   const reportChildWorkflow = useCallback((workflow: SettingsWorkflow, active: boolean) => setChildWorkflows((current) => {
     if (current.has(workflow) === active) return current;
     const next = new Set(current);
@@ -134,14 +140,47 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   useEffect(() => {
     if (!visible || entryDestination !== SettingsEntryDestination.Repositories || workflowProtected) return;
     setSelectedCategory(SettingsCategory.Repositories);
-    setPage("");
+    setPages((current) => ({ ...current, [SettingsCategory.Repositories]: "" }));
     destinationConsumed?.();
   }, [destinationConsumed, entryDestination, visible, workflowProtected]);
   const chooseCategory = (category: SettingsCategory) => {
     setSelectedCategory(category);
-    if (settingsCategories[category].area === SettingsArea.Configuration) setPage("");
   };
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
+  const renderResource = (row: Resource, rowKind: EntityKind, active: boolean) => {
+    const data = document(row);
+    return <article className="result" key={row.id}>
+      <h3>{rowKind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</h3>
+      {rowKind === EntityKind.DEVICE ? <DeviceDetails resource={row} currentDeviceId={currentDeviceId} /> : null}
+      {text(data.health) ? <p>Status: {text(data.health)}</p> : null}
+      {text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}
+      {rowKind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}
+      <small>{row.id}</small>
+      {rowKind === EntityKind.REPOSITORY ? <><RepositoryGitHubAccess selected={row} active={active} /><RepositoryGitHubItems selected={row} active={active} /></> : null}
+      <div className="actions">
+        {rowKind === EntityKind.DEVICE && data.revoked === false ? <button disabled={row.schemaVersion !== 1} onClick={() => setDevice(row)}>Revoke {resourceName(row)}</button> : null}
+        {editableKinds.includes(rowKind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {rowKind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</button> : null}
+        {editableKinds.includes(rowKind) && rowKind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}>Delete {resourceName(row)}</button> : null}
+        {rowKind === EntityKind.MODEL ? <button disabled={row.schemaVersion !== 1} onClick={() => setPricing(row)}>Token pricing</button> : null}
+        {rowKind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>Preview routing</button> : null}
+        {rowKind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>Inspect installed harnesses</button> : null}
+        {rowKind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}
+      </div>
+    </article>;
+  };
+  const hasDetailWorkflow = Boolean(pricing || device || machine || deleting || routing || editing || account);
+  const configurationPanels = settingsGroups.flatMap((group) => group.categories)
+    .filter((category) => settingsCategories[category].area === SettingsArea.Configuration)
+    .map((category) => {
+      const categoryKind = settingsCategories[category].kind ?? EntityKind.PROVIDER;
+      const resources = category === selectedCategory
+        ? result.data?.resources ?? cachedResources.current[category] ?? []
+        : cachedResources.current[category] ?? [];
+      const active = visible && area === SettingsArea.Configuration && category === selectedCategory && !workflowProtected;
+      return <div className="settings-category-results" key={category} hidden={category !== selectedCategory}>
+        {resources.map((row) => renderResource(row, categoryKind, active))}
+      </div>;
+    });
   return <Modal title="Settings" close={close} visible={visible} layout={ModalLayout.FullWindow}>
     <div className="settings-workspace">
       <aside className="settings-sidebar" aria-label="Settings navigation">
@@ -177,16 +216,17 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
           <div hidden={area !== SettingsArea.Configuration}>
             {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority ? <div hidden={kind !== EntityKind.DEVICE || Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} /></div> : null}
-            {pricing ? <ModelPricing model={pricing} active={visible} close={() => { setPricing(undefined); void result.refetch(); }} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={() => { setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={kind} initial={editing.initial} active={visible} saved={done} cancel={() => setEditing(undefined)} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : <>
+            {pricing ? <ModelPricing model={pricing} active={visible} close={() => { setPricing(undefined); void result.refetch(); }} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={() => { setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={kind} initial={editing.initial} active={visible} saved={done} cancel={() => setEditing(undefined)} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : null}
+            <div hidden={hasDetailWorkflow}>
               {result.isPending && !result.data ? <p role="status">Loading {selected.label.toLowerCase()}…</p> : null}
               <Problem error={result.error} />
               {result.error && result.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded results.</p> : null}
-              {result.data?.resources.map((row) => { const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</h3>{kind === EntityKind.DEVICE ? <DeviceDetails resource={row} currentDeviceId={currentDeviceId} /> : null}{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small>{kind === EntityKind.REPOSITORY ? <><RepositoryGitHubAccess selected={row} active={visible && area === SettingsArea.Configuration} /><RepositoryGitHubItems selected={row} active={visible && area === SettingsArea.Configuration} /></> : null}<div className="actions">{kind === EntityKind.DEVICE && data.revoked === false ? <button disabled={row.schemaVersion !== 1} onClick={() => setDevice(row)}>Revoke {resourceName(row)}</button> : null}{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}>Delete {resourceName(row)}</button> : null}{kind === EntityKind.MODEL ? <button disabled={row.schemaVersion !== 1} onClick={() => setPricing(row)}>Token pricing</button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>Preview routing</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>Inspect installed harnesses</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}</div></article>; })}
+              {configurationPanels}
               {kind === EntityKind.PROVIDER && page === "" && result.data?.resources.length === 0 && !result.error && !result.data.nextPageToken
                 ? <section className="provider-empty" aria-label="No providers yet"><SettingsIcon category={SettingsCategory.Providers} /><h2>No providers yet</h2><p>Add a provider to configure your models and AI accounts.</p></section>
                 : result.data?.resources.length === 0 ? <p>{kind === EntityKind.PROVIDER ? "No providers on this page." : "No saved entries."}</p> : null}
-              {!hidePagination ? <nav className="settings-pages" aria-label="Settings pages"><button type="button" disabled={!page || result.isFetching} onClick={() => setPage("")}>First page</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>Next page</button></nav> : null}
-            </>}
+              {!hidePagination ? <nav className="settings-pages" aria-label="Settings pages"><button type="button" disabled={!page || result.isFetching} onClick={() => setPages((current) => ({ ...current, [selectedCategory]: "" }))}>First page</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPages((current) => ({ ...current, [selectedCategory]: result.data!.nextPageToken }))}>Next page</button></nav> : null}
+            </div>
           </div>
         </div>
       </section>
