@@ -10,6 +10,8 @@ service SystemService {
   rpc StopServer(StopServerRequest) returns (StopServerResponse);
   rpc GetDoctor(GetDoctorRequest) returns (GetDoctorResponse);
   rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse);
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
+  rpc InspectBackup(InspectBackupRequest) returns (InspectBackupResponse);
 }
 service ResourceService {
   rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
@@ -1493,4 +1495,28 @@ message SubmitLocalReviewResponse {
   SessionChange change = 2;
   string request_id = 3;
   bool replayed = 4;
+}
+
+// Metadata does not establish integrity or restoration eligibility.
+message ManagedBackup {
+  string id = 1;
+  uint64 size_bytes = 2;
+  string modified_at = 3;
+}
+message ListBackupsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+message ListBackupsResponse {
+  repeated ManagedBackup backups = 1;
+  string next_page_token = 2;
+}
+message InspectBackupRequest {
+  string id = 1;
+}
+message InspectBackupResponse {
+  ManagedBackup backup = 1;
+  string sha256 = 2;
+  uint32 schema_version = 3;
+  string server_id = 4;
 }

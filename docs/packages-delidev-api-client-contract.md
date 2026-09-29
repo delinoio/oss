@@ -103,3 +103,7 @@ The generated PR collection kind enum adds independent CI/conflict reads while o
 
 
 IntegrationQuery also exports generated ListPullRequestRemediationAttempts and ResumePullRequestRemediation bindings. Callers preserve exact stable numeric strings and original set/request/revision identity; paginated history and explicit allowance resumption cannot infer execution authority or perform implicit mutation retries. These methods share the existing authenticated direct Connect transport and require no new client persistence or environment configuration.
+
+### Managed database backup observation
+
+SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and remaining restoration/deletion work.

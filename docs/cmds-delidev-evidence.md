@@ -3,7 +3,7 @@
 Issue #964 is preserved in full in [requirements](cmds-delidev-requirements.md). This ledger distinguishes code, deterministic tests, and actual external/native evidence. It is not a reduction of the requirements.
 
 ## Current implementation work
-The desktop/CLI/server/Worker implementation is in progress. At the owner’s request on 2026-09-28, this branch stops feature expansion at the private native PR workspace-matching increment and moves to pull-request iteration. This is a partial implementation checkpoint, not completion or closure of issue #964. No release or complete real-account harness integration claim is made; bounded native evidence is recorded separately below.
+The desktop/CLI/server/Worker implementation is in progress. The 2026-09-28 partial checkpoint was merged in PR #1041. On 2026-09-29 the owner requested implementation of the full remaining plan, including CEF desktop migration, while keeping real account/private-GitHub and platform distribution validation deferred. Completion work is active; the historical checkpoint is preserved below and is not a claim that the requirements are complete. No release or complete real-account harness integration claim is made; bounded native evidence is recorded separately below.
 
 | Boundary | Implementation | Verification |
 | --- | --- | --- |
@@ -2157,3 +2157,9 @@ and parent directory with internal links, and separately verify nested preview
 and listing behavior. Focused workspace race tests and vet pass on macOS arm64;
 the workspace test package cross-compiles for Windows amd64. This fixture does
 not establish live Windows link-race behavior or make user-owned files atomic.
+
+### Managed database backup observation (2026-09-29)
+
+Owner/client SystemService, CLI and Settings > Backups now expose bounded metadata pagination and explicit source-preserving image inspection alongside existing creation. Inspection copies an opened identity-checked image into private scratch storage, validates its SQLite integrity/schema and original server identity, hashes the inspected bytes and rechecks source identity and current client authority. This does not yet implement database restore, backup deletion, session deletion or workspace snapshots.
+
+Focused real SQLite/Connect/CLI race tests pass (store 3.751s, server 2.258s, CLI 2.532s). They cover committed WAL images, unchanged source/hash after later live writes, corrupt/foreign/missing/symlink/sidecar rejection, cancellation, scratch cleanup, pagination invalidation and Worker/revoked-client denial. Desktop `pnpm test` passes 68 files / 795 tests, type checking and production build. API-client tests pass 3 files / 41 tests. A first UI assertion incorrectly expected the untrusted raw Connect error text; the corrected assertion checks the sanitized alert and removal of stale success. Complete Go race/vet and protocol validation are tracked separately as they finish. No real account, native OS delivery or distribution evidence is claimed.

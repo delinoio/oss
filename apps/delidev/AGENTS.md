@@ -1,5 +1,8 @@
 # DeliDev CLI
 
+- DeliDev managed backup operations follow `docs/cmds-delidev-storage-contract.md`. Keep owner/client-only authorization, bounded metadata pagination, exact creation retries and source-preserving integrity inspection. Inspection must read an identity-checked private copy, reject sidecars/foreign server identity, recheck authorization after I/O and never imply restoration or credential/Worker recovery. Preserve exact byte counts and clear stale success after failed reinspection.
+
+
 - Session Diff uses authenticated Connect Query on the selected prepared repository, with distinct current HEAD, staged and Worktree creation comparisons. Validate complete scoped observations before rendering inert patches; expose untracked files, Gitlink-only submodules, unborn roots and stale/error state truthfully. Preserve the composer and focus across Files/Diff navigation, discard inactive caches, and never infer line review, patch application or execution actions.
 
 - Append newly created live transcript messages and interactions on their last loaded pages in authenticated stream delivery order, even when a replacement Worker's UUID sorts earlier than the page. Keep earlier pages bounded, suppress duplicates and removals, and scope every appended resource to its session; UUID ordering is not a live append clock.

@@ -309,3 +309,7 @@ The collection request's closed kind enum separates published feedback, required
 
 
 IntegrationService adds owner/client-only ListPullRequestRemediationAttempts and ResumePullRequestRemediation. List takes exact stable remote repository/PR numeric strings, page size and opaque cursor; returns the retained problem set, original attempt resources and next cursor. Resume takes a Mutation targeting the original set revision and returns the current set plus request ID/replayed flag. These operations never accept remote evidence or execution commands; follow the integration contract for history fingerprint bounds and explicit baseline-only resumption. Regenerate both Go and TypeScript/Connect Query sources from the canonical schema.
+
+### Managed database backup observation
+
+SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and remaining restoration/deletion work.

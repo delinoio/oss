@@ -3,7 +3,7 @@
 ## Goal
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 is normative; the historical web platform in #722 is not inherited.
 
-The owner requested a pull-request checkpoint on 2026-09-28 after the private native PR workspace-matching increment. Feature expansion is paused for iteration on that partial implementation; the complete issue remains open. Current verification and deferred acceptance are recorded in the [evidence ledger](cmds-delidev-evidence.md).
+The 2026-09-28 partial implementation checkpoint was merged in PR #1041. On 2026-09-29 the owner resumed completion of all missing desktop/CLI/server/Worker features and automated tests, while keeping actual account/private-GitHub and platform distribution acceptance deferred. The owner selected the existing pinned Tauri CEF runtime for the desktop, preserving macOS 13 support; that migration is part of the remaining implementation. Current verification and deferred acceptance are recorded in the [evidence ledger](cmds-delidev-evidence.md).
 
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its standalone/sidecar executable is `delidev`.
@@ -16,6 +16,7 @@ The owner requested a pull-request checkpoint on 2026-09-28 after the private na
 - `apps/delidev`: implemented React presentation for retained sessions, search, activity, bounded exact-response usage summaries with historical cost estimates and model pricing forms and optional session budgets, inbox, question/approval responses, queue actions, editable provider/model/account/agent/instruction/project/repository settings, explicit account connection/validation/catalog refresh, Worker checkout inspection, configuration deletion, read-only routing previews, Worker harness discovery, paired-device authorization/revocation and private single-use grant issuance, bounded read-only storage/Worker/protected-reference diagnostics, singleton routing/fetch preferences, schedule lifecycle/history, paginated session creation, native same-server Local Worker proof, explicit local Worker registration/controller lifecycle and explicit preparation/execution recovery; the native Tauri/Wry host opens separate pinned saved-server windows and starts/reuses and supervises a bundled Go server with durable explicit-stop coordination and a separate paired client. Native tray and client-specific reserved inbox notifications are implemented with current-source navigation, explicit permission settings and separate platform evidence requirements. Remaining desktop surfaces and multi-platform acceptance are in progress. On 2026-09-25 the owner explicitly expanded the active request to all of issue #964, including the desktop app; CLI-only acceptance is no longer the completion boundary.
 
 ## Domain Contract Documents
+- [Storage operations](cmds-delidev-storage-contract.md)
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Protocol contract](protos-delidev-v1-contract.md)

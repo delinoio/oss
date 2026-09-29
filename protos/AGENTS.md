@@ -1,5 +1,8 @@
 ### Instructions for `protos/`
 
+- DeliDev managed backup operations follow `docs/cmds-delidev-storage-contract.md`. Keep owner/client-only authorization, bounded metadata pagination, exact creation retries and source-preserving integrity inspection. Inspection must read an identity-checked private copy, reject sidecars/foreign server identity, recheck authorization after I/O and never imply restoration or credential/Worker recovery. Preserve exact byte counts and clear stale success after failed reinspection.
+
+
 - DeliDev ConfigurationService export/preview/apply follows `docs/cmds-delidev-configuration-transfer-contract.md`. Versioned bounded JSON excludes credentials and runtime evidence. Signed previews bind actor/server/exact before/after plan; import mutation receipts are reference-only and never replay side effects. Worker credentials cannot invoke these owner/client operations.
 
 - DeliDev `ReadSessionWorkspace` is owner/client-only. `WatchWorkspaceReads`/`ReportWorkspaceRead` are current owning-Worker-only observation APIs bound to the primary stream; they never claim durable jobs, refresh execution leases, create receipts or persist file bodies. Preserve the closed query/result schemas, exact relative-root selection, per-machine bound, deadline and late/duplicate/foreign result rejection in `docs/cmds-delidev-files-contract.md`.
