@@ -3237,3 +3237,12 @@ regeneration/freshness pass, and the generated API-client build passes; its dist
 is generated verification output and is removed before delivery. The complete
 serialized race rerun still hits the existing CLI live-diff deadline; a clean
 origin/main fixture comparison and final package results remain pending.
+
+The baseline comparison uses a clean archive of freshly fetched `origin/main`
+`b741cec88d68ba84eaf918bbee22ca28bff57ec6` and no user credentials. Its focused
+`TestCLISessionAcceptanceQueueAndArchive` fails at the same `session diff
+--comparison creation` unavailable/deadline boundary (75.013s), confirming that
+failure predates this change. This comparison does not waive full-suite or CI
+validation. The latest complete Go vet passes and generated client dist has been
+removed. PR #1116 reports the full race limitation explicitly; five-minute
+maintenance is registered as `maintain-delidev-pr-1116`.
