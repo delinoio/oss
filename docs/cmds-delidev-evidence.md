@@ -2177,3 +2177,24 @@ accessibility/screenshot request for the running DeliDev window timed out, so
 this records native startup but does not claim a captured native viewport or
 visual screenshot acceptance. No Rust, protocol or generated source changed;
 the app's generated `dist` output is removed from the worktree.
+
+### Issue #1054 sidebar project creation and query retries (2026-09-29)
+
+The Projects header now uses an icon-only New project action that opens the
+existing Settings editor, preserves protected and uncertain drafts, and returns
+through the existing save invalidation path. Each failed project, global-session,
+and expanded project-session query retries only its current page. The full
+`apps/delidev` `pnpm test` command passes on macOS arm64: 68 test files / 810
+tests, TypeScript type-checking, API-client generation/build, and the Rsbuild
+production build. Tests cover fresh and deferred entry, draft/request identity,
+exact query pages, and active-page invalidation after save.
+
+The native Tauri desktop binary built and launched on macOS arm64 with a private
+temporary data directory. The observed window remained at the local-server
+connection screen; the fixed `127.0.0.1:46310` listener belonged to another
+worktree, so it was not used. The Projects sidebar was therefore not reached:
+native pointer/keyboard behavior and the 960×640, 1,099/1,100/1,101-wide, and
+1,440×900 viewports remain unverified. Windows and Linux native acceptance is
+also untested. Component coverage is not counted as native visual evidence. No
+Rust, RPC, schema, or generated source changed; generated `dist` output is
+removed from the worktree.

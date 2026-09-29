@@ -36,13 +36,16 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line
 .sidebar-header { min-height: 34px; gap: 8px; }
 .sidebar-header h1 { margin: 0; font-size: 18px; line-height: 1.2; letter-spacing: -.025em; font-weight: 650; }
 .sidebar-header-actions { display: flex; gap: 2px; }
-.sidebar-header-button, .sidebar-refresh { display: grid; place-items: center; width: 34px; height: 34px; min-width: 34px; min-height: 34px; padding: 0; border-color: transparent; background: transparent; color: #5b6577; }
-.sidebar-header-button .sidebar-icon, .sidebar-refresh .sidebar-icon { width: 18px; height: 18px; }
+.sidebar-header-button { display: grid; place-items: center; width: 34px; height: 34px; min-width: 34px; min-height: 34px; padding: 0; border-color: transparent; background: transparent; color: #5b6577; }
+.sidebar-header-button .sidebar-icon { width: 18px; height: 18px; }
 .sidebar-new-session { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; height: 36px; min-height: 36px; padding: 5px 9px; border-color: #d5d9e0; border-radius: 7px; background: #fff; font-size: 13px; font-weight: 550; }
 .sidebar-new-session .sidebar-icon { width: 16px; height: 16px; }
 .sidebar-list { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 1px 8px 0; }
 .sidebar-projects-heading { min-height: 30px; gap: 4px; }
 .sidebar-projects-heading h2 { margin: 0; color: #697386; font-size: 11px; line-height: 1.2; letter-spacing: .07em; text-transform: uppercase; font-weight: 650; }
+.sidebar-new-project-button { display: grid; place-items: center; width: 34px; height: 34px; min-width: 34px; min-height: 34px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #5b6577; }
+.sidebar-new-project-button:hover { background: #eceef1; }
+.sidebar-new-project-button .sidebar-icon { width: 16px; height: 16px; }
 .sidebar-archived-filter { display: flex; align-items: center; gap: 7px; min-height: 30px; margin: 1px 0 5px; color: #535e70; font-size: 12px; font-weight: 450; }
 .sidebar-archived-filter input { width: 14px; height: 14px; margin: 0; accent-color: #6f7784; }
 .sidebar-project-group { min-width: 0; }
@@ -69,7 +72,9 @@ button.sidebar-project-row:hover { background: #eceef1; }
 .sidebar-general-chat-heading .sidebar-project-title { flex: 1; }
 .sidebar-empty, .sidebar-query-state, .sidebar-query-problem { margin: 4px 6px 7px 30px; color: #697386; font-size: 11px; line-height: 1.4; }
 .sidebar-query-state { color: #697386; }
-.sidebar-query-problem { color: #8b3d24; }
+.sidebar-query-problem { display: flex; align-items: flex-start; gap: 5px; color: #8b3d24; }
+.sidebar-query-problem > span { min-width: 0; overflow-wrap: anywhere; }
+.sidebar-query-problem button { flex: 0 0 auto; min-height: 24px; padding: 2px 6px; border-color: transparent; background: transparent; color: #8b3d24; font-size: 10px; }
 .sidebar-group-pager, .sidebar-global-pager, .sidebar-project-pager { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 2px 7px 25px; }
 .sidebar-global-pager, .sidebar-project-pager { padding-left: 4px; }
 .sidebar-group-pager button, .sidebar-global-pager button, .sidebar-project-pager button { min-height: 26px; padding: 3px 6px; border-color: transparent; background: transparent; color: #596475; font-size: 10px; }
@@ -77,6 +82,7 @@ button.sidebar-project-row:hover { background: #eceef1; }
 .sidebar-footer p { margin: 0 0 5px; color: var(--muted); font-size: 11px; }
 .sidebar-footer button { max-width: 100%; }
 .sidebar-session-tooltip { position: fixed; z-index: 1000; width: max-content; max-width: min(320px, calc(100vw - 16px)); padding: 8px 10px; border: 1px solid #c9ced6; border-radius: 6px; background: #202632; color: white; box-shadow: 0 3px 12px #20263233; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; pointer-events: none; }
+.sidebar-action-tooltip { position: fixed; z-index: 1000; max-width: min(120px, calc(100vw - 16px)); padding: 6px 9px; border: 1px solid #c9ced6; border-radius: 6px; background: #202632; color: white; box-shadow: 0 3px 12px #20263233; font-size: 12px; line-height: 1.3; white-space: nowrap; pointer-events: none; }
 .sidebar-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 main { min-width: 0; overflow: auto; }
 .session-container { height: 100%; }
