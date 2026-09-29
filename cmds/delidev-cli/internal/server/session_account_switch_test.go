@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -140,7 +141,7 @@ func TestStoppedAccountSwitchRetainsHistoryAndRequiresExplicitResume(t *testing.
 }
 
 func TestAccountSwitchRejectsUncertainOrIneligibleSelectionsAtomically(t *testing.T) {
-	for _, scenario := range []string{"active", "unknown-history", "account-bound", "cleanup", "stale", "disabled-B", "outside-snapshot", "provider-off", "archived", "unconfirmed", "worker", "project-restricted", "title-uncertain"} {
+	for _, scenario := range []string{"active", "unknown-history", "account-bound", "cleanup", "stale", "disabled-B", "outside-snapshot", "provider-off", "archived", "unconfirmed", "worker", "project-restricted", "title-uncertain", "contradictory-terminal"} {
 		t.Run(scenario, func(t *testing.T) {
 			mode, settle := domain.FullNativeHistory, true
 			if scenario == "active" {
@@ -179,13 +180,15 @@ func TestAccountSwitchRejectsUncertainOrIneligibleSelectionsAtomically(t *testin
 					t.Fatal(err)
 				}
 			}
-			if scenario == "cleanup" || scenario == "archived" || scenario == "unconfirmed" || scenario == "project-restricted" || scenario == "title-uncertain" {
+			if scenario == "cleanup" || scenario == "archived" || scenario == "unconfirmed" || scenario == "project-restricted" || scenario == "title-uncertain" || scenario == "contradictory-terminal" {
 				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.unsafe-selection", nil, func(tx *store.Tx) (any, error) {
 					sr, session, err := sessionRecord(tx, f.input.SessionID)
 					if err != nil {
 						return nil, err
 					}
 					switch scenario {
+					case "contradictory-terminal":
+						session.Outcome = domain.ExecutionRunning
 					case "cleanup":
 						session.Execution.CleanupVerified = false
 					case "archived":
@@ -227,5 +230,53 @@ func TestAccountSwitchRejectsUncertainOrIneligibleSelectionsAtomically(t *testin
 				t.Fatal("rejected selection changed session history")
 			}
 		})
+	}
+}
+
+func TestAccountSwitchKeepsMeasuredUsageOnItsOriginalExecution(t *testing.T) {
+	f, b, _ := accountSwitchFixture(t, domain.FullNativeHistory, false)
+	ctx := context.Background()
+	client := sessionClient(f.accountFixture)
+	observe := func(digest string) domain.ID {
+		t.Helper()
+		id := domain.NewID()
+		counts := reportedCounts(20)
+		event := domain.ExecutionEvent{Version: 1, ExecutionID: f.input.ExecutionID, Sequence: 3, Kind: domain.ExecutionResponseUsageObserved, NativeThreadID: string(f.thread), NativeTurnID: string(f.turn), ObservationID: id, ResponseUsage: &domain.NativeResponseUsage{ResponseDigest: digest, Counts: &counts, CostEvidence: domain.UsageCostMissing}}
+		raw, _ := json.Marshal(event)
+		_, err := f.workerClient.PublishExecution(ctx, ownerRequest(f.workerIdentity, &pb.PublishExecutionRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, EventJson: raw}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	finish := func(outcome domain.ExecutionOutcome) {
+		t.Helper()
+		f.publish(t, domain.ExecutionTurnFinished, 4, outcome)
+		completion := domain.ExecutionCompletion{Version: 2, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, NativeThreadID: domain.NativeIdentity(f.thread), NativeTurnID: domain.NativeIdentity(f.turn), LastSequence: 4, Outcome: outcome, CleanupVerified: true, NativeCheckpointDigest: strings.Repeat("ab", 32)}
+		raw, _ := json.Marshal(completion)
+		_, err := f.workerClient.ReportWork(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: raw}))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	aID, aExecution := f.input.AccountID, f.input.ExecutionID
+	aUsage := observe(strings.Repeat("a", 64))
+	finish(domain.ExecutionStopped)
+	if _, err := client.SwitchSessionAccount(ctx, ownerRequest(f.identity, switchRequest(f, b, t))); err != nil {
+		t.Fatal(err)
+	}
+	f.enqueue(t, "B measured response", domain.ExecuteMode)
+	f.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
+	f.claim(t)
+	f.grant(t)
+	f.publish(t, domain.ExecutionThreadBound, 1, "")
+	f.publish(t, domain.ExecutionInputAccepted, 2, "")
+	bUsage := observe(strings.Repeat("b", 64))
+	finish(domain.ExecutionSucceeded)
+	for _, expected := range []struct{ id, account, execution domain.ID }{{aUsage, aID, aExecution}, {bUsage, domain.ID(b.Id), f.input.ExecutionID}} {
+		record, err := f.service.Store.ResponseUsage(ctx, expected.id)
+		if err != nil || record.Record.AccountID != expected.account || record.Record.ExecutionID != expected.execution || *record.Record.Usage.Counts.Total != 20 {
+			t.Fatal("historical usage was relabeled", err)
+		}
 	}
 }

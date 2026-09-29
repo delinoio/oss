@@ -277,3 +277,11 @@ The private Worker observation channel now verifies an existing Local/Worktree s
 Managed backup creation, inventory, integrity inspection and durable permanent image deletion are connected through owner/client Connect RPC, CLI and desktop Settings. Schema v23 retains ordinary jobs/receipts while immutable external deletion intents survive database rollback. This does not complete permanent session deletion, workspace snapshot/restore or managed database restoration; see the [storage contract](cmds-delidev-storage-contract.md).
 
 Local desktop registration now has explicit owner-verified revoked-client recovery and a current-client revocation guard in the app. The CLI/native boundary retains the original revoked identity and private pairing history, uses a separate candidate and exact durable retry, and preserves server sessions/settings and independent Workers. It does not add automatic repair, remote saved-profile recovery, a new RPC or database migration; see the CLI and desktop contracts and evidence ledger.
+
+Explicit stopped Codex API account selection for issue #1097 now spans Go,
+authenticated Connect, CLI and generated clients. Original candidates,
+provider/model, terminal/cleanup and portable-history gates retain all prior
+attribution; new execution requires explicit Resume and a fresh scoped grant.
+Subscription/provider/model switching and automatic fallback remain excluded.
+See the sessions/proxy contracts and evidence ledger for the controlled native
+A-to-B result and unperformed desktop/real-account/platform acceptance.

@@ -145,6 +145,9 @@ func checkedContinuationPredecessor(tx *store.Tx, sr store.Record, session domai
 	if session.InitialExecution == nil || session.Execution == nil || session.ActiveExecutionID != "" || !session.Execution.CleanupVerified || session.Recovery != domain.NoRecovery || session.PendingSteerID != "" {
 		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", continuationConflict()
 	}
+	if (session.Outcome != domain.ExecutionSucceeded && session.Outcome != domain.ExecutionFailed && session.Outcome != domain.ExecutionStopped) || session.Execution.Outcome != session.Outcome {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", continuationConflict()
+	}
 	selected := session.ExecutionSelection()
 	previous, err := tx.SessionExecutionJob(sr.ID, selected.ID)
 	if err != nil {

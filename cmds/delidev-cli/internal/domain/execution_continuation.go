@@ -11,7 +11,7 @@ import (
 // rewrites a completed assignment, its usage, or the original candidate snapshot.
 type SessionAccountChange struct {
 	RequestID         ID        `json:"request_id"`
-	Revision          uint64    `json:"revision"`
+	Revision          uint64    `json:"revision,string"`
 	AfterExecutionID  ID        `json:"after_execution_id"`
 	PreviousAccountID ID        `json:"previous_account_id"`
 	AccountID         ID        `json:"account_id"`

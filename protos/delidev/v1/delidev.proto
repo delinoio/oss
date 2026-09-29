@@ -911,13 +911,6 @@ message ControlSessionRequest {
 message ControlSessionResponse {
   SessionChange change = 1;
 }
-message SwitchSessionAccountRequest {
-  Mutation mutation = 1;
-  string account_id = 2;
-}
-message SwitchSessionAccountResponse {
-  SessionChange change = 1;
-}
 message RenameSessionRequest {
   Mutation mutation = 1;
   string name = 2;
@@ -1726,4 +1719,12 @@ message GetBackupDeletionRequest {
 }
 message GetBackupDeletionResponse {
   BackupDeletionJob job = 1;
+}
+
+message SwitchSessionAccountRequest {
+  Mutation mutation = 1;
+  string account_id = 2;
+}
+message SwitchSessionAccountResponse {
+  SessionChange change = 1;
 }
