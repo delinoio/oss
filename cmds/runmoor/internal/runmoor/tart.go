@@ -93,6 +93,7 @@ type TartDriver struct {
 	Exec            CommandExecutor
 	HostCheck       func(context.Context) error
 	GuestExecutable string
+	processAlive    func(int) (bool, error)
 }
 
 func tartEnv(c Config) []string {
@@ -794,20 +795,63 @@ func createTartCommandAliasAt(c Config, home, alias string) (string, func(), err
 }
 
 func removeTartRunAlias(c Config, alias string) error {
+	present, err := tartRunAliasPresent(c, alias)
+	if err != nil {
+		return err
+	}
+	if !present {
+		return nil
+	}
+	path := filepath.Join(c.Storage.Data, "tart", "vms", alias)
+	if err = os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return problem(ErrCleanup, "Cannot remove the stopped Tart VM identity alias.", "Preserve the VM and inspect its private Tart storage before retrying.")
+	}
+	return nil
+}
+
+func tartRunAliasPresent(c Config, alias string) (bool, error) {
+	if !safeName.MatchString(alias) {
+		return false, ambiguousVMOwnership()
+	}
 	path := filepath.Join(c.Storage.Data, "tart", "vms", alias)
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
-		return nil
+		return false, nil
 	}
 	if err != nil || info.Mode()&os.ModeSymlink == 0 {
-		return ambiguousVMOwnership()
+		return false, ambiguousVMOwnership()
 	}
 	target, err := os.Readlink(path)
 	if err != nil || target != "/dev/fd/3" {
-		return ambiguousVMOwnership()
+		return false, ambiguousVMOwnership()
 	}
-	if err = os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return problem(ErrCleanup, "Cannot remove the stopped Tart VM identity alias.", "Preserve the VM and inspect its private Tart storage before retrying.")
+	return true, nil
+}
+
+func (t *TartDriver) tartProcessAlive(pid int) (bool, error) {
+	if t.processAlive != nil {
+		return t.processAlive(pid)
+	}
+	return tartRunProcessAlive(pid)
+}
+
+// A missing canonical directory is not proof that a detached Tart run ended:
+// the open-directory alias and recorded Tart process can outlive that name.
+// Preserve the execution until its recorded process is confirmed exited.
+func (t *TartDriver) confirmTartVMAbsent(c Config, r Runner) error {
+	aliasPresent, err := tartRunAliasPresent(c, tartRunAlias(r.ID))
+	if err != nil {
+		return err
+	}
+	if r.Handle.PID <= 0 {
+		if aliasPresent {
+			return ambiguousVMOwnership()
+		}
+		return nil
+	}
+	alive, err := t.tartProcessAlive(r.Handle.PID)
+	if err != nil || alive {
+		return ambiguousVMOwnership()
 	}
 	return nil
 }
@@ -1017,6 +1061,9 @@ func (t *TartDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapshot
 			return Observation{}, promoteErr
 		}
 		if _, e = os.Lstat(vmPath(c, name)); os.IsNotExist(e) {
+			if e = t.confirmTartVMAbsent(c, r); e != nil {
+				return Observation{}, e
+			}
 			return Observation{Handle: h}, nil
 		} else if e != nil {
 			return Observation{}, problem(ErrPermission, "Cannot inspect the Tart VM directory.", "Check private data directory permissions; the execution reservation remains held.")
@@ -1063,7 +1110,7 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 		return ambiguousVMOwnership()
 	}
 	if _, e := os.Lstat(vmPath(c, name)); os.IsNotExist(e) {
-		return nil
+		return t.confirmTartVMAbsent(c, r)
 	} else if e != nil {
 		return problem(ErrPermission, "Cannot inspect the Tart VM directory.", "Check private data directory permissions; the execution reservation remains held.")
 	}
@@ -1260,6 +1307,9 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 		} else if !os.IsNotExist(originalErr) {
 			return problem(ErrCleanup, "Cannot inspect the Tart VM for cleanup.", "Check private data directory permissions; its reservation remains held.")
 		} else {
+			if err = t.confirmTartVMAbsent(c, r); err != nil {
+				return err
+			}
 			if err = removeVMOwnerRecord(c, name, s.Installation, r.ID); err != nil {
 				return err
 			}

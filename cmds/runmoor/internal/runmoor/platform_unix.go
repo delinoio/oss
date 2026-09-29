@@ -221,3 +221,17 @@ func interruptProcess(cmd *exec.Cmd) {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 	}
 }
+
+func tartRunProcessAlive(pid int) (bool, error) {
+	if pid <= 0 {
+		return false, syscall.EINVAL
+	}
+	err := unix.Kill(pid, 0)
+	if err == nil || err == unix.EPERM {
+		return true, nil
+	}
+	if err == unix.ESRCH {
+		return false, nil
+	}
+	return false, err
+}

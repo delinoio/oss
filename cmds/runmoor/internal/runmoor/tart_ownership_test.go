@@ -533,6 +533,103 @@ func TestTartCleanupKnownAbsenceIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestTartMissingCanonicalVMRetainsActiveRun(t *testing.T) {
+	for _, action := range []string{"inspect", "stop", "cleanup"} {
+		t.Run(action, func(t *testing.T) {
+			c, s := fixtureStore(t)
+			id := newID()
+			name := "rm-" + id
+			if err := claimVM(c, name, s.View().Installation, id); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := createTartCommandAlias(c, tartRunAlias(id)); err != nil {
+				t.Fatal(err)
+			}
+			driver, fixture := fakeTart(c)
+			driver.processAlive = func(pid int) (bool, error) {
+				if pid != 4242 {
+					t.Fatalf("checked Tart PID = %d, want 4242", pid)
+				}
+				return true, nil
+			}
+			if err := os.RemoveAll(vmPath(c, name)); err != nil {
+				t.Fatal(err)
+			}
+			r := Runner{ID: id, Handle: Handle{VM: name, PID: 4242}, Phase: Busy}
+			var err error
+			switch action {
+			case "inspect":
+				_, err = driver.Inspect(context.Background(), c, r, s.View())
+			case "stop":
+				err = driver.Stop(context.Background(), c, r, s.View())
+			case "cleanup":
+				err = driver.Cleanup(context.Background(), c, r, s.View())
+			}
+			requireCode(t, err, ErrOwnership)
+			if err = verifyVMOwnerRecord(c, name, s.View().Installation, id); err != nil {
+				t.Fatal("live Tart run lost its durable owner record", err)
+			}
+			if _, err = os.Lstat(filepath.Join(c.Storage.Data, "tart", "vms", tartRunAlias(id))); err != nil {
+				t.Fatal("live Tart run lost its liveness alias", err)
+			}
+			if len(fixture.commands) != 0 {
+				t.Fatalf("missing canonical VM caused Tart commands: %q", fixture.commands)
+			}
+		})
+	}
+}
+
+func TestTartInspectionQuarantinesMissingCanonicalLiveRun(t *testing.T) {
+	m, c, _, _, pool := testManager(t)
+	id := seedRunner(t, m, pool, Busy)
+	name := "rm-" + id
+	if err := claimVM(c, name, m.Store.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishVMOwnerMarker(c, name, m.Store.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := createTartCommandAlias(c, tartRunAlias(id)); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Store.Update(func(s *Snapshot) error {
+		r := s.Runners[id]
+		r.Backend = Tart
+		r.Handle = Handle{VM: name, PID: 4242}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(vmPath(c, name)); err != nil {
+		t.Fatal(err)
+	}
+	driver, _ := fakeTart(c)
+	driver.processAlive = func(pid int) (bool, error) { return pid == 4242, nil }
+	m.Drivers = func(Backend) (Driver, error) { return driver, nil }
+	m.inspect(context.Background(), id)
+
+	r := m.Store.View().Runners[id]
+	if r.Phase != Quarantined || r.Problem == nil || r.Problem.Code != ErrOwnership {
+		t.Fatalf("missing canonical live run was not quarantined: %#v", r)
+	}
+	_, count, _ := usage(m.Store.View())
+	if count != 1 {
+		t.Fatalf("live Tart execution reservation count = %d, want 1", count)
+	}
+	if err := verifyVMOwnerRecord(c, name, m.Store.View().Installation, id); err != nil {
+		t.Fatal("live Tart run lost its durable owner record", err)
+	}
+}
+
 func TestTartCleanupDeletesTheVerifiedDirectoryAfterOriginalNameReplacement(t *testing.T) {
 	c, s := fixtureStore(t)
 	id := newID()

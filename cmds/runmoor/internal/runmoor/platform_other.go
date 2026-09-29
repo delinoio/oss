@@ -31,3 +31,4 @@ func interruptProcess(cmd *exec.Cmd) {
 		_ = cmd.Process.Kill()
 	}
 }
+func tartRunProcessAlive(int) (bool, error) { return false, unsupported() }
