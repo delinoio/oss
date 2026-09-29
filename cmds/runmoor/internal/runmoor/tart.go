@@ -96,14 +96,172 @@ type TartDriver struct {
 }
 
 func tartEnv(c Config) []string {
-	return append(minimalEnv(), "TART_HOME="+filepath.Join(c.Storage.Data, "tart"), "TART_NO_AUTO_PRUNE=1")
+	return tartEnvAt(c, tartHome(c))
 }
-func (t *TartDriver) run(ctx context.Context, c Config, args []string, in io.Reader) ([]byte, error) {
-	b, e := t.Exec.Run(ctx, c.TartExecutable, args, tartEnv(c), in)
+func tartHome(c Config) string      { return filepath.Join(c.Storage.Data, "tart") }
+func tartHomeCache(c Config) string { return filepath.Join(tartHome(c), "cache") }
+func tartVMPathAtHome(home, name string) string {
+	return filepath.Join(home, "vms", name)
+}
+func creationVMName(entity string) string { return "rm-create-" + entity }
+func tartCreationHome(c Config, entity string) string {
+	return filepath.Join(c.Storage.Data, "tart-creation", entity)
+}
+func tartCreationVMPath(c Config, entity string) string {
+	return tartVMPathAtHome(tartCreationHome(c, entity), creationVMName(entity))
+}
+func tartEnvAt(c Config, home string) []string {
+	return append(minimalEnv(), "TART_HOME="+home, "TART_NO_AUTO_PRUNE=1")
+}
+func prepareTartCreationHome(c Config, entity string) (string, *os.File, error) {
+	// Tart publishes names inside TART_HOME itself. Keep the requested final
+	// name out of its shared home until the marker is attached to the staged
+	// directory and the verified directory is moved into place.
+	if !validID(entity) {
+		return "", nil, ambiguousVMOwnership()
+	}
+	root := filepath.Join(c.Storage.Data, "tart-creation")
+	if err := privateDir(root); err != nil {
+		return "", nil, err
+	}
+	home := tartCreationHome(c, entity)
+	if _, err := os.Lstat(home); os.IsNotExist(err) {
+		if err = os.Mkdir(home, 0700); err != nil && !os.IsExist(err) {
+			return "", nil, problem(ErrPermission, "Cannot create the private Tart creation home.", "Preserve the VM and check Runmoor data directory permissions.")
+		}
+	} else if err != nil {
+		return "", nil, problem(ErrPermission, "Cannot inspect the private Tart creation home.", "Preserve the VM and check Runmoor data directory permissions.")
+	}
+	if err := privateDir(home); err != nil {
+		return "", nil, err
+	}
+	lock, err := lockTartCreationHome(home)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := privateDir(filepath.Join(home, "vms")); err != nil {
+		_ = lock.Close()
+		return "", nil, err
+	}
+	if err := privateDir(filepath.Join(home, "tmp")); err != nil {
+		_ = lock.Close()
+		return "", nil, err
+	}
+	if _, err = os.Lstat(tartCreationVMPath(c, entity)); err == nil || !os.IsNotExist(err) {
+		_ = lock.Close()
+		return "", nil, ambiguousVMOwnership()
+	}
+	if err := privateDir(tartHome(c)); err != nil {
+		_ = lock.Close()
+		return "", nil, err
+	}
+	if err := privateDir(tartHomeCache(c)); err != nil {
+		_ = lock.Close()
+		return "", nil, err
+	}
+	cache := filepath.Join(home, "cache")
+	if target, linkErr := os.Readlink(cache); linkErr == nil {
+		if target != tartHomeCache(c) {
+			_ = lock.Close()
+			return "", nil, ambiguousVMOwnership()
+		}
+	} else if os.IsNotExist(linkErr) {
+		if err := os.Symlink(tartHomeCache(c), cache); err != nil {
+			_ = lock.Close()
+			return "", nil, problem(ErrPermission, "Cannot share Tart's private content cache with the creation home.", "Preserve the VM and check Runmoor data directory permissions.")
+		}
+	} else {
+		_ = lock.Close()
+		return "", nil, ambiguousVMOwnership()
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		_ = lock.Close()
+		return "", nil, problem(ErrPermission, "Cannot inspect the private Tart creation home.", "Preserve the VM and check Runmoor data directory permissions.")
+	}
+	for _, entry := range entries {
+		switch entry.Name() {
+		case ".runmoor-creation.lock", "cache", "tmp", "vms":
+		default:
+			_ = lock.Close()
+			return "", nil, ambiguousVMOwnership()
+		}
+	}
+	return home, lock, nil
+}
+func cleanupTartCreationHome(c Config, entity string) {
+	home := tartCreationHome(c, entity)
+	if _, err := os.Lstat(home); os.IsNotExist(err) {
+		return
+	} else if err != nil {
+		return
+	}
+	if _, err := privateVMDirectory(home); err != nil {
+		return
+	}
+	lock, err := lockTartCreationHome(home)
+	if err != nil {
+		return
+	}
+	if err := privateDir(home); err != nil {
+		_ = lock.Close()
+		return
+	}
+	if _, err := os.Lstat(tartCreationVMPath(c, entity)); err == nil || !os.IsNotExist(err) {
+		_ = lock.Close()
+		return
+	}
+	for _, name := range []string{"tmp", "vms"} {
+		path := filepath.Join(home, name)
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			_ = lock.Close()
+			return
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil || len(entries) != 0 || os.Remove(path) != nil {
+			_ = lock.Close()
+			return
+		}
+	}
+	if target, err := os.Readlink(filepath.Join(home, "cache")); err != nil || target != tartHomeCache(c) {
+		_ = lock.Close()
+		return
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		_ = lock.Close()
+		return
+	}
+	for _, entry := range entries {
+		if entry.Name() != ".runmoor-creation.lock" && entry.Name() != "cache" {
+			_ = lock.Close()
+			return
+		}
+	}
+	if err = os.Remove(filepath.Join(home, "cache")); err != nil {
+		_ = lock.Close()
+		return
+	}
+	_ = lock.Close()
+	if err = os.Remove(filepath.Join(home, ".runmoor-creation.lock")); err != nil {
+		return
+	}
+	_ = os.Remove(home)
+	_ = os.Remove(filepath.Dir(home))
+}
+func (t *TartDriver) runAtHome(ctx context.Context, c Config, home string, args []string, in io.Reader) ([]byte, error) {
+	b, e := t.Exec.Run(ctx, c.TartExecutable, args, tartEnvAt(c, home), in)
 	if e != nil {
 		return nil, problem(ErrDependency, "Tart command failed.", "Check Tart 2.x.x, Guest Agent RPC and the owned VM with 'runmoor doctor'.")
 	}
 	return b, nil
+}
+func (t *TartDriver) run(ctx context.Context, c Config, args []string, in io.Reader) ([]byte, error) {
+	return t.runAtHome(ctx, c, tartHome(c), args, in)
 }
 
 func supportedTartVersion(output string) bool {
@@ -265,14 +423,21 @@ func openVerifiedVMOwnerAt(c Config, pathName, identityName, installation, entit
 	if !safeName.MatchString(pathName) || !safeName.MatchString(identityName) {
 		return nil, ambiguousVMOwnership()
 	}
+	return openVerifiedVMOwnerPath(c, vmPath(c, pathName), pathName, identityName, installation, entity)
+}
+
+func openVerifiedVMOwnerPath(c Config, directoryPath, pathName, identityName, installation, entity string) (*os.File, error) {
+	if !safeName.MatchString(pathName) || !safeName.MatchString(identityName) {
+		return nil, ambiguousVMOwnership()
+	}
 	if err := verifyVMOwnerRecord(c, identityName, installation, entity); err != nil {
 		return nil, err
 	}
-	before, err := vmDirectoryInfo(c, pathName)
+	before, err := privateVMDirectory(directoryPath)
 	if err != nil {
-		return nil, err
+		return nil, ambiguousVMOwnership()
 	}
-	dir, err := openTartVMDirectory(vmPath(c, pathName))
+	dir, err := openTartVMDirectory(directoryPath)
 	if err != nil {
 		return nil, ambiguousVMOwnership()
 	}
@@ -291,7 +456,7 @@ func openVerifiedVMOwnerAt(c Config, pathName, identityName, installation, entit
 	if err != nil || json.Unmarshal(b, &marker) != nil || marker != (vmOwner{installation, entity, identityName}) {
 		return nil, ambiguousVMOwnership()
 	}
-	after, err := vmDirectoryInfo(c, pathName)
+	after, err := privateVMDirectory(directoryPath)
 	if err != nil || !os.SameFile(before, after) {
 		return nil, ambiguousVMOwnership()
 	}
@@ -314,71 +479,203 @@ func verifyVMOwner(c Config, name, installation, entity string) error {
 	return verifyVMOwnerAt(c, name, name, installation, entity)
 }
 
-// publishVMOwnerMarker writes a complete marker into a newly created VM
-// without replacing any existing file. A crash before the link leaves the VM
-// ambiguous and therefore preserved for explicit recovery. Keep same-directory
-// hard-link publication until a supported atomic no-replace rename is available:
-// plain rename would overwrite a preexisting marker.
 func publishVMOwnerMarker(c Config, name, installation, entity string) error {
-	if err := verifyVMOwnerRecord(c, name, installation, entity); err != nil {
+	path := vmPath(c, name)
+	return publishVMOwnerMarkerAt(c, path, name, installation, entity)
+}
+
+// publishVMOwnerMarkerAt pins the just-created directory before writing the
+// marker, writes through that descriptor, and verifies that the name still
+// resolves to the same directory afterward. A replacement cannot receive the
+// marker after the descriptor has been opened.
+func publishVMOwnerMarkerAt(c Config, directoryPath, identityName, installation, entity string) error {
+	if err := verifyVMOwnerRecord(c, identityName, installation, entity); err != nil {
 		return err
 	}
-	dir := vmPath(c, name)
-	before, err := vmDirectoryInfo(c, name)
+	before, err := privateVMDirectory(directoryPath)
 	if err != nil {
-		return err
-	}
-	markerPath := vmOwnerMarkerPath(c, name)
-	if _, err = os.Lstat(markerPath); err == nil || !os.IsNotExist(err) {
 		return ambiguousVMOwnership()
 	}
-	encoded, _ := json.Marshal(vmOwner{installation, entity, name})
-	tmp, err := os.CreateTemp(dir, ".runmoor-owner-*.tmp")
+	dir, err := openTartVMDirectory(directoryPath)
 	if err != nil {
-		return problem(ErrPermission, "Cannot prepare the Tart VM ownership marker.", "Check the VM directory permissions; preserve the VM and retry only after inspection.")
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err = tmp.Chmod(0600); err == nil {
-		_, err = tmp.Write(encoded)
-	}
-	if err == nil {
-		err = tmp.Sync()
-	}
-	closeErr := tmp.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return problem(ErrPermission, "Cannot write the Tart VM ownership marker.", "Check the VM directory permissions; preserve the VM and retry only after inspection.")
-	}
-	after, err := vmDirectoryInfo(c, name)
-	if err != nil || !os.SameFile(before, after) {
 		return ambiguousVMOwnership()
 	}
-	if err = os.Link(tmpPath, markerPath); err != nil {
+	defer dir.Close()
+	opened, err := dir.Stat()
+	if err != nil || !os.SameFile(before, opened) {
+		return ambiguousVMOwnership()
+	}
+	if _, err = readTartVMOwnerMarker(dir, 4096); err == nil || !os.IsNotExist(err) {
+		return ambiguousVMOwnership()
+	}
+	encoded, err := json.Marshal(vmOwner{installation, entity, identityName})
+	if err != nil {
+		return ambiguousVMOwnership()
+	}
+	if err = publishTartVMOwnerMarker(dir, encoded); err != nil {
 		if os.IsExist(err) {
 			return ambiguousVMOwnership()
 		}
 		return problem(ErrPermission, "Cannot publish the Tart VM ownership marker.", "Preserve the VM and check filesystem support and directory permissions.")
 	}
-	if err = syncPrivateDir(dir); err != nil {
+	after, err := privateVMDirectory(directoryPath)
+	if err != nil || !os.SameFile(opened, after) {
+		return ambiguousVMOwnership()
+	}
+	if err = dir.Sync(); err != nil {
 		return problem(ErrPermission, "Cannot sync the Tart VM ownership marker.", "Preserve the VM and check directory permissions.")
 	}
-	return verifyVMOwner(c, name, installation, entity)
+	b, err := readTartVMOwnerMarker(dir, 4096)
+	var marker vmOwner
+	if err != nil || json.Unmarshal(b, &marker) != nil || marker != (vmOwner{installation, entity, identityName}) {
+		return ambiguousVMOwnership()
+	}
+	return verifyVMOwnerRecord(c, identityName, installation, entity)
+}
+
+func publishAndMoveCreatedTartVM(c Config, home, stageName, name, installation, entity string) error {
+	// Publish ownership through the opened VM directory, then expose that same
+	// inode at the canonical name with an exclusive rename. The caller holds the
+	// per-entity creation-home lock through the entire Tart operation.
+	if !safeName.MatchString(stageName) || !safeName.MatchString(name) || stageName == name {
+		return ambiguousVMOwnership()
+	}
+	if err := verifyVMOwnerRecord(c, name, installation, entity); err != nil {
+		return err
+	}
+	stagePath := tartVMPathAtHome(home, stageName)
+	dir, err := openTartVMDirectory(stagePath)
+	if err != nil {
+		return ambiguousVMOwnership()
+	}
+	defer dir.Close()
+	lock, err := lockTartVMConfigAt(dir)
+	if err != nil {
+		return problem(ErrOwnership, "Cannot lock the newly created Tart VM before ownership publication.", "Preserve the staging VM and its Runmoor record for diagnosis.")
+	}
+	defer lock.Close()
+	opened, err := dir.Stat()
+	pathInfo, pathErr := privateVMDirectory(stagePath)
+	if err != nil || pathErr != nil || !os.SameFile(opened, pathInfo) {
+		return ambiguousVMOwnership()
+	}
+	finalPath := vmPath(c, name)
+	if _, err = os.Lstat(finalPath); err == nil || !os.IsNotExist(err) {
+		return ambiguousVMOwnership()
+	}
+	if err = publishVMOwnerMarkerAt(c, stagePath, name, installation, entity); err != nil {
+		return err
+	}
+	pathInfo, pathErr = privateVMDirectory(stagePath)
+	if pathErr != nil || !os.SameFile(opened, pathInfo) {
+		return ambiguousVMOwnership()
+	}
+	if _, err = os.Lstat(finalPath); err == nil || !os.IsNotExist(err) {
+		return ambiguousVMOwnership()
+	}
+	if err = renameTartVMNoReplace(stagePath, finalPath); err != nil {
+		return ambiguousVMOwnership()
+	}
+	moved, err := privateVMDirectory(finalPath)
+	if err != nil || !os.SameFile(opened, moved) {
+		return ambiguousVMOwnership()
+	}
+	if err = verifyVMOwnerAt(c, name, name, installation, entity); err != nil {
+		return err
+	}
+	if err = syncPrivateDir(filepath.Dir(finalPath)); err != nil {
+		return problem(ErrCleanup, "Cannot sync the published Tart VM directory.", "Preserve the VM and retry after checking local storage.")
+	}
+	return nil
+}
+
+func promoteCreatedTartVM(c Config, name, installation, entity string) error {
+	home := tartCreationHome(c, entity)
+	if _, err := os.Lstat(home); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return problem(ErrPermission, "Cannot inspect the private Tart creation home.", "Preserve the Runmoor record and check local data directory permissions.")
+	}
+	if _, err := privateVMDirectory(home); err != nil {
+		return err
+	}
+	homeLock, err := lockTartCreationHome(home)
+	if err != nil {
+		return err
+	}
+	locked := true
+	releaseHomeLock := func() {
+		if locked {
+			_ = homeLock.Close()
+			locked = false
+		}
+	}
+	defer releaseHomeLock()
+	if err := privateDir(home); err != nil {
+		return err
+	}
+	if err := privateDir(filepath.Join(home, "vms")); err != nil {
+		return err
+	}
+	stagePath := tartCreationVMPath(c, entity)
+	if _, err = os.Lstat(stagePath); os.IsNotExist(err) {
+		releaseHomeLock()
+		cleanupTartCreationHome(c, entity)
+		return nil
+	} else if err != nil {
+		return problem(ErrPermission, "Cannot inspect the private Tart creation VM.", "Preserve the Runmoor record and check local data directory permissions.")
+	}
+	if err := verifyVMOwnerRecord(c, name, installation, entity); err != nil {
+		return err
+	}
+	dir, err := openVerifiedVMOwnerPath(c, stagePath, creationVMName(entity), name, installation, entity)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	lock, err := lockTartVMConfigAt(dir)
+	if err != nil {
+		return ambiguousVMOwnership()
+	}
+	defer lock.Close()
+	finalPath := vmPath(c, name)
+	if _, err = os.Lstat(finalPath); err == nil || !os.IsNotExist(err) {
+		return ambiguousVMOwnership()
+	}
+	if err = renameTartVMNoReplace(stagePath, finalPath); err != nil {
+		return ambiguousVMOwnership()
+	}
+	opened, err := dir.Stat()
+	moved, movedErr := privateVMDirectory(finalPath)
+	if err != nil || movedErr != nil || !os.SameFile(opened, moved) {
+		return ambiguousVMOwnership()
+	}
+	if err = verifyVMOwnerAt(c, name, name, installation, entity); err != nil {
+		return err
+	}
+	if err = syncPrivateDir(filepath.Dir(finalPath)); err != nil {
+		return problem(ErrCleanup, "Cannot sync the recovered Tart VM directory.", "Preserve the VM and retry after checking local storage.")
+	}
+	releaseHomeLock()
+	cleanupTartCreationHome(c, entity)
+	return nil
 }
 
 func (t *TartDriver) runOwned(ctx context.Context, c Config, installation, entity, name string, args []string, in io.Reader) ([]byte, error) {
-	return t.runOwnedAt(ctx, c, name, name, installation, entity, args, in)
+	return t.runOwnedAtHome(ctx, c, tartHome(c), name, name, installation, entity, args, in)
 }
 
 func (t *TartDriver) runOwnedAt(ctx context.Context, c Config, pathName, identityName, installation, entity string, args []string, in io.Reader) ([]byte, error) {
+	return t.runOwnedAtHome(ctx, c, tartHome(c), pathName, identityName, installation, entity, args, in)
+}
+
+func (t *TartDriver) runOwnedAtHome(ctx context.Context, c Config, home, pathName, identityName, installation, entity string, args []string, in io.Reader) ([]byte, error) {
 	dir, err := openVerifiedVMOwnerAt(c, pathName, identityName, installation, entity)
 	if err != nil {
 		return nil, err
 	}
 	defer dir.Close()
-	alias, cleanupAlias, err := createTartCommandAlias(c, "rm-op-"+newID())
+	alias, cleanupAlias, err := createTartCommandAliasAt(c, home, "rm-op-"+newID())
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +688,7 @@ func (t *TartDriver) runOwnedAt(ctx context.Context, c Config, pathName, identit
 	if !ok {
 		return nil, problem(ErrDependency, "The Tart command runner cannot bind operations to an owned VM.", "Use the supported Runmoor release and preserve the VM until its ownership can be verified.")
 	}
-	b, runErr := executor.RunPinned(ctx, c.TartExecutable, pinnedArgs, tartEnv(c), in, dir)
+	b, runErr := executor.RunPinned(ctx, c.TartExecutable, pinnedArgs, tartEnvAt(c, home), in, dir)
 	if runErr != nil {
 		runErr = problem(ErrDependency, "Tart command failed.", "Check Tart 2.x.x, Guest Agent RPC and the private VM directory.")
 	}
@@ -457,10 +754,14 @@ func (t *TartDriver) startOwned(c Config, name, installation, entity string, arg
 func tartRunAlias(entity string) string { return "rm-run-" + entity }
 
 func createTartCommandAlias(c Config, alias string) (string, func(), error) {
+	return createTartCommandAliasAt(c, tartHome(c), alias)
+}
+
+func createTartCommandAliasAt(c Config, home, alias string) (string, func(), error) {
 	if !safeName.MatchString(alias) {
 		return "", nil, ambiguousVMOwnership()
 	}
-	vmRoot := filepath.Join(c.Storage.Data, "tart", "vms")
+	vmRoot := filepath.Join(home, "vms")
 	if err := privateDir(vmRoot); err != nil {
 		return "", nil, err
 	}
@@ -541,6 +842,14 @@ func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 	}
 	im := s.Images[p.Image]
 	name := "rm-" + r.ID
+	creationHome, creationLock, e := prepareTartCreationHome(c, r.ID)
+	if e != nil {
+		return e
+	}
+	defer func() {
+		_ = creationLock.Close()
+		cleanupTartCreationHome(c, r.ID)
+	}()
 	if e := claimVM(c, name, s.Installation, r.ID); e != nil {
 		return e
 	}
@@ -548,10 +857,11 @@ func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 	if e := publish(h); e != nil {
 		return e
 	}
-	if _, e := t.runOwned(ctx, c, s.Installation, im.ID, im.VM, []string{"clone", im.VM, name}, nil); e != nil {
+	stageVM := creationVMName(r.ID)
+	if _, e := t.runOwnedAtHome(ctx, c, creationHome, im.VM, im.VM, s.Installation, im.ID, []string{"clone", im.VM, stageVM}, nil); e != nil {
 		return e
 	}
-	if e := publishVMOwnerMarker(c, name, s.Installation, r.ID); e != nil {
+	if e := publishAndMoveCreatedTartVM(c, creationHome, stageVM, name, s.Installation, r.ID); e != nil {
 		return e
 	}
 	if _, e := t.runOwned(ctx, c, s.Installation, r.ID, name, []string{"set", name, "--cpu", strconv.Itoa(p.Resources.CPU), "--memory", strconv.FormatInt(p.Resources.MemoryMiB, 10)}, nil); e != nil {
@@ -689,7 +999,14 @@ func (t *TartDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapshot
 		return Observation{}, ambiguousVMOwnership()
 	}
 	if _, e := os.Lstat(vmPath(c, name)); os.IsNotExist(e) {
-		return Observation{Handle: h}, nil
+		if promoteErr := promoteCreatedTartVM(c, name, s.Installation, r.ID); promoteErr != nil {
+			return Observation{}, promoteErr
+		}
+		if _, e = os.Lstat(vmPath(c, name)); os.IsNotExist(e) {
+			return Observation{Handle: h}, nil
+		} else if e != nil {
+			return Observation{}, problem(ErrPermission, "Cannot inspect the Tart VM directory.", "Check private data directory permissions; the execution reservation remains held.")
+		}
 	} else if e != nil {
 		return Observation{}, problem(ErrPermission, "Cannot inspect the Tart VM directory.", "Check private data directory permissions; the execution reservation remains held.")
 	}
@@ -867,6 +1184,9 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 	if !safeName.MatchString(name) {
 		return ambiguousVMOwnership()
 	}
+	if err := promoteCreatedTartVM(c, name, s.Installation, r.ID); err != nil {
+		return err
+	}
 	deletionName := deletionVMName(r.ID)
 	if !safeName.MatchString(deletionName) {
 		return ambiguousVMOwnership()
@@ -889,7 +1209,11 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 		} else if !os.IsNotExist(originalErr) {
 			return problem(ErrCleanup, "Cannot inspect the Tart VM for cleanup.", "Check private data directory permissions; its reservation remains held.")
 		} else {
-			return removeVMOwnerRecord(c, name, s.Installation, r.ID)
+			if err = removeVMOwnerRecord(c, name, s.Installation, r.ID); err != nil {
+				return err
+			}
+			cleanupTartCreationHome(c, r.ID)
+			return nil
 		}
 	} else if err != nil {
 		return problem(ErrCleanup, "Cannot inspect the Tart cleanup directory.", "Check private data directory permissions; its reservation remains held.")
@@ -900,7 +1224,11 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 	if err := removeTartRunAlias(c, tartRunAlias(r.ID)); err != nil {
 		return err
 	}
-	return removeVMOwnerRecord(c, name, s.Installation, r.ID)
+	if err := removeVMOwnerRecord(c, name, s.Installation, r.ID); err != nil {
+		return err
+	}
+	cleanupTartCreationHome(c, r.ID)
+	return nil
 }
 
 // Keep file reads bounded and hide os.File.WriteTo so io.CopyBuffer cannot

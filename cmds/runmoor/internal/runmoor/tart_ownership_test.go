@@ -44,6 +44,105 @@ func assertTartNeverStoppedOrDeleted(t *testing.T, fixture *tartFixture) {
 	}
 }
 
+func createFixtureTartVM(t *testing.T, c Config, home, name string) {
+	t.Helper()
+	dir := tartVMPathAtHome(home, name)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"config.json", "nvram.bin", "disk.img"} {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestTartCreationKeepsForeignFinalVMOutsideMarkerPublication(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	home, lock, err := prepareTartCreationHome(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = lock.Close()
+		cleanupTartCreationHome(c, id)
+	}()
+	createFixtureTartVM(t, c, home, creationVMName(id))
+
+	foreignPath := vmPath(c, name)
+	if err = os.MkdirAll(foreignPath, 0700); err != nil {
+		t.Fatal(err)
+	}
+	foreignFile := filepath.Join(foreignPath, "foreign-disk")
+	if err = os.WriteFile(foreignFile, []byte("foreign Tart VM"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err = publishAndMoveCreatedTartVM(c, home, creationVMName(id), name, s.View().Installation, id)
+	requireCode(t, err, ErrOwnership)
+	if _, err = os.Lstat(filepath.Join(foreignPath, vmOwnerMarkerName)); !os.IsNotExist(err) {
+		t.Fatalf("foreign VM received an ownership marker: %v", err)
+	}
+	if b, readErr := os.ReadFile(foreignFile); readErr != nil || string(b) != "foreign Tart VM" {
+		t.Fatalf("foreign VM changed: %q, %v", b, readErr)
+	}
+}
+
+func TestTartMarkedCreationIsPromotedAfterRestart(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	installation := s.View().Installation
+	if err := claimVM(c, name, installation, id); err != nil {
+		t.Fatal(err)
+	}
+	home, lock, err := prepareTartCreationHome(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createFixtureTartVM(t, c, home, creationVMName(id))
+	if err = publishVMOwnerMarkerAt(c, tartCreationVMPath(c, id), name, installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err = lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = promoteCreatedTartVM(c, name, installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err = verifyVMOwner(c, name, installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Lstat(tartCreationVMPath(c, id)); !os.IsNotExist(err) {
+		t.Fatalf("staged VM remains after promotion: %v", err)
+	}
+}
+
+func TestTartInspectionDoesNotTreatActiveCreationAsAbsent(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	installation := s.View().Installation
+	if err := claimVM(c, name, installation, id); err != nil {
+		t.Fatal(err)
+	}
+	_, lock, err := prepareTartCreationHome(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = lock.Close()
+		cleanupTartCreationHome(c, id)
+	}()
+	driver, _ := fakeTart(c)
+	_, err = driver.Inspect(context.Background(), c, Runner{ID: id, Handle: Handle{VM: name}, Phase: Preparing}, s.View())
+	requireCode(t, err, ErrRetry)
+}
+
 func TestTartStaleOwnerRecordCannotAuthorizeReplacementVM(t *testing.T) {
 	for _, action := range []string{"inspect", "stop", "cleanup", "image removal"} {
 		t.Run(action, func(t *testing.T) {

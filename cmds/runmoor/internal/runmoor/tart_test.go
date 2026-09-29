@@ -36,8 +36,19 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 	if name == "/usr/bin/sw_vers" {
 		return []byte("14.7"), nil
 	}
-	joined := strings.Join(env, "\n")
-	if !strings.Contains(joined, "TART_NO_AUTO_PRUNE=1") || !strings.Contains(joined, "TART_HOME="+filepath.Join(f.c.Storage.Data, "tart")) {
+	home := ""
+	noAutoPrune := false
+	for _, value := range env {
+		if strings.HasPrefix(value, "TART_HOME=") {
+			home = strings.TrimPrefix(value, "TART_HOME=")
+		}
+		if value == "TART_NO_AUTO_PRUNE=1" {
+			noAutoPrune = true
+		}
+	}
+	creationRoot := filepath.Join(f.c.Storage.Data, "tart-creation")
+	validHome := home == tartHome(f.c) || filepath.Dir(home) == creationRoot && validID(filepath.Base(home))
+	if !noAutoPrune || !validHome {
 		return nil, problem(ErrConfig, "Unsafe Tart environment.", "Fix the test boundary.")
 	}
 	for _, v := range env {
@@ -50,7 +61,7 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 		return []byte(f.version), nil
 	case "create", "clone", "import":
 		vm := args[len(args)-1]
-		dir := vmPath(f.c, vm)
+		dir := tartVMPathAtHome(home, vm)
 		if e := os.MkdirAll(dir, 0700); e != nil {
 			return nil, e
 		}
@@ -78,7 +89,7 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 			hook(args[1])
 		}
 		delete(f.running, args[1])
-		return nil, os.RemoveAll(vmPath(f.c, args[1]))
+		return nil, os.RemoveAll(tartVMPathAtHome(home, args[1]))
 	case "exec":
 		if strings.Contains(strings.Join(args, " "), "__guest-bootstrap") {
 			b, _ := io.ReadAll(in)

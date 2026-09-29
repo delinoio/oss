@@ -45,6 +45,9 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 	if im == nil {
 		return nil, problem(ErrImage, "Image revision does not exist.", "Use 'runmoor image list' to select an existing revision.")
 	}
+	if err := promoteCreatedTartVM(c, im.VM, s.Installation, im.ID); err != nil {
+		return nil, err
+	}
 	vmAbsent := false
 	if e := verifyVMOwner(c, im.VM, s.Installation, im.ID); e != nil {
 		if req.Action == "remove" {
@@ -296,6 +299,9 @@ func vmCanBeRemovedAsAbsent(c Config, name, installation, entity string) (bool, 
 	if !safeName.MatchString(name) {
 		return false, ambiguousVMOwnership()
 	}
+	if err := promoteCreatedTartVM(c, name, installation, entity); err != nil {
+		return false, err
+	}
 	if _, err := os.Lstat(vmPath(c, name)); !os.IsNotExist(err) {
 		if err != nil {
 			return false, problem(ErrPermission, "Cannot inspect the Tart VM directory.", "Preserve the image and check private data directory permissions.")
@@ -382,16 +388,25 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 	if e := claimVM(c, im.VM, s.Installation, id); e != nil {
 		return nil, m.imageFailure(id, e)
 	}
+	creationHome, creationLock, e := prepareTartCreationHome(c, id)
+	if e != nil {
+		return nil, m.imageFailure(id, e)
+	}
+	defer func() {
+		_ = creationLock.Close()
+		cleanupTartCreationHome(c, id)
+	}()
+	stageVM := creationVMName(id)
 	var args []string
 	var cloneSource *Image
 	if req.IPSW != "" {
-		args = []string{"create", "--from-ipsw", req.IPSW, im.VM}
+		args = []string{"create", "--from-ipsw", req.IPSW, stageVM}
 	} else if source := s.Images[req.From]; source != nil && (source.Phase == ImageSealed || source.Phase == ImageImported) {
 		if e := m.Tart.validateSealed(ctx, c, source, s.Installation); e != nil {
 			return nil, m.imageFailure(id, e)
 		}
 		cloneSource = source
-		args = []string{"clone", source.VM, im.VM}
+		args = []string{"clone", source.VM, stageVM}
 	} else if strings.HasPrefix(req.From, "oci://") {
 		ref := strings.TrimPrefix(req.From, "oci://")
 		if strings.ContainsAny(ref, "\x00\n\r") || !strings.Contains(ref, "/") {
@@ -409,9 +424,9 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 			return nil, m.imageFailure(id, problem(ErrImage, "OCI image did not resolve to an immutable digest.", "Use a digest-pinned OCI image supported by Tart."))
 		}
 		im.Source = resolved
-		args = []string{"clone", resolved, im.VM}
+		args = []string{"clone", resolved, stageVM}
 	} else if filepath.IsAbs(req.From) && strings.HasSuffix(req.From, ".tvm") {
-		args = []string{"import", req.From, im.VM}
+		args = []string{"import", req.From, stageVM}
 	} else {
 		if !safeName.MatchString(req.From) {
 			return nil, m.imageFailure(id, problem(ErrImage, "Unsupported local image source.", "Use a local Tart name, an absolute .tvm path, a sealed revision UUID or an oci:// reference."))
@@ -439,18 +454,18 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 		if _, e = m.Tart.Exec.Run(ctx, c.TartExecutable, []string{"export", req.From, archive}, env, nil); e != nil {
 			return nil, m.imageFailure(id, problem(ErrImage, "Cannot export the operator-owned source image.", "Check source permissions and free space; its contents are never modified by Runmoor."))
 		}
-		args = []string{"import", archive, im.VM}
+		args = []string{"import", archive, stageVM}
 	}
 	var createErr error
 	if cloneSource != nil {
-		_, createErr = m.Tart.runOwned(ctx, c, s.Installation, cloneSource.ID, cloneSource.VM, args, nil)
+		_, createErr = m.Tart.runOwnedAtHome(ctx, c, creationHome, cloneSource.VM, cloneSource.VM, s.Installation, cloneSource.ID, args, nil)
 	} else {
-		_, createErr = m.Tart.run(ctx, c, args, nil)
+		_, createErr = m.Tart.runAtHome(ctx, c, creationHome, args, nil)
 	}
 	if createErr != nil {
 		return nil, m.imageFailure(id, createErr)
 	}
-	if e := publishVMOwnerMarker(c, im.VM, s.Installation, id); e != nil {
+	if e := publishAndMoveCreatedTartVM(c, creationHome, stageVM, im.VM, s.Installation, id); e != nil {
 		return nil, m.imageFailure(id, e)
 	}
 	if _, e := m.Tart.runOwned(ctx, c, s.Installation, id, im.VM, []string{"set", im.VM, "--cpu", strconv.Itoa(req.Resources.CPU), "--memory", strconv.FormatInt(req.Resources.MemoryMiB, 10)}, nil); e != nil {
@@ -510,6 +525,10 @@ func (m *ImageManager) Reconcile(ctx context.Context, c Config) error {
 			continue
 		}
 		if err := cleanupImportArchive(c, id); err != nil {
+			cleanupErr = m.imageFailure(id, err)
+			continue
+		}
+		if err := promoteCreatedTartVM(c, im.VM, snapshot.Installation, im.ID); err != nil {
 			cleanupErr = m.imageFailure(id, err)
 			continue
 		}

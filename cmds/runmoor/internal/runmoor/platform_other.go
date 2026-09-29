@@ -16,8 +16,11 @@ func readPrivate(string, int64) ([]byte, error)             { return nil, unsupp
 func privateVMDirectory(string) (os.FileInfo, error)        { return nil, unsupported() }
 func openTartVMDirectory(string) (*os.File, error)          { return nil, unsupported() }
 func readTartVMOwnerMarker(*os.File, int64) ([]byte, error) { return nil, unsupported() }
+func publishTartVMOwnerMarker(*os.File, []byte) error       { return unsupported() }
 func syncPrivateDir(string) error                           { return unsupported() }
 func lockTartVMConfig(string) (*os.File, error)             { return nil, unsupported() }
+func lockTartVMConfigAt(*os.File) (*os.File, error)         { return nil, unsupported() }
+func lockTartCreationHome(string) (*os.File, error)         { return nil, unsupported() }
 func renameTartVMNoReplace(string, string) error            { return unsupported() }
 func lockState(string) (*os.File, error)                    { return nil, unsupported() }
 func unlockState(*os.File)                                  {}

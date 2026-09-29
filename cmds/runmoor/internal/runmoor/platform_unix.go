@@ -104,6 +104,34 @@ func readTartVMOwnerMarker(dir *os.File, limit int64) ([]byte, error) {
 	}
 	return b, nil
 }
+func publishTartVMOwnerMarker(dir *os.File, contents []byte) error {
+	name := ".runmoor-owner-" + newID() + ".tmp"
+	fd, err := unix.Openat(int(dir.Fd()), name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
+	if err != nil {
+		return err
+	}
+	tmp := os.NewFile(uintptr(fd), name)
+	_, writeErr := tmp.Write(contents)
+	syncErr := tmp.Sync()
+	closeErr := tmp.Close()
+	if writeErr != nil {
+		_ = unix.Unlinkat(int(dir.Fd()), name, 0)
+		return writeErr
+	}
+	if syncErr != nil {
+		_ = unix.Unlinkat(int(dir.Fd()), name, 0)
+		return syncErr
+	}
+	if closeErr != nil {
+		_ = unix.Unlinkat(int(dir.Fd()), name, 0)
+		return closeErr
+	}
+	if err = unix.Linkat(int(dir.Fd()), name, int(dir.Fd()), vmOwnerMarkerName, 0); err != nil {
+		_ = unix.Unlinkat(int(dir.Fd()), name, 0)
+		return err
+	}
+	return unix.Unlinkat(int(dir.Fd()), name, 0)
+}
 func syncPrivateDir(path string) error {
 	dir, err := os.Open(path)
 	if err != nil {
@@ -131,6 +159,35 @@ func lockTartVMConfig(path string) (*os.File, error) {
 	if err = unix.FcntlFlock(f.Fd(), unix.F_SETLK, &lock); err != nil {
 		_ = f.Close()
 		return nil, err
+	}
+	return f, nil
+}
+func lockTartVMConfigAt(dir *os.File) (*os.File, error) {
+	fd, err := unix.Openat(int(dir.Fd()), "config.json", unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), "config.json")
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		_ = f.Close()
+		return nil, os.ErrPermission
+	}
+	lock := unix.Flock_t{Type: unix.F_WRLCK, Whence: int16(io.SeekStart)}
+	if err = unix.FcntlFlock(f.Fd(), unix.F_SETLK, &lock); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+func lockTartCreationHome(home string) (*os.File, error) {
+	f, err := openPrivate(filepath.Join(home, ".runmoor-creation.lock"), os.O_RDWR|os.O_CREATE)
+	if err != nil {
+		return nil, err
+	}
+	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, problem(ErrRetry, "Tart VM creation is still in progress.", "Wait for the current creation or cleanup operation to finish; its reservation remains held.")
 	}
 	return f, nil
 }
