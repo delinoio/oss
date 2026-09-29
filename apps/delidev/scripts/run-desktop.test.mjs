@@ -1,0 +1,134 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+import { desktopArguments, desktopEnvironment, runDesktop } from "./run-desktop.mjs";
+
+const success = { code: 0, signal: null };
+const environment = { npm_execpath: "/tools/pnpm.cjs", PATH: "/tools", HOME: "/fixture" };
+
+test("macOS prepares a CEF bundle with embedded assets and preserves application argv", async () => {
+  const calls = [];
+  const logs = [];
+  const args = ["--data-dir", "/private/델리 dev/$literal`argument`"];
+  assert.deepEqual(await runDesktop(["--", ...args], {
+    platform: "darwin", arch: "arm64", environment,
+    creditsFor: () => "/cef/CREDITS.html",
+    log: entry => logs.push(entry),
+    run: async (...call) => { calls.push(call); return success; },
+  }), success);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0][1], [environment.npm_execpath, "build:native"]);
+  const [command, argv, options, lifecycle] = calls[1];
+  assert.equal(command, "cargo");
+  assert.ok(argv.includes("delidev-tauri-cli"));
+  assert.ok(argv.includes("dev"));
+  assert.ok(argv.includes("--no-watch"));
+  assert.ok(argv.includes("--no-dev-server"));
+  assert.ok(argv.includes("desktop-host,custom-protocol"));
+  assert.deepEqual(argv.slice(-args.length - 1), ["--", ...args]);
+  const config = JSON.parse(argv[argv.indexOf("--config") + 1]);
+  assert.equal(config.build.devUrl, null);
+  assert.equal(config.bundle.macOS.signingIdentity, "-");
+  assert.equal(config.bundle.resources["/cef/CREDITS.html"], "notices/Chromium-CREDITS.html");
+  assert.equal(options.shell, false);
+  assert.equal(lifecycle.terminateProcessTree, true);
+  assert.equal(calls[0][3].terminateProcessTree, true);
+  assert.equal(JSON.stringify(logs).includes(args[1]), false);
+});
+
+test("Windows and Linux retain the direct Cargo executable path", () => {
+  for (const platform of ["win32", "linux"]) {
+    assert.deepEqual(desktopArguments(platform, ["--data-dir", "/private/test"]), [
+      "run", "--locked", "--manifest-path", "src-tauri/Cargo.toml",
+      "--features", "desktop-host,custom-protocol", "--bin", "delidev-desktop",
+      "--", "--data-dir", "/private/test",
+    ]);
+    assert.deepEqual(desktopEnvironment(platform, environment), environment);
+  }
+});
+
+test("local macOS bundling excludes signing credentials and shares one CEF cache across build and run", () => {
+  const env = desktopEnvironment("darwin", {
+    ...environment, CARGO_TARGET_DIR: "/build output", CEF_PATH: "/foreign-cef",
+    APPLE_SIGNING_IDENTITY: "private", APPLE_CERTIFICATE: "private", APPLE_CERTIFICATE_PASSWORD: "private",
+    APPLE_ID: "private", APPLE_PASSWORD: "private", APPLE_TEAM_ID: "private",
+    APPLE_API_KEY: "private", APPLE_API_ISSUER: "private", APPLE_API_KEY_PATH: "private",
+    TAURI_SIGNING_PRIVATE_KEY: "private", NODE_OPTIONS: "--require private",
+  }, "/fixture");
+  assert.deepEqual(env, {
+    PATH: "/tools", HOME: "/fixture", CARGO_TARGET_DIR: "/build output",
+    CEF_PATH: "/fixture/Library/Caches/tauri-cef",
+  });
+  assert.equal(desktopEnvironment("darwin", { CARGO_TARGET_DIR: "build output" }).CARGO_TARGET_DIR,
+    fileURLToPath(new URL("../build output", import.meta.url)));
+});
+
+test("failed or interrupted preparation never launches the application", async () => {
+  for (const result of [{ code: 7, signal: null }, { code: null, signal: "SIGINT" }]) {
+    let calls = 0;
+    assert.deepEqual(await runDesktop([], {
+      platform: "darwin", environment, log() {},
+      run: async () => { calls++; return result; },
+      creditsFor: () => assert.fail("must not resolve bundle resources after failed preparation"),
+    }), result);
+    assert.equal(calls, 1);
+  }
+});
+
+test("child failures retain status and exception logs omit private argv", async () => {
+  const logs = [];
+  let calls = 0;
+  const failure = { code: 23, signal: null };
+  assert.deepEqual(await runDesktop([], {
+    platform: "linux", environment, log: entry => logs.push(entry),
+    run: async () => ++calls === 1 ? success : failure,
+  }), failure);
+  assert.equal(logs.at(-1).stage, "run");
+  assert.equal(logs.at(-1).code, 23);
+  assert.deepEqual(await runDesktop([], {
+    environment, log: entry => logs.push(entry),
+    run: async () => { throw new Error("spawn /private/user-data --token secret"); },
+  }), { code: 1, signal: null });
+  assert.equal(logs.at(-1).code, "launch-failed");
+  assert.doesNotMatch(JSON.stringify(logs), /user-data|secret/);
+});
+
+test("SIGTERM reaches the active child during preparation and execution", { skip: process.platform === "win32", timeout: 20_000 }, async t => {
+  const root = mkdtempSync(join(tmpdir(), "delidev-launch-test-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const stage of ["prepare", "run"]) {
+    const receipt = join(root, stage);
+    const childCode = `
+      const fs = require('node:fs');
+      process.on('SIGTERM', () => { fs.writeFileSync(${JSON.stringify(receipt)}, 'terminated'); process.exit(0); });
+      setInterval(() => {}, 1000);
+      process.stdout.write('ready\\n');
+    `;
+    const wrapper = spawn(process.execPath, ["--input-type=module", "-e", `
+      import { runDesktop } from ${JSON.stringify(new URL("./run-desktop.mjs", import.meta.url).href)};
+      import { spawnDevServer, exitLikeChild } from ${JSON.stringify(new URL("../../../scripts/spawn-dev-server.mjs", import.meta.url).href)};
+      let calls = 0;
+      exitLikeChild(await runDesktop([], {
+        platform: 'linux', environment: { npm_execpath: '/fixture/pnpm.cjs' }, log() {},
+        run: async (_command, _args, _options, lifecycle) => {
+          calls++;
+          if (${JSON.stringify(stage)} === 'run' && calls === 1) return { code: 0, signal: null };
+          return spawnDevServer(process.execPath, ['-e', ${JSON.stringify(childCode)}], { stdio: 'inherit', shell: false }, lifecycle);
+        }
+      }));
+    `], { stdio: ["ignore", "pipe", "pipe"] });
+    t.after(() => { if (wrapper.exitCode === null && wrapper.signalCode === null) wrapper.kill("SIGTERM"); });
+    const exited = once(wrapper, "exit");
+    await once(wrapper.stdout, "data");
+    wrapper.kill("SIGTERM");
+    const [code, signal] = await exited;
+    assert.equal(code, null);
+    assert.equal(signal, "SIGTERM");
+    assert.equal(readFileSync(receipt, "utf8"), "terminated");
+  }
+});

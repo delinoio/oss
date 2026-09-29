@@ -10,15 +10,16 @@
     "build:frontend": "rsbuild build",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
-    "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && vitest run && pnpm test:bundle-dry-run && pnpm build",
+    "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && vitest run && pnpm test:bundle-dry-run && pnpm test:desktop-launch && pnpm build",
     "test:unit": "vitest run",
     "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
     "build:native": "pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && cargo build --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop",
-    "dev:desktop": "pnpm build:native && cargo run --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop --",
+    "dev:desktop": "node scripts/run-desktop.mjs",
     "bundle:native": "pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && cargo run --manifest-path src-tauri/Cargo.toml --features cli --bin delidev-tauri-cli -- build --features desktop-host,custom-protocol,tauri/cef",
     "bundle:macos-dry-run": "node scripts/bundle-macos-dry-run.mjs",
     "bundle:dry-run": "node scripts/bundle-native-dry-run.mjs",
-    "test:bundle-dry-run": "node --test scripts/bundle-macos-dry-run.test.mjs scripts/native-package.test.mjs"
+    "test:bundle-dry-run": "node --test scripts/bundle-macos-dry-run.test.mjs scripts/native-package.test.mjs",
+    "test:desktop-launch": "node --test scripts/run-desktop.test.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
