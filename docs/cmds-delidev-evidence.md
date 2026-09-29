@@ -2198,3 +2198,21 @@ native pointer/keyboard behavior and the 960×640, 1,099/1,100/1,101-wide, and
 also untested. Component coverage is not counted as native visual evidence. No
 Rust, RPC, schema, or generated source changed; generated `dist` output is
 removed from the worktree.
+
+### Issue #1059 contextual desktop navigation and standalone Pull requests (2026-09-29)
+
+The desktop now has one shared menu rail with Sessions, Pull requests, Usage,
+Schedules, Activity, Inbox and Search context panes. Draft/applied filters and
+per-menu scroll positions stay in connection memory. Pull requests uses the
+existing exact-repository authority and explicit Load flow; disposable reads
+are removed on exit while detail navigation, collection selection, allowance
+confirmations and exact mutation retries remain reachable.
+
+The complete `apps/delidev` `pnpm test` command passes on macOS arm64: 69 test
+files / 822 tests, generated API-client build, TypeScript type-checking and the
+Rsbuild production build. This run does not establish native drawer focus,
+background inertness, visual layout, or behavior at the 960×640, 1,100/1,101px,
+759/760px and 200% zoom boundaries. No native DeliDev window was captured for
+this change; Windows and Linux native acceptance remains untested. No Rust,
+RPC, schema, database, or generated source changed. App and API-client `dist`
+directories produced by validation are removed from the worktree.

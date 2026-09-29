@@ -204,7 +204,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   };
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><CreateSession visible close={() => {}} open={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
   change("Name", "Owned Local session");
-  change("Project", (await screen.findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
+  change("Project", (await within(screen.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
   await waitFor(() => expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true));
   change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
@@ -239,7 +239,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><Schedules active open={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
   change("Schedule name", "Owned schedule");
-  change("Project", (await screen.findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
+  change("Project", (await within(screen.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
   change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
   change("Execution Worker", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
@@ -358,7 +358,7 @@ it("reads unavailable usage through the actual Go service without inventing cost
  expect(screen.getByText(/No exact response usage is recorded/)).toBeTruthy();
  expect(screen.getByText("Actual API cost:").parentElement!.textContent).toContain("Unavailable");
  fireEvent.click(screen.getByRole("checkbox",{name:"General Chat only"}));
- fireEvent.click(screen.getByRole("button",{name:"Apply usage filters"}));
+ fireEvent.click(screen.getByRole("button",{name:"Apply filters"}));
  await waitFor(()=>expect(screen.queryByText("Loading usage…")).toBeNull());
  cleanup();client.clear();
 });

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { create, fromBinary, toBinary, type DescMessage, type DescMethodUnary, type MessageInitShape, type MessageShape } from "@bufbuild/protobuf";
 import { useMutation } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
@@ -8,11 +8,13 @@ interface Intent { input?: object; bytes?: number; busy: boolean; uncertain: boo
 const empty: Intent = Object.freeze({ busy: false, uncertain: false });
 class IntentRegistry {
   alive = true;
+  revision = 0;
   entries = new Map<string, Intent>();
   listeners = new Set<() => void>();
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   put(key: string, value: Intent) {
     this.entries.set(key, value);
+    this.revision += 1;
     for (const listener of this.listeners) listener();
   }
   reserve(key: string, bytes: number) {
@@ -22,6 +24,16 @@ class IntentRegistry {
     for (const [id, value] of this.entries) if (!value.input && !value.busy) { this.entries.delete(id); return; }
     throw new ConnectError("Inspect pending operations before starting more work.", Code.ResourceExhausted);
   }
+}
+
+export interface RetainedMutationIntent { key: string; busy: boolean; uncertain: boolean }
+export function useRetainedMutationIntents(prefix: string): RetainedMutationIntent[] {
+  const registry = useContext(Context);
+  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
+  const revision = useSyncExternalStore(registry.subscribe, () => registry.revision, () => registry.revision);
+  return useMemo(() => [...registry.entries].flatMap(([key, intent]) => key.startsWith(prefix) && intent.input
+    ? [{ key, busy: intent.busy, uncertain: intent.uncertain }]
+    : []), [prefix, registry, revision]);
 }
 const Context = createContext<IntentRegistry | undefined>(undefined);
 export function MutationIntents({ children }: { children: ReactNode }) {
@@ -37,7 +49,9 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
   const mutation = useMutation(method, { retry: false });
   const [localError, setLocalError] = useState<{ key: string; error: unknown }>();
+  const mounted = useRef(true);
   const state = useSyncExternalStore(registry.subscribe, () => registry.entries.get(key) ?? empty);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const send = async (input?: MessageInitShape<I>) => {
     const current = registry.entries.get(key) ?? empty;
     if (current.busy || (current.input && input) || !registry.alive) return;
@@ -70,6 +84,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
     registry.put(key, empty);
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.
+    if (!mounted.current) return;
     try { accepted?.(result); } catch (error) { setLocalError({ key, error }); }
   };
   return { send, retry: () => send(), ...state, error: localError?.key === key ? localError.error : state.error };

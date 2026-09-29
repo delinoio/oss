@@ -44,18 +44,18 @@ it("shows exact known subtotals, missing fields and separate unavailable costs",
 it("applies filters explicitly and preserves a draft across navigation", async () => {
   const f = fixture(); const view = render(f.view());
   await screen.findByText("Known subtotals · incomplete coverage");
-  fireEvent.change(screen.getByRole("combobox", { name: "Usage account" }), { target: { value: f.ids.account } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Account" }), { target: { value: f.ids.account } });
   fireEvent.click(screen.getByRole("checkbox", { name: "General Chat only" }));
-  expect((screen.getByRole("combobox", { name: "Usage project" }) as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).disabled).toBe(true);
   expect(f.read).toHaveBeenCalledTimes(1);
   view.rerender(f.view(false)); view.rerender(f.view());
-  expect((screen.getByRole("combobox", { name: "Usage account" }) as HTMLSelectElement).value).toBe(f.ids.account);
-  fireEvent.click(screen.getByRole("button", { name: "Apply usage filters" }));
+  expect((screen.getByRole("combobox", { name: "Account" }) as HTMLSelectElement).value).toBe(f.ids.account);
+  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
   expect(f.read.mock.calls[1][0]).toMatchObject({ accountId: f.ids.account, generalChat: true, projectId: "" });
   fireEvent.change(screen.getByLabelText("From (local time)"), { target: { value: "2026-09-25T10:00" } });
   fireEvent.change(screen.getByLabelText("Until (local time, exclusive)"), { target: { value: "2026-09-24T10:00" } });
-  fireEvent.click(screen.getByRole("button", { name: "Apply usage filters" }));
+  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await screen.findByRole("alert"); expect(f.read).toHaveBeenCalledTimes(2);
 });
 
