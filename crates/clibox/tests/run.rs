@@ -4,20 +4,20 @@
 use std::os::fd::AsRawFd;
 #[cfg(unix)]
 use std::os::fd::FromRawFd;
-#[cfg(target_os = "linux")]
-use std::process::Child;
 use std::{
+    collections::HashMap,
     fs,
     io::{Read, Write},
     net::TcpListener,
     os::unix::process::CommandExt,
-    process::{Command, Stdio},
+    path::{Path, PathBuf},
+    process::{Child, Command, ExitStatus, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 fn command(home: &std::path::Path, args: &[&str]) -> Command {
@@ -28,6 +28,230 @@ fn command(home: &std::path::Path, args: &[&str]) -> Command {
     #[cfg(target_os = "macos")]
     command.env_remove("XDG_STATE_HOME");
     command
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[derive(Clone, Copy)]
+struct ProcessRecord {
+    parent: i32,
+    group: i32,
+    state_is_zombie: bool,
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn process_snapshot() -> HashMap<i32, ProcessRecord> {
+    let output = Command::new("ps")
+        .args(["-axo", "pid=,ppid=,pgid=,stat="])
+        .output()
+        .expect("ps is required for Unix process ownership tests");
+    assert!(output.status.success(), "could not inspect test processes");
+    String::from_utf8(output.stdout)
+        .expect("ps output should be UTF-8")
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let pid = fields.next()?.parse().ok()?;
+            let parent = fields.next()?.parse().ok()?;
+            let group = fields.next()?.parse().ok()?;
+            let state_is_zombie = fields.next()?.starts_with('Z');
+            Some((
+                pid,
+                ProcessRecord {
+                    parent,
+                    group,
+                    state_is_zombie,
+                },
+            ))
+        })
+        .collect()
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn wrapper_flags(timeout: &str, kill_after: &str) -> Vec<String> {
+    [
+        "run",
+        "with-timeout",
+        "--timeout",
+        timeout,
+        "--kill-after",
+        kill_after,
+        "--",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect()
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn nested_native_chain_args(depth: usize, outer_timeout: &str) -> Vec<String> {
+    assert!(depth >= 1);
+    let mut workload = vec![
+        "sh".to_owned(),
+        "-c".to_owned(),
+        "trap '' TERM; printf '%s %s\\n' \"$$\" \"$(ps -o pgid= -p $$)\" > \"$MARKER\"; exec \
+         sleep 30"
+            .to_owned(),
+    ];
+    for _ in 1..depth {
+        let mut nested = vec![env!("CARGO_BIN_EXE_clibox").to_owned()];
+        nested.extend(wrapper_flags("30s", "10s"));
+        nested.extend(workload);
+        workload = nested;
+    }
+    let mut args = wrapper_flags(outer_timeout, "0");
+    args.extend(workload);
+    args
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+struct NestedProcessFixture {
+    child: Child,
+    marker: PathBuf,
+    stderr: PathBuf,
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+impl NestedProcessFixture {
+    fn new(mut command: Command, marker: &Path) -> Self {
+        let stderr = marker.with_extension("stderr");
+        let stderr_file = fs::File::create(&stderr).expect("could not create fixture log");
+        Self {
+            child: command
+                .stdout(Stdio::null())
+                .stderr(Stdio::from(stderr_file))
+                .spawn()
+                .expect("could not start nested wrapper fixture"),
+            marker: marker.to_owned(),
+            stderr,
+        }
+    }
+
+    fn stderr(&self) -> String {
+        fs::read_to_string(&self.stderr).unwrap_or_default()
+    }
+
+    fn workload(&mut self, timeout: Duration) -> Option<(i32, i32)> {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if let Ok(contents) = fs::read_to_string(&self.marker) {
+                let mut fields = contents.split_whitespace();
+                if let (Some(pid), Some(group)) = (fields.next(), fields.next()) {
+                    if let (Ok(pid), Ok(group)) = (pid.parse(), group.parse()) {
+                        return Some((pid, group));
+                    }
+                }
+            }
+            if self.child.try_wait().ok().flatten().is_some() {
+                return None;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        None
+    }
+
+    fn wait(&mut self, timeout: Duration) -> Option<ExitStatus> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(status) = self.child.try_wait().expect("could not wait for wrapper") {
+                return Some(status);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+impl Drop for NestedProcessFixture {
+    fn drop(&mut self) {
+        let mut groups = Vec::new();
+        if let Ok(contents) = fs::read_to_string(&self.marker) {
+            if let Some(group) = contents
+                .split_whitespace()
+                .nth(1)
+                .and_then(|group| group.parse::<i32>().ok())
+            {
+                groups.push(group);
+            }
+        }
+        // Also find the root wrapper's direct child group when setup failed
+        // before the workload could publish its PID and process-group marker.
+        if let Ok(output) = Command::new("ps")
+            .args(["-axo", "pid=,ppid=,pgid="])
+            .output()
+        {
+            let root = self.child.id() as i32;
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                let mut fields = line.split_whitespace();
+                let Some(_pid) = fields.next() else { continue };
+                let Some(parent) = fields.next().and_then(|value| value.parse::<i32>().ok()) else {
+                    continue;
+                };
+                let Some(group) = fields.next().and_then(|value| value.parse::<i32>().ok()) else {
+                    continue;
+                };
+                if parent == root {
+                    groups.push(group);
+                }
+            }
+        }
+        groups.sort_unstable();
+        groups.dedup();
+        for group in groups.into_iter().filter(|group| *group > 0) {
+            // Every collected group is rooted in this fixture's wrapper.
+            unsafe { libc::kill(-group, libc::SIGKILL) };
+        }
+        if self.child.try_wait().ok().flatten().is_none() {
+            let _ = self.child.kill();
+        }
+        let _ = self.child.wait();
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn assert_process_chain_in_group(root: u32, workload: i32, expected_group: i32) {
+    let root = i32::try_from(root).expect("test process id should fit pid_t");
+    let processes = process_snapshot();
+    let mut current = workload;
+    let mut ancestors = 0;
+    while current != root {
+        let record = processes
+            .get(&current)
+            .unwrap_or_else(|| panic!("process {current} disappeared before ownership check"));
+        assert_eq!(
+            record.group, expected_group,
+            "process {current} escaped the root-owned process group"
+        );
+        current = record.parent;
+        ancestors += 1;
+        assert!(ancestors <= 64, "process ancestry exceeded its test bound");
+    }
+    assert!(
+        ancestors >= 2,
+        "fixture did not include a nested wrapper chain"
+    );
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn assert_process_group_stopped(group: i32) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let live: Vec<_> = process_snapshot()
+            .into_iter()
+            .filter_map(|(pid, process)| {
+                (process.group == group && !process.state_is_zombie).then_some(pid)
+            })
+            .collect();
+        if live.is_empty() {
+            return;
+        }
+        if Instant::now() >= deadline {
+            panic!("fixture processes remain live in group {group}: {live:?}");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -999,6 +1223,61 @@ fn outer_timeout_terminates_descendants_of_a_nested_wrapper() {
     panic!("outer timeout left a nested wrapper descendant running");
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn outer_timeout_cleans_sigterm_ignoring_workloads_in_deep_native_chains() {
+    for depth in [3, 4] {
+        let home = tempfile::tempdir().unwrap();
+        let marker = home.path().join(format!("native-depth-{depth}-workload"));
+        let args = nested_native_chain_args(depth, "5s");
+        let references: Vec<_> = args.iter().map(String::as_str).collect();
+        let mut command = command(home.path(), &references);
+        command.env("MARKER", &marker);
+        let mut fixture = NestedProcessFixture::new(command, &marker);
+
+        let (workload, group) = fixture.workload(Duration::from_secs(8)).unwrap_or_else(|| {
+            panic!(
+                "native depth {depth} workload did not start; wrapper status: {:?}; stderr: {}",
+                fixture.child.try_wait(),
+                fixture.stderr()
+            )
+        });
+        assert!(group > 0);
+        assert_process_chain_in_group(fixture.child.id(), workload, group);
+
+        let status = fixture
+            .wait(Duration::from_secs(5))
+            .unwrap_or_else(|| panic!("native depth {depth} outer timeout did not return"));
+        assert_eq!(status.code(), Some(124), "native depth {depth}");
+        assert_process_group_stopped(group);
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn outer_sigterm_cleans_a_deep_native_chain_before_return() {
+    let home = tempfile::tempdir().unwrap();
+    let marker = home.path().join("native-cancellation-workload");
+    let args = nested_native_chain_args(3, "30s");
+    let references: Vec<_> = args.iter().map(String::as_str).collect();
+    let mut command = command(home.path(), &references);
+    command.env("MARKER", &marker);
+    let mut fixture = NestedProcessFixture::new(command, &marker);
+
+    let (workload, group) = fixture
+        .workload(Duration::from_secs(8))
+        .expect("native cancellation workload did not start");
+    assert_process_chain_in_group(fixture.child.id(), workload, group);
+    let signal_result = unsafe { libc::kill(fixture.child.id() as i32, libc::SIGTERM) };
+    assert_eq!(signal_result, 0, "could not cancel outer wrapper");
+
+    let status = fixture
+        .wait(Duration::from_secs(5))
+        .expect("outer wrapper did not return after SIGTERM");
+    assert_eq!(status.code(), Some(143));
+    assert_process_group_stopped(group);
+}
+
 #[test]
 fn nested_shell_wrapper_owns_its_descendants() {
     let home = tempfile::tempdir().unwrap();
@@ -1121,14 +1400,11 @@ fn outer_timeout_terminates_descendants_of_a_nested_npm_launcher() {
     panic!("outer timeout left a nested npm launcher descendant running");
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn outer_timeout_terminates_descendants_of_nested_npm_launcher_chain() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("nested-npm-chain-descendant-pid");
-    let node_home = format!(
-        "HOME={}",
-        std::env::var("HOME").expect("the Node launcher test needs a host home directory")
-    );
     let launcher = home.path().join("launcher.cjs");
     let clibox_launcher = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../packages/clibox/src/launcher.cjs")
@@ -1146,65 +1422,45 @@ fn outer_timeout_terminates_descendants_of_nested_npm_launcher_chain() {
         ),
     )
     .unwrap();
-    let assignment = format!("MARKER={}", marker.display());
-    let output = command(
-        home.path(),
-        &[
-            "run",
-            "with-timeout",
-            "--timeout",
-            "5s",
-            "--kill-after",
-            "0",
-            &node_home,
-            &assignment,
-            "--",
-            "node",
-            launcher.to_str().unwrap(),
-            "run",
-            "with-timeout",
-            "--timeout",
-            "30s",
-            "--kill-after",
-            "10s",
-            "--",
-            "node",
-            launcher.to_str().unwrap(),
-            "run",
-            "with-timeout",
-            "--timeout",
-            "30s",
-            "--kill-after",
-            "10s",
-            "--",
-            "sh",
-            "-c",
-            "sleep 30 & echo $! > \"$MARKER\"; wait",
-        ],
-    )
-    .env("CLIBOX_LAUNCHER", clibox_launcher)
-    .env("CLIBOX_TEST_BINARY", env!("CARGO_BIN_EXE_clibox"))
-    .output()
-    .unwrap();
-    assert_eq!(output.status.code(), Some(124), "{output:?}");
-    assert!(
-        marker.is_file(),
-        "nested npm workload did not start: {output:?}"
-    );
-    let pid = fs::read_to_string(marker)
-        .unwrap()
-        .trim()
-        .parse::<i32>()
-        .unwrap();
-    for _ in 0..50 {
-        if unsafe { libc::kill(pid, 0) } == -1
-            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-        {
-            return;
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    panic!("outer timeout left a nested npm launcher chain descendant running");
+    let launcher = launcher.to_str().unwrap();
+    let mut node_2 = vec!["node".to_owned(), launcher.to_owned()];
+    node_2.extend(wrapper_flags("30s", "10s"));
+    node_2.extend([
+        "sh".to_owned(),
+        "-c".to_owned(),
+        "trap '' TERM; printf '%s %s\\n' \"$$\" \"$(ps -o pgid= -p $$)\" > \"$MARKER\"; exec \
+         sleep 30"
+            .to_owned(),
+    ]);
+    let mut node_1 = vec!["node".to_owned(), launcher.to_owned()];
+    node_1.extend(wrapper_flags("30s", "10s"));
+    node_1.extend(node_2);
+
+    let mut args = wrapper_flags("5s", "0");
+    args.pop();
+    args.push(format!(
+        "HOME={}",
+        std::env::var("HOME").expect("the Node launcher test needs a host home directory")
+    ));
+    args.push("--".to_owned());
+    args.extend(node_1);
+    let references: Vec<_> = args.iter().map(String::as_str).collect();
+    let mut command = command(home.path(), &references);
+    command
+        .env("MARKER", &marker)
+        .env("CLIBOX_LAUNCHER", clibox_launcher)
+        .env("CLIBOX_TEST_BINARY", env!("CARGO_BIN_EXE_clibox"));
+    let mut fixture = NestedProcessFixture::new(command, &marker);
+
+    let (workload, group) = fixture
+        .workload(Duration::from_secs(8))
+        .expect("nested npm workload did not start");
+    assert_process_chain_in_group(fixture.child.id(), workload, group);
+    let status = fixture
+        .wait(Duration::from_secs(8))
+        .expect("outer timeout did not return for the nested npm chain");
+    assert_eq!(status.code(), Some(124));
+    assert_process_group_stopped(group);
 }
 
 #[test]

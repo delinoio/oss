@@ -27,6 +27,7 @@
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
+- clibox Unix nested-wrapper ownership must prove bounded ancestry within the same process group through matching native executables and supported Node launchers to the matching outer owner; unknown or unavailable evidence fails closed. Preserve Linux/macOS deep-chain cleanup regressions and follow `docs/crates-clibox-foundation.md`.
 - `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`: non-publishable clibox command-family implementations.
 - `crates/clibox-fspy`: private, non-publishable issue #971 file-access workflow crate. Treat legacy fspy path-access hints as attempts only; never infer a successful content read or complete operation trace from them. Follow `docs/crates-clibox-fspy-contract.md`.
 - `crates/nodeup`: Rust-based Node.js version manager.
