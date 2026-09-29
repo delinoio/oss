@@ -1,12 +1,13 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -14,6 +15,13 @@ import (
 
 func snapshotRequest(t *testing.T, m *Manager, multi bool) (StorageRequest, []string) {
 	t.Helper()
+	var diagnostics bytes.Buffer
+	m.Logger = slog.New(slog.NewTextHandler(&diagnostics, nil))
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(diagnostics.String())
+		}
+	})
 	first, err := filepath.EvalSymlinks(repository(t))
 	if err != nil {
 		t.Fatal(err)
@@ -58,8 +66,14 @@ func TestSnapshotGitAtLongPrivatePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for len(filepath.Join(target, ".git")) <= 280 {
-		target = filepath.Join(target, strings.Repeat("snapshot-path-", 5))
+	// Windows CreateProcess limits cwd independently of Git's object paths.
+	// Match snapshot staging: a supported cwd with objects beyond MAX_PATH.
+	for len(target) < 230 {
+		target = filepath.Join(target, strings.Repeat("x", min(60, 230-len(target))))
+	}
+	object := filepath.Join(target, ".git", "objects", repo.BaseCommit[:2], repo.BaseCommit[2:])
+	if len(object) <= 280 {
+		t.Fatal("fixture did not exceed the native Git path limit")
 	}
 	if err := os.MkdirAll(target, 0700); err != nil {
 		t.Fatal(err)
@@ -198,13 +212,15 @@ func TestSnapshotSecondRepositoryDiskFailurePreservesAllSources(t *testing.T) {
 	input.Action = StorageCreate
 	input.SnapshotID = domain.NewID()
 	second := string(input.Manifest.Repositories[1].ID)
+	reachedSecond := false
 	m.storageCopyFault = func(path string) error {
 		if filepath.Base(path) == second {
-			return syscall.ENOSPC
+			reachedSecond = true
+			return snapshotDiskFullError()
 		}
 		return nil
 	}
-	if _, err := m.Storage(context.Background(), input); domain.SafeError(err).Code != domain.ResourceExhausted {
+	if _, err := m.Storage(context.Background(), input); !reachedSecond || domain.SafeError(err).Code != domain.ResourceExhausted {
 		t.Fatal("disk full did not retain a typed capacity problem", err)
 	}
 	for _, repo := range input.Manifest.Repositories {
@@ -401,15 +417,17 @@ func TestSnapshotCancellationDuringSecondCopyPreservesSources(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	second := string(input.Manifest.Repositories[1].ID)
+	reachedSecond := false
 	m.storageCopyFault = func(path string) error {
 		if filepath.Base(path) == second {
+			reachedSecond = true
 			cancel()
 			return ctx.Err()
 		}
 		return nil
 	}
-	if _, err := m.Storage(ctx, input); err == nil {
-		t.Fatal("mid-copy cancellation succeeded")
+	if _, err := m.Storage(ctx, input); !reachedSecond || domain.SafeError(err).Code != domain.Canceled {
+		t.Fatal("second-repository cancellation was not reached or retained", err)
 	}
 	for _, repo := range input.Manifest.Repositories {
 		if _, err := os.ReadFile(filepath.Join(repo.Path, "tracked.txt")); err != nil {

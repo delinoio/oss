@@ -3270,7 +3270,7 @@ permanent session/dependent Sidechat deletion or database restoration.
 Windows Go CI at `ba87a337` failed three new Git-backed snapshot cases after
 successful previews. Their default runner temporary roots put copied loose Git
 objects beyond 260 characters. Offline commands discard system/global settings;
-Git for Windows disables long paths by default. Snapshot checks now enable
+[Git for Windows disables long paths by default](https://gitforwindows.org/git-cannot-create-a-file-or-directory-with-a-long-path.html). Snapshot checks now enable
 `core.longpaths` per Windows command while preserving source configuration and
 all offline/identity checks. Closed commit/object/location failure phases improve
 redacted diagnostics. The new independent-copy regression uses a Git directory
@@ -3280,9 +3280,38 @@ original repository offline. It passes on macOS arm64 with the race detector
 pending; a local macOS pass is not Windows acceptance.
 
 The copied-config durability step also opened files read-only before calling
-`Sync`, while Windows `FlushFileBuffers` requires write access. It now opens
+`Sync`, while [Windows `FlushFileBuffers` requires write access](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers). It now opens
 only copied configuration with `O_RDWR`, retains flush failures and checks close
 errors. The long-path, faithful two-repository restoration and stale-preview/
 destination-conflict race regressions pass locally (40.953s;
 `/tmp/delidev-1121-config-flush.log`). This platform API correction still requires
 the next native Windows CI run.
+
+The disk-full fixture now injects native Windows `ERROR_DISK_FULL` or Unix
+`ENOSPC` on the matching platform. Both second-repository fault cases require
+that repository to be reached, so an unrelated earlier copy failure cannot
+satisfy the preservation/cancellation assertions. Failed Git-backed fixtures
+print retained structured diagnostics. Disk-full and mid-copy cancellation race
+checks pass on macOS arm64 (15.555s;
+`/tmp/delidev-1121-native-faults.log`); the final Windows amd64 workspace test
+binary cross-compiles (`/tmp/delidev-1121-windows-cross.log`).
+
+The final long-path fixture places loose objects beyond 280 characters while
+keeping the subprocess working directory at 230–231 characters; Windows
+[limits process creation from an oversized working directory](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setcurrentdirectory).
+This matches the failing staging layout without requiring a separate process
+launch capability. The final focused race run passes (6.547s;
+`/tmp/delidev-1121-final-long-path.log`), and Windows test cross-compilation passes
+again after this fixture adjustment.
+
+Final validation: `go vet ./cmds/delidev-cli/...` passes
+(`/tmp/delidev-1121-vet.log`). The complete `go test -race -p 2
+./cmds/delidev-cli/...` run passes every package except Grok, which exhausts its
+default ten-minute total package budget while its active question-claim subcase
+has run only two seconds. CLI (147.478s), server (352.236s), store (83.871s),
+Worker (135.701s) and the full workspace suite (548.039s) pass
+(`/tmp/delidev-1121-full-race.log`). An isolated
+`go test -race -timeout=30m ./cmds/delidev-cli/internal/harness/grok` passes
+(945.424s; `/tmp/delidev-1121-grok-race-extended.log`). Every DeliDev package
+therefore has a passing race result, while the original default-budget command
+remains recorded as failed. Production operation/read deadlines are unchanged.
