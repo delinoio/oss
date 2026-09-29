@@ -38,6 +38,54 @@ func matchesTitleOption(observed *string, expected string) bool {
 	return observed != nil && *observed == expected
 }
 
+type titleReasoningBudget struct {
+	items map[string]int
+	total int
+}
+
+func (b *titleReasoningBudget) observe(event codex.Event) bool {
+	itemID := event.ItemID
+	itemBytes := 0
+	switch event.Kind {
+	case codex.ArtifactStartedEvent, codex.ArtifactCompletedEvent:
+		if event.Artifact == nil || event.Artifact.Kind != codex.ReasoningArtifact || event.Artifact.ID != itemID {
+			return false
+		}
+		itemBytes = len(event.Artifact.Text)
+		for _, part := range event.Artifact.Summary {
+			itemBytes += len(part)
+		}
+		for _, part := range event.Artifact.Content {
+			itemBytes += len(part)
+		}
+	case codex.ArtifactDeltaEvent:
+		if event.ArtifactDelta == nil || (event.ArtifactDelta.Kind != codex.ReasoningSummaryDelta && event.ArtifactDelta.Kind != codex.ReasoningContentDelta && event.ArtifactDelta.Kind != codex.ReasoningSummaryAdded) {
+			return false
+		}
+		if b.items != nil {
+			itemBytes = b.items[itemID]
+		}
+		itemBytes += len(event.ArtifactDelta.Text)
+	default:
+		return false
+	}
+	if itemID == "" || itemBytes < 0 {
+		return false
+	}
+	if b.items == nil {
+		b.items = make(map[string]int)
+	}
+	previous, exists := b.items[itemID]
+	if !exists && len(b.items) >= codex.MaxArtifactParts {
+		return false
+	}
+	if itemBytes > previous {
+		b.total += itemBytes - previous
+		b.items[itemID] = itemBytes
+	}
+	return b.total <= domain.MaxAutomaticTitleReasoningBytes
+}
+
 func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, job domain.Job) (output json.RawMessage, returned error) {
 	connection := config.execution
 	if connection == nil || connection.Assignment == nil || domain.ID(connection.Assignment.Id) != jobID || connection.Client == nil || connection.Instance != job.InstanceID {
@@ -169,6 +217,7 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	var titleDeltaItem string
 	var usage *domain.NativeResponseUsage
 	var completed *codex.Turn
+	reasoning := titleReasoningBudget{}
 	var sawTurnStart, sawUserInput bool
 	var userInputCompletions int
 	for completed == nil || finalCount != 1 || !sawUserInput || !sawTurnStart {
@@ -255,6 +304,10 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		case codex.UsageEvent:
 			if event.Usage == nil || event.Usage.Validate() != nil {
 				return nil, publicationUncertain()
+			}
+		case codex.ArtifactStartedEvent, codex.ArtifactCompletedEvent, codex.ArtifactDeltaEvent:
+			if !reasoning.observe(event) {
+				return nil, domain.Fail(domain.Unsupported, "Codex emitted an unsupported or oversized title reasoning item.", "Keep reasoning private and discard it after checking the bounded final title response.")
 			}
 		case codex.TurnCompletedEvent:
 			if event.Turn == nil || event.Turn.ID != turn.TurnID || event.Turn.Status != codex.TurnCompleted {

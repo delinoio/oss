@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -287,5 +288,28 @@ func TestMatchesTitleOptionRequiresExactFrozenSelection(t *testing.T) {
 	empty := ""
 	if !matchesTitleOption(&value, "high") || matchesTitleOption(&value, "medium") || !matchesTitleOption(nil, "") || !matchesTitleOption(&empty, "") || matchesTitleOption(&value, "") || matchesTitleOption(nil, "high") {
 		t.Fatal("effective title settings accepted a value outside the frozen configuration")
+	}
+}
+
+func TestTitleReasoningArtifactsStayPrivateAndBounded(t *testing.T) {
+	budget := titleReasoningBudget{}
+	started := codex.Event{Kind: codex.ArtifactStartedEvent, ItemID: "reasoning", Artifact: &codex.Artifact{ID: "reasoning", Kind: codex.ReasoningArtifact}}
+	if !budget.observe(started) {
+		t.Fatal("a correlated reasoning item start was rejected")
+	}
+	delta := codex.Event{Kind: codex.ArtifactDeltaEvent, ItemID: "reasoning", ArtifactDelta: &codex.ArtifactDelta{Kind: codex.ReasoningSummaryDelta, Text: "bounded private reasoning"}}
+	if !budget.observe(delta) {
+		t.Fatal("a bounded reasoning delta was rejected")
+	}
+	completed := codex.Event{Kind: codex.ArtifactCompletedEvent, ItemID: "reasoning", Artifact: &codex.Artifact{ID: "reasoning", Kind: codex.ReasoningArtifact, Summary: []string{"bounded private reasoning"}}}
+	if !budget.observe(completed) || budget.total != len(delta.ArtifactDelta.Text) {
+		t.Fatalf("complete reasoning duplicated its already-counted deltas: total=%d", budget.total)
+	}
+	oversized := titleReasoningBudget{}
+	if oversized.observe(codex.Event{Kind: codex.ArtifactDeltaEvent, ItemID: "reasoning", ArtifactDelta: &codex.ArtifactDelta{Kind: codex.ReasoningContentDelta, Text: string(bytes.Repeat([]byte("r"), domain.MaxAutomaticTitleReasoningBytes+1))}}) {
+		t.Fatal("oversized reasoning content was accepted")
+	}
+	if budget.observe(codex.Event{Kind: codex.ArtifactStartedEvent, ItemID: "plan", Artifact: &codex.Artifact{ID: "plan", Kind: codex.PlanArtifact}}) {
+		t.Fatal("a plan artifact was treated as inert title reasoning")
 	}
 }

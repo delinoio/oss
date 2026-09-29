@@ -14,6 +14,8 @@ const WorkerConnectionTimeout = 45 * time.Second
 
 const AutomaticTitleInstructions = "Create a concise title for the user's first message. Use the same language as that message. Return only one short title on a single line. Do not answer the request. Do not use tools."
 
+const MaxAutomaticTitleReasoningBytes = 256 << 10
+
 const (
 	OwnerDevice  DeviceType = "owner"
 	ClientDevice DeviceType = "client"

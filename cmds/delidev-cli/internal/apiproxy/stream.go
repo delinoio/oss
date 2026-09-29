@@ -79,6 +79,7 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 	controller := http.NewResponseController(w)
 	total := 0
 	titleTextBytes := 0
+	titleReasoningBytes := 0
 	fragments := newStreamGuard(guard)
 	defer fragments.clear()
 	write := func(frame []byte) error {
@@ -144,7 +145,7 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 			return started, errInvalidDocument
 		}
 		if lease.Scope.Purpose == domain.SessionTitleUsage {
-			if err := validateTitleResponseFrame(kind, object, &titleTextBytes); err != nil {
+			if err := validateTitleResponseFrame(kind, object, data, &titleTextBytes, &titleReasoningBytes); err != nil {
 				return started, err
 			}
 		}
@@ -221,9 +222,41 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 	}
 }
 
-func validateTitleResponseFrame(kind string, object map[string]json.RawMessage, textBytes *int) error {
-	if strings.Contains(kind, "function_call") || strings.Contains(kind, "tool") || strings.Contains(kind, "reasoning") {
+func addTitleReasoningBytes(total *int, size int) error {
+	if size < 0 || size > domain.MaxAutomaticTitleReasoningBytes-*total {
 		return errInvalidDocument
+	}
+	*total += size
+	return nil
+}
+
+func validateTitleResponseFrame(kind string, object map[string]json.RawMessage, frame []byte, textBytes, reasoningBytes *int) error {
+	if strings.Contains(kind, "function_call") || strings.Contains(kind, "tool") {
+		return errInvalidDocument
+	}
+	if strings.Contains(kind, "reasoning") {
+		var value string
+		switch kind {
+		case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+			if json.Unmarshal(object["delta"], &value) != nil || !utf8.ValidString(value) {
+				return errInvalidDocument
+			}
+		case "response.reasoning_summary_text.done", "response.reasoning_text.done":
+			if json.Unmarshal(object["text"], &value) != nil || !utf8.ValidString(value) {
+				return errInvalidDocument
+			}
+		case "response.reasoning_summary_part.added", "response.reasoning_summary_part.done":
+			var part struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			}
+			if json.Unmarshal(object["part"], &part) != nil || part.Type != "summary_text" || !utf8.ValidString(part.Text) {
+				return errInvalidDocument
+			}
+		default:
+			return errInvalidDocument
+		}
+		return addTitleReasoningBytes(reasoningBytes, len(frame))
 	}
 	switch kind {
 	case "response.output_text.delta":
@@ -239,24 +272,41 @@ func validateTitleResponseFrame(kind string, object map[string]json.RawMessage, 
 		var item struct {
 			Type string `json:"type"`
 		}
-		if json.Unmarshal(object["item"], &item) != nil || item.Type != "message" {
+		if json.Unmarshal(object["item"], &item) != nil {
+			return errInvalidDocument
+		}
+		switch item.Type {
+		case "message":
+		case "reasoning":
+			return addTitleReasoningBytes(reasoningBytes, len(object["item"]))
+		default:
 			return errInvalidDocument
 		}
 	case "response.completed":
 		var response struct {
-			Output []struct {
-				Type    string `json:"type"`
-				Content []struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"content"`
-			} `json:"output"`
+			Output []json.RawMessage `json:"output"`
 		}
 		if json.Unmarshal(object["response"], &response) != nil {
 			return errInvalidDocument
 		}
 		completedBytes := 0
-		for _, item := range response.Output {
+		for _, rawItem := range response.Output {
+			var item struct {
+				Type    string `json:"type"`
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+			}
+			if json.Unmarshal(rawItem, &item) != nil {
+				return errInvalidDocument
+			}
+			if item.Type == "reasoning" {
+				if err := addTitleReasoningBytes(reasoningBytes, len(rawItem)); err != nil {
+					return err
+				}
+				continue
+			}
 			if item.Type != "message" {
 				return errInvalidDocument
 			}
