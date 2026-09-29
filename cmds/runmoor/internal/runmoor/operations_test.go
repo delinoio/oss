@@ -571,13 +571,22 @@ func TestFailedSystemctlStartKeepsDefinitionAndRedactsSessionFailure(t *testing.
 	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
 		t.Fatal(err)
 	}
-	definition := []byte("fixture service definition")
+	configPath := filepath.Join(home, "config.toml")
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	definitionText, err := serviceDefinition("linux", binary, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := []byte(definitionText)
 	if err := os.WriteFile(unit, definition, 0600); err != nil {
 		t.Fatal(err)
 	}
 
 	fixture := &serviceFixture{failSystemctl: true}
-	err := Service(context.Background(), "start", "", c, fixture)
+	err = Service(context.Background(), "start", configPath, c, fixture)
 	requireCode(t, err, ErrDependency)
 	if strings.Contains(err.Error(), "private systemctl session failure") || strings.Contains(err.Error(), "missing runtime") {
 		t.Fatalf("session failure details leaked: %v", err)
