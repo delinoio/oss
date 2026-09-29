@@ -21,6 +21,13 @@ and `ExecStop` with `systemctl --user cat runmoor.service`; on macOS, inspect
 the Runmoor launch agent's `ProgramArguments`. Preserve an invalid service
 definition and resolve its problem before retrying service commands.
 
+If Linux `service start` reports that the active manager does not match the
+installed service, gracefully stop it with
+`runmoor stop --config ORIGINAL_CONFIG_PATH`, then retry
+`runmoor service start` with the installed configuration. This lets the active
+manager drain using the configuration it was started with before systemd loads
+the replacement definition.
+
 ## Recover an Ubuntu user service
 
 Run these checks as the Runmoor user in a working login session, without

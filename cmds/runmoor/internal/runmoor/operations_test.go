@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -533,6 +534,7 @@ type serviceFixture struct {
 	commands      [][]string
 	envs          [][]string
 	failSystemctl bool
+	systemdPID    string
 }
 
 func (f *serviceFixture) Run(_ context.Context, name string, args, env []string, _ io.Reader) ([]byte, error) {
@@ -545,6 +547,13 @@ func (f *serviceFixture) Run(_ context.Context, name string, args, env []string,
 	}
 	if name == "systemctl" && f.failSystemctl {
 		return nil, errors.New("private systemctl session failure")
+	}
+	if name == "systemctl" && len(args) >= 3 && args[1] == "show" {
+		pid := f.systemdPID
+		if pid == "" {
+			pid = "0"
+		}
+		return []byte(pid + "\n"), nil
 	}
 	if name == "launchctl" && len(args) > 0 && args[0] == "print" {
 		return nil, errors.New("not loaded")
@@ -606,6 +615,55 @@ func TestFailedSystemctlStartKeepsDefinitionAndRedactsSessionFailure(t *testing.
 	}
 }
 
+func TestSystemdStartRejectsAnActiveManagerWithDifferentArguments(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("systemd user service")
+	}
+	c, s := fixtureStore(t)
+	s.Close()
+	home := filepath.Dir(c.Storage.State)
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	unit := servicePath()
+	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(home, "config.toml")
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := serviceDefinition("linux", binary, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture := &serviceFixture{systemdPID: strconv.Itoa(os.Getpid())}
+	err = Service(context.Background(), "start", configPath, c, fixture)
+	requireCode(t, err, ErrConfig)
+	if strings.Contains(err.Error(), configPath) || strings.Contains(err.Error(), binary) {
+		t.Fatalf("service identity details leaked: %v", err)
+	}
+	if len(fixture.commands) != 1 || !strings.Contains(strings.Join(fixture.commands[0], " "), "show") {
+		t.Fatalf("mismatched active service reached reload/start: %v", fixture.commands)
+	}
+}
+
+func TestParseSystemdProcessCommandLine(t *testing.T) {
+	got, err := parseSystemdProcessCommandLine([]byte("/opt/runmoor\x00run\x00--config\x00/home/user/config.toml\x00"))
+	if err != nil || strings.Join(got, "|") != "/opt/runmoor|run|--config|/home/user/config.toml" {
+		t.Fatalf("parsed command line = %q, %v", got, err)
+	}
+	for _, raw := range [][]byte{nil, []byte("/opt/runmoor\x00run"), []byte("/opt/runmoor\x00\x00run\x00")} {
+		if _, err := parseSystemdProcessCommandLine(raw); err == nil {
+			t.Fatalf("accepted malformed process command line %q", raw)
+		}
+	}
+}
+
 func TestUserServiceLifecycleUsesIsolatedUserDirectory(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("supported user services")
@@ -653,8 +711,8 @@ func TestUserServiceLifecycleUsesIsolatedUserDirectory(t *testing.T) {
 			t.Fatalf("non-systemctl action %v received Linux session context", command)
 		}
 	}
-	if runtime.GOOS == "linux" && systemctlCalls != 5 {
-		t.Fatalf("systemctl calls = %d, want five across install/start/stop/uninstall", systemctlCalls)
+	if runtime.GOOS == "linux" && systemctlCalls != 7 {
+		t.Fatalf("systemctl calls = %d, want seven across install/start/stop/uninstall", systemctlCalls)
 	}
 }
 func TestCapacityWaitIsVisibleWithoutPreemptingWork(t *testing.T) {

@@ -462,9 +462,17 @@ func plistTextIs(value plistValue, kind, want string) bool {
 }
 
 func systemdServiceConfig(data []byte) (string, error) {
+	args, err := systemdServiceInvocation(data)
+	if err != nil {
+		return "", err
+	}
+	return args[3], nil
+}
+
+func systemdServiceInvocation(data []byte) ([]string, error) {
 	text := string(data)
 	if strings.ContainsRune(text, '\r') {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	sections := make(map[string]map[string]string, 3)
 	section := ""
@@ -473,29 +481,29 @@ func systemdServiceConfig(data []byte) (string, error) {
 			continue
 		}
 		if strings.TrimSpace(line) != line {
-			return "", errInvalidServiceDefinition
+			return nil, errInvalidServiceDefinition
 		}
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			name := line[1 : len(line)-1]
 			if name != "Unit" && name != "Service" && name != "Install" {
-				return "", errInvalidServiceDefinition
+				return nil, errInvalidServiceDefinition
 			}
 			if _, duplicate := sections[name]; duplicate {
-				return "", errInvalidServiceDefinition
+				return nil, errInvalidServiceDefinition
 			}
 			sections[name] = make(map[string]string)
 			section = name
 			continue
 		}
 		if section == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
-			return "", errInvalidServiceDefinition
+			return nil, errInvalidServiceDefinition
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if !ok || key == "" || strings.TrimSpace(key) != key {
-			return "", errInvalidServiceDefinition
+			return nil, errInvalidServiceDefinition
 		}
 		if _, duplicate := sections[section][key]; duplicate {
-			return "", errInvalidServiceDefinition
+			return nil, errInvalidServiceDefinition
 		}
 		sections[section][key] = value
 	}
@@ -503,29 +511,29 @@ func systemdServiceConfig(data []byte) (string, error) {
 		"Description": "Runmoor ephemeral GitHub Actions runner manager",
 		"After":       "network-online.target",
 	}) || !systemdKeysEqual(sections["Service"], []string{"Type", "ExecStart", "ExecStop", "TimeoutStopSec", "KillMode", "Restart", "RestartSec", "UMask"}) || !systemdValuesEqual(sections["Install"], map[string]string{"WantedBy": "default.target"}) {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	service := sections["Service"]
 	if service["Type"] != "simple" || service["TimeoutStopSec"] != "infinity" || service["KillMode"] != "process" || service["Restart"] != "on-failure" || service["RestartSec"] != "5" || service["UMask"] != "0077" {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	startArgs, err := parseSystemdExec(service["ExecStart"])
 	if err != nil {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	stopArgs, err := parseSystemdExec(service["ExecStop"])
 	if err != nil {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	startBinary, startConfig, err := serviceInvocation(startArgs, "run")
 	if err != nil {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	stopBinary, stopConfig, err := serviceInvocation(stopArgs, "stop")
 	if err != nil || startBinary != stopBinary || startConfig != stopConfig {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
-	return startConfig, nil
+	return startArgs, nil
 }
 
 func systemdValuesEqual(actual, expected map[string]string) bool {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -110,6 +111,73 @@ func serviceCommandEnv(goos, command string) []string {
 	return env
 }
 
+func systemdMainPID(ctx context.Context, exec CommandExecutor) (int, error) {
+	output, err := exec.Run(ctx, "systemctl", []string{"--user", "show", "--property=MainPID", "--value", systemdServiceName}, serviceCommandEnv("linux", "systemctl"), nil)
+	if err != nil {
+		slog.Warn("systemd_service_identity_check_failed", "reason", "main_pid_unavailable")
+		return 0, problem(ErrDependency, "Cannot inspect the systemd user service.", "Check the logged-in systemd user session and retry service start.")
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	if err != nil || pid < 0 {
+		slog.Warn("systemd_service_identity_check_failed", "reason", "main_pid_invalid")
+		return 0, problem(ErrDependency, "Cannot inspect the systemd user service.", "Check the logged-in systemd user session and retry service start.")
+	}
+	return pid, nil
+}
+
+func systemdProcessCommandLine(pid int) ([]string, error) {
+	if pid <= 0 {
+		return nil, errInvalidServiceDefinition
+	}
+	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	if err != nil {
+		return nil, errInvalidServiceDefinition
+	}
+	return parseSystemdProcessCommandLine(data)
+}
+
+func parseSystemdProcessCommandLine(data []byte) ([]string, error) {
+	if len(data) < 2 || data[len(data)-1] != 0 {
+		return nil, errInvalidServiceDefinition
+	}
+	parts := bytes.Split(data[:len(data)-1], []byte{0})
+	args := make([]string, len(parts))
+	for i, part := range parts {
+		if len(part) == 0 {
+			return nil, errInvalidServiceDefinition
+		}
+		args[i] = string(part)
+	}
+	return args, nil
+}
+
+func requireSystemdActiveIdentity(ctx context.Context, exec CommandExecutor, definition []byte) error {
+	pid, err := systemdMainPID(ctx, exec)
+	if err != nil || pid == 0 {
+		return err
+	}
+	actual, err := systemdProcessCommandLine(pid)
+	if err != nil {
+		slog.Warn("systemd_service_identity_check_failed", "reason", "active_process_unreadable")
+		return problem(ErrDependency, "Cannot verify the active systemd service.", "Keep the service definition unchanged and retry from the logged-in service user's session.")
+	}
+	expected, err := systemdServiceInvocation(definition)
+	if err != nil {
+		return problem(ErrConfig, "The installed systemd service definition is invalid.", "Restore a valid Runmoor service definition before retrying.")
+	}
+	if len(actual) != len(expected) {
+		slog.Warn("systemd_service_identity_mismatch", "service", systemdServiceName)
+		return problem(ErrConfig, "The active systemd service does not match its installed definition.", "Gracefully stop the active manager with `runmoor stop --config <original-path>`, then retry service start.")
+	}
+	for i := range expected {
+		if actual[i] != expected[i] {
+			slog.Warn("systemd_service_identity_mismatch", "service", systemdServiceName)
+			return problem(ErrConfig, "The active systemd service does not match its installed definition.", "Gracefully stop the active manager with `runmoor stop --config <original-path>`, then retry service start.")
+		}
+	}
+	return nil
+}
+
 func Service(ctx context.Context, action, path string, c Config, exec CommandExecutor) error {
 	unit := servicePath()
 	uid := strconv.Itoa(os.Getuid())
@@ -183,6 +251,22 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 				return e
 			}
 			return run("launchctl", "bootstrap", domain, unit)
+		}
+		if runtime.GOOS == "linux" {
+			// Check the running process before daemon-reload: a changed on-disk
+			// unit must not replace ExecStop for a still-running old invocation.
+			if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
+				return e
+			}
+			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
+				return e
+			}
+			if e := run("systemctl", "--user", "daemon-reload"); e != nil {
+				return e
+			}
+			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
+				return e
+			}
 		}
 		return run("systemctl", "--user", "enable", "--now", systemdServiceName)
 	case "stop", "uninstall":
