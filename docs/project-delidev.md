@@ -274,6 +274,16 @@ Internal remediation planning now lists original linked session candidates by re
 
 The private Worker observation channel now verifies an existing Local/Worktree session's current PR head, branch, remote operands and clean state without changing files or native ownership. Original candidate revision/project/link checks invalidate stale observations after pause, Archive or unlink. This supplies candidate evidence; public Fix now/coalescing, fresh startup authorization and direct-harness Git writes remain unfinished.
 
-Managed backup creation, inventory, integrity inspection and durable permanent image deletion are connected through owner/client Connect RPC, CLI and desktop Settings. Schema v23 retains ordinary jobs/receipts while immutable external deletion intents survive database rollback. This does not complete permanent session deletion, workspace snapshot/restore or managed database restoration; see the [storage contract](cmds-delidev-storage-contract.md).
+Managed backup creation, inventory, integrity inspection and durable permanent image deletion are connected through owner/client Connect RPC, CLI and desktop Settings. Schema v23 retains ordinary jobs/receipts while immutable external deletion intents survive database rollback. Permanent session deletion is implemented through the separate lifecycle below; workspace snapshot/restore and managed database restoration remain required; see the [storage contract](cmds-delidev-storage-contract.md).
 
 Local desktop registration now has explicit owner-verified revoked-client recovery and a current-client revocation guard in the app. The CLI/native boundary retains the original revoked identity and private pairing history, uses a separate candidate and exact durable retry, and preserves server sessions/settings and independent Workers. It does not add automatic repair, remote saved-profile recovery, a new RPC or database migration; see the CLI and desktop contracts and evidence ledger.
+
+
+Permanent session deletion now has owner/client Connect RPC and equivalent confirmed
+CLI commands, a typed capability, synchronized intent outside SQLite, independently
+acknowledged Worker cleanup and complete managed-backup classification/removal.
+Unknown/offline ownership remains pending; UUID tombstones prevent stale database
+or Worker resurrection. Original Local checkouts, other sessions and shared account
+profiles are preserved. See the [storage contract](cmds-delidev-storage-contract.md)
+for bounds and evidence limits; workspace snapshots/restoration, currently absent
+native service families and broader issue #964 acceptance remain required.

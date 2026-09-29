@@ -35,6 +35,7 @@ type Store struct {
 	backupCreationGate sync.Mutex
 	notifyMu           sync.Mutex
 	notify             chan struct{}
+	deletionFault      bool
 	closed             bool
 }
 
@@ -102,7 +103,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			lock.Close()
 		}
 	}()
-	for _, name := range []string{"backups", "secrets", "backup-deletions", "backup-removals"} {
+	for _, name := range []string{"backups", "secrets", "backup-deletions", "backup-removals", "session-deletions"} {
 		if err := security.PrivateDir(filepath.Join(root, name)); err != nil {
 			return nil, storageError(err)
 		}
@@ -338,6 +339,10 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 	}
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return Result{}, domain.SessionDeletionPending()
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Result{}, storageError(err)
@@ -509,6 +514,30 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	}
 	if expected >= 1<<63-1 {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid expected revision.", "Reload the current entity revision.")
+	}
+	// An accepted external deletion obligation permanently closes admission.
+	// Original in-flight observations may settle only existing records; they
+	// cannot create new copies or restore dispatch while cleanup is pending.
+	scope := sessionID
+	if kind == domain.SessionKind {
+		scope = id
+	}
+	if scope != "" {
+		deleting, e := t.SessionDeleting(scope)
+		if e != nil {
+			return Record{}, e
+		}
+		if deleting {
+			if expected == 0 {
+				return Record{}, domain.SessionDeletionPending()
+			}
+			if kind == domain.SessionKind {
+				s, ok := value.(domain.Session)
+				if !ok || s.Dispatch != domain.DispatchPaused || s.NextExecutionIntent != "" {
+					return Record{}, domain.SessionDeletionPending()
+				}
+			}
+		}
 	}
 	body, err := json.Marshal(value)
 	if err != nil || len(body) > 1<<20 {
@@ -949,6 +978,9 @@ func init() {
 func (s *Store) Read(ctx context.Context, read func(*Tx) error) error {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return domain.SessionDeletionPending()
+	}
 	return s.readLocked(ctx, read)
 }
 

@@ -154,6 +154,7 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
   // Session creation can opt into server-owned, Worker-executed automatic titles.
   SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 = 1;
+  SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1 = 2;
 }
 message StopServerRequest {
   string request_id = 1;
@@ -260,6 +261,8 @@ service DeviceService {
   rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
 }
 service WorkerService {
+  rpc ListSessionDeletionWork(ListSessionDeletionWorkRequest) returns (ListSessionDeletionWorkResponse);
+  rpc ReportSessionDeletion(ReportSessionDeletionRequest) returns (ReportSessionDeletionResponse);
   rpc WatchWorkspaceReads(WatchWorkspaceReadsRequest) returns (stream WatchWorkspaceReadsResponse);
   rpc ReportWorkspaceRead(ReportWorkspaceReadRequest) returns (ReportWorkspaceReadResponse);
   rpc AttachWorker(AttachWorkerRequest) returns (AttachWorkerResponse);
@@ -764,6 +767,8 @@ message ResolveModelResponse {
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
+  rpc GetSessionDeletion(GetSessionDeletionRequest) returns (GetSessionDeletionResponse);
   rpc LinkSessionPullRequest(LinkSessionPullRequestRequest) returns (LinkSessionPullRequestResponse);
   rpc UnlinkSessionPullRequest(UnlinkSessionPullRequestRequest) returns (UnlinkSessionPullRequestResponse);
   rpc ReadSessionReviewContext(ReadSessionReviewContextRequest) returns (ReadSessionReviewContextResponse);
@@ -1717,4 +1722,59 @@ message GetBackupDeletionRequest {
 }
 message GetBackupDeletionResponse {
   BackupDeletionJob job = 1;
+}
+
+// Irrevocable deletion remains pending until every managed resource is confirmed.
+enum SessionDeletionState {
+  SESSION_DELETION_STATE_UNSPECIFIED = 0;
+  SESSION_DELETION_STATE_PENDING = 1;
+  SESSION_DELETION_STATE_SUCCEEDED = 2;
+}
+message SessionDeletionJob {
+  string id = 1;
+  string session_id = 2;
+  uint64 revision = 3;
+  SessionDeletionState state = 4;
+  string accepted_at = 5;
+  string finished_at = 6;
+  uint32 workers_pending = 7;
+  bool database_removed = 8;
+  bool backups_removed = 9;
+  // Removal is proved separately from filesystem allocation; bytes are unknown.
+  bool reclaimed_bytes_known = 10;
+}
+message DeleteSessionRequest {
+  Mutation mutation = 1;
+}
+message DeleteSessionResponse {
+  SessionDeletionJob job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetSessionDeletionRequest {
+  string session_id = 1;
+}
+message GetSessionDeletionResponse {
+  SessionDeletionJob job = 1;
+}
+message ListSessionDeletionWorkRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+  string after_session_id = 3;
+}
+message ListSessionDeletionWorkResponse {
+  // Closed version-1 metadata-only ownership envelopes, at most 20 per page.
+  repeated bytes work_json = 1;
+  string next_session_id = 2;
+}
+message ReportSessionDeletionRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string session_id = 4;
+  string deletion_id = 5;
+  string work_digest = 6;
+}
+message ReportSessionDeletionResponse {
+  SessionDeletionJob job = 1;
 }

@@ -22,6 +22,13 @@ type sessionReceipt struct {
 }
 
 func sessionRecord(tx *store.Tx, id domain.ID) (store.Record, domain.Session, error) {
+	deleting, err := tx.SessionDeleting(id)
+	if err != nil {
+		return store.Record{}, domain.Session{}, err
+	}
+	if deleting {
+		return store.Record{}, domain.Session{}, domain.SessionDeletionPending()
+	}
 	r, err := tx.Get(domain.SessionKind, id)
 	if err != nil {
 		return r, domain.Session{}, err

@@ -186,3 +186,14 @@ Schema v23 adds durable managed-backup deletion indexing and external deletion o
 ### Durable backup creation commands
 
 `backup create [--wait]` now calls `SystemService.RequestBackup` and returns the original accepted job; `--wait` observes completion without canceling the server-owned work when the caller disconnects. `backup creation --id JOB-ID` and `backup creations [--limit N] [--page-token TOKEN]` inspect original status after restart. See the [storage contract](cmds-delidev-storage-contract.md) for the shared controller, identity, retry and deletion boundaries.
+
+
+### Permanent session deletion
+
+`session delete --id SESSION-ID --revision N --confirm [--wait]` accepts an
+irreversible owner/paired-client deletion using the common exact request UUID.
+`session deletion --id SESSION-ID` observes its typed original job after restart
+or content removal. Waiting uses reads only and preserves accepted progress on
+cancellation or failure. Offline/uncertain Worker or backup cleanup stays pending;
+completion requires all managed copies confirmed removed and never invents
+reclaimed disk space. See the [storage contract](cmds-delidev-storage-contract.md).

@@ -5,8 +5,8 @@
 Go owns managed database backups, session deletion, Worker snapshots and recovery.
 The approved completion work includes every remaining issue #964 requirement;
 actual account/private-GitHub access and platform distribution validation remain
-deferred. This document distinguishes the implemented backup observation surface
-from permanent session deletion, workspace snapshots and restoration, which remain pending. Managed backup deletion is implemented separately below.
+deferred. This document covers managed backup observation, creation/deletion and permanent
+session deletion. Workspace snapshots and restoration remain pending.
 
 ## Managed backup observation
 
@@ -162,11 +162,91 @@ failures. Accepted deletion cannot be canceled. Logical validated image bytes
 removed are not a claim of reclaimed filesystem space; hard links, filesystem
 snapshots and allocation remain outside that measurement.
 
+## Permanent session deletion
+
+`SessionService.DeleteSession` accepts an owner/paired-client UUID-v7 request,
+original session ID and exact nonzero revision. `GetSessionDeletion` observes the
+original job independently of the session resource, including after that resource
+is removed. Workers cannot invoke these owner/client APIs. The typed
+`PERMANENT_SESSION_DELETION_V1` capability advertises this boundary. CLI
+`session delete --id ID --revision N --confirm [--wait]` requires explicit
+irreversible confirmation; `session deletion --id SESSION-ID` observes it later.
+Waiting reads the accepted job without replaying acceptance and preserves its
+identity/progress on cancellation or a failed read. Revisions remain decimal-safe.
+Archive continues to preserve content and is independent of this operation.
+
+Go persists a synchronized private `session-deletions/<session>.json` obligation
+outside replaceable SQLite **before** pausing dispatch or requesting cancellation.
+It binds the original server, actor, request, revision and every immutable claimed
+Worker assignment. New requests cannot replace it; exact retries return current
+progress, and receipt reconstruction reserves only the original request. Uncertain
+intent publication fences ordinary store access until external-journal recovery.
+Admission rejects new session copies; original cancellation/cleanup may finish,
+but no fresh execution, preparation, response or recovery is admitted. Startup
+reapplies intent before listeners, reconstructs reference-only receipts and
+repurges an older database when removal had committed. Obligations are never
+evicted: 4,096 sessions and 4,096 original jobs per session are explicit bounds;
+one immutable plan is capped at 1 MiB. Unknown ownership fails closed.
+
+A separate authenticated Worker polling/report lane survives an interrupted
+primary assignment stream. Work binds the original paired device/machine and
+immutable assignment instance/revision/hash; reports additionally require a live
+current instance and exact plan digest. One retained report UUID survives process
+replacement and lost acknowledgements. Cleanup tombstones native admission,
+joins original publication owners, reconciles exact retained process indexes,
+and acquires the same workspace lock as preparation/execution/reads. Missing,
+foreign, busy or uncertain evidence remains pending. A missing workspace without
+original removal proof is not completion, except for positively failed preparations
+that never produced a workspace. Worker attempts are bounded to two minutes.
+
+Original manifests bind session, machine and preparation digest. Worktree cleanup
+compares actual native common/admin directories and removes only the managed linked
+worktree; dirty/untracked owned worktree files are included. Original Local
+checkouts, including dirty/ignored files, are never traversed. Shared account
+browser profiles are outside the deletion plan. Worker cleanup removes original
+job/journal/outbox, execution runtime/history/claim, title runtime, workspace
+recovery, PR startup and owned process records. It persists original workspace
+proof before any unlink, persists removal stages before deleting journals, and
+then retains only non-content digest/report tombstones. Filesystem traversal
+never follows links, checks original file identity, observes cancellation before
+each unlink and is capped at 100,000 entries per owned tree. A replaced root is
+preserved as uncertain. Cleanup retry never starts native work or resends input.
+
+Only after every original Worker acknowledgement does one SQLite transaction
+remove the session and its scoped inputs, transcripts, tools, interactions,
+snapshots, links/reviews, attachments, jobs, occurrences, inbox, activity and usage
+records. Foreign-key cascades remove search/claim/index state; receipts touching
+removed resources are redacted and UUID/kind tombstones prevent stale publication.
+Shared PR remediation histories lose the deleted session's operands and retire
+coordination while preserving contiguous history and lifetime counters, without
+inventing a native outcome or refunding attempts. Secure-delete plus a successful
+WAL truncation must finish before database-removal acknowledgement. Existing
+schema-24 tables suffice; no destructive migration or fresh schema baseline is
+introduced.
+
+The joined server controller retries every two seconds, bounds each session pass
+to thirty seconds and uses identity-checked private immutable SQLite inspection
+to classify **every** managed backup. Images containing session entities or shared
+remediation operands use existing durable backup deletion intents. Unrelated
+images remain. Published replacements, corrupt/foreign images, unpublished
+scratch or unresolved claimed images preserve uncertainty and block completion.
+The final backup acknowledgement follows confirmed removals and directory sync;
+completion does not assert physical free-space recovery, and reclaimed bytes
+remain explicitly unknown. Repeated scans retain completed obligations and
+reapply removal to stale restored managed data. Logs contain operation/UUID,
+revision and stable error codes only, never paths, prompts or credentials.
+
+Future session-owned native services, dependent Sidechats and workspace snapshots
+must join this ownership graph and acknowledgement boundary before exposing them.
+Current unimplemented terminal/forward/browser-profile/snapshot products are not
+invented by deletion. Uncontrolled filesystem snapshots and external copies are
+outside the guarantee; platform/process fixtures do not establish native
+Windows/Linux or real-account acceptance.
+
 ## Remaining implementation
 
-Permanent session deletion requires irrevocable intent, stopped ownership,
-offline-Worker progress and managed-backup removal. Restoration must preserve
-deletion obligations outside the replaced database. Worker-local snapshots must
+Restoration must preserve session and image deletion obligations outside the
+replaced database and apply them before serving restored state. Worker-local snapshots must
 faithfully preserve all repositories, ignored files, unpushed commits and symlinks
 before deleting any managed source. Those operations are not yet exposed by the
 backup observation APIs; the complete requirements remain authoritative.

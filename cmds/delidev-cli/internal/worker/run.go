@@ -268,6 +268,12 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 func watchAttached(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, auxiliary bool) error {
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	deletionsDone := make(chan struct{})
+	go func() {
+		defer close(deletionsDone)
+		watchSessionDeletions(watchCtx, config, client, credential, instance)
+	}()
+	defer func() { cancel(); <-deletionsDone }()
 	results := make(chan error, 2)
 	go func() { results <- watch(watchCtx, config, client, credential, instance) }()
 	count := 1
@@ -603,6 +609,14 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 	}
 }
 func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb.Resource, job domain.Job) (journal, error) {
+	if resource.SessionId != "" {
+		if e := domain.ID(resource.SessionId).Validate(); e != nil {
+			return journal{}, e
+		}
+		if _, e := os.Lstat(sessionDeletionPath(config.Root, domain.ID(resource.SessionId))); !errors.Is(e, os.ErrNotExist) {
+			return journal{}, domain.SessionDeletionPending()
+		}
+	}
 	if job.Type == domain.ExecuteSessionJob {
 		var input domain.ExecutionJobInput
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != resource.SessionId || input.MachineID != job.MachineID {

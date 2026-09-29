@@ -3191,3 +3191,34 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+### Permanent session deletion, issue #1078 (2026-09-30)
+
+Implemented additive owner/client deletion and original-job observation RPC/CLI,
+independent authenticated Worker cleanup polling/acknowledgement, synchronized
+external server/Worker intent, immutable assignment/process/workspace comparisons,
+reference-only receipts, transactional content/search/usage removal and tombstones.
+Managed backup classification/removal reuses identity-checked private SQLite
+inspection and original durable backup deletion. Shared PR attempt histories lose
+session operands without resetting counters. Original Local checkout files and
+shared browser profiles are excluded from removal. Workspace snapshots,
+restoration, absent native service families and issue #964 platform/account
+acceptance remain separate requirements.
+
+Real isolated private SQLite/Git focused race fixtures passed for two-session
+isolation, original/offline Worker ownership, exact acknowledgement retry,
+revoked/foreign RPC access, stale revisions, intent-publication failure, database
+rollback with journal preservation, receipt redaction, managed image removal,
+Local dirty/ignored preservation, Worktree removal and crash-stage retry. The
+additional cleanup selection passes (store 14.863s, Worker 22.726s), including
+missing workspace proof and shared-remediation history consistency. RPC/CLI
+focused checks pass (server 12.945s, CLI 1.712s); CLI revisions beyond JavaScript's
+safe integer range remain exact. These are controlled process/transport fixtures,
+not real provider credentials or native Windows/Linux acceptance.
+
+API-client tests passed (41 tests) and type checking passed. Complete DeliDev Go
+vet passed. The initial complete race run encountered existing native fixture
+timeouts while the machine ran concurrent validation; a package-serialized
+30-minute-timeout rerun is pending. Protocol lint passed; breaking/freshness and
+final complete race results will be recorded after completion. No Rust or app
+frontend code changed, and no generated dist output was needed for these checks.

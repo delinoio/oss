@@ -5,6 +5,16 @@
 import { SessionService } from "./delidev_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.DeleteSession
+ */
+export const deleteSession = SessionService.method.deleteSession;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.GetSessionDeletion
+ */
+export const getSessionDeletion = SessionService.method.getSessionDeletion;
+
+/**
  * @generated from rpc delidev.v1.SessionService.LinkSessionPullRequest
  */
 export const linkSessionPullRequest = SessionService.method.linkSessionPullRequest;

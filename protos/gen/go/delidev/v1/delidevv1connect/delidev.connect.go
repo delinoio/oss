@@ -143,6 +143,12 @@ const (
 	// DeviceServiceRevokeDeviceProcedure is the fully-qualified name of the DeviceService's
 	// RevokeDevice RPC.
 	DeviceServiceRevokeDeviceProcedure = "/delidev.v1.DeviceService/RevokeDevice"
+	// WorkerServiceListSessionDeletionWorkProcedure is the fully-qualified name of the WorkerService's
+	// ListSessionDeletionWork RPC.
+	WorkerServiceListSessionDeletionWorkProcedure = "/delidev.v1.WorkerService/ListSessionDeletionWork"
+	// WorkerServiceReportSessionDeletionProcedure is the fully-qualified name of the WorkerService's
+	// ReportSessionDeletion RPC.
+	WorkerServiceReportSessionDeletionProcedure = "/delidev.v1.WorkerService/ReportSessionDeletion"
 	// WorkerServiceWatchWorkspaceReadsProcedure is the fully-qualified name of the WorkerService's
 	// WatchWorkspaceReads RPC.
 	WorkerServiceWatchWorkspaceReadsProcedure = "/delidev.v1.WorkerService/WatchWorkspaceReads"
@@ -244,6 +250,12 @@ const (
 	// ProviderServiceResolveModelProcedure is the fully-qualified name of the ProviderService's
 	// ResolveModel RPC.
 	ProviderServiceResolveModelProcedure = "/delidev.v1.ProviderService/ResolveModel"
+	// SessionServiceDeleteSessionProcedure is the fully-qualified name of the SessionService's
+	// DeleteSession RPC.
+	SessionServiceDeleteSessionProcedure = "/delidev.v1.SessionService/DeleteSession"
+	// SessionServiceGetSessionDeletionProcedure is the fully-qualified name of the SessionService's
+	// GetSessionDeletion RPC.
+	SessionServiceGetSessionDeletionProcedure = "/delidev.v1.SessionService/GetSessionDeletion"
 	// SessionServiceLinkSessionPullRequestProcedure is the fully-qualified name of the SessionService's
 	// LinkSessionPullRequest RPC.
 	SessionServiceLinkSessionPullRequestProcedure = "/delidev.v1.SessionService/LinkSessionPullRequest"
@@ -1330,6 +1342,8 @@ func (UnimplementedDeviceServiceHandler) RevokeDevice(context.Context, *connect.
 
 // WorkerServiceClient is a client for the delidev.v1.WorkerService service.
 type WorkerServiceClient interface {
+	ListSessionDeletionWork(context.Context, *connect.Request[v1.ListSessionDeletionWorkRequest]) (*connect.Response[v1.ListSessionDeletionWorkResponse], error)
+	ReportSessionDeletion(context.Context, *connect.Request[v1.ReportSessionDeletionRequest]) (*connect.Response[v1.ReportSessionDeletionResponse], error)
 	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest]) (*connect.ServerStreamForClient[v1.WatchWorkspaceReadsResponse], error)
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
@@ -1357,6 +1371,18 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkerService").Methods()
 	return &workerServiceClient{
+		listSessionDeletionWork: connect.NewClient[v1.ListSessionDeletionWorkRequest, v1.ListSessionDeletionWorkResponse](
+			httpClient,
+			baseURL+WorkerServiceListSessionDeletionWorkProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ListSessionDeletionWork")),
+			connect.WithClientOptions(opts...),
+		),
+		reportSessionDeletion: connect.NewClient[v1.ReportSessionDeletionRequest, v1.ReportSessionDeletionResponse](
+			httpClient,
+			baseURL+WorkerServiceReportSessionDeletionProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ReportSessionDeletion")),
+			connect.WithClientOptions(opts...),
+		),
 		watchWorkspaceReads: connect.NewClient[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse](
 			httpClient,
 			baseURL+WorkerServiceWatchWorkspaceReadsProcedure,
@@ -1440,19 +1466,31 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
-	watchWorkspaceReads   *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
-	reportWorkspaceRead   *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
-	attachWorker          *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
-	watchWork             *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
-	watchAuxiliaryWork    *connect.Client[v1.WatchAuxiliaryWorkRequest, v1.WatchAuxiliaryWorkResponse]
-	reportWork            *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
-	inspectRepository     *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
-	discoverHarnesses     *connect.Client[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse]
-	registerExecution     *connect.Client[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse]
-	publishExecution      *connect.Client[v1.PublishExecutionRequest, v1.PublishExecutionResponse]
-	claimQuestionResponse *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
-	claimApprovalResponse *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
-	claimSteerInput       *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+	listSessionDeletionWork *connect.Client[v1.ListSessionDeletionWorkRequest, v1.ListSessionDeletionWorkResponse]
+	reportSessionDeletion   *connect.Client[v1.ReportSessionDeletionRequest, v1.ReportSessionDeletionResponse]
+	watchWorkspaceReads     *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
+	reportWorkspaceRead     *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
+	attachWorker            *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
+	watchWork               *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
+	watchAuxiliaryWork      *connect.Client[v1.WatchAuxiliaryWorkRequest, v1.WatchAuxiliaryWorkResponse]
+	reportWork              *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
+	inspectRepository       *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
+	discoverHarnesses       *connect.Client[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse]
+	registerExecution       *connect.Client[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse]
+	publishExecution        *connect.Client[v1.PublishExecutionRequest, v1.PublishExecutionResponse]
+	claimQuestionResponse   *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
+	claimApprovalResponse   *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
+	claimSteerInput         *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+}
+
+// ListSessionDeletionWork calls delidev.v1.WorkerService.ListSessionDeletionWork.
+func (c *workerServiceClient) ListSessionDeletionWork(ctx context.Context, req *connect.Request[v1.ListSessionDeletionWorkRequest]) (*connect.Response[v1.ListSessionDeletionWorkResponse], error) {
+	return c.listSessionDeletionWork.CallUnary(ctx, req)
+}
+
+// ReportSessionDeletion calls delidev.v1.WorkerService.ReportSessionDeletion.
+func (c *workerServiceClient) ReportSessionDeletion(ctx context.Context, req *connect.Request[v1.ReportSessionDeletionRequest]) (*connect.Response[v1.ReportSessionDeletionResponse], error) {
+	return c.reportSessionDeletion.CallUnary(ctx, req)
 }
 
 // WatchWorkspaceReads calls delidev.v1.WorkerService.WatchWorkspaceReads.
@@ -1522,6 +1560,8 @@ func (c *workerServiceClient) ClaimSteerInput(ctx context.Context, req *connect.
 
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
+	ListSessionDeletionWork(context.Context, *connect.Request[v1.ListSessionDeletionWorkRequest]) (*connect.Response[v1.ListSessionDeletionWorkResponse], error)
+	ReportSessionDeletion(context.Context, *connect.Request[v1.ReportSessionDeletionRequest]) (*connect.Response[v1.ReportSessionDeletionResponse], error)
 	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
@@ -1545,6 +1585,18 @@ type WorkerServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkerService").Methods()
+	workerServiceListSessionDeletionWorkHandler := connect.NewUnaryHandler(
+		WorkerServiceListSessionDeletionWorkProcedure,
+		svc.ListSessionDeletionWork,
+		connect.WithSchema(workerServiceMethods.ByName("ListSessionDeletionWork")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceReportSessionDeletionHandler := connect.NewUnaryHandler(
+		WorkerServiceReportSessionDeletionProcedure,
+		svc.ReportSessionDeletion,
+		connect.WithSchema(workerServiceMethods.ByName("ReportSessionDeletion")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceWatchWorkspaceReadsHandler := connect.NewServerStreamHandler(
 		WorkerServiceWatchWorkspaceReadsProcedure,
 		svc.WatchWorkspaceReads,
@@ -1625,6 +1677,10 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case WorkerServiceListSessionDeletionWorkProcedure:
+			workerServiceListSessionDeletionWorkHandler.ServeHTTP(w, r)
+		case WorkerServiceReportSessionDeletionProcedure:
+			workerServiceReportSessionDeletionHandler.ServeHTTP(w, r)
 		case WorkerServiceWatchWorkspaceReadsProcedure:
 			workerServiceWatchWorkspaceReadsHandler.ServeHTTP(w, r)
 		case WorkerServiceReportWorkspaceReadProcedure:
@@ -1659,6 +1715,14 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedWorkerServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkerServiceHandler struct{}
+
+func (UnimplementedWorkerServiceHandler) ListSessionDeletionWork(context.Context, *connect.Request[v1.ListSessionDeletionWorkRequest]) (*connect.Response[v1.ListSessionDeletionWorkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ListSessionDeletionWork is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ReportSessionDeletion(context.Context, *connect.Request[v1.ReportSessionDeletionRequest]) (*connect.Response[v1.ReportSessionDeletionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ReportSessionDeletion is not implemented"))
+}
 
 func (UnimplementedWorkerServiceHandler) WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchWorkspaceReads is not implemented"))
@@ -2393,6 +2457,8 @@ func (UnimplementedProviderServiceHandler) ResolveModel(context.Context, *connec
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
+	GetSessionDeletion(context.Context, *connect.Request[v1.GetSessionDeletionRequest]) (*connect.Response[v1.GetSessionDeletionResponse], error)
 	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
 	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -2428,6 +2494,18 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		deleteSession: connect.NewClient[v1.DeleteSessionRequest, v1.DeleteSessionResponse](
+			httpClient,
+			baseURL+SessionServiceDeleteSessionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("DeleteSession")),
+			connect.WithClientOptions(opts...),
+		),
+		getSessionDeletion: connect.NewClient[v1.GetSessionDeletionRequest, v1.GetSessionDeletionResponse](
+			httpClient,
+			baseURL+SessionServiceGetSessionDeletionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("GetSessionDeletion")),
+			connect.WithClientOptions(opts...),
+		),
 		linkSessionPullRequest: connect.NewClient[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse](
 			httpClient,
 			baseURL+SessionServiceLinkSessionPullRequestProcedure,
@@ -2565,6 +2643,8 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	deleteSession            *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
+	getSessionDeletion       *connect.Client[v1.GetSessionDeletionRequest, v1.GetSessionDeletionResponse]
 	linkSessionPullRequest   *connect.Client[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse]
 	unlinkSessionPullRequest *connect.Client[v1.UnlinkSessionPullRequestRequest, v1.UnlinkSessionPullRequestResponse]
 	readSessionReviewContext *connect.Client[v1.ReadSessionReviewContextRequest, v1.ReadSessionReviewContextResponse]
@@ -2587,6 +2667,16 @@ type sessionServiceClient struct {
 	editLocalReviewComment   *connect.Client[v1.EditLocalReviewCommentRequest, v1.EditLocalReviewCommentResponse]
 	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
 	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
+}
+
+// DeleteSession calls delidev.v1.SessionService.DeleteSession.
+func (c *sessionServiceClient) DeleteSession(ctx context.Context, req *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error) {
+	return c.deleteSession.CallUnary(ctx, req)
+}
+
+// GetSessionDeletion calls delidev.v1.SessionService.GetSessionDeletion.
+func (c *sessionServiceClient) GetSessionDeletion(ctx context.Context, req *connect.Request[v1.GetSessionDeletionRequest]) (*connect.Response[v1.GetSessionDeletionResponse], error) {
+	return c.getSessionDeletion.CallUnary(ctx, req)
 }
 
 // LinkSessionPullRequest calls delidev.v1.SessionService.LinkSessionPullRequest.
@@ -2701,6 +2791,8 @@ func (c *sessionServiceClient) SubmitLocalReview(ctx context.Context, req *conne
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
+	GetSessionDeletion(context.Context, *connect.Request[v1.GetSessionDeletionRequest]) (*connect.Response[v1.GetSessionDeletionResponse], error)
 	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
 	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -2732,6 +2824,18 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
+	sessionServiceDeleteSessionHandler := connect.NewUnaryHandler(
+		SessionServiceDeleteSessionProcedure,
+		svc.DeleteSession,
+		connect.WithSchema(sessionServiceMethods.ByName("DeleteSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceGetSessionDeletionHandler := connect.NewUnaryHandler(
+		SessionServiceGetSessionDeletionProcedure,
+		svc.GetSessionDeletion,
+		connect.WithSchema(sessionServiceMethods.ByName("GetSessionDeletion")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceLinkSessionPullRequestHandler := connect.NewUnaryHandler(
 		SessionServiceLinkSessionPullRequestProcedure,
 		svc.LinkSessionPullRequest,
@@ -2866,6 +2970,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceDeleteSessionProcedure:
+			sessionServiceDeleteSessionHandler.ServeHTTP(w, r)
+		case SessionServiceGetSessionDeletionProcedure:
+			sessionServiceGetSessionDeletionHandler.ServeHTTP(w, r)
 		case SessionServiceLinkSessionPullRequestProcedure:
 			sessionServiceLinkSessionPullRequestHandler.ServeHTTP(w, r)
 		case SessionServiceUnlinkSessionPullRequestProcedure:
@@ -2918,6 +3026,14 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.DeleteSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) GetSessionDeletion(context.Context, *connect.Request[v1.GetSessionDeletionRequest]) (*connect.Response[v1.GetSessionDeletionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetSessionDeletion is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.LinkSessionPullRequest is not implemented"))

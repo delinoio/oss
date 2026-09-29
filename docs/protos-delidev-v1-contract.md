@@ -332,3 +332,24 @@ counts without replaying acceptance or filesystem work. Regenerate Go, TypeScrip
 and Connect Query bindings together.
 
 Provider activation adds an owner/client-only `ProviderService.ListProviderInventory`, closed capability/preset enums, account-list-only `ListResourcesRequest.provider_id`, and additive `SearchModels.enabled_providers_only`. Omitted model filtering preserves existing behavior. Provider enabled and preset provenance remain optional fields in the canonical provider JSON document for legacy compatibility. Inventory capabilities let clients detect older servers that ignore filters; Workers cannot read it. See [provider activation](cmds-delidev-provider-activation-contract.md), and regenerate Go messages/Connect handlers and TypeScript Connect Query bindings together.
+
+
+### Permanent session deletion
+
+`SessionService.DeleteSession` uses the existing UUID-v7/revision `Mutation` and
+returns an original typed `SessionDeletionJob`, request ID and replay flag.
+`GetSessionDeletion` reads by original session ID after content removal. Owner and
+paired-client authority applies; Worker credentials cannot invoke these APIs.
+`SystemCapability.PERMANENT_SESSION_DELETION_V1` advertises the additive surface.
+Pending/succeeded enum state, exact uint64 revision, accepted/finished timestamps,
+Worker count and database/backup acknowledgements keep acceptance separate from
+confirmed removal; unknown reclaimed bytes must remain unknown.
+
+`WorkerService.ListSessionDeletionWork` and `ReportSessionDeletion` form an
+independent current-instance-authenticated cleanup lane, bound to original paired
+machine/device and immutable versioned ownership metadata. Work pages contain at
+most 20 plans and 1 MiB; UUID continuation is observation only. Reports contain
+only original session/deletion IDs, plan digest and retained request UUID. No
+paths, prompts, credentials or new execution authority cross this boundary.
+Generate Go and TypeScript/Connect Query sources together and follow the
+[storage contract](cmds-delidev-storage-contract.md).

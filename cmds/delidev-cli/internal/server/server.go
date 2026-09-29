@@ -192,6 +192,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err := state.RestoreBackupDeletionIntents(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}), identity.ServerID); err != nil {
 		return err
 	}
+	if err := state.RestoreSessionDeletionIntents(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}), identity.ServerID); err != nil {
+		return err
+	}
 	listener, err := net.Listen("tcp", config.Listen)
 	if err != nil {
 		return domain.Fail(domain.Unavailable, "The requested listener could not be bound.", "Free the configured port or explicitly select another listener; DeliDev never remaps it automatically.")
@@ -258,6 +261,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	deletionsDone := make(chan struct{})
 	go func() { defer close(deletionsDone); service.runBackupDeletions(deletionsCtx) }()
 	defer func() { stopDeletions(); <-deletionsDone }()
+	sessionDeletionsCtx, stopSessionDeletions := context.WithCancel(child)
+	sessionDeletionsDone := make(chan struct{})
+	go func() { defer close(sessionDeletionsDone); service.runSessionDeletions(sessionDeletionsCtx) }()
+	defer func() { stopSessionDeletions(); <-sessionDeletionsDone }()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)
 	if ready != nil {
 		ready(service.Endpoint)
@@ -401,7 +408,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	})
 }
 func (s *Service) GetStatus(_ context.Context, req *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
-	response := connect.NewResponse(&pb.GetStatusResponse{Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, SchemaVersion: store.SchemaVersion, ServerId: string(s.Identity.ServerID), Listener: s.Endpoint.URL, StartedAt: s.Endpoint.StartedAt.Format(time.RFC3339Nano), Stopping: s.stopping.Load(), Capabilities: []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1}})
+	response := connect.NewResponse(&pb.GetStatusResponse{Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, SchemaVersion: store.SchemaVersion, ServerId: string(s.Identity.ServerID), Listener: s.Endpoint.URL, StartedAt: s.Endpoint.StartedAt.Format(time.RFC3339Nano), Stopping: s.stopping.Load(), Capabilities: []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1, pb.SystemCapability_SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1}})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
