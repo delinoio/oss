@@ -114,12 +114,16 @@ func TestBackupDeletionRetriesIntentFailureAndHashMismatchWithoutRemovingSource(
 		t.Fatal(err)
 	}
 	row, err = s.RunBackupDeletion(ctx, row.ID, in.ServerID)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("intent persistence failure was hidden from maintenance")
 	}
 	job, _ := Decode[domain.Job](row)
 	if job.State != domain.JobUncertain {
 		t.Fatal(job)
+	}
+	repeated, repeatErr := s.RunBackupDeletion(ctx, row.ID, in.ServerID)
+	if repeatErr == nil || repeated.Revision != row.Revision || domain.SafeError(repeatErr).Code != domain.SafeError(err).Code {
+		t.Fatal("unchanged failure was hidden or republished", repeated, repeatErr)
 	}
 	image := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
 	original, err := os.ReadFile(image)
@@ -141,8 +145,8 @@ func TestBackupDeletionRetriesIntentFailureAndHashMismatchWithoutRemovingSource(
 		t.Fatal(err)
 	}
 	row, err = s.RunBackupDeletion(ctx, row.ID, in.ServerID)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil || domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("image mismatch was hidden from maintenance", err)
 	}
 	job, _ = Decode[domain.Job](row)
 	if job.State != domain.JobUncertain {
@@ -360,7 +364,7 @@ func TestBackupDeletionMissingUnlinkAcknowledgmentStillRequiresSync(t *testing.T
 	}
 	row, err = s.runBackupDeletion(ctx, row.ID, in.ServerID, failSync)
 	job, decodeErr := Decode[domain.Job](row)
-	if err != nil || decodeErr != nil || job.State != domain.JobUncertain || syncs != 2 {
+	if err == nil || decodeErr != nil || job.State != domain.JobUncertain || syncs != 2 {
 		t.Fatal(job, err, decodeErr, syncs)
 	}
 	syncs = 0

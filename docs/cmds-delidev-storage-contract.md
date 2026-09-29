@@ -114,6 +114,10 @@ continue to enforce their external obligation if the managed image reappears.
 Completed scans validate the unchanged external intent and image absence without
 repeating directory synchronization. Unfinished/uncertain cleanup and every
 actual unlink still require synchronization before completion.
+Every failed deletion attempt returns its safe error alongside the retained job,
+including unchanged pending outcomes. Maintenance emits `backup_deletion_pending`
+with only the job ID and typed code; persisting uncertainty must not hide an
+ongoing filesystem failure or inflate revisions on identical retries.
 At most 4,096 deletion obligations may be accepted; capacity failure preserves all
 existing obligations rather than evicting them.
 

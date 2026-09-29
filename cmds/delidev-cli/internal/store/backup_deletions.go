@@ -389,7 +389,7 @@ func (s *Store) runBackupDeletion(ctx context.Context, id, server domain.ID, syn
 		next.Output, _ = json.Marshal(output)
 	}
 	if reflect.DeepEqual(job, next) {
-		return row, nil
+		return row, err
 	}
 	_, writeErr := s.Mutate(ctx, domain.NewID(), "backup.delete.progress", struct {
 		ID       domain.ID
@@ -401,7 +401,12 @@ func (s *Store) runBackupDeletion(ctx context.Context, id, server domain.ID, syn
 		}
 		return struct{}{}, err
 	})
-	return row, writeErr
+	if writeErr != nil {
+		return row, writeErr
+	}
+	// Retaining a pending outcome is not a successful cleanup attempt. Surface
+	// its safe error on every retry so maintenance can report persistent failures.
+	return row, err
 }
 
 func (s *Store) removeBackupImage(ctx context.Context, in BackupDeletionInput, state domain.JobState, syncParent func(string) error) (BackupDeletionOutput, error) {

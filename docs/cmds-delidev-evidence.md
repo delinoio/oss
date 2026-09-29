@@ -2708,6 +2708,14 @@ typecheck, eight package tests and build. Focused CLI recovery/local-pairing/
 backup race tests passed (16.243s), native library tests passed (14 passed,
 4 opt-in tests ignored), and the CEF host compiled with `desktop-host`.
 
+### PR #1063 deletion maintenance failure visibility (2026-09-29)
+
+Deletion attempts return the safe original failure with the updated or unchanged
+pending job, preserving the controller's typed `backup_deletion_pending` logging
+on every failed retry. Store race tests passed (5.089s), including inaccessible
+intent state, repeated identical failure without revision growth, hash mismatch,
+failed directory synchronization and subsequent successful recovery.
+
 ## 2026-09-29: PR #1060 account-setup merge validation
 
 - Merged main's guided API account setup and provider activation while preserving all desktop recovery rules and both branches' evidence records. The combined Settings surface retains current-device revocation guards; the CLI retains explicit local registration inspection/recovery alongside the new provider operations.
