@@ -81,9 +81,19 @@ func readPrivateServiceDefinition(path string) ([]byte, os.FileInfo, error) {
 
 func requireNoSystemdDropIns(unit string) error {
 	// systemd merges unit-specific and service-type drop-ins into the effective
-	// definition. Inspect the standard user lookup roots directly so validation
-	// can reject them before contacting systemd or opening offline state.
+	// definition, and a same-named unit in a higher-priority root can replace the
+	// installed file. Inspect every standard user lookup root directly so
+	// validation can reject either ambiguity before contacting systemd or opening
+	// offline state.
 	for _, root := range systemdUserUnitDirs(unit) {
+		shadow := filepath.Join(root, serviceLabel+".service")
+		if filepath.Clean(shadow) != filepath.Clean(unit) {
+			if _, err := os.Lstat(shadow); err == nil {
+				return errInvalidServiceDefinition
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
 		for _, name := range []string{"runmoor.service.d", "service.d"} {
 			path := filepath.Join(root, name)
 			if _, err := os.Lstat(path); err == nil {
@@ -117,6 +127,13 @@ func systemdUserUnitDirs(unit string) []string {
 	if !filepath.IsAbs(configHome) {
 		configHome = filepath.Join(home, ".config")
 	}
+	add(filepath.Join(configHome, "systemd", "user.control"))
+	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	if filepath.IsAbs(runtimeDir) {
+		add(filepath.Join(runtimeDir, "systemd", "user.control"))
+		add(filepath.Join(runtimeDir, "systemd", "transient"))
+		add(filepath.Join(runtimeDir, "systemd", "generator.early"))
+	}
 	add(filepath.Join(configHome, "systemd", "user"))
 	configDirs := os.Getenv("XDG_CONFIG_DIRS")
 	if configDirs == "" {
@@ -127,10 +144,13 @@ func systemdUserUnitDirs(unit string) []string {
 	}
 	add("/etc/systemd/user")
 
-	if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(runtimeDir) {
+	if filepath.IsAbs(runtimeDir) {
 		add(filepath.Join(runtimeDir, "systemd", "user"))
 	}
 	add("/run/systemd/user")
+	if filepath.IsAbs(runtimeDir) {
+		add(filepath.Join(runtimeDir, "systemd", "generator"))
+	}
 
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if !filepath.IsAbs(dataHome) {
@@ -146,6 +166,9 @@ func systemdUserUnitDirs(unit string) []string {
 	}
 	add("/usr/local/lib/systemd/user")
 	add("/usr/lib/systemd/user")
+	if filepath.IsAbs(runtimeDir) {
+		add(filepath.Join(runtimeDir, "systemd", "generator.late"))
+	}
 	return dirs
 }
 

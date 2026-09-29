@@ -275,6 +275,84 @@ func TestServiceActionsRejectSystemdDropInsBeforeSideEffects(t *testing.T) {
 	}
 }
 
+func TestSystemdUserServiceLookupRejectsShadowUnitsAndDropIns(t *testing.T) {
+	home := t.TempDir()
+	configHome := filepath.Join(home, "config")
+	configDirs := filepath.Join(home, "config-dirs")
+	runtimeDir := filepath.Join(home, "runtime")
+	dataHome := filepath.Join(home, "data")
+	dataDirs := filepath.Join(home, "data-dirs")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("XDG_CONFIG_DIRS", configDirs)
+	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	t.Setenv("XDG_DATA_DIRS", dataDirs)
+
+	unit := filepath.Join(configHome, "systemd", "user", serviceLabel+".service")
+	roots := systemdUserUnitDirs(unit)
+	wantRoots := []string{
+		filepath.Join(configHome, "systemd", "user.control"),
+		filepath.Join(runtimeDir, "systemd", "user.control"),
+		filepath.Join(runtimeDir, "systemd", "transient"),
+		filepath.Join(runtimeDir, "systemd", "generator.early"),
+		filepath.Join(configHome, "systemd", "user"),
+		filepath.Join(configDirs, "systemd", "user"),
+		"/etc/systemd/user",
+		filepath.Join(runtimeDir, "systemd", "user"),
+		"/run/systemd/user",
+		filepath.Join(runtimeDir, "systemd", "generator"),
+		filepath.Join(dataHome, "systemd", "user"),
+		filepath.Join(dataDirs, "systemd", "user"),
+		"/usr/local/lib/systemd/user",
+		"/usr/lib/systemd/user",
+		filepath.Join(runtimeDir, "systemd", "generator.late"),
+	}
+	rootSet := make(map[string]struct{}, len(roots))
+	for _, root := range roots {
+		rootSet[root] = struct{}{}
+	}
+	for _, root := range wantRoots {
+		if _, ok := rootSet[root]; !ok {
+			t.Fatalf("standard user unit search root %q is missing from %v", root, roots)
+		}
+	}
+
+	for _, root := range wantRoots {
+		if filepath.Clean(root) == filepath.Dir(unit) || strings.HasPrefix(root, "/etc/") || strings.HasPrefix(root, "/run/") || strings.HasPrefix(root, "/usr/") {
+			continue
+		}
+		t.Run(root, func(t *testing.T) {
+			if err := os.MkdirAll(root, 0700); err != nil {
+				t.Fatal(err)
+			}
+			shadow := filepath.Join(root, serviceLabel+".service")
+			if err := os.WriteFile(shadow, []byte("[Service]\nExecStart=/tmp/foreign\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := requireNoSystemdDropIns(unit); err == nil {
+				t.Fatal("shadow service definition was accepted")
+			}
+			if err := os.Remove(shadow); err != nil {
+				t.Fatal(err)
+			}
+
+			for _, name := range []string{"runmoor.service.d", "service.d"} {
+				dropIn := filepath.Join(root, name)
+				if err := os.Mkdir(dropIn, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := requireNoSystemdDropIns(unit); err == nil {
+					t.Fatalf("drop-in directory %q was accepted", name)
+				}
+				if err := os.Remove(dropIn); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func TestServiceActionsDoNotContactDifferentRunningManager(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("service definitions are supported on macOS and Linux")
