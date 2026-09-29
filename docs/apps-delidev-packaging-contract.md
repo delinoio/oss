@@ -1,0 +1,122 @@
+# DeliDev native package verification
+
+## Scope
+
+`apps/delidev/scripts` and `.github/workflows/delidev-native-dry-run.yml` own
+credential-free native package preparation for DeliDev's six desktop targets.
+These paths build reviewable packages; they do not publish a release, install an
+update or establish native runtime acceptance. Production signing, notarization,
+updater trust and Windows/Linux execution remain separate requirements.
+
+## Runtime and Language
+
+Node.js 24 orchestrates the existing pinned Rust/Tauri CEF packager and Go sidecar.
+CI installs the repository's `nightly-2026-01-01` Rust toolchain and explicitly
+selects the matrix's native host, including Windows arm64.
+The Tauri revision remains `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; `cef`
+150.0.0 resolves to native CEF 150.0.10 / Chromium 150.0.7871.101. No packaging
+operation starts a DeliDev server, Worker, harness or account login.
+
+## Users and Operators
+
+Maintainers run local dry runs or manually dispatch the read-only GitHub workflow.
+The workflow has no automatic push, tag, release or pull-request trigger.
+
+## Interfaces and Contracts
+
+`pnpm --dir apps/delidev bundle:dry-run --target <triple>` requires a clean committed
+checkout, matching native Node architecture and matching `rustc` host. Recheck the
+unchanged commit and clean working tree before publishing verified output. The command
+rejects cross compilation as native evidence. `--plan` prints the same six-entry
+matrix consumed by CI; it requires neither dependencies nor credentials.
+
+| Target | Native runner | Package |
+| --- | --- | --- |
+| `x86_64-apple-darwin` | `macos-15-intel` | Ad-hoc signed `.app` in a tar archive |
+| `aarch64-apple-darwin` | `macos-15` | Ad-hoc signed `.app` in a tar archive |
+| `x86_64-pc-windows-msvc` | `windows-2022` | Unsigned MSI |
+| `aarch64-pc-windows-msvc` | `windows-11-arm` | Unsigned MSI |
+| `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | Unsigned DEB |
+| `aarch64-unknown-linux-gnu` | `ubuntu-22.04-arm` | Unsigned DEB |
+
+The macOS-specific `bundle:macos-dry-run` remains available for development
+checkouts and verifies strict nested ad-hoc signatures, original bundle ID,
+macOS 13 metadata, main/sidecar/CEF/helper architecture and required CEF data.
+The general command archives that verified app with file modes retained.
+Windows extracts the MSI administratively without installing it, verifies
+original app/sidecar/CEF PE64 architecture and resources, and requires the product
+executables and installer to report `NotSigned`. Linux extracts the DEB without
+installation, checks ELF64 architecture, CEF resources and the exact installed
+launcher link. None of these static checks implies successful native startup.
+
+The pinned Debian bundler moves the main binary to
+`/usr/share/DeliDev/delidev-desktop` while retaining its sidecar at
+`/usr/bin/delidev`. Native sidecar resolution recognizes only that exact installed
+layout; development/AppImage paths retain adjacent resolution with no PATH lookup.
+
+Every verified package contains unchanged Apache `LICENSE`/`NOTICE`, the original
+CEF license and the exact distribution's Chromium `CREDITS.html`. Distribution
+identity and complete packaged notice bytes are checked; the report also records
+the Chromium credits SHA-256. Ordinary `bundle:native` is development packaging;
+only the verified dry-run path currently assembles the complete native notice set.
+
+## Storage
+
+Verified artifacts live under `target/delidev-dry-run/<target>/<source-commit>/`
+with `verification.json` and `SHA256SUMS`. Reports bind exact source revision,
+target, artifact name/size/digest, CEF version, notice digest and explicit signature
+state. They retain `runtimeAcceptance: unverified` and never claim publication.
+A per-checkout build lock excludes concurrent packagers; an interrupted lock needs
+explicit inspection before removal. Temporary extraction/staging is cleaned on
+ordinary failure. A successful result is atomically published, and an existing
+commit's artifacts are never silently replaced. CI uploads only successful results
+as seven-day workflow artifacts, with no public release or tag.
+
+## Security
+
+Build children receive the bounded system/tool environment only. Windows adds
+explicit MSVC/SDK and OS lookup fields; secret-bearing proxy, signing, notarization,
+updater and publication variables and executable-injection flags are excluded.
+Windows pnpm runs through its JavaScript entry, avoiding `cmd.exe` command-string
+construction. GitHub checkout credentials are not persisted, permissions are
+`contents: read`, and no signing environment or repository secret is referenced.
+LFS is hydrated before compilation; generated `dist` remains untracked output.
+
+## Logging
+
+Build tools emit their ordinary diagnostics. Verification emits bounded status
+and typed failure descriptions; its JSON contains package provenance only, never
+account data, environment dumps or signing material. A failed check must not leave
+a successful verification report.
+
+## Build and Test
+
+Run `pnpm --dir apps/delidev test`, `pnpm ci:workflows`, `pnpm ci:contracts` and root
+`cargo test` after native source changes. Header/resource/notice tests use temporary
+files and cover wrong architecture, truncation, invalid PE offsets, duplicate
+extracted executables, missing resources and launcher redirection. The workflow
+contract test guards manual dispatch, LFS hydration, read-only permissions and
+verification before upload. Full local native packaging requires a clean commit;
+matrix source validation does not count as six successful platform builds.
+
+## Dependencies and Integrations
+
+This workflow uses the repository's locked pnpm/Rust/Go dependency graph and
+existing frontend/API generation. Native runner labels follow
+[GitHub's runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+Native resource layouts follow the pinned Tauri bundler, not unversioned examples.
+Imported CEF/Chromium licensing remains distinct from repository ownership.
+
+## Change Triggers
+
+Update this contract, scoped `apps/delidev/AGENTS.md`, workflow tests, desktop
+contract and evidence ledger together when targets, runtime pins, bundle layouts,
+notice sources, verification or publication boundaries change.
+
+## References
+
+- [Project](project-delidev.md)
+- [Desktop contract](apps-delidev-desktop-contract.md)
+- [Evidence ledger](cmds-delidev-evidence.md)
+- [Repository defaults](repository-defaults.md)
+- [License contract](repository-license-contract.md)

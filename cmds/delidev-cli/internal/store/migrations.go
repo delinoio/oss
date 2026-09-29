@@ -188,18 +188,43 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return storageError(err)
 		}
 	}
-	if version < 22 {
+	// Previous unmerged backup layouts used versions 21 and 22. Detect their
+	// retained deletion table before adding schema 23. Only the backup layout
+	// of version 22 still needs the hosted-provider defaults; main's version 22
+	// already applied them and must preserve subsequent explicit deletions.
+	var existingDeletionTable bool
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='backup_deletions')").Scan(&existingDeletionTable); err != nil {
+		return storageError(err)
+	}
+	if version == 21 && existingDeletionTable {
+		var providerIndex bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name='provider_preset_unique')").Scan(&providerIndex); err != nil {
+			return storageError(err)
+		}
+		if !providerIndex {
+			if _, err := tx.ExecContext(ctx, providerActivationSchema); err != nil {
+				return storageError(err)
+			}
+		}
+	}
+	if version < 22 || (version == 22 && existingDeletionTable) {
 		if err := seedHostedProviders(ctx, tx); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "PRAGMA user_version=22"); err != nil {
+	}
+	if !existingDeletionTable {
+		if _, err := tx.ExecContext(ctx, backupDeletionSchema); err != nil {
 			return storageError(err)
 		}
 	}
-	if version < 23 {
-		if err := applySessionTitleSchema(ctx, tx); err != nil {
-			return err
-		}
+	// Main and the unmerged backup branch both used schema 23. The title
+	// migration inspects its own column and creates only missing indexes and
+	// claim tables, preserving existing usage and one-time inference claims.
+	if err := applySessionTitleSchema(ctx, tx); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "PRAGMA user_version=24;"); err != nil {
+		return storageError(err)
 	}
 	return storageError(tx.Commit())
 }

@@ -6,7 +6,7 @@
 ## Runtime and Language
 React 19.2.8 and TypeScript render the trusted app through Rsbuild. The native Tauri component implements the window, bounded Go sidecar startup, private client bootstrap, saved server windows, local-server supervision, tray presentation and native notifications. Go owns every product operation. The frontend development origin is fixed at `http://127.0.0.1:46311`; conflicts fail. This is a desktop application, not a browser product or deployed website.
 
-The native crate is a root workspace member. Its optional `desktop-host` feature uses Wry from the immutable official Tauri revision `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; it does not alter DevHud’s CEF feature graph. The default library tests require no display. The executable is `delidev-desktop`, bundle identifier `io.delino.delidev`.
+The native crate is a root workspace member. Its optional `desktop-host` feature uses CEF from the immutable official Tauri revision `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`, sharing the existing workspace CEF pins. The executable routes native helper invocations through `tauri::cef_entry_point` before parsing product arguments or starting Go controllers. macOS retains the 13.0 minimum. Capabilities match only the trusted `main` and `server-*` webview labels, never every webview in their containing window; external child views receive no app permission by window association. Trusted windows remain incognito and deny external navigation and new-window requests. Account browser persistence and cleanup require their separate implementation; switching engines alone does not establish those features. The default library tests require no display. The executable is `delidev-desktop`, bundle identifier `io.delino.delidev`.
 
 ## Users and Operators
 One server owner can connect multiple paired desktop clients. The initial prerequisite checklist links to saved settings without installing a harness or overriding existing setup. Automated readiness checks remain pending.
@@ -92,7 +92,7 @@ One native supervision loop per desktop process invokes Go's `server ensure`; Go
 
 The desktop offers explicit server stop through direct authenticated Connect with retained mutation identity and a description of its effect on clients/Workers. Accepted stop, automatic-restart suppression and session cleanup remain distinct. Explicit local start uses the existing closed native bootstrap command. Renderer connection verification retries at most three transient status reads and never repeats a native startup/pairing operation or product mutation automatically. Reconnection to the same server/device/endpoint/credential revalidates active read queries without replacing drafts or pending mutation identities; an identity change still clears connection-owned state.
 
-Navigation is restricted to the app entry document, including Tauri’s empty custom-scheme path. External navigations and popups are denied. The main window CSP permits only the fixed local RPC and native IPC; only the development policy permits the fixed development HMR connection and inline styles. The app webview is ephemeral. The DeliDev app icon uses the supplied 1254×1254 transparent RGBA PNG as its canonical source, with a 256×256 RGBA PNG for the native window and tray and a multiresolution Windows ICO. Tauri's explicit bundle icon list includes both PNGs and the ICO so the macOS bundle can derive an ICNS from the full-resolution source.
+Navigation is restricted to the app entry document, including Tauri’s empty custom-scheme path. External navigations and popups are denied. The main window CSP permits only the fixed local RPC and native IPC; only the development policy permits the fixed development HMR connection and inline styles. The app webview is ephemeral. The DeliDev app icon uses the supplied 1254×1254 transparent RGBA PNG as its canonical source, with a 256×256 RGBA PNG for the native window and tray and a multiresolution Windows ICO. Tauri's explicit bundle icon list includes both PNGs and the ICO so the macOS bundle can derive an ICNS from the full-resolution source. Preserve the original source bytes and the `icon-source@2x.png` density marker: the pinned bundler downsizes it to 1024px, which ICNS supports as 512 points at retina density only; a density-one entry fails packaging.
 
 ### Saved server windows
 The main window's Saved servers dialog uses the [Go saved-connection boundary](cmds-delidev-connections-contract.md). Listing never contacts every server. A masked private pairing document shows its non-secret endpoint/server identity before explicit submission; its original profile ID/name/grant remain immutable through uncertainty and dialog visibility, then clear after confirmed pairing. Existing pending profiles retry only their retained Go intent. An old inventory read cannot erase newer mutation feedback. The native controller sends at most 32 KiB of pairing input through a joined stdin writer, never argv, and preserves the existing 40-second timeout and 128-KiB output bound, covering 32 maximally escaped profile labels. The dialog has no token reveal or arbitrary file/command operation.
@@ -454,5 +454,137 @@ Session recovery also exposes the original initial Worktree identity when interr
 PR detail and retained session associations expose a separately opened remediation-attempt history using generated IntegrationQuery. Closed panels release reads. Validate stable PR/set/chain ownership, bounded policy/problem references, original actor/times and exact state/input/execution/outcome combinations before rendering the whole page. Show original reservation/start/finish, manual/automatic kind, selected policy summary, retained session, startup rejection and lifetime versus since-resumption counters without inferring push/handled status. Preserve uint64 revisions as bigint and normalize UTC nanoseconds without calendar rollover before time comparisons.
 
 An inactive chain with a recorded limit exposes an explicit allowance-resumption confirmation. Bind the selected original set ID/revision, block changed/invalid/stale pages and active/uncertain ownership, and retain the exact request across lost receipts/navigation. Server authority remains independent of rendering checks. Resumption preserves history, starts no job itself and never calls session Resume/preparation/creation. Existing policy editing still states that automatic execution is not available until controller composition is implemented.
+
+### Managed database backup observation
+
+SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and remaining session deletion/restoration work. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
+
+## CEF packaging
+
+`pnpm bundle:native` builds frontend assets and the target Go sidecar before
+invoking a package-local CLI compiled from the same immutable Tauri revision.
+It explicitly enables the local `custom-protocol` feature so saved-window
+authorization recognizes bundled assets, and `tauri/cef` so the upstream bundler selects CEF resources,
+helper applications and platform entitlements. Pass `--debug --bundles app` on
+macOS for a local development bundle. No signing credentials or publication are
+configured by this command. The executable-only `build:native` command remains
+available for compilation; it does not prove that a complete distributable has
+all native resources. The separate [native package verification contract](apps-delidev-packaging-contract.md)
+defines six native dry-run paths, retained original notices and package inspection;
+actual production signing, release publication and six-platform runtime evidence remain pending.
+
+## First-session checklist
+
+The welcome screen now connects its checklist to the authenticated server status,
+`SystemService.GetDoctor`, and bounded account/Agent configuration reads. The
+user explicitly chooses **Check prerequisites** or **Refresh prerequisites**;
+opening the welcome screen does not inspect protected account references.
+The check never discovers a harness, logs in, refreshes a provider, installs
+software or invokes inference. Its setup button opens existing settings.
+
+Server connection, database/storage observations, enabled Workers with active
+streams and retained verified harness handshakes, saved enabled connected account
+health, and Agent configurations are separate facts. No aggregate ready indicator
+or automatic execution is derived from them. The selected session still validates
+its exact model/account/harness/machine choices at acceptance. Repository work
+requires a project; General Chat remains an explicit alternative.
+
+Doctor reports must have the supported schema, original authenticated server
+identity, bounded unique Worker/harness inventories and no inference-probe claim.
+Account/Agent reads validate their expected resource scope and preserve the
+first-page bound. Missing results from a partial page remain unknown; malformed,
+foreign and failed observations cannot leave a previous successful badge visible.
+Inactive welcome/settings presentation starts no checklist read. All results remain
+in the connection's existing nonpersistent query scope.
+
+CEF URL authorization uses blocking runtime getters at the pinned revision.
+Commands reaching those getters must run asynchronously outside the native UI
+loop. Tray and notification navigation must move authorization to a blocking
+worker and recheck shutdown and notification generations before publication.
+Otherwise the UI loop can wait for its own queued URL request and deadlock.
+Keep these safeguards until the runtime provides nonblocking getters.
+
+Each trusted CEF document explicitly enables the native accessibility tree after
+page load through the UI-loop webview callback. The pinned runtime otherwise
+applies accessibility notifications only to already existing browsers; newly
+opened saved-server windows must also expose their semantic UI. The direct CEF
+dependency matches the runtime's 150.0.0 pin. Remove this workaround only after
+upstream propagates accessibility state to newly created browsers. Structured exit logs contain no renderer content and distinguish the runtime
+Exit event, notification task join, tray task join and return from `app.run`.
+The Exit event precedes CEF shutdown and must never be labeled process exit.
+Even a runtime return is separate from observed process termination. Native
+shutdown latency remains an independently recorded acceptance concern.
+
+
+### Durable backup creation
+
+`RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose original durable jobs through Connect and generated queries. Current CLI and Settings use that path; the synchronous `CreateBackup` remains compatible. Keep pending acceptance separate from image publication, exact retries across navigation, typed failure/stale observations and integer precision. Jobs resume after server restart without client resubmission, and completed history does not assert current image availability. See the [storage contract](cmds-delidev-storage-contract.md).
+
+### Keyless macOS packaging dry run
+
+`pnpm --dir apps/delidev bundle:macos-dry-run` builds the API client, frontend,
+Go sidecar and pinned native CEF bundle on a native macOS x64/arm64 host. A separate
+`tauri.dry-run.conf.json` selects only the ad-hoc signing identity. The wrapper
+passes an exact allowlist of non-secret system/tool environment values; it excludes
+certificate imports, notarization credentials, updater signing keys, publication
+tokens and executable-injection settings. It neither publishes nor notarizes.
+Normal `bundle:native` remains a separate command and does not promise a verified
+release signature by itself.
+
+After building, require the original bundle ID, minimum macOS 13 metadata and
+matching native architecture for the main executable, Go sidecar, CEF framework
+and five helpers. Require ICU, resource and scale data, then verify nested code
+and sealed resources with `codesign --verify --deep --strict` and independently
+confirm the ad-hoc identity. A mismatch or missing file fails the command. These
+checks prove packaging structure for the selected native host, not Developer ID,
+notarization, update-signature trust, all native runtime behavior or other OS builds.
+Node verifier tests exercise authority filtering and rejection of incompatible
+artifacts. The existing frontend test command runs those separately from jsdom
+component tests under `src`.
+
+The final basic CEF bundle exposed a further shutdown distinction: the runtime
+Exit event can precede actual process termination. A 0.289-second event observation
+followed by a still-live native process after more than two minutes is not a
+successful Quit. Native sampling placed the main-thread wait inside CEF. The
+independent Go server remained available. Do not add forced process termination
+as a product success path or call this native unsupported; closure remains an
+unresolved acceptance issue pending an observed complete native shutdown.
+
+A later unlocked macOS arm64 menu test at baseline `bfe823f7` reached the actual
+Quit menu item. In an ad-hoc diagnostic copy with only private data/cache/log
+paths changed, Exit occurred 251.849 seconds after the request and the runtime
+returned at 271.666 seconds; the original native process and its helpers then
+were absent without an agent-issued signal. The sampled CEF worker waited in
+`SecItemCopyMatching`; the native permission UI was inaccessible to the automation
+and its handling was not observed. This confirms eventual shutdown for that one
+run, not responsive Quit or a resolved review. The test's new private server
+could not bind the occupied default port, so it provides no new connected-server
+retention acceptance. Preserve the original pin and encryption; do not use a
+mock Keychain, force-exit success or unseen prompt handling as a fix.
+
+
+### Combined desktop navigation and backup surfaces
+
+Managed Backups is a System category in the full-window Settings workspace,
+including its compact category selector. Category navigation keeps the backup
+component mounted so retained mutation identities survive leaving and reopening
+the category. The project-grouped sidebar and Inbox workspace coexist with the
+live first-session checklist in the session welcome surface.
+
+The first-session checklist validates the complete schema-v2 report before
+publishing report-derived observations: required server/database/storage and
+Worker fields, closed platform/result values, exact uint64 measurements, bounded
+unique resource/credential inventories, all four installation entries and valid
+calendar timestamps. Partial or foreign reports and contradictory
+installation/protocol/problem observations remain Unknown. Validate retained version,
+observation time, capability lists and known optional fields before counting any
+handshake; a valid unchecked, missing or failed observation still means Needs setup.
+
+Backups tracks accepted creation/deletion IDs independently of ascending history
+pages, using the single-job Connect reads. Keep at most 20 local entries per kind,
+allow explicit dismissal only for terminal observations, and preserve pending
+entries through navigation. Each successful directly observed revision refreshes
+the image inventory; reads stop while hidden and uncertain acceptance retries
+still use only their original request.
 
 The **API Providers** and **Models** settings content follows [provider activation](cmds-delidev-provider-activation-contract.md). Validate all required inventory capabilities before enabling these workflows; render server-derived exact account counts and bounded results, and use active-only model queries for display and new selections. Zero accounts is a valid provider state: keep Add account optional and show no account-required error or notice. Models allow manual registration without an account and explain that automatic discovery requires a connected account. Real request failures remain visible. Off references remain explicit and retained. Switches use exact revision-bound intents and resolve uncertain outcomes from the same request; no optimistic state is authority. This feature does not implement Settings shell geometry or the account wizard.

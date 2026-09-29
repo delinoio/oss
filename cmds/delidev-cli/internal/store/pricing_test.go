@@ -9,7 +9,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const dropPRProblemFixtureSchema = `DROP TABLE pr_remediation_attempts; DROP TABLE pr_problem_records; DROP TABLE pr_problem_ci_observations; DROP TABLE pr_problem_sets; `
+const dropPRProblemFixtureSchema = `DROP INDEX provider_preset_unique; DROP TABLE backup_deletions; DROP TABLE pr_remediation_attempts; DROP TABLE pr_problem_records; DROP TABLE pr_problem_ci_observations; DROP TABLE pr_problem_sets; `
 const dropNotificationFixtureSchema = dropPRProblemFixtureSchema + `DROP TABLE notification_deliveries; DROP TABLE notification_preferences; `
 const dropPricingFixtureSchema = dropNotificationFixtureSchema + `DROP TABLE session_estimate_totals; DROP TABLE response_estimates; DROP TABLE active_pricing; DROP TABLE pricing_versions; `
 

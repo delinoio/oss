@@ -28,3 +28,43 @@ export const getDoctor = SystemService.method.getDoctor;
  * @generated from rpc delidev.v1.SystemService.CreateBackup
  */
 export const createBackup = SystemService.method.createBackup;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.ListBackups
+ */
+export const listBackups = SystemService.method.listBackups;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.InspectBackup
+ */
+export const inspectBackup = SystemService.method.inspectBackup;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.DeleteBackup
+ */
+export const deleteBackup = SystemService.method.deleteBackup;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.GetBackupDeletion
+ */
+export const getBackupDeletion = SystemService.method.getBackupDeletion;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.ListBackupDeletions
+ */
+export const listBackupDeletions = SystemService.method.listBackupDeletions;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.RequestBackup
+ */
+export const requestBackup = SystemService.method.requestBackup;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.GetBackupCreation
+ */
+export const getBackupCreation = SystemService.method.getBackupCreation;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.ListBackupCreations
+ */
+export const listBackupCreations = SystemService.method.listBackupCreations;

@@ -11,7 +11,7 @@ use delidev_desktop::{
     NativeFailure, canonical_id,
     notifications::{self, Notice, Permission, PermissionProblem, PresentationResult, Readiness},
 };
-use tauri::{AppHandle, WebviewWindow, Wry};
+use tauri::{AppHandle, Cef, WebviewWindow};
 use tokio::sync::oneshot;
 
 use super::{SavedWindows, saved_binding, tray_host, trusted_main};
@@ -49,7 +49,7 @@ pub struct NotificationHost {
 }
 
 fn instance(
-    window: &WebviewWindow<Wry>,
+    window: &WebviewWindow<Cef>,
     windows: &SavedWindows,
 ) -> Result<Option<String>, NativeFailure> {
     if window.label() == "main" {
@@ -60,8 +60,8 @@ fn instance(
     }
 }
 #[tauri::command]
-pub fn begin_notifications(
-    window: WebviewWindow<Wry>,
+pub async fn begin_notifications(
+    window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
 ) -> Result<String, NativeFailure> {
@@ -79,8 +79,8 @@ pub fn begin_notifications(
     Ok(scope)
 }
 #[tauri::command]
-pub fn end_notifications(
-    window: WebviewWindow<Wry>,
+pub async fn end_notifications(
+    window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
     scope: String,
@@ -98,7 +98,7 @@ pub fn end_notifications(
 }
 #[tauri::command]
 pub async fn notification_permission(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
 ) -> Result<Readiness, NativeFailure> {
@@ -114,7 +114,7 @@ pub async fn notification_permission(
 }
 #[tauri::command]
 pub async fn request_notification_permission(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
 ) -> Result<Readiness, NativeFailure> {
@@ -124,8 +124,8 @@ pub async fn request_notification_permission(
 }
 #[tauri::command]
 pub async fn present_notification(
-    window: WebviewWindow<Wry>,
-    app: AppHandle<Wry>,
+    window: WebviewWindow<Cef>,
+    app: AppHandle<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
     scope: String,
@@ -233,7 +233,7 @@ impl NotificationHost {
 
     fn start(
         self: &Arc<Self>,
-        app: AppHandle<Wry>,
+        app: AppHandle<Cef>,
         target: Target,
         notice: Notice,
     ) -> Result<oneshot::Receiver<PresentationResult>, NativeFailure> {

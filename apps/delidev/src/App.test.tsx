@@ -229,7 +229,10 @@ it("invalidates the loaded sidebar pages after saving without resetting their cu
   const refreshed = value.sessionRequests.slice(sessionRequestsBeforeSave);
   expect(refreshed).toContainEqual({ projectId: "", includeArchived: true, pageToken: "global-next" });
   expect(refreshed).toContainEqual({ projectId: project.id, includeArchived: true, pageToken: "project-session-next" });
-});
+// This full-shell scenario performs several sequential pagination and settings
+// interactions. Bound its aggregate CI duration separately from the unchanged
+// per-observation deadlines; the default five seconds is not a product SLA.
+}, 15_000);
 
 it("keeps the draft and session mounted across settings and navigation, and renders native text inertly", async () => {
   const value = fixture();

@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
@@ -38,6 +38,28 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
   return { resources, save, remove, preview, inspect, connect, disconnect, client, view };
 }
 function input(value: unknown) { return value as { mutation: { requestId: string; expectedRevision: bigint }; documentJson: Uint8Array }; }
+
+it("shows the complete grouped navigation once and keeps its selected category in sync", async () => {
+  const value = fixture([]);
+  render(value.view(<Settings visible close={() => {}} />));
+  const navigation = screen.getByRole("navigation", { name: "Settings categories" });
+  const labels = ["AI Subscription Accounts", "API Accounts", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Execution Workers", "Paired devices", "Server preferences", "Integrations", "Diagnostics", "Notifications", "Import / Export", "Backups"];
+  const values = ["subscription-accounts", "api-accounts", "providers", "models", "agent-workers", "instructions", "projects", "repositories", "execution-workers", "paired-devices", "server-preferences", "integrations", "diagnostics", "notifications", "transfer", "backups"];
+  expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI & agents", "Workspace", "System"]);
+  expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
+  const categorySelect = screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement;
+  expect(categorySelect.options).toHaveLength(16);
+  expect(Array.from(categorySelect.querySelectorAll("optgroup"), (group) => group.label)).toEqual(["AI & agents", "Workspace", "System"]);
+  expect(categorySelect.value).toBe("providers");
+  for (const [index, label] of labels.entries()) {
+    const button = within(navigation).getByRole("button", { name: label });
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("heading", { level: 1, name: label })).toBeTruthy();
+    expect(categorySelect.value).toBe(values[index]);
+  }
+  expect(categorySelect.value).toBe("backups");
+});
 
 it("keeps API provider accounts optional when none are connected", async () => {
   const provider = resource(EntityKind.PROVIDER, { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true, preset_id: "openai" });

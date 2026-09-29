@@ -18,7 +18,13 @@
   },
   "bundle": {
     "active": true,
-    "icon": ["icons/icon.png", "icons/icon-source.png", "icons/icon.ico"],
+    "license": "Apache-2.0",
+    "resources": {
+      "../../../LICENSE": "notices/LICENSE",
+      "../../../NOTICE": "notices/NOTICE",
+      "notices/CEF-LICENSE.txt": "notices/CEF-LICENSE.txt"
+    },
+    "icon": ["icons/icon.png", "icons/icon-source@2x.png", "icons/icon.ico"],
     "externalBin": ["binaries/delidev"],
     "macOS": {"minimumSystemVersion": "13.0"}
   }

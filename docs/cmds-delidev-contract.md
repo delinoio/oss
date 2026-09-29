@@ -179,3 +179,10 @@ The pinned Claude initial-assignment profile now composes authenticated Worker r
 
 ## Portable configuration
 The eight existing editable configuration kinds now share owner/client export, read-only signed previews and atomic imports through Connect, CLI and desktop settings. Explicit machine/checkout mappings, fresh disconnected accounts, unchanged reuse and revision-bound settings replacement prevent implicit authority transfer. New repositories pass every Worker inspection before any configuration commits. See [portable configuration](cmds-delidev-configuration-transfer-contract.md) for limits and remaining portable surfaces.
+
+Schema v23 adds durable managed-backup deletion indexing and external deletion obligations under the [storage contract](cmds-delidev-storage-contract.md). The explicit API, CLI and desktop operations share original inspection/revision checks and restart recovery. Permanent session deletion, workspace snapshots and database restoration remain incomplete.
+
+
+### Durable backup creation commands
+
+`backup create [--wait]` now calls `SystemService.RequestBackup` and returns the original accepted job; `--wait` observes completion without canceling the server-owned work when the caller disconnects. `backup creation --id JOB-ID` and `backup creations [--limit N] [--page-token TOKEN]` inspect original status after restart. See the [storage contract](cmds-delidev-storage-contract.md) for the shared controller, identity, retry and deletion boundaries.

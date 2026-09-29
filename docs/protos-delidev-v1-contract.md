@@ -316,4 +316,19 @@ The collection request's closed kind enum separates published feedback, required
 
 IntegrationService adds owner/client-only ListPullRequestRemediationAttempts and ResumePullRequestRemediation. List takes exact stable remote repository/PR numeric strings, page size and opaque cursor; returns the retained problem set, original attempt resources and next cursor. Resume takes a Mutation targeting the original set revision and returns the current set plus request ID/replayed flag. These operations never accept remote evidence or execution commands; follow the integration contract for history fingerprint bounds and explicit baseline-only resumption. Regenerate both Go and TypeScript/Connect Query sources from the canonical schema.
 
+### Managed database backup observation
+
+SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and remaining session deletion/restoration work. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
+
+
+### Durable backup creation
+
+`RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose original durable jobs through Connect and generated queries. Current CLI and Settings use that path; the synchronous `CreateBackup` remains compatible. Keep pending acceptance separate from image publication, exact retries across navigation, typed failure/stale observations and integer precision. Jobs resume after server restart without client resubmission, and completed history does not assert current image availability. See the [storage contract](cmds-delidev-storage-contract.md).
+
+`SystemService.GetBackupDeletion` is an owner/paired-client read of one original
+durable deletion job ID, independent of history pagination. It rechecks current
+authority, rejects other job types and preserves exact uint64 revisions and byte
+counts without replaying acceptance or filesystem work. Regenerate Go, TypeScript
+and Connect Query bindings together.
+
 Provider activation adds an owner/client-only `ProviderService.ListProviderInventory`, closed capability/preset enums, account-list-only `ListResourcesRequest.provider_id`, and additive `SearchModels.enabled_providers_only`. Omitted model filtering preserves existing behavior. Provider enabled and preset provenance remain optional fields in the canonical provider JSON document for legacy compatibility. Inventory capabilities let clients detect older servers that ignore filters; Workers cannot read it. See [provider activation](cmds-delidev-provider-activation-contract.md), and regenerate Go messages/Connect handlers and TypeScript Connect Query bindings together.

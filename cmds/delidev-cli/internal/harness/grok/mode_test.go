@@ -96,7 +96,9 @@ func TestInitialPlanRequiresOriginalClaimAckAndMode(t *testing.T) {
 			config.Mode, config.Model = domain.PlanMode, turnFixtureModel
 			api, err := openAPI(context.Background(), config)
 			if err != nil {
-				t.Fatal(err)
+				// openAPI joins failed startup before returning; retain its redacted
+				// phase evidence instead of losing the only Windows failure detail.
+				t.Fatalf("native initialization: %v; private fixture logs: %s", err, logs.String())
 			}
 			defer api.Close()
 			if _, err := api.SelectPlan(context.Background(), domain.NewID(), func(context.Context, ModeClaim) error { t.Error("selection preceded creation"); return nil }); err == nil {

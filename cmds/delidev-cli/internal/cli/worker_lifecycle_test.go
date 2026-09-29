@@ -78,14 +78,17 @@ func TestDetachedWorkerLifecyclePreservesRegistrationAcrossStopAndRestart(t *tes
 	var second worker.RuntimeStatus
 	for {
 		second, err = worker.Status(workerRoot)
-		if err != nil {
+		// Status has a bounded metadata-lock wait. A busy native writer can
+		// exhaust it on Windows; keep observing within this existing deadline
+		// without replaying start or weakening the generation checks below.
+		if err != nil && domain.SafeError(err).Code != domain.Conflict {
 			t.Fatal(err)
 		}
-		if second.State == worker.StateRunning {
+		if err == nil && second.State == worker.StateRunning {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("replacement never connected", second)
+			t.Fatal("replacement never connected", second, err)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

@@ -21,17 +21,23 @@ func TestInspectPropagatesRemoteHeadExecutionFailures(t *testing.T) {
 	}{
 		{"absent", "exit 1", ""},
 		{"invalid", "exit 128", domain.Unavailable},
-		{"timeout", "exec sleep 5", domain.Unavailable},
+		{"timeout", "exec sleep 30", domain.Unavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			executable := filepath.Join(root, "git-fixture")
-			script := "#!/bin/sh\ncase \"$7\" in\nrev-parse) printf '%s\\n' \"$2\";;\nremote) printf 'origin\\n';;\nsymbolic-ref) " + tc.command + ";;\n*) exit 128;;\nesac\n"
+			script := "#!/bin/sh\ncase \"$7\" in\nrev-parse) printf '%s\\n' \"$2\";;\nremote) printf 'origin\\n';;\nsymbolic-ref) printf entered > \"$2/remote-head-entered\"; " + tc.command + ";;\n*) exit 128;;\nesac\n"
 			if err := os.WriteFile(executable, []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
-			g := Git{Executable: executable, ProcessRoot: filepath.Join(root, "processes"), OwnerID: domain.NewID(), Timeout: time.Second}
+			g := Git{Executable: executable, ProcessRoot: filepath.Join(root, "processes"), OwnerID: domain.NewID(), Timeout: 10 * time.Second}
+			// Allow native process setup to finish before exercising the remote
+			// HEAD outcome. A one-second per-command budget could expire during
+			// rev-parse on loaded hosts and test a different error altogether.
 			got, err := g.Inspect(context.Background(), root)
+			if _, markerErr := os.Stat(filepath.Join(root, "remote-head-entered")); markerErr != nil {
+				t.Fatal("remote HEAD fixture was never reached", err, markerErr)
+			}
 			if tc.want == "" {
 				if err != nil || len(got.Remotes) != 1 || len(got.DefaultRefs) != 0 {
 					t.Fatalf("absent default: %+v %v", got, err)

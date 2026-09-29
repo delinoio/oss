@@ -161,3 +161,14 @@ The version-1 envelope binds server/device/instance/machine, original input/acco
 
 
 Explicit startup recovery reuses `ReadPRStartupRejection` under the original session lock; it never calls preparation, first-execution claim, process cleanup or Git. The separate Worker/server comparison must bind the original job journal and assignment/device before accepting this proof. A read cannot convert checking/passed/missing phase records to rejection, create a new record, repair a changed manifest or grant native eligibility.
+
+## Bounded Git metadata observations
+
+Compatible administrative path and object-format queries share one owned
+`git rev-parse` invocation. The parser requires the exact record count and
+terminators, rejects ambiguous embedded delimiters and retains path spaces.
+Source/linked-worktree identity, all-repository before/after checks, original
+HEAD validation, filter checks and private diff administration remain mandatory.
+No result is cached across observations and the 15-second read deadline remains.
+This reduces repeated process/journal setup on Windows without relaxing native
+ownership or accepting partial metadata.

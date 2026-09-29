@@ -36,7 +36,7 @@ Authorized session metadata retains typed owner, mode, state and bounded reason:
 
 ## Storage
 
-Automatic naming metadata lives in the existing session JSON document. The immutable auxiliary assignment is one durable UUID-v7 job. A one-time inference claim is stored independently from native credential grants. Schema migration adds a typed usage purpose without backfilling title work or repricing history; migration remains backup-first and transactional.
+Automatic naming metadata lives in the existing session JSON document. The immutable auxiliary assignment is one durable UUID-v7 job. A one-time inference claim is stored independently from native credential grants. Schema 24 reconciles both pre-merge version-23 layouts, preserving existing send/HTTP claims and adding only missing title and backup structures. Schema migration adds a typed usage purpose without backfilling title work or repricing history; migration remains backup-first and transactional.
 
 Title response usage uses purpose `session-title`, exact original session/project/execution/account/connection/provider/model/harness/version/thread/turn attribution and existing response-digest deduplication. Missing native usage remains unavailable and does not prevent applying a valid title. Title-purpose records do not enter conversation response counts or conversation missing-response coverage. Existing retained estimates, when available, contribute once to the session lifetime budget; no actual spend is inferred. Title work never overwrites conversation usage pointers.
 

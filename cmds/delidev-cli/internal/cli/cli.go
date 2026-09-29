@@ -391,15 +391,11 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		value, err := configurationTransfer(ctx, c, o, rest, streams)
 		return emit(value, err)
 	case "backup":
-		if len(rest) != 1 || rest[0] != "create" {
-			return emit(nil, usage())
+		if len(rest) > 0 && (rest[0] == "create" || rest[0] == "delete") {
+			ensureRequest(&o)
 		}
-		ensureRequest(&o)
-		response, err := c.system.CreateBackup(ctx, request(c, &pb.CreateBackupRequest{RequestId: string(o.requestID)}))
-		if err != nil {
-			return emit(nil, rpc.ClientError(err))
-		}
-		return emit(response.Msg, nil)
+		value, err := backupCommand(ctx, c, o, rest)
+		return emit(value, err)
 	case "events":
 		fs := flags("events")
 		cursor := fs.String("cursor", "", "snapshot event cursor")
@@ -899,7 +895,14 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   configuration export [--output PATH]
   configuration preview --input PATH|- [--output PATH]
   configuration apply --input PATH|- [--request-id ID]
-  backup create
+  backup create [--wait]
+  backup creation --id JOB-ID
+  backup creations [--limit N] [--page-token TOKEN]
+  backup list [--limit N] [--page-token TOKEN]
+  backup inspect --id ID
+  backup delete --id ID --expected-revision REV --size-bytes BYTES --modified-at TIME --sha256 SHA256 --confirm
+  backup deletion --id JOB-ID
+  backup deletions [--limit N] [--page-token TOKEN]
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]
   KIND get --id ID

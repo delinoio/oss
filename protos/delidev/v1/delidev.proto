@@ -10,6 +10,14 @@ service SystemService {
   rpc StopServer(StopServerRequest) returns (StopServerResponse);
   rpc GetDoctor(GetDoctorRequest) returns (GetDoctorResponse);
   rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse);
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
+  rpc InspectBackup(InspectBackupRequest) returns (InspectBackupResponse);
+  rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse);
+  rpc GetBackupDeletion(GetBackupDeletionRequest) returns (GetBackupDeletionResponse);
+  rpc ListBackupDeletions(ListBackupDeletionsRequest) returns (ListBackupDeletionsResponse);
+  rpc RequestBackup(RequestBackupRequest) returns (RequestBackupResponse);
+  rpc GetBackupCreation(GetBackupCreationRequest) returns (GetBackupCreationResponse);
+  rpc ListBackupCreations(ListBackupCreationsRequest) returns (ListBackupCreationsResponse);
 }
 service ResourceService {
   rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
@@ -1600,4 +1608,113 @@ message SubmitLocalReviewResponse {
   SessionChange change = 2;
   string request_id = 3;
   bool replayed = 4;
+}
+
+// Metadata does not establish integrity or restoration eligibility.
+message ManagedBackup {
+  string id = 1;
+  uint64 size_bytes = 2;
+  string modified_at = 3;
+  uint64 revision = 4;
+}
+message ListBackupsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+message ListBackupsResponse {
+  repeated ManagedBackup backups = 1;
+  string next_page_token = 2;
+}
+message InspectBackupRequest {
+  string id = 1;
+}
+message InspectBackupResponse {
+  ManagedBackup backup = 1;
+  string sha256 = 2;
+  uint32 schema_version = 3;
+  string server_id = 4;
+}
+
+// Accepted deletions cannot be canceled or undone by restoring a database image.
+enum BackupDeletionState {
+  BACKUP_DELETION_STATE_UNSPECIFIED = 0;
+  BACKUP_DELETION_STATE_PENDING = 1;
+  BACKUP_DELETION_STATE_SUCCEEDED = 2;
+}
+message BackupDeletionJob {
+  string id = 1;
+  string backup_id = 2;
+  uint64 revision = 3;
+  BackupDeletionState state = 4;
+  string accepted_at = 5;
+  string finished_at = 6;
+  string problem_code = 7;
+  // Logical image bytes only, not reclaimed filesystem space.
+  uint64 image_bytes = 8;
+  // False after recovery if the original unlink could not be observed.
+  bool removal_observed = 9;
+}
+message DeleteBackupRequest {
+  string request_id = 1;
+  ManagedBackup backup = 2;
+  string sha256 = 3;
+}
+message DeleteBackupResponse {
+  BackupDeletionJob job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ListBackupDeletionsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+message ListBackupDeletionsResponse {
+  repeated BackupDeletionJob jobs = 1;
+  string next_page_token = 2;
+}
+
+// A reserved backup identity is not proof that an image has been published.
+enum BackupCreationState {
+  BACKUP_CREATION_STATE_UNSPECIFIED = 0;
+  BACKUP_CREATION_STATE_PENDING = 1;
+  BACKUP_CREATION_STATE_SUCCEEDED = 2;
+  BACKUP_CREATION_STATE_FAILED = 3;
+}
+message BackupCreationJob {
+  string id = 1;
+  string backup_id = 2;
+  uint64 revision = 3;
+  BackupCreationState state = 4;
+  string accepted_at = 5;
+  string finished_at = 6;
+  string problem_code = 7;
+}
+message RequestBackupRequest {
+  string request_id = 1;
+}
+message RequestBackupResponse {
+  BackupCreationJob job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetBackupCreationRequest {
+  string id = 1;
+}
+message GetBackupCreationResponse {
+  BackupCreationJob job = 1;
+}
+message ListBackupCreationsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+message ListBackupCreationsResponse {
+  repeated BackupCreationJob jobs = 1;
+  string next_page_token = 2;
+}
+
+message GetBackupDeletionRequest {
+  string id = 1;
+}
+message GetBackupDeletionResponse {
+  BackupDeletionJob job = 1;
 }

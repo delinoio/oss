@@ -3,7 +3,7 @@
 Issue #964 is preserved in full in [requirements](cmds-delidev-requirements.md). This ledger distinguishes code, deterministic tests, and actual external/native evidence. It is not a reduction of the requirements.
 
 ## Current implementation work
-The desktop/CLI/server/Worker implementation is in progress. At the owner’s request on 2026-09-28, this branch stops feature expansion at the private native PR workspace-matching increment and moves to pull-request iteration. This is a partial implementation checkpoint, not completion or closure of issue #964. No release or complete real-account harness integration claim is made; bounded native evidence is recorded separately below.
+The desktop/CLI/server/Worker implementation is in progress. The 2026-09-28 partial checkpoint was merged in PR #1041. On 2026-09-29 the owner requested implementation of the full remaining plan, including CEF desktop migration, while keeping real account/private-GitHub and platform distribution validation deferred. Completion work is active; the historical checkpoint is preserved below and is not a claim that the requirements are complete. No release or complete real-account harness integration claim is made; bounded native evidence is recorded separately below.
 
 | Boundary | Implementation | Verification |
 | --- | --- | --- |
@@ -2161,6 +2161,237 @@ and listing behavior. Focused workspace race tests and vet pass on macOS arm64;
 the workspace test package cross-compiles for Windows amd64. This fixture does
 not establish live Windows link-race behavior or make user-owned files atomic.
 
+### Managed database backup observation (2026-09-29)
+
+Owner/client SystemService, CLI and Settings > Backups now expose bounded metadata pagination and explicit source-preserving image inspection alongside existing creation. Inspection copies an opened identity-checked image into private scratch storage, validates its SQLite integrity/schema and original server identity, hashes the inspected bytes and rechecks source identity and current client authority. This does not yet implement database restore, backup deletion, session deletion or workspace snapshots.
+
+Focused real SQLite/Connect/CLI race tests pass (store 3.751s, server 2.258s, CLI 2.532s). They cover committed WAL images, unchanged source/hash after later live writes, corrupt/foreign/missing/symlink/sidecar rejection, cancellation, scratch cleanup, pagination invalidation and Worker/revoked-client denial. Desktop `pnpm test` passes 68 files / 795 tests, type checking and production build. API-client tests pass 3 files / 41 tests. A first UI assertion incorrectly expected the untrusted raw Connect error text; the corrected assertion checks the sanitized alert and removal of stale success. Complete Go race/vet and protocol validation are tracked separately as they finish. No real account, native OS delivery or distribution evidence is claimed.
+
+### CEF desktop shell migration (2026-09-29)
+
+- Replaced DeliDev's optional Wry desktop host with CEF at the existing immutable
+  Tauri revision. Main/saved windows, tray and notification handles use the same
+  CEF runtime, and helper processes enter through the native CEF macro before
+  product argument parsing. macOS minimum remains 13.0.
+- Capabilities now match trusted webview labels instead of entire windows, so a
+  future external child view cannot inherit its containing window's app authority.
+  Trusted app documents remain incognito and navigation constrained.
+- Added a package-local revision-pinned packaging CLI and `bundle:native`, which
+  explicitly selects the CEF bundler after preparing frontend and Go sidecar.
+- macOS arm64 `cargo check` with desktop-host/custom-protocol passed. Native library
+  tests passed (11 passed, 4 opt-in integration tests ignored), including capability
+  isolation. Root `cargo test` exposed five pre-existing binpm `/var` versus
+  `/private/var` temporary-path assertions; a canonical temporary-root rerun and
+  actual development bundle verification are in progress.
+- This migrates the shell, not the required account browser, tab persistence,
+  distributed profile cleanup or six-platform signed distribution. Those features
+  and evidence remain incomplete; no release or real-account claim is made.
+
+### First-session setup observations (2026-09-29)
+
+- Replaced the static welcome checklist with the existing authenticated Go status,
+  doctor and account/Agent configuration RPCs. Explicit inspection shows separate
+  connection/storage/Worker/harness/account/configuration observations and opens
+  the existing settings surface without creating a session or dispatching work.
+- Frontend tests cover explicit read initiation, inactive views, no mutation,
+  failed refresh, foreign server identity, duplicate/malformed resources,
+  partial pages, disabled accounts and offline/disabled Workers. The complete
+  app `pnpm test` passed: 69 files / 799 tests, typecheck and production build.
+- The CEF packaging check detected the old npm Tauri API minor version; it is now
+  aligned to the workspace's existing `@tauri-apps/api` 2.11.1 pin. This is a
+  compatibility correction, not a claim that security advisories are resolved.
+
+### Completion work validation and native CEF correction (2026-09-29)
+
+- Full `go test -race -timeout 30m ./cmds/delidev-cli/...` and `go vet
+  ./cmds/delidev-cli/...` passed. The first race run reached Go's default ten-minute
+  timeout in the Grok fixture package; its unchanged rerun completed in 889.478s.
+  API-client tests (41) and `pnpm proto:check` passed, including generated drift.
+- Root `cargo test` passed with canonical `TMPDIR=/private/tmp` after explicitly
+  building `fspy_preload_unix --features pnport`, required by the existing pnport
+  integration tests. No unrelated Rust sources changed. Native DeliDev library
+  and desktop-host tests passed (12 library plus 7 binary; 4 opt-in tests ignored).
+- `pnpm --dir apps/delidev bundle:native --debug --bundles app` produced a macOS
+  arm64 app with the Go sidecar, CEF framework and helper applications. Actual
+  bundled execution exposed a UI-loop deadlock in synchronous URL-authorizing
+  IPC handlers. A native stack sample identified the blocked CEF getter; commands
+  now run asynchronously and tray/notification navigation authorizes off-loop.
+  The bundle also explicitly enables the local custom-protocol feature required
+  by the saved-window guard.
+- In a private accountless temporary server scope, the corrected bundle opened
+  a saved authenticated server, displayed explicit prerequisite observations,
+  created a managed backup and displayed successful database/server-identity
+  inspection in Settings. No AI account, inference, PAT or Git push was used.
+  SIGTERM exited the corrected app while the independent server stayed available.
+- Saved-window HTML was visually usable but absent from the native accessibility
+  tree. UI automation timed out after the Quit shortcut, although a native stack
+  sample showed the UI loop idle rather than blocked; normal menu/shortcut quit
+  remains unverified. This is a native accessibility/automation evidence gap,
+  not proof of native unsupported behavior. macOS 13 runtime, Windows/Linux,
+  account browser isolation/persistence, signing and release remain unverified.
+
+### Durable managed backup deletion (2026-09-29)
+
+- Implemented schema-21 backup deletion jobs, original inspection/revision-bound
+  acceptance, independent synchronized deletion intents, creation-replay denial,
+  joined retry maintenance and startup reconstruction after database rollback.
+  Owner/client RPC, explicit CLI confirmation and Settings inspection/confirmation
+  use the same operations; job history remains queryable after restart.
+- Real SQLite/file race tests cover concurrent identical requests, independent
+  duplicate rejection, stale metadata/revision, altered image hashes, intent-path
+  failure, recovery after original unlink without its DB receipt, old-DB replacement
+  with the external intent preserved, and backup-first migration from schema 20.
+  RPC tests cover Worker denial/current original-job replay; CLI tests drive the
+  live authenticated server/controller and require confirmation. A first CLI run
+  caught a missing automatic mutation request ID; the fixed path passed.
+- Desktop `pnpm test` passed 69 files / 800 tests, typecheck and production build;
+  API-client tests passed 41. Buf lint and breaking checks passed. Complete Go
+  race/vet and final generated drift validation are recorded after completion.
+- No physical free-space result, database restore, session deletion, Worker
+  snapshot or native Windows/Linux validation is inferred from these tests.
+
+### CEF accessibility and shutdown observation (2026-09-29)
+
+- The saved-window accessibility gap was reproduced and corrected by enabling
+  each trusted browser's native accessibility state after page load. In an actual
+  macOS arm64 bundle, a newly opened authenticated server window then exposed
+  its semantic headings, navigation, checklist and controls to native automation.
+- Added redacted exit-requested/exit-completed diagnostics. Repeated Quit checks
+  exceeded the native automation tool's five-second observation window. An Alloy
+  diagnostic build subsequently logged native runtime exit 67.896 seconds after
+  the request, with the independent server still serving. This proves delayed
+  native completion for that diagnostic build, not prompt shutdown. Default-mode
+  prompt shutdown remains an unresolved native acceptance concern.
+- Menu rerouting, speculative browser-close sequencing and an alternate runtime
+  style did not establish prompt shutdown and were removed. The committed change
+  retains only the verified per-document accessibility fix and exit diagnostics;
+  it never substitutes forced process termination for successful CEF cleanup.
+- The schema-21 full Go run exposed historical migration fixtures that removed
+  only tables through schema 20. Their shared downgrade setup now also removes
+  the new table, preserving the intended original-schema assertions. The entire
+  store race suite passed after this correction (60.079s).
+- Final verification: the complete `go test -race -timeout 30m
+  ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...` passed, as did
+  API-client tests (41), desktop tests (69 files, 800 tests), desktop typecheck/build,
+  Buf lint/breaking/generated drift, focused CEF native tests and root `cargo test`.
+  Root Cargo used `TMPDIR=/private/tmp` with the required pnport preload built;
+  native build/test invocations were serialized to avoid shared-target interference.
+
+
+### Durable managed backup creation (2026-09-29)
+
+Implemented actor-bound job/image reservation, asynchronous Connect admission,
+individual/paged status, CLI creation/wait/status and Settings job presentation.
+The joined server controller reuses a published original image after interrupted
+settlement and keeps transient failures pending without unbounded receipt growth.
+Cancellation-aware file ownership locks prevent canceled observations/jobs from
+waiting indefinitely behind another image. Permanent deletion prevents recreation.
+No new migration or credential/Worker filesystem access is introduced.
+
+Focused real SQLite/store/Connect/CLI race tests passed (store 4.660s, server
+2.154s, CLI 6.356s). They cover concurrent original requests, canceled attempts,
+reopening after lost publication acknowledgment, exact image/hash/mtime retention,
+queue bounds, recoverable storage failures, actor revocation, deletion precedence,
+RPC Worker denial/cursor binding and real server controller use from the CLI.
+Four frontend tests passed, including retained uncertain acceptance, typed
+pending/completed/stale display and publication-driven inventory refresh. Full
+suite and generated validation results are recorded after completion below.
+
+Database restoration is still unimplemented: it additionally needs coordinated
+quiescence, preserved live authorization, quarantine of historical execution and
+scheduling state, atomic commit/recovery and preserved deletion obligations.
+These creation tests do not establish that restore boundary or whole-workspace
+snapshot/session permanent deletion acceptance.
+- Complete DeliDev Go race tests and vet passed after durable creation, including
+  CLI 185.041s, server 355.829s, store 115.119s and Worker 160.837s. API-client
+  tests (41), desktop tests (801), typecheck/build and Buf lint/breaking/generated
+  drift passed. A later recovery-hardening check additionally rejects foreign
+  published images and adjacent WAL without changing their bytes; focused real
+  backup/migration/store race tests passed (7.510s).
+
+### Final packaged macOS observations and keyless dry run (2026-09-29)
+
+- A final macOS arm64 app/DMG build succeeded using the pinned default CEF runtime.
+  In an isolated accountless server/client fixture, native accessibility exposed
+  the saved server window, Settings and Backups. Creation visibly advanced from
+  pending revision 1 to completed revision 2; the inventory appeared and explicit
+  inspection verified the image, schema 21 and original server identity.
+- Quit emitted the runtime Exit event 0.289154 seconds after the request, but the
+  process remained alive beyond two minutes. Native sampling located its main
+  thread in a CEF internal wait. After unsuccessful normal termination, only the
+  owned test fixture was killed for cleanup; no such force-exit code was added to
+  the product. The independent server remained responsive and was subsequently
+  stopped through its own CLI. This does not supersede the unresolved shutdown
+  acceptance item with a success claim.
+- Strict signature inspection of the ordinary unsigned bundle failed. The new
+  explicit macOS dry run rebuilt with credential-free ad-hoc signing and passed
+  strict nested signature/resource validation, bundle ID, macOS 13 metadata and
+  main/sidecar/CEF/helper architecture checks. Final signed startup logged both
+  initial document loads. CEF also emitted a process-requirement validation warning
+  for the ad-hoc process. The Mac subsequently locked, preventing another UI/Quit
+  check; signed native runtime completion remains unverified. All owned fixtures
+  were cleaned up, and another worktree's existing DeliDev app was left untouched.
+- The verifier's two Node tests pass, including credential/injection environment
+  exclusion and architecture/OS/signature/resource rejection. Native x64, actual
+  macOS 13 execution, Windows/Linux, production certificates, notarization and
+  published releases remain separate unverified evidence.
+
+### Approved completion plan: remaining implementation
+
+This change is a partial implementation of the complete seven-stage plan. It does
+not declare issue #964 or the overall product complete, and it does not reclassify
+missing product integration as native unsupported.
+
+| Plan area | Implemented in this change | Still required |
+| --- | --- | --- |
+| Storage/deletion/recovery | Managed backup inventory/inspection, durable creation/deletion, external deletion obligations and schema-22 migration (including both prior schema-21 layouts) | Permanent session/dependent Sidechat deletion, whole-workspace snapshots, cleanup/restore and atomic database recovery |
+| Four harnesses/sessions | Existing native/public foundations retained | Remaining Grok repository/continuation/interactions, native Fork, complete Sidechat/compaction/context/subagent public composition |
+| Authentication/quota/usage | Existing API-key lifecycle and usage foundation retained | Subscription/headless workflows, quota refresh/notifications, account-switch fidelity and remaining usage/credit integration |
+| Session tools/browser | Pinned CEF shell, async URL authorization and per-document accessibility | Worker PTY/ConPTY, forwarding, account profiles/tabs and distributed profile deletion; native Quit acceptance |
+| PR remediation | Existing evidence, attempt and workspace foundations retained | Public Fix now/automatic controller, exact fresh execution and verified commit/push outcomes |
+| Remote operations/services/updates | Existing lifecycle foundations retained | SSH installation, complete proxy/service adapters, verified Worker/desktop update flows |
+| Desktop/distribution | Live first-session checklist, macOS arm64 native observations, six-target dry-run build definitions and keyless package verification | Quota tray/widget completion, remaining diagnostics/settings integration, five unexecuted native build targets and production signing/release paths |
+
+Real provider accounts, PAT/private-repository access, paid inference and actual
+push remain deferred by the user. Those evidence deferrals are distinct from the
+unimplemented product paths above.
+
+### Six-target native dry-run preparation (2026-09-29)
+
+- Added a manually dispatched, read-only native matrix for macOS x64/arm64,
+  Windows x64/arm64 and Ubuntu 22.04 x64/arm64. Matching host/toolchain checks,
+  extracted PE64/ELF64 architecture and CEF resource checks, unsigned Windows
+  verification and existing strict ad-hoc macOS checks feed revision-bound package
+  manifests and SHA-256 sums. No remote workflow was dispatched in this task.
+- The pinned Debian layout relocates only the main executable. Native sidecar
+  resolution now recognizes the exact `/usr/share/DeliDev` to `/usr/bin/delidev`
+  mapping while preserving adjacent development/AppImage behavior. This is a
+  source-backed correction with a focused layout test, not Linux runtime evidence.
+- Packages retain complete original repository licenses, the unchanged CEF
+  license and the exact downloaded Chromium credits. Verification compares their
+  bytes and binds the credits digest. A failed package check cannot publish a
+  verification manifest or overwrite a prior successful result.
+- Eight native packaging tests, 801 frontend tests and typecheck/build passed.
+  Workflow lint and 95 CI contract tests passed. The final DeliDev Go race/vet
+  pass includes Grok 878.207s, server 459.158s, store 102.102s and Worker 201.607s.
+  A root Rust rerun encountered two unrelated `clibox-fspy` macOS observation
+  timeouts. Its 14 focused macOS supervision tests passed with one test thread,
+  then the complete root `cargo test -- --test-threads=1` passed, including the
+  new exact Debian sidecar-layout test. No unrelated source was changed to obtain
+  that result.
+- The full native dry run passed on macOS arm64 for source commit
+  `cc66add28a47d162297da67b500a66b2eb52954e`. It generated an ad-hoc verified app
+  archive of 158,281,705 bytes with SHA-256
+  `8779fbf333fe20bfdad49aace9f1166e0a617515d2ed39f2d597dff56bbbb807`.
+  Complete original notices matched; the Chromium credits SHA-256 is
+  `496533b09217fe29c4b142e23e796b9d6b95bfdb3208d02d54b487535b341480`.
+  The generated `verification.json` keeps runtime acceptance unverified and
+  publication not requested. The earlier native Quit limitation remains open;
+  this packaging run did not repeat the blocked UI test or use production keys.
+- Generated repository-owned `dist` directories were removed after validation.
+  The Go toolchain's third-party `src/cmd/dist` source and installed dependency
+  contents were preserved. No real account, private GitHub repository, paid
+  inference, Git push, remote workflow dispatch or public release was exercised.
 ### Issue #1044 project-grouped desktop sidebar (2026-09-29)
 
 The DeliDev desktop sidebar now uses the bounded project/session navigation
@@ -2301,6 +2532,70 @@ fail on macOS temporary-path canonicalization and relative `BINPM_HOME`
 validation. App and API-client `dist` directories produced by validation are
 removed from the worktree.
 
+### PR #1063 main integration (2026-09-29)
+
+Merged main through `5d47286f` while preserving the project sidebar, full-window
+Settings, Inbox workspace, token analytics, maximized native window declarations
+and app icon. Backups is connected to the Settings System group and the live
+prerequisite checklist remains in the session welcome surface. Generated Go and
+TypeScript bindings are regenerated from the combined additive schema. The
+prior native package evidence remains bound to its original revision; this merge
+does not establish new native package or Quit acceptance.
+
+Post-merge checks passed: desktop `pnpm test` (71 files / 834 tests, typecheck,
+8 packaging tests and production build), API client (41 tests), focused Go race
+tests for backup/usage/migration/Inbox (store 20.841s, server 13.336s, CLI 6.016s),
+complete DeliDev vet, Buf lint/breaking/generated drift and Git LFS integrity.
+Native CEF compilation/tests passed (13 library tests with 4 environment-dependent
+tests ignored, and 7 host tests). No new native UI or package acceptance is
+inferred from these tests.
+
+The complete post-merge root `TMPDIR=/private/tmp cargo test --
+--test-threads=1` also passed. Generated repository-owned app/client `dist`
+directories were removed after validation.
+
+### PR #1063 review repair: completed deletion maintenance (2026-09-29)
+
+Completed deletion scans validate original journal contents, image absence and
+sidecars without repeatedly synchronizing unchanged directories. Pending or
+uncertain recovery still synchronizes before completion, and a matching restored
+image is revalidated, removed and synchronized. Focused real SQLite/filesystem
+race tests passed (3.909s), including zero-sync repeated completed scans, actual
+reappearing-image removal and a failed then recovered absence-sync boundary.
+
+### PR #1063 review repair: prerequisite installation observations (2026-09-29)
+
+The checklist now validates the complete known installation shape, bounded
+version/time/capability observations and installation/protocol/problem state
+relationships. Malformed or contradictory data stays Unknown rather than being
+accepted as an observation or missing setup. Focused frontend tests passed
+(27 cases, including valid unchecked, missing, version-only and failed/unsupported
+handshakes), and desktop type checking passed. These checks perform no native
+probe, account authentication or inference.
+
+### PR #1063 review repair: exact deletion confirmation (2026-09-29)
+
+Fresh permanent-deletion confirmation is bound to its inspected response and is
+cleared when Backups becomes inactive or inspection refreshes/replaces the
+observation. Reopening with changed bytes/hash cannot reuse a previously checked
+box. Submitted uncertain retries remain bound to their original request. All six
+backup component tests and type checking passed, including changed-image cases
+across hiding and explicit reinspection plus exact uncertain retry preservation.
+
+### PR #1063 review repair: accepted backup job observation (2026-09-29)
+
+Added owner/client `GetBackupDeletion` and CLI `backup deletion --id JOB-ID`.
+Settings retains accepted creation/deletion IDs independently of history pages,
+pauses their reads while hidden, preserves concurrent accepted jobs, and refreshes
+inventory after each observed completion. Tracking has an explicit 20-entry bound
+per kind; terminal entries can be dismissed without changing durable history.
+Focused server/CLI race tests passed (6.185s / 6.660s), including the 21st deletion
+outside the first history page, original pending/completed state, paired-client
+access, revoked/Worker denial and wrong job type rejection. Eight backup UI tests,
+type checking, Buf lint and additive compatibility against the previous PR commit
+passed. Main concurrently gained Provider inventory APIs in #1065; compatibility
+against that advanced baseline requires merging it before final validation.
+
 ## 2026-09-29: PR #1060 credential provenance repair
 
 - Merged current main while retaining both desktop recovery and sidebar validation records. The merged desktop frontend passed its full `pnpm test` command.
@@ -2359,11 +2654,265 @@ used. Native Settings viewport, geometry and keyboard acceptance remain
 unverified. The branch includes the API-provider activation prerequisite from
 PR #1061. Generated app/client `dist` output is removed after validation.
 
+### PR #1063 repair integration with main #1065 (2026-09-29)
+
+Merged main `96b81fd4` without rebasing, retaining Provider inventory, split
+account setup and Backups together in the 16-category Settings surface. The
+parallel schema-21 histories are reconciled as provider activation at 21 and
+backup deletion at 22. Fresh initialization creates both; a prior backup-branch
+schema-21 database preserves its existing deletion jobs and adds the missing
+provider index. Legacy migration fixtures now recreate the corresponding original
+schema before reopening. Focused backup/migration/pricing race checks passed
+(19.344s), desktop `pnpm test` passed 72 files / 873 tests plus typecheck, eight
+package tests and build, and Buf lint/breaking against current main passed.
+
+### PR #1063 CI repair: delayed pairing observations (2026-09-29)
+
+The CI Protocol and Client job failed in the real-server Settings pairing test
+while waiting for the private-document reveal button. Delaying the first pairing
+read by 1.2 seconds reproduces that exact failure with Testing Library's default
+one-second wait. Pairing integration now uses explicit five-second observation
+waits inside a bounded 30-second test. Both client and Worker cases gate the
+actual server response to verify no reveal is available before the fresh read,
+then delay its delivery beyond one second and retain the single-use consumption
+and cache-secret checks. Production issuance and reveal rules are unchanged.
+The focused 16 tests passed; final desktop `pnpm test` passed 72 files / 873 tests,
+TypeScript checking, eight packaging tests and the production build.
+
+### PR #1063 local CLI acceptance diagnostic (2026-09-29)
+
+The final macOS Go race run and its first focused CLI retry failed in
+`TestCLISessionAcceptanceQueueAndArchive` at the first creation-comparison read
+with `unavailable`; preceding Worker file reads succeeded. The test now retains
+both server and Worker structured logs through one synchronized handler and
+prints them only on failure after both services have joined. With these
+diagnostics, the same focused case passed under race in 143.047s and without race
+in 118.505s. This is an intermittent unresolved observation failure, not evidence
+of a product fix or a passing complete race suite. Production read deadlines and
+read-authority validation were not weakened.
+
+### PR #1063 local PR observation fixture deadline (2026-09-29)
+
+The combined race run also failed the unborn workspace diff and the Worktree PR
+matching observation with `recovery_required`; all harness, server, store and
+Worker packages passed. Both workspace cases passed together on a focused race
+retry (33.705s). The PR matching fixture was allocating its 15-second read
+deadline before native execution-lease setup and baseline capture. It now starts
+that unchanged budget immediately before the read, matching the server's actual
+dispatch boundary and the sibling mismatch fixture. Its focused race test passed
+again in 18.147s. The unborn-diff failure remains intermittent and is not called
+fixed by this test correction.
+
+### PR #1063 repair final validation (2026-09-29)
+
+- Desktop `pnpm test`: 72 files / 873 tests, TypeScript checking, eight native
+  packaging tests and production build passed. API client: 41 tests passed.
+- Full DeliDev `go vet`, including the final fixture corrections, passed. Buf
+  lint, breaking against main `96b81fd4`, generated-source freshness and Git LFS
+  integrity passed. This repair introduces no Rust changes; earlier native and
+  root Cargo evidence above is historical, not a new execution at this head.
+- `go test -race -timeout 30m ./cmds/delidev-cli/...` finished with the three
+  observation failures detailed above. Other packages passed, including Grok
+  (1015.033s), server (988.558s), store (321.600s) and Worker (562.507s).
+- A sequential JSON run subsequently completed the entire CLI package with a
+  pass in 210.574s. Its driver was stopped after the current test child exited
+  naturally to avoid repeating already-passing packages; that interrupted driver
+  is not reported as a successful complete-suite command.
+- The final full workspace package race retry completed in 514.707s with
+  failures in `TestInspectPropagatesRemoteHeadExecutionFailures` (unexpected
+  `invalid_argument` during setup) and
+  `TestPRWorkspaceMatchPreservesMismatchesAndDistinguishesUnknownAccess`
+  (`unavailable` timeout). The original unborn-diff and first PR-match failures
+  did not recur in that run. These macOS native-process/observation failures
+  remain unresolved; neither the whole Go race suite nor product verification
+  is declared complete. No production timeout or ownership guard was relaxed.
+- Generated repository-owned app/client `dist` directories were removed; the
+  external Go toolchain's `src/cmd/dist` source remains intact. No real provider
+  account, paid inference, PAT/private repository or product-driven push was
+  used. Publication of this code PR is separate from the deferred product push
+  acceptance.
+
+### PR #1063 integration with local-registration recovery (2026-09-29)
+
+The final review inventory observed main `dc9e1969` and six additional findings;
+they are handled in this same repair without another status-monitoring cycle.
+Merged main's explicit revoked-registration recovery while retaining CEF and
+async native authorization. Frontend `pnpm test` passed 73 files / 883 tests,
+typecheck, eight package tests and build. Focused CLI recovery/local-pairing/
+backup race tests passed (16.243s), native library tests passed (14 passed,
+4 opt-in tests ignored), and the CEF host compiled with `desktop-host`.
+
+### PR #1063 deletion maintenance failure visibility (2026-09-29)
+
+Deletion attempts return the safe original failure with the updated or unchanged
+pending job, preserving the controller's typed `backup_deletion_pending` logging
+on every failed retry. Store race tests passed (5.089s), including inaccessible
+intent state, repeated identical failure without revision growth, hash mismatch,
+failed directory synchronization and subsequent successful recovery.
+
+### PR #1063 deletion intent capacity recovery (2026-09-29)
+
+Startup inventory counts canonical intent filenames separately from ignored
+atomic-write remnants, retaining the 4,096-obligation cap and a separate
+8,192-entry directory bound. Real filesystem boundary tests cover 4,096 intents
+plus remnants, both independent overflow cases and preservation of pending
+evidence. The deletion store race suite passed in 5.402s.
+
+### PR #1063 inspection sidecar publication race (2026-09-29)
+
+Inspection now rechecks WAL/SHM/journal absence immediately before publishing
+validated metadata. Deterministic copy-boundary tests create each sidecar while
+retaining identical original image bytes, verify refusal without source changes,
+and verify successful recovery after removal. Managed-backup race tests passed.
+
+### PR #1063 backup creation revocation boundary (2026-09-29)
+
+Durable creation passes the original principal into the actual copy, which now
+authorizes under the exclusive store gate retained through VACUUM/publication.
+A real SQLite regression commits revocation after successful preliminary
+authorization at the copy boundary and verifies a terminal unauthorized job with
+neither a published nor pending image. Backup store/server race suites passed
+(15.125s / 5.998s), including owner recovery and original creation retries.
+
 ## 2026-09-29: PR #1060 account-setup merge validation
 
 - Merged main's guided API account setup and provider activation while preserving all desktop recovery rules and both branches' evidence records. The combined Settings surface retains current-device revocation guards; the CLI retains explicit local registration inspection/recovery alongside the new provider operations.
 - Merged frontend `pnpm test` passes 71 files / 847 tests, typechecking and production build. Focused CLI desktop recovery, local pairing and account race tests pass, and `go vet ./cmds/delidev-cli/...` passes. This merge changes no Rust source and does not replace the previously recorded native/full-suite evidence limits.
 - Git LFS objects were hydrated and verified. Required generated embeds were built for Go checks and hooks; repository-owned generated `dist` directories are removed after validation.
+
+### PR #1063 atomic deletion claim repair (2026-09-29)
+
+Managed backup deletion moves the published image using a native atomic
+no-replace rename into private `backup-removals/`, synchronizes both directories,
+and verifies the claimed bytes, metadata and sidecars again before unlink.
+Mismatched claims, reopened original paths and late SQLite sidecars are retained
+as pending recovery evidence. Restart resumes a retained claim; no unlink targets
+the original published name after validation. This is not an isolation boundary
+against hostile same-user mutation of the private recovery namespace.
+
+The real-filesystem deletion race suite passes (7.852s), including replacement
+between initial validation and claim, preservation of an existing destination,
+late WAL/SHM/journal/pending files, interrupted directory synchronization,
+restart recovery, reopened original preservation and existing durable-job cases.
+
+### PR #1063 Worker observation contention fixture (2026-09-29)
+
+The Windows CI lifecycle fixture failed while reading replacement status because
+its bounded metadata-lock wait returned `Conflict`. The fixture now retries only
+that read within its existing 65-second observation deadline. It never repeats
+start, changes a generation, replaces credentials or suppresses other errors.
+The native macOS race fixture passes; this is not a Windows runtime result or a
+claim that the other recorded Windows Git/Grok timeouts have been repaired.
+
+### PR #1063 remote-HEAD failure fixture phase (2026-09-29)
+
+The full macOS workspace run showed the remote-HEAD error fixture expiring in
+its preliminary working-tree inspection instead of the intended `symbolic-ref`
+operation. Its fixture-only per-command bound is now ten seconds, the intentional
+blocked HEAD command lasts thirty seconds, and every case must prove that HEAD
+inspection actually started. The focused race group passes (14.868s), covering
+native absent/invalid exits and timeout. Product Git/read deadlines are unchanged;
+the separately recorded PR-match and Windows workspace failures remain unresolved.
+
+### PR #1063 final repair verification and unresolved findings (2026-09-29)
+
+- Final complete store race tests pass (71.908s); final DeliDev Go vet passes.
+  The new atomic-claim store tests cross-compile for Windows amd64 and Linux
+  arm64. Those are compile checks, not native runtime evidence.
+- Root `cargo test -- --test-threads=1` passes with `TMPDIR=/private/tmp` after
+  preparing the documented pnport macOS companion. The merged native library
+  tests pass (14 passed, four opt-in ignored) and the CEF desktop-host check
+  passes. Final desktop verification after the registration-recovery merge
+  passes 73 files / 883 tests, type checking, eight packaging tests and build.
+- Final Buf lint, breaking and deterministic generated-source checks pass.
+  API-client tests (41) and LFS integrity passed earlier in this repair; no
+  further client/schema/asset changes followed. Generated repository-owned
+  desktop/client `dist` directories are removed before publication.
+- Nine actionable review findings are repaired. The native CEF Quit finding
+  remains unresolved: inspection of the pinned runtime's browser-drain and
+  shutdown sequence and the existing native sample does not establish a safe
+  fix or successful process termination. No speculative shutdown workaround,
+  forced-success termination or native-unsupported classification was added.
+- The last observed Windows CI failures in CLI/workspace Git reads and Grok
+  creation remain unresolved. The lifecycle status-contention fixture repair
+  is verified only on macOS. The earlier full macOS workspace run's PR-match
+  observation failure also remains unresolved. The complete Go race command
+  is not reported green; focused passing reruns do not erase those failures.
+- The PR remains a partial implementation of the approved seven-stage plan.
+  Real accounts, hosted inference, private GitHub operations/product Git push,
+  Windows/Linux native execution, production signing and publication remain
+  outside this verification. The one-shot repair does not monitor subsequent CI.
+
+### PR #1063 contextual navigation and provider-default merge (2026-09-29)
+
+Merged main through `1f51c33e`, retaining contextual sidebars and the standalone
+Pull requests surface with the live prerequisite checklist and managed Backups.
+Settings retains both its complete sixteen-category coverage and the new valid
+zero-account provider behavior.
+
+Schema 23 reconciles both prior version-22 layouts. The unmerged backup layout
+keeps its original deletion jobs and receives hosted defaults once; main's
+already-seeded layout gains the backup table without recreating explicitly deleted
+providers. Saved Off settings and identities survive both paths, alongside the
+existing version-21 compatibility and backup-before-migration boundary. The added
+fixture initially used a TEXT write for a BLOB-owned document; it now exercises
+the real typed mutation path. Focused backup/default/migration race tests pass
+(19.485s). Full desktop `pnpm test` passes 74 files / 886 tests, type checking,
+eight packaging tests and production build. No Rust or wire schema changed.
+
+### PR #1063 macOS icon packaging repair (2026-09-29)
+
+The merged full-resolution icon exposed a native dry-run failure: the pinned
+bundler downsamples 1254px to 1024px but rejects that size at density one with
+`No matching IconType`. Renaming the unchanged source to `icon-source@2x.png`
+provides the required retina density. The exact LFS attribute and Tauri icon
+list follow the rename; the supplied artwork, window/tray PNG and Windows ICO
+remain byte-for-byte unchanged. The real macOS arm64 dry run now passes bundle
+creation, macOS 13 metadata, native sidecar/CEF/helper architecture, resources,
+notices and strict nested ad-hoc signature checks. Git LFS integrity passes.
+This packaging result does not establish native Quit or release-signing success.
+
+### PR #1063 exit diagnostics and final repair validation (2026-09-29)
+
+Native exit diagnostics now distinguish the runtime Exit event, notification
+join, tray join and return from `app.run`. The event is no longer named
+`runtime-exited`, because the pinned runtime emits it before CEF shutdown. No
+termination behavior, credential policy, browser persistence or runtime pin was
+changed. The temporary private CEF-cache override used for the diagnostic build
+was removed from the final source.
+
+The isolated macOS arm64 ad-hoc bundle launched successfully. The Mac was locked,
+so the computer-use tool could not activate the Quit menu; no menu acceptance is
+claimed. Cleanup by SIGTERM reached the Exit event after about 33 seconds, then
+completed both notification and tray joins. The process remained alive for more
+than two further minutes without the runtime-return log. A fresh native sample
+placed the main thread inside CEF waiting on a Mach message and one CEF worker
+inside `SecItemCopyMatching` / Keychain decryption. The prior Quit sample contains
+the same Keychain stack. This narrows the investigation but does not prove the
+specific permission/signature condition or establish a safe fix. No keychain
+item was inspected or changed, and no mock-keychain or encryption-disabling
+switch was added. The owned blocked fixture was forcibly cleaned up separately
+from product shutdown. The original CEF Quit review remains unresolved.
+
+Final local checks for this repair:
+
+- Full store and server race suites pass (91.006s and 342.506s). The combined
+  store/server/CLI run fails `TestCLISessionAcceptanceQueueAndArchive` at review
+  creation when a workspace read times out; its isolated race retry passes
+  (74.919s). Neither that retry nor the passing focused migration group makes
+  the complete Go race suite green. Prior workspace PR-match and Windows Git/Grok
+  failures remain open. Production deadlines were not relaxed.
+- Go vet, API-client tests (41), Buf lint/breaking/generated drift and LFS
+  integrity pass. The already recorded merged desktop run remains 74 files /
+  886 tests, type checking, eight package verifier tests and production build.
+- CEF desktop-host binary tests pass (7). Root
+  `TMPDIR=/private/tmp cargo test -- --test-threads=1` passes, with the previously
+  prepared pnport companion binaries. Existing opt-in ignored tests do not
+  establish platform/native acceptance.
+- The real macOS arm64 packaging dry run passes after the icon repair. Windows,
+  Linux, other architectures, actual macOS 13 execution, real accounts/inference,
+  product Git push, release signing/notarization and publication remain unverified
+  or deferred as previously recorded. No release workflow was dispatched.
 
 ### Issues #1056 and #1057 automatic titles and chat-first session creation (2026-09-29)
 
@@ -2403,3 +2952,192 @@ store, worker, domain and API proxy packages, and `pnpm proto:check` pass on the
 merged branch. Native Tauri screenshot/keyboard acceptance at 960×640, hosted
 provider/account behavior and cross-platform native title inference remain
 unverified. Generated app/client `dist` output is removed after validation.
+
+### PR #1063 automatic-title merge repair (2026-09-29)
+
+Merged main through `ac8dd2ec`, preserving its mounted chat-first new-session
+page and automatic title/usage/Worker capability paths alongside the live
+prerequisite checklist, managed Backups and CEF host. The generated Go and
+TypeScript contracts were regenerated together with the repository's Node 24
+runtime; the host's unrelated Node 26 default failed the protobuf plugin wire
+boundary and was not used for validation.
+
+Schema 24 reconciles the two version-23 layouts with a synchronized pre-migration
+backup and one transaction. Existing backup deletion jobs, title-purpose usage,
+original inference/HTTP claims and explicit provider deletions survive. The added
+real SQLite fixtures prove both upgrade paths and prevent resending claimed
+inference. Focused migration/provider/backup race tests pass (5.547s); title and
+backup race groups pass in domain, server, Worker and relay packages. Desktop
+`pnpm test` passes 74 files / 894 tests, type checking, eight package verifier
+tests and production build. This merge does not resolve the recorded native
+CEF Quit or Windows integration acceptance gaps.
+
+### PR #1063 LFS contract repair (2026-09-29)
+
+The CI asset contract still referenced `icon-source.png` after the verified
+retina rename. Its exact pointer/attribute assertion now targets
+`icon-source@2x.png`; all size, committed-pointer and hydration checks remain.
+The complete repository CI-contract suite passes all 95 tests locally.
+
+### PR #1063 sidebar scenario timeout (2026-09-29)
+
+The Linux CI frontend failure exhausted Vitest's default five-second aggregate
+timeout in the multi-page sidebar/settings scenario. That one full-shell test
+now has a bounded 15-second aggregate deadline. Its per-observation deadlines,
+exact request counts, cursors and archive-filter assertions are unchanged; this
+does not change production request deadlines or establish native latency.
+The complete desktop `pnpm test` passes 74 files / 894 tests, TypeScript
+checking, eight packaging verifier tests and the production build on macOS
+arm64. The Linux hosted CI rerun has not been observed.
+
+### PR #1063 bounded Git observation repair (2026-09-29)
+
+The Windows CLI failure's original private-fixture log shows repeated owned Git
+launches consuming the 15-second review observation deadline. Compatible Git
+administrative path and object-format reads now share a single owned invocation,
+removing eight launches from a two-repository working-tree comparison while
+retaining every before/after repository check, HEAD validation, filter refusal
+and process cleanup. No observation deadline or native authority was expanded.
+
+Real Git fixtures preserve distinct linked/common administration, spaces,
+SHA-1/SHA-256 object formats and the original index. Malformed record boundaries
+are rejected. Focused workspace read/diff/identity/continuation/recovery race
+tests pass (81.423s), and the complete CLI session/review/Archive scenario passes
+with race detection (46.590s) on macOS arm64. These are local results, not a
+Windows runtime result or a guarantee against arbitrary host starvation; the
+hosted Windows rerun still needs verification.
+
+### PR #1063 Grok initialization investigation (2026-09-29)
+
+The Windows Plan-mode failure occurred in native API initialization, before the
+foreign-mode observation under test. That test discarded its captured private
+fixture log. It now includes the redacted initialization log on failure, and
+API initialization reports elapsed milliseconds plus distinct initial/runtime/
+workspace inspection, launch, initialize, authentication or cleanup phases.
+Production time bounds, process ownership and no-resend rules are unchanged.
+
+The available Windows log does not identify which native inspection failed;
+host contention is a hypothesis, not established cause. This diagnostic repair
+is not a claimed Windows fix. Another native Windows run with the retained
+phase evidence is required to resolve that failure.
+
+The local Grok initialization, original Plan-claim and bounded discovery race
+group passes (144.080s). The added structured failure/latency and redaction
+assertions pass separately (18.522s). Go vet passes for the final Grok and
+workspace code. These fixtures use no account login or paid inference.
+
+### PR #1063 final repair validation (2026-09-29)
+
+The final workspace package's complete race suite passes (323.460s), extending
+coverage beyond the focused Git fixtures to execution, recovery and PR workspace
+matching. The current repair also passes repository CI contracts (95 tests),
+desktop tests (74 files / 894 tests, type checking, eight packaging verifier
+tests and build), API client tests (41), Buf lint/breaking/generated-drift,
+Go vet and Git LFS integrity. Both generated app/client `dist` directories were
+removed after validation.
+
+The removed original checkout was unavailable; repair continued in a clean
+linked checkout of the same PR branch after the managed-worktree API could not
+resolve the missing repository. No Rust source was authored in this repair;
+the previous root Cargo/native package results above are prior evidence, not
+new runs. No native Windows run, new CEF Quit acceptance, signed release or
+real-account/inference/product-push validation was performed. Windows Grok
+initialization and CEF shutdown remain unresolved; metadata batching still
+needs a hosted Windows result before its CI failure is declared fixed.
+
+### PR #1063 backup publication provenance repair (2026-09-29)
+
+Backup creation now commits the copied image's exact metadata and SHA-256 in the
+live database before a no-replace publication. A reserved filename and matching
+server identity cannot adopt an older image. Real SQLite fixtures reject both an
+unclaimed same-server image and replacement after publication while preserving
+the suspect bytes; the existing restart/lost-completion fixture still reuses its
+original image. The store backup race group passes (11.710s).
+
+### PR #1063 managed image size repair (2026-09-29)
+
+Creation and migration now reject copied images over the same 8 GiB bound used by
+inspection/deletion before publishing them. Size rejection preserves the live
+database, removes unpublished scratch output and settles durable creation as
+failed/resource-exhausted. A real sparse file tests the exact limit without
+allocating 8 GiB; the backup/inspection/migration race group passes (15.103s).
+
+### PR #1063 CLI waited backup failure repair (2026-09-29)
+
+`backup create --wait` now returns a typed nonzero exit when the accepted job
+fails, retaining the original job, backup, request, revision, problem and replay
+fields. Interrupted waiting and failed reads retain the last accepted result.
+Real Connect fixtures cover pending-to-failed and already-failed retries for
+revocation, recovery and size limits without repeating acceptance; the existing
+real-server successful create/inspect/delete path still passes. The CLI backup
+race group passes (6.907s).
+
+### PR #1063 complete prerequisite report validation (2026-09-29)
+
+The first-session checklist now rejects incomplete enclosing reports and Worker
+records even when one contained installation looks valid. Validation includes
+required version/platform/calendar fields, storage results and decimal counts,
+all four harnesses and bounded credential observations. Valid failed storage
+remains a separate setup observation and does not hide a complete Worker report.
+Type checking and the prerequisite component suite pass (74 tests), including
+missing fields, unknown closed values, contradictory results and uint64 overflow.
+
+### PR #1063 real-server model selector wait repair (2026-09-29)
+
+The hosted frontend job failed while waiting for the Claude model option under
+Testing Library's default one-second deadline. The real-server fixture now
+deterministically delays the provider capability read and subsequent model query
+by 600 ms each. That reproduces the same missing-option failure before the fix;
+a bounded five-second wait passes while retaining exact model selection, persisted
+permission and invalid-edit rejection assertions. Production RPC deadlines and
+the 15-second scenario deadline are unchanged. Complete desktop `pnpm test`
+passes 74 files / 941 tests, TypeScript checking, eight native package verifier
+tests and the production build. The new hosted run is not observed in this
+one-shot repair.
+
+### PR #1063 unlocked native Quit investigation (2026-09-29)
+
+A fresh macOS arm64 ad-hoc bundle dry run at baseline `bfe823f7` passed sidecar,
+CEF/helper/resource/license, architecture, macOS 13 metadata and strict nested
+signature verification. A separate temporary diagnostic crate changed only the
+private data/cache/log destinations; the original product source, shutdown logic,
+Tauri revision and CEF distribution were unchanged. Its copied bundle was signed
+ad-hoc separately, and the original release binary was restored afterward.
+
+The unlocked native UI allowed a real application-menu Quit. The structured
+request at 08:40:02.321129Z preceded Exit at 08:44:14.170544Z, notification/tray
+joins immediately afterward and runtime return at 08:44:33.986925Z. The owned
+process and helpers were then absent. No agent-issued signal or forced-success
+path was used. The 271.666-second delay still fails responsive Quit acceptance.
+A sample during the wait again places a CEF worker in `SecItemCopyMatching`;
+the main thread was still servicing the native event loop. Access to the native
+SecurityAgent UI was blocked by the computer-use tool, so prompt contents,
+handling and the exact decryption/signature condition were not established.
+
+Upstream [CEF issue #2692](https://github.com/chromiumembedded/cef/issues/2692)
+documents shared Keychain-name behavior, and
+[commit fa874acb](https://github.com/chromiumembedded/cef/commit/fa874acb9dd4a0ebf607245543b2f20d27d04916)
+adds custom names in a later runtime. The corresponding patch/API is absent from
+the pinned `g8042e43` distribution. That is a candidate dependency constraint,
+not proof that upgrading resolves this shutdown. No pin change, mock Keychain,
+encryption downgrade or real credential grant was performed.
+
+The existing default listener was occupied, so the new private server startup
+failed closed; no unrelated server was stopped or replaced. This run adds no
+connected-session retention, macOS 13, Windows/Linux or production-signing
+acceptance. The native review remains unresolved pending a safe reproducible
+shutdown fix and prompt/signature evidence.
+
+### PR #1063 fourth repair validation (2026-09-29)
+
+The four new review repairs have focused real SQLite/Connect race coverage,
+including same-server image substitution, unchanged lost-publication recovery,
+exact 8 GiB rejection and typed waited CLI failure. The server backup race group
+passes (5.755s), and Go vet passes for all DeliDev packages. Desktop `pnpm test`
+passes 74 files / 941 tests, type checking, eight package verifier tests and build.
+The native package dry run above predates the Go/frontend repairs and is not a
+native runtime test of their final contents. No repository Rust code or generated
+protobuf contract changed in this invocation. Prior root Cargo, API-client and
+Buf results remain prior evidence. Generated desktop/client `dist` output is
+removed after verification. The single final PR inventory still contained one
+frontend CI failure (repaired locally above); no post-push green CI is claimed.
