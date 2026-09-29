@@ -332,3 +332,18 @@ counts without replaying acceptance or filesystem work. Regenerate Go, TypeScrip
 and Connect Query bindings together.
 
 Provider activation adds an owner/client-only `ProviderService.ListProviderInventory`, closed capability/preset enums, account-list-only `ListResourcesRequest.provider_id`, and additive `SearchModels.enabled_providers_only`. Omitted model filtering preserves existing behavior. Provider enabled and preset provenance remain optional fields in the canonical provider JSON document for legacy compatibility. Inventory capabilities let clients detect older servers that ignore filters; Workers cannot read it. See [provider activation](cmds-delidev-provider-activation-contract.md), and regenerate Go messages/Connect handlers and TypeScript Connect Query bindings together.
+
+## Workspace storage service
+
+`WorkspaceStorageService` is owner/paired-client-only and provides
+`RequestWorkspaceStorage`, `GetWorkspaceStorageOperation` and
+`CancelWorkspaceStorageOperation`. The closed additive action enum selects
+preview/create/cleanup/inspect/restore/delete/recover. Acceptance binds Mutation
+to the current session; cancellation binds it to the original current job.
+Successful preview, exact snapshot and original recovery job references have
+separate fields. Responses expose current original Resource jobs with request
+UUID/replay status; polling never resends native side effects. GetStatus adds
+`WORKSPACE_STORAGE_V1`. Snapshot metadata stays in the existing Snapshot kind
+and generated Go/TypeScript/Connect Query bindings reproduce from the schema.
+The [storage contract](cmds-delidev-storage-contract.md) owns exact authorization,
+state publication, safe copying, cancellation and explicit recovery semantics.

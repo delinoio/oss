@@ -36,6 +36,7 @@ type Git struct {
 	HooksDir      string
 	Timeout       time.Duration
 	readOnly      bool
+	offline       bool
 	diffIndexFile string
 }
 
@@ -76,6 +77,9 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	bounded, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	commandArgs := []string{"-C", root, "-c", "core.quotePath=false", "-c", "color.ui=false"}
+	if g.offline {
+		commandArgs = append(commandArgs, "-c", "core.worktree="+root, "-c", "core.bare=false", "-c", "protocol.allow=never", "-c", "core.fsmonitor=false", "-c", "core.hooksPath="+g.HooksDir, "-c", "gc.auto=0", "-c", "maintenance.auto=false")
+	}
 	if g.readOnly {
 		// Even check-attr can open the index and invoke a configured fsmonitor.
 		// Read-only workspace observations never grant that command authority.
@@ -92,6 +96,13 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	var out limitedOutput
 	out.limit = MaxGitOutput
 	environment := gitEnvironment()
+	if g.offline {
+		environment = slices.DeleteFunc(environment, func(value string) bool {
+			key, _, _ := strings.Cut(value, "=")
+			return strings.HasPrefix(strings.ToUpper(key), "GIT_") || strings.HasPrefix(strings.ToUpper(key), "SSH_")
+		})
+		environment = append(environment, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_NO_LAZY_FETCH=1", "GIT_NO_REPLACE_OBJECTS=1")
+	}
 	if g.readOnly {
 		// Git localizes binary/EOF patch markers. Read observations require a
 		// stable wire grammar independent of the execution machine's locale.

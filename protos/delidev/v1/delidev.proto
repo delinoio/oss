@@ -154,6 +154,7 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
   // Session creation can opt into server-owned, Worker-executed automatic titles.
   SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 = 1;
+  SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1 = 2;
 }
 message StopServerRequest {
   string request_id = 1;
@@ -1717,4 +1718,52 @@ message GetBackupDeletionRequest {
 }
 message GetBackupDeletionResponse {
   BackupDeletionJob job = 1;
+}
+
+// Worker-local storage operations reserve one durable job. Acceptance is not
+// proof of native publication or removal; observe the original job separately.
+service WorkspaceStorageService {
+  rpc RequestWorkspaceStorage(RequestWorkspaceStorageRequest) returns (RequestWorkspaceStorageResponse);
+  rpc GetWorkspaceStorageOperation(GetWorkspaceStorageOperationRequest) returns (GetWorkspaceStorageOperationResponse);
+  rpc CancelWorkspaceStorageOperation(CancelWorkspaceStorageOperationRequest) returns (CancelWorkspaceStorageOperationResponse);
+}
+enum WorkspaceStorageAction {
+  WORKSPACE_STORAGE_ACTION_UNSPECIFIED = 0;
+  WORKSPACE_STORAGE_ACTION_PREVIEW = 1;
+  WORKSPACE_STORAGE_ACTION_CREATE = 2;
+  WORKSPACE_STORAGE_ACTION_CLEANUP = 3;
+  WORKSPACE_STORAGE_ACTION_INSPECT = 4;
+  WORKSPACE_STORAGE_ACTION_RESTORE = 5;
+  WORKSPACE_STORAGE_ACTION_DELETE = 6;
+  WORKSPACE_STORAGE_ACTION_RECOVER = 7;
+}
+message RequestWorkspaceStorageRequest {
+  // Entity ID/revision select the current session, even for snapshot operations.
+  Mutation mutation = 1;
+  WorkspaceStorageAction action = 2;
+  string snapshot_id = 3;
+  // Cleanup requires the exact successful preview job and unchanged contents.
+  string preview_job_id = 4;
+  // Explicit inspection/settlement of the original uncertain storage job.
+  string recovery_job_id = 5;
+}
+message RequestWorkspaceStorageResponse {
+  Resource job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetWorkspaceStorageOperationRequest {
+  string id = 1;
+}
+message GetWorkspaceStorageOperationResponse {
+  Resource job = 1;
+}
+
+message CancelWorkspaceStorageOperationRequest {
+  // Select the original job and its exact current revision.
+  Mutation mutation = 1;
+}
+message CancelWorkspaceStorageOperationResponse {
+  Resource job = 1;
+  bool replayed = 2;
 }

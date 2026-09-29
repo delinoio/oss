@@ -51,6 +51,8 @@ const (
 	ActivityServiceName = "delidev.v1.ActivityService"
 	// UsageServiceName is the fully-qualified name of the UsageService service.
 	UsageServiceName = "delidev.v1.UsageService"
+	// WorkspaceStorageServiceName is the fully-qualified name of the WorkspaceStorageService service.
+	WorkspaceStorageServiceName = "delidev.v1.WorkspaceStorageService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -378,6 +380,15 @@ const (
 	// UsageServiceSetModelPricingProcedure is the fully-qualified name of the UsageService's
 	// SetModelPricing RPC.
 	UsageServiceSetModelPricingProcedure = "/delidev.v1.UsageService/SetModelPricing"
+	// WorkspaceStorageServiceRequestWorkspaceStorageProcedure is the fully-qualified name of the
+	// WorkspaceStorageService's RequestWorkspaceStorage RPC.
+	WorkspaceStorageServiceRequestWorkspaceStorageProcedure = "/delidev.v1.WorkspaceStorageService/RequestWorkspaceStorage"
+	// WorkspaceStorageServiceGetWorkspaceStorageOperationProcedure is the fully-qualified name of the
+	// WorkspaceStorageService's GetWorkspaceStorageOperation RPC.
+	WorkspaceStorageServiceGetWorkspaceStorageOperationProcedure = "/delidev.v1.WorkspaceStorageService/GetWorkspaceStorageOperation"
+	// WorkspaceStorageServiceCancelWorkspaceStorageOperationProcedure is the fully-qualified name of
+	// the WorkspaceStorageService's CancelWorkspaceStorageOperation RPC.
+	WorkspaceStorageServiceCancelWorkspaceStorageOperationProcedure = "/delidev.v1.WorkspaceStorageService/CancelWorkspaceStorageOperation"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -3823,4 +3834,129 @@ func (UnimplementedUsageServiceHandler) GetPricingVersion(context.Context, *conn
 
 func (UnimplementedUsageServiceHandler) SetModelPricing(context.Context, *connect.Request[v1.SetModelPricingRequest]) (*connect.Response[v1.SetModelPricingResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.SetModelPricing is not implemented"))
+}
+
+// WorkspaceStorageServiceClient is a client for the delidev.v1.WorkspaceStorageService service.
+type WorkspaceStorageServiceClient interface {
+	RequestWorkspaceStorage(context.Context, *connect.Request[v1.RequestWorkspaceStorageRequest]) (*connect.Response[v1.RequestWorkspaceStorageResponse], error)
+	GetWorkspaceStorageOperation(context.Context, *connect.Request[v1.GetWorkspaceStorageOperationRequest]) (*connect.Response[v1.GetWorkspaceStorageOperationResponse], error)
+	CancelWorkspaceStorageOperation(context.Context, *connect.Request[v1.CancelWorkspaceStorageOperationRequest]) (*connect.Response[v1.CancelWorkspaceStorageOperationResponse], error)
+}
+
+// NewWorkspaceStorageServiceClient constructs a client for the delidev.v1.WorkspaceStorageService
+// service. By default, it uses the Connect protocol with the binary Protobuf Codec, asks for
+// gzipped responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply
+// the connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewWorkspaceStorageServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) WorkspaceStorageServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	workspaceStorageServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkspaceStorageService").Methods()
+	return &workspaceStorageServiceClient{
+		requestWorkspaceStorage: connect.NewClient[v1.RequestWorkspaceStorageRequest, v1.RequestWorkspaceStorageResponse](
+			httpClient,
+			baseURL+WorkspaceStorageServiceRequestWorkspaceStorageProcedure,
+			connect.WithSchema(workspaceStorageServiceMethods.ByName("RequestWorkspaceStorage")),
+			connect.WithClientOptions(opts...),
+		),
+		getWorkspaceStorageOperation: connect.NewClient[v1.GetWorkspaceStorageOperationRequest, v1.GetWorkspaceStorageOperationResponse](
+			httpClient,
+			baseURL+WorkspaceStorageServiceGetWorkspaceStorageOperationProcedure,
+			connect.WithSchema(workspaceStorageServiceMethods.ByName("GetWorkspaceStorageOperation")),
+			connect.WithClientOptions(opts...),
+		),
+		cancelWorkspaceStorageOperation: connect.NewClient[v1.CancelWorkspaceStorageOperationRequest, v1.CancelWorkspaceStorageOperationResponse](
+			httpClient,
+			baseURL+WorkspaceStorageServiceCancelWorkspaceStorageOperationProcedure,
+			connect.WithSchema(workspaceStorageServiceMethods.ByName("CancelWorkspaceStorageOperation")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// workspaceStorageServiceClient implements WorkspaceStorageServiceClient.
+type workspaceStorageServiceClient struct {
+	requestWorkspaceStorage         *connect.Client[v1.RequestWorkspaceStorageRequest, v1.RequestWorkspaceStorageResponse]
+	getWorkspaceStorageOperation    *connect.Client[v1.GetWorkspaceStorageOperationRequest, v1.GetWorkspaceStorageOperationResponse]
+	cancelWorkspaceStorageOperation *connect.Client[v1.CancelWorkspaceStorageOperationRequest, v1.CancelWorkspaceStorageOperationResponse]
+}
+
+// RequestWorkspaceStorage calls delidev.v1.WorkspaceStorageService.RequestWorkspaceStorage.
+func (c *workspaceStorageServiceClient) RequestWorkspaceStorage(ctx context.Context, req *connect.Request[v1.RequestWorkspaceStorageRequest]) (*connect.Response[v1.RequestWorkspaceStorageResponse], error) {
+	return c.requestWorkspaceStorage.CallUnary(ctx, req)
+}
+
+// GetWorkspaceStorageOperation calls
+// delidev.v1.WorkspaceStorageService.GetWorkspaceStorageOperation.
+func (c *workspaceStorageServiceClient) GetWorkspaceStorageOperation(ctx context.Context, req *connect.Request[v1.GetWorkspaceStorageOperationRequest]) (*connect.Response[v1.GetWorkspaceStorageOperationResponse], error) {
+	return c.getWorkspaceStorageOperation.CallUnary(ctx, req)
+}
+
+// CancelWorkspaceStorageOperation calls
+// delidev.v1.WorkspaceStorageService.CancelWorkspaceStorageOperation.
+func (c *workspaceStorageServiceClient) CancelWorkspaceStorageOperation(ctx context.Context, req *connect.Request[v1.CancelWorkspaceStorageOperationRequest]) (*connect.Response[v1.CancelWorkspaceStorageOperationResponse], error) {
+	return c.cancelWorkspaceStorageOperation.CallUnary(ctx, req)
+}
+
+// WorkspaceStorageServiceHandler is an implementation of the delidev.v1.WorkspaceStorageService
+// service.
+type WorkspaceStorageServiceHandler interface {
+	RequestWorkspaceStorage(context.Context, *connect.Request[v1.RequestWorkspaceStorageRequest]) (*connect.Response[v1.RequestWorkspaceStorageResponse], error)
+	GetWorkspaceStorageOperation(context.Context, *connect.Request[v1.GetWorkspaceStorageOperationRequest]) (*connect.Response[v1.GetWorkspaceStorageOperationResponse], error)
+	CancelWorkspaceStorageOperation(context.Context, *connect.Request[v1.CancelWorkspaceStorageOperationRequest]) (*connect.Response[v1.CancelWorkspaceStorageOperationResponse], error)
+}
+
+// NewWorkspaceStorageServiceHandler builds an HTTP handler from the service implementation. It
+// returns the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewWorkspaceStorageServiceHandler(svc WorkspaceStorageServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	workspaceStorageServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkspaceStorageService").Methods()
+	workspaceStorageServiceRequestWorkspaceStorageHandler := connect.NewUnaryHandler(
+		WorkspaceStorageServiceRequestWorkspaceStorageProcedure,
+		svc.RequestWorkspaceStorage,
+		connect.WithSchema(workspaceStorageServiceMethods.ByName("RequestWorkspaceStorage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workspaceStorageServiceGetWorkspaceStorageOperationHandler := connect.NewUnaryHandler(
+		WorkspaceStorageServiceGetWorkspaceStorageOperationProcedure,
+		svc.GetWorkspaceStorageOperation,
+		connect.WithSchema(workspaceStorageServiceMethods.ByName("GetWorkspaceStorageOperation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workspaceStorageServiceCancelWorkspaceStorageOperationHandler := connect.NewUnaryHandler(
+		WorkspaceStorageServiceCancelWorkspaceStorageOperationProcedure,
+		svc.CancelWorkspaceStorageOperation,
+		connect.WithSchema(workspaceStorageServiceMethods.ByName("CancelWorkspaceStorageOperation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.WorkspaceStorageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case WorkspaceStorageServiceRequestWorkspaceStorageProcedure:
+			workspaceStorageServiceRequestWorkspaceStorageHandler.ServeHTTP(w, r)
+		case WorkspaceStorageServiceGetWorkspaceStorageOperationProcedure:
+			workspaceStorageServiceGetWorkspaceStorageOperationHandler.ServeHTTP(w, r)
+		case WorkspaceStorageServiceCancelWorkspaceStorageOperationProcedure:
+			workspaceStorageServiceCancelWorkspaceStorageOperationHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedWorkspaceStorageServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedWorkspaceStorageServiceHandler struct{}
+
+func (UnimplementedWorkspaceStorageServiceHandler) RequestWorkspaceStorage(context.Context, *connect.Request[v1.RequestWorkspaceStorageRequest]) (*connect.Response[v1.RequestWorkspaceStorageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkspaceStorageService.RequestWorkspaceStorage is not implemented"))
+}
+
+func (UnimplementedWorkspaceStorageServiceHandler) GetWorkspaceStorageOperation(context.Context, *connect.Request[v1.GetWorkspaceStorageOperationRequest]) (*connect.Response[v1.GetWorkspaceStorageOperationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkspaceStorageService.GetWorkspaceStorageOperation is not implemented"))
+}
+
+func (UnimplementedWorkspaceStorageServiceHandler) CancelWorkspaceStorageOperation(context.Context, *connect.Request[v1.CancelWorkspaceStorageOperationRequest]) (*connect.Response[v1.CancelWorkspaceStorageOperationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkspaceStorageService.CancelWorkspaceStorageOperation is not implemented"))
 }

@@ -18,3 +18,5 @@ export * from "./errors.js";
 export * from "./validation.js";
 export * as UsageQuery from "./gen/delidev/v1/delidev-UsageService_connectquery.js";
 export * as IntegrationQuery from "./gen/delidev/v1/delidev-IntegrationService_connectquery.js";
+
+export * as WorkspaceStorageQuery from "./gen/delidev/v1/delidev-WorkspaceStorageService_connectquery.js";

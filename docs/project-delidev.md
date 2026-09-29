@@ -277,3 +277,12 @@ The private Worker observation channel now verifies an existing Local/Worktree s
 Managed backup creation, inventory, integrity inspection and durable permanent image deletion are connected through owner/client Connect RPC, CLI and desktop Settings. Schema v23 retains ordinary jobs/receipts while immutable external deletion intents survive database rollback. This does not complete permanent session deletion, workspace snapshot/restore or managed database restoration; see the [storage contract](cmds-delidev-storage-contract.md).
 
 Local desktop registration now has explicit owner-verified revoked-client recovery and a current-client revocation guard in the app. The CLI/native boundary retains the original revoked identity and private pairing history, uses a separate candidate and exact durable retry, and preserves server sessions/settings and independent Workers. It does not add automatic repair, remote saved-profile recovery, a new RPC or database migration; see the CLI and desktop contracts and evidence ledger.
+
+Issue #1079 implements owner/client Connect and CLI Worker workspace storage:
+whole ordered Worktree/General Chat snapshots, preview-bound manual cleanup,
+conflict-safe restoration/deletion and explicit original-operation recovery.
+Files remain private on their owning Worker; the server stores metadata and
+atomic paused state. Original Local checkouts and active/dependent work remain
+protected. This does not complete permanent session/Sidechat deletion, database
+restore, the desktop storage surface or deferred native platform acceptance;
+follow the storage/workspace contracts and evidence ledger.

@@ -1,7 +1,7 @@
 # DeliDev Worker workspace contract
 
 ## Scope
-`cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. The Worker first Codex runner now uses the execution lease below; public first dispatch uses that lease; forks and snapshots remain separate pending boundaries in the evidence ledger.
+`cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. The Worker first Codex runner now uses the execution lease below; public first dispatch uses that lease; forks remain a separate pending boundary; managed whole-workspace snapshots follow the storage contract and their distinct evidence ledger entry.
 
 ## Runtime and Language
 Go and the execution machine's installed Git. No harness or Git installation is performed automatically.
@@ -172,3 +172,18 @@ HEAD validation, filter checks and private diff administration remain mandatory.
 No result is cached across observations and the 15-second read deadline remains.
 This reduces repeated process/journal setup on Windows without relaxing native
 ownership or accepting partial metadata.
+
+
+## Managed storage ownership
+
+Issue #1079 adds private Worker-local whole-workspace snapshots, preview-bound
+manual cleanup and atomic restoration under the existing session/process locks.
+Follow [storage operations](cmds-delidev-storage-contract.md) for the complete
+job/receipt, bounds, independent Git stores, retained bytes, removal-intent and
+explicit recovery contract. Original Local checkouts are ineligible. No source
+removal precedes verified publication of every repository. Restore keeps the
+canonical owned cwd and original logical identity through a private comparison
+binding, with standalone Git administration replacing the removed linked store.
+Active claims, unknown dependent resources and conflicting destinations remain
+protected. This storage comparison grants no new native checkpoint/history
+support; all existing execution and continuation evidence gates still apply.

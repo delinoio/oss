@@ -41,6 +41,7 @@ type envelope struct {
 	Error     *domain.Error `json:"error,omitempty"`
 }
 type client struct {
+	storage       delidevv1connect.WorkspaceStorageServiceClient
 	transport     *http.Transport
 	system        delidevv1connect.SystemServiceClient
 	resources     delidevv1connect.ResourceServiceClient
@@ -390,6 +391,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 		value, err := configurationTransfer(ctx, c, o, rest, streams)
 		return emit(value, err)
+	case "storage":
+		ensureRequest(&o)
+		value, err := workspaceStorageCommand(ctx, c, o, rest)
+		return emit(value, err)
 	case "backup":
 		if len(rest) > 0 && (rest[0] == "create" || rest[0] == "delete") {
 			ensureRequest(&o)
@@ -681,6 +686,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
 	return client{
 		transport: transport, endpoint: endpoint, token: token,
+		storage:       delidevv1connect.NewWorkspaceStorageServiceClient(httpClient, endpoint, opts...),
 		inbox:         delidevv1connect.NewInboxServiceClient(httpClient, endpoint, opts...),
 		schedules:     delidevv1connect.NewScheduleServiceClient(httpClient, endpoint, opts...),
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),
@@ -862,6 +868,12 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session steer --id SESSION --input-id INPUT --revision N --execution-id EXECUTION --turn-id TURN
   session stop|archive|restore|resume --id ID --revision N
   session rename --id ID --revision N --name NAME
+  storage preview|create --session-id ID --expected-revision N
+  storage cleanup --session-id ID --expected-revision N --preview-job-id JOB --confirm
+  storage inspect|restore|delete --session-id ID --expected-revision N --snapshot-id ID [--confirm]
+  storage recover --session-id ID --expected-revision N --recovery-job-id JOB
+  storage operation --id JOB
+  storage cancel --id JOB --expected-revision N
   schedule create --input FILE|- [--local-worker-dir PATH]
   schedule edit --id ID --revision N --input FILE|- [--local-worker-dir PATH]
   schedule list [--project-id ID] [--enabled all|true|false] [--limit N] [--page-token TOKEN]

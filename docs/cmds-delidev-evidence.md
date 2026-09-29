@@ -3191,3 +3191,36 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+## Issue #1079 — Worker-local workspace snapshots and manual storage
+
+Implemented owner/paired-client Connect and equivalent CLI preview, create,
+cleanup, inspection, restore, deletion, cancellation and explicit recovery.
+Acceptance retains actor-bound UUID-v7 receipts, exact revisions, original job
+references, atomic metadata/session/events and paused dispatch. Existing schema
+and historical records remain unchanged. Worker bytes remain private and local.
+
+The snapshot engine uses one manifest and independent Git stores for every
+ordered repository or General Chat, preserving staged/unstaged/untracked/ignored,
+unpushed, executable-mode and symlink data. Whole source observation, complete
+published copies and Git integrity precede a no-replace source-root transition.
+Removal intents and explicit journal-bound recovery preserve uncertainty instead
+of replaying native publication. Active ownership, original Local checkouts,
+unresolved dependents and occupied restoration destinations are protected.
+Logical source/retained snapshot/removal counts remain separate from measured
+filesystem free space. No remote push or automatic retention is introduced.
+
+Focused General Chat, interrupted removal/restore/delete, foreign retained files,
+real Unix socket/FIFO/device, server receipt/Resume/only-copy protections and
+Worker no-replay/assignment tests are being validated in temporary state. Earlier
+focused two-repository round trips and injected second-repository disk-full tests
+passed; final lease/remote and mid-copy cancellation regressions plus the complete
+Go race run remain pending. Complete Go vet passed. The API client passed 3 files /
+41 tests, type checking and build. Protocol lint passed; breaking/freshness checks
+remain in progress. Final verification outcomes will be recorded before publication.
+
+These fixtures use actual local Git and private temporary state with controlled
+storage faults, no user credentials or native AI inference. They do not establish
+native Windows/Linux runtime acceptance, real provider/private-GitHub access,
+physical reclaimed-space attribution, a desktop storage-management surface,
+permanent session/dependent Sidechat deletion or database restoration.
