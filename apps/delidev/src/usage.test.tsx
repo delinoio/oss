@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, UsageTimeGranularity, UsageAccountingProfile, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
+import { AccountingUnitKind, EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, UsageTimeGranularity, UsageAccountingProfile, UsageTotalsSchema, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
 import { encode } from "./documents";
 
@@ -59,6 +59,28 @@ it("applies filters explicitly and preserves a draft across navigation", async (
   fireEvent.change(screen.getByLabelText(/^Until \(/), { target: { value: "2026-09-24T10:00" } });
   fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await screen.findByRole("alert"); expect(f.read).toHaveBeenCalledTimes(2);
+});
+
+it.each([false, true])("keeps native-only groups out of response details with mixed responses=%s", async (mixed) => {
+  const f = fixture();
+  const native = create(GetUsageSummaryResponseSchema, { groups: [{ sessionId: newRequestId(), sessionName: "Grok-only session", accountId: f.ids.account, providerId: f.ids.provider, modelId: f.ids.model, totals: { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] } }] }).groups[0];
+  f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
+  f.data.groups[0].totals = create(UsageTotalsSchema, { responses: 1, total: { unavailableResponses: 1 }, accounting: [{ kind: AccountingUnitKind.CODEX_RESPONSE, units: 1, unavailableUnits: 1 }] });
+  f.data.totals = create(UsageTotalsSchema, { responses: mixed ? 1 : 0, total: mixed ? { unavailableResponses: 1 } : undefined, accounting: [...(mixed ? f.data.groups[0].totals.accounting : []), ...native.totals!.accounting] });
+  f.data.groups = mixed ? [f.data.groups[0], native] : [native];
+  render(f.view());
+  await screen.findByText("Incomplete coverage");
+  const responseSection = screen.getByRole("region", { name: "Session, model and account details" });
+  expect(within(responseSection).queryByText("Grok-only session")).toBeNull();
+  if (mixed) {
+    expect(within(responseSection).getByRole("table")).toBeTruthy();
+    expect(within(responseSection).getByText("Retained session")).toBeTruthy();
+    expect(within(responseSection).getByText(/1 responses · 1 unavailable/)).toBeTruthy();
+  } else {
+    expect(within(responseSection).queryByRole("table")).toBeNull();
+    expect(within(responseSection).getByText(/No exact response usage is recorded/)).toBeTruthy();
+  }
+  expect(within(screen.getByRole("region", { name: "Verified Grok closed inputs" })).getByText("Grok-only session")).toBeTruthy();
 });
 
 it("labels a new applied time scope while its result is still loading", async () => {

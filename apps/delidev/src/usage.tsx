@@ -93,6 +93,7 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
     closeDrawer();
   };
   const data = result.data;
+  const responseGroups = data?.groups.filter((group) => (group.totals?.responses ?? 0) > 0) ?? [];
   const appliedZone = data?.analytics?.timeZone || selection.timeZone;
   const conditions = appliedFilters(selection);
   const draftChanged = !sameFilters(draft, appliedDraft);
@@ -130,7 +131,7 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
       {result.error ? <p className="usage-stale-indicator" role="status">Stale values from the last successful read</p> : null}
       {data.analytics?.granularity === UsageTimeGranularity.DAY ? <UsageCharts analytics={data.analytics} timeZone={appliedZone} /> : <p className="usage-charts-unavailable" role="status">Daily and model charts are unavailable from this server version. Update the DeliDev server to view analytics; the current summary and detail data remain available.</p>}
       <section className="usage-detail" aria-labelledby="usage-detail-title"><h2 id="usage-detail-title">Session, model and account details</h2>
-        {data.groups.length ? <div className="usage-table" role="region" aria-label="Session, model and account usage table; scroll horizontally to inspect all details" tabIndex={0}><table><caption>Known response subtotals with original session, project, account, API and model identities</caption><thead><tr><th scope="col">Session / project</th><th scope="col">Account</th><th scope="col">Model / API</th><th scope="col">Tokens</th><th scope="col">Token-price estimate</th></tr></thead><tbody>{data.groups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${group.modelId}`}>
+        {responseGroups.length ? <div className="usage-table" role="region" aria-label="Session, model and account usage table; scroll horizontally to inspect all details" tabIndex={0}><table><caption>Known response subtotals with original session, project, account, API and model identities</caption><thead><tr><th scope="col">Session / project</th><th scope="col">Account</th><th scope="col">Model / API</th><th scope="col">Tokens</th><th scope="col">Token-price estimate</th></tr></thead><tbody>{responseGroups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${group.modelId}`}>
           <td><button type="button" onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><small>{group.sessionId}</small><p>{group.projectId ? group.projectName || `Project ${group.projectId}` : "General Chat"}</p>{group.projectId ? <small>{group.projectId}</small> : null}</td>
           <td><span>{group.accountName || "Retained account"}</span><small>{group.accountId}</small></td>
           <td><span>{group.modelName || "Retained model"}</span><small>{group.modelId}</small><p>{group.providerName || `API ${group.providerId}`}</p><small>{group.providerId}</small></td>
