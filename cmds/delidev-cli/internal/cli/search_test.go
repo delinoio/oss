@@ -102,7 +102,16 @@ func TestCLISearchRetainedConversationsAndFilters(t *testing.T) {
 	if usageSummary["accepted_executions_without_response"] != float64(1) || usageSummary["actual_cost"] != "USAGE_COST_STATE_UNAVAILABLE" || usageSummary["totals"].(map[string]any)["total"].(map[string]any)["known_total"] != "" {
 		t.Fatal("CLI invented complete usage or cost", usageResult)
 	}
-	for _, bad := range [][]string{{"usage"}, {"usage", "summary", "--from", "yesterday"}, {"usage", "summary", "--account-id", "invalid"}, {"usage", "summary", "--project-id", string(domain.NewID()), "--general-chat"}} {
+	dailyCode, dailyResult := cliRun(t, root, []string{"usage", "summary", "--granularity", "day", "--timezone", "Asia/Seoul"}, "")
+	if dailyCode != 0 {
+		t.Fatal("daily usage CLI failed", dailyResult)
+	}
+	dailySummary := dailyResult["result"].(map[string]any)
+	analytics, ok := dailySummary["analytics"].(map[string]any)
+	if !ok || analytics["time_zone"] != "Asia/Seoul" || len(analytics["days"].([]any)) == 0 {
+		t.Fatal("daily usage CLI omitted server analytics", dailyResult)
+	}
+	for _, bad := range [][]string{{"usage"}, {"usage", "summary", "--from", "yesterday"}, {"usage", "summary", "--account-id", "invalid"}, {"usage", "summary", "--project-id", string(domain.NewID()), "--general-chat"}, {"usage", "summary", "--timezone", "UTC"}, {"usage", "summary", "--granularity", "day"}, {"usage", "summary", "--granularity", "hour", "--timezone", "UTC"}} {
 		if code, _ := cliRun(t, root, bad, ""); code == 0 {
 			t.Fatal("invalid usage scope accepted", bad)
 		}

@@ -35,6 +35,7 @@
 ### DeliDev
 
 - `packages/delidev-api-client` owns the private generated TypeScript/Connect Query bindings and bounded read-only synchronization helpers. Follow `docs/packages-delidev-api-client-contract.md`. Generate all descriptors from `delidev.v1`; never duplicate Go product validation or add implicit startup/mutation retry.
+- Generated DeliDev UsageQuery exposes the additive explicit granularity/timezone fields and optional same-snapshot daily/model analytics. Preserve exact decimal counter strings and server-supplied Other groups; the client must not recreate aggregates or rank results locally. Follow `docs/packages-delidev-api-client-contract.md`.
 - Bind each transport to one explicit HTTPS or exact HTTP loopback origin and fresh caller-owned credentials. Disable redirects/cookies/cache; never store credentials, documents or cursors in browser storage, logs or query keys. Identity changes cancel all old requests and discard their caches.
 - Apply coherent complete snapshots before their cursors, then fetch changed resources by identity/revision. Advance replay only after consumption, resnapshot on typed gaps, preserve retained state on disconnect, and bound memory/backoff. Resource streams cannot emit native notifications or execute work. The real temporary Go-server fixture is uncached and uses only test-owned credentials/processes.
 

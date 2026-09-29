@@ -2192,3 +2192,67 @@ Issue #1046 adds presence-aware activation, canonical preset identity, bounded i
 The required complete `go test -race ./cmds/delidev-cli/...` run passed the affected `internal/cli`, `internal/server`, and `internal/store` packages, along with the other packages, but `internal/harness/grok` reached its ten-minute package timeout in `TestQuestionControllerOriginalClaimsAndUncertainty/question-claim-failure` while `inspectProfile` waited for its process wire. That unchanged focused Grok case passes alone under the race detector in 7.794 seconds. The cause of the combined-run timeout is not established; the complete command is not a passing result.
 
 Native desktop layout and keyboard checks were not performed for this change; the frontend fixtures do not establish native-window behavior. No real provider account or inference readiness was tested. Preserve that evidence gap during review and follow `docs/cmds-delidev-provider-activation-contract.md`.
+
+### Issue #1052 daily and model token analytics (2026-09-29)
+
+The Token Usage page now presents the six exact measures, persistent coverage,
+applied-scope timestamps, daily token trends and ranked model/API comparisons
+while retaining the existing Usage navigation, session details and separate
+historical cost evidence. The additive `GetUsageSummary` DAY query aggregates
+from the same authorized response snapshot, buckets by first-retention time in
+the requested IANA zone, and returns complete exact model groups plus a
+server-summed Other group. The CLI exposes the same optional analytics. The
+desktop uses the existing generated Connect client and renders a compatible
+summary when an older server omits analytics.
+
+The store fixture verifies zero, missing-counter, no-response and clipped-day
+distinctions, price timestamp independence, deduplication, model/overall
+reconciliation and measured/unavailable counts. Domain fixtures cover clipped
+calendar boundaries, 23/25-hour DST days and a skipped civil date. Keyboard
+chart traversal, all six measures in full data tables, filter drafts and
+loading/error scope labeling are covered by component tests. Focused Go race
+tests pass for domain, store, server and CLI, and `go vet ./cmds/delidev-cli/...`
+passes. The required default `go test -race ./cmds/delidev-cli/...` invocation
+hits Go's 10-minute package timeout in the existing Grok
+`TestQuestionControllerOriginalClaimsAndUncertainty/question-foreign-proposal`
+fixture while its helper waits for profile inspection; the other packages,
+including the changed usage packages, report pass. The complete suite passes
+with `go test -race -timeout 30m ./cmds/delidev-cli/...`; Grok completed in
+876.760s, server in 417.567s, store in 144.471s, worker in 212.671s and
+workspace in 390.328s. The app suite passes 69 files /
+809 tests, TypeScript type-checking and production build. Generated API client
+lint, 3 files / 41 tests and build pass; protocol lint and breaking checks pass.
+Repeated `pnpm proto:generate` leaves generated files byte-for-byte unchanged.
+
+No native viewport screenshot was captured for this increment; the running
+DeliDev desktop windows were not built from this worktree, and the attempted
+screen capture did not return a reviewable viewport. Responsive CSS, browser
+component/keyboard tests and production build are evidence for this change, not
+native-window or hosted billing acceptance. Generated app/client `dist`
+directories are removed after validation.
+
+### Issue #1054 sidebar project creation and query retries (2026-09-29)
+
+The Projects header now uses an icon-only New project action that opens the
+existing Settings editor, preserves protected and uncertain drafts, and returns
+through the existing save invalidation path. Each failed project, global-session,
+and expanded project-session query retries only its current page. The full
+`apps/delidev` `pnpm test` command passes on macOS arm64: 68 test files / 810
+tests, TypeScript type-checking, API-client generation/build, and the Rsbuild
+production build. Tests cover fresh and deferred entry, draft/request identity,
+exact query pages, and active-page invalidation after save.
+
+The native Tauri desktop binary built and launched on macOS arm64 with a private
+temporary data directory. The observed window remained at the local-server
+connection screen; the fixed `127.0.0.1:46310` listener belonged to another
+worktree, so it was not used. The Projects sidebar was therefore not reached:
+native pointer/keyboard behavior and the 960×640, 1,099/1,100/1,101-wide, and
+1,440×900 viewports remain unverified. Windows and Linux native acceptance is
+also untested. Component coverage is not counted as native visual evidence. No
+Rust, RPC, schema, or generated source changed; generated `dist` output is
+removed from the worktree.
+
+After merging the current PR branch with `origin/main`, `apps/delidev` `pnpm
+test` passes 69 files / 826 tests, type checking and production build. This
+validates the combined Token Usage and sidebar changes; generated app/client
+`dist` output is removed afterward.

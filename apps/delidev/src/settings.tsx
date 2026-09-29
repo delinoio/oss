@@ -4,7 +4,7 @@ import { Integrations } from "./integrations";
 import { ConfigurationTransfer } from "./configuration-transfer";
 import { ModelPricing } from "./pricing";
 import { NotificationSettings } from "./notification-settings";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { ConfigurationQuery, EntityKind, ProviderInventoryCapability, ProviderPresetId, ProviderQuery, ResourceQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
@@ -22,22 +22,33 @@ import { PairingGrant, type PairingAuthority } from "./pairing-grant";
 import { AccountSettings, AccountSettingsSection, type AccountProviderSummary } from "./account-settings";
 import { ActiveModelSettings, ApiProviderSettings, providerInventoryReady } from "./provider-model-settings";
 
-export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, active, saved, cancel }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; active: boolean; saved: () => void; cancel: () => void }) {
+export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, active, saved, cancel, focusName = false, nameFocused }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; active: boolean; saved: () => void; cancel: () => void; focusName?: boolean; nameFocused?: () => void }) {
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
   const [job, setJob] = useState<Resource | "unknown">();
   const [childPending, setChildPending] = useState(false);
   const [problem, setProblem] = useState("");
+  const form = useRef<HTMLFormElement>(null);
   const current = useQuery(ResourceQuery.getResource, { kind, id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
   const mutation = useRetainedMutation(`configuration:${kind}:${initial?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result) => { if (result.job) setJob(result.job); else if (result.resource) saved(); else setJob("unknown"); });
   const stale = Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
   const blocked = mutation.busy || mutation.uncertain;
+  useEffect(() => {
+    if (!active || !focusName || kind !== EntityKind.PROJECT || initial || blocked) return;
+    const frame = window.requestAnimationFrame(() => {
+      const name = form.current?.querySelector<HTMLInputElement>("input");
+      if (!name || name.disabled) return;
+      name.focus();
+      nameFocused?.();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active, blocked, focusName, initial, kind, nameFocused]);
   const change = (value: Document) => {
     if (encode(value).byteLength > 1 << 20 || (kind === EntityKind.TEMPLATE && new TextEncoder().encode(text(value.contents)).byteLength > 128 << 10)) { setProblem("This configuration is too large. Shorten the text before adding more content."); return; }
     setData(value); setProblem("");
   };
   if (job) return <section><h3>{kindNames[kind]} save accepted</h3>{job === "unknown" ? <p role="alert">The server acknowledged this request without a readable result. Inspect its receipt before starting another save.</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>Configuration saved after Worker validation.</p><button onClick={saved}>Done</button></> : state === JobState.Failed || state === JobState.Canceled ? <button onClick={() => setJob(undefined)}>Return to retained draft</button> : null}</TrackedJob>}</section>;
   const validSubscriptionProvider = !subscriptionOnly || (kind === EntityKind.PROVIDER && data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "");
-  return <form onSubmit={(event) => { event.preventDefault(); if (blocked || childPending || stale || !validSubscriptionProvider || (initial && current.error)) return; void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: 1, documentJson: encode(data) }); }}>
+  return <form ref={form} onSubmit={(event) => { event.preventDefault(); if (blocked || childPending || stale || !validSubscriptionProvider || (initial && current.error)) return; void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: 1, documentJson: encode(data) }); }}>
     <h3>{initial ? "Edit" : "New"} {kindNames[kind]}</h3>
     <fieldset disabled={blocked}><ConfigurationFields kind={kind} data={data} change={change} active={active} existing={Boolean(initial)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} /></fieldset>
     {stale ? <p role="alert">This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving.</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error || mutation.error} />
@@ -46,7 +57,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   </form>;
 }
 
-export enum SettingsEntryDestination { Repositories = "repositories" }
+export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations }
 enum SettingsWorkflow { Integrations = "integrations", Notifications = "notifications", Transfer = "transfer", Accounts = "accounts" }
 enum SettingsCategory {
@@ -119,6 +130,8 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   const [startApiWizard, setStartApiWizard] = useState<{ key: string; providerId: string; provider?: AccountProviderSummary }>();
   const [accountProviderHint, setAccountProviderHint] = useState<AccountProviderSummary>();
   const [childWorkflows, setChildWorkflows] = useState<ReadonlySet<SettingsWorkflow>>(() => new Set());
+  const [focusNewProjectName, setFocusNewProjectName] = useState(false);
+  const handledDestination = useRef<SettingsEntryDestination | undefined>(undefined);
   const client = useQueryClient();
   const selected = settingsCategories[selectedCategory];
   const area = selected.area;
@@ -183,11 +196,27 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   const successfulEmptyFirstPage = !page && Boolean(result.data && result.data.resources.length === 0 && !result.error && !result.data.nextPageToken);
   const hidePagination = successfulEmptyFirstPage;
   useEffect(() => {
-    if (!visible || entryDestination !== SettingsEntryDestination.Repositories || workflowProtected) return;
-    setSelectedCategory(SettingsCategory.Repositories);
+    if (!entryDestination) {
+      handledDestination.current = undefined;
+      return;
+    }
+    if (!visible || handledDestination.current === entryDestination) return;
+    if (entryDestination === SettingsEntryDestination.NewProject && editing && kind === EntityKind.PROJECT && !editing.initial) {
+      handledDestination.current = entryDestination;
+      destinationConsumed?.();
+      return;
+    }
+    if (workflowProtected) return;
+    setSelectedCategory(entryDestination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : SettingsCategory.Projects);
     setPage("");
+    if (entryDestination === SettingsEntryDestination.NewProject) {
+      setEditing({ key: newRequestId() });
+      setFocusNewProjectName(true);
+    }
+    handledDestination.current = entryDestination;
     destinationConsumed?.();
-  }, [destinationConsumed, entryDestination, visible, workflowProtected]);
+  }, [destinationConsumed, editing, entryDestination, kind, visible, workflowProtected]);
+  const projectNameFocused = useCallback(() => setFocusNewProjectName(false), []);
   const chooseCategory = (category: SettingsCategory) => {
     setSelectedCategory(category);
     if (settingsCategories[category].area === SettingsArea.Configuration) {
@@ -255,7 +284,7 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
             <div hidden={!isSubscriptionAccounts || hasOverlay}>
               <AccountSettings section={AccountSettingsSection.Subscription} active={visible && isSubscriptionAccounts && !hasOverlay} accountTypeFilteringReady={accountTypeFilteringReady} accountTypeFilteringProblem={accountInventory.error} providerIdFilter={accountProviderID} clearProviderFilter={() => { setAccountProviderID(""); setAccountProviderHint(undefined); }} setProviderFilter={(providerId, provider) => { setAccountProviderID(providerId); setAccountProviderHint(provider); setPage(""); }} providers={accountProviders} eligibleProviders={eligibleProviders} providerSearch={providerSearch} setProviderSearch={setProviderSearch} providerSearchLoading={accountInventory.isFetching} providerSearchError={accountInventory.error} providerSearchHasMore={Boolean(eligibleInventory.data?.nextPageToken)} loadMoreProviders={() => setProviderChoicePage(eligibleInventory.data?.nextPageToken ?? "")} providerFilterHasMore={Boolean(accountInventory.data?.nextPageToken)} loadMoreProviderFilters={() => setProviderFilterPage(accountInventory.data?.nextPageToken ?? "")} subscriptionProviderResources={accountProviders.map((provider) => provider.provider)} subscriptionProviderManagement={subscriptionProviderManagement} openApiProviders={() => { setSelectedCategory(SettingsCategory.Providers); setPage(""); }} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} providerHint={accountProviderHint} />
             </div>
-            {pricing ? <ModelPricing model={pricing} active={visible} close={() => { setPricing(undefined); void client.invalidateQueries({ refetchType: "active" }); }} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={() => { setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={editing.kind ?? kind} initial={editing.initial} initialData={editing.initialData} subscriptionOnly={editing.subscriptionOnly} active={visible} saved={done} cancel={() => setEditing(undefined)} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void client.invalidateQueries({ refetchType: "active" }); }} /> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setAccountProviderID(providerID); setAccountProviderHint(provider); setProviderSearch(entry.displayName); setPage(""); }} addAccount={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setAccountProviderID(providerID); setAccountProviderHint(provider); setProviderSearch(entry.displayName); setStartApiWizard({ key: newRequestId(), providerId: providerID, provider }); setPage(""); }} deleteCustom={setDeleting} /> : isModels ? <ActiveModelSettings active={visible && isModels} createModel={() => setEditing({ kind: EntityKind.MODEL, key: newRequestId() })} editModel={(initial) => setEditing({ kind: EntityKind.MODEL, initial, key: newRequestId() })} priceModel={setPricing} /> : hasSpecializedPanel ? null : <>
+            {pricing ? <ModelPricing model={pricing} active={visible} close={() => { setPricing(undefined); void client.invalidateQueries({ refetchType: "active" }); }} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={() => { setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={editing.kind ?? kind} initial={editing.initial} initialData={editing.initialData} subscriptionOnly={editing.subscriptionOnly} active={visible} saved={done} cancel={() => setEditing(undefined)} focusName={focusNewProjectName} nameFocused={projectNameFocused} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setAccountProviderID(providerID); setAccountProviderHint(provider); setProviderSearch(entry.displayName); setPage(""); }} addAccount={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setAccountProviderID(providerID); setAccountProviderHint(provider); setProviderSearch(entry.displayName); setStartApiWizard({ key: newRequestId(), providerId: providerID, provider }); setPage(""); }} deleteCustom={setDeleting} /> : isModels ? <ActiveModelSettings active={visible && isModels} createModel={() => setEditing({ kind: EntityKind.MODEL, key: newRequestId() })} editModel={(initial) => setEditing({ kind: EntityKind.MODEL, initial, key: newRequestId() })} priceModel={setPricing} /> : hasSpecializedPanel ? null : <>
               {result.isPending && !result.data ? <p role="status">Loading {selected.label.toLowerCase()}…</p> : null}
               <Problem error={result.error} />
               {result.error && result.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded results.</p> : null}

@@ -1183,6 +1183,12 @@ message GetUsageSummaryRequest {
   string provider_id = 6;
   string model_id = 7;
   bool general_chat = 8;
+  UsageTimeGranularity granularity = 9;
+  string time_zone = 10;
+}
+enum UsageTimeGranularity {
+  USAGE_TIME_GRANULARITY_UNSPECIFIED = 0;
+  USAGE_TIME_GRANULARITY_DAY = 1;
 }
 message UsageMeasure {
   // Empty is unavailable. "0" is measured zero. Decimal integer, never float.
@@ -1198,6 +1204,29 @@ message UsageTotals {
   UsageMeasure output = 5;
   UsageMeasure reasoning_output = 6;
   UsageMeasure total = 7;
+}
+message UsageAnalyticsDay {
+  int64 from_unix_ms = 1;
+  int64 until_unix_ms = 2;
+  UsageTotals totals = 3;
+}
+message UsageAnalyticsModel {
+  string provider_id = 1;
+  string model_id = 2;
+  string provider_name = 3;
+  string model_name = 4;
+  UsageTotals totals = 5;
+}
+message UsageOtherModels {
+  uint32 model_count = 1;
+  UsageTotals totals = 2;
+}
+message UsageAnalytics {
+  UsageTimeGranularity granularity = 1;
+  string time_zone = 2;
+  repeated UsageAnalyticsDay days = 3;
+  repeated UsageAnalyticsModel models = 4;
+  UsageOtherModels other_models = 5;
 }
 message UsageGroup {
   string session_id = 1;
@@ -1239,6 +1268,7 @@ message GetUsageSummaryResponse {
   uint32 accepted_executions_without_response = 8;
   EstimateTotals estimates = 9;
   repeated PricingUsage pricing = 10;
+  UsageAnalytics analytics = 11;
 }
 
 // User-declared token prices only. No rate or result establishes actual spend.
