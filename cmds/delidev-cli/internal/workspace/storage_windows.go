@@ -1,6 +1,9 @@
 package workspace
 
-import "golang.org/x/sys/windows"
+import (
+	"errors"
+	"golang.org/x/sys/windows"
+)
 
 func storageRenameNoReplace(from, to string) error {
 	source, err := windows.UTF16PtrFromString(from)
@@ -23,4 +26,8 @@ func storageCapacity(path string) (*uint64, *uint64) {
 		return nil, nil
 	}
 	return &capacity, &available
+}
+
+func storageFull(err error) bool {
+	return errors.Is(err, windows.ERROR_DISK_FULL) || errors.Is(err, windows.ERROR_HANDLE_DISK_FULL)
 }

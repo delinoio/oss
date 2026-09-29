@@ -164,8 +164,8 @@ func TestSnapshotSecondRepositoryDiskFailurePreservesAllSources(t *testing.T) {
 		}
 		return nil
 	}
-	if _, err := m.Storage(context.Background(), input); err == nil {
-		t.Fatal("disk full copy succeeded")
+	if _, err := m.Storage(context.Background(), input); domain.SafeError(err).Code != domain.ResourceExhausted {
+		t.Fatal("disk full did not retain a typed capacity problem", err)
 	}
 	for _, repo := range input.Manifest.Repositories {
 		if _, err := os.ReadFile(filepath.Join(repo.Path, "tracked.txt")); err != nil {

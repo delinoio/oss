@@ -303,7 +303,9 @@ The independent Git stores can cost more than the removed linked worktree. These
 logical counts never imply positive physical reclamation: compression, shared
 blocks and concurrent allocations prevent attribution from byte subtraction.
 Unsupported capacity observation stays absent. Failed/unfinished jobs do not
-report confirmed removal. Owned scratch/retained removal data may still occupy
+report confirmed removal. Native disk-full/quota failures before publication have
+a redacted `resource_exhausted` classification; uncertain transitions retain their
+separate recovery-required ownership. Owned scratch/retained removal data may still occupy
 space during recovery and is reflected in filesystem free observations, not
 misrepresented as a published snapshot.
 

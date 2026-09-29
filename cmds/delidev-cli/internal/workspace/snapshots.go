@@ -205,6 +205,9 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 	defer lock.Close()
 	defer func() {
 		if returned != nil {
+			if storageFull(returned) {
+				returned = domain.Fail(domain.ResourceExhausted, "Worker storage capacity or quota is exhausted.", "Preserve the original operation and copies; free unrelated space before requesting new work.")
+			}
 			m.Logger.Warn("workspace_storage_failed", "session_id", r.Preparation.SessionID, "operation_id", r.OperationID, "action", r.Action, "code", domain.SafeError(returned).Code)
 		}
 	}()

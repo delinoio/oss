@@ -1,6 +1,9 @@
 package workspace
 
-import "golang.org/x/sys/unix"
+import (
+	"errors"
+	"golang.org/x/sys/unix"
+)
 
 func storageRenameNoReplace(from, to string) error {
 	return unix.Renameat2(unix.AT_FDCWD, from, unix.AT_FDCWD, to, unix.RENAME_NOREPLACE)
@@ -14,3 +17,5 @@ func storageCapacity(path string) (*uint64, *uint64) {
 	free := stat.Bavail * uint64(stat.Bsize)
 	return &capacity, &free
 }
+
+func storageFull(err error) bool { return errors.Is(err, unix.ENOSPC) || errors.Is(err, unix.EDQUOT) }

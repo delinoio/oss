@@ -3212,12 +3212,24 @@ filesystem free space. No remote push or automatic retention is introduced.
 
 Focused General Chat, interrupted removal/restore/delete, foreign retained files,
 real Unix socket/FIFO/device, server receipt/Resume/only-copy protections and
-Worker no-replay/assignment tests are being validated in temporary state. Earlier
-focused two-repository round trips and injected second-repository disk-full tests
-passed; final lease/remote and mid-copy cancellation regressions plus the complete
-Go race run remain pending. Complete Go vet passed. The API client passed 3 files /
-41 tests, type checking and build. Protocol lint passed; breaking/freshness checks
-remain in progress. Final verification outcomes will be recorded before publication.
+Worker no-replay/assignment tests pass in temporary state. The focused race run
+for two-repository restoration, preserved execution-lease identity, unchanged
+local test remotes, second-repository disk failure and mid-copy cancellation
+passes (231.862s; `/tmp/delidev-1079-snapshots.log`). Complete Go vet passes.
+The API client passes 3 files / 41 tests, type checking and build. Root
+`pnpm proto:check` passes formatting/lint, origin/main compatibility and generated
+freshness (`/tmp/delidev-1079-proto.log`). Linux arm64 and Windows amd64 workspace
+test binaries cross-compile; cross-compilation does not prove native runtime.
+
+The complete race run is still in progress. Its existing
+`TestCLISessionAcceptanceQueueAndArchive` hits the bounded Worker file-reader
+comparison deadline (`/tmp/delidev-1079-race.log`). An isolated repeat and the
+serialized final run hit the same existing boundary. A separately archived source
+checkout of fetched main `b741cec88d68ba84eaf918bbee22ca28bff57ec6` reproduces
+that fixture failure on its review-create file comparison (56.75s;
+`/tmp/delidev-1079-baseline-cli.log`), without these changes. The production
+read deadline is retained. Final full-suite and typed-capacity regression outcomes
+will be recorded before publication.
 
 These fixtures use actual local Git and private temporary state with controlled
 storage faults, no user credentials or native AI inference. They do not establish
