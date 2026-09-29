@@ -3234,3 +3234,13 @@ workspace-read and detached-worker readiness failures in unchanged native
 fixtures; its CLI package failed after 370.223s. These failures are not reported
 as passed or as PR activity regressions without independent reproduction.
 Isolated reruns and the final captured full race run are recorded below.
+
+The isolated two-test CLI race rerun passed detached Worker lifecycle but failed
+`TestCLISessionAcceptanceQueueAndArchive` at its creation-comparison Git read
+with `unavailable` (CLI package 114.874s). A separate temporary source export of
+unchanged base revision `b741cec88d68ba84eaf918bbee22ca28bff57ec6` reproduced the
+same fixture's `unavailable` workspace-reader classification at the preceding
+`tracked.txt` read (59.435s). This independently establishes the pre-existing
+workspace observation failure; it does not establish its root cause or repair.
+The latest PR activity server race check, including mutation-invalidated cursor
+rejection, passed in 4.673s.
