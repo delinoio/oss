@@ -10,7 +10,7 @@ import { Prerequisites } from "./prerequisites";
 
 function fixture() {
   const serverId = newRequestId();
-  const report = { schema_version: 2, server_id: serverId, version: "0.1.0", inference_probes: false, observed_at: new Date().toISOString(), database: "ready", storage: { result: { state: "observed" } }, more_machines: false, machines: [{ machine_id: newRequestId(), active_stream: true, disabled: false, installations: [{ harness: "codex", state: "detected", version: "0.151.0", protocol_verified: true, protocol_state: "verified", capabilities: [] as string[], observed_at: new Date().toISOString() }] }] };
+  const report = { schema_version: 2, server_id: serverId, version: "0.1.0", protocol_version: 1, database_schema_version: 24, os: "darwin", architecture: "arm64", listener: "http://127.0.0.1:46310", credential_store: "owner-credential-ready", credentials: [], more_credentials: false, inference_probes: false, observed_at: new Date().toISOString(), database: "ready", storage: { result: { state: "observed" }, database_bytes: "4096", wal_bytes: "0", logical_database_bytes: "4096", volume_capacity_bytes: "8192", volume_available_bytes: "4096", resources: [] }, more_machines: false, machines: [{ machine_id: newRequestId(), name: "Worker", os: "darwin", architecture: "arm64", version: "0.1.0", last_seen: new Date().toISOString(), active_stream: true, disabled: false, installations: [{ harness: "codex", state: "detected", version: "0.151.0", protocol_verified: true, protocol_state: "verified", capabilities: [] as string[], observed_at: new Date().toISOString() }, ...["claude-code", "opencode", "grok-build"].map(harness => ({ harness, state: "unchecked", protocol_verified: false, capabilities: [] as string[] }))] }] };
   const account = create(ResourceSchema, { id: newRequestId(), revision: 1n, kind: EntityKind.ACCOUNT, schemaVersion: 1, documentJson: encode({ provider_id: newRequestId(), enabled: true, health: "ready", connection: { id: newRequestId() } }) });
   const agent = create(ResourceSchema, { id: newRequestId(), revision: 1n, kind: EntityKind.AGENT, schemaVersion: 1, documentJson: encode({ harness: "codex", model_id: newRequestId(), accounts: [] }) });
   const doctor = vi.fn(async () => ({ reportJson: encode(report) }));
@@ -121,9 +121,60 @@ it.each([
   { harness: "codex", state: "detected", version: "0.151.0", protocol_verified: false, protocol_state: "failed", capabilities: [], observed_at: new Date().toISOString(), problem_code: "unavailable" },
 ])("keeps a valid non-ready installation distinct from malformed data: %j", async installation => {
   const f = fixture();
-  f.doctor.mockImplementation(async () => ({ reportJson: encode({ ...f.report, machines: [{ ...f.report.machines[0], installations: [installation] }] }) }));
+  f.doctor.mockImplementation(async () => ({ reportJson: encode({ ...f.report, machines: [{ ...f.report.machines[0], installations: [installation, ...f.report.machines[0]!.installations.slice(1)] }] }) }));
   render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
   await screen.findByText("Execution Worker and harness: Needs setup");
   expect(screen.getByText("Server diagnostics: Observed")).toBeTruthy();
+});
+
+it.each([
+  { database: undefined }, { database: "future" }, { storage: undefined }, { storage: {} },
+  { protocol_version: undefined }, { protocol_version: "1" }, { protocol_version: 0 },
+  { database_schema_version: undefined }, { database_schema_version: 1.5 },
+  { version: undefined }, { os: undefined }, { os: "future" }, { architecture: "x86" },
+  { listener: undefined }, { listener: "https://secret:token@example.test" },
+  { credential_store: undefined }, { credential_store: "ready" },
+  { observed_at: "2026-02-30T12:00:00Z" }, { observed_at: "2026-09-29" },
+  { credentials: undefined }, { credentials: null }, { more_credentials: undefined },
+  { credentials: [{ account_id: newRequestId(), result: { state: "future" } }] },
+  { credentials: [{ account_id: newRequestId(), result: { state: "observed" } }] },
+  { credentials: [{ account_id: newRequestId(), result: { state: "failed", code: "future" } }] },
+  { native_output: "unexpected report field" },
+])("rejects an incomplete or invalid enclosing report: %j", async changes => {
+  const f = fixture(); Object.assign(f.report, changes);
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("Server diagnostics: Unknown")).toBeTruthy();
+  expect(screen.getByText("Execution Worker and harness: Unknown")).toBeTruthy();
+});
+it.each([
+  { name: undefined }, { name: "" }, { os: undefined }, { os: "future" },
+  { architecture: undefined }, { architecture: "x64" }, { version: undefined },
+  { last_seen: undefined }, { last_seen: "2026-02-30T12:00:00Z" },
+  { installations: [] }, { native_path: "unexpected field" },
+])("rejects a partial machine despite its valid detected installation: %j", async changes => {
+  const f = fixture(); Object.assign(f.report.machines[0]!, changes);
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("Execution Worker and harness: Unknown")).toBeTruthy();
+});
+it.each([
+  { result: { state: "future" } }, { result: { state: "observed", code: "unavailable" } },
+  { database_bytes: undefined }, { wal_bytes: 0 }, { logical_database_bytes: "18446744073709551616" },
+  { resources: undefined }, { resources: [{ kind: "future", count: "1" }] },
+  { resources: [{ kind: "session", count: "01" }] },
+  { resources: [{ kind: "session", count: "1" }, { kind: "session", count: "2" }] },
+])("rejects malformed storage without granting Worker readiness: %j", async changes => {
+  const f = fixture(); Object.assign(f.report.storage, changes);
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("Execution Worker and harness: Unknown")).toBeTruthy();
+});
+it("retains valid failed storage separately from a complete Worker observation", async () => {
+  const f = fixture();
+  f.doctor.mockResolvedValue({ reportJson: encode({ ...f.report, database: "failed", storage: { result: { state: "failed", code: "permission_denied" }, resources: [] } }) });
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText("Execution Worker and harness: Observed");
+  expect(screen.getByText("Server diagnostics: Needs setup")).toBeTruthy();
 });

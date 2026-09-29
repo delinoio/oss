@@ -558,8 +558,12 @@ component mounted so retained mutation identities survive leaving and reopening
 the category. The project-grouped sidebar and Inbox workspace coexist with the
 live first-session checklist in the session welcome surface.
 
-The first-session checklist rejects malformed installation shapes and contradictory
-installation/protocol/problem observations as Unknown. Validate retained version,
+The first-session checklist validates the complete schema-v2 report before
+publishing report-derived observations: required server/database/storage and
+Worker fields, closed platform/result values, exact uint64 measurements, bounded
+unique resource/credential inventories, all four installation entries and valid
+calendar timestamps. Partial or foreign reports and contradictory
+installation/protocol/problem observations remain Unknown. Validate retained version,
 observation time, capability lists and known optional fields before counting any
 handshake; a valid unchecked, missing or failed observation still means Needs setup.
 

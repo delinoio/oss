@@ -26,22 +26,67 @@ function validInstallation(value: Document): boolean {
   } else if (value.version !== undefined) return false;
   if (state === InstallationState.Unchecked) {
     if (value.observed_at !== undefined) return false;
-  } else if (typeof value.observed_at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value.observed_at) || !Number.isFinite(Date.parse(value.observed_at))) return false;
+  } else if (!timestamp(value.observed_at)) return false;
   const problem = protocol === ProtocolState.Unsupported ? FailureCode.Unsupported : protocol === ProtocolState.Failed ? FailureCode.Unavailable : installationProblems[state];
   if (value.problem_code !== problem) return false;
   if (value.guidance !== undefined && (typeof value.guidance !== "string" || value.guidance.length > 4096 || value.guidance.includes("\0"))) return false;
   return true;
 }
 
+enum DiagnosticState { Observed = "observed", Unavailable = "unavailable", Unconfigured = "unconfigured", NotApplicable = "not-applicable", Failed = "failed", Superseded = "superseded" }
+const reportFields = new Set(["schema_version", "observed_at", "version", "protocol_version", "database_schema_version", "os", "architecture", "server_id", "listener", "database", "credential_store", "inference_probes", "storage", "machines", "more_machines", "credentials", "more_credentials"]);
+const machineFields = new Set(["machine_id", "name", "os", "architecture", "version", "last_seen", "disabled", "active_stream", "installations"]);
+const storageBytes = ["database_bytes", "wal_bytes", "logical_database_bytes", "volume_capacity_bytes", "volume_available_bytes"];
+const resourceKinds = new Set(["pairing", "project", "repository", "agent", "account", "provider", "model", "machine", "session", "template", "settings", "schedule", "occurrence", "message", "queue", "steer", "interaction", "review", "snapshot", "device", "integration", "pull_request", "problem", "inbox", "usage", "job", "routing"]);
+const unavailableCodes = new Set([FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Unsupported, FailureCode.Canceled]);
+function shape(value: unknown, fields: Set<string>): value is Document {
+  return value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(key => fields.has(key));
+}
+function boundedText(value: unknown, max: number, required = true): value is string {
+  return typeof value === "string" && !value.includes("\0") && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value) && new TextEncoder().encode(value).length <= max && (!required || Boolean(value.trim()));
+}
+function timestamp(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match || !Number.isFinite(Date.parse(value))) return false;
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1]! && Number(match[4]) < 24 && Number(match[5]) < 60 && Number(match[6]) < 60;
+}
+function uint64(value: unknown): boolean {
+  return typeof value === "string" && /^(0|[1-9][0-9]{0,19})$/.test(value) && BigInt(value) <= 18446744073709551615n;
+}
+function uint32(value: unknown): boolean { return typeof value === "number" && Number.isInteger(value) && value > 0 && value <= 4294967295; }
+function platform(value: Document): boolean { return ["darwin", "linux", "windows"].includes(text(value.os)) && ["amd64", "arm64"].includes(text(value.architecture)); }
+function diagnosticResult(value: unknown): value is Document {
+  if (!shape(value, new Set(["state", "code", "guidance"])) || !Object.values(DiagnosticState).includes(value.state as DiagnosticState) || (value.guidance !== undefined && !boundedText(value.guidance, 4096, false))) return false;
+  if ([DiagnosticState.Observed, DiagnosticState.Unconfigured, DiagnosticState.NotApplicable].includes(value.state as DiagnosticState)) return value.code === undefined;
+  if (!Object.values(FailureCode).includes(value.code as FailureCode)) return false;
+  if (value.state === DiagnosticState.Superseded) return value.code === FailureCode.Conflict;
+  return (value.state === DiagnosticState.Unavailable) === unavailableCodes.has(value.code as FailureCode);
+}
+function validStorage(value: unknown, database: unknown): boolean {
+  if (!shape(value, new Set(["result", "resources", ...storageBytes])) || !diagnosticResult(value.result) || ![DiagnosticState.Observed, DiagnosticState.Failed, DiagnosticState.Unavailable].includes(value.result.state as DiagnosticState)) return false;
+  if (storageBytes.some(key => value[key] !== undefined && !uint64(value[key])) || (value.result.state === DiagnosticState.Observed && storageBytes.some(key => value[key] === undefined))) return false;
+  if ((database === "ready") !== (value.logical_database_bytes !== undefined) || !Array.isArray(value.resources) || value.resources.length > resourceKinds.size) return false;
+  const seen = new Set();
+  for (const entry of value.resources) {
+    if (!shape(entry, new Set(["kind", "count"])) || !resourceKinds.has(text(entry.kind)) || seen.has(entry.kind) || !uint64(entry.count)) return false;
+    seen.add(entry.kind);
+  }
+  return true;
+}
 function reportFrom(bytes: Uint8Array | undefined, server: string): Document | undefined {
   if (!bytes || bytes.byteLength > 1 << 20 || !isEntityId(server)) return;
   try {
-    const report = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
-    if (report.schema_version !== 2 || report.server_id !== server || report.inference_probes !== false || !Number.isFinite(Date.parse(text(report.observed_at))) || !Array.isArray(report.machines) || report.machines.length > 50 || typeof report.more_machines !== "boolean") return;
+    const report: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    if (!shape(report, reportFields) || report.schema_version !== 2 || report.server_id !== server || report.inference_probes !== false || !timestamp(report.observed_at) || !boundedText(report.version, 256) || !uint32(report.protocol_version) || !uint32(report.database_schema_version) || !platform(report) || !boundedText(report.listener, 2048) || !["ready", "failed"].includes(text(report.database)) || report.credential_store !== "owner-credential-ready" || !validStorage(report.storage, report.database) || !Array.isArray(report.machines) || report.machines.length > 50 || typeof report.more_machines !== "boolean" || !Array.isArray(report.credentials) || report.credentials.length > 50 || typeof report.more_credentials !== "boolean") return;
+    const listener = new URL(report.listener);
+    if (!["http:", "https:"].includes(listener.protocol) || listener.username || listener.password || listener.search || listener.hash || listener.pathname !== "/") return;
     const seen = new Set();
-    for (const entry of report.machines) {
-      const machine = object(entry);
-      if (!isEntityId(text(machine.machine_id)) || seen.has(machine.machine_id) || typeof machine.disabled !== "boolean" || typeof machine.active_stream !== "boolean" || !Array.isArray(machine.installations) || machine.installations.length > 4) return;
+    for (const machine of report.machines) {
+      if (!shape(machine, machineFields) || !isEntityId(text(machine.machine_id)) || seen.has(machine.machine_id) || !boundedText(machine.name, 256) || !platform(machine) || !boundedText(machine.version, 256, false) || !timestamp(machine.last_seen) || typeof machine.disabled !== "boolean" || typeof machine.active_stream !== "boolean" || !Array.isArray(machine.installations) || machine.installations.length !== harnesses.size) return;
       seen.add(machine.machine_id);
       const installed = new Set();
       for (const item of machine.installations) {
@@ -49,6 +94,13 @@ function reportFrom(bytes: Uint8Array | undefined, server: string): Document | u
         if (!validInstallation(installation) || installed.has(installation.harness)) return;
         installed.add(installation.harness);
       }
+    }
+    const accounts = new Set();
+    for (const credential of report.credentials) {
+      if (!shape(credential, new Set(["account_id", "connection_id", "result"])) || !isEntityId(text(credential.account_id)) || accounts.has(credential.account_id) || (credential.connection_id !== undefined && !isEntityId(text(credential.connection_id))) || !diagnosticResult(credential.result)) return;
+      if ([DiagnosticState.Observed, DiagnosticState.NotApplicable].includes(credential.result.state as DiagnosticState) && credential.connection_id === undefined) return;
+      if (credential.result.state === DiagnosticState.Unconfigured && credential.connection_id !== undefined) return;
+      accounts.add(credential.account_id);
     }
     return report;
   } catch { return; }

@@ -3071,3 +3071,13 @@ Real Connect fixtures cover pending-to-failed and already-failed retries for
 revocation, recovery and size limits without repeating acceptance; the existing
 real-server successful create/inspect/delete path still passes. The CLI backup
 race group passes (6.907s).
+
+### PR #1063 complete prerequisite report validation (2026-09-29)
+
+The first-session checklist now rejects incomplete enclosing reports and Worker
+records even when one contained installation looks valid. Validation includes
+required version/platform/calendar fields, storage results and decimal counts,
+all four harnesses and bounded credential observations. Valid failed storage
+remains a separate setup observation and does not hide a complete Worker report.
+Type checking and the prerequisite component suite pass (74 tests), including
+missing fields, unknown closed values, contradictory results and uint64 overflow.
