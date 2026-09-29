@@ -6,6 +6,13 @@ use std::{
 
 use super::*;
 
+#[test]
+fn interrupted_message_names_supported_console_events() {
+    let message = Code::Interrupted.message();
+    assert!(message.contains("Ctrl+C"));
+    assert!(message.contains("on Windows, Ctrl+Break"));
+}
+
 fn options(timeout: Option<Duration>) -> Options {
     Options {
         timeout,

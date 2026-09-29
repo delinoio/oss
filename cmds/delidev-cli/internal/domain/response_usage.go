@@ -19,6 +19,13 @@ type NativeResponseUsage struct {
 	CostEvidence   UsageCostEvidence  `json:"cost_evidence"`
 }
 
+type UsagePurpose string
+
+const (
+	ConversationUsage UsagePurpose = "conversation"
+	SessionTitleUsage UsagePurpose = "session-title"
+)
+
 func (u NativeResponseUsage) Validate() error {
 	value, err := hex.DecodeString(u.ResponseDigest)
 	if err != nil || len(value) != 32 || hex.EncodeToString(value) != u.ResponseDigest || (u.CostEvidence != UsageCostMissing && u.CostEvidence != UsageCostUnspecified) {
@@ -34,6 +41,7 @@ func (u NativeResponseUsage) Validate() error {
 // records first publication; subsequent identical observations do not charge it
 // again. Nullable counts/cost evidence cannot become measured zero or spend.
 type ResponseUsageRecord struct {
+	Purpose      UsagePurpose        `json:"purpose,omitempty"`
 	SessionID    ID                  `json:"session_id"`
 	ProjectID    ID                  `json:"project_id,omitempty"`
 	ExecutionID  ID                  `json:"execution_id"`
@@ -55,7 +63,7 @@ func (u ResponseUsageRecord) Validate() error {
 			return invalidObservation()
 		}
 	}
-	if (u.ProjectID != "" && u.ProjectID.Validate() != nil) || u.Harness != Codex || u.Version != CodexProtocolVersion || ID(u.ThreadID).Validate() != nil || ID(u.TurnID).Validate() != nil || u.Sequence == 0 || u.Sequence > MaxExecutionEvents {
+	if (u.Purpose != "" && u.Purpose != ConversationUsage && u.Purpose != SessionTitleUsage) || (u.ProjectID != "" && u.ProjectID.Validate() != nil) || u.Harness != Codex || u.Version != CodexProtocolVersion || ID(u.ThreadID).Validate() != nil || ID(u.TurnID).Validate() != nil || u.Sequence == 0 || u.Sequence > MaxExecutionEvents {
 		return invalidObservation()
 	}
 	return u.Usage.Validate()

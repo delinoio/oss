@@ -33,7 +33,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 		result.Analytics = &domain.UsageAnalytics{Granularity: f.Granularity, TimeZone: f.TimeZone, Days: dayBuckets, Models: []domain.UsageAnalyticsModel{}}
 		modelGroups = make(map[usageModelKey]*domain.UsageAnalyticsModel)
 	}
-	where := "r.created_at>=? AND r.created_at<?"
+	where := "r.purpose='conversation' AND r.created_at>=? AND r.created_at<?"
 	args := []any{f.From.UnixMilli(), f.Until.UnixMilli()}
 	for _, part := range []struct {
 		column string

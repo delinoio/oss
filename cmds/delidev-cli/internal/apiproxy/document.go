@@ -182,3 +182,43 @@ func validateRequest(ctx context.Context, raw []byte, lease *Lease, op Operation
 	}
 	return stream, nil
 }
+
+// validateTitleRequest rebuilds the one allowed request from server-owned
+// fields. Codex's native tool list is never forwarded to the provider.
+func validateTitleRequest(raw []byte, scope Scope) ([]byte, bool, error) {
+	object, err := document(raw, secretGuard{})
+	if err != nil {
+		return nil, false, domain.Fail(domain.InvalidArgument, "The native title request is not unambiguous UTF-8 JSON.", "Preserve the title job; no fallback request is permitted.")
+	}
+	var model string
+	var stream bool
+	if json.Unmarshal(object["model"], &model) != nil || model != scope.NativeModel || json.Unmarshal(object["stream"], &stream) != nil || !stream {
+		return nil, false, domain.Fail(domain.PermissionDenied, "The title request changed its frozen model or streaming profile.", "Use exactly the original Codex model and native response stream.")
+	}
+	for _, field := range []string{"models", "route", "fallbacks", "previous_response_id", "conversation"} {
+		if _, exists := object[field]; exists {
+			return nil, false, domain.Fail(domain.PermissionDenied, "The title request attempted alternate routing or conversation history.", "Use only the immutable first message and frozen model.")
+		}
+	}
+	request := map[string]any{
+		"model":               scope.NativeModel,
+		"instructions":        domain.AutomaticTitleInstructions,
+		"input":               scope.TitlePrompt,
+		"stream":              true,
+		"tools":               []any{},
+		"tool_choice":         "none",
+		"parallel_tool_calls": false,
+		"max_output_tokens":   128,
+	}
+	if scope.Effort != "" {
+		request["reasoning"] = map[string]string{"effort": scope.Effort}
+	}
+	if scope.ServiceTier != "" {
+		request["service_tier"] = scope.ServiceTier
+	}
+	encoded, err := json.Marshal(request)
+	if err != nil || len(encoded) > 1<<20 {
+		return nil, false, domain.Fail(domain.ResourceExhausted, "The rebuilt title request exceeds its bound.", "Preserve the placeholder without truncating or retrying inference.")
+	}
+	return encoded, true, nil
+}

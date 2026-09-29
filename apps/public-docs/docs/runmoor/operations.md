@@ -141,6 +141,8 @@ A recorded job completion continues through cleanup even if GitHub has already r
 
 Back up only after `drain` and `stop`. Preserve the complete state and managed-data directories; protect referenced credential files separately. Install the new binary manually and start again. Roll back using a compatible binary and its matching drained state/data backup. Version 0.2.0 upgrades existing state automatically; back up before upgrading and use the matching backup to return to 0.1.3. Unsupported database versions fail without destructive migration; never reuse an older backup while resources created after that backup are still active.
 
+If startup reports `Possible legacy SQLite state exists at an ambiguous location`, stop every Runmoor manager that may use either location. Preserve complete backups of both locations before recovery. Do not move or delete either database; the original state location may be ambiguous and requires explicit review.
+
 Jobs retain timeout accounting across restart/sleep. Active work requests OS sleep inhibition; warm idle capacity does not keep the machine awake indefinitely. Failure is a warning and does not change system power settings. Forced sleep, lid closure, shutdown and power loss can still interrupt work.
 
 ## Managed runner updates
@@ -178,7 +180,7 @@ macOS and Xcode still use their existing manual/package-manager update workflows
 ## Troubleshooting and privacy
 
 - `AUTHENTICATION_FAILED`: correct the referenced credential/permissions. Reload can resume the pool when a changed credential reference or runner group passes validation; if the secret changed at the same reference, use `resume`.
-- `IMAGE_INVALID` or `RUNNER_VERSION_UNSUPPORTED`: pre-pull a correct digest or seal a compatible image. Managed pools retry runner preparation automatically; inspect status or request `runner update`. Exact pins require explicit replacement. GitHub generally requires replacement within 30 days and may require security updates sooner.
+- `IMAGE_INVALID` or `RUNNER_VERSION_UNSUPPORTED`: for Docker, pre-pull a correct digest; for Tart, prepare a macOS guest whose metadata reports `darwin`, then seal it and update the pool. Linux, missing, or unrecognized Tart guest OS metadata is rejected. An older unsupported sealed image remains listed for diagnosis and can be removed after references are cleared. Managed pools retry runner preparation automatically; inspect status or request `runner update`. Exact pins require explicit replacement. GitHub generally requires replacement within 30 days and may require security updates sooner.
 - `CAPACITY_EXHAUSTED` or `DISK_LOW`: adjust explicit budgets/free disk, or remove an unused sealed image yourself. Do not delete active execution storage.
 - `OWNERSHIP_AMBIGUOUS`: preserve local state and investigate the exact resource. Use a different scale-set name when another installation owns it; restoring ownership requires the original matching backup.
 - `CLEANUP_PENDING`: restore Docker/Tart/GitHub connectivity and let reconciliation retry. A stopped manager reports pending cleanup until the next run.

@@ -39,8 +39,9 @@ function mountSidebar({ projects, sessions }: {
   const openSession = vi.fn();
   const openSettings = vi.fn();
   const newSession = vi.fn();
-  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Sidebar surface={Surface.Sessions} selectedSessionId="" navigate={vi.fn()} openSession={openSession} newSession={newSession} openSettings={openSettings} /></QueryClientProvider></TransportProvider>);
-  return { ...view, client, openSession, openSettings, newSession, projectRequests, sessionRequests };
+  const navigate = vi.fn();
+  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Sidebar surface={Surface.Sessions} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} openSettings={openSettings} /></QueryClientProvider></TransportProvider>);
+  return { ...view, client, navigate, openSession, openSettings, newSession, projectRequests, sessionRequests };
 }
 
 it("keeps equal-name projects separate, includes empty projects, and only reads expanded project pages", async () => {
@@ -71,6 +72,17 @@ it("keeps equal-name projects separate, includes empty projects, and only reads 
   expect(value.sessionRequests.filter((request) => request.projectId === second.id)).toHaveLength(1);
   expect(value.sessionRequests.filter((request) => request.projectId === empty.id)).toHaveLength(1);
   expect(value.openSession).not.toHaveBeenCalled();
+});
+
+it("includes the safe title reason in sidebar text and its accessible description", async () => {
+  const project = resource(EntityKind.PROJECT, "Title project");
+  const session = resource(EntityKind.SESSION, "New session", project.id, {
+    workspace: "worktree", outcome: "succeeded", archive: "active", name_mode: "automatic", title_state: "skipped", title_reason: "budget-reached",
+  });
+  mountSidebar({ projects: () => ({ resources: [project] }), sessions: () => ({ sessions: [session] }) });
+  fireEvent.click(await screen.findByRole("button", { name: `Title project. Project ID: ${project.id}` }));
+  const row = await screen.findByRole("button", { name: /Title skipped\. The session budget did not allow another request\./ });
+  expect(within(row).getByText("Skipped · Budget reached")).toBeTruthy();
 });
 
 it("keeps sparse global paging reachable and groups retained sessions by their original unknown project ID", async () => {
@@ -236,7 +248,7 @@ it("retries an expanded project's exact session page without refetching other sc
   expect(value.sessionRequests.filter((request) => !request.projectId)).toHaveLength(1);
 });
 
-it("routes the icon rail only to existing destinations and opens Pull requests through Settings", async () => {
+it("routes the icon rail to the matching surface and opens New project through Settings", async () => {
   const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }) });
   await screen.findByRole("button", { name: "Sessions" });
   const newProject = screen.getByRole("button", { name: "New project" });
@@ -247,7 +259,7 @@ it("routes the icon rail only to existing destinations and opens Pull requests t
   fireEvent.click(newProject);
   expect(value.openSettings).toHaveBeenCalledWith("new-project");
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
-  expect(value.openSettings).toHaveBeenCalledWith("repositories");
+  expect(value.navigate).toHaveBeenCalledWith(Surface.PullRequests);
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
   expect(value.newSession).toHaveBeenCalledOnce();
   expect(value.sessionRequests).toHaveLength(1);

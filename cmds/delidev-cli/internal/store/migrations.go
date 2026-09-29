@@ -196,6 +196,11 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return storageError(err)
 		}
 	}
+	if version < 23 {
+		if err := applySessionTitleSchema(ctx, tx); err != nil {
+			return err
+		}
+	}
 	return storageError(tx.Commit())
 }
 

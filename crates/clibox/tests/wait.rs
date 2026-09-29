@@ -619,35 +619,47 @@ fn broken_stderr_does_not_replace_signal_cancellation_results() {
 
 #[cfg(windows)]
 #[test]
-fn windows_ctrl_c_is_handled_in_an_isolated_console() {
+fn windows_console_events_cancel_each_wait_kind_in_isolated_consoles() {
     use std::os::windows::process::CommandExt;
 
     use windows_sys::Win32::System::Threading::CREATE_NEW_CONSOLE;
-    let output = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "windows_ctrl_c_helper", "--nocapture"])
-        .env("CLIBOX_TEST_CONSOLE_HELPER", "1")
-        .creation_flags(CREATE_NEW_CONSOLE)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    for kind in ["file", "tcp", "http"] {
+        for name in ["ctrl_c", "ctrl_break"] {
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "windows_console_wait_helper", "--nocapture"])
+                .env("CLIBOX_TEST_CONSOLE_HELPER", "1")
+                .env("CLIBOX_TEST_CONSOLE_KIND", kind)
+                .env("CLIBOX_TEST_CONSOLE_EVENT", name)
+                .creation_flags(CREATE_NEW_CONSOLE)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{kind} {name}\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
 }
 
 #[cfg(windows)]
 #[test]
-fn windows_ctrl_c_helper() {
-    use std::io::{BufRead, BufReader};
+fn windows_console_wait_helper() {
+    use std::io::{BufRead, BufReader, Read};
 
     use windows_sys::Win32::System::Console::{
-        GenerateConsoleCtrlEvent, SetConsoleCtrlHandler, CTRL_C_EVENT,
+        GenerateConsoleCtrlEvent, SetConsoleCtrlHandler, CTRL_BREAK_EVENT, CTRL_C_EVENT,
     };
     if std::env::var_os("CLIBOX_TEST_CONSOLE_HELPER").is_none() {
         return;
     }
+    let kind = std::env::var("CLIBOX_TEST_CONSOLE_KIND").unwrap();
+    let event = match std::env::var("CLIBOX_TEST_CONSOLE_EVENT").unwrap().as_str() {
+        "ctrl_c" => CTRL_C_EVENT,
+        "ctrl_break" => CTRL_BREAK_EVENT,
+        _ => panic!("unexpected test console event"),
+    };
     unsafe extern "system" fn ignore(_: u32) -> i32 {
         1
     }
@@ -661,13 +673,38 @@ fn windows_ctrl_c_helper() {
     // this disposable helper. Its clibox child still receives real Ctrl+C.
     assert_ne!(unsafe { SetConsoleCtrlHandler(Some(ignore), 1) }, 0);
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join(MARKER);
+    let listener = if kind == "http" {
+        Some(TcpListener::bind("127.0.0.1:0").unwrap())
+    } else {
+        None
+    };
+    let tcp_target = if kind == "tcp" {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        Some(address.to_string())
+    } else {
+        None
+    };
+    let file_target = dir.path().join(MARKER);
+    let target = match kind.as_str() {
+        "file" => file_target.to_str().unwrap().to_owned(),
+        "tcp" => tcp_target.unwrap(),
+        "http" => format!(
+            "http://{}/{}",
+            listener.as_ref().unwrap().local_addr().unwrap(),
+            MARKER
+        ),
+        _ => panic!("unexpected test wait kind"),
+    };
     let mut child = Command::new(env!("CARGO_BIN_EXE_clibox"))
         .args([
             "wait",
-            "file",
-            path.to_str().unwrap(),
+            kind.as_str(),
+            target.as_str(),
             "--json",
+            "--interval",
+            "10s",
             "--timeout",
             "5s",
         ])
@@ -681,14 +718,50 @@ fn windows_ctrl_c_helper() {
     let mut line = String::new();
     loop {
         assert!(stderr.read_line(&mut line).unwrap() > 0);
-        if line.contains("wait_observation") {
+        if line.contains(if kind == "http" {
+            "wait_attempt"
+        } else {
+            "wait_observation"
+        }) {
             break;
         }
         line.clear();
     }
-    assert_ne!(unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0) }, 0);
+    let mut connection = listener.as_ref().map(|listener| {
+        let (mut stream, _) = accept(listener);
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut request = Vec::new();
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let mut chunk = [0; 1024];
+            let count = stream.read(&mut chunk).unwrap();
+            assert_ne!(count, 0, "HTTP request ended before its headers");
+            request.extend_from_slice(&chunk[..count]);
+        }
+        stream
+    });
+    assert_ne!(unsafe { GenerateConsoleCtrlEvent(event, 0) }, 0);
     let output = child.wait_with_output().unwrap();
-    assert_eq!(json(&output, 130)["status"], "cancelled");
+    let value = json(&output, 130);
+    assert_eq!(value["kind"], kind);
+    assert_eq!(value["status"], "cancelled");
+    assert_eq!(value["error"]["code"], "interrupted");
+    assert_eq!(value["attempts"], 1);
+    assert_eq!(String::from_utf8_lossy(&output.stdout).lines().count(), 1);
+    let mut remaining_stderr = String::new();
+    stderr.read_to_string(&mut remaining_stderr).unwrap();
+    assert!(remaining_stderr.contains("Wait cancelled"));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(MARKER));
+    assert!(!remaining_stderr.contains(MARKER));
+    if let Some(stream) = connection.as_mut() {
+        let mut byte = [0];
+        assert_eq!(
+            stream.read(&mut byte).unwrap(),
+            0,
+            "HTTP connection stayed open"
+        );
+    }
 }
 
 #[cfg(windows)]

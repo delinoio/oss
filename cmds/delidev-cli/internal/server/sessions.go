@@ -176,7 +176,14 @@ func appendSessionInput(tx *store.Tx, id domain.ID, session *domain.Session, inp
 }
 
 func acceptedSession(input domain.CreateSession, origin *domain.LocalOrigin, creator domain.ID) domain.Session {
-	return domain.Session{EstimatedCostBudget: input.EstimatedCostBudget, LocalOrigin: origin, Name: input.Name, AgentID: input.AgentID, MachineID: input.MachineID, ProjectID: input.ProjectID, Workspace: input.Workspace, Starting: input.Starting, Source: input.Source, CreatedBy: creator, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchBlocked, Problem: domain.InitialExecutionPending()}
+	session := domain.Session{EstimatedCostBudget: input.EstimatedCostBudget, LocalOrigin: origin, Name: input.Name, NameMode: input.NameMode, AgentID: input.AgentID, MachineID: input.MachineID, ProjectID: input.ProjectID, Workspace: input.Workspace, Starting: input.Starting, Source: input.Source, CreatedBy: creator, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchBlocked, Problem: domain.InitialExecutionPending()}
+	if input.NameMode == domain.AutomaticSessionName {
+		session.Name = "New session"
+		session.NameOwner = domain.AutomaticNameOwner
+		session.NameGeneration = 1
+		session.TitleState = domain.TitleWaiting
+	}
+	return session
 }
 
 func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.CreateSessionRequest]) (*connect.Response[pb.CreateSessionResponse], error) {
@@ -427,6 +434,20 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 		if r.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload current state before controlling it.")
 		}
+		titleCleanupPending := false
+		if action == domain.StopSession || action == domain.ArchiveSession {
+			titleCleanupPending, err = cancelSessionTitleJob(tx, value.TitleJobID)
+			if err != nil {
+				return nil, err
+			}
+			if value.NameOwner == domain.AutomaticNameOwner && (value.TitleState == domain.TitleWaiting || value.TitleState == domain.TitleQueued || value.TitleState == domain.TitleRunning || value.TitleState == domain.TitleUncertain) {
+				if value.NameGeneration == ^uint64(0) {
+					return nil, domain.Fail(domain.ResourceExhausted, "Session title ownership reached its generation limit.", "Preserve the current title and inspect the original operation.")
+				}
+				value.NameGeneration++
+				value.TitleState, value.TitleReason = domain.TitleSkipped, domain.TitleReasonCanceled
+			}
+		}
 		if action == domain.ResumeSession {
 			deniedProviderID, err = requireSessionProviderEnabled(tx, value)
 			if err != nil {
@@ -445,6 +466,9 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 		if value.InitialExecution != nil {
 			if err := controlNativeSession(tx, r, &value, action); err != nil {
 				return nil, err
+			}
+			if action == domain.ArchiveSession && titleCleanupPending {
+				value.Archive = domain.ArchivePending
 			}
 			if _, err := tx.Put(domain.SessionKind, r.ID, r.Revision, r.ID, r.ProjectID, value); err != nil {
 				return nil, err
@@ -467,7 +491,7 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 				return nil, err
 			}
 			value.Archive = domain.ArchivePending
-			if stopped && value.Recovery == domain.NoRecovery {
+			if stopped && value.Recovery == domain.NoRecovery && !titleCleanupPending {
 				value.Archive = domain.Archived
 			}
 		case domain.RestoreSession:
@@ -518,6 +542,17 @@ func (s *Service) RenameSession(ctx context.Context, req *connect.Request[pb.Ren
 			return nil, err
 		}
 		value.Name = req.Msg.Name
+		if value.NameGeneration == ^uint64(0) {
+			return nil, domain.Fail(domain.ResourceExhausted, "Session title ownership reached its generation limit.", "Preserve the current title and inspect the original operation.")
+		}
+		if _, err := cancelSessionTitleJob(tx, value.TitleJobID); err != nil {
+			return nil, err
+		}
+		value.NameMode = domain.ManualSessionName
+		value.NameOwner = domain.ManualNameOwner
+		value.NameGeneration++
+		value.TitleState = domain.TitleSkipped
+		value.TitleReason = domain.TitleReasonManualRename
 		if _, err := tx.Put(domain.SessionKind, r.ID, meta.ExpectedRevision, r.ID, r.ProjectID, value); err != nil {
 			return nil, err
 		}

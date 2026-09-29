@@ -16,7 +16,7 @@ The desktop/CLI/server/Worker implementation is in progress. At the owner’s re
 | Workers, executables, outbound jobs, processes, updates, services | Durable outbound job API, instance leases and uncertainty on replacement implemented; explicit foreground Worker loop, private pairing and execution journals, capped reconnect and CLI commands implemented; native process ownership with a durable start barrier, separate interactive streams and Git integration implemented; Worker-owned executable selection and version discovery through RPC/CLI implemented; Codex non-inference native handshake implemented; first Codex job execution through cleanup reporting integrated; remaining native profiles/lifecycle, updates and services pending | Real Connect pairing/dispatch/report/revocation tests; CLI pairing to a real Worker and real temporary Git inspection; persisted completion reuse and interrupted-journal uncertainty; discovery isolation/path precedence/output bounds/cancellation and stale-generation publication tests; installed Codex Worker execution and live revocation pass against a scripted loopback provider with seeded readiness, not external inference |
 | Codex, Claude Code, OpenCode, Grok Build native adapters | Bounded native JSON-RPC transport and version-specific Codex non-inference app-server handshake integrated with discovery; separate Claude Code `2.1.236` bare-mode stream-json initialization and exact private scope validation integrated with discovery; Grok Build `1.0.41` private configuration inspection and ACP initialization plus empty startup MCP inventory integrated with discovery; OpenCode `1.18.32` owned authenticated loopback/global HTTP profile integrated with discovery; internal thread create/read/resume, exact settings, Execute/Plan turns, expected-turn Steer, interruption and typed core lifecycle/message events implemented; immutable first-turn Worker execution with scoped account authority, durable events and cleanup reporting integrated; durable questions and public non-secret response acceptance through journaled native delivery and exact live acceptance evidence integrated; public first dispatch, verified FIFO/Resume continuation and selected-input public Steer integrated; original approvals, journaled responses, exact permission output and pinned single-use execution evidence integrated; bounded automatic inspection after uncertain interaction delivery integrated; OpenCode public Build/Plan dispatch, verified FIFO/Resume and bounded retained-report recovery are integrated; Claude public Execute/Plan dispatch, original root content/tool/callback/progress/usage publication, independent Stop/interrupted-denial cleanup and successful root-content/Read FIFO/Resume are integrated; remaining rich events/approval cases, Claude additional history profiles/subscription accounts and richer Grok execution remain pending; the bounded Grok first-text General Chat runner and public dispatch are integrated | Real macOS OpenCode `1.18.32`, Grok Build `1.0.41` and Claude Code `2.1.236` private no-account/no-inference initialization and owned cleanup; real macOS Codex `0.151.0` handshake, thread persistence/resume, Execute/Plan/Steer/interruption against loopback scripted provider responses; temporary native protocol fixtures; real selected accounts, external inference and other OS/harness combinations not validated |
 | Workspace preparation, Local protection, forks, snapshots | Worker-local inspection, exact reference resolution, detached multi-repository preparation, primary cwd, Local protection, General Chat isolation, durable preparation/cleanup manifests implemented; multi-repository native Codex dispatch/continuation with exact primary/runtime roots and authenticated Local existing-checkout and unborn-branch execution implemented; inspection and session preparation RPC/CLI integrated with atomic complete-manifest publication and immutable job cancellation; original-journal preparation recovery and explicit partial cleanup, including Local metadata-only cleanup, integrated; native forks and snapshots pending | Real temporary Git: subdirectory/linked inspection, detached commits, retry reuse, partial rollback, dirty Local preservation, remote fetch advancement/failure, disabled fetch, cancellation, explicit missing-default failure; real CLI/Worker General Chat/multi-repository preparation and Archive retention |
-| Sessions, queue, Steer, interactions, Plan, archive/recovery | Durable session/initial-input acceptance, ordered bounded queue, revision-checked content edits/removal tombstones, session lists/rename, workspace jobs and never-executed preparation-aware Stop/Archive/Restore integrated through Connect/CLI; accepted first Codex Worker jobs and terminal cleanup reports integrated; first-native Stop/Archive/paused Restore and bounded Worker interruption integrated; public owner non-secret question responses and journaled Worker delivery and exact live native acceptance integrated; public first dispatch/snapshot/routing, FIFO continuation, explicit Resume and selected-input Steer integrated; public approval response delivery, exact live permission acceptance and pinned single-use approval execution evidence integrated; automatic same-connection inspection after uncertain response delivery and retained completion recovery after Worker restart integrated; paired Worker Local origin and existing-checkout native execution integrated; other approval acceptance/history recovery and forks remain pending | Real SQLite/Connect/CLI acceptance/restart/replay, concurrent FIFO order, mode preservation, scoped pages, byte bounds, stale/cross-session edit denial, archive visibility/paused restore and uncertainty refusal; actual private Worker first-turn execution/completion and revocation verified with installed Codex and seeded readiness, and public CLI Execute/Plan first dispatch, FIFO follow-ups, Stop/Resume, selected-input Steer and post-Steer continuation pass with actual discovery and keyless loopback validation without seeded readiness |
+| Sessions, queue, Steer, interactions, Plan, archive/recovery | Durable session/initial-input acceptance, ordered bounded queue, revision-checked content edits/removal tombstones, session lists/rename, workspace jobs and never-executed preparation-aware Stop/Archive/Restore integrated through Connect/CLI; accepted first Codex Worker jobs and terminal cleanup reports integrated; first-native Stop/Archive/paused Restore and bounded Worker interruption integrated; public owner non-secret question responses and journaled Worker delivery and exact live native acceptance integrated; public first dispatch/snapshot/routing, FIFO continuation, explicit Resume and selected-input Steer integrated; public approval response delivery, exact live permission acceptance and pinned single-use approval execution evidence integrated; automatic same-connection inspection after uncertain response delivery and retained completion recovery after Worker restart integrated; paired Worker Local origin and existing-checkout native execution integrated; issues #1056/#1057 add automatic title ownership/auxiliary jobs and chat-first session creation; other approval acceptance/history recovery and forks remain pending | Real SQLite/Connect/CLI acceptance/restart/replay, concurrent FIFO order, mode preservation, scoped pages, stale/cross-session edit denial, archive visibility/paused restore and uncertainty refusal; actual private Worker first-turn execution/completion and revocation verified with installed Codex and seeded readiness, and public CLI Execute/Plan first dispatch, FIFO follow-ups, Stop/Resume, selected-input Steer and post-Steer continuation pass with actual discovery and keyless loopback validation without seeded readiness; installed Codex title inference and chat-first frontend evidence are recorded below |
 | Schedules, overlap/skip/wait, durable occurrences | Calendar/storage, bounded coordinator and owner/client ScheduleService/CLI implemented, including atomic independent sessions, Overlap/Skip/Wait, offline history, cleanup-gated FIFO, Local origin and reference-deletion disabling; Project/Agent deletion preserves retained session execution under final project restrictions; remaining native harness/platform acceptance pending | Calendar/SQLite/coordinator/Connect/CLI fixtures cover timezone/DST, receipts, rollback, capacity/FIFO/history after deletion/restart, role/provenance and cursor gates; installed macOS Codex manual Run now verifies native Worktree Execute and Local Plan; a separate actual cron timer verifies Worktree Execute, independent history after deletion and continuation, all with a keyless scripted provider |
 | Terminal/files/diff/reviews/Sidechat/forwarding | Worker-backed file browsing, bounded Git comparisons and durable local review submission implemented; terminals, Sidechat and forwarding pending | Real temporary Git/Connect/SQLite and desktop component fixtures; bounded macOS native file/diff/review evidence recorded below |
 | GitHub PAT/query/PR evidence/remediation | Named native PAT profiles, scoped queries/forms, PR links/diffs, active-rule/CI/reviewer evidence, durable problem versions/dismissal and remediation history/allowance implemented. Private attempt coordination, exact-head preparation, startup rejection/recovery and current workspace matching implemented; public Fix now, automatic controller/session selection and harness commit/push remain pending | Real SQLite/Connect/isolated Git, scripted GitHub and CLI/desktop tests; bounded native/form evidence below. Actual token/private/SSO acceptance deferred by the owner; no end-to-end remediation success claimed |
@@ -2262,10 +2262,44 @@ also untested. Component coverage is not counted as native visual evidence. No
 Rust, RPC, schema, or generated source changed; generated `dist` output is
 removed from the worktree.
 
-After merging the current PR branch with `origin/main`, `apps/delidev` `pnpm
-test` passes 69 files / 826 tests, type checking and production build. This
-validates the combined Token Usage and sidebar changes; generated app/client
-`dist` output is removed afterward.
+### Issue #1059 contextual desktop navigation and standalone Pull requests (2026-09-29)
+
+The desktop now has one shared menu rail with Sessions, Pull requests, Usage,
+Schedules, Activity, Inbox and Search context panes. Draft/applied filters and
+per-menu scroll positions stay in connection memory. Pull requests uses the
+existing exact-repository authority and explicit Load flow; disposable reads
+are removed on exit while detail navigation, collection selection, allowance
+confirmations and exact mutation retries remain reachable.
+
+The original `apps/delidev` `pnpm test` run passed on macOS arm64: 69 test
+files / 822 tests, generated API-client build, TypeScript type-checking and the
+Rsbuild production build. After integrating the daily/model Usage analytics,
+the complete command passes with 70 test files / 827 tests, including the
+updated sidebar filter flow, actual Go service integration, generated API-client
+build, TypeScript type-checking and Rsbuild production build. These runs do not
+establish native drawer focus, background inertness, visual layout, or behavior
+at the 960×640, 1,100/1,101px, 759/760px and 200% zoom boundaries. No native
+DeliDev window was captured for this change; Windows and Linux native acceptance
+remains untested. The #1059 navigation and Pull requests work adds no separate
+GitHub backend path, RPC, Rust, or relational database schema. The merged
+branch also includes #1052 analytics, #1047 provider-inventory/account-filter
+RPC, schema, client and Go server changes, and #1060 desktop recovery work from
+`main`. An earlier combined analytics/sidebar run passed 69 test files / 826
+tests. After integrating `main` through #1060, `apps/delidev` `pnpm test`
+passes 72 test files / 848 tests, generated API-client build, TypeScript
+type-checking and Rsbuild production build. `pnpm proto:check` passes
+formatting/lint, breaking-change and generated-source freshness checks.
+`go test ./cmds/delidev-cli/internal/cli -count=1` and
+`go vet ./cmds/delidev-cli/...` pass. One full CLI-module test run had a single
+`TestCLISessionAcceptanceQueueAndArchive` failure because the workspace file
+reader was unavailable during concurrent Go runs; the isolated CLI-package
+rerun passed.
+`cargo test -p delidev-desktop` passes 12 tests; four tests that require a
+built Go sidecar remain ignored. The repository-wide `cargo test` command
+compiled DeliDev but could not finish because five unrelated `binpm` CLI tests
+fail on macOS temporary-path canonicalization and relative `BINPM_HOME`
+validation. App and API-client `dist` directories produced by validation are
+removed from the worktree.
 
 ## 2026-09-29: PR #1060 credential provenance repair
 
@@ -2330,3 +2364,42 @@ PR #1061. Generated app/client `dist` output is removed after validation.
 - Merged main's guided API account setup and provider activation while preserving all desktop recovery rules and both branches' evidence records. The combined Settings surface retains current-device revocation guards; the CLI retains explicit local registration inspection/recovery alongside the new provider operations.
 - Merged frontend `pnpm test` passes 71 files / 847 tests, typechecking and production build. Focused CLI desktop recovery, local pairing and account race tests pass, and `go vet ./cmds/delidev-cli/...` passes. This merge changes no Rust source and does not replace the previously recorded native/full-suite evidence limits.
 - Git LFS objects were hydrated and verified. Required generated embeds were built for Go checks and hooks; repository-owned generated `dist` directories are removed after validation.
+
+### Issues #1056 and #1057 automatic titles and chat-first session creation (2026-09-29)
+
+Sessions can opt into automatic naming without changing the legacy manual
+request receipt shape. A successful first response queues a separate durable
+title operation after native cleanup; the auxiliary Worker stream is typed and
+capability-negotiated, title inference uses a fresh private Codex runtime and
+the original prompt, and title usage is retained separately from conversation
+response counts. Manual rename and cancellation races remain generation- and
+claim-guarded. The new-session page is a routed surface that keeps the existing
+conversation mounted, gates creation on typed server capability, retains a
+bounded draft, and reports completion without stealing focus after navigation.
+
+On macOS arm64, opt-in
+`DELIDEV_CODEX_TITLE_EXECUTABLE=/opt/homebrew/bin/codex go test -v
+./cmds/delidev-cli/internal/worker -run TestOptInInstalledCodexTitleInference
+-count=1` passed with installed Codex `0.151.0`. This ran its real native
+app-server thread and turn against one private loopback scripted-provider
+response. The fixture verified the exact original Japanese first message,
+fixed same-language title instructions, frozen model/effort, an empty tool
+list, `tool_choice=none`, disabled parallel calls, the 128-token cap, no
+conversation/fallback/plugin fields, and one provider request after a single
+registered credential digest and send claim. The resulting title-purpose
+usage was attributed to the original session, project, execution, account,
+connection, provider and model. Native configuration validation proved both
+request and stream retries were zero; the temporary probe, title home/work
+directory and owned process records were removed.
+
+This evidence used no login, user account, external provider or real billing;
+the response and usage came from the deterministic local fixture. Before the
+latest-main merge, the frontend `pnpm test` run passed 70 files / 843 tests.
+After merging current main, the frontend `pnpm test` command passes 72 files /
+856 tests, TypeScript checking and the production build, including loading,
+empty-page, permission-denied, connection-failure and new-session selector
+states. `go vet ./cmds/delidev-cli/...`, focused race tests for the server,
+store, worker, domain and API proxy packages, and `pnpm proto:check` pass on the
+merged branch. Native Tauri screenshot/keyboard acceptance at 960×640, hosted
+provider/account behavior and cross-platform native title inference remain
+unverified. Generated app/client `dist` output is removed after validation.

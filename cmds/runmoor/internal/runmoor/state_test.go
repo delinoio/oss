@@ -1,15 +1,27 @@
 package runmoor
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
+
+func sqliteDatabasePath(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var sequence int
+	var name, path string
+	if err := db.QueryRow("PRAGMA database_list").Scan(&sequence, &name, &path); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
 
 func TestStateOwnershipAtomicityAndRecovery(t *testing.T) {
 	c, s := fixtureStore(t)
@@ -76,6 +88,251 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 		t.Fatal("future database modified")
 	}
 }
+
+func TestStateUsesEscapedSQLiteFilePaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix host storage contract")
+	}
+
+	for _, name := range []string{"s?x", "s#x", "s%x", "s with spaces", "s-雪"} {
+		t.Run(name, func(t *testing.T) {
+			c := fixtureConfig(t)
+			c.Storage.State = filepath.Join(filepath.Dir(c.Storage.State), name)
+			wantPath := filepath.Join(c.Storage.State, "state.sqlite")
+
+			store, err := OpenStore(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if store != nil {
+					_ = store.Close()
+				}
+			})
+			installation := store.View().Installation
+			if got := sqliteDatabasePath(t, store.db); got != wantPath {
+				t.Fatalf("SQLite opened %q, want %q", got, wantPath)
+			}
+			if _, err = OpenStore(c); err == nil {
+				t.Fatal("a second manager opened the same state directory")
+			} else {
+				requireCode(t, err, ErrLocked)
+			}
+			if err = store.Update(func(snapshot *Snapshot) error {
+				snapshot.Paused = true
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err = store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			store = nil
+
+			reopened, err := OpenStore(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			if got := sqliteDatabasePath(t, reopened.db); got != wantPath {
+				t.Fatalf("reopened SQLite path %q, want %q", got, wantPath)
+			}
+			if snapshot := reopened.View(); snapshot.Installation != installation || !snapshot.Paused {
+				t.Fatal("reopen lost committed state or installation identity")
+			}
+			for _, suffix := range []string{"", "-wal", "-shm"} {
+				info, statErr := os.Stat(wantPath + suffix)
+				if suffix == "" && statErr != nil {
+					t.Fatalf("SQLite database is missing: %v", statErr)
+				}
+				if statErr != nil && !os.IsNotExist(statErr) {
+					t.Fatalf("cannot inspect SQLite file %q: %v", suffix, statErr)
+				}
+				if statErr == nil && info.Mode().Perm() != 0600 {
+					t.Fatalf("SQLite file %q mode is %#o, want 0600", suffix, info.Mode().Perm())
+				}
+			}
+			if question := strings.IndexByte(wantPath, '?'); question >= 0 {
+				if _, err := os.Stat(wantPath[:question]); !os.IsNotExist(err) {
+					t.Fatalf("unexpected legacy-prefix database at %q", wantPath[:question])
+				}
+			}
+		})
+	}
+}
+
+func TestQuestionMarkStatePathsKeepIndependentStores(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix host storage contract")
+	}
+
+	a := fixtureConfig(t)
+	root := filepath.Dir(a.Storage.State)
+	a.Storage.State = filepath.Join(root, "s?a")
+	a.Storage.Data = filepath.Join(root, "data-a")
+	b := a
+	b.Storage.State = filepath.Join(root, "s?b")
+	b.Storage.Data = filepath.Join(root, "data-b")
+
+	first, err := OpenStore(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if first != nil {
+			_ = first.Close()
+		}
+	})
+	second, err := OpenStore(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if second != nil {
+			_ = second.Close()
+		}
+	})
+	firstPath := filepath.Join(a.Storage.State, "state.sqlite")
+	secondPath := filepath.Join(b.Storage.State, "state.sqlite")
+	if got := sqliteDatabasePath(t, first.db); got != firstPath {
+		t.Fatalf("first SQLite opened %q, want %q", got, firstPath)
+	}
+	if got := sqliteDatabasePath(t, second.db); got != secondPath {
+		t.Fatalf("second SQLite opened %q, want %q", got, secondPath)
+	}
+	firstInstallation := first.View().Installation
+	secondInstallation := second.View().Installation
+	if firstPath == secondPath || firstInstallation == secondInstallation {
+		t.Fatal("distinct state paths shared a database or installation")
+	}
+	if err = first.Update(func(snapshot *Snapshot) error {
+		snapshot.Paused = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = second.Update(func(snapshot *Snapshot) error {
+		snapshot.Stopping = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	first = nil
+	if err = second.Close(); err != nil {
+		t.Fatal(err)
+	}
+	second = nil
+
+	reopenedFirst, err := OpenStore(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopenedFirst.Close()
+	reopenedSecond, err := OpenStore(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopenedSecond.Close()
+	if got := reopenedFirst.View(); got.Installation != firstInstallation || !got.Paused || got.Stopping {
+		t.Fatal("first store did not preserve its independent state")
+	}
+	if got := reopenedSecond.View(); got.Installation != secondInstallation || got.Paused || !got.Stopping {
+		t.Fatal("second store did not preserve its independent state")
+	}
+}
+
+func TestAmbiguousLegacyQuestionMarkStateIsPreserved(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix host storage contract")
+	}
+
+	for _, createEmptyTarget := range []bool{false, true} {
+		name := "missing intended database"
+		if createEmptyTarget {
+			name = "empty intended database"
+		}
+		t.Run(name, func(t *testing.T) {
+			c := fixtureConfig(t)
+			root := filepath.Dir(c.Storage.State)
+			c.Storage.State = filepath.Join(root, "old-truncated-target-1007?x")
+			legacyPath := strings.SplitN(filepath.Join(c.Storage.State, "state.sqlite"), "?", 2)[0]
+			intendedPath := filepath.Join(c.Storage.State, "state.sqlite")
+
+			installation := newID()
+			pendingID := newID()
+			snapshot, err := json.Marshal(Snapshot{
+				SchemaVersion: 2,
+				Installation:  installation,
+				Pools:         map[string]*PoolState{},
+				Runners:       map[string]*Runner{pendingID: {ID: pendingID, Phase: Cleaning}},
+				Images:        map[string]*Image{},
+				Generations:   map[string]Config{},
+				Managed:       map[string]*ManagedPool{},
+				Artifacts:     map[string]*RunnerArtifact{},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			legacy, err := sql.Open("sqlite", legacyPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = legacy.Exec("CREATE TABLE snapshot (id INTEGER PRIMARY KEY CHECK(id=1), body BLOB NOT NULL)"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = legacy.Exec("PRAGMA user_version=2"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = legacy.Exec("INSERT INTO snapshot(id,body) VALUES(1,?)", snapshot); err != nil {
+				t.Fatal(err)
+			}
+			if err = legacy.Close(); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(legacyPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if createEmptyTarget {
+				if err = os.Mkdir(c.Storage.State, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err = os.WriteFile(intendedPath, nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			_, err = OpenStore(c)
+			requireCode(t, err, ErrState)
+			if !strings.Contains(err.Error(), "Stop all Runmoor managers") || strings.Contains(err.Error(), "old-truncated-target-1007") {
+				t.Fatalf("recovery diagnostic is incomplete or includes a private path: %v", err)
+			}
+			after, readErr := os.ReadFile(legacyPath)
+			if readErr != nil || !bytes.Equal(after, before) {
+				t.Fatal("ambiguous legacy database was changed")
+			}
+			if createEmptyTarget {
+				info, statErr := os.Stat(intendedPath)
+				if statErr != nil || info.Size() != 0 {
+					t.Fatal("empty intended database was modified")
+				}
+				if _, statErr = os.Stat(filepath.Join(c.Storage.State, "manager.lock")); !os.IsNotExist(statErr) {
+					t.Fatal("manager lock was created before legacy-state refusal")
+				}
+			} else if _, statErr := os.Stat(c.Storage.State); !os.IsNotExist(statErr) {
+				t.Fatal("state directory was created before legacy-state refusal")
+			}
+			if _, statErr := os.Stat(c.Storage.Data); !os.IsNotExist(statErr) {
+				t.Fatal("data directory was created before legacy-state refusal")
+			}
+		})
+	}
+}
+
 func TestRetentionKeepsUnresolvedRecords(t *testing.T) {
 	_, s := fixtureStore(t)
 	now := time.Now()

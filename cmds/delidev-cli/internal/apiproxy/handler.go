@@ -135,6 +135,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusServiceUnavailable, domain.Unsupported)
 		return
 	}
+	if lease.Scope.Purpose == domain.SessionTitleUsage {
+		bounded, stop := context.WithTimeout(ctx, 30*time.Second)
+		defer stop()
+		ctx = bounded
+	}
 	if !lease.Scope.allows(operation) {
 		fail(http.StatusForbidden, domain.PermissionDenied)
 		return
@@ -162,17 +167,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	stopBody := context.AfterFunc(ctx, func() { _ = r.Body.Close(); _ = controller.SetWriteDeadline(time.Now()) })
 	defer stopBody()
-	raw, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
+	bodyLimit := int64(maxBody)
+	if lease.Scope.Purpose == domain.SessionTitleUsage {
+		bodyLimit = 1 << 20
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, bodyLimit+1))
 	defer clear(raw)
 	if err != nil {
 		fail(http.StatusBadRequest, domain.InvalidArgument)
 		return
 	}
-	if len(raw) > maxBody {
+	if int64(len(raw)) > bodyLimit {
 		fail(http.StatusRequestEntityTooLarge, domain.ResourceExhausted)
 		return
 	}
-	stream, err := validateRequest(ctx, raw, lease, operation)
+	stream := false
+	if lease.Scope.Purpose == domain.SessionTitleUsage {
+		raw, stream, err = validateTitleRequest(raw, lease.Scope)
+	} else {
+		stream, err = validateRequest(ctx, raw, lease, operation)
+	}
 	if err != nil {
 		fail(errorStatus(err), safeCode(err))
 		return
@@ -186,7 +200,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	submitted := false
 	phase := phaseCredential
 	defer func() {
-		h.logger.Info("api_proxy_request_finished", "correlation_id", correlation, "execution_id", lease.Scope.ExecutionID, "session_id", lease.Scope.SessionID, "account_id", lease.Scope.AccountID, "provider_id", lease.Scope.ProviderID, "model_id", lease.Scope.ModelID, "operation", operation, "phase", phase, "stream", stream, "submitted", submitted, "http_status", status, "error_code", code, "duration_ms", time.Since(started).Milliseconds())
+		h.logger.Info("api_proxy_request_finished", "correlation_id", correlation, "execution_id", lease.Scope.ExecutionID, "session_id", lease.Scope.SessionID, "account_id", lease.Scope.AccountID, "provider_id", lease.Scope.ProviderID, "model_id", lease.Scope.ModelID, "purpose", lease.Scope.Purpose, "operation", operation, "phase", phase, "stream", stream, "submitted", submitted, "http_status", status, "error_code", code, "duration_ms", time.Since(started).Milliseconds())
 	}()
 	var key []byte
 	if lease.Scope.Provider.Authentication != domain.KeylessAuth {
@@ -219,6 +233,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		code = safeCode(err)
 		fail(errorStatus(err), code)
 		return
+	}
+	if lease.BeforeSubmit != nil {
+		if err := lease.BeforeSubmit(ctx, operation); err != nil {
+			code = safeCode(err)
+			fail(errorStatus(err), code)
+			return
+		}
 	}
 	defer upstream.Header.Del("Authorization")
 	defer upstream.Header.Del("x-api-key")
