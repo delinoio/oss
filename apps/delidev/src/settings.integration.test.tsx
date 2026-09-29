@@ -344,7 +344,9 @@ for (const kind of ["client", "worker"] as const) it(`issues a real single-use $
   fireEvent.change(screen.getByLabelText("Device name"), { target: { value: `Disposable ${kind}` } });
   fireEvent.change(screen.getByLabelText("Device type"), { target: { value: kind } });
   fireEvent.click(screen.getByRole("button", { name: "Issue single-use document" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Reveal private document" }));
+  // This real-server integration runs alongside the full desktop suite in CI;
+  // allow its follow-up pairing-resource read a bounded five seconds under load.
+  fireEvent.click(await screen.findByRole("button", { name: "Reveal private document" }, { timeout: 5000 }));
   const raw = (screen.getByLabelText("Private pairing document") as HTMLTextAreaElement).value;
   const grant = JSON.parse(raw);
   const pair = (path: string) => runCLI([kind === "client" ? "device" : "worker", "pair", kind === "client" ? "--device-dir" : "--worker-dir", path, "--code-stdin", "--name", "Disposable UI grant"], raw);
