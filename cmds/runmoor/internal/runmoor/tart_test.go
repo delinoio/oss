@@ -216,11 +216,10 @@ func (f *startingTartCommand) Start(string, []string, []string) (int, error) {
 }
 func (f *startingTartCommand) StartPinned(name string, args, env []string, dir *os.File) (int, error) {
 	f.started = true
-	canonical, err := f.tartFixture.canonicalPinnedArgs(args, env, dir)
-	if err != nil {
+	if _, err := f.tartFixture.canonicalPinnedArgs(args, env, dir); err != nil {
 		return 0, err
 	}
-	return f.tartFixture.Start(name, canonical, env)
+	return 123, nil
 }
 func (f *startingTartCommand) Run(ctx context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
 	if f.started && args[0] == "get" {
