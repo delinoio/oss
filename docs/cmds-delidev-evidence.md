@@ -2372,5 +2372,20 @@ unimplemented product paths above.
   Workflow lint and 95 CI contract tests passed. The final DeliDev Go race/vet
   pass includes Grok 878.207s, server 459.158s, store 102.102s and Worker 201.607s.
   A root Rust rerun encountered two unrelated `clibox-fspy` macOS observation
-  timeouts; the focused serial retry and complete serial root rerun are recorded
-  after completion. macOS package revalidation follows the source commit.
+  timeouts. Its 14 focused macOS supervision tests passed with one test thread,
+  then the complete root `cargo test -- --test-threads=1` passed, including the
+  new exact Debian sidecar-layout test. No unrelated source was changed to obtain
+  that result.
+- The full native dry run passed on macOS arm64 for source commit
+  `cc66add28a47d162297da67b500a66b2eb52954e`. It generated an ad-hoc verified app
+  archive of 158,281,705 bytes with SHA-256
+  `8779fbf333fe20bfdad49aace9f1166e0a617515d2ed39f2d597dff56bbbb807`.
+  Complete original notices matched; the Chromium credits SHA-256 is
+  `496533b09217fe29c4b142e23e796b9d6b95bfdb3208d02d54b487535b341480`.
+  The generated `verification.json` keeps runtime acceptance unverified and
+  publication not requested. The earlier native Quit limitation remains open;
+  this packaging run did not repeat the blocked UI test or use production keys.
+- Generated repository-owned `dist` directories were removed after validation.
+  The Go toolchain's third-party `src/cmd/dist` source and installed dependency
+  contents were preserved. No real account, private GitHub repository, paid
+  inference, Git push, remote workflow dispatch or public release was exercised.
