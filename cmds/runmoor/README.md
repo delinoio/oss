@@ -391,6 +391,8 @@ before Runmoor contacts a manager or changes the service. Inspect the installed
 path in `systemctl --user cat runmoor.service` on Ubuntu or the Runmoor launch
 agent's `ProgramArguments` on macOS. Drain and uninstall with the current path
 before installing the service with a replacement configuration.
+Paths containing `..` that resolve through a symlink to a different file are
+also rejected; use the installed absolute configuration path directly.
 
 Manager-only restart reconciles SQLite with actual Docker/Tart and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
 

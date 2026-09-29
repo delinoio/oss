@@ -89,6 +89,12 @@ func TestRequireServiceConfigMatchAcceptsNormalizedAbsolutePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	wanted := filepath.Join(home, "runmoor config.toml")
+	if err := os.Mkdir(filepath.Join(home, "unused"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wanted, []byte(""), 0600); err != nil {
+		t.Fatal(err)
+	}
 	binary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -101,8 +107,67 @@ func TestRequireServiceConfigMatchAcceptsNormalizedAbsolutePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	requested := home + `/unused/../runmoor config.toml`
+	resolved, err := filepath.EvalSymlinks(requested)
+	if err != nil {
+		t.Fatalf("normalized requested path did not resolve: %v", err)
+	}
+	cleanedResolved, err := filepath.EvalSymlinks(filepath.Clean(requested))
+	if err != nil || filepath.Clean(resolved) != filepath.Clean(cleanedResolved) {
+		t.Fatalf("normalized requested path resolves differently from its cleaned spelling: %q versus %q: %v", resolved, cleanedResolved, err)
+	}
 	if err := requireServiceConfigMatch(runtime.GOOS, unit, requested); err != nil {
 		t.Fatalf("equivalent normalized paths did not match: %v", err)
+	}
+}
+
+func TestRequireServiceConfigMatchRejectsSymlinkDotAliases(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("service definitions are supported on macOS and Linux")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if runtime.GOOS == "linux" {
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	}
+	unit := servicePath()
+	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+		t.Fatal(err)
+	}
+	aliasRoot := filepath.Join(home, "alias")
+	targetRoot := filepath.Join(home, "target")
+	if err := os.MkdirAll(filepath.Join(targetRoot, "nested"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(aliasRoot, "link")
+	if err := os.MkdirAll(aliasRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(targetRoot, "nested"), link); err != nil {
+		t.Fatal(err)
+	}
+	installedPath := filepath.Join(aliasRoot, "config.toml")
+	requestedPath := link + string(filepath.Separator) + ".." + string(filepath.Separator) + "config.toml"
+	if err := os.WriteFile(installedPath, []byte("installed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(targetRoot, "config.toml"), []byte("requested"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := serviceDefinition(runtime.GOOS, binary, installedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireServiceConfigMatch(runtime.GOOS, unit, requestedPath); err == nil {
+		t.Fatal("symlink-dot alias selected a different configuration")
+	} else {
+		requireCode(t, err, ErrConfig)
 	}
 }
 

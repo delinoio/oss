@@ -20,6 +20,8 @@ then install and start it with the new path. On systemd, inspect `ExecStart`
 and `ExecStop` with `systemctl --user cat runmoor.service`; on macOS, inspect
 the Runmoor launch agent's `ProgramArguments`. Preserve an invalid service
 definition and resolve its problem before retrying service commands.
+Paths containing `..` that resolve through a symlink to a different file are
+also rejected; use the installed absolute configuration path directly.
 
 If a Linux service action reports that the active manager does not match the
 installed service, gracefully stop it with

@@ -41,14 +41,42 @@ func validateServiceConfigMatch(goos, unit, requested string) (serviceDefinition
 	if err != nil {
 		return serviceDefinitionSnapshot{}, problem(ErrConfig, "The installed service definition has no safe configuration path.", "Preserve it and restore a valid Runmoor service definition before retrying.")
 	}
-	wanted, err := filepath.Abs(requested)
-	if err != nil || requested == "" || strings.ContainsAny(requested, "\x00\r\n") {
+	if requested == "" || strings.ContainsAny(requested, "\x00\r\n") {
 		return serviceDefinitionSnapshot{}, problem(ErrConfig, "The requested configuration path is invalid.", "Use the same valid --config path used when installing the service.")
+	}
+	wanted, err := filepath.Abs(requested)
+	if err != nil {
+		return serviceDefinitionSnapshot{}, problem(ErrConfig, "The requested configuration path is invalid.", "Use the same valid --config path used when installing the service.")
+	}
+	if hasParentPathComponent(requested) {
+		// filepath.Abs cleans dot segments before resolving symlinks. Compare
+		// both real paths so a symlink/.. sequence cannot select a different
+		// configuration while harmless aliases such as /var -> /private/var work.
+		originalResolved, resolveErr := filepath.EvalSymlinks(requested)
+		if resolveErr == nil {
+			originalResolved, resolveErr = filepath.Abs(originalResolved)
+		}
+		cleanedResolved, cleanedErr := filepath.EvalSymlinks(wanted)
+		if cleanedErr == nil {
+			cleanedResolved, cleanedErr = filepath.Abs(cleanedResolved)
+		}
+		if resolveErr != nil || cleanedErr != nil || filepath.Clean(originalResolved) != filepath.Clean(cleanedResolved) {
+			return serviceDefinitionSnapshot{}, problem(ErrConfig, "The requested configuration path is ambiguous.", "Use the installed absolute --config path without symlink-based dot segments.")
+		}
 	}
 	if filepath.Clean(wanted) != installed {
 		return serviceDefinitionSnapshot{}, problem(ErrConfig, "The requested configuration does not match the installed service.", "Use the same --config path used when installing the service; drain and uninstall that service before replacing its configuration.")
 	}
 	return serviceDefinitionSnapshot{data: data, info: info}, nil
+}
+
+func hasParentPathComponent(path string) bool {
+	for _, component := range strings.Split(path, string(filepath.Separator)) {
+		if component == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func requireServiceDefinitionUnchanged(goos, unit, requested string, original serviceDefinitionSnapshot) error {
