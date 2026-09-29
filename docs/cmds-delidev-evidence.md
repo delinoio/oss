@@ -3191,3 +3191,24 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+## 2026-09-30: issue #1083 PR activity projection
+
+The activity extension atomically retains metadata-only original problem, local
+dismissal and semantic attempt transitions, with stable UUID/source revisions,
+original version references, actor/request identity and server retention time.
+Dedicated verification metadata projects independently from attempt success; the
+private proof publication boundary has no production/public verifier caller.
+Original history is not reconstructed or rewritten. Session deletion removes
+owned activity, including pre-binding reservations, without deleting shared PR
+evidence. Generated Go/TypeScript schemas and CLI/desktop reads are additive.
+
+Executed focused verification used isolated temporary SQLite and loopback
+provider/native fixtures: store PR activity race tests passed (7.577s), server
+PR activity race tests passed (6.324s), CLI metadata parity passed (0.696s), and
+the first two desktop source-inspection tests passed. Later dedicated proof
+replay/inspection checks and full required validation are recorded below when
+complete. LFS assets were hydrated before builds, and required ignored embed
+output was explicitly generated for Go hooks. No real PAT/account, Git push by
+DeliDev, native remediation, production verifier or multi-platform distribution
+acceptance was performed.

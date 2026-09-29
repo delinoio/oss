@@ -85,6 +85,18 @@ func (t *Tx) putPRRemediationAttempt(id domain.ID, expected uint64, v domain.PRR
 	if err := v.Validate(); err != nil {
 		return Record{}, err
 	}
+	var prior domain.PRRemediationAttemptState
+	if expected != 0 {
+		old, err := t.Get(domain.ProblemKind, id)
+		if err != nil {
+			return Record{}, err
+		}
+		previous, err := Decode[domain.PRRemediationAttempt](old)
+		if err != nil || previous.Validate() != nil {
+			return Record{}, prRemediationConflict()
+		}
+		prior = previous.State
+	}
 	r, err := t.Put(domain.ProblemKind, id, expected, "", "", v)
 	if err != nil {
 		return r, err
@@ -97,6 +109,13 @@ func (t *Tx) putPRRemediationAttempt(id domain.ID, expected uint64, v domain.PRR
 		_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pr_remediation_attempts(id,set_id,chain_id,sequence,state,input_id) VALUES(?,?,?,?,?,?)", id, v.SetID, v.ChainID, v.Sequence, v.State, input)
 	} else {
 		_, err = t.tx.ExecContext(t.ctx, "UPDATE pr_remediation_attempts SET state=?,input_id=? WHERE id=?", v.State, input, id)
+	}
+	if err == nil && prior != v.State {
+		_, set, readErr := t.GetPRProblemSet(v.SetID)
+		if readErr != nil {
+			return r, readErr
+		}
+		err = t.recordPRActivity(r, v.SetID, set.Target, domain.PRActivityAttempt, v.Problems, &v)
 	}
 	return r, storageError(err)
 }

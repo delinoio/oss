@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
-  ActivityKind, ActivityQuery, EntityKind, ResourceQuery,
+  ActivityKind, ActivityQuery, ActivityPRAttemptState, ActivityPRActorType, ActivityPRMode, EntityKind, ResourceQuery,
   SearchArchiveState, SearchExecutionOutcome, SearchQuery,
 } from "@delinoio/delidev-api-client";
 import { document, text } from "./documents";
 import { Problem } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
 import { SidebarSurface, useCloseSidebarDrawer, useSidebarDrawerOpen } from "./sidebar-context";
+import { ActivityPRSource } from "./activity-pr-source";
 
 export enum Surface { Sessions = "sessions", NewSession = "new-session", PullRequests = "pull-requests", Usage = "usage", Schedules = "schedules", Activity = "activity", Inbox = "inbox", Search = "search" }
 function Pager({ page, next, setPage, busy }: { page: string; next?: string; setPage: (value: string) => void; busy: boolean }) {
@@ -74,7 +75,13 @@ export function Activity({ active, open }: { active: boolean; open: (id: string)
     <div className="actions"><button className="primary" onClick={() => apply(draft)}>Apply filters</button><button onClick={() => { setDraft(emptyActivity); apply(emptyActivity); }}>Reset</button></div>
   </SidebarSurface>
   <section hidden={!active} className="page"><header><h2>Activity</h2><button disabled={result.isFetching} onClick={() => { setPage(""); void result.refetch(); }}>Refresh</button></header><Problem error={result.error} />{result.isFetching ? <p role="status">Loading activity…</p> : null}{result.error && result.data ? <p className="notice">The refresh failed. These are the last activity rows for this scope.</p> : null}
-    {result.data?.entries.map((entry) => <article className="result" key={entry.id}><strong>{ActivityKind[entry.kind]?.toLowerCase().replaceAll("_", " ")}</strong><p><time dateTime={new Date(Number(entry.observedAtUnixMs)).toISOString()}>{new Date(Number(entry.observedAtUnixMs)).toLocaleString()}</time></p>{entry.sessionId ? <button onClick={() => open(entry.sessionId)}>Open session</button> : <p>Waiting or skipped occurrence</p>}{entry.accountId ? <small>Account {entry.accountId}</small> : null}</article>)}
+    {result.data?.entries.map((entry) => <article className="result" key={entry.id}><strong>{ActivityKind[entry.kind]?.toLowerCase().replaceAll("_", " ")}</strong><p><time dateTime={new Date(Number(entry.observedAtUnixMs)).toISOString()}>{new Date(Number(entry.observedAtUnixMs)).toLocaleString()}</time></p>{entry.pullRequest ? <>
+      <p>{entry.pullRequest.owner}/{entry.pullRequest.name} #{entry.pullRequest.number}</p>
+      {entry.pullRequest.attemptState !== ActivityPRAttemptState.ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED ? <p>Attempt: {ActivityPRAttemptState[entry.pullRequest.attemptState]?.replace("ACTIVITY_PR_ATTEMPT_STATE_", "").toLowerCase().replaceAll("_", " ")} · {ActivityPRMode[entry.pullRequest.mode]?.replace("ACTIVITY_PR_MODE_", "").toLowerCase()}. Success does not establish verified handling.</p> : null}
+      <p>Actor: {ActivityPRActorType[entry.pullRequest.actorType]?.replace("ACTIVITY_PR_ACTOR_TYPE_", "").toLowerCase()}{entry.pullRequest.deviceId ? ` ${entry.pullRequest.deviceId}` : ""}</p>
+      <details><summary>Original activity references</summary><p>Source {entry.pullRequest.sourceId} · revision {entry.sourceRevision.toString()} · request {entry.pullRequest.requestId}</p>{entry.pullRequest.problems.map(ref => <p key={ref.id}>Problem {ref.id} · version <code>{ref.contentVersion}</code></p>)}</details>
+      <ActivityPRSource target={entry.pullRequest} revision={entry.sourceRevision} />
+    </> : null}{entry.sessionId ? <button onClick={() => open(entry.sessionId)}>Open session</button> : !entry.pullRequest ? <p>Waiting or skipped occurrence</p> : null}{entry.accountId ? <small>Account {entry.accountId}</small> : null}</article>)}
     {result.data?.entries.length === 0 ? <p>{page ? "No further activity on this page." : "No activity yet."}</p> : null}<Pager page={page} setPage={setPage} next={result.data?.nextPageToken} busy={result.isFetching} />
   </section></>;
 }

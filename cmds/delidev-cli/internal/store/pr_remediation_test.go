@@ -24,6 +24,7 @@ type remediationStoreFixture struct {
 	policy      domain.RemediationPolicy
 	observation domain.RepositoryQueryResult
 	problems    []domain.PRRemediationProblemRef
+	outcome     domain.ExecutionOutcome
 }
 
 func newRemediationStoreFixture(t *testing.T, s *Store) *remediationStoreFixture {
@@ -135,10 +136,15 @@ func (f *remediationStoreFixture) finish(t *testing.T, attempt Record, verified 
 			if input.Validate() != nil {
 				t.Fatal("fixture assignment", input.Validate())
 			}
-			done := domain.ExecutionCompletion{Version: 1, ExecutionID: v.ExecutionID, InputID: v.InputID, NativeThreadID: domain.NativeIdentity(domain.NewID()), NativeTurnID: domain.NativeIdentity(domain.NewID()), LastSequence: 3, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
+			outcome := f.outcome
+			if outcome == "" {
+				outcome = domain.ExecutionSucceeded
+			}
+			done := domain.ExecutionCompletion{Version: 1, ExecutionID: v.ExecutionID, InputID: v.InputID, NativeThreadID: domain.NativeIdentity(domain.NewID()), NativeTurnID: domain.NativeIdentity(domain.NewID()), LastSequence: 3, Outcome: outcome, CleanupVerified: true}
 			inputRaw, _ := json.Marshal(input)
 			outputRaw, _ := json.Marshal(done)
-			fixtureJob := domain.Job{Type: domain.ExecuteSessionJob, MachineID: f.exec.machine, State: domain.JobSucceeded, Input: inputRaw, Output: outputRaw, AcceptedAt: tx.now, FinishedAt: &tx.now}
+			state := map[domain.ExecutionOutcome]domain.JobState{domain.ExecutionSucceeded: domain.JobSucceeded, domain.ExecutionFailed: domain.JobFailed, domain.ExecutionStopped: domain.JobCanceled}[outcome]
+			fixtureJob := domain.Job{Type: domain.ExecuteSessionJob, MachineID: f.exec.machine, State: state, Input: inputRaw, Output: outputRaw, AcceptedAt: tx.now, FinishedAt: &tx.now}
 			for _, mutate := range mutations {
 				mutate(&fixtureJob)
 			}
@@ -146,8 +152,8 @@ func (f *remediationStoreFixture) finish(t *testing.T, attempt Record, verified 
 			if err != nil {
 				return nil, err
 			}
-			s.Execution = &domain.ExecutionProgress{JobID: job.ID, ExecutionID: v.ExecutionID, InputID: v.InputID, NativeThreadID: string(done.NativeThreadID), NativeTurnID: string(done.NativeTurnID), LastSequence: 3, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
-			s.ActiveExecutionID, s.Dispatch, s.Outcome = "", domain.DispatchReady, domain.ExecutionSucceeded
+			s.Execution = &domain.ExecutionProgress{JobID: job.ID, ExecutionID: v.ExecutionID, InputID: v.InputID, NativeThreadID: string(done.NativeThreadID), NativeTurnID: string(done.NativeTurnID), LastSequence: 3, Outcome: outcome, CleanupVerified: true}
+			s.ActiveExecutionID, s.Dispatch, s.Outcome = "", domain.DispatchReady, outcome
 			if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, f.project, s); err != nil {
 				return nil, err
 			}

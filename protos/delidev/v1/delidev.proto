@@ -1149,6 +1149,59 @@ enum ActivityKind {
   ACTIVITY_KIND_EXECUTION_STOPPED = 4;
   ACTIVITY_KIND_SCHEDULE_CRON = 5;
   ACTIVITY_KIND_SCHEDULE_RUN_NOW = 6;
+  ACTIVITY_KIND_PR_PROBLEM_OBSERVED = 7;
+  ACTIVITY_KIND_PR_PROBLEM_DISMISSED = 8;
+  // Attempt success never establishes that the original problems were handled.
+  ACTIVITY_KIND_PR_REMEDIATION_ATTEMPT = 9;
+  // Requires its own immutable verification source, never attempt success.
+  ACTIVITY_KIND_PR_VERIFIED_HANDLED = 10;
+}
+enum ActivityPRAttemptState {
+  ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED = 0;
+  ACTIVITY_PR_ATTEMPT_STATE_RESERVED = 1;
+  ACTIVITY_PR_ATTEMPT_STATE_BOUND = 2;
+  ACTIVITY_PR_ATTEMPT_STATE_RUNNING = 3;
+  ACTIVITY_PR_ATTEMPT_STATE_UNCERTAIN = 4;
+  ACTIVITY_PR_ATTEMPT_STATE_SUCCEEDED = 5;
+  ACTIVITY_PR_ATTEMPT_STATE_FAILED = 6;
+  ACTIVITY_PR_ATTEMPT_STATE_STOPPED = 7;
+  ACTIVITY_PR_ATTEMPT_STATE_CANCELED = 8;
+  ACTIVITY_PR_ATTEMPT_STATE_NOT_STARTED = 9;
+}
+enum ActivityPRMode {
+  ACTIVITY_PR_MODE_UNSPECIFIED = 0;
+  ACTIVITY_PR_MODE_MANUAL = 1;
+  ACTIVITY_PR_MODE_AUTOMATIC = 2;
+}
+message ActivityPRProblemReference {
+  string id = 1;
+  string content_version = 2;
+}
+enum ActivityPRActorType {
+  ACTIVITY_PR_ACTOR_TYPE_UNSPECIFIED = 0;
+  ACTIVITY_PR_ACTOR_TYPE_OWNER = 1;
+  ACTIVITY_PR_ACTOR_TYPE_CLIENT = 2;
+}
+// Only metadata; no PR title, feedback, tool output or provider diagnostics.
+message ActivityPRMetadata {
+  string problem_set_id = 1;
+  string remote_repository_id = 2;
+  string pull_request_id = 3;
+  string number = 4;
+  string owner = 5;
+  string name = 6;
+  string source_id = 7;
+  repeated ActivityPRProblemReference problems = 8;
+  ActivityPRActorType actor_type = 9;
+  string device_id = 10;
+  string request_id = 11;
+  ActivityPRAttemptState attempt_state = 12;
+  ActivityPRMode mode = 13;
+  string verification_id = 14;
+}
+enum ActivityCapability {
+  ACTIVITY_CAPABILITY_UNSPECIFIED = 0;
+  ACTIVITY_CAPABILITY_PR_HANDLING_V1 = 1;
 }
 enum ActivityOccurrenceState {
   ACTIVITY_OCCURRENCE_STATE_UNSPECIFIED = 0;
@@ -1174,7 +1227,7 @@ message ListActivityRequest {
   uint32 page_size = 3;
   string page_token = 4;
 }
-// Metadata only. Original source identity is also the stable activity identity.
+// Metadata only. PR transitions have their own immutable activity identity.
 message ActivityEntry {
   string id = 1;
   EntityKind source_kind = 2;
@@ -1192,10 +1245,12 @@ message ActivityEntry {
   ActivityOccurrenceState occurrence_state = 13;
   // Current dispatch/cleanup job state, including pre-native failure.
   ActivityJobState job_state = 14;
+  ActivityPRMetadata pull_request = 15;
 }
 message ListActivityResponse {
   repeated ActivityEntry entries = 1;
   string next_page_token = 2;
+  repeated ActivityCapability capabilities = 3;
 }
 
 service UsageService {
