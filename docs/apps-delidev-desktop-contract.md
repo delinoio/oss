@@ -389,7 +389,9 @@ helper applications and platform entitlements. Pass `--debug --bundles app` on
 macOS for a local development bundle. No signing credentials or publication are
 configured by this command. The executable-only `build:native` command remains
 available for compilation; it does not prove that a complete distributable has
-all native resources. Six-target signing and release verification remain pending.
+all native resources. The separate [native package verification contract](apps-delidev-packaging-contract.md)
+defines six native dry-run paths, retained original notices and package inspection;
+actual production signing, release publication and six-platform runtime evidence remain pending.
 
 ## First-session checklist
 

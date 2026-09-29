@@ -2,6 +2,12 @@
 
 Repository workflows are reviewed as source-backed contracts. Workflow IDs, job IDs, artifact names, permissions, triggers, protected environments, and publication boundaries must match the checked-in YAML and the static workflow tests.
 
+DeliDev's manual `delidev-native-dry-run.yml` is a credential-free six-target native
+packaging workflow governed by `docs/apps-delidev-packaging-contract.md`. It has
+read-only repository access and uploads revision-bound verified workflow artifacts
+only; it does not sign with production keys, notarize, publish releases or install
+updates. Native runtime acceptance remains separate from package verification.
+
 ## Continuous integration
 
 ### Git LFS assets

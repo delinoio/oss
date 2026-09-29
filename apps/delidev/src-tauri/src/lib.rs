@@ -541,11 +541,26 @@ pub fn default_data_root() -> Result<PathBuf> {
 
 pub fn bundled_sidecar(executable: &Path) -> Result<PathBuf> {
     let parent = executable.parent().ok_or(NativeFailure::SidecarMissing)?;
+    #[cfg(target_os = "linux")]
+    if let Some(sidecar) = debian_sidecar(executable) {
+        return Ok(sidecar);
+    }
     Ok(parent.join(if cfg!(windows) {
         "delidev.exe"
     } else {
         "delidev"
     }))
+}
+
+// The pinned CEF Debian bundler relocates only the main binary to this fixed
+// product directory. Its external binaries remain in /usr/bin. Resolve only
+// that installed layout, never PATH or renderer input; AppImage/development
+// executables keep the adjacent sidecar. Remove this case if the pinned bundler
+// starts installing the sidecar beside the CEF executable on Debian.
+#[cfg(any(target_os = "linux", test))]
+fn debian_sidecar(executable: &Path) -> Option<PathBuf> {
+    (executable == Path::new("/usr/share/DeliDev/delidev-desktop"))
+        .then(|| PathBuf::from("/usr/bin/delidev"))
 }
 
 pub mod notifications;
@@ -555,6 +570,24 @@ mod tests;
 
 #[cfg(test)]
 mod desktop_capability_tests {
+    #[test]
+    fn debian_sidecar_accepts_only_the_pinned_installed_layout() {
+        use std::path::{Path, PathBuf};
+        assert_eq!(
+            super::debian_sidecar(Path::new("/usr/share/DeliDev/delidev-desktop")),
+            Some(PathBuf::from("/usr/bin/delidev"))
+        );
+        for path in [
+            "/tmp/DeliDev/delidev-desktop",
+            "/usr/share/other/delidev-desktop",
+            "/usr/share/DeliDev/other",
+            "/mount/DeliDev.AppDir/bin/delidev-desktop",
+            "usr/share/DeliDev/delidev-desktop",
+        ] {
+            assert_eq!(super::debian_sidecar(Path::new(path)), None);
+        }
+    }
+
     #[test]
     fn native_authority_belongs_only_to_trusted_webviews() {
         for (source, labels) in [

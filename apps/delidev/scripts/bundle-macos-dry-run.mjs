@@ -1,7 +1,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { accessSync, constants, lstatSync } from "node:fs";
+import { accessSync, constants, lstatSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, join } from "node:path";
+import { targets, cefCredits, packageResources, verifyNotices } from "./native-package.mjs";
 
 // Dry runs must not discover imported certificates, notarization credentials,
 // updater keys or executable injection flags through the caller's environment.
@@ -45,7 +46,13 @@ function main() {
   build("pnpm", ["--filter", "@delinoio/delidev-api-client", "build"]);
   build("pnpm", ["build"]);
   build("pnpm", ["prepare:sidecar"]);
-  build("cargo", ["run", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "delidev-tauri-cli", "--", "build", "--bundles", "app", "--features", "desktop-host,custom-protocol,tauri/cef", "--config", "src-tauri/tauri.dry-run.conf.json"]);
+  build("cargo", ["build", "--locked", "--release", "--manifest-path", "src-tauri/Cargo.toml", "--features", "desktop-host,custom-protocol", "--bin", "delidev-desktop"]);
+  const selected = targets.find(item => item.platform === process.platform && item.arch === process.arch);
+  const credits = cefCredits(selected, env);
+  const resources = packageResources(app, root, credits);
+  const dryRunConfig = JSON.parse(readFileSync(join(app, "src-tauri/tauri.dry-run.conf.json"), "utf8"));
+  const config = JSON.stringify({ ...dryRunConfig, bundle: { ...dryRunConfig.bundle, resources: { [credits]: "notices/Chromium-CREDITS.html" } } });
+  build("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "delidev-tauri-cli", "--", "build", "--bundles", "app", "--features", "desktop-host,custom-protocol,tauri/cef", "--config", config]);
   const bundle = join(root, "target/release/bundle/macos/DeliDev.app");
   const run = (command, args) => {
     const result = spawnSync(command, args, { cwd: app, env, encoding: "utf8" });
@@ -53,6 +60,7 @@ function main() {
     return result.stdout + result.stderr;
   };
   verifyBundle(bundle, run, process.arch === "arm64" ? "arm64" : "x86_64");
+  verifyNotices(join(bundle, "Contents/Resources"), resources);
   process.stdout.write("DeliDev macOS dry run passed: native sidecar, CEF resources, macOS 13 metadata and ad-hoc signature verified. No publication or notarization occurred.\n");
 }
 

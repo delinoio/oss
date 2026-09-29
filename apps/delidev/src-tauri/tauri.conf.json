@@ -18,6 +18,12 @@
   },
   "bundle": {
     "active": true,
+    "license": "Apache-2.0",
+    "resources": {
+      "../../../LICENSE": "notices/LICENSE",
+      "../../../NOTICE": "notices/NOTICE",
+      "notices/CEF-LICENSE.txt": "notices/CEF-LICENSE.txt"
+    },
     "externalBin": ["binaries/delidev"],
     "macOS": {"minimumSystemVersion": "13.0"}
   }

@@ -2347,8 +2347,30 @@ missing product integration as native unsupported.
 | Session tools/browser | Pinned CEF shell, async URL authorization and per-document accessibility | Worker PTY/ConPTY, forwarding, account profiles/tabs and distributed profile deletion; native Quit acceptance |
 | PR remediation | Existing evidence, attempt and workspace foundations retained | Public Fix now/automatic controller, exact fresh execution and verified commit/push outcomes |
 | Remote operations/services/updates | Existing lifecycle foundations retained | SSH installation, complete proxy/service adapters, verified Worker/desktop update flows |
-| Desktop/distribution | Live first-session checklist, macOS arm64 native observations and keyless packaging verification | Quota tray/widget completion, remaining diagnostics/settings integration and all six native build/release paths |
+| Desktop/distribution | Live first-session checklist, macOS arm64 native observations, six-target dry-run build definitions and keyless package verification | Quota tray/widget completion, remaining diagnostics/settings integration, five unexecuted native build targets and production signing/release paths |
 
 Real provider accounts, PAT/private-repository access, paid inference and actual
 push remain deferred by the user. Those evidence deferrals are distinct from the
 unimplemented product paths above.
+
+### Six-target native dry-run preparation (2026-09-29)
+
+- Added a manually dispatched, read-only native matrix for macOS x64/arm64,
+  Windows x64/arm64 and Ubuntu 22.04 x64/arm64. Matching host/toolchain checks,
+  extracted PE64/ELF64 architecture and CEF resource checks, unsigned Windows
+  verification and existing strict ad-hoc macOS checks feed revision-bound package
+  manifests and SHA-256 sums. No remote workflow was dispatched in this task.
+- The pinned Debian layout relocates only the main executable. Native sidecar
+  resolution now recognizes the exact `/usr/share/DeliDev` to `/usr/bin/delidev`
+  mapping while preserving adjacent development/AppImage behavior. This is a
+  source-backed correction with a focused layout test, not Linux runtime evidence.
+- Packages retain complete original repository licenses, the unchanged CEF
+  license and the exact downloaded Chromium credits. Verification compares their
+  bytes and binds the credits digest. A failed package check cannot publish a
+  verification manifest or overwrite a prior successful result.
+- Eight native packaging tests, 801 frontend tests and typecheck/build passed.
+  Workflow lint and 95 CI contract tests passed. The final DeliDev Go race/vet
+  pass includes Grok 878.207s, server 459.158s, store 102.102s and Worker 201.607s.
+  A root Rust rerun encountered two unrelated `clibox-fspy` macOS observation
+  timeouts; the focused serial retry and complete serial root rerun are recorded
+  after completion. macOS package revalidation follows the source commit.
