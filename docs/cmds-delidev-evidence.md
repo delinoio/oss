@@ -98,6 +98,25 @@ The same job independently failed to download `golang.org/x/net@v0.58.0` from th
 Go module proxy with an HTTP/2 `INTERNAL_ERROR`. The new CI run retries that
 transport failure without changing dependency versions.
 
+The later [protocol/client CI job](https://github.com/delinoio/oss/actions/runs/36631179872/job/109620999932)
+passes schema validation and client checks, then fails the real-server GitHub
+profile fixture at its default one-second wait for the post-save list refresh.
+The fixture now gives both creation and rename observations a bounded 15-second
+window while preserving the original saved-document and CLI revision assertions.
+A temporary 1.25-second delay after each actual Go save response reproduces the
+old creation failure and passes with the corrected waits. That injected delay
+is removed from the committed fixture; no product timeout or mutation behavior
+changes.
+The required `apps/delidev` `pnpm test` invocation passes client build and type
+checking, and its profile fixture passes, but the concurrent run hits unrelated
+five-second backup and desktop fixture cutoffs. A two-worker Vitest rerun hits
+a different five-second App fixture cutoff. Serial `vitest run --maxWorkers=1`
+passes all 74 files / 941 assertions with their original test timeouts. These
+observations distinguish the repaired native profile wait from the other local
+fixture timing failures; no global timeout or worker-limit change is committed.
+The remaining package validation steps also pass: eight bundle-verifier tests,
+six desktop-launcher tests and the production build.
+
 ## Native interface discovery (not execution validation)
 - Installed read-only version/help checks: Codex CLI `0.151.0`, Claude Code `2.1.236`, OpenCode `1.18.20`. No `grok` executable was found on this machine. No user credential files were read and no inference was invoked by these checks.
 - Official adapter references retrieved: [Codex app-server](https://learn.chatgpt.com/docs/app-server) for native expected-turn steering; [Claude Code programmatic execution](https://code.claude.com/docs/en/headless) for structured streams; [OpenCode server](https://opencode.ai/docs/server/) for authenticated native HTTP; [Grok Build headless/ACP](https://docs.x.ai/build/cli/headless-scripting) for native JSON-RPC integration. Installed-version capability validation and real-account evidence remain required before claiming an adapter supported end to end.
