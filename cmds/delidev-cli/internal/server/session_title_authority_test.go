@@ -2,14 +2,18 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
 func TestTitleAuthorityRemainsBoundToFrozenInitialExecutionAfterFollowUp(t *testing.T) {
@@ -39,6 +43,46 @@ func TestTitleAuthorityRemainsBoundToFrozenInitialExecutionAfterFollowUp(t *test
 	original.AccountID = domain.NewID()
 	if matchesInitialTitleExecution(session, original) {
 		t.Fatal("title authority accepted an original account that differs from the frozen snapshot")
+	}
+}
+
+func TestTitleRegistrationRejectsSecondSendClaimButReplaysExactReceipt(t *testing.T) {
+	f := recoveredAutomaticTitleFixture(t)
+	_, recovery := acceptRecovery(t, f)
+	completeRecovery(t, f, recovery.ExecutionRecoveryJob)
+	sr, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session domain.Session
+	if domain.Decode(sr.Data, &session) != nil || session.TitleJobID == "" {
+		t.Fatalf("recovery did not queue the title: %+v", session)
+	}
+	claimed, err := claimTitleJob(context.Background(), f.service, f.input.MachineID, f.instance, f.device, session.TitleJobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	titleToken, err := security.RandomToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(titleToken))
+	request := &pb.RegisterExecutionRequest{
+		Mutation:  &pb.Mutation{RequestId: string(domain.NewID()), Id: string(claimed.ID), ExpectedRevision: claimed.Revision},
+		MachineId: string(f.input.MachineID), InstanceId: string(f.instance), CredentialDigest: digest[:],
+	}
+	worker := security.Identity{Token: f.workerToken}
+	registered, err := f.client.RegisterExecution(context.Background(), ownerRequest(worker, request))
+	if err != nil || registered.Msg.Replayed {
+		t.Fatalf("first title send registration failed: %v", err)
+	}
+	replay, err := f.client.RegisterExecution(context.Background(), ownerRequest(worker, request))
+	if err != nil || !replay.Msg.Replayed {
+		t.Fatalf("exact registration receipt did not replay: %v", err)
+	}
+	request.Mutation.RequestId = string(domain.NewID())
+	if _, err := f.client.RegisterExecution(context.Background(), ownerRequest(worker, request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("a fresh receipt sent the title a second time: %v", err)
 	}
 }
 

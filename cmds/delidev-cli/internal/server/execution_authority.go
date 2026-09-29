@@ -392,8 +392,12 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 				return nil, executionDenied()
 			}
 			grant.ExecutionID = input.OriginalExecutionID
-			if _, err := tx.ClaimTitleInference(identity.Job); err != nil {
+			claimed, err := tx.ClaimTitleInference(identity.Job)
+			if err != nil {
 				return nil, err
+			}
+			if !claimed {
+				return nil, executionDenied()
 			}
 		} else {
 			var input domain.ExecutionJobInput
