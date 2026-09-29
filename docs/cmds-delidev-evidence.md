@@ -3219,15 +3219,25 @@ passed current and historical migration/backup fixtures.
 Go/TypeScript generation reproduced without drift. The generated-client package
 passed all 41 tests and type checking.
 
-The full `go test -race -timeout 20m -json ./cmds/delidev-cli/...` run is still
-in progress and has reported failures in workspace diff/preparation fixtures and
-`TestCLISessionAcceptanceQueueAndArchive`. Its final result is not yet established.
+The full `go test -race -timeout 20m -json ./cmds/delidev-cli/...` run exited 1.
+It reported workspace diff/preparation fixture failures and a workspace-reader
+failure in `TestCLISessionAcceptanceQueueAndArchive`, plus a test-logger
+`bytes.Buffer` race in Grok's
+`TestProbeOwnsBoundedInspectedInitialization/timeout`. Grok, server, store, Worker
+and workspace packages reached the 20-minute test timeout; CLI also failed.
+These failures are retained explicitly; focused passing checks do not establish a
+passing full suite. The domain and Claude harness packages passed in that run.
 An isolated rerun of `TestWorkspaceDiffKeepsOriginalCreationCommitAndLiveExecution`
 also failed with a working-tree timeout. The same test run against unchanged
 `origin/main` revision `b741cec88d68ba84eaf918bbee22ca28bff57ec6`, using a temporary
 source export, failed with `recovery_required` because the Worker workspace result
 did not prove the accepted preparation. This demonstrates a baseline failure of
 that fixture; it does not establish a passing full suite or explain every failure.
+The Grok timeout fixture and its process helper are unchanged in this PR.
+An isolated baseline `go test -race -timeout 20m ./cmds/delidev-cli/internal/harness/grok -run '^TestProbeOwnsBoundedInspectedInitialization$/^timeout$' -count=1`
+passed once; that result does not negate the race observed in the full run.
+Generated repository-owned `dist` outputs used for workspace preparation were
+removed after verification.
 
 All new fixtures use isolated temporary SQLite/server state and controlled native
 observations without installed inference, user credentials or real provider
