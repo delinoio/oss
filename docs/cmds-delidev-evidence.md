@@ -2376,8 +2376,9 @@ PR #1061. Generated app/client `dist` output is removed after validation.
 
 ## 2026-09-29: PR #1061 CI repair validation
 
-- Merged `origin/main` at `ac8dd2ec` and retained the provider-activation repairs and session-title evidence. The review/CI repair changed only the real Settings integration fixture: after issuance, it still requires a fresh server read before revealing the private code, and now uses the existing explicit refresh action once if that first read reports the grant status as unavailable. The fixture then pairs with the exact issued document and verifies that a second use is rejected.
+- Merged the latest `origin/main` through `51a3767c` and retained the provider-activation repairs and session-title evidence. The review/CI repair changed only the real Settings integration fixture: after issuance, it still requires a fresh server read before revealing the private code, and now uses the existing explicit refresh action once if that first read reports the grant status as unavailable. The fixture then pairs with the exact issued document and verifies that a second use is rejected.
 - On macOS arm64 with the repository-pinned Node.js 24 runtime, `apps/delidev` `pnpm test` passed all 72 files and 860 tests, TypeScript checking, and the production build. Root `pnpm proto:check` passed lint, breaking-change, and fresh-generation checks. The earlier local fresh-generation failure was reproduced under Node.js 26 and did not recur under the repository-pinned Node.js 24 runtime.
+- `TMPDIR=/private/tmp cargo test --quiet` passed across the Rust workspace after building the macOS `pnport` and `fspy_preload_unix` injection artifacts required by its supervisor fixtures.
 - Generated repository-owned app/client `dist` output is removed after validation. This remains local macOS arm64 evidence and does not claim Windows/Linux execution or broader full-issue acceptance.
 
 ### Issues #1056 and #1057 automatic titles and chat-first session creation (2026-09-29)
