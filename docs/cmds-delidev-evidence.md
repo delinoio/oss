@@ -3221,7 +3221,8 @@ Executed on macOS arm64 with private temporary state and controlled fixtures:
   Windows CI and was not executed on this macOS host.
 - Protocol format/lint and the baseline breaking check pass. Generated Go,
   TypeScript and Connect Query bindings include distinct response types for
-  each new RPC. Generation freshness is checked against the committed change.
+  each new RPC. Full `pnpm proto:check`, including committed generation
+  freshness, passes.
 - The API client passes all three files / 41 tests. Desktop typechecking and the
   two terminal tests pass, including split UTF-8 across interrupted and clean
   unconfirmed observation EOF, exact creation retry and same-terminal reattach.
@@ -3233,8 +3234,12 @@ Executed on macOS arm64 with private temporary state and controlled fixtures:
   failures: default parallelism passes 932/943; two workers pass 939/943; one
   worker passes 938/943. Failures affect existing App/settings/backups/sidebar/
   tray tests rather than terminal assertions. The latest one-worker failures
-  pass on separate App (37 tests) and settings (31 tests) reruns. These varying
-  failures remain full-suite limitations, not a claimed clean latest full run.
+  pass on separate App (37 tests) and settings (31 tests) reruns. A further
+  default-parallelism run passes 941/943 with App/settings timing failures. The
+  final complete `pnpm test` then passes all 75 files / 943 tests, typechecking,
+  all packaging/launch tests and the production build on the final protocol and
+  frontend sources. Earlier varying failures remain recorded as environment
+  sensitivity; they do not replace that latest complete successful result.
 - The required root `go test -race ./cmds/delidev-cli/...` completes unsuccessfully:
   the existing CLI acceptance fixture reaches its bounded workspace-diff read
   failure, and Grok/server/store/Worker/workspace packages exceed Go's default
