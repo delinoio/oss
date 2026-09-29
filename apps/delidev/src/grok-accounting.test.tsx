@@ -35,3 +35,25 @@ it("distinguishes measured zero, missing units and an unnegotiated older server"
   expect(screen.getByRole("status").textContent).toContain("unavailable from this server version");
   expect(screen.queryByText(/1 closed inputs/)).toBeNull();
 });
+
+it("shows both localized endpoints of a clipped daily interval with an exclusive end", () => {
+  const totals = { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] };
+  const from = new Date("2026-09-01T03:04:05Z");
+  const until = new Date("2026-09-01T09:10:11Z");
+  const data = create(GetUsageSummaryResponseSchema, {
+    accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, totals,
+    groups: [{ sessionId: "original-session", totals }],
+    analytics: { granularity: UsageTimeGranularity.DAY, timeZone: "Asia/Seoul", days: [{ fromUnixMs: BigInt(from.getTime()), untilUnixMs: BigInt(until.getTime()), totals }] },
+  });
+  render(<GrokAccounting data={data} open={() => {}} />);
+  const daily = screen.getByRole("table", { name: "Daily verified Grok inputs (Asia/Seoul)" });
+  expect(within(daily).getByRole("columnheader", { name: "From" })).toBeTruthy();
+  expect(within(daily).getByRole("columnheader", { name: "Until" })).toBeTruthy();
+  const endpoints = daily.querySelectorAll("time");
+  expect(endpoints).toHaveLength(2);
+  expect(endpoints[0].dateTime).toBe(from.toISOString());
+  expect(endpoints[1].dateTime).toBe(until.toISOString());
+  expect(endpoints[0].textContent).toMatch(/12:04:05/);
+  expect(endpoints[1].textContent).toMatch(/(?:0?6|18):10:11/);
+  expect(within(daily).getByText("(exclusive)")).toBeTruthy();
+});
