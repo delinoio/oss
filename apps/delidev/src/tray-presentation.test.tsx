@@ -21,7 +21,7 @@ it("opens the native-selected view without sending work or losing the session dr
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Tray fixture", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
   const inboxId = newRequestId();
-  const entry = create(ResourceSchema, { id: inboxId, kind: EntityKind.INBOX, sessionId: id, revision: 1n, schemaVersion: 1, documentJson: encode({ source: "execution-terminal", read_state: "unread" }) });
+  const entry = create(ResourceSchema, { id: inboxId, kind: EntityKind.INBOX, sessionId: id, revision: 1n, schemaVersion: 1, createdAt: "2026-09-27T00:01:00Z", documentJson: encode({ source: "execution-terminal", source_id: newRequestId(), read_state: "unread", terminal: { outcome: "stopped" } }) });
   const getInbox = vi.fn(() => ({ view: { entry, session } })), markRead = vi.fn(() => ({}));
   const send = vi.fn(() => ({}));
   const transport = createRouterTransport((router) => {
@@ -38,14 +38,15 @@ it("opens the native-selected view without sending work or losing the session dr
   await waitFor(() => expect(native.callbacks.size).toBe(1));
   native.pending = { id: newRequestId(), destination: "inbox" };
   await act(async () => { for (const callback of native.callbacks) callback(); });
-  await screen.findByText("No retained requests or completions.");
+  await screen.findByText("No retained requests or execution results.");
   await waitFor(() => expect(native.pending).toBeNull());
   native.pending = { id: newRequestId(), destination: "inbox", inbox_id: inboxId };
   await act(async () => { for (const callback of native.callbacks) callback(); });
-  await screen.findByText("Selected inbox item");
+  await screen.findByRole("heading", { name: "Execution stopped" });
+  await screen.findByText("Original terminal observation");
   expect(getInbox).toHaveBeenCalledWith(expect.objectContaining({ id: inboxId }), expect.anything());
   expect(markRead).not.toHaveBeenCalled();
-  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh selected item" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled).toBe(false));
   const beforeReactivation = getInbox.mock.calls.length;
   native.pending = { id: newRequestId(), destination: "inbox", inbox_id: inboxId };
   await act(async () => { for (const callback of native.callbacks) callback(); });
