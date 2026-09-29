@@ -1,5 +1,7 @@
 # DeliDev CLI
 
+- Settings presentation follows `docs/apps-delidev-desktop-contract.md`: use the existing accessible native modal as a full-webview sidebar layout, retain the 14 grouped categories and their mounted state, and keep responsive selection, mutation locks, empty/error/pagination distinctions, focus handling and exact draft/retry preservation. Scope the presentation styles to Settings and leave all other modal geometry and native window behavior unchanged.
+
 - Session Diff uses authenticated Connect Query on the selected prepared repository, with distinct current HEAD, staged and Worktree creation comparisons. Validate complete scoped observations before rendering inert patches; expose untracked files, Gitlink-only submodules, unborn roots and stale/error state truthfully. Preserve the composer and focus across Files/Diff navigation, discard inactive caches, and never infer line review, patch application or execution actions.
 
 - Append newly created live transcript messages and interactions on their last loaded pages in authenticated stream delivery order, even when a replacement Worker's UUID sorts earlier than the page. Keep earlier pages bounded, suppress duplicates and removals, and scope every appended resource to its session; UUID ordering is not a live append clock.

@@ -80,7 +80,7 @@ export function formatConfigurationReview(raw: string): string {
 
 // The original JSON bytes, not a JS number round trip, are the export/import
 // authority. Parsed objects below are display-only; revisions use bigint.
-export function ConfigurationTransfer({ active }: { active: boolean }) {
+export function ConfigurationTransfer({ active, showCategoryIntro = true }: { active: boolean; showCategoryIntro?: boolean }) {
   const [exported, setExported] = useState("");
   const [draft, setDraft] = useState("");
   const [loaded, setLoaded] = useState<{ raw: string; bundle: Bundle }>();
@@ -146,8 +146,7 @@ export function ConfigurationTransfer({ active }: { active: boolean }) {
     finally { previewRead.reset(); gate.current = false; }
   };
   return <section aria-label="Portable configuration">
-    <h3>Export and import configuration</h3>
-    <p>Transfer providers, models, account preferences, Agent Workers, instructions, repositories, projects and server preferences. Accounts are imported disconnected and require a new connection. Device registrations, observed quotas, discovered model evidence and session history are excluded.</p>
+    {showCategoryIntro ? <><h3>Export and import configuration</h3><p>Transfer providers, models, account preferences, Agent Workers, instructions, repositories, projects and server preferences. Accounts are imported disconnected and require a new connection. Device registrations, observed quotas, discovered model evidence and session history are excluded.</p></> : null}
     <button disabled={blocked || !active} onClick={() => void exportNow()}>Export configuration</button>
     {exported ? <><label>Exported configuration<textarea ref={exportText} readOnly value={exported} rows={6} spellCheck={false} /></label><button onClick={() => { exportText.current?.focus(); exportText.current?.select(); }}>Select export for copying</button></> : null}
     <fieldset disabled={blocked}>
