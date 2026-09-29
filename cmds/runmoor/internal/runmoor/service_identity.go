@@ -626,7 +626,10 @@ func serviceInvocation(args []string, action string) (string, string, error) {
 		return "", "", errInvalidServiceDefinition
 	}
 	config, err := cleanAbsoluteServicePath(args[3])
-	if err != nil {
+	if err != nil || config != args[3] {
+		// A configuration path with dot segments can identify a different file
+		// when a preceding component is a symlink. Reject the serialized spelling
+		// before normalizing it for the service identity comparison.
 		return "", "", errInvalidServiceDefinition
 	}
 	return binary, config, nil

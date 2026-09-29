@@ -35,25 +35,41 @@ func TestServiceDefinitionsRoundTripConfigurationPaths(t *testing.T) {
 	}
 }
 
-func TestServiceDefinitionsNormalizeConfigurationPath(t *testing.T) {
+func TestServiceDefinitionsRejectNonCanonicalConfigurationPaths(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("service definitions are supported on macOS and Linux")
 	}
 	root := t.TempDir()
-	installed := root + `/unused/../runmoor config.toml`
-	wanted := filepath.Join(root, "runmoor config.toml")
+	config := filepath.Join(root, "runmoor config.toml")
+	linkTarget := filepath.Join(root, "actual", "nested")
+	if err := os.MkdirAll(linkTarget, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(linkTarget, link); err != nil {
+		t.Fatal(err)
+	}
+	nonCanonical := []string{
+		root + string(os.PathSeparator) + "." + string(os.PathSeparator) + filepath.Base(config),
+		root + string(os.PathSeparator) + "unused" + string(os.PathSeparator) + ".." + string(os.PathSeparator) + filepath.Base(config),
+		link + string(os.PathSeparator) + ".." + string(os.PathSeparator) + filepath.Base(config),
+	}
 	for _, goos := range []string{"darwin", "linux"} {
 		t.Run(goos, func(t *testing.T) {
-			definition, err := serviceDefinition(goos, filepath.Join(root, "runmoor"), installed)
+			definition, err := serviceDefinition(goos, filepath.Join(root, "runmoor"), config)
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := serviceConfigFromDefinition(goos, []byte(definition))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != filepath.Clean(wanted) {
-				t.Fatalf("configuration path = %q, want %q", got, filepath.Clean(wanted))
+			for _, path := range nonCanonical {
+				mutated := definition
+				if goos == "darwin" {
+					mutated = strings.Replace(mutated, "<string>"+xmlText(config)+"</string></array>", "<string>"+xmlText(path)+"</string></array>", 1)
+				} else {
+					mutated = strings.ReplaceAll(mutated, systemdQuote(config), systemdQuote(path))
+				}
+				if _, err := serviceConfigFromDefinition(goos, []byte(mutated)); err == nil {
+					t.Errorf("non-canonical configuration path %q was accepted", path)
+				}
 			}
 		})
 	}
@@ -72,20 +88,20 @@ func TestRequireServiceConfigMatchAcceptsNormalizedAbsolutePaths(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
 		t.Fatal(err)
 	}
-	installed := home + `/unused/../runmoor config.toml`
 	wanted := filepath.Join(home, "runmoor config.toml")
 	binary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	definition, err := serviceDefinition(runtime.GOOS, binary, installed)
+	definition, err := serviceDefinition(runtime.GOOS, binary, wanted)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := requireServiceConfigMatch(runtime.GOOS, unit, wanted); err != nil {
+	requested := home + `/unused/../runmoor config.toml`
+	if err := requireServiceConfigMatch(runtime.GOOS, unit, requested); err != nil {
 		t.Fatalf("equivalent normalized paths did not match: %v", err)
 	}
 }
