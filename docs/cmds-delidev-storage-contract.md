@@ -209,3 +209,11 @@ deletion table and preserve later explicit provider deletions, identities and Of
 settings. Detect the prior layout before changing either table or version.
 
 Both version-23 layouts migrate to 24 under the same pre-migration backup and transaction. The backup layout gains the missing title usage column, index and send/HTTP claim tables; the title layout gains the backup deletion index. Preserve existing usage attribution, original job identities, both once-only claims and explicit provider deletions. Never queue title inference or reseed providers while merging these layouts.
+
+Creation publication commits a versioned metadata/digest claim in the live SQLite
+metadata table after synchronizing the private copy and before an atomic
+no-replace rename. Recovery matches that independent claim and original server
+identity. A valid older same-server image at a reserved path, a replaced published
+image, or a legacy image without a claim is preserved and reports recovery-required;
+none can complete the pending job. A crash after rename retains the original
+claim and exact bytes across restart without recopying the live database.

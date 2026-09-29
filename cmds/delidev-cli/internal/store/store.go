@@ -835,6 +835,9 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 	}
 	path := filepath.Join(s.root, "backups", string(id)+".sqlite")
 	if _, err := os.Lstat(path); err == nil {
+		if err := s.verifyBackupPublication(ctx, path, id); err != nil {
+			return "", err
+		}
 		if err := validateBackup(ctx, path, &owner); err != nil {
 			return "", err
 		}
@@ -882,7 +885,12 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 	if err := validateBackup(ctx, pending, &owner); err != nil {
 		return "", err
 	}
-	if err := os.Rename(pending, path); err != nil {
+	// Commit the exact private image's provenance before its public filename
+	// appears. A same-server image at that known name is not a retry receipt.
+	if err := s.recordBackupPublication(ctx, pending, id); err != nil {
+		return "", err
+	}
+	if err := claimBackupImage(pending, path); err != nil {
 		return "", storageError(err)
 	}
 	if err := security.SyncParent(path); err != nil {

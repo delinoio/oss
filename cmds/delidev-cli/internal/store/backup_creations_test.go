@@ -284,7 +284,7 @@ func TestBackupCreationWaitersHonorCancellationDuringOtherImageOwnership(t *test
 }
 
 func TestBackupCreationRecoveryRejectsForeignImageAndAdjacentWAL(t *testing.T) {
-	for _, scenario := range []string{"foreign", "sidecar"} {
+	for _, scenario := range []string{"foreign", "same-server", "replaced-publication", "sidecar"} {
 		t.Run(scenario, func(t *testing.T) {
 			s, root, ctx, owner := creationFixture(t)
 			row, _, err := s.RequestBackup(ctx, domain.NewID(), owner)
@@ -293,8 +293,16 @@ func TestBackupCreationRecoveryRejectsForeignImageAndAdjacentWAL(t *testing.T) {
 			}
 			_, intent, _ := DecodeBackupCreation(row)
 			target := filepath.Join(root, "backups", string(intent.BackupID)+".sqlite")
-			if scenario == "foreign" {
-				other, otherRoot, otherCtx, _ := creationFixture(t)
+			if scenario != "sidecar" {
+				other, otherRoot, otherCtx := s, root, ctx
+				if scenario == "foreign" {
+					other, otherRoot, otherCtx, _ = creationFixture(t)
+				}
+				if scenario == "replaced-publication" {
+					if _, err := s.BackupID(ctx, intent.BackupID); err != nil {
+						t.Fatal(err)
+					}
+				}
 				id, err := other.Backup(otherCtx)
 				if err != nil {
 					t.Fatal(err)

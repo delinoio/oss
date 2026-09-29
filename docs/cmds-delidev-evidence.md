@@ -3044,3 +3044,12 @@ new runs. No native Windows run, new CEF Quit acceptance, signed release or
 real-account/inference/product-push validation was performed. Windows Grok
 initialization and CEF shutdown remain unresolved; metadata batching still
 needs a hosted Windows result before its CI failure is declared fixed.
+
+### PR #1063 backup publication provenance repair (2026-09-29)
+
+Backup creation now commits the copied image's exact metadata and SHA-256 in the
+live database before a no-replace publication. A reserved filename and matching
+server identity cannot adopt an older image. Real SQLite fixtures reject both an
+unclaimed same-server image and replacement after publication while preserving
+the suspect bytes; the existing restart/lost-completion fixture still reuses its
+original image. The store backup race group passes (11.710s).
