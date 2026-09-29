@@ -10,6 +10,8 @@ TypeScript ES2022 modules run in the desktop renderer. Development uses the repo
 The DeliDev desktop client connects to one explicitly selected authenticated local/remote server. Maintainers generate bindings from the canonical protobuf and validate them against the actual Go server.
 
 ## Interfaces and Contracts
+
+Generated `ListResourcesRequest` exposes optional account-only provider and account-type selectors. Keep these fields in the list request and its query key/cursor input; do not move them into the shared `Filter` used by snapshots or event streams. The Go server performs filtering before pagination and binds both fields into continuation cursors. Provider inventory reports `ACCOUNT_TYPE_FILTER` separately from its activation/model/provider-filter capabilities; split account views require all of them.
 - `buf.gen.yaml` generates messages and Connect Query descriptors exclusively from `delidev.v1`. Root generation/freshness and Turbo input/output tracking include the package. Existing Go/DevHud/ach output remains reproducible.
 - `UsageQuery` exports generated summary/current-price/historical-price descriptors and the explicit price mutation. Preserve nullable decimal rates, exact amount/counter strings, separate currencies and token-basis versus native coverage. The additive summary request supports explicit day granularity and IANA zone; optional daily/model analytics are server-owned results from the same snapshot as existing totals. Only the server computes historical estimates and Other-model totals; no client-side aggregation or inferred actual cost.
 - `createDeliDevTransport` takes an explicit server origin and caller-owned fresh token supplier. It uses binary Connect POST, server streaming and no automatic mutation retries. `newRequestId` creates UUID-v7 mutation identities; callers retain the complete original request on uncertain retries.
@@ -118,3 +120,5 @@ durable deletion job ID, independent of history pagination. It rechecks current
 authority, rejects other job types and preserves exact uint64 revisions and byte
 counts without replaying acceptance or filesystem work. Regenerate Go, TypeScript
 and Connect Query bindings together.
+
+Generated `ProviderQuery` exposes bounded provider inventory and the client maps typed `provider_disabled` failures. Desktop provider/model consumers require provider activation, active-provider model filtering and account-provider filtering capabilities; split account views and their wizard additionally require `ACCOUNT_TYPE_FILTER`. Use generated inventory/model queries; do not infer availability from generic resource pages or query unfiltered providers as fallback. Preserve exact mutation requests across uncertain outcomes. See [provider activation](cmds-delidev-provider-activation-contract.md).

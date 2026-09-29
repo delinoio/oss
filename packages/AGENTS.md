@@ -1,7 +1,7 @@
 ### Instructions for `packages/`
 - Backup job observation uses owner/client `GetBackupCreation` and `GetBackupDeletion` independently of bounded history pages. Keep accepted IDs and exact revisions through navigation, refresh inventory after observed completion, and never replay a mutation to poll status. Follow `docs/cmds-delidev-storage-contract.md`.
 
-- Managed backup deletion uses existing durable jobs/receipts and schema-21 indexing, plus immutable synchronized `backup-deletions/` intents outside SQLite before unlink. Preserve exact inspected revision/metadata/hash, original actor/request identity, startup obligation reconstruction, creation-replay suppression, bounded pending retries and source preservation on mismatch. Never evict deletion obligations or equate logical image bytes with reclaimed disk space; follow `docs/cmds-delidev-storage-contract.md`.
+- Managed backup deletion uses existing durable jobs/receipts and schema-22 indexing, plus immutable synchronized `backup-deletions/` intents outside SQLite before unlink. Preserve exact inspected revision/metadata/hash, original actor/request identity, startup obligation reconstruction, creation-replay suppression, bounded pending retries and source preservation on mismatch. Never evict deletion obligations or equate logical image bytes with reclaimed disk space; follow `docs/cmds-delidev-storage-contract.md`.
 
 
 - DeliDev portable configuration uses generated ConfigurationQuery export/preview/apply bindings. Keep original document bytes and exact request identities under `docs/cmds-delidev-configuration-transfer-contract.md`; client parsing never becomes authorization, validation or numeric reserialization authority.
@@ -105,3 +105,4 @@
 
 - React Forge GLB/FBX scene and animation sessions follow `docs/packages-react-forge-scene-contract.md`; preserve the shared React, atomic export and MCP lifecycle while keeping the 3D model independent from Office/PDF.
 - React Forge `/sfx` adds generation-only WAV sessions under `docs/packages-react-forge-sfx-contract.md`; preserve original procedural-example provenance, expose synthesis limits, and distinguish this unreleased extension from npm `0.1.1`.
+- DeliDev provider and model settings follow `docs/cmds-delidev-provider-activation-contract.md`: capability-gate against ProviderInventory, derive exact counts from the server, paginate custom providers, filter model reads/selections server-side to enabled API providers, and preserve explicit Off references. Do not add a client-side activation/eligibility source.

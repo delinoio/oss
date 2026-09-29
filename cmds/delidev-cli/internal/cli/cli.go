@@ -438,6 +438,8 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	page := fs.String("page-token", "", "page token")
 	project := fs.String("project-id", "", "project scope")
 	session := fs.String("session-id", "", "session scope")
+	accountType := fs.String("account-type", "", "account type: api or subscription")
+	providerID := fs.String("provider-id", "", "account provider ID")
 	if err := parse(fs, rest); err != nil {
 		return emit(nil, err)
 	}
@@ -445,6 +447,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	case "list", "snapshot":
 		if *limit > 200 || *limit == 0 {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Invalid page size.", "Use 1 through 200."))
+		}
+		if (*accountType != "" || *providerID != "") && kind != domain.AccountKind {
+			return emit(nil, domain.Fail(domain.InvalidArgument, "Account filters require account resources.", "Select account as the resource kind."))
+		}
+		if action == "snapshot" && (*accountType != "" || *providerID != "") {
+			return emit(nil, domain.Fail(domain.InvalidArgument, "Account filters apply only to paginated account lists.", "Use account list instead of account snapshot."))
 		}
 		f := &pb.Filter{Kind: rpc.WireKind(kind), PageSize: uint32(*limit), PageToken: *page, ProjectId: *project, SessionId: *session}
 		if action == "snapshot" {
@@ -454,7 +462,17 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			}
 			return emit(map[string]any{"resources": resourcesJSON(response.Msg.Resources), "cursor": response.Msg.Cursor}, nil)
 		}
-		response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: f}))
+		var selectedType pb.AccountTypeFilter
+		switch *accountType {
+		case "":
+		case "api":
+			selectedType = pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API
+		case "subscription":
+			selectedType = pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_SUBSCRIPTION
+		default:
+			return emit(nil, domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription."))
+		}
+		response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: f, ProviderId: *providerID, AccountType: selectedType}))
 		if err != nil {
 			return emit(nil, rpc.ClientError(err))
 		}

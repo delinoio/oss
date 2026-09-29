@@ -67,3 +67,5 @@ Update the project index, CLI contract, evidence ledger and scoped AGENTS with a
 
 ### Deleted project configuration
 Relay authorization continues to enforce current project restrictions while the project exists. If configuration is explicitly deleted, an established session snapshot may use only the final Agent/account restrictions atomically retained with that project's deletion tombstone. Missing or invalid retained evidence denies authority; it never implies unrestricted access. This keeps an already authorized native request independent of configuration lifetime without bypassing current account/connection, Worker, session/input or cancellation checks. New first dispatch still requires live configuration.
+
+Provider Off is intentionally not a live relay-revocation condition. A durable grant accepted before Off may complete its original turn under the existing relay checks. Off committed before a first fresh grant is rejected at dispatch/admission and registration; do not add the activation check to the shared relay scope or current-turn interactions. See [provider activation](cmds-delidev-provider-activation-contract.md).

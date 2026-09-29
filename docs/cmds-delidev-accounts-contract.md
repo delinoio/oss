@@ -8,6 +8,8 @@ Account aliases/provider associations and display/routing preferences remain con
 
 ## CLI and RPC
 
+`account list` uses the ordinary paginated `ResourceService.ListResources` path and may select `--account-type api|subscription` and `--provider-id UUID`. Both selectors are optional for compatibility. The server composes them before pagination and binds them to the cursor; clients must not filter a fetched page locally. Snapshots and event streams remain unfiltered and unchanged.
+
 | CLI | Connect RPC | Meaning |
 | --- | --- | --- |
 | `account connect --id ID --revision N --key-stdin` | `AccountService.ConnectAccount` | Store a bounded API key through the protected server vault and record an unverified connection. |
@@ -68,3 +70,5 @@ rm -rf "$delidev_cli_fixture_dir"
 ```
 
 Choose `amd64` instead when appropriate. This opt-in test must never target a host user's shared credential session. Native Windows/macOS account-command composition, subscription/provider authentication and execution/proxy lifecycle evidence remain separate from this Linux credential-lifecycle result. Consult the [evidence ledger](cmds-delidev-evidence.md) before making a support/completion claim.
+
+API provider activation is independent of account enablement, connection, validation, and credential cleanup. Provider inventory derives exact total/connected counts server-side; connected excludes accounts with pending credential removal and does not imply verified health. `ListResourcesRequest.provider_id` and the closed `account_type` selector are list-only account filters applied before pagination; signed cursors bind both selectors, while snapshots and event streams retain their prior scope. The desktop uses separate AI Subscription Accounts and API Accounts categories and gates both on the provider inventory's account-type-filter marker. API provider Add account opens a Provider → Account wizard with the selected enabled API provider; it saves metadata once, then performs a fresh provider read immediately before one explicit credential connection. Navigation remains locked while that check is in flight. It never starts validation or model discovery. Subscription provider metadata is managed in a collapsed section and only accepts native-subscription protocol, subscription authentication and an empty endpoint. Subscription login remains unavailable.

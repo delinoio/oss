@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -240,7 +241,7 @@ func TestBackupDeletionRejectsCanceledAndStaleAdmission(t *testing.T) {
 
 func TestBackupDeletionMigrationFrom20PreservesExistingTablesAndBackup(t *testing.T) {
 	s, root, ctx, in := deletionFixture(t)
-	if _, err := s.db.ExecContext(ctx, "DROP TABLE backup_deletions; PRAGMA user_version=20;"); err != nil {
+	if _, err := s.db.ExecContext(ctx, "DROP INDEX provider_preset_unique; DROP TABLE backup_deletions; PRAGMA user_version=20;"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -252,7 +253,7 @@ func TestBackupDeletionMigrationFrom20PreservesExistingTablesAndBackup(t *testin
 	}
 	defer reopened.Close()
 	var version int
-	if err := reopened.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != 21 {
+	if err := reopened.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != SchemaVersion {
 		t.Fatal(version, err)
 	}
 	images, err := reopened.BackupInventory(ctx)
@@ -367,5 +368,50 @@ func TestBackupDeletionMissingUnlinkAcknowledgmentStillRequiresSync(t *testing.T
 	job, decodeErr = Decode[domain.Job](row)
 	if err != nil || decodeErr != nil || job.State != domain.JobSucceeded || syncs != 2 {
 		t.Fatal(job, err, decodeErr, syncs)
+	}
+}
+
+func TestBackupDeletionMigrationFromBothVersion21Layouts(t *testing.T) {
+	for _, legacyBackupBranch := range []bool{false, true} {
+		t.Run(fmt.Sprint(legacyBackupBranch), func(t *testing.T) {
+			s, root, ctx, in := deletionFixture(t)
+			var original Record
+			if legacyBackupBranch {
+				var err error
+				original, _, err = s.DeleteBackup(ctx, domain.NewID(), in)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.db.ExecContext(ctx, "DROP INDEX provider_preset_unique; PRAGMA user_version=21;"); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := s.db.ExecContext(ctx, "DROP TABLE backup_deletions; PRAGMA user_version=21;"); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := Open(ctx, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			var version, index int
+			if err := reopened.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != 22 {
+				t.Fatal(version, err)
+			}
+			if err := reopened.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name='provider_preset_unique' AND type='index'").Scan(&index); err != nil || index != 1 {
+				t.Fatal(index, err)
+			}
+			if legacyBackupBranch {
+				row, err := reopened.RunBackupDeletion(ctx, original.ID, in.ServerID)
+				job, decodeErr := Decode[domain.Job](row)
+				if err != nil || decodeErr != nil || job.State != domain.JobSucceeded {
+					t.Fatal(job, err, decodeErr)
+				}
+			} else if _, _, err := reopened.DeleteBackup(ctx, domain.NewID(), in); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

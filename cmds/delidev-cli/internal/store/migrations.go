@@ -183,8 +183,39 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return storageError(err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, backupDeletionSchema); err != nil {
-		return storageError(err)
+	if version < 21 {
+		if _, err := tx.ExecContext(ctx, providerActivationSchema); err != nil {
+			return storageError(err)
+		}
+	}
+	// The unmerged backup branch also used version 21 before provider activation
+	// landed on main. Recognize its retained table and add the missing index;
+	// never drop its original deletion jobs or external obligations.
+	var existingDeletionTable bool
+	if version == 21 {
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='backup_deletions')").Scan(&existingDeletionTable); err != nil {
+			return storageError(err)
+		}
+		if existingDeletionTable {
+			var providerIndex bool
+			if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name='provider_preset_unique')").Scan(&providerIndex); err != nil {
+				return storageError(err)
+			}
+			if !providerIndex {
+				if _, err := tx.ExecContext(ctx, providerActivationSchema); err != nil {
+					return storageError(err)
+				}
+			}
+		}
+	}
+	if existingDeletionTable {
+		if _, err := tx.ExecContext(ctx, "PRAGMA user_version=22;"); err != nil {
+			return storageError(err)
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, backupDeletionSchema); err != nil {
+			return storageError(err)
+		}
 	}
 	return storageError(tx.Commit())
 }

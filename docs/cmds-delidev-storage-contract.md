@@ -90,7 +90,7 @@ pagination (20 default, 99 maximum). The same request returns the current origin
 job. Other requests cannot replace an accepted deletion, and Workers cannot call
 these operations. A queued acceptance is not proof of file removal.
 
-Schema 21 adds a backup-to-job/request index through the existing synchronized
+Schema 22 adds a backup-to-job/request index after the main schema-21 provider index through the existing synchronized
 backup-first migration. Deletions use the existing durable job and request-receipt
 infrastructure. Backup creation/inspection/deletion share a server lock; accepted
 SQL ownership immediately prevents an old creation request from recreating the
@@ -173,3 +173,10 @@ only while the view is active; terminal observations stop polling and each newly
 observed successful revision refreshes the image inventory. Failed refreshes are
 stale/unavailable, not success. Dismissing terminal tracking frees local capacity
 without deleting server history, canceling work or repeating acceptance.
+
+Schema 22 follows main's provider-activation schema 21. Upgrading a pre-merge
+schema-21 backup database recognizes its existing deletion table, adds the
+missing provider preset index and retains every job, receipt and external
+obligation. Both schema-21 layouts receive a verified pre-migration backup;
+index creation and version advancement commit atomically or leave the original
+database intact. Fresh schema-22 stores include both indexes from initialization.

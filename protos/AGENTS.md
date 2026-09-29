@@ -1,11 +1,13 @@
 ### Instructions for `protos/`
 - Backup job observation uses owner/client `GetBackupCreation` and `GetBackupDeletion` independently of bounded history pages. Keep accepted IDs and exact revisions through navigation, refresh inventory after observed completion, and never replay a mutation to poll status. Follow `docs/cmds-delidev-storage-contract.md`.
 
-- Managed backup deletion uses existing durable jobs/receipts and schema-21 indexing, plus immutable synchronized `backup-deletions/` intents outside SQLite before unlink. Preserve exact inspected revision/metadata/hash, original actor/request identity, startup obligation reconstruction, creation-replay suppression, bounded pending retries and source preservation on mismatch. Never evict deletion obligations or equate logical image bytes with reclaimed disk space; follow `docs/cmds-delidev-storage-contract.md`.
+- Managed backup deletion uses existing durable jobs/receipts and schema-22 indexing, plus immutable synchronized `backup-deletions/` intents outside SQLite before unlink. Preserve exact inspected revision/metadata/hash, original actor/request identity, startup obligation reconstruction, creation-replay suppression, bounded pending retries and source preservation on mismatch. Never evict deletion obligations or equate logical image bytes with reclaimed disk space; follow `docs/cmds-delidev-storage-contract.md`.
 
 
 - DeliDev managed backup operations follow `docs/cmds-delidev-storage-contract.md`. Keep owner/client-only authorization, bounded metadata pagination, exact creation retries and source-preserving integrity inspection. Inspection must read an identity-checked private copy, reject sidecars/foreign server identity, recheck authorization after I/O and never imply restoration or credential/Worker recovery. Preserve exact byte counts and clear stale success after failed reinspection.
 
+
+- DeliDev account `provider_id` and `account_type` are additive selectors on `ListResourcesRequest` only. Keep them out of shared `Filter`, snapshots and event streams; bind both into the signed resource-page cursor and retain unspecified account type as the historical all-types behavior.
 
 - DeliDev ConfigurationService export/preview/apply follows `docs/cmds-delidev-configuration-transfer-contract.md`. Versioned bounded JSON excludes credentials and runtime evidence. Signed previews bind actor/server/exact before/after plan; import mutation receipts are reference-only and never replay side effects. Worker credentials cannot invoke these owner/client operations.
 
@@ -135,3 +137,5 @@
 - DeliDev remediation history/resumption are owner/client IntegrationService operations under the integration contract. Lists bind stable remote numeric identities, normalized page size and every original attempt revision in their signed cursor. Resume targets the exact retained set mutation, advances only explicit allowance provenance and returns current state on replay; no execution or remote-evidence payload is accepted. Regenerate Go and TypeScript/Connect Query outputs together.
 
 - DeliDev `RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose typed durable creation observations without changing legacy synchronous `CreateBackup`. Reserved image IDs are not publication proof; retain pending/succeeded/failed enum states, exact request IDs and revisions, bounded actor-bound cursors, and decimal-safe uint64 values. Follow `docs/cmds-delidev-storage-contract.md`.
+
+- DeliDev provider activation follows `docs/cmds-delidev-provider-activation-contract.md`: provider inventory is owner/client-only and capability-bearing; provider ID scopes only account list pages; the optional enabled-provider model filter remains additive and cursor-bound. Generate all Go and TypeScript bindings from the canonical proto.

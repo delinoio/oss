@@ -329,12 +329,19 @@ const (
 )
 
 type Provider struct {
-	Name           string         `json:"name"`
-	Endpoint       string         `json:"endpoint"`
-	Protocol       APIProtocol    `json:"protocol"`
-	Authentication Authentication `json:"authentication"`
-	Discovery      bool           `json:"discovery"`
+	Name           string            `json:"name"`
+	Endpoint       string            `json:"endpoint"`
+	Protocol       APIProtocol       `json:"protocol"`
+	Authentication Authentication    `json:"authentication"`
+	Discovery      bool              `json:"discovery"`
+	Enabled        *bool             `json:"enabled,omitempty"`
+	PresetID       *ProviderPresetID `json:"preset_id,omitempty"`
 }
+
+// EnabledValue keeps pre-activation provider documents available by default.
+func (p Provider) EnabledValue() bool { return p.Enabled == nil || *p.Enabled }
+
+func (p *Provider) SetEnabled(enabled bool) { p.Enabled = &enabled }
 
 func (p Provider) Validate() error {
 	if err := Text(p.Name, "provider name", 256, true); err != nil {
@@ -343,8 +350,11 @@ func (p Provider) Validate() error {
 	if !p.Protocol.Valid() {
 		return Fail(InvalidArgument, "Unsupported provider protocol.", "Select a directly compatible native protocol.")
 	}
+	if p.PresetID != nil && !p.PresetID.Valid() {
+		return Fail(InvalidArgument, "Unknown managed provider preset.", "Use one of the supported API provider preset identifiers.")
+	}
 	if p.Protocol == NativeSubscription {
-		if p.Authentication != SubscriptionAuth || p.Endpoint != "" {
+		if p.Authentication != SubscriptionAuth || p.Endpoint != "" || p.PresetID != nil {
 			return Fail(InvalidArgument, "Native subscription providers cannot configure an API endpoint.", "Use an isolated official account login.")
 		}
 		return nil

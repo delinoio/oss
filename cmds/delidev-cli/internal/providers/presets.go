@@ -19,6 +19,8 @@ func Presets() []domain.ProviderPreset {
 	}
 	for i := range items {
 		items[i].Provider.Discovery = true
+		presetID := items[i].ID
+		items[i].Provider.PresetID = &presetID
 		items[i].Compatibility = compatibility
 	}
 	return items

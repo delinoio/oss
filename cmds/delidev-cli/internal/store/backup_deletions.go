@@ -23,7 +23,7 @@ CREATE TABLE backup_deletions (
  job_id TEXT NOT NULL UNIQUE REFERENCES entities(id),
  request_id TEXT NOT NULL UNIQUE
 );
-PRAGMA user_version=21;
+PRAGMA user_version=22;
 `
 
 // BackupDeletionInput binds a previously inspected immutable image. Revision one

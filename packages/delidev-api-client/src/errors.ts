@@ -17,6 +17,7 @@ export enum FailureCode {
   BudgetReached = "budget_reached",
   ResourceExhausted = "resource_exhausted",
   CursorExpired = "cursor_expired",
+  ProviderDisabled = "provider_disabled",
   Canceled = "canceled",
   Internal = "internal",
 }
