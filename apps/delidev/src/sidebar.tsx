@@ -175,7 +175,6 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
   const rail = useRef<HTMLElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const modalDrawer = useRef(false);
-  const scrollSurface = useRef(surface);
   const surfaceScroll = useRef(new Map<Surface, number>());
   const [projectsPage, setProjectsPage] = useState("");
   const [globalPage, setGlobalPage] = useState("");
@@ -227,10 +226,8 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
   }, [compact, drawerOpen, setDrawerOpen]);
   useLayoutEffect(() => {
     const container = list.current;
-    if (!container || scrollSurface.current === surface) return;
-    surfaceScroll.current.set(scrollSurface.current, container.scrollTop);
+    if (!container) return;
     container.scrollTop = surfaceScroll.current.get(surface) ?? 0;
-    scrollSurface.current = surface;
   }, [surface]);
   const projectRows = projects.data?.resources ?? [];
   const knownProjectIds = useMemo(() => new Set(projectRows.map((row) => row.id)), [projectRows]);
@@ -287,14 +284,18 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
     setProjectPages(new Map());
   };
 
+  const navigateToSurface = (destination: Surface) => {
+    if (destination !== surface && list.current) surfaceScroll.current.set(surface, list.current.scrollTop);
+    navigate(destination);
+  };
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
   return <aside className="sidebar" aria-label="Application sidebar">
     <nav ref={rail} className="sidebar-rail" aria-label="Primary navigation">
-      <SidebarButton label="Sessions" icon="sessions" current={surface === Surface.Sessions} onClick={() => navigate(Surface.Sessions)} />
-      <SidebarButton label="Pull requests" icon="pull-requests" current={surface === Surface.PullRequests} onClick={() => navigate(Surface.PullRequests)} />
-      <SidebarButton label="Usage" icon="usage" current={surface === Surface.Usage} onClick={() => navigate(Surface.Usage)} />
-      <SidebarButton label="Schedules" icon="schedules" current={surface === Surface.Schedules} onClick={() => navigate(Surface.Schedules)} />
-      <SidebarButton label="Activity" icon="activity" current={surface === Surface.Activity} onClick={() => navigate(Surface.Activity)} />
+      <SidebarButton label="Sessions" icon="sessions" current={surface === Surface.Sessions} onClick={() => navigateToSurface(Surface.Sessions)} />
+      <SidebarButton label="Pull requests" icon="pull-requests" current={surface === Surface.PullRequests} onClick={() => navigateToSurface(Surface.PullRequests)} />
+      <SidebarButton label="Usage" icon="usage" current={surface === Surface.Usage} onClick={() => navigateToSurface(Surface.Usage)} />
+      <SidebarButton label="Schedules" icon="schedules" current={surface === Surface.Schedules} onClick={() => navigateToSurface(Surface.Schedules)} />
+      <SidebarButton label="Activity" icon="activity" current={surface === Surface.Activity} onClick={() => navigateToSurface(Surface.Activity)} />
       <span className="sidebar-rail-spacer" />
       <SidebarButton label="Settings" icon="settings" onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
     </nav>
@@ -303,13 +304,13 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
       <header className="sidebar-header">
         <h1>DeliDev</h1>
         <div className="sidebar-header-actions">
-          <button type="button" className="sidebar-header-button" aria-label="Inbox" aria-current={surface === Surface.Inbox ? "page" : undefined} onClick={() => navigate(Surface.Inbox)}><Icon name="inbox" /></button>
-          <button type="button" className="sidebar-header-button" aria-label="Search" aria-current={surface === Surface.Search ? "page" : undefined} onClick={() => navigate(Surface.Search)}><Icon name="search" /></button>
+          <button type="button" className="sidebar-header-button" aria-label="Inbox" aria-current={surface === Surface.Inbox ? "page" : undefined} onClick={() => navigateToSurface(Surface.Inbox)}><Icon name="inbox" /></button>
+          <button type="button" className="sidebar-header-button" aria-label="Search" aria-current={surface === Surface.Search ? "page" : undefined} onClick={() => navigateToSurface(Surface.Search)}><Icon name="search" /></button>
         </div>
       </header>
       <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>Close navigation</button>
       {surface === Surface.Sessions ? <button type="button" className="sidebar-new-session" onClick={(event) => { event.currentTarget.focus(); newSession(); setDrawerOpen(false); }}><Icon name="plus" />New session</button> : null}
-      <div ref={list} className="sidebar-list" aria-label={surface === Surface.Sessions ? "Project and session navigation" : "Menu navigation and filters"}>
+      <div ref={list} className="sidebar-list" aria-label={surface === Surface.Sessions ? "Project and session navigation" : "Menu navigation and filters"} onScroll={(event) => surfaceScroll.current.set(surface, event.currentTarget.scrollTop)}>
         {surface === Surface.Sessions ? <>
         <header className="sidebar-projects-heading"><h2>Projects</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label="New project" onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button></header>
         {newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>New project</div>, window.document.body) : null}

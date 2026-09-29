@@ -18,7 +18,7 @@ function resource(kind: EntityKind, name: string, projectId = "", values: Record
 function mountSidebar({ projects, sessions }: {
   projects: (pageToken: string) => { resources: Resource[]; nextPageToken?: string };
   sessions: (request: { projectId: string; includeArchived: boolean; pageToken: string }) => { sessions: Resource[]; nextPageToken?: string };
-}) {
+}, rerenderOnNavigation = false) {
   const projectRequests: string[] = [];
   const sessionRequests: { projectId: string; includeArchived: boolean; pageToken: string }[] = [];
   const transport: Transport = createRouterTransport((router) => {
@@ -40,7 +40,15 @@ function mountSidebar({ projects, sessions }: {
   const openSettings = vi.fn();
   const newSession = vi.fn();
   const navigate = vi.fn();
-  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Sidebar surface={Surface.Sessions} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} openSettings={openSettings} /></QueryClientProvider></TransportProvider>);
+  let surface = Surface.Sessions;
+  const renderSidebar = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} openSettings={openSettings} /></QueryClientProvider></TransportProvider>;
+  const view = render(renderSidebar());
+  if (rerenderOnNavigation) navigate.mockImplementation((destination) => {
+    const list = view.container.querySelector<HTMLElement>(".sidebar-list");
+    if (list) list.scrollTop = 0;
+    surface = destination;
+    view.rerender(renderSidebar());
+  });
   return { ...view, client, navigate, openSession, openSettings, newSession, projectRequests, sessionRequests };
 }
 
@@ -252,4 +260,19 @@ it("routes the icon rail to the matching surface and opens New project through S
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
   expect(value.newSession).toHaveBeenCalledOnce();
   expect(value.sessionRequests).toHaveLength(1);
+});
+
+it("restores each surface scroll before a shorter pane clamps the outgoing position", async () => {
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }) }, true);
+  const list = await screen.findByLabelText("Project and session navigation") as HTMLElement;
+  list.scrollTop = 340;
+
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  const shortPane = await screen.findByLabelText("Menu navigation and filters") as HTMLElement;
+  expect(shortPane.scrollTop).toBe(0);
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect(await screen.findByLabelText("Project and session navigation")).toBe(list);
+  expect(list.scrollTop).toBe(340);
+  expect(value.navigate).toHaveBeenCalledWith(Surface.PullRequests);
+  expect(value.navigate).toHaveBeenCalledWith(Surface.Sessions);
 });
