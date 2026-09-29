@@ -418,6 +418,7 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 		Revision uint64
 		Action   domain.SessionAction
 	}{meta.Id, meta.ExpectedRevision, action}
+	var deniedProviderID domain.ID
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "session.control", identity, func(tx *store.Tx) (any, error) {
 		r, value, err := sessionRecord(tx, domain.ID(meta.Id))
 		if err != nil {
@@ -427,6 +428,10 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload current state before controlling it.")
 		}
 		if action == domain.ResumeSession {
+			deniedProviderID, err = requireSessionProviderEnabled(tx, value)
+			if err != nil {
+				return nil, err
+			}
 			if value.StartupRejection != nil {
 				return nil, domain.Fail(domain.Conflict, "This input was rejected before native startup and cannot be resumed.", "Preserve this attempt and create a fresh authorized PR fix after resolving its rejection.")
 			}
@@ -478,6 +483,9 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 		return sessionReceipt{SessionID: r.ID}, nil
 	})
 	if err != nil {
+		if domain.SafeError(err).Code == domain.ProviderDisabled {
+			s.logger.InfoContext(ctx, "session_dispatch_denied", "operation", "resume", "session_id", meta.Id, "session_revision", meta.ExpectedRevision, "provider_id", deniedProviderID, "reason", domain.ProviderDisabled, "enabled", false)
+		}
 		return nil, rpc.Error(err, correlation)
 	}
 	change, err := s.sessionResult(ctx, result)

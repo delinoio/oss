@@ -2178,6 +2178,21 @@ this records native startup but does not claim a captured native viewport or
 visual screenshot acceptance. No Rust, protocol or generated source changed;
 the app's generated `dist` output is removed from the worktree.
 
+### Account type and provider list filters (2026-09-29)
+
+`ListResourcesRequest` now carries additive list-only provider and closed account-type selectors. Go maps the closed enum to existing API/subscription account values and applies both selectors in indexed resource SQL before the page limit; signed cursors bind both selectors. The shared snapshot filter and event stream are unchanged. `account list` exposes the same optional selectors.
+
+Focused real-server Connect tests cover 102 interleaved API/subscription accounts across providers, old unfiltered callers, combined type/provider pages, mismatched-cursor rejection, incompatible resource kinds, unknown enum rejection and unchanged full snapshots. The dedicated CLI fixture verifies API/provider selection, subscription-only results and invalid enum text. Both focused package tests pass. Full CLI race/vet, root protocol breaking/freshness, frontend split-menu/wizard and actual desktop geometry/keyboard acceptance remain pending; no provider inference or credentialed endpoint was used.
+### API provider activation (#1046)
+
+Issue #1046 adds presence-aware activation, canonical preset identity, bounded inventory/account filtering, active-provider model filtering, and admission checks at dispatch/Resume and durable execution registration. The dedicated server fixtures cover legacy provider omission, provider-scoped account cursors, exact concurrent activation, disabled discovery, dispatch/Resume, grant ordering and observational replay. Portable tests also reject explicit malformed activation fields and duplicate managed presets at preview, target collision and deferred-apply recheck.
+
+`pnpm test` in `apps/delidev` passes type checking, all 67 test files / 794 tests, and the production build. `go vet ./cmds/delidev-cli/...` passes. The added portable-field and import-collision tests pass under `go test -race` in the server package. Root `pnpm proto:lint`, `pnpm proto:breaking` and staged `pnpm proto:fresh` pass.
+
+The required complete `go test -race ./cmds/delidev-cli/...` run passed the affected `internal/cli`, `internal/server`, and `internal/store` packages, along with the other packages, but `internal/harness/grok` reached its ten-minute package timeout in `TestQuestionControllerOriginalClaimsAndUncertainty/question-claim-failure` while `inspectProfile` waited for its process wire. That unchanged focused Grok case passes alone under the race detector in 7.794 seconds. The cause of the combined-run timeout is not established; the complete command is not a passing result.
+
+Native desktop layout and keyboard checks were not performed for this change; the frontend fixtures do not establish native-window behavior. No real provider account or inference readiness was tested. Preserve that evidence gap during review and follow `docs/cmds-delidev-provider-activation-contract.md`.
+
 ### Issue #1052 daily and model token analytics (2026-09-29)
 
 The Token Usage page now presents the six exact measures, persistent coverage,
@@ -2255,8 +2270,37 @@ build, TypeScript type-checking and Rsbuild production build. These runs do not
 establish native drawer focus, background inertness, visual layout, or behavior
 at the 960×640, 1,100/1,101px, 759/760px and 200% zoom boundaries. No native
 DeliDev window was captured for this change; Windows and Linux native acceptance
-remains untested. The #1059 navigation and Pull requests work adds no RPC or
-backend GitHub capability. This merged branch also contains the #1052 additive
-analytics RPC/schema/client changes from `main`; no Rust or database schema
-changed. App and API-client `dist` directories produced by validation are
-removed from the worktree.
+remains untested. The #1059 navigation and Pull requests work adds no separate
+GitHub backend path. The merged branch includes the #1052 analytics and #1047
+provider-inventory/account-filter RPC, schema, client and Go server changes
+from `main`; no Rust or relational database schema changed. An earlier
+combined analytics/sidebar run passed 69 test files / 826 tests. After the
+latest `main` merge, `apps/delidev` `pnpm test` passes 71 test files / 838
+tests, generated API-client build, TypeScript type-checking and Rsbuild
+production build. `pnpm proto:check` passes formatting/lint, breaking-change
+and generated-source freshness checks. App and API-client `dist` directories
+produced by validation are removed from the worktree.
+
+### Issue #1047 account categories and guided API connection (2026-09-29)
+
+Settings now has separate AI Subscription Accounts and API Accounts, server-
+filtered by account type and provider before pagination. The API account wizard
+uses enabled inventory entries, server-owned preset key guidance and existing
+account preferences. It saves metadata once, re-reads the provider immediately
+before connection, retains the created account on connection failure, and
+keeps validation/discovery as separate explicit actions. Provider-filter
+changes reset the account page token.
+
+`apps/delidev` `pnpm test` passes 70 files / 837 tests, API-client build,
+TypeScript type-checking and the Rsbuild production build. The real temporary
+Go-server integration uses an owned loopback keyless provider to create,
+connect and validate an account, then configure a model and Agent. Relevant
+server, CLI and store filter/provider tests pass under the race detector, and
+`go vet ./cmds/delidev-cli/...` passes. Root Proto lint, breaking-change and
+fresh-generation checks pass after integrating the provider and usage schema
+updates.
+
+No real provider account, hosted inference, external credential or harness was
+used. Native Settings viewport, geometry and keyboard acceptance remain
+unverified. The branch includes the API-provider activation prerequisite from
+PR #1061. Generated app/client `dist` output is removed after validation.

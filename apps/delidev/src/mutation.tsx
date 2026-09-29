@@ -44,7 +44,7 @@ export function MutationIntents({ children }: { children: ReactNode }) {
 
 // Exact pending requests outlive session navigation. Only switching the whole
 // connection discards this registry; late results cannot reach its replacement.
-export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>) => void) {
+export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void) {
   const registry = useContext(Context);
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
   const mutation = useMutation(method, { retry: false });
@@ -85,7 +85,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.
     if (!mounted.current) return;
-    try { accepted?.(result); } catch (error) { setLocalError({ key, error }); }
+    try { accepted?.(result, retained); } catch (error) { setLocalError({ key, error }); }
   };
   return { send, retry: () => send(), ...state, error: localError?.key === key ? localError.error : state.error };
 }

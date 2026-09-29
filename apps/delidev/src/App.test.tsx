@@ -77,16 +77,15 @@ it("defers a New Project entry behind a retained parent editor", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  const newProvider = await screen.findByRole("button", { name: "New Provider" });
-  await waitFor(() => expect((newProvider as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(newProvider);
+  fireEvent.click(await screen.findByRole("button", { name: "Instructions" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
   const providerName = screen.getByRole("textbox", { name: "Name" });
-  fireEvent.change(providerName, { target: { value: "Retained provider draft" } });
+  fireEvent.change(providerName, { target: { value: "Retained instructions draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "New project" }));
   expect(screen.getByRole("textbox", { name: "Name" })).toBe(providerName);
-  expect((providerName as HTMLInputElement).value).toBe("Retained provider draft");
-  expect(screen.getByRole("button", { name: "Save Provider" })).toBeTruthy();
+  expect((providerName as HTMLInputElement).value).toBe("Retained instructions draft");
+  expect(screen.getByRole("button", { name: "Save Instructions" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
   expect(await screen.findByRole("heading", { name: "New Project" })).toBeTruthy();
   await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
@@ -424,21 +423,20 @@ it("opens a dedicated PR workspace and reads GitHub only after Load", async () =
   expect(request).toMatchObject({ kind: "pull-request", operation: "list", state: "open", page: 1, page_size: 20 });
 });
 
-it("defers the PR entry while a parent configuration editor draft is open", async () => {
+it("navigates to standalone PRs while retaining an Instructions draft", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  const newProvider = await screen.findByRole("button", { name: "New Provider" });
-  await waitFor(() => expect((newProvider as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(newProvider);
+  fireEvent.click(await screen.findByRole("button", { name: "Instructions" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
   const name = await screen.findByRole("textbox", { name: "Name" });
-  fireEvent.change(name, { target: { value: "Retained provider draft" } });
+  fireEvent.change(name, { target: { value: "Retained instructions draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   expect(await within(screen.getByRole("main")).findByRole("heading", { name: "Pull requests" })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
-  expect((await screen.findByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained provider draft");
+  expect((await screen.findByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained instructions draft");
   expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("false");
   fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
