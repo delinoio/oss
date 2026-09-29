@@ -2183,3 +2183,17 @@ Focused real SQLite/Connect/CLI race tests pass (store 3.751s, server 2.258s, CL
 - This migrates the shell, not the required account browser, tab persistence,
   distributed profile cleanup or six-platform signed distribution. Those features
   and evidence remain incomplete; no release or real-account claim is made.
+
+### First-session setup observations (2026-09-29)
+
+- Replaced the static welcome checklist with the existing authenticated Go status,
+  doctor and account/Agent configuration RPCs. Explicit inspection shows separate
+  connection/storage/Worker/harness/account/configuration observations and opens
+  the existing settings surface without creating a session or dispatching work.
+- Frontend tests cover explicit read initiation, inactive views, no mutation,
+  failed refresh, foreign server identity, duplicate/malformed resources,
+  partial pages, disabled accounts and offline/disabled Workers. The complete
+  app `pnpm test` passed: 69 files / 799 tests, typecheck and production build.
+- The CEF packaging check detected the old npm Tauri API minor version; it is now
+  aligned to the workspace's existing `@tauri-apps/api` 2.11.1 pin. This is a
+  compatibility correction, not a claim that security advisories are resolved.

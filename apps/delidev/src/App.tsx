@@ -11,6 +11,7 @@ import { Schedules } from "./schedules";
 import type { ControlLocalWorker } from "./local-worker-controls";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
+import { Prerequisites } from "./prerequisites";
 import { MutationIntents } from "./mutation";
 import { connectionQueryClient } from "./cache";
 import type { PairingAuthority } from "./pairing-grant";
@@ -55,7 +56,7 @@ function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDevice
       {page ? <button onClick={() => setPage("")}>First page</button> : null}{sessions.data?.nextPageToken ? <button onClick={() => setPage(sessions.data!.nextPageToken)}>More sessions</button> : null}
     </div><footer><p role="status">{status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable"}</p>{localServer}<button onClick={(event) => { event.currentTarget.focus(); setSettings(true); }}>Settings</button></footer>
   </aside><main id="main" tabIndex={-1}><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
-    <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>Your sessions, in one place</h2><p>Select a retained session or start a new conversation.</p><h3>Before your first session</h3><ol><li>Connect to your DeliDev server.</li><li>Pair an execution Worker and verify its installed harness.</li><li>Connect an AI account and configure an Agent Worker.</li><li>Configure a project, or choose General Chat.</li></ol><button onClick={(event) => { event.currentTarget.focus(); setSettings(true); }}>View prerequisites in Settings</button><Problem error={status.error} /></section>}</div>
+    <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>Your sessions, in one place</h2><p>Select a retained session or start a new conversation.</p><Prerequisites active={surface === Surface.Sessions && !settings && !creating} openSettings={() => setSettings(true)} /><Problem error={status.error} /></section>}</div>
     {surface === Surface.Search ? <Search open={open} /> : surface === Surface.Activity ? <Activity open={open} /> : surface === Surface.Inbox ? selectedInbox ? <InboxSelection key={selectedInbox} id={selectedInbox} activation={inboxActivation} open={open} close={() => setSelectedInbox("")} /> : <Inbox open={open} /> : null}
     <Usage active={surface === Surface.Usage} open={open} />
     <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} />

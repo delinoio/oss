@@ -389,3 +389,27 @@ macOS for a local development bundle. No signing credentials or publication are
 configured by this command. The executable-only `build:native` command remains
 available for compilation; it does not prove that a complete distributable has
 all native resources. Six-target signing and release verification remain pending.
+
+## First-session checklist
+
+The welcome screen now connects its checklist to the authenticated server status,
+`SystemService.GetDoctor`, and bounded account/Agent configuration reads. The
+user explicitly chooses **Check prerequisites** or **Refresh prerequisites**;
+opening the welcome screen does not inspect protected account references.
+The check never discovers a harness, logs in, refreshes a provider, installs
+software or invokes inference. Its setup button opens existing settings.
+
+Server connection, database/storage observations, enabled Workers with active
+streams and retained verified harness handshakes, saved enabled connected account
+health, and Agent configurations are separate facts. No aggregate ready indicator
+or automatic execution is derived from them. The selected session still validates
+its exact model/account/harness/machine choices at acceptance. Repository work
+requires a project; General Chat remains an explicit alternative.
+
+Doctor reports must have the supported schema, original authenticated server
+identity, bounded unique Worker/harness inventories and no inference-probe claim.
+Account/Agent reads validate their expected resource scope and preserve the
+first-page bound. Missing results from a partial page remain unknown; malformed,
+foreign and failed observations cannot leave a previous successful badge visible.
+Inactive welcome/settings presentation starts no checklist read. All results remain
+in the connection's existing nonpersistent query scope.
