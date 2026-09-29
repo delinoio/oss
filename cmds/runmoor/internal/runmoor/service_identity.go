@@ -597,7 +597,9 @@ func serviceInvocation(args []string, action string) (string, string, error) {
 		return "", "", errInvalidServiceDefinition
 	}
 	binary, err := cleanAbsoluteServicePath(args[0])
-	if err != nil {
+	if err != nil || binary != args[0] {
+		// Do not clean executable paths before comparison: a symlink component
+		// followed by `..` can resolve differently from the cleaned spelling.
 		return "", "", errInvalidServiceDefinition
 	}
 	config, err := cleanAbsoluteServicePath(args[3])

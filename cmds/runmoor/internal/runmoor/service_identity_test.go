@@ -129,6 +129,31 @@ func TestServiceDefinitionParsersRejectAmbiguousArguments(t *testing.T) {
 	}
 }
 
+func TestSystemdDefinitionRejectsNonCanonicalExecutablePaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("service definitions are supported on macOS and Linux")
+	}
+	root := t.TempDir()
+	binary := filepath.Join(root, "runmoor")
+	config := filepath.Join(root, "config.toml")
+	definition, err := serviceDefinition("linux", binary, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, executable := range []string{
+		root + string(os.PathSeparator) + "link" + string(os.PathSeparator) + ".." + string(os.PathSeparator) + "runmoor",
+		root + string(os.PathSeparator) + "." + string(os.PathSeparator) + "runmoor",
+		root + string(os.PathSeparator) + "nested" + string(os.PathSeparator) + ".." + string(os.PathSeparator) + "runmoor",
+	} {
+		t.Run(executable, func(t *testing.T) {
+			mutated := strings.ReplaceAll(definition, systemdQuote(binary), systemdQuote(executable))
+			if _, err := serviceConfigFromDefinition("linux", []byte(mutated)); err == nil {
+				t.Fatal("non-canonical executable path was accepted")
+			}
+		})
+	}
+}
+
 type serviceCommandRecorder struct {
 	calls []string
 	onRun func(name string, args []string)
