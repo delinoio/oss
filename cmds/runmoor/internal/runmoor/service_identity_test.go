@@ -188,6 +188,62 @@ func TestServiceActionsRejectMismatchedConfigurationBeforeSideEffects(t *testing
 	}
 }
 
+func TestServiceActionsRejectSystemdDropInsBeforeSideEffects(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("systemd service definitions are supported on Linux")
+	}
+	home := t.TempDir()
+	configHome := filepath.Join(home, "config")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("XDG_CONFIG_DIRS", filepath.Join(home, "xdg-config"))
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "runtime"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+	t.Setenv("XDG_DATA_DIRS", filepath.Join(home, "xdg-data"))
+	unit := servicePath()
+	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+		t.Fatal(err)
+	}
+	installedPath := filepath.Join(home, "installed.toml")
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := serviceDefinition(runtime.GOOS, binary, installedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dropIn := filepath.Join(configHome, "systemd", "user", "runmoor.service.d")
+	if err := os.MkdirAll(dropIn, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dropIn, "override.conf"), []byte("[Service]\nExecStart=/tmp/other-runmoor\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, action := range []string{"start", "stop", "uninstall"} {
+		t.Run(action, func(t *testing.T) {
+			config := fixtureConfig(t)
+			commands := &serviceCommandRecorder{}
+			err := Service(context.Background(), action, installedPath, config, commands)
+			requireCode(t, err, ErrConfig)
+			if len(commands.calls) != 0 {
+				t.Fatalf("OS service commands were invoked: %v", commands.calls)
+			}
+			if _, err := os.Stat(config.Storage.State); !os.IsNotExist(err) {
+				t.Fatalf("requested configuration state was touched: %v", err)
+			}
+			got, err := os.ReadFile(unit)
+			if err != nil || string(got) != definition {
+				t.Fatalf("installed definition changed: read error %v", err)
+			}
+		})
+	}
+}
+
 func TestServiceActionsDoNotContactDifferentRunningManager(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("service definitions are supported on macOS and Linux")

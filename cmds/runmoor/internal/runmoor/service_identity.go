@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -13,6 +14,11 @@ import (
 const serviceDefinitionLimit = 64 << 10
 
 func requireServiceConfigMatch(goos, unit, requested string) error {
+	if goos == "linux" {
+		if err := requireNoSystemdDropIns(unit); err != nil {
+			return problem(ErrConfig, "The installed systemd service has an ambiguous effective definition.", "Remove systemd user drop-ins for Runmoor or service units, then restore the generated Runmoor service definition.")
+		}
+	}
 	data, err := readPrivate(unit, serviceDefinitionLimit)
 	if err != nil {
 		return problem(ErrConfig, "The installed service definition is missing or cannot be read securely.", "Restore an owner-only regular Runmoor service definition without symlinks before retrying.")
@@ -33,6 +39,76 @@ func requireServiceConfigMatch(goos, unit, requested string) error {
 		return problem(ErrConfig, "The requested configuration does not match the installed service.", "Use the same --config path used when installing the service; drain and uninstall that service before replacing its configuration.")
 	}
 	return nil
+}
+
+func requireNoSystemdDropIns(unit string) error {
+	// systemd merges unit-specific and service-type drop-ins into the effective
+	// definition. Inspect the standard user lookup roots directly so validation
+	// can reject them before contacting systemd or opening offline state.
+	for _, root := range systemdUserUnitDirs(unit) {
+		for _, name := range []string{"runmoor.service.d", "service.d"} {
+			path := filepath.Join(root, name)
+			if _, err := os.Lstat(path); err == nil {
+				return errInvalidServiceDefinition
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func systemdUserUnitDirs(unit string) []string {
+	var dirs []string
+	add := func(path string) {
+		if !filepath.IsAbs(path) {
+			return
+		}
+		path = filepath.Clean(path)
+		for _, existing := range dirs {
+			if existing == path {
+				return
+			}
+		}
+		dirs = append(dirs, path)
+	}
+	add(filepath.Dir(unit))
+
+	home, _ := os.UserHomeDir()
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if !filepath.IsAbs(configHome) {
+		configHome = filepath.Join(home, ".config")
+	}
+	add(filepath.Join(configHome, "systemd", "user"))
+	configDirs := os.Getenv("XDG_CONFIG_DIRS")
+	if configDirs == "" {
+		configDirs = "/etc/xdg"
+	}
+	for _, base := range filepath.SplitList(configDirs) {
+		add(filepath.Join(base, "systemd", "user"))
+	}
+	add("/etc/systemd/user")
+
+	if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(runtimeDir) {
+		add(filepath.Join(runtimeDir, "systemd", "user"))
+	}
+	add("/run/systemd/user")
+
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if !filepath.IsAbs(dataHome) {
+		dataHome = filepath.Join(home, ".local", "share")
+	}
+	add(filepath.Join(dataHome, "systemd", "user"))
+	dataDirs := os.Getenv("XDG_DATA_DIRS")
+	if dataDirs == "" {
+		dataDirs = "/usr/local/share:/usr/share"
+	}
+	for _, base := range filepath.SplitList(dataDirs) {
+		add(filepath.Join(base, "systemd", "user"))
+	}
+	add("/usr/local/lib/systemd/user")
+	add("/usr/lib/systemd/user")
+	return dirs
 }
 
 func serviceConfigFromDefinition(goos string, data []byte) (string, error) {
