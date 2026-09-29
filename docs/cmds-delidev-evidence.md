@@ -2796,6 +2796,9 @@ neither a published nor pending image. Backup store/server race suites passed
 - `TMPDIR=/private/tmp cargo test --quiet` passed across the Rust workspace after building the macOS `pnport` and `fspy_preload_unix` injection artifacts required by its supervisor fixtures.
 - A follow-up review found that signed provider inventory cursors could outlive the switch from case-folded to exact-name ordering. The inventory cursor scope is now versioned so prior 24-hour cursors expire instead of being reinterpreted; a server regression fixture verifies a validly signed legacy cursor is rejected at the current provider/account epoch. Provider inventory server/store tests passed under `-race`, and `go vet ./cmds/delidev-cli/...` passed.
 - Generated repository-owned app/client `dist` output is removed after validation. This remains local macOS arm64 evidence and does not claim Windows/Linux execution or broader full-issue acceptance.
+- Merged `origin/main` through `86346ef3`, preserving the provider inventory regressions and current-main Settings navigation, pairing verification, backup, and native packaging changes. The resolved pairing fixture retains the gated fresh-read privacy assertion and refreshes once if the first read is unavailable.
+- On macOS arm64 with Node.js 24.20.0, `apps/delidev` `pnpm test` passed 74 files / 943 tests, all eight packaging dry-run tests, type checking, and the production build. CLI, server, store, and workspace Go package tests passed; `go vet ./cmds/delidev-cli/...` passed.
+- Root `TMPDIR=/private/tmp cargo test -- --test-threads=1` passed after building the macOS pnport/fspy injection prerequisites. Opt-in native sidecar and installed-renderer tests remain ignored by their declared requirements. `git lfs fsck` passed, and app/client generated `dist` directories were removed after validation.
 
 ### PR #1063 atomic deletion claim repair (2026-09-29)
 
