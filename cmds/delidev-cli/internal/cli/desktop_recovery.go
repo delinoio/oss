@@ -322,6 +322,7 @@ func desktopDevice(ctx context.Context, c client, id domain.ID) (domain.Device, 
 }
 func desktopRecoveryCommand(ctx context.Context, o options, args []string) (any, error) {
 	fs := flags("device " + args[0])
+	expectedEndpoint := fs.String("expected-endpoint", "", "required local endpoint (checked before recovery)")
 	var id *string
 	var revision *uint64
 	if args[0] == "recover-local" {
@@ -330,6 +331,11 @@ func desktopRecoveryCommand(ctx context.Context, o options, args []string) (any,
 	}
 	if err := parse(fs, args[1:]); err != nil {
 		return nil, err
+	}
+	if *expectedEndpoint != "" {
+		if err := rpc.ValidateEndpoint(*expectedEndpoint); err != nil {
+			return nil, err
+		}
 	}
 	if id != nil && (domain.ID(*id).Validate() != nil || *revision == 0 || o.requestID.Validate() != nil) {
 		return nil, domain.Fail(domain.MissingInput, "Recovery requires the original device ID, revision and explicit request ID.", "Inspect local registration and retain one request ID for every retry.")
@@ -341,6 +347,13 @@ func desktopRecoveryCommand(ctx context.Context, o options, args []string) (any,
 		return nil, err
 	}
 	defer c.transport.CloseIdleConnections()
+	// The desktop pins its supported endpoint inside the native capability. This
+	// guard shares the exact owner-authorized client used below, so a separate
+	// preflight read cannot race into a replacement on another listener.
+	if *expectedEndpoint != "" && c.endpoint != *expectedEndpoint {
+		slog.Warn("desktop_recovery", "request_id", o.requestID, "phase", "preflight", "code", domain.Unsupported)
+		return nil, domain.Fail(domain.Unsupported, "The local server endpoint is incompatible with this desktop.", "Use the original server's matching client without replacing its registration.")
+	}
 	lock, err := security.TryLock(filepath.Join(o.dataDir, "desktop-recovery.lock"))
 	if err != nil {
 		return nil, err

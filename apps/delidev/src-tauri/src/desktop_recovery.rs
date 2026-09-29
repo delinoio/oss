@@ -28,7 +28,12 @@ fn valid_revision(value: &str) -> bool {
 impl Connector {
     pub fn inspect_desktop_registration(&self) -> Result<DesktopRegistration> {
         let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
-        let result = self.run(&["device".into(), "inspect-local".into()]);
+        let result = self.run(&[
+            "device".into(),
+            "inspect-local".into(),
+            "--expected-endpoint".into(),
+            format!("http://{}", self.listen).into(),
+        ]);
         let value: DesktopRegistration =
             serde_json::from_value(result?).map_err(|_| NativeFailure::InvalidEvidence)?;
         if canonical_id(&value.server_id).is_err()
@@ -69,6 +74,10 @@ impl Connector {
                 device.into(),
                 "--revision".into(),
                 revision.into(),
+                // Go enforces the native-owned endpoint before any recovery
+                // intent or pairing mutation, using the same client authority.
+                "--expected-endpoint".into(),
+                format!("http://{}", self.listen).into(),
             ])?)
             .map_err(|_| NativeFailure::InvalidEvidence)?;
             if metadata.device_id == device {
@@ -98,6 +107,43 @@ impl Connector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn native_registration_commands_pin_the_endpoint_in_go() {
+        use std::os::unix::fs::PermissionsExt;
+        let temporary = tempfile::tempdir().unwrap();
+        let executable = temporary.path().join("sidecar");
+        fs::write(
+            &executable,
+            r#"#!/bin/sh
+if [ "$4" = inspect-local ]; then
+    [ "$#" = 6 ] && [ "$5" = --expected-endpoint ] && [ "$6" = http://127.0.0.1:46310 ] || exit 2
+else
+    [ "$#" = 12 ] && [ "$6" = recover-local ] && [ "${11}" = --expected-endpoint ] && [ "${12}" = http://127.0.0.1:46310 ] || exit 2
+fi
+printf '%s' '{"version":1,"error":{"code":"unsupported"}}'
+exit 1
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let connector = Connector::new(executable, temporary.path().join("server")).unwrap();
+        assert!(matches!(
+            connector.inspect_desktop_registration(),
+            Err(NativeFailure::Incompatible)
+        ));
+        assert!(matches!(
+            connector.recover_desktop_registration(
+                &uuid::Uuid::now_v7().to_string(),
+                "2",
+                &uuid::Uuid::now_v7().to_string()
+            ),
+            Err(NativeFailure::Incompatible)
+        ));
+        assert!(!connector.root.exists());
+    }
+
     #[test]
     fn revisions_preserve_exact_uint64_values() {
         for value in ["1", "9007199254740993", "18446744073709551615"] {

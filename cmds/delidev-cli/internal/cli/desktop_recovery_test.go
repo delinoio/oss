@@ -208,6 +208,39 @@ func TestDesktopRecoveryRejectsMissingOriginalPairingCommitment(t *testing.T) {
 	}
 }
 
+func TestDesktopRecoveryEnforcesExpectedEndpointBeforeMutation(t *testing.T) {
+	root, original := desktopFixture(t)
+	revokeDesktop(t, root, original)
+	clientRoot := filepath.Join(root, "desktop-client")
+	before, err := desktopHashes(clientRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := domain.NewID()
+	for _, args := range [][]string{{"device", "inspect-local"}, recoveryArgs(original, request)} {
+		args = append(args, "--expected-endpoint", "http://127.0.0.1:1")
+		if code, result := cliRun(t, root, args, ""); code == 0 || result["error"].(map[string]any)["code"] != "unsupported" {
+			t.Fatal("native endpoint mismatch was not rejected", result)
+		}
+	}
+	for _, path := range []string{"desktop-recovery.json", "desktop-recoveries", filepath.Join("pairing-codes", string(request)+".pending.json")} {
+		if _, err := os.Lstat(filepath.Join(root, path)); !os.IsNotExist(err) {
+			t.Fatal("endpoint mismatch wrote recovery state", path)
+		}
+	}
+	after, err := desktopHashes(clientRoot)
+	if err != nil || before != after {
+		t.Fatal("endpoint mismatch changed the active credential", err)
+	}
+	if code, result := cliRun(t, root, []string{"device", "list"}, ""); code != 0 || len(result["result"].(map[string]any)["resources"].([]any)) != 1 {
+		t.Fatal("endpoint mismatch created a replacement", result)
+	}
+	args := append(recoveryArgs(original, request), "--expected-endpoint", original.Endpoint)
+	if code, result := cliRun(t, root, args, ""); code != 0 {
+		t.Fatal("matching endpoint rejected", result)
+	}
+}
+
 func TestDesktopRecoveryRetainsOriginalAndUsesOneReplacement(t *testing.T) {
 	root, original := desktopFixture(t)
 	clientRoot := filepath.Join(root, "desktop-client")

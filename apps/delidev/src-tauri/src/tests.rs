@@ -96,7 +96,9 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path().join("server");
     let mut connector = Connector::new(binary, root).unwrap();
-    connector.listen = "127.0.0.1:0".into();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    connector.listen = listener.local_addr().unwrap().to_string();
+    drop(listener);
     // Always stop this private fixture server, including after assertion failure.
     struct Stop<'a>(&'a Connector);
     impl Drop for Stop<'_> {
@@ -180,6 +182,22 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
     assert_eq!(inspected.state, DesktopRegistrationState::Revoked);
     assert_eq!(inspected.device_id, first.device_id);
     let request = uuid::Uuid::now_v7().to_string();
+    // A production connector cannot recover this fixture's alternate endpoint.
+    // Failure must precede new registrations and fixed credential publication.
+    let old_credential =
+        Zeroizing::new(fs::read(connector.root.join("desktop-client/device.json")).unwrap());
+    assert!(matches!(
+        replacement.recover_desktop_registration(&first.device_id, &inspected.revision, &request),
+        Err(NativeFailure::Incompatible)
+    ));
+    assert!(!connector.root.join("desktop-recovery.json").exists());
+    assert!(!connector.root.join("desktop-recoveries").exists());
+    assert_eq!(
+        *old_credential,
+        fs::read(connector.root.join("desktop-client/device.json")).unwrap()
+    );
+    let devices = connector.run(&["device".into(), "list".into()]).unwrap();
+    assert_eq!(devices["resources"].as_array().unwrap().len(), 2);
     let recovered = connector
         .recover_desktop_registration(&first.device_id, &inspected.revision, &request)
         .unwrap();

@@ -585,3 +585,5 @@
 - Revoked desktop eligibility must bind the entire credential, including token and pairing identity, to the private commitment retained after fresh authenticated local pairing or a prior immutable completed recovery receipt. Never reconstruct missing original proof from revoked metadata or ordinary reuse; legacy revoked scopes without proof remain recovery-required.
 
 - Require and validate the original local desktop pairing journal and its request-bound grant before revoked eligibility or recovery intent. Both original credential and pairing commitments are mandatory on journal load; validate archived pairing ownership on retries and never reconstruct absent original pairing evidence.
+
+- Enforce the optional desktop `--expected-endpoint` guard against the authenticated owner client before any recovery journal, archive or pairing mutation. The guard never selects another endpoint, and a mismatch preserves the original credential and all recovery state.
