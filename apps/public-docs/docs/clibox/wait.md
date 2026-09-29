@@ -56,10 +56,10 @@ Default success output is one summary, such as `tcp ready after 1250 ms (3 attem
 | Ready | 0 |
 | Runtime failure or overall timeout | 1 |
 | Invalid CLI input | 2 |
-| Ctrl+C | 130 |
+| Ctrl+C, or Ctrl+Break on Windows | 130 |
 | Unix SIGTERM | 143 |
 
-Ctrl+C and Unix SIGTERM stop waiting and release owned resources without terminating the target service or changing the target file. Wait commands never consume stdin or launch subsequent commands. They do not support reverse waiting, multiple targets, or continuous monitoring. They create no persistent application state, configuration, cache, or operation history.
+Ctrl+C, Ctrl+Break on Windows, and Unix SIGTERM stop waiting and release owned resources without terminating the target service or changing the target file. Wait commands never consume stdin or launch subsequent commands. They do not support reverse waiting, multiple targets, or continuous monitoring. They create no persistent application state, configuration, cache, or operation history.
 
 Results and diagnostics omit input hosts, URLs, paths, credentials, and response contents. Detailed troubleshooting uses redacted stderr logs:
 
