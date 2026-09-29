@@ -138,7 +138,11 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 		}
 		return nil
 	case "start":
-		if _, e := readPrivate(unit, 64<<10); e != nil {
+		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+			if e := requireServiceConfigMatch(runtime.GOOS, unit, path); e != nil {
+				return e
+			}
+		} else if _, e := readPrivate(unit, 64<<10); e != nil {
 			return e
 		}
 		if runtime.GOOS == "darwin" {
@@ -149,6 +153,11 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 		}
 		return run("systemctl", "--user", "enable", "--now", "runmoor.service")
 	case "stop", "uninstall":
+		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+			if e := requireServiceConfigMatch(runtime.GOOS, unit, path); e != nil {
+				return e
+			}
+		}
 		if _, e := SendControl(ctx, c, ControlRequest{Action: "stop"}); e == nil {
 			if e = waitStopped(ctx, c, ""); e != nil {
 				return e

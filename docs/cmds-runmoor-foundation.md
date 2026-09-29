@@ -80,6 +80,8 @@ launchd and systemd user services invoke the same foreground manager and drain c
 
 A launchd bootout failure is returned as a safe dependency error and leaves the plist intact unless a separate exact-service query returns service-not-found and the GUI domain remains reachable. An arbitrary query failure or a still-loaded definition cannot count as a successful stop or uninstall.
 
+Before start, stop, or uninstall, securely read and structurally parse the generated user-service definition. Require its recorded normalized absolute `--config` path to match the requested path. For systemd, `ExecStart` and `ExecStop` must use the same executable and configuration. Missing, symlinked, foreign-owned, malformed, duplicate, or ambiguous definitions fail with `CONFIG_INVALID` before contacting a manager, opening offline state, invoking an OS service command, or deleting the definition. Parse the plist and systemd argument syntax as structured data; never interpret these definitions through a shell or substring search. Diagnostics do not disclose either configuration path.
+
 ## Storage
 
 - Config: `$XDG_CONFIG_HOME/runmoor/config.toml`, otherwise `~/.config/runmoor/config.toml`.

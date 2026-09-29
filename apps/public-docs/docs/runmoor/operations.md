@@ -11,6 +11,16 @@ runmoor service uninstall
 
 These commands manage a launchd or systemd **user** service with the same drain semantics. Install the binary at a persistent location first. Installation does not overwrite an existing service definition. Uninstall preserves data/configuration and refuses to abandon known live executions when the manager cannot be contacted. Run the service in a functioning user session; availability after logout/reboot depends on that OS session, and Runmoor does not change system login policy.
 
+Service start, stop, and uninstall must use the same `--config` path that was
+recorded when the service was installed. If Runmoor reports
+`CONFIG_INVALID` because the requested configuration does not match the
+installed service, retry with the installed configuration path. To replace a
+service configuration, drain and uninstall the service with its current path,
+then install and start it with the new path. On systemd, inspect `ExecStart`
+and `ExecStop` with `systemctl --user cat runmoor.service`; on macOS, inspect
+the Runmoor launch agent's `ProgramArguments`. Preserve an invalid service
+definition and resolve its problem before retrying service commands.
+
 ## Recover an Ubuntu user service
 
 Run these checks as the Runmoor user in a working login session, without

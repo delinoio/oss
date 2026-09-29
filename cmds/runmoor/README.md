@@ -379,6 +379,13 @@ runmoor service uninstall
 
 These commands manage a launchd or systemd **user** service with the same drain semantics. Install the binary at a persistent location first. Installation does not overwrite an existing service definition. Uninstall preserves data/configuration and refuses to abandon known live executions when the manager cannot be contacted. Run the service in a functioning user session; availability after logout/reboot depends on that OS session, and Runmoor does not change system login policy.
 
+Service start, stop, and uninstall must use the same `--config` path recorded
+when the service was installed. A different path returns `CONFIG_INVALID`
+before Runmoor contacts a manager or changes the service. Inspect the installed
+path in `systemctl --user cat runmoor.service` on Ubuntu or the Runmoor launch
+agent's `ProgramArguments` on macOS. Drain and uninstall with the current path
+before installing the service with a replacement configuration.
+
 Manager-only restart reconciles SQLite with actual Docker/Tart and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
 
 A recorded job completion continues through cleanup even if GitHub has already removed its ephemeral runner registration. Capacity becomes available once the owned execution is confirmed stopped, while any remaining cleanup is retried. An upgrade does not automatically recover existing quarantines. For a previously affected completed job, confirm completion in GitHub and verify the exact ownership and stopped state of its local resources before recovering the affected pool with `runmoor stop --pool NAME --force`.

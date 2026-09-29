@@ -76,18 +76,23 @@ func TestLaunchdUninstallPreservesDefinitionUntilUnloaded(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(unit, []byte("fixture service definition"), 0600); err != nil {
+	configPath := filepath.Join(filepath.Dir(c.Storage.State), "installed.toml")
+	definition, err := serviceDefinition("darwin", "/fixture/runmoor", configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
 		t.Fatal(err)
 	}
 	f := &launchdUnloadFixture{bootout: serviceExit(5)}
 	for _, action := range []string{"stop", "uninstall"} {
-		requireCode(t, Service(context.Background(), action, "", c, f), ErrDependency)
-		if data, err := os.ReadFile(unit); err != nil || string(data) != "fixture service definition" {
+		requireCode(t, Service(context.Background(), action, configPath, c, f), ErrDependency)
+		if data, err := os.ReadFile(unit); err != nil || string(data) != definition {
 			t.Fatal("failed unload removed the service definition")
 		}
 	}
 	f.service = serviceExit(113)
-	if err := Service(context.Background(), "uninstall", "", c, f); err != nil {
+	if err := Service(context.Background(), "uninstall", configPath, c, f); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(unit); !os.IsNotExist(err) {
