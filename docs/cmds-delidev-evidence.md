@@ -2281,15 +2281,25 @@ establish native drawer focus, background inertness, visual layout, or behavior
 at the 960×640, 1,100/1,101px, 759/760px and 200% zoom boundaries. No native
 DeliDev window was captured for this change; Windows and Linux native acceptance
 remains untested. The #1059 navigation and Pull requests work adds no separate
-GitHub backend path. The merged branch includes the #1052 analytics and #1047
-provider-inventory/account-filter RPC, schema, client and Go server changes
-from `main`; no Rust or relational database schema changed. An earlier
-combined analytics/sidebar run passed 69 test files / 826 tests. After the
-latest `main` merge, `apps/delidev` `pnpm test` passes 71 test files / 838
-tests, generated API-client build, TypeScript type-checking and Rsbuild
-production build. `pnpm proto:check` passes formatting/lint, breaking-change
-and generated-source freshness checks. App and API-client `dist` directories
-produced by validation are removed from the worktree.
+GitHub backend path, RPC, Rust, or relational database schema. The merged
+branch also includes #1052 analytics, #1047 provider-inventory/account-filter
+RPC, schema, client and Go server changes, and #1060 desktop recovery work from
+`main`. An earlier combined analytics/sidebar run passed 69 test files / 826
+tests. After integrating `main` through #1060, `apps/delidev` `pnpm test`
+passes 72 test files / 848 tests, generated API-client build, TypeScript
+type-checking and Rsbuild production build. `pnpm proto:check` passes
+formatting/lint, breaking-change and generated-source freshness checks.
+`go test ./cmds/delidev-cli/internal/cli -count=1` and
+`go vet ./cmds/delidev-cli/...` pass. One full CLI-module test run had a single
+`TestCLISessionAcceptanceQueueAndArchive` failure because the workspace file
+reader was unavailable during concurrent Go runs; the isolated CLI-package
+rerun passed.
+`cargo test -p delidev-desktop` passes 12 tests; four tests that require a
+built Go sidecar remain ignored. The repository-wide `cargo test` command
+compiled DeliDev but could not finish because five unrelated `binpm` CLI tests
+fail on macOS temporary-path canonicalization and relative `BINPM_HOME`
+validation. App and API-client `dist` directories produced by validation are
+removed from the worktree.
 
 ## 2026-09-29: PR #1060 credential provenance repair
 
