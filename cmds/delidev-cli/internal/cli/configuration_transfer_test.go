@@ -127,7 +127,7 @@ func TestCLIConfigurationTransferThroughRealWorker(t *testing.T) {
 	if err = domain.Decode(exported, &bundle); err != nil {
 		t.Fatal(err)
 	}
-	if len(bundle.Entries) != 2 || len(bundle.Machines) != 1 || bundle.Machines[0].ID != machine {
+	if len(bundle.Entries) != 8 || len(bundle.Machines) != 1 || bundle.Machines[0].ID != machine {
 		t.Fatal("missing configuration/machine mapping")
 	}
 	for _, entry := range bundle.Entries {
