@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -55,6 +57,33 @@ func createFixtureTartVM(t *testing.T, c Config, home, name string) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func TestTartConfigLockProbeProcess(t *testing.T) {
+	path := os.Getenv("RUNMOOR_TART_CONFIG_LOCK_PROBE")
+	if path == "" {
+		return
+	}
+	lock, err := lockTartVMConfig(path)
+	if err != nil {
+		os.Exit(11)
+	}
+	_ = lock.Close()
+	os.Exit(0)
+}
+
+func tartConfigLockHeldByOtherProcess(t *testing.T, path string) bool {
+	t.Helper()
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("Tart config locks use Unix advisory locks")
+	}
+	t.Setenv("RUNMOOR_TART_CONFIG_LOCK_PROBE", path)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestTartConfigLockProbeProcess$")
+	err := cmd.Run()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return exitErr.ExitCode() == 11
+	}
+	return false
 }
 
 func TestTartCreationKeepsForeignFinalVMOutsideMarkerPublication(t *testing.T) {
@@ -487,6 +516,9 @@ func TestTartCleanupDeletesTheVerifiedDirectoryAfterOriginalNameReplacement(t *t
 		if target != deletionName {
 			t.Errorf("Tart delete target = %q, want staged name %q", target, deletionName)
 		}
+		if !tartConfigLockHeldByOtherProcess(t, filepath.Join(vmPath(c, deletionName), "config.json")) {
+			t.Error("Tart config lock was released before the staged VM delete")
+		}
 		if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
 			t.Error(err)
 			return
@@ -533,6 +565,14 @@ func TestTartCleanupRecoversAStagedOwnedVM(t *testing.T) {
 		t.Fatal(err)
 	}
 	driver, fixture := fakeTart(c)
+	fixture.beforeDelete = func(target string) {
+		if target != deletionName {
+			t.Errorf("Tart delete target = %q, want staged name %q", target, deletionName)
+		}
+		if !tartConfigLockHeldByOtherProcess(t, filepath.Join(vmPath(c, deletionName), "config.json")) {
+			t.Error("recovered staged VM config lock was released before delete")
+		}
+	}
 	r := Runner{ID: id, Handle: Handle{VM: name}}
 	if err := driver.Cleanup(context.Background(), c, r, s.View()); err != nil {
 		t.Fatal(err)
