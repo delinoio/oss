@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -144,12 +145,20 @@ func TestWorkspaceDiffIsolationCannotRunAnActiveCleanFilter(t *testing.T) {
 func TestWorkspaceDiffUnbornAndBoundedResults(t *testing.T) {
 	m, input, manifest := unbornLocalFixture(t)
 	root := manifest.PrimaryPath
+	readDiff := func(mode domain.WorkspaceDiffComparison) (domain.WorkspaceReadResult, error) {
+		request := diffRequest(input, manifest, mode, "new.txt")
+		// This test launches several real Git subprocesses. Use the full supported
+		// read window so Windows full-suite contention does not consume its margin.
+		// Revert to the shared deadline if this test stops exercising native Git.
+		request.Deadline = time.Now().Add(16 * time.Second)
+		return m.ReadWorkspace(context.Background(), request)
+	}
 	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("initial\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	gitTest(t, root, "add", "new.txt")
 	for _, mode := range []domain.WorkspaceDiffComparison{domain.DiffWorkingTree, domain.DiffStaged} {
-		r, err := m.ReadWorkspace(context.Background(), diffRequest(input, manifest, mode, "new.txt"))
+		r, err := readDiff(mode)
 		if err != nil || r.Diff.Base != domain.DiffEmptyTree || r.Diff.HeadCommit != "" || !strings.Contains(r.Diff.Patch, "+initial") {
 			t.Fatal("unborn diff invented a commit", mode, err)
 		}
@@ -157,7 +166,7 @@ func TestWorkspaceDiffUnbornAndBoundedResults(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte(strings.Repeat("larger\n", 16000)), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.ReadWorkspace(context.Background(), diffRequest(input, manifest, domain.DiffWorkingTree, "new.txt")); err == nil || domain.SafeError(err).Code != domain.ResourceExhausted {
+	if _, err := readDiff(domain.DiffWorkingTree); err == nil || domain.SafeError(err).Code != domain.ResourceExhausted {
 		t.Fatal("oversized diff silently truncated", err)
 	}
 }

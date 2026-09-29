@@ -19,6 +19,7 @@ type tartFixture struct {
 	commands          [][]string
 	jit               string
 	version           string
+	guestOS           tartGuestOS
 	rejectGuest       bool
 	afterGet          func(string)
 	beforeDelete      func(string)
@@ -60,7 +61,7 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 		}
 		f.running[vm] = false
 	case "get":
-		b, err := json.Marshal(vmInfo{Running: f.running[args[1]], State: "stopped", OS: "darwin", CPU: 1, Memory: 512})
+		b, err := json.Marshal(vmInfo{Running: f.running[args[1]], State: "stopped", OS: f.guestOS, CPU: 1, Memory: 512})
 		if f.afterGet != nil {
 			hook := f.afterGet
 			f.afterGet = nil
@@ -163,8 +164,21 @@ func (f *tartFixture) StartPinned(name string, args, env []string, dir *os.File)
 	return f.Start(name, canonical, env)
 }
 func fakeTart(c Config) (*TartDriver, *tartFixture) {
-	f := &tartFixture{c: c, running: map[string]bool{}, version: "2.37.0"}
+	f := &tartFixture{c: c, running: map[string]bool{}, version: "2.37.0", guestOS: tartGuestOSDarwin}
 	return &TartDriver{Exec: f, HostCheck: func(context.Context) error { return nil }}, f
+}
+
+type tartVMInfoResponse struct {
+	CommandExecutor
+	output []byte
+	err    error
+}
+
+func (r tartVMInfoResponse) Run(ctx context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
+	if len(args) > 0 && args[0] == "get" {
+		return r.output, r.err
+	}
+	return r.CommandExecutor.Run(ctx, name, args, env, in)
 }
 
 func TestTartVersionCompatibility(t *testing.T) {
@@ -333,6 +347,123 @@ func TestImageSealAndConfigurationShareRunnerPathValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestImageSealPreservesDependencyFailuresBeforeReservation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output []byte
+		err    error
+	}{
+		{name: "unavailable metadata", err: context.DeadlineExceeded},
+		{name: "malformed metadata", output: []byte("{")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, s := fixtureStore(t)
+			driver, fixture := fakeTart(c)
+			images := &ImageManager{Store: s, Tart: driver}
+			im, err := images.Operate(context.Background(), c, ImageRequest{Action: "create", Name: "setup", IPSW: "/fixture.ipsw", Resources: Resources{1, 512}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			driver.Exec = tartVMInfoResponse{CommandExecutor: fixture, output: tc.output, err: tc.err}
+			_, err = images.Operate(context.Background(), c, ImageRequest{Action: "seal", ID: im.ID, RunnerVersion: "2.337.0"})
+			requireCode(t, err, ErrDependency)
+			stored := s.View().Images[im.ID]
+			if stored.Phase != ImagePreparing || stored.Problem == nil || stored.Problem.Code != ErrDependency {
+				t.Fatalf("metadata dependency failure changed reservation state or classification: %#v", stored)
+			}
+			if fixture.running[im.VM] {
+				t.Fatal("metadata dependency failure booted the VM")
+			}
+		})
+	}
+}
+
+func TestImageSealRejectsUnsupportedGuestOSBeforeReservationOrBoot(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		guestOS tartGuestOS
+	}{
+		{name: "linux", guestOS: "linux"},
+		{name: "missing", guestOS: ""},
+		{name: "unknown", guestOS: "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, s := fixtureStore(t)
+			driver, fixture := fakeTart(c)
+			images := &ImageManager{Store: s, Tart: driver}
+			im, err := images.Operate(context.Background(), c, ImageRequest{Action: "create", Name: "setup", IPSW: "/fixture.ipsw", Resources: Resources{1, 512}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture.guestOS = tc.guestOS
+			firstCommand := len(fixture.commands)
+			_, err = images.Operate(context.Background(), c, ImageRequest{Action: "seal", ID: im.ID, RunnerVersion: "2.337.0"})
+			requireCode(t, err, ErrImage)
+			if p, ok := err.(*Problem); !ok || !strings.Contains(p.Recovery, "macOS") {
+				t.Fatalf("unsupported guest error lacks macOS recovery guidance: %v", err)
+			}
+			stored := s.View().Images[im.ID]
+			if stored.Phase != ImagePreparing || stored.Problem == nil || stored.Problem.Code != ErrImage {
+				t.Fatalf("unsupported guest changed reservation state or lost its diagnostic: %#v", stored)
+			}
+			for _, args := range fixture.commands[firstCommand:] {
+				if args[0] == "run" || args[0] == "exec" || args[0] == "stop" {
+					t.Fatalf("unsupported guest reached VM preparation: %v", args)
+				}
+			}
+			if fixture.running[im.VM] {
+				t.Fatal("unsupported guest was booted")
+			}
+		})
+	}
+}
+
+func TestUnsupportedSealedGuestCannotValidateOrCloneAndCanBeRemoved(t *testing.T) {
+	c, s := fixtureStore(t)
+	driver, fixture := fakeTart(c)
+	images := &ImageManager{Store: s, Tart: driver}
+	ctx := context.Background()
+	im, err := images.Operate(ctx, c, ImageRequest{Action: "create", Name: "base", IPSW: "/fixture.ipsw", Resources: Resources{1, 512}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	im, err = images.Operate(ctx, c, ImageRequest{Action: "seal", ID: im.ID, RunnerVersion: "2.337.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.guestOS = "linux"
+	p := c.Pools[0]
+	p.Backend, p.Image, p.RunnerPath, p.RunnerVersion = Tart, im.ID, im.RunnerPath, im.RunnerVersion
+	firstCommand := len(fixture.commands)
+	requireCode(t, driver.Validate(ctx, c, p, s.View()), ErrImage)
+	published := false
+	err = driver.Prepare(ctx, c, p, Runner{ID: newID(), Backend: Tart, Image: im.ID}, s.View(), "unused-jit", func(Handle) error {
+		published = true
+		return nil
+	})
+	requireCode(t, err, ErrImage)
+	if published {
+		t.Fatal("unsupported sealed image was published for job preparation")
+	}
+	_, err = images.Operate(ctx, c, ImageRequest{Action: "create", Name: "replacement", From: im.ID, Resources: Resources{1, 512}})
+	requireCode(t, err, ErrImage)
+	for _, args := range fixture.commands[firstCommand:] {
+		if args[0] == "clone" || args[0] == "exec" || args[0] == "set" || args[0] == "run" {
+			t.Fatalf("unsupported sealed image reached clone or helper transfer: %v", args)
+		}
+	}
+	if retained := s.View().Images[im.ID]; retained == nil || retained.Phase != ImageSealed {
+		t.Fatal("validation changed or discarded the unsupported sealed record")
+	}
+	if _, err = images.Operate(ctx, c, ImageRequest{Action: "remove", ID: im.ID}); err != nil {
+		t.Fatalf("unsupported sealed image could not be explicitly removed: %v", err)
+	}
+	if s.View().Images[im.ID] != nil {
+		t.Fatal("explicit image removal retained the unsupported revision")
+	}
+}
+
 func TestTartImageLifecycleAndCredentialBoundary(t *testing.T) {
 	c, s := fixtureStore(t)
 	t.Setenv("RUNMOOR_TEST_CREDENTIAL", "management-secret-must-stay-host")

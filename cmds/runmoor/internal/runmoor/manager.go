@@ -938,6 +938,30 @@ func (m *Manager) runnerProblem(id string, err error, quarantine bool) {
 	logProblem(m.Log, "runner_reconciliation_failed", p)
 }
 
+// recordBusyRemoval applies a GitHub busy response only while the runner still
+// has the lifecycle phase that initiated removal. A completion or operator
+// transition may commit while the request is in flight, so the response must
+// not roll that newer state back to Busy.
+func recordBusyRemoval(s *Snapshot, id string, expected RunnerPhase, handle *Handle) {
+	r := s.Runners[id]
+	if r == nil || r.ID != id || r.Phase != expected || r.Forced || r.CompletedJob || r.RemoteRemoved || r.Terminated {
+		return
+	}
+	if r.StartedAt.IsZero() {
+		c, ok := s.Generations[r.Generation]
+		if !ok {
+			return
+		}
+		// Without an observed start, creation time is the conservative bound.
+		r.StartedAt = r.CreatedAt
+		r.Deadline = r.CreatedAt.Add(c.JobTimeout())
+	}
+	if handle != nil {
+		r.Handle = *handle
+	}
+	r.Phase = Busy
+}
+
 func runnerInspectionPending(r *Runner) bool {
 	return r != nil && !r.CompletedJob && !r.RemoteRemoved && !r.Terminated &&
 		(r.Phase == Preparing || r.Phase == Idle || r.Phase == Busy)
@@ -1038,13 +1062,7 @@ func (m *Manager) inspect(ctx context.Context, id string) {
 			return
 		}
 		_ = m.Store.Update(func(v *Snapshot) error {
-			rr := v.Runners[id]
-			rr.Handle = obs.Handle
-			rr.Phase = Busy
-			if rr.StartedAt.IsZero() {
-				rr.StartedAt = rr.CreatedAt
-				rr.Deadline = rr.CreatedAt.Add(c.JobTimeout())
-			}
+			recordBusyRemoval(v, id, Preparing, &obs.Handle)
 			return nil
 		})
 		return
@@ -1076,14 +1094,7 @@ func (m *Manager) retireRunner(ctx context.Context, id string) {
 	if e != nil {
 		if q, ok := e.(*Problem); ok && q.Code == ErrBusy {
 			_ = m.Store.Update(func(s *Snapshot) error {
-				r := s.Runners[id]
-				if r.Phase == Idle {
-					r.Phase = Busy
-					if r.StartedAt.IsZero() {
-						r.StartedAt = nowUTC()
-						r.Deadline = r.StartedAt.Add(s.Generations[r.Generation].JobTimeout())
-					}
-				}
+				recordBusyRemoval(s, id, Idle, nil)
 				return nil
 			})
 			return
@@ -1119,14 +1130,7 @@ func (m *Manager) cleanup(ctx context.Context, id string) {
 		if e != nil {
 			if q, ok := e.(*Problem); ok && q.Code == ErrBusy {
 				_ = m.Store.Update(func(s *Snapshot) error {
-					rr := s.Runners[id]
-					rr.Phase = Busy
-					if rr.StartedAt.IsZero() {
-						// With no observed job start, use the durable creation time
-						// so recovery never grants a fresh timeout after downtime.
-						rr.StartedAt = rr.CreatedAt
-						rr.Deadline = rr.StartedAt.Add(c.JobTimeout())
-					}
+					recordBusyRemoval(s, id, Cleaning, nil)
 					return nil
 				})
 				return
