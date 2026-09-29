@@ -58,6 +58,7 @@ func TestRequestDiagnosticsConcurrentSameModelUsesExactIDs(t *testing.T) {
 		<-release
 		w.Header().Set("Content-Type", "application/json")
 		id := strings.ReplaceAll(r.Header.Get("X-Client-Request-Id"), "-", "")
+		w.Header().Set("X-Request-Id", "req_"+id)
 		_, _ = io.WriteString(w, `{"id":"resp_`+id+`","object":"response","status":"completed","service_tier":"priority","output":[]}`)
 	}))
 	defer upstream.Close()
@@ -90,7 +91,7 @@ func TestRequestDiagnosticsConcurrentSameModelUsesExactIDs(t *testing.T) {
 		want[id] = true
 	}
 	for _, row := range rows {
-		if !want[row.CorrelationId] || row.Id != row.CorrelationId || row.NativeResponseId != "resp_"+strings.ReplaceAll(row.CorrelationId, "-", "") || row.AccountId != string(f.input.AccountID) || row.DurationMs == nil || row.HttpAttempted == nil || !*row.HttpAttempted || row.RequestedEffort == nil || *row.RequestedEffort != "high" || row.EffectiveEffort != nil || row.EffectiveServiceTier == nil || *row.EffectiveServiceTier != "priority" {
+		if !want[row.CorrelationId] || row.Id != row.CorrelationId || row.NativeResponseId != "resp_"+strings.ReplaceAll(row.CorrelationId, "-", "") || row.ProviderRequestId != "req_"+strings.ReplaceAll(row.CorrelationId, "-", "") || row.AccountId != string(f.input.AccountID) || row.DurationMs == nil || row.HttpAttempted == nil || !*row.HttpAttempted || row.RequestedEffort == nil || *row.RequestedEffort != "high" || row.EffectiveEffort != nil || row.EffectiveServiceTier == nil || *row.EffectiveServiceTier != "priority" {
 			t.Fatalf("lost exact request metadata: %+v", row)
 		}
 		delete(want, row.CorrelationId)

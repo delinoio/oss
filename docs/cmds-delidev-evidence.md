@@ -3245,3 +3245,11 @@ This evidence proves implementation behavior through isolated controlled
 fixtures. It does not establish real-provider/native-account, native desktop
 visual, additional platform, production-signing or release acceptance, and
 does not imply completion of the broader issue #964. No Rust source changed.
+
+Subsequent protocol-owned provider-header coverage passes proxy race tests
+(1.460s) and the native/request server race group (23.973s). OpenAI-shaped
+responses retain only guarded `X-Request-Id`; Anthropic Messages retains
+only guarded `Request-Id`. Duplicate, content-bearing, oversized and
+credential-matching header values remain unavailable. The simultaneous-request
+RPC fixture verifies each exact provider request ID alongside its response and
+correlation identities. Go vet passes again after this change.

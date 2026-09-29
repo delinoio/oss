@@ -2,11 +2,33 @@ package apiproxy
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
+
+func TestRequestDiagnosticProviderHeaderUsesExactProtocolAndGuard(t *testing.T) {
+	header := http.Header{}
+	header.Set("X-Request-Id", "req_openai")
+	header.Set("Request-Id", "req_anthropic")
+	guard := newSecretGuard([]byte("req_PRIVATE_KEY"), nil)
+	if diagnosticProviderRequestID(header, domain.OpenAIResponses, guard) != "req_openai" || diagnosticProviderRequestID(header, domain.AnthropicMessages, guard) != "req_anthropic" {
+		t.Fatal("provider identity was read through another protocol's header")
+	}
+	for _, unsafe := range []string{"req_PRIVATE_KEY", "/private/path user@example.com", "req_" + strings.Repeat("a", 125)} {
+		header.Set("Request-Id", unsafe)
+		if diagnosticProviderRequestID(header, domain.AnthropicMessages, guard) != "" {
+			t.Fatal("private provider header was retained")
+		}
+	}
+	header.Set("Request-Id", "req_first")
+	header.Add("Request-Id", "req_second")
+	if diagnosticProviderRequestID(header, domain.AnthropicMessages, guard) != "" {
+		t.Fatal("ambiguous provider headers were joined")
+	}
+}
 
 func TestRequestDiagnosticSettingsRemainClosedAndIndependent(t *testing.T) {
 	guard := newSecretGuard([]byte("PRIVATE_PROVIDER_KEY"), []byte("PRIVATE_EXECUTION_TOKEN"))

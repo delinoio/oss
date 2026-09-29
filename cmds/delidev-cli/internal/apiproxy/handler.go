@@ -312,9 +312,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer response.Body.Close()
-	if values := response.Header.Values("X-Request-Id"); len(values) == 1 && domain.SafeDiagnosticID(values[0]) && !guard.contains(values[0]) {
-		diagnostic.ProviderRequestID = values[0]
-	}
+	diagnostic.ProviderRequestID = diagnosticProviderRequestID(response.Header, protocol, guard)
 	status = response.StatusCode
 	phase = phaseHeaders
 	if status != http.StatusOK {

@@ -2,9 +2,22 @@ package apiproxy
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
+
+func diagnosticProviderRequestID(header http.Header, protocol domain.APIProtocol, guard secretGuard) string {
+	name := "X-Request-Id"
+	if protocol == domain.AnthropicMessages {
+		name = "Request-Id"
+	}
+	values := header.Values(name)
+	if len(values) == 1 && domain.SafeDiagnosticID(values[0]) && !guard.contains(values[0]) {
+		return values[0]
+	}
+	return ""
+}
 
 func diagnosticOperation(operation Operation) domain.RequestDiagnosticOperation {
 	switch operation {
