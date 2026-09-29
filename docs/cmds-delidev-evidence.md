@@ -21,7 +21,7 @@ The desktop/CLI/server/Worker implementation is in progress. At the owner’s re
 | Terminal/files/diff/reviews/Sidechat/forwarding | Worker-backed file browsing, bounded Git comparisons and durable local review submission implemented; terminals, Sidechat and forwarding pending | Real temporary Git/Connect/SQLite and desktop component fixtures; bounded macOS native file/diff/review evidence recorded below |
 | GitHub PAT/query/PR evidence/remediation | Named native PAT profiles, scoped queries/forms, PR links/diffs, active-rule/CI/reviewer evidence, durable problem versions/dismissal and remediation history/allowance implemented. Private attempt coordination, exact-head preparation, startup rejection/recovery and current workspace matching implemented; public Fix now, automatic controller/session selection and harness commit/push remain pending | Real SQLite/Connect/isolated Git, scripted GitHub and CLI/desktop tests; bounded native/form evidence below. Actual token/private/SSO acceptance deferred by the owner; no end-to-end remediation success claimed |
 | Usage/costs/budgets, diagnostics/doctor | Exact Codex response ledger, bounded RPC/CLI/dashboard summaries, immutable historical token prices and session estimated-cost budget gates/forms implemented; bounded version-2 doctor implemented. Complete native resume/child/fork/other-harness usage and remaining diagnostics still required | Real SQLite/Connect/UI tests and private installed Codex macOS scripted-provider evidence below; no hosted actual-billing or complete telemetry claim |
-| Search/activity/inbox, config import/export | Native question/approval/terminal inbox persistence and independent read-state RPC/CLI with joined current-source/session inspection and bounded pagination implemented; retained typed-message search with original-execution account filters, Archive and bounded authenticated RPC/CLI pages implemented; metadata-only execution/terminal/schedule activity RPC/CLI implemented; client-specific notification preferences/reservations and native desktop presentation are implemented with actual OS delivery acceptance still pending; version-1 configuration export/preview/import is implemented for the eight editable configuration kinds with explicit machine mapping and atomic Worker validation; PR activity and additional portable surfaces remain pending | Atomic publication, source uniqueness, read-state isolation and migration/reopen fixtures; native evidence recorded below |
+| Search/activity/inbox, config import/export | Native question/approval/terminal inbox persistence and independent read-state RPC/CLI with joined current-source/session inspection and bounded pagination implemented; retained typed-message search with original-execution account filters, Archive and bounded authenticated RPC/CLI pages implemented; metadata-only execution/terminal/schedule activity RPC/CLI implemented; client-specific notification preferences/reservations and a filtered desktop Inbox list/detail workspace with typed bounded connection-memory response drafts are implemented; actual OS delivery acceptance remains pending; version-1 configuration export/preview/import is implemented for the eight editable configuration kinds with explicit machine mapping and atomic Worker validation; PR activity and additional portable surfaces remain pending | Atomic publication, source uniqueness, read-state isolation and migration/reopen fixtures; desktop `pnpm test` passes 67 files / 798 tests, type checking and production build; actual OS notification delivery remains unverified |
 | Deletion/managed backups/offline cleanup/storage | Pending | Pending |
 | CLI build/distribution and OS lifecycle | Pending | Native Windows/Linux evidence pending |
 
@@ -36,6 +36,9 @@ The TypeScript direct-Connect integration boundary is now implemented in `packag
 - 2026-09-24: `go test -race ./cmds/delidev-cli/...`, package vet, Buf formatting/lint, and generated Go bindings validated. The native macOS executable was exercised against an isolated temporary data directory. Linux arm64 cross-compilation succeeded; this does not establish native Linux behavior.
 - 2026-09-24: Windows amd64 cross-compilation succeeded. Native Windows runtime remains unverified. Real temporary Git preparation tests and package race tests/vet pass on macOS arm64.
 - A subsequent Git-registration regression exposed the macOS `/var` parent alias during rollback. Worker roots now canonicalize before ownership journals are created; the real Git regression and package race/vet checks were rerun after the fix.
+
+### Inbox workspace increment (2026-09-29)
+Issue #1049 replaces the standalone Inbox cards with one persistent responsive list/detail workspace. Component coverage verifies server enum filters and 20-entry paging, revision-bound read-state changes, exact selection, sequential and overlapping notification re-reads with stale-result suppression, draft retention across selection/filter changes, and rejection of a foreign joined source. From the repository root, `apps/delidev` `pnpm test` passes all 67 files / 798 tests, TypeScript checking, API-client build and Rsbuild production build. The workspace implementation does not change the protocol or server. Tests establish frontend behavior only; native OS notification delivery and supported-platform acceptance remain unverified.
 
 ## Native interface discovery (not execution validation)
 - Installed read-only version/help checks: Codex CLI `0.151.0`, Claude Code `2.1.236`, OpenCode `1.18.20`. No `grok` executable was found on this machine. No user credential files were read and no inference was invoked by these checks.
@@ -2184,3 +2187,24 @@ the app's generated `dist` output is removed from the worktree.
 - `pnpm test` from `apps/delidev` passed typechecking, 69 test files / 814 tests and the production frontend build. Coverage includes explicit confirmation, duplicate clicks, uncertain retry through dialog hiding, pending-request recovery after remount, large exact revisions, malformed/foreign evidence, self-revocation rejection and preserved other-device retry behavior.
 - The native host build and the explicitly enabled real-sidecar `real_sidecar_connect_reuse_revocation_and_exit` test passed on macOS arm64. The latter verifies replacement/replay through the Rust/Go boundary, normal reconnect and the unchanged independent Worker credential. A locally assembled ad hoc development app bundle showed the recovered connection and Paired devices with the original revoked client, authorized replacement/current-client label, omitted self-revocation action and unchanged Worker. The existing local scope's recovery journal was complete and authenticated inspection confirmed the replacement; server and Worker identities and the connected Worker were unchanged. This is macOS development evidence, not signed release or Windows/Linux UI acceptance.
 - Root `cargo test` passed after setting `TMPDIR=/private/tmp` and preparing the documented macOS pnport companion with `cargo build -p pnport -p fspy_preload_unix --features fspy_preload_unix/pnport`. The first unprepared runs exposed the existing binpm `/var` versus `/private/var` temporary-path mismatch and absent pnport injection artifact; no unrelated source changes were made. Generated repository-owned `dist` output is removed after verification and commit hooks.
+
+### Issue #1054 sidebar project creation and query retries (2026-09-29)
+
+The Projects header now uses an icon-only New project action that opens the
+existing Settings editor, preserves protected and uncertain drafts, and returns
+through the existing save invalidation path. Each failed project, global-session,
+and expanded project-session query retries only its current page. The full
+`apps/delidev` `pnpm test` command passes on macOS arm64: 68 test files / 810
+tests, TypeScript type-checking, API-client generation/build, and the Rsbuild
+production build. Tests cover fresh and deferred entry, draft/request identity,
+exact query pages, and active-page invalidation after save.
+
+The native Tauri desktop binary built and launched on macOS arm64 with a private
+temporary data directory. The observed window remained at the local-server
+connection screen; the fixed `127.0.0.1:46310` listener belonged to another
+worktree, so it was not used. The Projects sidebar was therefore not reached:
+native pointer/keyboard behavior and the 960×640, 1,099/1,100/1,101-wide, and
+1,440×900 viewports remain unverified. Windows and Linux native acceptance is
+also untested. Component coverage is not counted as native visual evidence. No
+Rust, RPC, schema, or generated source changed; generated `dist` output is
+removed from the worktree.
