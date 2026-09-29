@@ -875,15 +875,44 @@ func (t *TartDriver) confirmTartVMAbsent(c Config, r Runner, s Snapshot) error {
 		}
 		return nil
 	}
-	processStart := s.RunnerTartStarts[r.ID]
-	if s.Images[r.ID] != nil {
-		processStart = s.ImageTartStarts[r.ID]
-	}
-	alive, err := t.tartProcessAlive(r.Handle.PID, processStart)
+	alive, err := t.tartProcessAlive(r.Handle.PID, recordedTartProcessStart(r, s))
 	if err != nil || alive {
 		return ambiguousVMOwnership()
 	}
 	return nil
+}
+
+func recordedTartProcessStart(r Runner, s Snapshot) string {
+	if s.Images[r.ID] != nil {
+		return s.ImageTartStarts[r.ID]
+	}
+	return s.RunnerTartStarts[r.ID]
+}
+
+func (t *TartDriver) waitTartProcessExit(ctx context.Context, c Config, r Runner, s Snapshot) error {
+	aliasPresent, err := tartRunAliasPresent(c, tartRunAlias(r.ID))
+	if err != nil {
+		return err
+	}
+	if r.Handle.PID <= 0 {
+		if aliasPresent {
+			return ambiguousVMOwnership()
+		}
+		return nil
+	}
+	processStart := recordedTartProcessStart(r, s)
+	for {
+		alive, err := t.tartProcessAlive(r.Handle.PID, processStart)
+		if err != nil {
+			return ambiguousVMOwnership()
+		}
+		if !alive {
+			return nil
+		}
+		if !waitContext(ctx, 200*time.Millisecond) {
+			return problem(ErrCleanup, "Tart reported the VM stopped but its detached process is still active.", "Keep its run alias and reservation; retry cleanup after the Tart process exits.")
+		}
+	}
 }
 
 func removeStaleTartRunAlias(c Config, alias string) error {
@@ -1167,7 +1196,7 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 		return e
 	}
 	if !v.Running {
-		if e = t.confirmTartVMAbsent(c, r, s); e != nil {
+		if e = t.waitTartProcessExit(ctx, c, r, s); e != nil {
 			return e
 		}
 		return removeTartRunAlias(c, tartRunAlias(r.ID))
@@ -1185,7 +1214,7 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 			return e
 		}
 		if !v.Running {
-			if e = t.confirmTartVMAbsent(c, r, s); e != nil {
+			if e = t.waitTartProcessExit(ctx, c, r, s); e != nil {
 				return e
 			}
 			return removeTartRunAlias(c, tartRunAlias(r.ID))

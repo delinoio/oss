@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func replacedTartVM(t *testing.T, c Config, installation, entity string) (string, string) {
@@ -565,6 +566,87 @@ func TestTartCleanupKnownAbsenceRemovesStaleRunAliasBeforeOwnerRecord(t *testing
 	if _, err := os.Lstat(vmOwnerPath(c, name)); !os.IsNotExist(err) {
 		t.Fatalf("owner record remains after confirmed absent cleanup: %v", err)
 	}
+}
+
+func TestTartStopWaitsForDetachedProcessAfterVMStops(t *testing.T) {
+	t.Run("process exits within cleanup context", func(t *testing.T) {
+		c, s := fixtureStore(t)
+		id := newID()
+		name := "rm-" + id
+		if err := claimVM(c, name, s.View().Installation, id); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := createTartCommandAlias(c, tartRunAlias(id)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Update(func(snapshot *Snapshot) error {
+			snapshot.RunnerTartStarts = map[string]string{id: "fixture-process-start"}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		driver, fixture := fakeTart(c)
+		fixture.running[name] = true
+		checks := 0
+		driver.processAlive = func(pid int) (bool, error) {
+			if pid != 123 {
+				t.Fatalf("checked Tart PID = %d, want 123", pid)
+			}
+			checks++
+			return checks < 3, nil
+		}
+		r := Runner{ID: id, Handle: Handle{VM: name, PID: 123}, Phase: Busy}
+		if err := driver.Stop(context.Background(), c, r, s.View()); err != nil {
+			t.Fatalf("stop failed while the detached process was exiting: %v", err)
+		}
+		if checks != 3 {
+			t.Fatalf("Tart process liveness checks = %d, want 3", checks)
+		}
+		if present, err := tartRunAliasPresent(c, tartRunAlias(id)); err != nil || present {
+			t.Fatalf("run alias remained after process exit: present=%t err=%v", present, err)
+		}
+	})
+
+	t.Run("deadline retains run alias for retry", func(t *testing.T) {
+		c, s := fixtureStore(t)
+		id := newID()
+		name := "rm-" + id
+		if err := claimVM(c, name, s.View().Installation, id); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := createTartCommandAlias(c, tartRunAlias(id)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Update(func(snapshot *Snapshot) error {
+			snapshot.RunnerTartStarts = map[string]string{id: "fixture-process-start"}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		driver, fixture := fakeTart(c)
+		fixture.running[name] = true
+		driver.processAlive = func(pid int) (bool, error) { return true, nil }
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		r := Runner{ID: id, Handle: Handle{VM: name, PID: 123}, Phase: Busy}
+		err := driver.Stop(ctx, c, r, s.View())
+		requireCode(t, err, ErrCleanup)
+		if present, aliasErr := tartRunAliasPresent(c, tartRunAlias(id)); aliasErr != nil || !present {
+			t.Fatalf("cleanup deadline lost the run alias: present=%t err=%v", present, aliasErr)
+		}
+	})
 }
 
 func TestTartMissingCanonicalVMRetainsActiveRun(t *testing.T) {
