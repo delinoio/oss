@@ -254,6 +254,130 @@ func TestTartCleanupKnownAbsenceIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestTartCleanupDeletesTheVerifiedDirectoryAfterOriginalNameReplacement(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"config.json", "nvram.bin", "disk.img"} {
+		if err := os.WriteFile(filepath.Join(vmPath(c, name), file), []byte("owned VM"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	deletionName := deletionVMName(id)
+	driver, fixture := fakeTart(c)
+	foreign := filepath.Join(vmPath(c, name), "foreign-disk")
+	fixture.beforeDelete = func(target string) {
+		if target != deletionName {
+			t.Errorf("Tart delete target = %q, want staged name %q", target, deletionName)
+		}
+		if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := os.WriteFile(foreign, []byte("replacement at original name"), 0600); err != nil {
+			t.Error(err)
+		}
+	}
+	r := Runner{ID: id, Handle: Handle{VM: name}}
+	if err := driver.Cleanup(context.Background(), c, r, s.View()); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(foreign); err != nil || string(data) != "replacement at original name" {
+		t.Fatal("cleanup removed the replacement at the original name", err)
+	}
+	if _, err := os.Lstat(vmPath(c, deletionName)); !os.IsNotExist(err) {
+		t.Fatal("cleanup left the verified Tart VM at its staged name", err)
+	}
+	if _, err := os.Lstat(vmOwnerPath(c, name)); !os.IsNotExist(err) {
+		t.Fatal("successful cleanup retained the durable owner record", err)
+	}
+}
+
+func TestTartCleanupRecoversAStagedOwnedVM(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"config.json", "nvram.bin", "disk.img"} {
+		if err := os.WriteFile(filepath.Join(vmPath(c, name), file), []byte("owned VM"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	deletionName := deletionVMName(id)
+	if err := renameTartVMNoReplace(vmPath(c, name), vmPath(c, deletionName)); err != nil {
+		t.Fatal(err)
+	}
+	driver, fixture := fakeTart(c)
+	r := Runner{ID: id, Handle: Handle{VM: name}}
+	if err := driver.Cleanup(context.Background(), c, r, s.View()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture.commands) == 0 || fixture.commands[len(fixture.commands)-1][0] != "delete" || fixture.commands[len(fixture.commands)-1][1] != deletionName {
+		t.Fatal("recovery did not delete the verified staged VM", fixture.commands)
+	}
+	if _, err := os.Lstat(vmOwnerPath(c, name)); !os.IsNotExist(err) {
+		t.Fatal("recovered cleanup retained the durable owner record", err)
+	}
+}
+
+func TestTartCleanupPreservesADeletionNameCollision(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"config.json", "nvram.bin", "disk.img"} {
+		if err := os.WriteFile(filepath.Join(vmPath(c, name), file), []byte("owned VM"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	deletionName := deletionVMName(id)
+	foreign := filepath.Join(vmPath(c, deletionName), "foreign-disk")
+	if err := os.MkdirAll(vmPath(c, deletionName), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(foreign, []byte("unrelated VM"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	driver, fixture := fakeTart(c)
+	err := driver.Cleanup(context.Background(), c, Runner{ID: id, Handle: Handle{VM: name}}, s.View())
+	requireCode(t, err, ErrOwnership)
+	assertTartNeverStoppedOrDeleted(t, fixture)
+	if data, err := os.ReadFile(foreign); err != nil || string(data) != "unrelated VM" {
+		t.Fatal("cleanup removed the unrelated deletion-name occupant", err)
+	}
+	if _, err := os.Stat(vmOwnerMarkerPath(c, name)); err != nil {
+		t.Fatal("collision discarded the original owned VM", err)
+	}
+	if err := verifyVMOwnerRecord(c, name, s.View().Installation, id); err != nil {
+		t.Fatal("collision discarded the durable owner record", err)
+	}
+}
+
 func TestTartOwnerMarkerPublicationIsExclusiveAndPrivate(t *testing.T) {
 	c, s := fixtureStore(t)
 	id := newID()

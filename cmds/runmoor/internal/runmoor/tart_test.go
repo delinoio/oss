@@ -13,14 +13,15 @@ import (
 )
 
 type tartFixture struct {
-	mu          sync.Mutex
-	c           Config
-	running     map[string]bool
-	commands    [][]string
-	jit         string
-	version     string
-	rejectGuest bool
-	afterGet    func(string)
+	mu           sync.Mutex
+	c            Config
+	running      map[string]bool
+	commands     [][]string
+	jit          string
+	version      string
+	rejectGuest  bool
+	afterGet     func(string)
+	beforeDelete func(string)
 }
 
 func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
@@ -66,6 +67,11 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 	case "stop":
 		f.running[args[1]] = false
 	case "delete":
+		if f.beforeDelete != nil {
+			hook := f.beforeDelete
+			f.beforeDelete = nil
+			hook(args[1])
+		}
 		delete(f.running, args[1])
 		return nil, os.RemoveAll(vmPath(f.c, args[1]))
 	case "exec":

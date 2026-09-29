@@ -15,6 +15,8 @@ func openPrivate(string, int) (*os.File, error)      { return nil, unsupported()
 func readPrivate(string, int64) ([]byte, error)      { return nil, unsupported() }
 func privateVMDirectory(string) (os.FileInfo, error) { return nil, unsupported() }
 func syncPrivateDir(string) error                    { return unsupported() }
+func lockTartVMConfig(string) (*os.File, error)      { return nil, unsupported() }
+func renameTartVMNoReplace(string, string) error     { return unsupported() }
 func lockState(string) (*os.File, error)             { return nil, unsupported() }
 func unlockState(*os.File)                           {}
 func freeDisk(string) (uint64, error)                { return 0, unsupported() }

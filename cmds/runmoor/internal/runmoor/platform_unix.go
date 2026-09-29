@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func privateDir(path string) error {
@@ -83,6 +85,24 @@ func syncPrivateDir(path string) error {
 		return syncErr
 	}
 	return closeErr
+}
+func lockTartVMConfig(path string) (*os.File, error) {
+	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), path)
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		_ = f.Close()
+		return nil, os.ErrPermission
+	}
+	lock := unix.Flock_t{Type: unix.F_WRLCK, Whence: int16(io.SeekStart)}
+	if err = unix.FcntlFlock(f.Fd(), unix.F_SETLK, &lock); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
 }
 func lockState(path string) (*os.File, error) {
 	f, e := openPrivate(path, os.O_RDWR|os.O_CREATE)
