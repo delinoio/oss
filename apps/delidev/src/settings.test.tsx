@@ -77,6 +77,23 @@ it("shows API provider inventory and enables custom creation only with required 
   expect(screen.getByRole("switch", { name: "Turn on Local provider" })).toBeTruthy();
 });
 
+it("pages native subscription providers independently of active API providers", async () => {
+  const subscriptions = Array.from({ length: 51 }, (_, index) => resource(EntityKind.PROVIDER, { name: `Subscription ${String(index + 1).padStart(2, "0")}`, protocol: "native-subscription", authentication: "subscription" }));
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
+  const value = fixture(subscriptions, (kind, pageToken) => {
+    if (kind === EntityKind.PROVIDER) return pageToken ? { resources: [subscriptions[50]] } : { resources: subscriptions.slice(0, 50), nextPageToken: "subscription-page-2" };
+    return { resources: [] };
+  }, (pageToken) => ({ entries: [], capabilities, ...(pageToken ? {} : { nextPageToken: "active-api-page-2" }) }));
+  render(value.view(<Settings visible close={() => {}} />));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Settings categories" })).getByRole("button", { name: "AI accounts" }));
+  await clickEnabledButton("New AI account");
+  await screen.findByRole("option", { name: "Subscription 50" });
+  expect(screen.queryByRole("option", { name: "Subscription 51" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "More subscription providers" }));
+  await screen.findByRole("option", { name: "Subscription 51" });
+  expect((screen.getByRole("button", { name: "More API providers" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
 it("opens a new account draft for an enabled provider with no accounts", async () => {
   const provider = resource(EntityKind.PROVIDER, { name: "Account-ready provider", endpoint: "https://api.example.test/v1", protocol: "openai-chat", authentication: "bearer", enabled: true });
   const value = fixture([provider], undefined, () => ({ entries: [{ presetId: ProviderPresetId.UNSPECIFIED, providerId: provider.id, provider, displayName: "Account-ready provider", enabled: true, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] }));
