@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -262,6 +263,30 @@ func TestPausedManagedPoolChecksReleasesWithoutPreparing(t *testing.T) {
 	if !s.Paused || builder.calls != 0 || q.Current.RunnerVersion != "2.337.0" || q.CandidateVersion != "2.338.0" || q.LastCheck.IsZero() || !q.NextCheck.After(time.Now()) {
 		t.Fatal("paused release checks changed execution or lost freshness")
 	}
+}
+
+func TestManagedTartReadinessReturnsOwnershipFailureImmediately(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(vmOwnerMarkerPath(c, name)); err != nil {
+		t.Fatal(err)
+	}
+	driver, _ := fakeTart(c)
+	builder := &ManagedImageBuilder{Images: &ImageManager{Store: s, Tart: driver}}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err := builder.installTartArchive(ctx, c, name, "/Users/runner/actions-runner", "unused-archive", s.View().Installation, id)
+	requireCode(t, err, ErrOwnership)
 }
 
 func TestManagedImportedSourceSurvivesPreparationRetry(t *testing.T) {

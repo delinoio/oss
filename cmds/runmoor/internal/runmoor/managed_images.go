@@ -380,6 +380,9 @@ func (b *ManagedImageBuilder) installTartArchive(ctx context.Context, c Config, 
 		if p, ok := e.(*Problem); ok && p.Code == ErrImage {
 			return e
 		}
+		if p, ok := e.(*Problem); ok && p.Code == ErrOwnership {
+			return e
+		}
 		if !waitContext(ctx, time.Second) {
 			return ctx.Err()
 		}
