@@ -1,6 +1,7 @@
 # Runmoor command rules
 
 - Follow `docs/project-runmoor.md` and `docs/cmds-runmoor-foundation.md`; issue #893 is the product contract.
+- Linux `systemctl --user` service commands may inherit only caller-provided `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS` in addition to the existing minimal command environment. Keep `minimalEnv` unchanged for Tart, guests, and unrelated subprocesses; leave missing selectors unset and do not inherit arbitrary variables.
 - Keep CLI, TOML v1, SQLite v2 (with atomic v1 migration), and versioned JSON contracts synchronized with the English README and Markdown-owned `apps/public-docs/docs/runmoor` documentation at `https://oss.delino.io/runmoor`.
 - Generate scale-set, GitHub-style platform and architecture routing labels only when `init` creates a new pool: Docker amd64 uses `runmoor-linux`, `linux`, `x64`; Docker arm64 uses `runmoor-linux`, `linux`, `ARM64`; Tart arm64 uses `runmoor-macos`, `macOS`, `ARM64`. Do not synthesize labels for loaded, omitted or manually authored pool labels.
 - Use the official pinned `actions/scaleset` client. Persist message effects before acknowledgement; derive demand from statistics, never event counts. Bound advertised and acquired jobs by host and backend capacity, including DinD cost; recheck eligibility and capacity after a pending poll before acquisition.
