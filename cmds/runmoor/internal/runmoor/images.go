@@ -96,7 +96,7 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		if err := m.Tart.Stop(ctx, c, Runner{ID: im.ID, Handle: Handle{VM: im.VM}}, s); err != nil {
 			return nil, m.imageFailure(im.ID, err)
 		}
-		if _, err := m.Tart.startOwned(c, im.VM, s.Installation, im.ID, []string{"run", "--no-graphics", "--no-audio", im.VM}); err != nil {
+		if _, err := m.Tart.startOwned(ctx, c, im.VM, s.Installation, im.ID, []string{"run", "--no-graphics", "--no-audio", im.VM}); err != nil {
 			if p, ok := err.(*Problem); ok && p.Code == ErrOwnership {
 				return nil, m.imageFailure(im.ID, err)
 			}
@@ -144,7 +144,7 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		if e := m.reserve(c, im.ID); e != nil {
 			return nil, e
 		}
-		if _, e := m.Tart.startOwned(c, im.VM, s.Installation, im.ID, []string{"run", "--no-audio", im.VM}); e != nil {
+		if _, e := m.Tart.startOwned(ctx, c, im.VM, s.Installation, im.ID, []string{"run", "--no-audio", im.VM}); e != nil {
 			if p, ok := e.(*Problem); ok && p.Code == ErrOwnership {
 				return nil, m.imageFailure(im.ID, e)
 			}
@@ -194,7 +194,7 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 			return nil, e
 		}
 		if !v.Running {
-			if _, e = m.Tart.startOwned(c, im.VM, s.Installation, im.ID, []string{"run", "--no-graphics", "--no-audio", im.VM}); e != nil {
+			if _, e = m.Tart.startOwned(ctx, c, im.VM, s.Installation, im.ID, []string{"run", "--no-graphics", "--no-audio", im.VM}); e != nil {
 				if p, ok := e.(*Problem); ok && p.Code == ErrOwnership {
 					return nil, m.imageFailure(im.ID, e)
 				}

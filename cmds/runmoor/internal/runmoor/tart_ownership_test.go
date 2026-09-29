@@ -3,6 +3,7 @@ package runmoor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -360,7 +361,7 @@ func TestTartStartUsesTheVerifiedDirectoryAfterNameReplacement(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	_, err := driver.startOwned(c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
+	_, err := driver.startOwned(context.Background(), c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
 	requireCode(t, err, ErrOwnership)
 	if aliasedName != tartRunAlias(id) {
 		t.Fatalf("Tart start alias = %q, want %q", aliasedName, tartRunAlias(id))
@@ -373,6 +374,47 @@ func TestTartStartUsesTheVerifiedDirectoryAfterNameReplacement(t *testing.T) {
 	}
 	if err = removeTartRunAlias(c, tartRunAlias(id)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTartStartDoesNotLaunchAfterCallerCancelsDuringPrecheck(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"config.json", "nvram.bin", "disk.img"} {
+		if err := os.WriteFile(filepath.Join(vmPath(c, name), file), []byte("owned VM"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	driver, fixture := fakeTart(c)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fixture.afterGet = func(got string) {
+		if got != name {
+			t.Errorf("owned start precheck inspected %q, want %q", got, name)
+		}
+		cancel()
+	}
+	_, err := driver.startOwned(ctx, c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("owned start error = %v, want context cancellation", err)
+	}
+	for _, args := range fixture.commands {
+		if len(args) > 0 && args[0] == "run" {
+			t.Fatalf("cancelled owned start launched Tart: %q", args)
+		}
+	}
+	if fixture.running[name] {
+		t.Fatal("cancelled owned start started the VM")
 	}
 }
 

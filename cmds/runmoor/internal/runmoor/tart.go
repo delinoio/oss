@@ -710,14 +710,20 @@ func replaceCommandVMName(args []string, original, replacement string) ([]string
 	return result, replaced
 }
 
-func (t *TartDriver) startOwned(c Config, name, installation, entity string, args []string) (int, error) {
+func (t *TartDriver) startOwned(ctx context.Context, c Config, name, installation, entity string, args []string) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	dir, err := openVerifiedVMOwnerAt(c, name, name, installation, entity)
 	if err != nil {
 		return 0, err
 	}
 	defer dir.Close()
-	current, err := t.vmOwned(context.Background(), c, name, installation, entity)
+	current, err := t.vmOwned(ctx, c, name, installation, entity)
 	if err != nil {
+		return 0, err
+	}
+	if err = ctx.Err(); err != nil {
 		return 0, err
 	}
 	if current.Running {
@@ -730,6 +736,10 @@ func (t *TartDriver) startOwned(c Config, name, installation, entity string, arg
 	if _, _, err = createTartCommandAlias(c, alias); err != nil {
 		return 0, err
 	}
+	if err = ctx.Err(); err != nil {
+		_ = removeTartRunAlias(c, alias)
+		return 0, err
+	}
 	pinnedArgs, replaced := replaceCommandVMName(args, name, alias)
 	if !replaced {
 		_ = removeTartRunAlias(c, alias)
@@ -739,6 +749,10 @@ func (t *TartDriver) startOwned(c Config, name, installation, entity string, arg
 	if !ok {
 		_ = removeTartRunAlias(c, alias)
 		return 0, problem(ErrDependency, "The Tart command runner cannot bind operations to an owned VM.", "Use the supported Runmoor release and preserve the VM until its ownership can be verified.")
+	}
+	if err = ctx.Err(); err != nil {
+		_ = removeTartRunAlias(c, alias)
+		return 0, err
 	}
 	pid, runErr := executor.StartPinned(c.TartExecutable, pinnedArgs, tartEnv(c), dir)
 	if runErr != nil {
@@ -867,7 +881,7 @@ func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 	if _, e := t.runOwned(ctx, c, s.Installation, r.ID, name, []string{"set", name, "--cpu", strconv.Itoa(p.Resources.CPU), "--memory", strconv.FormatInt(p.Resources.MemoryMiB, 10)}, nil); e != nil {
 		return e
 	}
-	pid, e := t.startOwned(c, name, s.Installation, r.ID, []string{"run", "--no-graphics", "--no-audio", name})
+	pid, e := t.startOwned(ctx, c, name, s.Installation, r.ID, []string{"run", "--no-graphics", "--no-audio", name})
 	if e != nil {
 		if p, ok := e.(*Problem); ok && p.Code == ErrOwnership {
 			return e

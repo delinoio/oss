@@ -295,7 +295,7 @@ func (b *ManagedImageBuilder) prepareTart(ctx context.Context, c Config, p Pool,
 		return p, err
 	}
 	installation := b.Store.View().Installation
-	if _, err = b.Images.Tart.startOwned(c, im.VM, installation, im.ID, []string{"run", "--no-graphics", "--no-audio", im.VM}); err != nil {
+	if _, err = b.Images.Tart.startOwned(ctx, c, im.VM, installation, im.ID, []string{"run", "--no-graphics", "--no-audio", im.VM}); err != nil {
 		if problemErr, ok := err.(*Problem); ok && problemErr.Code == ErrOwnership {
 			return p, err
 		}
