@@ -14,6 +14,9 @@ service SystemService {
   rpc InspectBackup(InspectBackupRequest) returns (InspectBackupResponse);
   rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse);
   rpc ListBackupDeletions(ListBackupDeletionsRequest) returns (ListBackupDeletionsResponse);
+  rpc RequestBackup(RequestBackupRequest) returns (RequestBackupResponse);
+  rpc GetBackupCreation(GetBackupCreationRequest) returns (GetBackupCreationResponse);
+  rpc ListBackupCreations(ListBackupCreationsRequest) returns (ListBackupCreationsResponse);
 }
 service ResourceService {
   rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
@@ -1559,5 +1562,44 @@ message ListBackupDeletionsRequest {
 }
 message ListBackupDeletionsResponse {
   repeated BackupDeletionJob jobs = 1;
+  string next_page_token = 2;
+}
+
+// A reserved backup identity is not proof that an image has been published.
+enum BackupCreationState {
+  BACKUP_CREATION_STATE_UNSPECIFIED = 0;
+  BACKUP_CREATION_STATE_PENDING = 1;
+  BACKUP_CREATION_STATE_SUCCEEDED = 2;
+  BACKUP_CREATION_STATE_FAILED = 3;
+}
+message BackupCreationJob {
+  string id = 1;
+  string backup_id = 2;
+  uint64 revision = 3;
+  BackupCreationState state = 4;
+  string accepted_at = 5;
+  string finished_at = 6;
+  string problem_code = 7;
+}
+message RequestBackupRequest {
+  string request_id = 1;
+}
+message RequestBackupResponse {
+  BackupCreationJob job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetBackupCreationRequest {
+  string id = 1;
+}
+message GetBackupCreationResponse {
+  BackupCreationJob job = 1;
+}
+message ListBackupCreationsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+message ListBackupCreationsResponse {
+  repeated BackupCreationJob jobs = 1;
   string next_page_token = 2;
 }

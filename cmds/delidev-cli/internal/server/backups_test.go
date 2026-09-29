@@ -91,3 +91,52 @@ func TestBackupDeletionRPCIsOwnerClientOnlyAndReturnsCurrentOriginalJob(t *testi
 		t.Fatal(listing, err)
 	}
 }
+
+func TestBackupCreationRPCSeparatesAcceptanceFromPublicationAndRetainsOriginalJob(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := s.Store.BindIdentity(ctx, s.Identity.ServerID); err != nil {
+		t.Fatal(err)
+	}
+	request := &pb.RequestBackupRequest{RequestId: string(domain.NewID())}
+	accepted, err := s.RequestBackup(ctx, connect.NewRequest(request))
+	if err != nil || accepted.Msg.Job.State != pb.BackupCreationState_BACKUP_CREATION_STATE_PENDING {
+		t.Fatal(accepted, err)
+	}
+	if items, err := s.Store.BackupInventory(ctx); err != nil || len(items) != 0 {
+		t.Fatal("acceptance published an image", items, err)
+	}
+	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
+	if _, err := s.RequestBackup(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal(err)
+	}
+	if _, err := s.GetBackupCreation(worker, connect.NewRequest(&pb.GetBackupCreationRequest{Id: accepted.Msg.Job.Id})); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal(err)
+	}
+	if _, err := s.ListBackupCreations(worker, connect.NewRequest(&pb.ListBackupCreationsRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal(err)
+	}
+	if _, err := s.Store.RunBackupCreation(ctx, domain.ID(accepted.Msg.Job.Id), s.Identity.ServerID); err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := s.RequestBackup(ctx, connect.NewRequest(request))
+	if err != nil || !repeated.Msg.Replayed || repeated.Msg.Job.Id != accepted.Msg.Job.Id || repeated.Msg.Job.State != pb.BackupCreationState_BACKUP_CREATION_STATE_SUCCEEDED {
+		t.Fatal(repeated, err)
+	}
+	for range 2 {
+		if _, err := s.RequestBackup(ctx, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := s.ListBackupCreations(ctx, connect.NewRequest(&pb.ListBackupCreationsRequest{PageSize: 1}))
+	if err != nil || len(page.Msg.Jobs) != 1 || page.Msg.NextPageToken == "" {
+		t.Fatal(page, err)
+	}
+	next, err := s.ListBackupCreations(ctx, connect.NewRequest(&pb.ListBackupCreationsRequest{PageSize: 1, PageToken: page.Msg.NextPageToken}))
+	if err != nil || len(next.Msg.Jobs) != 1 || next.Msg.Jobs[0].Id == page.Msg.Jobs[0].Id {
+		t.Fatal(next, err)
+	}
+	if _, err := s.ListBackupCreations(ctx, connect.NewRequest(&pb.ListBackupCreationsRequest{PageSize: 2, PageToken: page.Msg.NextPageToken})); err == nil {
+		t.Fatal("cursor changed page scope")
+	}
+}

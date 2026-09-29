@@ -871,7 +871,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   configuration export [--output PATH]
   configuration preview --input PATH|- [--output PATH]
   configuration apply --input PATH|- [--request-id ID]
-  backup create
+  backup create [--wait]
+  backup creation --id JOB-ID
+  backup creations [--limit N] [--page-token TOKEN]
   backup list [--limit N] [--page-token TOKEN]
   backup inspect --id ID
   backup delete --id ID --expected-revision REV --size-bytes BYTES --modified-at TIME --sha256 SHA256 --confirm

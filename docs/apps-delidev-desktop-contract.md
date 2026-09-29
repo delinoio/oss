@@ -430,3 +430,8 @@ dependency matches the runtime's 150.0.0 pin. Remove this workaround only after
 upstream propagates accessibility state to newly created browsers. Structured
 exit-requested/exit-completed logs contain no renderer content. Native shutdown
 latency remains an independently recorded acceptance concern.
+
+
+### Durable backup creation
+
+`RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose original durable jobs through Connect and generated queries. Current CLI and Settings use that path; the synchronous `CreateBackup` remains compatible. Keep pending acceptance separate from image publication, exact retries across navigation, typed failure/stale observations and integer precision. Jobs resume after server restart without client resubmission, and completed history does not assert current image availability. See the [storage contract](cmds-delidev-storage-contract.md).

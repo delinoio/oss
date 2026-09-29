@@ -24,10 +24,54 @@ func backupCommand(ctx context.Context, c client, o options, args []string) (any
 	f := flags("backup " + args[0])
 	switch args[0] {
 	case "create":
+		wait := f.Bool("wait", false, "wait for the original durable job; interruption does not cancel it")
 		if err := parse(f, args[1:]); err != nil {
 			return nil, err
 		}
-		result, err := c.system.CreateBackup(ctx, request(c, &pb.CreateBackupRequest{RequestId: string(o.requestID)}))
+		result, err := c.system.RequestBackup(ctx, request(c, &pb.RequestBackupRequest{RequestId: string(o.requestID)}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		if *wait {
+			for result.Msg.Job != nil && result.Msg.Job.State == pb.BackupCreationState_BACKUP_CREATION_STATE_PENDING {
+				timer := time.NewTimer(250 * time.Millisecond)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return nil, domain.SafeError(ctx.Err())
+				case <-timer.C:
+				}
+				current, err := c.system.GetBackupCreation(ctx, request(c, &pb.GetBackupCreationRequest{Id: result.Msg.Job.Id}))
+				if err != nil {
+					return nil, rpc.ClientError(err)
+				}
+				result.Msg.Job = current.Msg.Job
+			}
+		}
+		return backupOutput(result.Msg)
+	case "creation":
+		id := f.String("id", "", "original backup creation job UUID")
+		if err := parse(f, args[1:]); err != nil {
+			return nil, err
+		}
+		if err := domain.ID(*id).Validate(); err != nil {
+			return nil, err
+		}
+		result, err := c.system.GetBackupCreation(ctx, request(c, &pb.GetBackupCreationRequest{Id: *id}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		return backupOutput(result.Msg)
+	case "creations":
+		limit := f.Uint("limit", 20, "page size, from 1 to 99")
+		page := f.String("page-token", "", "original creation page token")
+		if err := parse(f, args[1:]); err != nil {
+			return nil, err
+		}
+		if *limit < 1 || *limit > 99 {
+			return nil, usage()
+		}
+		result, err := c.system.ListBackupCreations(ctx, request(c, &pb.ListBackupCreationsRequest{PageSize: uint32(*limit), PageToken: *page}))
 		if err != nil {
 			return nil, rpc.ClientError(err)
 		}

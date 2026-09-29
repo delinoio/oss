@@ -249,6 +249,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		service.runScheduleDispatch(scheduleCtx)
 	}()
 	defer func() { stopSchedules(); <-schedulesDone }()
+	creationsCtx, stopCreations := context.WithCancel(child)
+	creationsDone := make(chan struct{})
+	go func() { defer close(creationsDone); service.runBackupCreations(creationsCtx) }()
+	defer func() { stopCreations(); <-creationsDone }()
 	deletionsCtx, stopDeletions := context.WithCancel(child)
 	deletionsDone := make(chan struct{})
 	go func() { defer close(deletionsDone); service.runBackupDeletions(deletionsCtx) }()
@@ -283,6 +287,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	<-dispatchDone
 	stopSchedules()
 	<-schedulesDone
+	stopCreations()
+	<-creationsDone
+	stopDeletions()
+	<-deletionsDone
 	service.executionAuthority.close()
 	if err := service.closeAccountSecrets(); err != nil {
 		return domain.SafeError(err)

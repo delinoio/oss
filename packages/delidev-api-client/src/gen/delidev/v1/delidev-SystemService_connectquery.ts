@@ -48,3 +48,18 @@ export const deleteBackup = SystemService.method.deleteBackup;
  * @generated from rpc delidev.v1.SystemService.ListBackupDeletions
  */
 export const listBackupDeletions = SystemService.method.listBackupDeletions;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.RequestBackup
+ */
+export const requestBackup = SystemService.method.requestBackup;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.GetBackupCreation
+ */
+export const getBackupCreation = SystemService.method.getBackupCreation;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.ListBackupCreations
+ */
+export const listBackupCreations = SystemService.method.listBackupCreations;

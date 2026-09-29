@@ -15,11 +15,11 @@ to the owner and paired clients. Workers cannot invoke them. The existing
 actor-authenticated creation receipt reserves one backup UUID before filesystem
 work; the same request retries the original image instead of creating another.
 
-`delidev backup create`, `backup list [--limit N] [--page-token TOKEN]` and
+`delidev backup create [--wait]`, `backup list [--limit N] [--page-token TOKEN]` and
 `backup inspect --id ID` use those same RPCs. Ordinary commands never start a
 server. Settings > Backups provides creation, pagination and explicit integrity
 inspection, retaining the exact creation request after an uncertain response.
-Backup sizes use decimal strings in CLI JSON and BigInt in the desktop.
+The legacy `CreateBackup` RPC retains its synchronous receipt behavior for existing clients; current CLI/desktop creation uses the durable path below. Backup sizes use decimal strings in CLI JSON and BigInt in the desktop.
 
 Listing returns UUID, byte size and modification time only; it does not establish
 integrity, creation provenance or restoration eligibility. Default page size is
@@ -45,6 +45,41 @@ operation, backup UUID, schema and correlation/error codes, never paths, databas
 content or credentials. No inspection opens a credential store, changes the
 original image, restores a database or proves Worker/browser/credential recovery.
 Failed reinspection removes the desktop's earlier success indication.
+
+## Durable managed backup creation
+
+`SystemService.RequestBackup` reserves a generic `create-backup` job and original
+image UUID in one actor/server-bound UUID-v7 receipt. `GetBackupCreation` and
+`ListBackupCreations` expose typed pending/succeeded/failed state, revision,
+timestamps and safe problem codes. Pages are signed against the current actor and
+page size (20 default, 99 maximum); at most 32 creations may remain pending.
+New creation has no prior image revision. Repeating a request reads the current
+original job, including after publication; changing its actor cannot borrow it.
+No additional SQLite migration is required beyond the existing job schema.
+
+The server owns a joined maintenance controller independently of the requesting
+client, retries pending jobs every two seconds and bounds each image attempt to
+thirty seconds. Original device authority is rechecked before copying. Lock
+waiters observe cancellation while another backup holds file ownership; shutdown
+joins both creation and deletion controllers before reporting server stopped.
+SQLite still supplies a consistent committed image. Capture time is the actual
+successful copy, not acceptance time. A canceled client does not cancel its job;
+server interruption preserves pending state and the reserved identity.
+
+If the original file was published before a lost completion acknowledgment, retry
+validates and synchronizes that same file. Terminal success never recreates a
+later removed image. External permanent deletion always wins, including between
+image publication and job settlement. Revoked authority, corrupt ownership or a
+deletion obligation ends the job with a typed failure; transient storage failure
+remains pending. Unchanged failures do not grow revisions or mutation receipts.
+Success records historical publication, not current file availability, integrity
+at a later time, credential recovery or database restoration.
+
+CLI `backup create` now returns the accepted job. `--wait` observes its existing
+job until terminal state or caller cancellation without canceling creation.
+`backup creation --id JOB-ID` and `backup creations` work after restart. Settings
+keeps exact uncertain acceptance retries, polls visible creation jobs, refreshes
+the image inventory on completed publication and labels stale/unknown results.
 
 ## Permanent managed backup deletion
 

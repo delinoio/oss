@@ -33,11 +33,23 @@ func TestBackupCLIUsesServerInventoryAndChecksOriginalImage(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("server startup timed out")
 	}
-	code, value := cliRun(t, root, []string{"backup", "create"}, "")
+	code, value := cliRun(t, root, []string{"backup", "create", "--wait"}, "")
 	if code != 0 {
 		t.Fatal(code, value)
 	}
-	id := value["result"].(map[string]any)["id"].(string)
+	creation := value["result"].(map[string]any)["job"].(map[string]any)
+	id := creation["backup_id"].(string)
+	if creation["state"] != "BACKUP_CREATION_STATE_SUCCEEDED" {
+		t.Fatal(value)
+	}
+	code, value = cliRun(t, root, []string{"backup", "creation", "--id", creation["id"].(string)}, "")
+	if code != 0 || value["result"].(map[string]any)["job"].(map[string]any)["backup_id"] != id {
+		t.Fatal(code, value)
+	}
+	code, value = cliRun(t, root, []string{"backup", "creations", "--limit", "1"}, "")
+	if code != 0 || len(value["result"].(map[string]any)["jobs"].([]any)) != 1 {
+		t.Fatal(code, value)
+	}
 	code, value = cliRun(t, root, []string{"backup", "list", "--limit", "1"}, "")
 	if code != 0 {
 		t.Fatal(code, value)

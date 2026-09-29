@@ -27,14 +27,15 @@ const applicationID = 0x444c4456
 const MaxPage = 200
 
 type Store struct {
-	db         *sql.DB
-	root       string
-	lock       *security.Lock
-	gate       sync.RWMutex
-	backupGate sync.Mutex
-	notifyMu   sync.Mutex
-	notify     chan struct{}
-	closed     bool
+	db                 *sql.DB
+	root               string
+	lock               *security.Lock
+	gate               sync.RWMutex
+	backupGate         sync.Mutex
+	backupCreationGate sync.Mutex
+	notifyMu           sync.Mutex
+	notify             chan struct{}
+	closed             bool
 }
 
 type Record struct {
@@ -759,7 +760,9 @@ func (s *Store) Backup(ctx context.Context) (domain.ID, error) {
 }
 
 func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
-	s.backupGate.Lock()
+	if err := lockBackupContext(ctx, &s.backupGate); err != nil {
+		return "", err
+	}
 	defer s.backupGate.Unlock()
 	if err := s.backupNotDeleted(ctx, id); err != nil {
 		return "", err

@@ -3,7 +3,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { SystemService, BackupDeletionState, newRequestId } from "@delinoio/delidev-api-client";
+import { SystemService, BackupCreationState, BackupDeletionState, newRequestId } from "@delinoio/delidev-api-client";
 import { Backups } from "./backups";
 import { MutationIntents } from "./mutation";
 
@@ -12,13 +12,15 @@ function fixture() {
   const backup = { id, revision: 1n, sizeBytes: 9007199254740993n, modifiedAt: "2026-09-29T00:00:00Z" };
   const list = vi.fn(async () => ({ backups: [backup] }));
   const inspect = vi.fn(async () => ({ backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() }));
-  const create = vi.fn(async (_input: unknown) => ({ id, requestId: newRequestId(), replayed: false }));
+  const creation = { id: newRequestId(), backupId: id, revision: 1n, state: BackupCreationState.PENDING, problemCode: "" };
+  const create = vi.fn(async (_input: unknown) => ({ job: creation, requestId: newRequestId(), replayed: false }));
+  const creations = vi.fn(async () => ({ jobs: [creation] }));
   const remove = vi.fn(async (_input: unknown) => ({ job: { id: newRequestId(), backupId: id, revision: 1n, state: BackupDeletionState.PENDING } }));
   const deletions = vi.fn(async () => ({ jobs: [] }));
-  const transport = createRouterTransport(router => router.service(SystemService, { listBackups: list, inspectBackup: inspect, createBackup: create, deleteBackup: remove, listBackupDeletions: deletions }));
+  const transport = createRouterTransport(router => router.service(SystemService, { listBackups: list, inspectBackup: inspect, requestBackup: create, listBackupCreations: creations, deleteBackup: remove, listBackupDeletions: deletions }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Backups active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { id, list, inspect, create, remove, deletions, view };
+  return { id, list, inspect, create, creation, creations, remove, deletions, view };
 }
 
 it("lists metadata without inspecting automatically and preserves exact byte counts", async () => {
@@ -49,7 +51,7 @@ it("retries an uncertain creation with its original request after hiding setting
   fireEvent.click(screen.getByRole("button", { name: "Retry the same backup creation" }));
   await waitFor(() => expect(f.create).toHaveBeenCalledTimes(2));
   expect(f.create.mock.calls[0]![0]).toEqual(f.create.mock.calls[1]![0]);
-  await screen.findByText(`Backup created: ${f.id}`);
+  await screen.findByText(`Backup creation accepted: ${f.creation.id}`);
 });
 
 
@@ -72,4 +74,19 @@ it("requires inspected confirmation and retains the exact deletion after an unce
   await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(2));
   expect(f.remove.mock.calls[1]![0]).toEqual(first);
   await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+});
+
+
+it("shows durable creation outcomes without treating pending or stale observations as publication", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByText("Backup creation pending");
+  expect(screen.queryByText("Backup creation completed")).toBeNull();
+  f.creations.mockResolvedValueOnce({ jobs: [{ ...f.creation, revision: 2n, state: BackupCreationState.SUCCEEDED }] });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh creation jobs" }));
+  await screen.findByText("Backup creation completed");
+  await waitFor(() => expect(f.list.mock.calls.length).toBeGreaterThan(1));
+  f.creations.mockRejectedValueOnce(new ConnectError("Server unavailable", Code.Unavailable));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh creation jobs" }));
+  await screen.findByText("Previous creation observations are shown; current state is unavailable.");
 });

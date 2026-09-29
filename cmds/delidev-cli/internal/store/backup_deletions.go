@@ -217,7 +217,9 @@ func (s *Store) DeleteBackup(ctx context.Context, request domain.ID, in BackupDe
 	if !ok || actor != in.Actor {
 		return Record{}, false, deletionConflict()
 	}
-	s.backupGate.Lock()
+	if err := lockBackupContext(ctx, &s.backupGate); err != nil {
+		return Record{}, false, err
+	}
 	defer s.backupGate.Unlock()
 	owner, err := s.ScopeIdentity(ctx)
 	if err != nil {
@@ -261,7 +263,9 @@ func (s *Store) DeleteBackup(ctx context.Context, request domain.ID, in BackupDe
 // RestoreBackupDeletionIntents rebuilds metadata lost to an older DB image. It
 // runs before serving clients. It never drops or weakens external obligations.
 func (s *Store) RestoreBackupDeletionIntents(ctx context.Context, server domain.ID) error {
-	s.backupGate.Lock()
+	if err := lockBackupContext(ctx, &s.backupGate); err != nil {
+		return err
+	}
 	defer s.backupGate.Unlock()
 	root := filepath.Join(s.root, "backup-deletions")
 	if err := security.CheckPrivateDir(root); err != nil {
@@ -331,7 +335,9 @@ func (s *Store) BackupDeletionJobs(ctx context.Context, after domain.ID, limit i
 }
 
 func (s *Store) RunBackupDeletion(ctx context.Context, id, server domain.ID) (Record, error) {
-	s.backupGate.Lock()
+	if err := lockBackupContext(ctx, &s.backupGate); err != nil {
+		return Record{}, err
+	}
 	defer s.backupGate.Unlock()
 	row, err := s.Get(ctx, domain.JobKind, id)
 	if err != nil {

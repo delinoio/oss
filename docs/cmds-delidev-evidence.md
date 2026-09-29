@@ -2273,3 +2273,29 @@ Focused real SQLite/Connect/CLI race tests pass (store 3.751s, server 2.258s, CL
   Buf lint/breaking/generated drift, focused CEF native tests and root `cargo test`.
   Root Cargo used `TMPDIR=/private/tmp` with the required pnport preload built;
   native build/test invocations were serialized to avoid shared-target interference.
+
+
+### Durable managed backup creation (2026-09-29)
+
+Implemented actor-bound job/image reservation, asynchronous Connect admission,
+individual/paged status, CLI creation/wait/status and Settings job presentation.
+The joined server controller reuses a published original image after interrupted
+settlement and keeps transient failures pending without unbounded receipt growth.
+Cancellation-aware file ownership locks prevent canceled observations/jobs from
+waiting indefinitely behind another image. Permanent deletion prevents recreation.
+No new migration or credential/Worker filesystem access is introduced.
+
+Focused real SQLite/store/Connect/CLI race tests passed (store 4.660s, server
+2.154s, CLI 6.356s). They cover concurrent original requests, canceled attempts,
+reopening after lost publication acknowledgment, exact image/hash/mtime retention,
+queue bounds, recoverable storage failures, actor revocation, deletion precedence,
+RPC Worker denial/cursor binding and real server controller use from the CLI.
+Four frontend tests passed, including retained uncertain acceptance, typed
+pending/completed/stale display and publication-driven inventory refresh. Full
+suite and generated validation results are recorded after completion below.
+
+Database restoration is still unimplemented: it additionally needs coordinated
+quiescence, preserved live authorization, quarantine of historical execution and
+scheduling state, atomic commit/recovery and preserved deletion obligations.
+These creation tests do not establish that restore boundary or whole-workspace
+snapshot/session permanent deletion acceptance.

@@ -1,4 +1,5 @@
 # DeliDev CLI
+- Durable backup creation uses `SystemService.RequestBackup` and existing actor/server-bound jobs, with separate acceptance and publication. Keep original image/job IDs across client loss and restart, recheck the original actor, join maintenance before stopped logs, honor lock-wait cancellation, and let external deletion obligations win. Preserve synchronous `CreateBackup` compatibility; CLI `backup create [--wait]` and desktop use durable status. Follow `docs/cmds-delidev-storage-contract.md`.
 
 - Managed backup deletion uses existing durable jobs/receipts and schema-21 indexing, plus immutable synchronized `backup-deletions/` intents outside SQLite before unlink. Preserve exact inspected revision/metadata/hash, original actor/request identity, startup obligation reconstruction, creation-replay suppression, bounded pending retries and source preservation on mismatch. Never evict deletion obligations or equate logical image bytes with reclaimed disk space; follow `docs/cmds-delidev-storage-contract.md`.
 
