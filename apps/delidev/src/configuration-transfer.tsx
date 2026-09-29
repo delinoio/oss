@@ -80,7 +80,7 @@ export function formatConfigurationReview(raw: string): string {
 
 // The original JSON bytes, not a JS number round trip, are the export/import
 // authority. Parsed objects below are display-only; revisions use bigint.
-export function ConfigurationTransfer({ active }: { active: boolean }) {
+export function ConfigurationTransfer({ active, onWorkflowReadyChange }: { active: boolean; onWorkflowReadyChange?: (active: boolean) => void }) {
   const [exported, setExported] = useState("");
   const [draft, setDraft] = useState("");
   const [loaded, setLoaded] = useState<{ raw: string; bundle: Bundle }>();
@@ -112,6 +112,10 @@ export function ConfigurationTransfer({ active }: { active: boolean }) {
   const state = [JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(reportedState as JobState) ? reportedState : text(jobValue?.state) || reportedState;
   const importProblem = object(jobValue?.problem ?? report?.problem);
   const blocked = loading || exportRead.isPending || previewRead.isPending || mutation.busy || mutation.uncertain || Boolean(report);
+  useEffect(() => {
+    onWorkflowReadyChange?.(Boolean(draft || loaded || preview || report || problem || loading || exportRead.isPending || previewRead.isPending || mutation.busy || mutation.uncertain));
+    return () => onWorkflowReadyChange?.(false);
+  }, [draft, exportRead.isPending, loaded, loading, mutation.busy, mutation.uncertain, onWorkflowReadyChange, preview, previewRead.isPending, problem, report]);
   useEffect(() => { if (state === JobState.Succeeded) void queryClient.invalidateQueries({ refetchType: "active" }); }, [state, queryClient]);
   const invalidate = () => { generation.current++; setPreview(undefined); setProblem(""); };
   const load = (raw: string) => {

@@ -3,11 +3,11 @@ import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, InboxService, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode } from "./documents";
 
-function fixture(interactions: Resource[] = []) {
+function fixture(interactions: Resource[] = [], repositories: Resource[] = []) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
   const message = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ role: "assistant", text: '<script>window.invalid = true</script>', state: "completed" }) });
@@ -16,20 +16,23 @@ function fixture(interactions: Resource[] = []) {
   const enqueues = vi.fn(async () => ({ change: { session } }));
   const controls = vi.fn(async () => ({ change: { session } }));
   const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1 }));
+  const githubQuery = vi.fn(async () => ({ schemaVersion: 1, documentJson: encode({}) }));
+  const preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status });
     router.service(SessionService, { listSessions: () => ({ sessions: [session, other] }), listQueue: () => ({ inputs: [] }), enqueueInput: enqueues, controlSession: controls });
     router.service(ResourceService, {
       getSnapshot: (request) => ({ resources: [request.filter?.sessionId === other.id ? other : session], cursor: "snapshot" }),
-      listResources: (request) => ({ resources: request.filter?.kind === EntityKind.MESSAGE ? [message] : request.filter?.kind === EntityKind.INTERACTION ? interactions : [] }),
+      listResources: (request) => ({ resources: request.filter?.kind === EntityKind.MESSAGE ? [message] : request.filter?.kind === EntityKind.INTERACTION ? interactions : request.filter?.kind === EntityKind.REPOSITORY ? repositories : [] }),
       async *watchEvents(_request, context) {
         await new Promise<void>((resolve) => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); });
       },
     });
-    router.service(InboxService, { listInbox: () => ({ entries: [] }) });
+    router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: async () => ({ preferences }) });
+    router.service(IntegrationService, { queryRepositoryIntegration: githubQuery });
     router.service(ConfigurationService, {});
   });
-  return { transport, session, message, enqueues, controls, status };
+  return { transport, session, message, enqueues, controls, status, githubQuery };
 }
 
 it("keeps the draft and session mounted across settings and navigation, and renders native text inertly", async () => {
@@ -279,4 +282,77 @@ it.each(["valid", "mixed", "null"])("renders closed Grok user history through se
   expect(screen.queryByText("Original verified Grok input")).toBeNull();
  }
  expect(value.enqueues).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled();
+});
+
+it("opens the PR shortcut in Repositories without reading GitHub until the repository browser is activated", async () => {
+  const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository", integration_id: newRequestId(), github_owner: "owner", github_name: "repo" }) });
+  const value = fixture([], [repository]);
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
+  await screen.findByRole("button", { name: "Browse GitHub items" });
+  expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true");
+  expect(value.githubQuery).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  await waitFor(() => expect(value.githubQuery).toHaveBeenCalledTimes(1));
+});
+
+it("defers the PR entry while a parent configuration editor draft is open", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Provider" }));
+  const name = await screen.findByRole("textbox", { name: "Name" });
+  fireEvent.change(name, { target: { value: "Retained provider draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained provider draft");
+  expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(value.enqueues).not.toHaveBeenCalled();
+  expect(value.controls).not.toHaveBeenCalled();
+});
+
+it("defers the PR entry until a nested integration profile draft is canceled", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
+  const name = screen.getByRole("textbox", { name: "Profile name" });
+  fireEvent.change(name, { target: { value: "Retained GitHub profile draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  expect((screen.getByRole("textbox", { name: "Profile name" }) as HTMLInputElement).value).toBe("Retained GitHub profile draft");
+  expect(screen.getByRole("button", { name: "Integrations" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(value.githubQuery).not.toHaveBeenCalled();
+});
+
+it("retains and defers around notification and import drafts until their explicit cancel path", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Questions and approval requests" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  expect((screen.getByRole("checkbox", { name: "Questions and approval requests" }) as HTMLInputElement).checked).toBe(false);
+  expect(screen.getByRole("button", { name: "Notifications" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
+  const importDraft = screen.getByRole("textbox", { name: "Configuration JSON" });
+  fireEvent.change(importDraft, { target: { value: "{\"version\":1" } });
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  expect((screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement).value).toBe("{\"version\":1");
+  expect(screen.getByRole("button", { name: "Import / Export" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.change(importDraft, { target: { value: "" } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
 });
