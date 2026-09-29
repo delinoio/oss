@@ -1,5 +1,7 @@
 # DeliDev CLI
 
+- Keep the supplied transparent PNG as the canonical DeliDev app icon. Generate the 256px native window/tray PNG and multiresolution Windows ICO from it, and include the full-resolution source in Tauri's bundle icons for macOS ICNS generation. Track the source through exact-path Git LFS as documented in `docs/apps-delidev-desktop-contract.md` and `docs/repository-workflow-contract.md`.
+
 - Session Diff uses authenticated Connect Query on the selected prepared repository, with distinct current HEAD, staged and Worktree creation comparisons. Validate complete scoped observations before rendering inert patches; expose untracked files, Gitlink-only submodules, unborn roots and stale/error state truthfully. Preserve the composer and focus across Files/Diff navigation, discard inactive caches, and never infer line review, patch application or execution actions.
 
 - Append newly created live transcript messages and interactions on their last loaded pages in authenticated stream delivery order, even when a replacement Worker's UUID sorts earlier than the page. Keep earlier pages bounded, suppress duplicates and removals, and scope every appended resource to its session; UUID ordering is not a live append clock.
