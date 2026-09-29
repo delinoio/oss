@@ -3252,11 +3252,19 @@ Executed checks:
   '^TestCLISessionAcceptanceQueueAndArchive$' -count=1 -timeout=3m`.
   This establishes that this particular observed failure also occurs without
   the issue #1102 change; it does not classify the other broad-suite failures.
+- The initial PR's `DevHud Protocol and Client` job passed protocol generation
+  but timed out the combined notification/import draft UI regression at five
+  seconds. The CI repair separates those independently initialized workflows
+  into two tests with their original retention, deferral and explicit-cancel
+  assertions intact. `pnpm test` in `apps/delidev` passed type checking, all
+  942 UI tests in 74 files, native package/desktop-launch script fixtures and
+  the frontend production build. No desktop behavior or test timeout was changed.
 
 These are isolated temporary protocol/history/process and authenticated RPC
 fixtures. The public fixture's checkpoint digest represents independently
 retained Worker proof; it does not launch the installed Claude CLI. No new
 installed-Claude failed-provider run, hosted-account inference, native desktop
 interaction, Windows/Linux runtime, distribution or release acceptance is
-claimed. No protocol, frontend or Rust source changes are needed for this
-existing Resume/recovery boundary.
+claimed. The Resume/recovery implementation requires no protocol, frontend
+behavior or Rust changes; the separate UI test repair above addresses its
+observed PR CI timeout.

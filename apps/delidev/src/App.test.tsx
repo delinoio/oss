@@ -536,7 +536,8 @@ it("defers the PR entry until a nested integration profile draft is canceled", a
   expect(value.githubQuery).not.toHaveBeenCalled();
 });
 
-it("retains and defers around notification and import drafts until their explicit cancel path", async () => {
+// Each independently mounted draft workflow gets its own bounded test deadline.
+it("retains and defers around a notification draft until its explicit cancel path", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -550,9 +551,12 @@ it("retains and defers around notification and import drafts until their explici
   expect(screen.getByRole("button", { name: "Notifications" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+});
 
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+it("retains and defers around an import draft until its explicit cancel path", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
   const importDraft = screen.getByRole("textbox", { name: "Configuration JSON" });
   fireEvent.change(importDraft, { target: { value: "{\"version\":1" } });
