@@ -2779,3 +2779,32 @@ blocked HEAD command lasts thirty seconds, and every case must prove that HEAD
 inspection actually started. The focused race group passes (14.868s), covering
 native absent/invalid exits and timeout. Product Git/read deadlines are unchanged;
 the separately recorded PR-match and Windows workspace failures remain unresolved.
+
+### PR #1063 final repair verification and unresolved findings (2026-09-29)
+
+- Final complete store race tests pass (71.908s); final DeliDev Go vet passes.
+  The new atomic-claim store tests cross-compile for Windows amd64 and Linux
+  arm64. Those are compile checks, not native runtime evidence.
+- Root `cargo test -- --test-threads=1` passes with `TMPDIR=/private/tmp` after
+  preparing the documented pnport macOS companion. The merged native library
+  tests pass (14 passed, four opt-in ignored) and the CEF desktop-host check
+  passes. Final desktop verification after the registration-recovery merge
+  passes 73 files / 883 tests, type checking, eight packaging tests and build.
+- Final Buf lint, breaking and deterministic generated-source checks pass.
+  API-client tests (41) and LFS integrity passed earlier in this repair; no
+  further client/schema/asset changes followed. Generated repository-owned
+  desktop/client `dist` directories are removed before publication.
+- Nine actionable review findings are repaired. The native CEF Quit finding
+  remains unresolved: inspection of the pinned runtime's browser-drain and
+  shutdown sequence and the existing native sample does not establish a safe
+  fix or successful process termination. No speculative shutdown workaround,
+  forced-success termination or native-unsupported classification was added.
+- The last observed Windows CI failures in CLI/workspace Git reads and Grok
+  creation remain unresolved. The lifecycle status-contention fixture repair
+  is verified only on macOS. The earlier full macOS workspace run's PR-match
+  observation failure also remains unresolved. The complete Go race command
+  is not reported green; focused passing reruns do not erase those failures.
+- The PR remains a partial implementation of the approved seven-stage plan.
+  Real accounts, hosted inference, private GitHub operations/product Git push,
+  Windows/Linux native execution, production signing and publication remain
+  outside this verification. The one-shot repair does not monitor subsequent CI.
