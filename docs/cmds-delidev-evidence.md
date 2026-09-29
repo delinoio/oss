@@ -2612,3 +2612,15 @@ diagnostics, the same focused case passed under race in 143.047s and without rac
 in 118.505s. This is an intermittent unresolved observation failure, not evidence
 of a product fix or a passing complete race suite. Production read deadlines and
 read-authority validation were not weakened.
+
+### PR #1063 local PR observation fixture deadline (2026-09-29)
+
+The combined race run also failed the unborn workspace diff and the Worktree PR
+matching observation with `recovery_required`; all harness, server, store and
+Worker packages passed. Both workspace cases passed together on a focused race
+retry (33.705s). The PR matching fixture was allocating its 15-second read
+deadline before native execution-lease setup and baseline capture. It now starts
+that unchanged budget immediately before the read, matching the server's actual
+dispatch boundary and the sibling mismatch fixture. Its focused race test passed
+again in 18.147s. The unborn-diff failure remains intermittent and is not called
+fixed by this test correction.
