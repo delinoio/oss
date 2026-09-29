@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,9 @@ func TestImageHashStopsReadingOnCancellation(t *testing.T) {
 }
 
 func TestImageDigestPreservesFormatAndRejectsCancelledResults(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("Tart image file access uses Unix descriptor-relative opens")
+	}
 	c := fixtureConfig(t)
 	vm := "digest-fixture"
 	if err := os.MkdirAll(vmPath(c, vm), 0700); err != nil {
@@ -65,19 +69,66 @@ func TestImageDigestPreservesFormatAndRejectsCancelledResults(t *testing.T) {
 		}
 		_, _ = io.WriteString(h, contents)
 	}
-	digest, err := imageDigest(context.Background(), c, vm)
+	dir, err := openTartVMDirectory(vmPath(c, vm))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	digest, err := imageDigestAt(context.Background(), dir)
 	if err != nil || digest != hex.EncodeToString(h.Sum(nil)) {
 		t.Fatal("sealed image digest compatibility changed", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if digest, err = imageDigest(ctx, c, vm); digest != "" || !errors.Is(err, context.Canceled) {
+	if digest, err = imageDigestAt(ctx, dir); digest != "" || !errors.Is(err, context.Canceled) {
 		t.Fatal("cancelled hashing published a digest", digest, err)
 	}
 	ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
-	if digest, err = imageDigest(ctx, c, vm); digest != "" || !errors.Is(err, context.DeadlineExceeded) {
+	if digest, err = imageDigestAt(ctx, dir); digest != "" || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("expired hashing published a digest", digest, err)
+	}
+}
+
+func TestImageDigestUsesPinnedVMDirectoryAfterPathReplacement(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("Tart image file access uses Unix descriptor-relative opens")
+	}
+	c := fixtureConfig(t)
+	vm := "digest-pinned-fixture"
+	path := vmPath(c, vm)
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	original := []string{"original config", "original nvram", "original disk"}
+	for i, name := range []string{"config.json", "nvram.bin", "disk.img"} {
+		if err := os.WriteFile(filepath.Join(path, name), []byte(original[i]), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir, err := openTartVMDirectory(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	if err = os.Rename(path, path+".replaced"); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"config.json", "nvram.bin", "disk.img"} {
+		if err = os.WriteFile(filepath.Join(path, name), []byte("replacement "+name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := sha256.New()
+	for _, contents := range original {
+		_, _ = io.WriteString(want, contents)
+	}
+	digest, err := imageDigestAt(context.Background(), dir)
+	if err != nil || digest != hex.EncodeToString(want.Sum(nil)) {
+		t.Fatalf("digest followed the replaced VM path: got %q, err %v", digest, err)
 	}
 }
 

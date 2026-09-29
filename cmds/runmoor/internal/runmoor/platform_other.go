@@ -15,6 +15,7 @@ func openPrivate(string, int) (*os.File, error)             { return nil, unsupp
 func readPrivate(string, int64) ([]byte, error)             { return nil, unsupported() }
 func privateVMDirectory(string) (os.FileInfo, error)        { return nil, unsupported() }
 func openTartVMDirectory(string) (*os.File, error)          { return nil, unsupported() }
+func openTartVMFileAt(*os.File, string) (*os.File, error)   { return nil, unsupported() }
 func readTartVMOwnerMarker(*os.File, int64) ([]byte, error) { return nil, unsupported() }
 func publishTartVMOwnerMarker(*os.File, []byte) error       { return unsupported() }
 func syncPrivateDir(string) error                           { return unsupported() }

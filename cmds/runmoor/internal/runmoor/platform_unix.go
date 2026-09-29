@@ -87,6 +87,22 @@ func openTartVMDirectory(path string) (*os.File, error) {
 	}
 	return f, nil
 }
+func openTartVMFileAt(dir *os.File, name string) (*os.File, error) {
+	if dir == nil || name == "" || filepath.Base(name) != name || name == "." || name == ".." {
+		return nil, os.ErrInvalid
+	}
+	fd, err := unix.Openat(int(dir.Fd()), name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), name)
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		_ = f.Close()
+		return nil, os.ErrPermission
+	}
+	return f, nil
+}
 func readTartVMOwnerMarker(dir *os.File, limit int64) ([]byte, error) {
 	fd, err := unix.Openat(int(dir.Fd()), vmOwnerMarkerName, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {

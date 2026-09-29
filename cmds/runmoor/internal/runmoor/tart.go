@@ -885,12 +885,19 @@ func (t *TartDriver) vmOwnedAt(ctx context.Context, c Config, pathName, identity
 }
 
 func imageDigestOwned(ctx context.Context, c Config, name, installation, entity string) (string, error) {
-	if err := verifyVMOwner(c, name, installation, entity); err != nil {
+	dir, err := openVerifiedVMOwnerAt(c, name, name, installation, entity)
+	if err != nil {
 		return "", err
 	}
-	digest, digestErr := imageDigest(ctx, c, name)
-	if err := verifyVMOwner(c, name, installation, entity); err != nil {
+	defer dir.Close()
+	digest, digestErr := imageDigestAt(ctx, dir)
+	if err = verifyVMOwnerAt(c, name, name, installation, entity); err != nil {
 		return "", err
+	}
+	opened, openErr := dir.Stat()
+	current, currentErr := vmDirectoryInfo(c, name)
+	if openErr != nil || currentErr != nil || !os.SameFile(opened, current) {
+		return "", ambiguousVMOwnership()
 	}
 	return digest, digestErr
 }
@@ -1376,14 +1383,14 @@ func (r imageDigestReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func imageDigest(ctx context.Context, c Config, vm string) (string, error) {
+func imageDigestAt(ctx context.Context, dir *os.File) (string, error) {
 	h := sha256.New()
 	buf := make([]byte, 64<<10)
 	for _, name := range []string{"config.json", "nvram.bin", "disk.img"} {
 		if e := ctx.Err(); e != nil {
 			return "", e
 		}
-		f, e := os.Open(filepath.Join(vmPath(c, vm), name))
+		f, e := openTartVMFileAt(dir, name)
 		if e != nil {
 			return "", problem(ErrImage, "Prepared image files are incomplete.", "Prepare a standalone Tart macOS image before sealing.")
 		}
