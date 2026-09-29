@@ -133,6 +133,9 @@ func (t *Tx) ObservePRCI(expected uint64, observed domain.RepositoryQueryResult)
 				}
 			}
 			value = domain.PRProblem{Version: 1, Type: domain.PRProblemEvidenceRecord, SetID: row.ID, Kind: domain.PRCIProblem, Target: set.Target, Observation: proof.Observation, ContentVersion: version, CI: &domain.PRCIProblemEvidence{ObservationID: proofRow.ID, Context: entry, Source: proof.CI.Result.Source, RulesDigest: proof.CI.Rules.Digest}, Current: true, State: domain.PRProblemUnhandled}
+			if proof.CI.Result.Source == domain.CIMergeQueueCommit {
+				value.CI.QueueNodeID, value.CI.QueueEntryNodeID = proof.CI.MergeQueue.NodeID, proof.CI.MergeQueue.Entry.NodeID
+			}
 			record, err = t.putPRProblem(domain.NewID(), 0, value)
 			if err != nil {
 				return Record{}, 0, err

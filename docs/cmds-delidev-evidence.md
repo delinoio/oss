@@ -3191,3 +3191,59 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+
+### Stable ALLGREEN merge queue CI (2026-09-30, issue #1105)
+
+The existing authenticated PR CI read now binds the original PR head/base and
+queue/entry identity to a complete ordered queue inventory, native ALLGREEN
+configuration, entry head/base commits and complete required-check evidence.
+Repeated inventories and a post-rule queue recheck reject changed or removed
+entries, including earlier membership changes that leave the target position
+unchanged. Actions results require the original merge_group suite/workflow
+relationship at the entry commit. HEADGREEN and incomplete evidence cannot
+borrow ordinary PR-head/test-merge failures; native queue state never supplies
+a failed check. Original queue failures remain inspectable across restart while
+removal/replacement prevents historical execution authority. Existing RPC/CLI
+receipts, authorization, database schema and generated protobuf sources are
+unchanged.
+
+Verification uses isolated temporary state and controlled provider fixtures:
+
+- Queue-specific race checks across domain, GitHub adapter and store pass:
+  `go test -race ./cmds/delidev-cli/internal/domain
+  ./cmds/delidev-cli/internal/integrations/github
+  ./cmds/delidev-cli/internal/store -run 'Queue|ALLGREEN'`. Coverage includes
+  terminal/pending/success results, wrong App/event/workflow/commit, missing
+  configuration/pages/permissions, independent cursors, changed/reordered
+  entries, post-rule removal, preserved original proofs and fresh remediation
+  refusal for replacement or removed entries.
+- Final Go vet across the complete DeliDev package tree passes. Final frontend
+  type checking, both CI/history files (17 tests), eight package-verifier tests,
+  six desktop-launcher tests and the production frontend build pass. Frontend
+  execution used the available Node.js 26.7.0 / pnpm 10.26.2 runtime; this is not
+  the separate Node.js 24 CI acceptance result.
+- Existing PR-problem RPC and CLI receipt/history tests pass under the race
+  detector: `go test -race ./cmds/delidev-cli/internal/server
+  ./cmds/delidev-cli/internal/cli -run 'TestPRProblem|TestCLIPRProblem'`.
+- The fixed expanded GraphQL document executed through read-only authenticated
+  `gh` against public PR #1107 without schema errors; its mergeQueueEntry was
+  null. This proves schema compatibility only, not live queue/PAT acceptance.
+- Required default `go test -race ./cmds/delidev-cli/...` did not pass: CLI and
+  workspace native reads failed, and claude/grok/server/store/worker/workspace
+  packages reached their ten-minute aggregate deadlines. The unchanged
+  `TestCLISessionAcceptanceQueueAndArchive` isolated race rerun also failed on
+  an unavailable workspace Git read. The cause is not established, and no
+  unrelated native source or timeout changes are included.
+- `pnpm test` in apps/delidev was executed. An initial run passed before the
+  added historical-queue display test; later full runs passed the new queue
+  tests but failed unchanged native Settings integration assertions. The
+  default final full run passed 943/945 tests, and an equivalent two-worker
+  full-unit rerun passed 944/945, failing the GitHub-profile rename assertion.
+  The complete 11-test Settings integration file passed separately once.
+  These later full commands are not reported as passing.
+
+Native Windows/Linux/macOS queue acceptance, real queued repositories,
+production credentials, remediation dispatch/Git writes and release publication
+were not exercised. Issue #964 remains incomplete; HEADGREEN, required-workflow
+and code-scanning evaluation retain their separate adapter requirements.
