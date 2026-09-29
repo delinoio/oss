@@ -55,6 +55,113 @@ fn json(output: &Output, code: i32) -> Value {
     value
 }
 
+#[cfg(unix)]
+fn closed_pipe_writer() -> Stdio {
+    use std::os::fd::{FromRawFd, OwnedFd};
+
+    let mut descriptors = [-1; 2];
+    assert_eq!(unsafe { libc::pipe(descriptors.as_mut_ptr()) }, 0);
+    assert_eq!(unsafe { libc::close(descriptors[0]) }, 0);
+    unsafe { Stdio::from(OwnedFd::from_raw_fd(descriptors[1])) }
+}
+
+#[cfg(windows)]
+fn closed_pipe_writer() -> Stdio {
+    use std::os::windows::io::{FromRawHandle, OwnedHandle};
+
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE},
+        System::Pipes::CreatePipe,
+    };
+
+    let mut reader: HANDLE = std::ptr::null_mut();
+    let mut writer: HANDLE = std::ptr::null_mut();
+    assert_ne!(
+        unsafe { CreatePipe(&mut reader, &mut writer, std::ptr::null(), 0) },
+        0
+    );
+    assert_ne!(unsafe { CloseHandle(reader) }, 0);
+    unsafe { Stdio::from(OwnedHandle::from_raw_handle(writer)) }
+}
+
+fn run_with_closed_stderr(args: &[&str], rust_log: Option<&str>) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_clibox"));
+    command
+        .args(args)
+        .env("NO_COLOR", "1")
+        .stdout(Stdio::piped())
+        .stderr(closed_pipe_writer());
+    if let Some(rust_log) = rust_log {
+        command.env("RUST_LOG", rust_log);
+    } else {
+        command.env_remove("RUST_LOG");
+    }
+    command.output().unwrap()
+}
+
+#[test]
+fn closed_stderr_preserves_wait_results_and_exit_codes() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("ready");
+    std::fs::write(&file, b"").unwrap();
+    let missing = dir.path().join("missing");
+
+    for rust_log in [None, Some("off")] {
+        let output = run_with_closed_stderr(
+            &["wait", "file", file.to_str().unwrap(), "--json"],
+            rust_log,
+        );
+        assert_eq!(json(&output, 0)["status"], "ready");
+
+        let output = run_with_closed_stderr(
+            &["wait", "file", dir.path().to_str().unwrap(), "--json"],
+            rust_log,
+        );
+        let value = json(&output, 1);
+        assert_eq!(value["status"], "failed");
+        assert_eq!(value["error"]["code"], "not_regular_file");
+
+        let output = run_with_closed_stderr(
+            &[
+                "wait",
+                "file",
+                missing.to_str().unwrap(),
+                "--timeout",
+                "30ms",
+                "--json",
+            ],
+            rust_log,
+        );
+        let value = json(&output, 1);
+        assert_eq!(value["status"], "timeout");
+        assert_eq!(value["error"]["code"], "overall_timeout");
+    }
+
+    for extra in [vec![], vec!["--quiet"]] {
+        let mut args = vec!["wait", "file", dir.path().to_str().unwrap()];
+        args.extend(extra);
+        let output = run_with_closed_stderr(&args, Some("off"));
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+    }
+}
+
+#[test]
+fn stdout_failure_stays_an_error_when_stderr_is_also_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("ready");
+    std::fs::write(&file, b"").unwrap();
+
+    let status = Command::new(env!("CARGO_BIN_EXE_clibox"))
+        .args(["wait", "file", file.to_str().unwrap(), "--json"])
+        .env("RUST_LOG", "off")
+        .stdout(closed_pipe_writer())
+        .stderr(closed_pipe_writer())
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(1));
+}
+
 #[test]
 fn invalid_inputs_are_redacted_and_never_emit_json() {
     let invalid: Vec<Vec<&str>> = vec![
@@ -460,6 +567,53 @@ fn handled_signals_produce_one_final_result_during_checks_and_delays() {
         stderr.read_to_string(&mut rest).unwrap();
         assert!(rest.contains("Wait cancelled"));
         assert!(!rest.contains(MARKER));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn broken_stderr_does_not_replace_signal_cancellation_results() {
+    use std::io::{BufRead, BufReader};
+
+    for (signal, exit, code) in [
+        (libc::SIGINT, 130, "interrupted"),
+        (libc::SIGTERM, 143, "terminated"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join(MARKER);
+        let mut child = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .args([
+                "wait",
+                "file",
+                target.to_str().unwrap(),
+                "--json",
+                "--interval",
+                "10s",
+                "--timeout",
+                "5s",
+            ])
+            .env("RUST_LOG", "clibox=debug")
+            .env("NO_COLOR", "1")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stderr = BufReader::new(child.stderr.take().unwrap());
+        let mut line = String::new();
+        loop {
+            assert!(stderr.read_line(&mut line).unwrap() > 0);
+            if line.contains("wait_observation") {
+                break;
+            }
+            line.clear();
+        }
+        drop(stderr);
+        assert_eq!(unsafe { libc::kill(child.id() as i32, signal) }, 0);
+
+        let output = child.wait_with_output().unwrap();
+        let value = json(&output, exit);
+        assert_eq!(value["status"], "cancelled");
+        assert_eq!(value["error"]["code"], code);
     }
 }
 
