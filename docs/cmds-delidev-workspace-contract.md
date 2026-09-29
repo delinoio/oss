@@ -182,7 +182,10 @@ actual HEAD commits, then copies each repository into a separate detached
 `--no-checkout` worktree without fetch or checkout filters. It copies the exact
 non-split index and bounded regular files, preserving original directory and
 file permission modes independently of the Worker umask, including staged, unstaged, ignored
-and untracked data. General Chat copies its owned tree. Source and target hashes,
+and untracked data. Source reads and destination writes use separate opened
+filesystem roots; linked destinations are rejected before copying, and copied
+files/directories are synchronized before the ready manifest. General Chat
+copies its owned tree. Source and target hashes,
 HEAD and index are rechecked after every repository and after native creation.
 Explicit authenticated Local uses the same files. Links, nested repositories,
 special files, split indexes and unborn Git are outside the initial profile;

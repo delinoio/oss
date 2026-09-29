@@ -7,7 +7,23 @@ workspace owners. Issue #964 and the existing session, harness and workspace
 contracts remain normative. Fork does not imply Sidechat, account switching,
 transcript replay or support for unknown native history.
 
-## Acceptance and publication
+Canonical owners are `cmds/delidev-cli/internal/{server,worker,workspace,harness/codex,cli}`, additive `protos/delidev/v1` and generated clients, with presentation in `apps/delidev`.
+
+## Runtime and Language
+
+Go owns business logic, durable jobs and native/workspace operations. The desktop
+uses existing React/TypeScript and authenticated Connect Query. Codex is pinned
+to the repository's independently verified native `0.151.0` profile.
+
+## Users and Operators
+
+Owner and paired clients request/observe Fork through Connect, CLI or desktop.
+Only the original authorized Worker may inspect its private source and create a
+child. Provider/account authorities remain the original immutable selection.
+
+## Interfaces and Contracts
+
+### Acceptance and publication
 
 Owner/paired clients use authenticated `SessionService.ForkSession` and
 `session fork`. A UUID-v7 request, exact source revision and completed native
@@ -24,7 +40,25 @@ or executable historical work. The child retains source/session/boundary links.
 Source continuation is excluded while a fork owns its boundary; this reservation
 does not rewrite the source session or advance routing.
 
-## Native and workspace ownership
+### Public commands and child continuation
+
+`delidev session fork --id <source> --revision <revision> --turn-id <native-turn>
+--name <child> [--workspace worktree|general-chat|local] [--local-worker-dir <scope>]
+[--request-id <uuid-v7>] [--wait]` has the same authenticated semantics as Connect.
+`delidev session fork --job-id <accepted-job> [--wait]` observes without mutation.
+`--wait` observes for at most 135 seconds within a 145-second command deadline;
+timeout returns the original job and cannot cancel or repeat Fork.
+Private scope paths are CLI/Worker inputs and never part of public RPC rollout
+selection. A copied child starts paused and requires a new queued input plus
+explicit Resume. Its first turn resumes the child checkpoint, and subsequent
+FIFO/Resume uses the child's verified completion on the same new history. Keep
+original account/connection and configuration even after current Agent edits;
+current eligibility failures retain input instead of rerouting. Child metadata
+exposes its source/boundary link; source transcript records remain source-owned.
+
+## Storage
+
+### Native and workspace ownership
 
 Use pinned Codex `0.151.0` `thread/fork` with inclusive `lastTurnId`, explicit
 child cwd and runtime workspace roots. Path import may name only the exact
@@ -43,32 +77,21 @@ authenticated same-machine Worker authority. Copying is bounded to 256 MiB and 1
 Worker deadline, with per-chunk cancellation;
 source observations are compared before and after all repositories. Unsupported
 files, mixed snapshots or a failed second copy cannot publish a partial child.
+Source reads and destination writes use separate opened filesystem roots;
+canonical destination validation rejects linked targets before copying. Copied
+files and directories are synchronized before the ready manifest is published,
+and original permission modes are restored independently of the Worker umask.
 
-## Evidence
+Optional preparation/session/execution JSON fields and job kinds are additive.
+Existing records retain their omitted-field bytes. Fork uses the existing
+synchronized job journal, UUID-v7 receipts, private native runtime and atomic
+SQLite state/events; no destructive schema migration or external object storage
+is introduced. The Worker stores one canonical synchronized `fork-completion.json`
+whose exact digest binds the native child and its immutable manifest/configuration.
 
-Use temporary Worker/database/repository/native-provider fixtures without user
-credentials. Keep deterministic implementation verification separate from
-installed native, real-account, other-platform and release acceptance. Required
-checks are root `go test -race ./cmds/delidev-cli/...`, root
-`go vet ./cmds/delidev-cli/...` and `pnpm proto:check` for schema changes.
+## Security
 
-## Public commands and child continuation
-
-`delidev session fork --id <source> --revision <revision> --turn-id <native-turn>
---name <child> [--workspace worktree|general-chat|local] [--local-worker-dir <scope>]
-[--request-id <uuid-v7>] [--wait]` has the same authenticated semantics as Connect.
-`delidev session fork --job-id <accepted-job> [--wait]` observes without mutation.
-`--wait` observes for at most 135 seconds within a 145-second command deadline;
-timeout returns the original job and cannot cancel or repeat Fork.
-Private scope paths are CLI/Worker inputs and never part of public RPC rollout
-selection. A copied child starts paused and requires a new queued input plus
-explicit Resume. Its first turn resumes the child checkpoint, and subsequent
-FIFO/Resume uses the child's verified completion on the same new history. Keep
-original account/connection and configuration even after current Agent edits;
-current eligibility failures retain input instead of rerouting. Child metadata
-exposes its source/boundary link; source transcript records remain source-owned.
-
-## Failure ownership
+### Failure ownership
 
 Acceptance, actor, Worker instance, original assignment, complete checkpoint,
 workspace manifest and exact native request are independently bound. Current
@@ -78,3 +101,58 @@ operation is never retried after reconnect. Definite pre-native/copy failures ma
 settle failed without a child. Unknown creation or cleanup remains uncertain,
 retains the private runtime/workspace and holds the source reservation for
 operator investigation. No source execution claim is advanced by inspection.
+
+The product never selects a rollout path. Native metadata selects one exact
+regular Worker-private `sessions/*.jsonl` file, with canonical rooted accesses,
+link/special-file refusal, immutable byte proof and before/after identity checks.
+Secret Local proof is dedicated write-only authority, excluded from receipts.
+Fork receives no registered inference grant; only later ordinary execution may
+receive one after current eligibility checks. Imported source workspaces remain
+original-owned; the fork coordinator never advances their execution claim.
+
+## Logging
+
+Keep structured `log/slog` start/finish, accepted request/job/source identities,
+native request ownership, stable outcome codes and ordinary process/preparation
+lifecycle evidence. Never log rollout paths/bodies, copied bytes, prompts,
+configuration content, credential values, private environments or raw native
+errors. An uncertain result remains independently visible in its retained job.
+
+## Build and Test
+
+Use temporary Worker/database/repository/native-provider fixtures without user
+credentials. Keep deterministic implementation verification separate from
+installed native, real-account, other-platform and release acceptance. Required
+checks are root `go test -race ./cmds/delidev-cli/...`, root
+`go vet ./cmds/delidev-cli/...` and `pnpm proto:check` for schema changes.
+
+Frontend changes additionally require `pnpm test` from `apps/delidev`. Native
+fixtures are explicitly opted in with `DELIDEV_NATIVE_THREAD_EXECUTABLE`; use
+private generated homes and keyless scripted loopback providers. Required output
+packages are generated before compilation, and repository-owned `dist` output
+is removed from the final worktree.
+
+## Dependencies and Integrations
+
+Reuse existing workspace closed inspections, process ownership/cleanup, Worker
+journals/outboxes, immutable execution checkpoints, current account selection and
+Connect generation. Native Fork is the pinned official app-server method; no
+transcript synthesis, cross-account routing, SDK/engine or hosted service is added.
+
+## Change Triggers
+
+Update this contract, project index, evidence ledger, session/workspace/harness
+contracts and scoped `cmds/delidev-cli/AGENTS.md` for profile or ownership changes.
+Update protocol/client contracts, their AGENTS files and generated bindings for
+RPC changes. Keep desktop contracts/AGENTS synchronized with presentation changes.
+
+## References
+
+- [DeliDev project](project-delidev.md)
+- [Repository defaults](repository-defaults.md)
+- [Session contract](cmds-delidev-sessions-contract.md)
+- [Workspace contract](cmds-delidev-workspace-contract.md)
+- [Harness contract](cmds-delidev-harness-contract.md)
+- [Evidence ledger](cmds-delidev-evidence.md)
+- [Issue #1092](https://github.com/delinoio/oss/issues/1092)
+- [Complete issue #964 requirements](cmds-delidev-requirements.md)

@@ -41,3 +41,23 @@ func TestForkSnapshotRejectsChangesAcrossNativeCreation(t *testing.T) {
 		t.Fatal("canceled copy accepted")
 	}
 }
+
+func TestForkCopyRejectsLinkedDestinationWithoutWritingExternalFiles(t *testing.T) {
+	source, external := t.TempDir(), t.TempDir()
+	source, _ = filepath.EvalSymlinks(source)
+	external, _ = filepath.EvalSymlinks(external)
+	if err := os.WriteFile(filepath.Join(source, "source.txt"), []byte("retained source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(source, "linked-child")
+	if err := os.Symlink(external, target); err != nil {
+		t.Skip("native link fixture unavailable")
+	}
+	if _, err := copyForkTree(context.Background(), source, target, false); err == nil {
+		t.Fatal("linked target accepted")
+	}
+	entries, err := os.ReadDir(external)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("copy wrote unselected external content", err)
+	}
+}

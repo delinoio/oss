@@ -167,6 +167,18 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 		return "", forkUnsupported()
 	}
 	defer root.Close()
+	var outputRoot *os.Root
+	if target != "" {
+		canonical, err := filepath.EvalSymlinks(target)
+		if err != nil || canonical != target || !filepath.IsAbs(target) {
+			return "", forkUnsupported()
+		}
+		outputRoot, err = os.OpenRoot(target)
+		if err != nil {
+			return "", forkUnsupported()
+		}
+		defer outputRoot.Close()
+	}
 	hash := sha256.New()
 	var size int64
 	entries := 0
@@ -206,7 +218,7 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 		}
 		if before.IsDir() {
 			if target != "" && name != "." {
-				if err := os.Mkdir(filepath.Join(target, name), before.Mode().Perm()|0700); err != nil {
+				if err := outputRoot.Mkdir(name, before.Mode().Perm()|0700); err != nil {
 					return domain.SafeError(err)
 				}
 			}
@@ -235,7 +247,12 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 				}
 			}
 			if target != "" {
-				if err := os.Chmod(filepath.Join(target, name), before.Mode().Perm()); err != nil {
+				if err := outputRoot.Chmod(name, before.Mode().Perm()); err != nil {
+					return domain.SafeError(err)
+				}
+				// File Sync alone cannot publish new directory entries durably.
+				// Sync each copied directory bottom-up before the ready manifest.
+				if err := security.SyncParent(filepath.Join(target, name, ".fork-directory-sync")); err != nil {
 					return domain.SafeError(err)
 				}
 			}
@@ -247,7 +264,7 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 			var output *os.File
 			writer := io.Writer(hash)
 			if target != "" {
-				output, err = os.OpenFile(filepath.Join(target, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, before.Mode().Perm())
+				output, err = outputRoot.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, before.Mode().Perm())
 				if err != nil {
 					return domain.SafeError(err)
 				}
