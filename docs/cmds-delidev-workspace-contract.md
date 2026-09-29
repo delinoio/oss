@@ -180,7 +180,8 @@ Follow the [fork contract](cmds-delidev-forks-contract.md). Optional omitted
 The owning Worker holds the original closed execution inspection while deriving
 actual HEAD commits, then copies each repository into a separate detached
 `--no-checkout` worktree without fetch or checkout filters. It copies the exact
-non-split index and bounded regular files, including staged, unstaged, ignored
+non-split index and bounded regular files, preserving original directory and
+file permission modes independently of the Worker umask, including staged, unstaged, ignored
 and untracked data. General Chat copies its owned tree. Source and target hashes,
 HEAD and index are rechecked after every repository and after native creation.
 Explicit authenticated Local uses the same files. Links, nested repositories,

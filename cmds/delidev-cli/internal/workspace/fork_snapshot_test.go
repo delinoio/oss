@@ -14,6 +14,9 @@ func TestForkSnapshotRejectsChangesAcrossNativeCreation(t *testing.T) {
 	source, _ = filepath.EvalSymlinks(source)
 	target, _ = filepath.EvalSymlinks(target)
 	path := filepath.Join(source, "file.txt")
+	if err := os.Chmod(target, 0700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(path, []byte("before native fork"), 0600); err != nil {
 		t.Fatal(err)
 	}

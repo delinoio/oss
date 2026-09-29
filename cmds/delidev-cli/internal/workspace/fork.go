@@ -186,6 +186,9 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 		if !before.IsDir() && !before.Mode().IsRegular() {
 			return forkUnsupported()
 		}
+		if before.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
+			return forkUnsupported()
+		}
 		metadata, _ := json.Marshal(struct {
 			Name string
 			Mode uint32
@@ -231,7 +234,7 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 					return err
 				}
 			}
-			if target != "" && name != "." {
+			if target != "" {
 				if err := os.Chmod(filepath.Join(target, name), before.Mode().Perm()); err != nil {
 					return domain.SafeError(err)
 				}
@@ -256,6 +259,11 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 				return ResultUncertain()
 			}
 			if output != nil {
+				// Creation obeys the process umask; restore the original regular
+				// mode explicitly before publishing or comparing the copied tree.
+				if err := output.Chmod(before.Mode().Perm()); err != nil {
+					return domain.SafeError(err)
+				}
 				if err := output.Sync(); err != nil {
 					return domain.SafeError(err)
 				}
