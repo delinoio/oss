@@ -3259,3 +3259,21 @@ full-screen VT applications. The broader permanent-session deletion feature
 remains separate; its storage boundary cannot delete live terminal ownership.
 No Rust source changed. Generated repository `dist` directories are removed
 from the final worktree after validation.
+
+### PR #1127 CI repair: profile save observations (2026-09-30)
+
+The hosted Protocol and Client job passed protocol generation and client checks
+but failed the existing real-server Settings GitHub profile test while waiting
+one second for its saved profile to appear. Delaying each successful profile-save
+acknowledgment by 1.2 seconds reproduces the exact missing-Rename-button failure.
+The fixture now waits up to five seconds for both post-save observations within
+its existing 30-second scenario budget. It retains the real Go server and CLI,
+asserts exactly two successful writes, and verifies the renamed definition at
+revision 2. Production mutation, refetch and RPC behavior are unchanged.
+
+All 11 focused real-server Settings tests pass. Complete desktop `pnpm test`
+passes 75 files / 943 tests, TypeScript checking, eight package verifier tests,
+six native-launch script tests and the production build. This repair changes no
+Go, Rust or protocol sources and uses no PAT, user credential or model inference.
+Generated desktop/client `dist` directories are removed after verification.
+New hosted CI and review results remain separate from this local evidence.
