@@ -361,8 +361,11 @@ func TestTartStartUsesTheVerifiedDirectoryAfterNameReplacement(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	_, err := driver.startOwned(context.Background(), c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
+	pid, err := driver.startOwned(context.Background(), c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
 	requireCode(t, err, ErrOwnership)
+	if pid != 123 {
+		t.Fatalf("started Tart PID was lost after ownership recheck failed: %d", pid)
+	}
 	if aliasedName != tartRunAlias(id) {
 		t.Fatalf("Tart start alias = %q, want %q", aliasedName, tartRunAlias(id))
 	}
@@ -808,6 +811,52 @@ func TestTartCleanupPreservesADeletionNameCollision(t *testing.T) {
 	}
 	if err := verifyVMOwnerRecord(c, name, s.View().Installation, id); err != nil {
 		t.Fatal("collision discarded the durable owner record", err)
+	}
+}
+
+func TestImageRemovalRetainsReservationWhileDetachedTartRunLives(t *testing.T) {
+	c, s := fixtureStore(t)
+	driver, _ := fakeTart(c)
+	images := &ImageManager{Store: s, Tart: driver}
+	im, err := images.Operate(context.Background(), c, ImageRequest{Action: "create", Name: "setup", IPSW: "/fixture.ipsw", Resources: Resources{1, 512}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = images.Operate(context.Background(), c, ImageRequest{Action: "open", ID: im.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.View().ImageTartPIDs[im.ID]; got != 123 {
+		t.Fatalf("persisted setup Tart PID = %d, want 123", got)
+	}
+	if err = os.RemoveAll(vmPath(c, im.VM)); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Remove(filepath.Join(c.Storage.Data, "tart", "vms", tartRunAlias(im.ID))); err != nil {
+		t.Fatal(err)
+	}
+	var checkedPID int
+	driver.processAlive = func(pid int) (bool, error) {
+		checkedPID = pid
+		return true, nil
+	}
+	_, err = images.Operate(context.Background(), c, ImageRequest{Action: "remove", ID: im.ID})
+	requireCode(t, err, ErrOwnership)
+	if checkedPID != 123 {
+		t.Fatalf("checked detached Tart PID = %d, want 123", checkedPID)
+	}
+	current := s.View()
+	if current.Images[im.ID] == nil || current.Images[im.ID].Phase != ImageOpen {
+		t.Fatal("ambiguous removal discarded its image record")
+	}
+	if current.ImageTartPIDs[im.ID] != 123 {
+		t.Fatal("ambiguous removal discarded its detached Tart PID")
+	}
+	resources, count, vms := usage(current)
+	if resources != im.Resources || count != 1 || vms != 1 {
+		t.Fatalf("live image reservation was released: resources=%+v count=%d vms=%d", resources, count, vms)
+	}
+	if err = verifyVMOwnerRecord(c, im.VM, current.Installation, im.ID); err != nil {
+		t.Fatal("ambiguous removal discarded the durable image owner record", err)
 	}
 }
 

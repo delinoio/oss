@@ -761,7 +761,7 @@ func (t *TartDriver) startOwned(ctx context.Context, c Config, name, installatio
 		return 0, problem(ErrDependency, "Tart command failed.", "Check Tart 2.x.x, Guest Agent RPC and the private VM directory.")
 	}
 	if err = verifyVMOwnerAt(c, name, name, installation, entity); err != nil {
-		return 0, err
+		return pid, err
 	}
 	return pid, nil
 }
@@ -927,6 +927,12 @@ func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 	}
 	pid, e := t.startOwned(ctx, c, name, s.Installation, r.ID, []string{"run", "--no-graphics", "--no-audio", name})
 	if e != nil {
+		if pid > 0 {
+			h.PID = pid
+			if publishErr := publish(h); publishErr != nil {
+				return publishErr
+			}
+		}
 		if p, ok := e.(*Problem); ok && p.Code == ErrOwnership {
 			return e
 		}
@@ -1110,7 +1116,10 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 		return ambiguousVMOwnership()
 	}
 	if _, e := os.Lstat(vmPath(c, name)); os.IsNotExist(e) {
-		return t.confirmTartVMAbsent(c, r)
+		if e = t.confirmTartVMAbsent(c, r); e != nil {
+			return e
+		}
+		return removeTartRunAlias(c, tartRunAlias(r.ID))
 	} else if e != nil {
 		return problem(ErrPermission, "Cannot inspect the Tart VM directory.", "Check private data directory permissions; the execution reservation remains held.")
 	}
@@ -1119,6 +1128,9 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 		return e
 	}
 	if !v.Running {
+		if e = t.confirmTartVMAbsent(c, r); e != nil {
+			return e
+		}
 		return removeTartRunAlias(c, tartRunAlias(r.ID))
 	}
 	if v.Running {
@@ -1134,6 +1146,9 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 			return e
 		}
 		if !v.Running {
+			if e = t.confirmTartVMAbsent(c, r); e != nil {
+				return e
+			}
 			return removeTartRunAlias(c, tartRunAlias(r.ID))
 		}
 		if !waitContext(ctx, 200*time.Millisecond) {
@@ -1277,6 +1292,9 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 		return ambiguousVMOwnership()
 	}
 	if err := promoteCreatedTartVM(c, name, s.Installation, r.ID); err != nil {
+		return err
+	}
+	if err := t.confirmTartVMAbsent(c, r); err != nil {
 		return err
 	}
 	deletionName := deletionVMName(r.ID)

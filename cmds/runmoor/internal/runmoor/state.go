@@ -110,7 +110,7 @@ func OpenStore(c Config) (*Store, error) {
 	s := &Store{db: db, lock: lock}
 	relocated := false
 	if version == 0 {
-		s.state = Snapshot{SchemaVersion: 2, Requested: c, Managed: map[string]*ManagedPool{}, Artifacts: map[string]*RunnerArtifact{}, Installation: newID(), Pools: map[string]*PoolState{}, Runners: map[string]*Runner{}, Images: map[string]*Image{}, Generations: map[string]Config{}, Config: c}
+		s.state = Snapshot{SchemaVersion: 2, Requested: c, Managed: map[string]*ManagedPool{}, Artifacts: map[string]*RunnerArtifact{}, Installation: newID(), Pools: map[string]*PoolState{}, Runners: map[string]*Runner{}, Images: map[string]*Image{}, ImageTartPIDs: map[string]int{}, Generations: map[string]Config{}, Config: c}
 		b, _ := json.Marshal(s.state)
 		tx, e := db.Begin()
 		if e == nil {

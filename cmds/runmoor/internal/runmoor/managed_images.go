@@ -295,7 +295,7 @@ func (b *ManagedImageBuilder) prepareTart(ctx context.Context, c Config, p Pool,
 		return p, err
 	}
 	installation := b.Store.View().Installation
-	if _, err = b.Images.Tart.startOwned(ctx, c, im.VM, installation, im.ID, []string{"run", "--no-graphics", "--no-audio", im.VM}); err != nil {
+	if _, err = b.Images.startTart(ctx, c, im, installation, []string{"run", "--no-graphics", "--no-audio", im.VM}); err != nil {
 		if problemErr, ok := err.(*Problem); ok && problemErr.Code == ErrOwnership {
 			return p, err
 		}
@@ -430,7 +430,7 @@ func (b *ManagedImageBuilder) Cleanup(ctx context.Context, c Config, a RunnerArt
 		im := s.Images[a.ID]
 		if im != nil {
 			if err := verifyVMOwner(c, im.VM, s.Installation, im.ID); err == nil {
-				if err = b.Images.Tart.Stop(ctx, c, Runner{ID: im.ID, Handle: Handle{VM: im.VM}}, s); err != nil {
+				if err = b.Images.stopTart(ctx, c, im, s); err != nil {
 					return err
 				}
 			} else {

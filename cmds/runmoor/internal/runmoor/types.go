@@ -216,6 +216,7 @@ type Snapshot struct {
 	Pools                map[string]*PoolState       `json:"pools"`
 	Runners              map[string]*Runner          `json:"runners"`
 	Images               map[string]*Image           `json:"images"`
+	ImageTartPIDs        map[string]int              `json:"image_tart_pids,omitempty"`
 	Generations          map[string]Config           `json:"generations"`
 	Paused               bool                        `json:"paused"`
 	Stopping             bool                        `json:"stopping"`

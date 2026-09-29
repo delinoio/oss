@@ -293,6 +293,13 @@ func TestImageOpenWaitsForConfirmedVMStartup(t *testing.T) {
 				if err != nil || command.polls < readyAfter {
 					t.Fatal("image open acknowledged an unconfirmed VM", err)
 				}
+				if got := s.View().ImageTartPIDs[im.ID]; got != 123 {
+					t.Fatalf("persisted setup Tart PID = %d, want 123", got)
+				}
+				status, marshalErr := json.Marshal(statusOf(s.View(), false))
+				if marshalErr != nil || strings.Contains(string(status), "image_tart_pids") {
+					t.Fatal("private image Tart PID leaked through status JSON", marshalErr)
+				}
 				return
 			}
 			requireCode(t, err, ErrPreparation)
