@@ -244,6 +244,9 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 			return nil, e
 		}
 		if !v.Running {
+			if e := m.confirmImageTartExited(c, im); e != nil {
+				return nil, m.imageFailure(im.ID, problem(ErrOwnership, "The previous image Tart process has not been confirmed stopped.", "Preserve its VM reservation and retry image seal after the recorded Tart process exits."))
+			}
 			if _, e = m.startTart(ctx, c, im, s.Installation, []string{"run", "--no-graphics", "--no-audio", im.VM}); e != nil {
 				if p, ok := e.(*Problem); ok && p.Code == ErrOwnership {
 					return nil, m.imageFailure(im.ID, e)

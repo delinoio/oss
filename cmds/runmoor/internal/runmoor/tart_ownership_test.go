@@ -955,6 +955,44 @@ func TestImageOpenDoesNotRelaunchWhileRecordedTartProcessLives(t *testing.T) {
 	}
 }
 
+func TestImageSealDoesNotRelaunchWhilePreviousTartProcessLives(t *testing.T) {
+	c, s := fixtureStore(t)
+	driver, fixture := fakeTart(c)
+	images := &ImageManager{Store: s, Tart: driver}
+	im, err := images.Operate(context.Background(), c, ImageRequest{Action: "create", Name: "setup", IPSW: "/fixture.ipsw", Resources: Resources{CPU: 1, MemoryMiB: 512}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = createTartCommandAlias(c, tartRunAlias(im.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Update(func(snapshot *Snapshot) error {
+		if snapshot.ImageTartPIDs == nil {
+			snapshot.ImageTartPIDs = map[string]int{}
+		}
+		if snapshot.ImageTartStarts == nil {
+			snapshot.ImageTartStarts = map[string]string{}
+		}
+		snapshot.ImageTartPIDs[im.ID] = 123
+		snapshot.ImageTartStarts[im.ID] = "fixture-process-start"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	driver.processAlive = func(pid int) (bool, error) { return pid == 123, nil }
+	_, err = images.Operate(context.Background(), c, ImageRequest{Action: "seal", ID: im.ID, RunnerVersion: "2.337.0"})
+	requireCode(t, err, ErrOwnership)
+	for _, command := range fixture.commands {
+		if len(command) > 0 && command[0] == "run" {
+			t.Fatal("image seal relaunched Tart while its recorded process was still alive")
+		}
+	}
+	current := s.View()
+	if current.ImageTartPIDs[im.ID] != 123 || current.ImageTartStarts[im.ID] != "fixture-process-start" {
+		t.Fatal("image seal discarded the previous Tart process identity", current.ImageTartPIDs[im.ID], current.ImageTartStarts[im.ID])
+	}
+}
+
 func TestImageReconcileOwnershipFailureReplacesPreparationProblem(t *testing.T) {
 	c, s := fixtureStore(t)
 	id := newID()
