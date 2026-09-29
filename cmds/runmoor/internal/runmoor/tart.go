@@ -19,6 +19,17 @@ import (
 
 const GuestAgentVersion = "0.14.2"
 
+type tartGuestOS string
+
+const tartGuestOSDarwin tartGuestOS = "darwin"
+
+func validateTartGuestOS(os tartGuestOS) error {
+	if os != tartGuestOSDarwin {
+		return problem(ErrImage, "Tart image guest operating system is unsupported.", "Use a macOS guest image; Runmoor Tart pools require a Darwin guest.")
+	}
+	return nil
+}
+
 type CommandExecutor interface {
 	Run(context.Context, string, []string, []string, io.Reader) ([]byte, error)
 	Start(string, []string, []string) (int, error)
@@ -128,6 +139,9 @@ func (t *TartDriver) validateSealed(ctx context.Context, c Config, im *Image, in
 	if e != nil {
 		return e
 	}
+	if e = validateTartGuestOS(v.OS); e != nil {
+		return e
+	}
 	if v.Running || v.State == "suspended" {
 		return problem(ErrImage, "A sealed base image must remain stopped.", "Stop external access to the base and prepare a new clean revision.")
 	}
@@ -146,7 +160,7 @@ type vmInfo struct {
 	State   string
 	CPU     int
 	Memory  uint64
-	OS      string
+	OS      tartGuestOS
 }
 
 func (t *TartDriver) vm(ctx context.Context, c Config, name string) (vmInfo, error) {
