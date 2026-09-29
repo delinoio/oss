@@ -6,9 +6,11 @@ edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/delinoio/oss"
 publish = false
+default-run = "delidev-desktop"
 
 [features]
 default = []
+cli = ["dep:tauri-cli"]
 desktop-host = ["dep:tauri", "dep:tauri-build", "dep:tracing-subscriber", "native-notifications"]
 native-notifications = ["dep:tokio", "dep:mac-usernotifications", "dep:windows", "dep:zbus", "dep:futures-lite"]
 custom-protocol = ["tauri?/custom-protocol"]
@@ -22,7 +24,8 @@ tracing = "0.1"
 uuid = { version = "=1.23.0", features = ["serde", "v7"] }
 zeroize = "=1.8.2"
 url = "=2.5.8"
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41", default-features = false, features = ["wry", "compression", "x11", "common-controls-v6", "tray-icon"], optional = true }
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41", default-features = false, features = ["cef", "compression", "tray-icon", "unstable"], optional = true }
+tauri-cli = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41", optional = true }
 tracing-subscriber = { version = "0.3", features = ["fmt", "json"], optional = true }
 tokio = { version = "=1.49.0", features = ["sync", "time", "rt", "macros"], optional = true }
 
@@ -46,3 +49,8 @@ tempfile = "=3.25.0"
 name = "delidev-desktop"
 path = "src/main.rs"
 required-features = ["desktop-host"]
+
+[[bin]]
+name = "delidev-tauri-cli"
+path = "src/bin/delidev-tauri-cli.rs"
+required-features = ["cli"]

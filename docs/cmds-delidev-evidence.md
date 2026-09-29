@@ -2163,3 +2163,23 @@ not establish live Windows link-race behavior or make user-owned files atomic.
 Owner/client SystemService, CLI and Settings > Backups now expose bounded metadata pagination and explicit source-preserving image inspection alongside existing creation. Inspection copies an opened identity-checked image into private scratch storage, validates its SQLite integrity/schema and original server identity, hashes the inspected bytes and rechecks source identity and current client authority. This does not yet implement database restore, backup deletion, session deletion or workspace snapshots.
 
 Focused real SQLite/Connect/CLI race tests pass (store 3.751s, server 2.258s, CLI 2.532s). They cover committed WAL images, unchanged source/hash after later live writes, corrupt/foreign/missing/symlink/sidecar rejection, cancellation, scratch cleanup, pagination invalidation and Worker/revoked-client denial. Desktop `pnpm test` passes 68 files / 795 tests, type checking and production build. API-client tests pass 3 files / 41 tests. A first UI assertion incorrectly expected the untrusted raw Connect error text; the corrected assertion checks the sanitized alert and removal of stale success. Complete Go race/vet and protocol validation are tracked separately as they finish. No real account, native OS delivery or distribution evidence is claimed.
+
+### CEF desktop shell migration (2026-09-29)
+
+- Replaced DeliDev's optional Wry desktop host with CEF at the existing immutable
+  Tauri revision. Main/saved windows, tray and notification handles use the same
+  CEF runtime, and helper processes enter through the native CEF macro before
+  product argument parsing. macOS minimum remains 13.0.
+- Capabilities now match trusted webview labels instead of entire windows, so a
+  future external child view cannot inherit its containing window's app authority.
+  Trusted app documents remain incognito and navigation constrained.
+- Added a package-local revision-pinned packaging CLI and `bundle:native`, which
+  explicitly selects the CEF bundler after preparing frontend and Go sidecar.
+- macOS arm64 `cargo check` with desktop-host/custom-protocol passed. Native library
+  tests passed (11 passed, 4 opt-in integration tests ignored), including capability
+  isolation. Root `cargo test` exposed five pre-existing binpm `/var` versus
+  `/private/var` temporary-path assertions; a canonical temporary-root rerun and
+  actual development bundle verification are in progress.
+- This migrates the shell, not the required account browser, tab persistence,
+  distributed profile cleanup or six-platform signed distribution. Those features
+  and evidence remain incomplete; no release or real-account claim is made.

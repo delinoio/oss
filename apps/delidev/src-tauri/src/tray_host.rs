@@ -13,7 +13,7 @@ use delidev_desktop::{
     presentation::{TrayDestination, TraySummary, menu_alias},
 };
 use tauri::{
-    AppHandle, Emitter, Manager, WebviewWindow, Wry,
+    AppHandle, Cef, Emitter, Manager, WebviewWindow,
     menu::{Menu, MenuItem, Submenu},
     tray::TrayIconBuilder,
 };
@@ -84,7 +84,7 @@ pub struct TrayHost {
     stop: Arc<AtomicBool>,
     task: Mutex<Option<JoinHandle<()>>>,
 }
-fn authorized(window: &WebviewWindow<Wry>, windows: &SavedWindows) -> Result<(), NativeFailure> {
+fn authorized(window: &WebviewWindow<Cef>, windows: &SavedWindows) -> Result<(), NativeFailure> {
     if window.label() == "main" {
         trusted_main(window)
     } else {
@@ -93,8 +93,8 @@ fn authorized(window: &WebviewWindow<Wry>, windows: &SavedWindows) -> Result<(),
 }
 #[tauri::command]
 pub fn begin_tray(
-    window: WebviewWindow<Wry>,
-    app: AppHandle<Wry>,
+    window: WebviewWindow<Cef>,
+    app: AppHandle<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
 ) -> Result<String, NativeFailure> {
@@ -119,8 +119,8 @@ pub fn begin_tray(
 }
 #[tauri::command]
 pub fn publish_tray(
-    window: WebviewWindow<Wry>,
-    app: AppHandle<Wry>,
+    window: WebviewWindow<Cef>,
+    app: AppHandle<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
     scope: String,
@@ -136,7 +136,7 @@ pub fn publish_tray(
 }
 #[tauri::command]
 pub fn read_tray_action(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
 ) -> Result<Option<TrayAction>, NativeFailure> {
@@ -158,7 +158,7 @@ pub fn read_tray_action(
 }
 #[tauri::command]
 pub fn acknowledge_tray_action(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
     id: String,
@@ -169,7 +169,7 @@ pub fn acknowledge_tray_action(
     Ok(())
 }
 
-pub fn schedule(app: &AppHandle<Wry>) {
+pub fn schedule(app: &AppHandle<Cef>) {
     let target = app.clone();
     if app
         .run_on_main_thread(move || {
@@ -188,7 +188,7 @@ pub fn schedule(app: &AppHandle<Wry>) {
         );
     }
 }
-pub fn remove(app: &AppHandle<Wry>, label: &str) {
+pub fn remove(app: &AppHandle<Cef>, label: &str) {
     let host = app.state::<Arc<TrayHost>>();
     if let Ok(mut state) = host.state.lock() {
         state.windows.remove(label);
@@ -197,8 +197,8 @@ pub fn remove(app: &AppHandle<Wry>, label: &str) {
     schedule(app);
 }
 fn append(
-    app: &AppHandle<Wry>,
-    menu: &Submenu<Wry>,
+    app: &AppHandle<Cef>,
+    menu: &Submenu<Cef>,
     text: &str,
     activation: Option<Activation>,
     state: &mut State,
@@ -210,7 +210,7 @@ fn append(
     }
     menu.append(&item)
 }
-fn render(app: &AppHandle<Wry>) -> tauri::Result<()> {
+fn render(app: &AppHandle<Cef>) -> tauri::Result<()> {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return Ok(());
     };
@@ -437,7 +437,7 @@ fn render(app: &AppHandle<Wry>) -> tauri::Result<()> {
     )?)?;
     tray.set_menu(Some(menu))
 }
-fn activate(app: &AppHandle<Wry>, id: &str) {
+fn activate(app: &AppHandle<Cef>, id: &str) {
     if id == "tray-quit" {
         app.exit(0);
         return;
@@ -458,7 +458,7 @@ fn activate(app: &AppHandle<Wry>, id: &str) {
     navigate(app, action, None, None);
 }
 pub fn activate_inbox(
-    app: &AppHandle<Wry>,
+    app: &AppHandle<Cef>,
     label: String,
     instance: Option<String>,
     scope: String,
@@ -479,7 +479,7 @@ pub fn activate_inbox(
     );
 }
 fn navigate(
-    app: &AppHandle<Wry>,
+    app: &AppHandle<Cef>,
     action: Activation,
     inbox_id: Option<String>,
     notification_scope: Option<String>,
@@ -519,7 +519,7 @@ fn navigate(
     }
 }
 impl TrayHost {
-    pub fn install(self: &Arc<Self>, app: &AppHandle<Wry>) -> tauri::Result<()> {
+    pub fn install(self: &Arc<Self>, app: &AppHandle<Cef>) -> tauri::Result<()> {
         let menu = Menu::new(app)?;
         menu.append(&MenuItem::with_id(
             app,

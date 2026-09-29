@@ -1,5 +1,7 @@
 # DeliDev CLI
 
+- Desktop uses CEF at the existing immutable Tauri revision and the CEF helper entry point, with macOS 13 retained. Bind capabilities to trusted webview labels, never window-wide labels that grant future external child views app authority. Keep engine migration distinct from account-browser persistence and cleanup evidence.
+
 - DeliDev managed backup operations follow `docs/cmds-delidev-storage-contract.md`. Keep owner/client-only authorization, bounded metadata pagination, exact creation retries and source-preserving integrity inspection. Inspection must read an identity-checked private copy, reject sidecars/foreign server identity, recheck authorization after I/O and never imply restoration or credential/Worker recovery. Preserve exact byte counts and clear stale success after failed reinspection.
 
 

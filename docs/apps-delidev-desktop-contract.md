@@ -6,7 +6,7 @@
 ## Runtime and Language
 React 19.2.8 and TypeScript render the trusted app through Rsbuild. The native Tauri component implements the window, bounded Go sidecar startup, private client bootstrap, saved server windows, local-server supervision, tray presentation and native notifications. Go owns every product operation. The frontend development origin is fixed at `http://127.0.0.1:46311`; conflicts fail. This is a desktop application, not a browser product or deployed website.
 
-The native crate is a root workspace member. Its optional `desktop-host` feature uses Wry from the immutable official Tauri revision `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; it does not alter DevHud’s CEF feature graph. The default library tests require no display. The executable is `delidev-desktop`, bundle identifier `io.delino.delidev`.
+The native crate is a root workspace member. Its optional `desktop-host` feature uses CEF from the immutable official Tauri revision `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`, sharing the existing workspace CEF pins. The executable routes native helper invocations through `tauri::cef_entry_point` before parsing product arguments or starting Go controllers. macOS retains the 13.0 minimum. Capabilities match only the trusted `main` and `server-*` webview labels, never every webview in their containing window; external child views receive no app permission by window association. Trusted windows remain incognito and deny external navigation and new-window requests. Account browser persistence and cleanup require their separate implementation; switching engines alone does not establish those features. The default library tests require no display. The executable is `delidev-desktop`, bundle identifier `io.delino.delidev`.
 
 ## Users and Operators
 One server owner can connect multiple paired desktop clients. The initial prerequisite checklist links to saved settings without installing a harness or overriding existing setup. Automated readiness checks remain pending.
@@ -378,3 +378,14 @@ An inactive chain with a recorded limit exposes an explicit allowance-resumption
 ### Managed database backup observation
 
 SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and remaining restoration/deletion work.
+
+## CEF packaging
+
+`pnpm bundle:native` builds frontend assets and the target Go sidecar before
+invoking a package-local CLI compiled from the same immutable Tauri revision.
+It explicitly enables `tauri/cef` so the upstream bundler selects CEF resources,
+helper applications and platform entitlements. Pass `--debug --bundles app` on
+macOS for a local development bundle. No signing credentials or publication are
+configured by this command. The executable-only `build:native` command remains
+available for compilation; it does not prove that a complete distributable has
+all native resources. Six-target signing and release verification remain pending.

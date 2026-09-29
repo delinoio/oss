@@ -552,3 +552,20 @@ pub mod notifications;
 pub mod presentation;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod desktop_capability_tests {
+    #[test]
+    fn native_authority_belongs_only_to_trusted_webviews() {
+        for (source, labels) in [
+            (include_str!("../capabilities/main.json"), vec!["main"]),
+            (include_str!("../capabilities/saved.json"), vec!["server-*"]),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(source).unwrap();
+            assert!(capability.get("windows").is_none());
+            assert!(capability.get("remote").is_none());
+            assert_eq!(capability["webviews"], serde_json::json!(labels));
+            assert!(!capability["permissions"].as_array().unwrap().is_empty());
+        }
+    }
+}

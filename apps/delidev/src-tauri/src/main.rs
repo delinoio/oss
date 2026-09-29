@@ -18,7 +18,7 @@ use notification_host::{
     present_notification, request_notification_permission,
 };
 use tauri::{
-    AppHandle, Emitter, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
+    AppHandle, Cef, Emitter, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent,
     utils::config::{Csp, CspDirectiveSources, WebviewUrl},
     webview::NewWindowResponse,
 };
@@ -43,7 +43,7 @@ fn trusted_url(url: &tauri::Url) -> bool {
 
 #[tauri::command]
 async fn open_github(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
     url: String,
@@ -65,7 +65,7 @@ async fn open_github(
 
 #[tauri::command]
 async fn connect_local(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     supervision: tauri::State<'_, Arc<Supervision>>,
 ) -> Result<Connection, NativeFailure> {
@@ -88,7 +88,7 @@ async fn connect_local(
 
 #[tauri::command]
 fn local_server_status(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     supervision: tauri::State<'_, Arc<Supervision>>,
 ) -> Result<LocalServerStatus, NativeFailure> {
     if window.label() != "main"
@@ -101,7 +101,7 @@ fn local_server_status(
 
 #[tauri::command]
 async fn local_worker_proof(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
 ) -> Result<LocalWorkerProof, NativeFailure> {
     if window.label() != "main"
@@ -121,7 +121,7 @@ async fn local_worker_proof(
 
 #[tauri::command]
 async fn local_worker_control(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     action: LocalWorkerAction,
     generation: Option<String>,
@@ -148,7 +148,7 @@ struct SavedBinding {
 #[derive(Default)]
 struct SavedWindows(Mutex<BTreeMap<String, SavedBinding>>);
 
-fn trusted_main(window: &WebviewWindow<Wry>) -> Result<(), NativeFailure> {
+fn trusted_main(window: &WebviewWindow<Cef>) -> Result<(), NativeFailure> {
     if window.label() != "main"
         || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
     {
@@ -157,7 +157,7 @@ fn trusted_main(window: &WebviewWindow<Wry>) -> Result<(), NativeFailure> {
     Ok(())
 }
 fn saved_binding(
-    window: &WebviewWindow<Wry>,
+    window: &WebviewWindow<Cef>,
     windows: &SavedWindows,
 ) -> Result<SavedBinding, NativeFailure> {
     let url = window.url().map_err(|_| NativeFailure::PermissionDenied)?;
@@ -179,7 +179,7 @@ fn saved_binding(
 }
 #[tauri::command]
 fn connection_context(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
 ) -> Result<Option<SavedConnection>, NativeFailure> {
     if window.label() == "main" {
@@ -190,7 +190,7 @@ fn connection_context(
 }
 #[tauri::command]
 async fn saved_connections(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
 ) -> Result<Vec<SavedConnection>, NativeFailure> {
     trusted_main(&window)?;
@@ -201,7 +201,7 @@ async fn saved_connections(
 }
 #[tauri::command]
 async fn removed_connections(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     after: String,
 ) -> Result<RemovedConnections, NativeFailure> {
@@ -213,7 +213,7 @@ async fn removed_connections(
 }
 #[tauri::command]
 async fn retained_worker_control(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     id: String,
     action: LocalWorkerAction,
@@ -229,8 +229,8 @@ async fn retained_worker_control(
 }
 #[tauri::command]
 async fn remove_connection(
-    window: WebviewWindow<Wry>,
-    app: AppHandle<Wry>,
+    window: WebviewWindow<Cef>,
+    app: AppHandle<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     id: String,
@@ -322,7 +322,7 @@ async fn remove_connection(
 }
 #[tauri::command]
 async fn pair_connection(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     id: String,
     name: String,
@@ -337,7 +337,7 @@ async fn pair_connection(
 }
 #[tauri::command]
 async fn retry_connection(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     id: String,
 ) -> Result<SavedConnection, NativeFailure> {
@@ -353,8 +353,8 @@ async fn retry_connection(
 #[expect(clippy::too_many_arguments)]
 #[tauri::command]
 async fn rename_connection(
-    window: WebviewWindow<Wry>,
-    app: AppHandle<Wry>,
+    window: WebviewWindow<Cef>,
+    app: AppHandle<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     id: String,
@@ -373,7 +373,7 @@ async fn rename_connection(
 }
 
 fn update_saved_label(
-    app: &AppHandle<Wry>,
+    app: &AppHandle<Cef>,
     windows: &SavedWindows,
     mut profile: SavedConnection,
 ) -> Result<SavedConnection, NativeFailure> {
@@ -405,7 +405,7 @@ fn update_saved_label(
 
 #[tauri::command]
 async fn connect_saved(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
 ) -> Result<Connection, NativeFailure> {
@@ -426,7 +426,7 @@ async fn connect_saved(
 }
 #[tauri::command]
 async fn saved_worker_proof(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
 ) -> Result<LocalWorkerProof, NativeFailure> {
@@ -448,7 +448,7 @@ async fn saved_worker_proof(
 }
 #[tauri::command]
 async fn saved_worker_control(
-    window: WebviewWindow<Wry>,
+    window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     action: LocalWorkerAction,
@@ -471,7 +471,7 @@ async fn saved_worker_control(
     }
     Ok(result)
 }
-fn show(window: &WebviewWindow<Wry>) -> Result<(), NativeFailure> {
+fn show(window: &WebviewWindow<Cef>) -> Result<(), NativeFailure> {
     window
         .unminimize()
         .and_then(|_| window.show())
@@ -494,7 +494,7 @@ fn saved_csp(policy: &str, origin: &str) -> Result<String, NativeFailure> {
     );
     Ok(Csp::from(directives).to_string())
 }
-fn create_main(app: &AppHandle<Wry>) -> tauri::Result<WebviewWindow<Wry>> {
+fn create_main(app: &AppHandle<Cef>) -> tauri::Result<WebviewWindow<Cef>> {
     let config = &app.config().app.windows[0];
     WebviewWindowBuilder::from_config(app, config)?
         .incognito(true)
@@ -511,8 +511,8 @@ fn create_main(app: &AppHandle<Wry>) -> tauri::Result<WebviewWindow<Wry>> {
 }
 #[tauri::command]
 fn show_connection_manager(
-    window: WebviewWindow<Wry>,
-    app: AppHandle<Wry>,
+    window: WebviewWindow<Cef>,
+    app: AppHandle<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
 ) -> Result<(), NativeFailure> {
     if window.label() == "main" {
@@ -530,8 +530,8 @@ fn show_connection_manager(
 }
 #[tauri::command]
 async fn open_connection(
-    window: WebviewWindow<Wry>,
-    app: AppHandle<Wry>,
+    window: WebviewWindow<Cef>,
+    app: AppHandle<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     id: String,
@@ -643,7 +643,7 @@ fn run() -> Result<(), NativeFailure> {
     let supervision = Arc::new(Supervision::new(Arc::clone(&connector)));
     let tray = Arc::new(TrayHost::default());
     let notifications = Arc::new(NotificationHost::default());
-    let app = tauri::Builder::<Wry>::new()
+    let app = tauri::Builder::<Cef>::new()
         .manage(Arc::new(SavedWindows::default()))
         .manage(Arc::clone(&tray))
         .manage(Arc::clone(&notifications))
@@ -742,6 +742,7 @@ fn run() -> Result<(), NativeFailure> {
     Ok(())
 }
 
+#[tauri::cef_entry_point]
 fn main() {
     tracing_subscriber::fmt()
         .json()
