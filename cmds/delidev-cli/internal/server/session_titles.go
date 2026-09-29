@@ -172,6 +172,21 @@ func titleFailureReason(err *domain.Error) domain.SessionTitleReason {
 	}
 }
 
+func requireSessionTitleRelayProof(tx *store.Tx, jobID domain.ID) error {
+	sendClaimed, err := tx.TitleInferenceClaimed(jobID)
+	if err != nil {
+		return err
+	}
+	requestClaimed, err := tx.TitleHTTPRequestClaimed(jobID)
+	if err != nil {
+		return err
+	}
+	if !sendClaimed || !requestClaimed {
+		return domain.Fail(domain.PermissionDenied, "The successful title report has no durable native relay proof.", "Accept title output only after the assigned Worker registered and sent one relayed request.")
+	}
+	return nil
+}
+
 func titleFailureOutcome(err *domain.Error) (domain.SessionTitleState, domain.SessionTitleReason) {
 	state, reason := domain.TitleFailed, titleFailureReason(err)
 	if err == nil {
@@ -222,6 +237,11 @@ func finishSessionTitle(tx *store.Tx, record store.Record, job domain.Job, expec
 	}
 	if session.TitleJobID != record.ID || session.TitleOperationID != input.OperationID {
 		return store.Record{}, domain.Fail(domain.RecoveryRequired, "The title operation no longer owns this session job.", "Retain the result for reconciliation without changing the current session name.")
+	}
+	if reported == nil {
+		if err := requireSessionTitleRelayProof(tx, record.ID); err != nil {
+			return store.Record{}, err
+		}
 	}
 	var result domain.AuxiliaryTitleResult
 	if reported == nil {

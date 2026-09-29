@@ -36,6 +36,15 @@ func (t *Tx) TitleInferenceClaimed(jobID domain.ID) (bool, error) {
 	return claimed, storageError(err)
 }
 
+func (t *Tx) TitleHTTPRequestClaimed(jobID domain.ID) (bool, error) {
+	if err := jobID.Validate(); err != nil {
+		return false, err
+	}
+	var claimed bool
+	err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM session_title_http_claims WHERE job_id=?)", jobID).Scan(&claimed)
+	return claimed, storageError(err)
+}
+
 // ClaimTitleHTTPRequest prevents native request retries after inference reaches
 // the upstream provider, even if the Worker loses the response or RPC report.
 func (t *Tx) ClaimTitleHTTPRequest(jobID domain.ID) (bool, error) {
