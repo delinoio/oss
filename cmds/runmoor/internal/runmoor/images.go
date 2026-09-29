@@ -515,8 +515,12 @@ func (m *ImageManager) Reconcile(ctx context.Context, c Config) error {
 		}
 		v, e := m.Tart.vmOwned(ctx, c, im.VM, snapshot.Installation, im.ID)
 		if e != nil {
+			ownershipFailure := false
+			if p, ok := e.(*Problem); ok {
+				ownershipFailure = p.Code == ErrOwnership
+			}
 			if err := m.Store.Update(func(s *Snapshot) error {
-				if im := s.Images[id]; im != nil && im.Problem == nil {
+				if im := s.Images[id]; im != nil && (im.Problem == nil || ownershipFailure && im.Problem.Code != ErrOwnership) {
 					im.Problem = problem(ErrOwnership, "Image preparation state cannot be confirmed; its reservation remains held.", "Restore Tart connectivity and the matching private image data, then inspect image list. Preserve uncertain setup processes and ownership records.")
 				}
 				return nil

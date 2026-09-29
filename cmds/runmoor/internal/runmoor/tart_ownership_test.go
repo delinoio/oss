@@ -378,6 +378,40 @@ func TestTartCleanupPreservesADeletionNameCollision(t *testing.T) {
 	}
 }
 
+func TestImageReconcileOwnershipFailureReplacesPreparationProblem(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-image-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath(c, name), "stale-preparation-state"), []byte("stale"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(func(snapshot *Snapshot) error {
+		snapshot.Images[id] = &Image{
+			ID:      id,
+			VM:      name,
+			Phase:   ImageOpen,
+			Problem: problem(ErrPreparation, "Old preparation failure.", "Retry preparation."),
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	driver, _ := fakeTart(c)
+	images := &ImageManager{Store: s, Tart: driver}
+	if err := images.Reconcile(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.View().Images[id].Problem; got == nil || got.Code != ErrOwnership {
+		t.Fatalf("image reconciliation retained a lower-priority problem instead of ownership ambiguity: %#v", got)
+	}
+}
+
 func TestTartOwnerMarkerPublicationIsExclusiveAndPrivate(t *testing.T) {
 	c, s := fixtureStore(t)
 	id := newID()
