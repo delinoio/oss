@@ -3225,14 +3225,33 @@ usage, so this result does not manufacture new measured usage/cost.
 Real loopback RPC fixtures cover active execution, absent/sticky account-bound
 history, uncertain cleanup, stale revision, disabled B, original candidate
 exclusion, current provider/project restrictions, Archive, outstanding answer
-acceptance, uncertain title work and Worker denial. Rejection leaves the session
-revision/document unchanged. The accepted retry retains one change; a new
+acceptance, uncertain title work, contradictory terminal state and Worker denial.
+Rejection leaves the session revision/document unchanged. Controlled response
+observations also verify measured usage remains attached to A's original execution
+and B's fresh execution independently. The accepted retry retains one change; a new
 assignment carries B's scope and A's checkpoint scope independently. The HTTP
 relay fixtures reject previous-response, conversation and item-reference input
 before credential access/upstream work on creation and compaction, and preserve
 ordinary full-history bytes.
 
-Generated client unit tests passed (41 tests) and client typecheck passed.
+Executed validation:
+
+- Focused account-switch server tests, the proxy suite and the original execution
+  authority/continuation regressions pass under the race detector. Domain/Worker
+  continuation and checkpoint regressions also pass under the race detector.
+- `go vet ./cmds/delidev-cli/...`, `pnpm proto:check`, generated client unit tests
+  (41 tests) and client typecheck pass.
+- The required `go test -race ./cmds/delidev-cli/...` completed with failures:
+  several existing packages exceeded the default ten-minute package limit, and
+  CLI/workspace/Grok native-helper fixtures reported timeout/readiness failures.
+  A lower-concurrency `-p 1 -timeout 20m` retry is still pending; a passing focused
+  suite does not establish a passing full suite.
+- One native rerun failed closed during its sixth-turn Stop after an unsupported
+  private native event, retaining recovery-required state. The identical complete
+  seven-request account-switch fixture then passed without a source change. This
+  records the observed intermittent interrupt limitation rather than treating
+  that failed run as cleanup proof.
+
 This is controlled implementation/native evidence, not real hosted-account,
 subscription, Windows/Linux, desktop UI or release acceptance. No schema
 migration, user credential mutation or production publication is claimed.
