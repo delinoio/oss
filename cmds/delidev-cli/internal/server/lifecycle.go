@@ -123,3 +123,22 @@ func SuppressLocalRestart(root string, requestID domain.ID) error {
 	defer lock.Close()
 	return writeStopped(root, requestID, configurationDigest(Config{}))
 }
+
+// SuppressCompletedServiceRestart carries a joined service Stop into ordinary
+// automatic startup. Match the original generation so a replacement foreground
+// controller can never have its newer intent suppressed by an old service exit.
+func SuppressCompletedServiceRestart(root string, generation domain.ID) error {
+	if err := generation.Validate(); err != nil {
+		return err
+	}
+	lock, err := LockLifecycle(root)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	value, err := ReadLifecycle(root)
+	if err != nil || value.Generation != generation || value.State == DesiredStopped {
+		return err
+	}
+	return writeStopped(root, domain.NewID(), value.Configuration)
+}
