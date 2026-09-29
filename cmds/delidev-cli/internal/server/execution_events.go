@@ -123,10 +123,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 	case domain.ClaudeCode:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionMessageCompleted || kind == domain.ExecutionClaudeMessageObserved || kind == domain.ExecutionClaudeUsageObserved || kind == domain.ExecutionClaudeToolObserved || kind == domain.ExecutionClaudeReplyEchoObserved || kind == domain.ExecutionClaudeCallbackSettled || kind == domain.ExecutionClaudeInterruptionObserved || kind == domain.ExecutionClaudeProgressObserved || kind == domain.ExecutionTurnFinished || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed) && len(executionAPIOperations(input, domain.AnthropicMessages)) != 0
 	case domain.GrokBuild:
-		if kind == domain.ExecutionTurnFinished && input.Input.Mode != domain.ExecuteMode {
-			return false
-		}
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionGrokTextObserved || kind == domain.ExecutionGrokUsageObserved || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionGrokTextObserved || kind == domain.ExecutionGrokUsageObserved || kind == domain.ExecutionTurnFinished || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind.IsArtifact() || kind == domain.ExecutionProgressObserved || kind.IsInteraction() || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionQuestionAccepted || kind == domain.ExecutionApprovalAccepted) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	case domain.OpenCode:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionQuestionAccepted || kind == domain.ExecutionApprovalAccepted || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
@@ -137,7 +134,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
-	if (event.GrokUserMessageID != "" || event.GrokText != nil || event.GrokUsage != nil || event.GrokTerminal != nil || event.GrokStop != nil) && input.Configuration.Harness != domain.GrokBuild {
+	if (event.GrokUserMessageID != "" || event.GrokText != nil || event.GrokUsage != nil || event.GrokTerminal != nil || event.GrokStop != nil || event.GrokPublicTerminal != nil) && input.Configuration.Harness != domain.GrokBuild {
 		return executionEventConflict()
 	}
 	if (event.ClaudeTerminal != nil || event.ClaudeStop != nil || event.ClaudeDenial != nil) != (input.Configuration.Harness == domain.ClaudeCode && event.Kind == domain.ExecutionTurnFinished) || event.ClaudeTerminal != nil && event.ClaudeStop != nil {
@@ -156,11 +153,14 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 		return executionEventConflict()
 	}
 	if u := event.Interaction; u != nil && event.Kind == domain.ExecutionInteractionRequested {
-		if (input.Configuration.Harness == domain.ClaudeCode) != (u.Claude != nil) || (input.Configuration.Harness == domain.OpenCode) != (u.OpenCode != nil) || u.OpenCode != nil && u.OpenCode.NativeMessageID == event.NativeTurnID {
+		if (input.Configuration.Harness == domain.GrokBuild) != (u.Grok != nil) || (input.Configuration.Harness == domain.ClaudeCode) != (u.Claude != nil) || (input.Configuration.Harness == domain.OpenCode) != (u.OpenCode != nil) || u.OpenCode != nil && u.OpenCode.NativeMessageID == event.NativeTurnID {
 			return executionEventConflict()
 		}
 	}
 	if u := event.Interaction; u != nil && event.Kind == domain.ExecutionInteractionClosed && (input.Configuration.Harness == domain.ClaudeCode) != (u.ClaudeCancellation != nil) {
+		return executionEventConflict()
+	}
+	if event.Progress != nil && (input.Configuration.Harness == domain.GrokBuild) != (event.Progress.Progress.GrokMode != nil || event.Progress.Progress.GrokInteraction != nil) {
 		return executionEventConflict()
 	}
 	if event.Progress != nil && (input.Configuration.Harness == domain.OpenCode) != (event.Progress.Progress.Kind == domain.OpenCodeTodoProgressKind || event.Progress.Progress.Kind == domain.OpenCodeChangesProgressKind || event.Progress.Progress.Kind == domain.OpenCodeWorkspaceProgressKind) {
@@ -173,6 +173,9 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 		return executionEventConflict()
 	}
 	if tool := event.Tool; tool != nil {
+		if (input.Configuration.Harness == domain.GrokBuild) != (tool.Snapshot != nil && tool.Snapshot.Kind == domain.GrokNativeTool) {
+			return executionEventConflict()
+		}
 		if input.Configuration.Harness == domain.OpenCode {
 			if tool.Snapshot == nil || !tool.Snapshot.Kind.IsOpenCode() || domain.NativeIdentity(tool.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(tool.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || tool.NativeParentID == event.NativeTurnID {
 				return executionEventConflict()
@@ -182,6 +185,9 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 		}
 	}
 	if artifact := event.Artifact; artifact != nil {
+		if (input.Configuration.Harness == domain.GrokBuild) != (artifact.Snapshot != nil && artifact.Snapshot.Grok != nil) {
+			return executionEventConflict()
+		}
 		textReasoning := artifact.Snapshot != nil && artifact.Snapshot.Kind == domain.ReasoningTextArtifact || artifact.Delta != nil && artifact.Delta.Kind == domain.ReasoningTextDelta
 		if input.Configuration.Harness == domain.OpenCode {
 			if !(textReasoning || artifact.Snapshot != nil && artifact.Snapshot.Kind == domain.OpenCodeRevisionArtifact) || domain.NativeIdentity(artifact.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(artifact.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || artifact.NativeParentID == event.NativeTurnID {
@@ -232,10 +238,18 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 			}
 		}
 		progress = &domain.ExecutionProgress{JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
+		if input.Configuration.Harness == domain.GrokBuild {
+			progress.Capabilities = []domain.Capability{domain.CapabilityExecute, domain.CapabilityPlan, domain.CapabilityQuestions, domain.CapabilityApprovals, domain.CapabilityUsage}
+		}
 		session.Execution = progress
 	} else {
 		if event.Kind == domain.ExecutionThreadBound || progress.JobID != job.ID || progress.ExecutionID != input.ExecutionID || progress.InputID != input.InputID || progress.NativeThreadID != event.NativeThreadID || event.Sequence != progress.LastSequence+1 {
 			return executionEventConflict()
+		}
+		if input.Configuration.Harness == domain.GrokBuild {
+			if err := observeGrokOrder(progress, event); err != nil {
+				return err
+			}
 		}
 		if prior := progress.ClaudeInterruption; prior != nil {
 			result := prior.ResultID == "" && event.Kind == domain.ExecutionClaudeInterruptionObserved && event.ClaudeInterruption != nil && event.ClaudeInterruption.Observation.Kind == domain.ClaudeDenialResult
@@ -297,6 +311,8 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 					publish := publishGrokTerminal
 					if event.GrokStop != nil {
 						publish = publishGrokStop
+					} else if event.GrokPublicTerminal != nil {
+						publish = publishGrokPublicTerminal
 					}
 					if err := publish(tx, input, sr, progress, event); err != nil {
 						return err

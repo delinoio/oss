@@ -55,6 +55,7 @@ type textControl struct {
 	terminal    bool
 	stop        *textStop
 	profile     inputProfile
+	rich        bool
 	permissions map[domain.ID]*fileReply
 	questions   map[domain.ID]*questionReply
 	plans       map[domain.ID]*planReply
@@ -79,6 +80,8 @@ func (c *textControl) accept(prompt string) {
 	defer c.mu.Unlock()
 	c.prompt, c.running = prompt, true
 }
+
+func (c *textControl) hasRich() bool { c.mu.Lock(); defer c.mu.Unlock(); return c.rich }
 
 func (c *textControl) originalStop() *textStop {
 	c.mu.Lock()
@@ -116,7 +119,7 @@ func (a *apiConnection) StopText(ctx context.Context, request domain.ID, record 
 		return result, sessionUncertain()
 	}
 	control.mu.Lock()
-	if control.profile != plainTextInput {
+	if control.profile != plainTextInput && (control.profile != publicInput || control.rich || a.profile.mode == domain.PlanMode) {
 		control.mu.Unlock()
 		return result, incompatible()
 	}

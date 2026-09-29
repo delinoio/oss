@@ -93,6 +93,7 @@ func fixtureQuestionTerminal(workspace, mode string, request domain.ID) {
 	if mode != "question-missing-rpc" {
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "id": request, "result": result})
 	}
+	fixtureInputTail(workspace, mode, fixtureNotify)
 }
 
 func TestQuestionControllerOriginalClaimsAndUncertainty(t *testing.T) {

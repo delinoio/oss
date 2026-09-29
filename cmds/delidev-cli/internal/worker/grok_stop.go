@@ -14,7 +14,7 @@ import (
 // cancellation must still be submitted while an acknowledged-content receipt is
 // blocked. The journal independently checks the four original input records.
 func (c *GrokBindingPublisher) Stop(ctx context.Context, claim grok.StopClaim) error {
-	if c == nil || c.journal == nil || !c.accepted.Load() || c.mode != domain.GrokDefaultMode || claim.Validate() != nil || claim.OwnerID != c.reference.JobID || claim.ProductSessionID != c.reference.SessionID || claim.InputRequestID != c.reference.InputRequestID || !c.stopClaim.CompareAndSwap(nil, &claim) {
+	if c == nil || c.journal == nil || !c.accepted.Load() || c.publisher.input.Input.Mode != domain.ExecuteMode || claim.Validate() != nil || claim.OwnerID != c.reference.JobID || claim.ProductSessionID != c.reference.SessionID || claim.InputRequestID != c.reference.InputRequestID || !c.stopClaim.CompareAndSwap(nil, &claim) {
 		return publicationUncertain()
 	}
 	return c.journal.Stop(ctx, claim)

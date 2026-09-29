@@ -122,10 +122,14 @@ func (c *GrokBindingPublisher) TextCompletion() (domain.ExecutionCompletion, err
 	sequence, sequenceErr := c.publisher.acknowledgedSequence()
 	ordinary := c.terminal != nil && c.stopped == nil && len(claims) == 6
 	stopped := c.stopped != nil && c.terminal == nil && len(claims) == 5 && c.stopped.Validate(string(c.thread)) == nil
-	if c.stage != grokTextFinished || (!ordinary && !stopped) || err != nil || sequenceErr != nil || sequence != c.sequence {
+	rich := c.publicTerminal != nil && c.terminal == nil && c.stopped == nil && c.publicTerminal.Validate(string(c.thread)) == nil
+	if c.stage != grokTextFinished || (!ordinary && !stopped && !rich) || err != nil || sequenceErr != nil || sequence != c.sequence {
 		return domain.ExecutionCompletion{}, publicationUncertain()
 	}
 	value := domain.ExecutionCompletion{Version: 1, ExecutionID: c.reference.ExecutionID, InputID: c.reference.InputID, NativeThreadID: domain.NativeIdentity(c.thread), NativeTurnID: domain.NativeIdentity(c.turn), LastSequence: sequence, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
+	if rich {
+		value.Outcome = c.publicTerminal.Outcome
+	}
 	if stopped {
 		value.Outcome = c.stopped.Outcome()
 	}

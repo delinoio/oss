@@ -101,7 +101,7 @@ func (c *textControl) offerPlan(event nativewire.Event, fact planFact) (PlanOffe
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	key, err := fileToolRequestKey(event.ID)
-	if c.profile != planningInput || !c.running || c.terminal || event.Kind != nativewire.ServerRequest || event.Token.Validate() != nil || err != nil || fact.Request == nil || fact.Artifact == nil || c.plans[event.Token] != nil || len(c.plans) >= 128 {
+	if !c.profile.planning() || !c.running || c.terminal || event.Kind != nativewire.ServerRequest || event.Token.Validate() != nil || err != nil || fact.Request == nil || fact.Artifact == nil || c.plans[event.Token] != nil || len(c.plans) >= 128 {
 		return PlanOffer{}, incompatible()
 	}
 	if c.plans == nil {
@@ -137,7 +137,7 @@ func (a *apiConnection) ReplyPlan(ctx context.Context, request, arrival domain.I
 	}
 	c.mu.Lock()
 	r := c.plans[arrival]
-	if c.profile != planningInput || !c.running || c.terminal || r == nil || r.done != nil || request == a.creationRequest || request == a.modeRequest {
+	if !c.profile.planning() || !c.running || c.terminal || r == nil || r.done != nil || request == a.creationRequest || request == a.modeRequest {
 		c.mu.Unlock()
 		return result, sessionUncertain()
 	}

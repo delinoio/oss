@@ -177,6 +177,7 @@ type ExecutionMessageUpdate struct {
 type ExecutionEvent struct {
 	GrokUserMessageID  ID                                 `json:"grok_user_message_id,omitempty"`
 	GrokStop           *GrokStopObservation               `json:"grok_stop,omitempty"`
+	GrokPublicTerminal *GrokPublicTerminal                `json:"grok_public_terminal,omitempty"`
 	GrokTerminal       *GrokTextTerminal                  `json:"grok_terminal,omitempty"`
 	GrokText           *GrokTextUpdate                    `json:"grok_text,omitempty"`
 	GrokUsage          *GrokResponseUsage                 `json:"grok_usage,omitempty"`
@@ -416,6 +417,9 @@ func (e ExecutionEvent) Validate() error {
 	if e.GrokStop != nil && (e.Kind != ExecutionTurnFinished || e.GrokStop.Validate(e.NativeThreadID) != nil || e.Outcome != e.GrokStop.Outcome() || e.ProblemCode != "" || e.GrokTerminal != nil || e.ClaudeTerminal != nil || e.ClaudeStop != nil || e.ClaudeDenial != nil || e.OpenCodeStop != nil) {
 		return invalidGrokContent()
 	}
+	if e.GrokPublicTerminal != nil && (e.Kind != ExecutionTurnFinished || e.GrokPublicTerminal.Validate(e.NativeThreadID) != nil || e.Outcome != e.GrokPublicTerminal.Outcome || e.ProblemCode != "" || e.GrokTerminal != nil || e.GrokStop != nil || e.ClaudeTerminal != nil || e.ClaudeStop != nil || e.ClaudeDenial != nil || e.OpenCodeStop != nil) {
+		return invalidGrokContent()
+	}
 	if e.GrokTerminal != nil && (e.Kind != ExecutionTurnFinished || e.GrokTerminal.Validate(e.NativeThreadID) != nil || e.Outcome != ExecutionSucceeded || e.ProblemCode != "" || e.ClaudeTerminal != nil || e.ClaudeStop != nil || e.ClaudeDenial != nil || e.OpenCodeStop != nil) {
 		return invalidGrokContent()
 	}
@@ -443,7 +447,11 @@ func (e ExecutionEvent) Validate() error {
 type ExecutionProgress struct {
 	GrokUserMessageID      ID                          `json:"grok_user_message_id,omitempty"`
 	GrokStop               *GrokStopObservation        `json:"grok_stop,omitempty"`
+	GrokPublicTerminal     *GrokPublicTerminal         `json:"grok_public_terminal,omitempty"`
 	GrokTerminal           *GrokTextTerminal           `json:"grok_terminal,omitempty"`
+	Capabilities           []Capability                `json:"capabilities,omitempty"`
+	GrokLastEvent          string                      `json:"grok_last_event,omitempty"`
+	GrokMode               *GrokModeObservation        `json:"grok_mode,omitempty"`
 	GrokContent            *GrokContentState           `json:"grok_content,omitempty"`
 	ClaudeCompaction       *ClaudeCompactionState      `json:"claude_compaction,omitempty"`
 	ClaudeDenial           *ClaudeDenialCompletion     `json:"claude_denial,omitempty"`

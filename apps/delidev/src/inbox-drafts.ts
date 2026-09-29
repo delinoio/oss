@@ -2,7 +2,10 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import type { Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
 
+import type { GrokDecision, GrokQuestionOutcome } from "./native-grok-interaction";
+
 export enum InteractionDraftKind {
+  Grok = "grok",
   CodexQuestion = "codex-question",
   CodexApproval = "codex-approval",
   OpenCodeQuestion = "opencode-question",
@@ -14,6 +17,7 @@ export enum DraftGrantScope { Turn = "turn", Session = "session" }
 export enum DraftAccess { Omit = "omit", Read = "read", Write = "write", Deny = "deny" }
 
 export type InteractionDraftState =
+  | { kind: InteractionDraftKind.Grok; answers: Record<string, string>; outcome: GrokQuestionOutcome; decision: GrokDecision | "" }
   | { kind: InteractionDraftKind.CodexQuestion; selected: Record<string, string[]>; free: Record<string, string>; unanswered: Record<string, boolean> }
   | { kind: InteractionDraftKind.CodexApproval; choice: number; access: Record<number, DraftAccess>; network: boolean; scope: DraftGrantScope; strict: boolean }
   | { kind: InteractionDraftKind.OpenCodeQuestion; selected: string[][]; custom: Record<number, string>; customEnabled: Record<number, boolean>; unanswered: Record<number, boolean> }
@@ -31,14 +35,16 @@ export interface InboxInteractionDraft {
 export function interactionRequestIdentity(resource: Resource): string {
   const data = document(resource);
   const nativeRequest = object(data.native_request_id);
-  const claude = object(data.claude), opencode = object(data.opencode);
-  return [resource.id, text(nativeRequest.text), text(data.native_item_id), text(data.native_turn_id), text(claude.arrival_id), text(opencode.native_event_id)].filter(Boolean).join("|");
+  const claude = object(data.claude), opencode = object(data.opencode), grok = object(data.grok);
+  return [resource.id, text(nativeRequest.text), text(data.native_item_id), text(data.native_turn_id), text(claude.arrival_id), text(opencode.native_event_id), text(grok.request_digest), text(grok.proposal_digest), text(object(grok.plan).content_digest)].filter(Boolean).join("|");
 }
 
 export function initialInteractionDraft(resource: Resource): InboxInteractionDraft | undefined {
   const data = document(resource);
   let editable: InteractionDraftState | undefined;
-  if (data.claude != null) {
+  if (data.grok != null) {
+    editable = { kind: InteractionDraftKind.Grok, answers: {}, outcome: "accepted" as GrokQuestionOutcome, decision: "" };
+  } else if (data.claude != null) {
     editable = { kind: InteractionDraftKind.Claude, selected: [], custom: {}, customEnabled: {}, skipped: {}, denial: false, reason: "", interrupt: false };
   } else if (data.opencode != null) {
     editable = data.type === "user-question"
@@ -54,6 +60,8 @@ export function initialInteractionDraft(resource: Resource): InboxInteractionDra
 
 export function isEmptyInteractionDraft(state: InteractionDraftState): boolean {
   switch (state.kind) {
+    case InteractionDraftKind.Grok:
+      return !Object.values(state.answers).some(Boolean) && state.decision === "" && state.outcome === "accepted";
     case InteractionDraftKind.CodexQuestion:
       return Object.values(state.selected).every((row) => row.length === 0) && Object.values(state.free).every((value) => value === "") && !Object.values(state.unanswered).some(Boolean);
     case InteractionDraftKind.CodexApproval:

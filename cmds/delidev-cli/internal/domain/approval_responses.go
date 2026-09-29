@@ -13,6 +13,7 @@ const MaxApprovalResponseBytes = 256 << 10
 // selects one original decision or a bounded native permission grant, never
 // another request, command, question answer or execution policy.
 type ApprovalResponseInput struct {
+	Grok     *GrokApprovalResponse       `json:"grok,omitempty"`
 	Claude   *ClaudePermissionResponse   `json:"claude,omitempty"`
 	OpenCode *OpenCodePermissionResponse `json:"opencode,omitempty"`
 	Decision *CodexApprovalDecision      `json:"decision,omitempty"`
@@ -38,7 +39,7 @@ func invalidApprovalResponse() error {
 }
 
 func (r ApprovalResponseInput) Validate(original *ApprovalRequest) error {
-	if r.Claude != nil || r.OpenCode != nil || original == nil || original.Validate() != nil {
+	if r.Grok != nil || r.Claude != nil || r.OpenCode != nil || original == nil || original.Validate() != nil {
 		return invalidApprovalResponse()
 	}
 	a := original.Codex
@@ -132,6 +133,7 @@ func (u ExecutionApprovalResponseUpdate) Validate() error {
 type ApprovalAcceptanceEvidence string
 
 const (
+	NativeGrokApprovalOutput      ApprovalAcceptanceEvidence = "native-grok-tool-output"
 	NativeOpenCodePermissionReply ApprovalAcceptanceEvidence = "native-opencode-permission-reply"
 	NativePermissionsOutput       ApprovalAcceptanceEvidence = "native-permissions-output"
 	NativeApprovedCommand         ApprovalAcceptanceEvidence = "native-approved-command"
@@ -164,7 +166,7 @@ func (u ExecutionApprovalAcceptanceUpdate) Validate() error {
 	if u.Evidence == NativeOpenCodePermissionReply && u.OpenCode != nil {
 		return u.OpenCode.Validate(NativeApprovalInteraction)
 	}
-	if u.OpenCode != nil || u.Evidence != NativePermissionsOutput {
+	if u.OpenCode != nil || u.Evidence != NativePermissionsOutput && u.Evidence != NativeGrokApprovalOutput {
 		return Fail(InvalidArgument, "Unknown native approval acceptance evidence.", "Retain exact owned permission-tool output; transmission, closure and tool completion cannot replace it.")
 	}
 	return nil

@@ -67,6 +67,9 @@ func publishQuestionAcceptance(tx *store.Tx, job store.Record, input domain.Exec
 	if err != nil {
 		return err
 	}
+	if err := validateGrokReplyAcceptance(tx, input, value, event); err != nil {
+		return err
+	}
 	if err := validateOpenCodeReplyAcceptance(tx, input, value, event.QuestionAcceptance.OpenCode); err != nil {
 		return err
 	}

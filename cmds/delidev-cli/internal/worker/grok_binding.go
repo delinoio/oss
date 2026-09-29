@@ -23,6 +23,7 @@ const (
 	grokAcceptancePending
 	grokInputAccepted
 	grokContentPending
+	grokObservationPending
 	grokTextClosing
 	grokTerminalPending
 	grokTextFinished
@@ -61,6 +62,11 @@ type GrokBindingPublisher struct {
 	pendingChunk    string
 	pendingResponse *domain.GrokResponseCounts
 	closureID       domain.ID
+	publicTerminal  *domain.GrokPublicTerminal
+	artifacts       map[string]domain.GrokPlanRevision
+	tools           map[string]*grokPublicTool
+	indices         map[uint64]string
+	interactions    map[domain.ID]*grokPublicInteraction
 	terminal        *domain.GrokTextTerminal
 }
 
@@ -102,7 +108,7 @@ func newGrokBindingPublisher(p *ExecutionPublisher, journal *grokClaimJournal) (
 	if err != nil || readErr != nil || path != journal.path || len(claims) != 0 {
 		return nil, publicationUncertain()
 	}
-	return &GrokBindingPublisher{publisher: p, journal: journal, reference: r, mode: mode, textOutput: sha256.New()}, nil
+	return &GrokBindingPublisher{publisher: p, journal: journal, reference: r, mode: mode, textOutput: sha256.New(), tools: map[string]*grokPublicTool{}, indices: map[uint64]string{}, interactions: map[domain.ID]*grokPublicInteraction{}, artifacts: map[string]domain.GrokPlanRevision{}}, nil
 }
 
 func (c *GrokBindingPublisher) block() error {
@@ -275,7 +281,11 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.stage != grokBindingPending && c.stage != grokAcceptancePending && c.stage != grokContentPending && c.stage != grokTerminalPending {
+	return c.replayPendingLocked(ctx)
+}
+
+func (c *GrokBindingPublisher) replayPendingLocked(ctx context.Context) error {
+	if c.stage != grokBindingPending && c.stage != grokAcceptancePending && c.stage != grokContentPending && c.stage != grokObservationPending && c.stage != grokTerminalPending {
 		return publicationUncertain()
 	}
 	p := c.publisher
@@ -284,7 +294,7 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 	kind := domain.ExecutionThreadBound
 	if c.stage == grokAcceptancePending {
 		kind = domain.ExecutionInputAccepted
-	} else if c.stage == grokContentPending {
+	} else if c.stage == grokContentPending || c.stage == grokObservationPending {
 		kind = c.pendingKind
 	} else if c.stage == grokTerminalPending {
 		kind = domain.ExecutionTurnFinished

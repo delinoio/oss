@@ -12,6 +12,11 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 	if update == nil {
 		return executionEventConflict()
 	}
+	if update.Snapshot != nil && update.Snapshot.Grok != nil {
+		if err := validateGrokPlan(tx, input, event, update.Snapshot.Grok); err != nil {
+			return err
+		}
+	}
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionArtifactStarted {
@@ -35,7 +40,7 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 			if update.Snapshot.Kind != artifact.Started.Kind {
 				return executionEventConflict()
 			}
-			if artifact.Started.Kind == domain.OpenCodeRevisionArtifact && !reflect.DeepEqual(artifact.Started, *update.Snapshot) {
+			if (artifact.Started.Kind == domain.OpenCodeRevisionArtifact || artifact.Started.Grok != nil) && !reflect.DeepEqual(artifact.Started, *update.Snapshot) {
 				return executionEventConflict()
 			}
 			if artifact.Started.Kind == domain.ReasoningTextArtifact {
@@ -118,6 +123,23 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 		return err
 	}
 	switch update.Progress.Kind {
+	case domain.GrokModeProgress:
+		if err := validateGrokMode(tx, input, progress, event); err != nil {
+			return err
+		}
+		if _, err := domain.GrokEventIndex(update.Progress.GrokMode.EventID, event.NativeThreadID); err != nil {
+			return executionEventConflict()
+		}
+		copy := *update.Progress.GrokMode
+		progress.GrokMode = &copy
+	case domain.GrokInteractionProgress:
+		message, err := tx.GrokExecutionItem(input.SessionID, input.ExecutionID, event.NativeThreadID, event.NativeTurnID, update.Progress.GrokInteraction.ToolID)
+		if err != nil {
+			return err
+		}
+		if _, err := grokToolSnapshot(message); err != nil {
+			return err
+		}
 	case domain.OpenCodeWorkspaceProgressKind:
 		progress.LatestWorkspaceEventID = update.ID
 	case domain.OpenCodeTodoProgressKind:

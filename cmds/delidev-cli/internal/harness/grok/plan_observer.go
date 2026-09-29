@@ -51,9 +51,10 @@ type planFact struct {
 		ID    string
 		Stage planInteractionStage
 	}
-	Mode     *modeObservation
-	Request  *planRequest
-	Artifact *planArtifact
+	ModeToolID string
+	Mode       *modeObservation
+	Request    *planRequest
+	Artifact   *planArtifact
 }
 
 type planObserver struct {
@@ -279,7 +280,7 @@ func (o *planObserver) observe(event nativewire.Event) (planFact, error) {
 		if err != nil {
 			return fact, err
 		}
-		hasEvent, fact.Mode = true, &observation
+		hasEvent, fact.Mode, fact.ModeToolID = true, &observation, id
 	default:
 		return fact, incompatible()
 	}

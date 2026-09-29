@@ -36,6 +36,7 @@ const (
 const MaxArtifactParts = 1024
 
 type ArtifactSnapshot struct {
+	Grok     *GrokPlanRevision `json:"grok,omitempty"`
 	Revision *OpenCodeRevision `json:"revision,omitempty"`
 	Kind     ArtifactKind      `json:"kind"`
 	Text     string            `json:"text"`
@@ -47,6 +48,7 @@ func (s *ArtifactSnapshot) UnmarshalJSON(raw []byte) error {
 	// encoding/json otherwise turns null string elements into empty strings,
 	// which would manufacture native content at an observed reasoning index.
 	var wire struct {
+		Grok     *GrokPlanRevision `json:"grok,omitempty"`
 		Revision *OpenCodeRevision `json:"revision,omitempty"`
 		Kind     ArtifactKind      `json:"kind"`
 		Text     *string           `json:"text"`
@@ -56,7 +58,7 @@ func (s *ArtifactSnapshot) UnmarshalJSON(raw []byte) error {
 	if Decode(raw, &wire) != nil || wire.Text == nil {
 		return invalidArtifact()
 	}
-	*s = ArtifactSnapshot{Kind: wire.Kind, Text: *wire.Text, Revision: wire.Revision}
+	*s = ArtifactSnapshot{Kind: wire.Kind, Text: *wire.Text, Revision: wire.Revision, Grok: wire.Grok}
 	for _, pair := range []struct {
 		source []*string
 		target *[]string
@@ -86,6 +88,9 @@ func invalidArtifact() error {
 }
 
 func (s ArtifactSnapshot) Validate() error {
+	if s.Grok != nil && (s.Kind != PlanArtifact || s.Text != s.Grok.Content || s.Revision != nil) {
+		return invalidArtifact()
+	}
 	if s.Kind == OpenCodeRevisionArtifact {
 		if s.Revision == nil || s.Text != "" || s.Summary != nil || s.Content != nil || s.Revision.Validate() != nil {
 			return invalidArtifact()
@@ -201,12 +206,14 @@ type NativePlan struct {
 // Turn progress has no native item identity. A diff is only an observation,
 // not repository/file-review ownership or permission to read/write a path.
 type NativeProgress struct {
-	Workspace *OpenCodeWorkspaceEvent `json:"workspace,omitempty"`
-	Changes   *OpenCodeChanges        `json:"changes,omitempty"`
-	Todo      *OpenCodeTodoProgress   `json:"todo,omitempty"`
-	Kind      ProgressKind            `json:"kind"`
-	Plan      *NativePlan             `json:"plan,omitempty"`
-	Diff      *string                 `json:"diff,omitempty"`
+	GrokInteraction *GrokNativeInteractionObservation `json:"grok_interaction,omitempty"`
+	GrokMode        *GrokModeObservation              `json:"grok_mode,omitempty"`
+	Workspace       *OpenCodeWorkspaceEvent           `json:"workspace,omitempty"`
+	Changes         *OpenCodeChanges                  `json:"changes,omitempty"`
+	Todo            *OpenCodeTodoProgress             `json:"todo,omitempty"`
+	Kind            ProgressKind                      `json:"kind"`
+	Plan            *NativePlan                       `json:"plan,omitempty"`
+	Diff            *string                           `json:"diff,omitempty"`
 }
 type ExecutionProgressUpdate struct {
 	ID       ID             `json:"id"`
@@ -218,7 +225,26 @@ func (u ExecutionProgressUpdate) Validate() error {
 		return invalidArtifact()
 	}
 	p := u.Progress
+	if p.Kind == GrokInteractionProgress {
+		if p.GrokInteraction == nil || p.GrokInteraction.Validate() != nil || p.GrokMode != nil || p.Plan != nil || p.Diff != nil || p.Todo != nil || p.Changes != nil || p.Workspace != nil {
+			return invalidArtifact()
+		}
+		return nil
+	}
+	if p.GrokInteraction != nil {
+		return invalidArtifact()
+	}
+	if p.Kind != GrokModeProgress && p.GrokMode != nil {
+		return invalidArtifact()
+	}
 	switch p.Kind {
+	case GrokModeProgress:
+		if p.GrokMode == nil || Text(p.GrokMode.ToolID, "original mode tool", 256, true) != nil || !p.GrokMode.Mode.Valid() || Text(p.GrokMode.EventID, "native mode event", 128, true) != nil || p.Workspace != nil || p.Changes != nil || p.Todo != nil || p.Plan != nil || p.Diff != nil {
+			return invalidArtifact()
+		}
+		if n, ok := grokCount(p.GrokMode.TimestampMS); !ok || n > 253402300799999 {
+			return invalidArtifact()
+		}
 	case PlanProgress:
 		if p.Workspace != nil || p.Changes != nil || p.Todo != nil || p.Plan == nil || p.Diff != nil || p.Plan.Steps == nil || len(p.Plan.Steps) > MaxArtifactParts || (p.Plan.Explanation != nil && Text(*p.Plan.Explanation, "native plan explanation", MaxMessageText, false) != nil) {
 			return invalidArtifact()

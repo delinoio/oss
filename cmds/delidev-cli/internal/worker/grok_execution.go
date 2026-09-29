@@ -25,9 +25,9 @@ import (
 
 func executeGrokSession(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, logger *slog.Logger) (output json.RawMessage, returned error) {
 	if input.Version != 1 || input.Continuation != nil || input.Installation.Version != grok.SupportedVersion {
-		return nil, domain.Fail(domain.Unsupported, "Grok execution requires the original first-text profile.", "Retain existing native history; a replacement input or continuation is not authorized.")
+		return nil, domain.Fail(domain.Unsupported, "Grok execution requires an original supported first-input profile.", "Retain existing native history; a replacement input or continuation is not authorized.")
 	}
-	contextTokens, err := input.Configuration.GrokFirstTextContext(input.Input.Mode)
+	contextTokens, err := input.Configuration.GrokFirstInputContext(input.Input.Mode)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	cancelTargeted := context.AfterFunc(ctx, cancelNative)
 	defer cancelTargeted()
 	nativeConfig := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, Instructions: input.Configuration.Instructions, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
-	api, err := grok.OpenOwnedAPIWithStop(nativeCtx, nativeConfig, binding.Creation, binding.Input, binding.Closure, binding.Stop)
+	api, err := grok.OpenOwnedPublicAPI(nativeCtx, nativeConfig, grok.PlanningRecorders{Creation: binding.Creation, Mode: binding.Mode, Input: binding.Input, File: binding.journal.FileReply, Question: binding.journal.QuestionReply, Plan: binding.journal.PlanReply}, binding.Closure, binding.Stop)
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +135,11 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	}()
 	if _, err := api.Create(nativeCtx, input.ThreadRequestID, input.SessionID); err != nil {
 		return nil, err
+	}
+	if input.Input.Mode == domain.PlanMode {
+		if _, err := api.SelectPlan(nativeCtx, domain.NewID()); err != nil {
+			return nil, err
+		}
 	}
 	observed, err := api.SessionBinding(nativeCtx)
 	if err != nil {
@@ -156,8 +161,9 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		return nil, err
 	}
 	logger.InfoContext(nativeCtx, "native_execution_thread_bound")
+	responsesDone := startGrokResponses(ctx, nativeCtx, cancelNative, config, binding, api)
 	var stopControl *grokStopControl
-	_, err = api.RunText(nativeCtx, input.TurnRequestID, input.Input.Prompt, func(callback context.Context, value grok.InputObservation) error {
+	_, err = api.RunPublic(nativeCtx, input.TurnRequestID, input.Input.Prompt, func(callback context.Context, value grok.InputObservation) error {
 		switch value.Kind {
 		case grok.InputAccepted:
 			if err := publish(callback, binding.AcceptInput(callback, value)); err != nil {
@@ -171,6 +177,10 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 			return nil
 		case grok.InputText, grok.InputResponse:
 			return publish(callback, binding.ObserveContent(callback, value))
+		case grok.InputFileTool, grok.InputQuestion, grok.InputPlan:
+			return binding.ObservePublic(callback, value, api)
+		case grok.InputPermissionRejected:
+			return nil
 		case grok.InputTitle, grok.InputCompleted, grok.StopSettled:
 			// Callback copies do not prove original native closure/Stop, history
 			// or workspace cleanup. Independent controller comparison follows.
@@ -180,6 +190,9 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		}
 	})
 	stopControl.join()
+	if responseErr := responsesDone(); responseErr != nil {
+		return nil, responseErr
+	}
 	if _, stopErr := api.InspectStop(); stopErr == nil {
 		if err != nil && domain.SafeError(err).Code != domain.Canceled {
 			return nil, err
@@ -188,11 +201,17 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 			return nil, err
 		}
 	} else {
-		if err != nil {
+		if err != nil && domain.SafeError(err).Code != domain.Canceled {
 			return nil, err
 		}
-		if err := publish(nativeCtx, binding.CloseText(nativeCtx, api)); err != nil {
-			return nil, err
+		if _, scopeErr := api.CompletedTextScope(nativeCtx); scopeErr == nil {
+			if err := publish(nativeCtx, binding.CloseText(nativeCtx, api)); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := binding.PublishPublicTerminal(nativeCtx, api); err != nil {
+				return nil, err
+			}
 		}
 	}
 	completion, err := binding.TextCompletion()

@@ -39,7 +39,7 @@ func (s *Service) acceptQuestionResponse(tx *store.Tx, responseID, interactionID
 	// The Codex branch additionally accounts for its pinned native wrapper;
 	// check its size before acceptance, not after the
 	// Worker has claimed a response that cannot fit on the native wire.
-	if value.OpenCode == nil && value.Claude == nil {
+	if value.Grok == nil && value.OpenCode == nil && value.Claude == nil {
 		if err := codex.ValidateQuestionResponseSize(codex.QuestionAnswers{Answers: input.Answers}); err != nil {
 			return store.Record{}, err
 		}

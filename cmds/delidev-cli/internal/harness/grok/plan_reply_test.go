@@ -118,6 +118,7 @@ func fixturePlanningAdvance(workspace, mode string, request domain.ID) {
 	fixtureNotify("_x.ai/session_notification", turn)
 	fixtureNotify("_x.ai/session/prompt_complete", promptCompletedFixture)
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "id": request, "result": result})
+	fixtureInputTail(workspace, mode, fixtureNotify)
 }
 
 func fixturePlanningReply(root, workspace, mode string, request domain.ID, raw []byte) {

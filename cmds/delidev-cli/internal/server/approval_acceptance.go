@@ -18,11 +18,14 @@ func publishApprovalAcceptance(tx *store.Tx, job store.Record, input domain.Exec
 	if err != nil {
 		return err
 	}
+	if err := validateGrokReplyAcceptance(tx, input, value, event); err != nil {
+		return err
+	}
 	if err := validateOpenCodeReplyAcceptance(tx, input, value, event.ApprovalAcceptance.OpenCode); err != nil {
 		return err
 	}
 	response := value.ApprovalResponse
-	if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.NativeApprovalInteraction || (value.OpenCode == nil && (value.Approval == nil || value.Approval.Codex == nil || value.Approval.Codex.Kind != domain.CodexPermissionsApproval)) || response == nil || (value.OpenCode == nil && response.Input.Grant == nil) || response.Input.ValidateInteraction(value) != nil || response.ID != u.ResponseID || response.Claim == nil || response.Delivery == nil || response.Acceptance != nil || (response.State != domain.ApprovalResponseTransmitted && response.State != domain.ApprovalResponseUncertain) || (response.Delivery.State != domain.ApprovalTransmitted && response.Delivery.State != domain.ApprovalDeliveryUncertain) || response.Delivery.Sequence >= event.Sequence || progress.UnconfirmedResponses == 0 {
+	if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.NativeApprovalInteraction || (value.Grok == nil && value.OpenCode == nil && (value.Approval == nil || value.Approval.Codex == nil || value.Approval.Codex.Kind != domain.CodexPermissionsApproval)) || response == nil || (value.Grok == nil && value.OpenCode == nil && response.Input.Grant == nil) || response.Input.ValidateInteraction(value) != nil || response.ID != u.ResponseID || response.Claim == nil || response.Delivery == nil || response.Acceptance != nil || (response.State != domain.ApprovalResponseTransmitted && response.State != domain.ApprovalResponseUncertain) || (response.Delivery.State != domain.ApprovalTransmitted && response.Delivery.State != domain.ApprovalDeliveryUncertain) || response.Delivery.Sequence >= event.Sequence || progress.UnconfirmedResponses == 0 {
 		return executionEventConflict()
 	}
 	claimedJob, err := store.Decode[domain.Job](job)

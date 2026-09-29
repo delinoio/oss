@@ -10,6 +10,11 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 	if update == nil {
 		return executionEventConflict()
 	}
+	if input.Configuration.Harness == domain.GrokBuild {
+		if err := validateGrokToolAuthority(tx, input, event); err != nil {
+			return err
+		}
+	}
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionToolStarted {
@@ -46,9 +51,18 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 				return executionEventConflict()
 			}
 		}
+		if tool.Started.Kind == domain.GrokNativeTool {
+			prior := tool.Started
+			if len(tool.States) > 0 {
+				prior = tool.States[len(tool.States)-1].Snapshot
+			}
+			if update.Snapshot == nil || domain.ValidateGrokToolTransition(prior, *update.Snapshot, event.NativeThreadID) != nil {
+				return executionEventConflict()
+			}
+		}
 		switch event.Kind {
 		case domain.ExecutionToolUpdated:
-			if !tool.Started.Kind.IsOpenCode() || len(tool.States) >= 1024 {
+			if !tool.Started.Kind.IsOpenCode() && tool.Started.Kind != domain.GrokNativeTool || len(tool.States) >= 1024 {
 				return executionEventConflict()
 			}
 			tool.States = append(tool.States, domain.SequencedToolState{Sequence: event.Sequence, Snapshot: *update.Snapshot})

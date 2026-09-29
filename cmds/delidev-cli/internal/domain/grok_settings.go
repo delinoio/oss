@@ -29,6 +29,21 @@ func (c ExecutionConfiguration) GrokFirstTextContext(mode SessionMode) (uint64, 
 	return c.GrokContext.Tokens, nil
 }
 
+// GrokFirstInputContext retains the same closed settings while admitting the
+// independently verified initial native Plan selection.
+func (c ExecutionConfiguration) GrokFirstInputContext(mode SessionMode) (uint64, error) {
+	if _, err := c.GrokModeForInput(mode); err != nil {
+		return 0, err
+	}
+	if c.GrokContext == nil {
+		return 0, Fail(Unsupported, "Grok Build needs explicit model context metadata.", "Record the original selected model context window before execution.")
+	}
+	if err := c.GrokContext.Validate(); err != nil {
+		return 0, err
+	}
+	return c.GrokContext.Tokens, nil
+}
+
 // Grok modes are original ACP observations, not filesystem sandbox policies.
 type GrokMode string
 

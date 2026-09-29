@@ -40,7 +40,8 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 				return store.Record{}, err
 			}
 		}
-		verified = completion.Version == 1 && (ordinary || stopped) && input.Input.Mode == domain.ExecuteMode
+		rich := progress.GrokPublicTerminal != nil && progress.GrokTerminal == nil && progress.GrokStop == nil && progress.GrokPublicTerminal.Validate(progress.NativeThreadID) == nil && progress.GrokPublicTerminal.InputRequestID == input.TurnRequestID && progress.GrokPublicTerminal.Outcome == completion.Outcome && progress.UnconfirmedResponses == 0
+		verified = completion.Version == 1 && ((ordinary || stopped) && input.Input.Mode == domain.ExecuteMode || rich)
 	}
 	if input.Configuration.Harness == domain.ClaudeCode {
 		// A digest alone cannot grant continuation after a changed permission,

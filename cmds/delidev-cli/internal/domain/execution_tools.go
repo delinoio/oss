@@ -70,6 +70,7 @@ type FileChangeObservation struct {
 }
 
 type ToolSnapshot struct {
+	Grok    *GrokToolObservation        `json:"grok,omitempty"`
 	Builtin *OpenCodeBuiltinObservation `json:"builtin,omitempty"`
 	Todo    *OpenCodeTodoObservation    `json:"todo,omitempty"`
 	Kind    ToolKind                    `json:"kind"`
@@ -139,7 +140,7 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 		if u.Snapshot == nil || u.Snapshot.Validate() != nil {
 			return invalidTool()
 		}
-		if u.Snapshot.Kind.IsOpenCode() {
+		if u.Snapshot.Kind.IsOpenCode() || u.Snapshot.Kind == GrokNativeTool {
 			if kind == ExecutionToolStarted && u.Snapshot.Status != ToolPending || kind == ExecutionToolUpdated && u.Snapshot.Status != ToolPending && u.Snapshot.Status != ToolRunning || kind == ExecutionToolCompleted && u.Snapshot.Status != ToolCompleted && u.Snapshot.Status != ToolFailed {
 				return invalidTool()
 			}
@@ -171,6 +172,15 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 func (s ToolSnapshot) Validate() error {
+	if s.Kind == GrokNativeTool {
+		if s.Grok == nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil {
+			return invalidTool()
+		}
+		return s.Grok.Validate(s.Status)
+	}
+	if s.Grok != nil {
+		return invalidTool()
+	}
 	if s.Kind == OpenCodeReadTool {
 		if s.Command != nil || s.Changes != nil || s.Read == nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil {
 			return invalidTool()

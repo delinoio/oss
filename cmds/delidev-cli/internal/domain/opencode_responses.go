@@ -125,6 +125,15 @@ func (r OpenCodePermissionResponse) Validate(original *OpenCodeInteractionReques
 }
 
 func (r QuestionResponseInput) ValidateInteraction(original ExecutionInteraction) error {
+	if original.Grok != nil {
+		if original.Type != UserQuestionInteraction || r.Grok == nil || r.Claude != nil || r.OpenCode != nil || r.Answers != nil || original.Grok.Validate(original.Type, original.NativeRequestID, original.NativeItemID) != nil {
+			return invalidQuestionResponse()
+		}
+		return r.Grok.Validate(*original.Grok)
+	}
+	if r.Grok != nil {
+		return invalidQuestionResponse()
+	}
 	if original.Claude != nil {
 		if original.Type != UserQuestionInteraction || r.Claude == nil || r.OpenCode != nil || r.Answers != nil {
 			return invalidQuestionResponse()
@@ -151,6 +160,15 @@ func (r QuestionResponseInput) ValidateInteraction(original ExecutionInteraction
 }
 
 func (r ApprovalResponseInput) ValidateInteraction(original ExecutionInteraction) error {
+	if original.Grok != nil {
+		if original.Type != NativeApprovalInteraction || r.Grok == nil || r.Claude != nil || r.OpenCode != nil || r.Decision != nil || r.Grant != nil || original.Grok.Validate(original.Type, original.NativeRequestID, original.NativeItemID) != nil {
+			return invalidApprovalResponse()
+		}
+		return r.Grok.Validate(*original.Grok)
+	}
+	if r.Grok != nil {
+		return invalidApprovalResponse()
+	}
 	if original.Claude != nil {
 		if original.Type != NativeApprovalInteraction || r.Claude == nil || r.OpenCode != nil || r.Decision != nil || r.Grant != nil {
 			return invalidApprovalResponse()

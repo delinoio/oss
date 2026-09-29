@@ -11,12 +11,9 @@ import (
 )
 
 func TestGrokFirstDispatchRetainsUnsupportedSelectionsWithoutClaiming(t *testing.T) {
-	for _, scenario := range []string{"plan", "missing-context", "unknown-context", "small-context", "large-context", "option", "repository"} {
+	for _, scenario := range []string{"missing-context", "unknown-context", "small-context", "large-context", "option", "repository"} {
 		t.Run(scenario, func(t *testing.T) {
 			mode := domain.ExecuteMode
-			if scenario == "plan" {
-				mode = domain.PlanMode
-			}
 			var f *firstDispatchFixture
 			if scenario == "repository" {
 				f = newFirstDispatchFixtureWorkspaceProfile(t, domain.GrokBuild, mode, "/fixture/grok", "", "fixture-model", domain.Worktree)
@@ -70,5 +67,26 @@ func TestGrokFirstDispatchRetainsUnsupportedSelectionsWithoutClaiming(t *testing
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestGrokFirstPlanDispatchKeepsOriginalAssignment(t *testing.T) {
+	f := newFirstDispatchFixtureForHarness(t, domain.GrokBuild, domain.PlanMode)
+	if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err != nil {
+		t.Fatal(err)
+	}
+	r := f.refresh(t)
+	s, err := store.Decode[domain.Session](r)
+	if err != nil || s.InitialExecution == nil || s.InitialExecution.Configuration.Harness != domain.GrokBuild || s.InitialExecution.Configuration.GrokContext == nil || s.Dispatch != domain.DispatchClaimed {
+		t.Fatal("Plan did not claim the original first-input profile", err)
+	}
+	replay, err := sessionClient(f.accountFixture).CreateSession(context.Background(), ownerRequest(f.identity, f.request))
+	if err != nil || replay.Msg.Change.ExecutionJob == nil {
+		t.Fatal("missing immutable Plan assignment", err)
+	}
+	var job domain.Job
+	var input domain.ExecutionJobInput
+	if domain.Decode(replay.Msg.Change.ExecutionJob.DocumentJson, &job) != nil || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Input.Mode != domain.PlanMode || input.Continuation != nil || input.Configuration.Instructions != "" {
+		t.Fatal("Plan assignment acquired common instructions or continuation")
 	}
 }

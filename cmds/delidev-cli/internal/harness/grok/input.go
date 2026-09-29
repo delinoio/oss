@@ -64,6 +64,7 @@ type ObservationKind string
 type inputProfile string
 
 const (
+	publicInput       inputProfile = "public-first-input"
 	plainTextInput    inputProfile = "plain-text"
 	readFileInput     inputProfile = "read-file"
 	fileWriteInput    inputProfile = "file-write"
@@ -73,7 +74,9 @@ const (
 	planningInput     inputProfile = "planning"
 )
 
-func (p inputProfile) mixed() bool { return p == mixedToolInput || p == planningInput }
+func (p inputProfile) mixed() bool { return p == mixedToolInput || p.planning() }
+
+func (p inputProfile) planning() bool { return p == planningInput || p == publicInput }
 
 func (p inputProfile) questionsOnly() bool { return p == questionInput || p == planQuestionInput }
 
@@ -186,7 +189,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	if !a.ready || a.inputStarted || request == a.product || request == a.creationRequest || request == a.modeRequest {
 		return result, sessionUncertain()
 	}
-	if profile == planQuestionInput || profile == planningInput && a.profile.mode == domain.PlanMode {
+	if profile == planQuestionInput || profile.planning() && a.profile.mode == domain.PlanMode {
 		if a.profile.mode != domain.PlanMode || a.modeBinding == nil || a.modeBinding.Validate() != nil {
 			return result, sessionUncertain()
 		}
@@ -336,6 +339,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		return nil
 	}
 	publishMixed := func(event nativewire.Event) (returned error) {
+		control.mu.Lock()
+		control.rich = true
+		control.mu.Unlock()
 		stage := "original-tool"
 		defer func() {
 			if returned != nil && a.inspection.Logger != nil {
@@ -519,7 +525,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			}
 			if !running && queue.running {
 				if profile.mixed() {
-					if profile == planningInput {
+					if profile.planning() {
 						mode := NativeDefaultMode
 						if a.modeBinding != nil {
 							mode = NativePlanMode
@@ -657,7 +663,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					return result, incompatible()
 				}
 				if reason.Update.Reason == Cancelled {
-					if profile == fileWriteInput || profile.mixed() {
+					if (profile == fileWriteInput || profile.mixed()) && control.originalStop() == nil {
 						rejectedTurn, err = parseRejectedFileTurn(event.Params, a.session, queue.prompt, a.profile.model)
 						if err != nil {
 							return result, err
@@ -720,7 +726,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 						return result, err
 					}
 				case retryMetadata:
-					if profile != plainTextInput || !queue.running || observation.retry == nil || observation.retry.Attempt != uint64(len(settled.retries)+1) {
+					if (profile != plainTextInput && (profile != publicInput || control.hasRich() || a.profile.mode == domain.PlanMode)) || !queue.running || observation.retry == nil || observation.retry.Attempt != uint64(len(settled.retries)+1) {
 						return result, incompatible()
 					}
 					settled.retries = append(settled.retries, *observation.retry)
@@ -746,7 +752,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				return result, incompatible()
 			}
 			if reason.Reason == Cancelled {
-				if profile == fileWriteInput || profile.mixed() {
+				if (profile == fileWriteInput || profile.mixed()) && control.originalStop() == nil {
 					rejectedPrompt, err = parseRejectedFileCompletion(event.Params, a.session, queue.prompt)
 					if err != nil {
 						return result, err
@@ -791,7 +797,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	if interrupted != promptInterrupted || rejected != promptRejected {
 		return result, incompatible()
 	}
-	if profile == planningInput && (mixed == nil || !control.plansSettled(mixed.plans)) {
+	if profile.planning() && (mixed == nil || !control.plansSettled(mixed.plans)) {
 		return result, incompatible()
 	}
 	if rejected {
@@ -811,6 +817,14 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		}
 		if err := a.Close(); err != nil {
 			return result, sessionUncertain()
+		}
+		if profile == publicInput {
+			settled.prompt = queue.prompt
+			copy(settled.output[:], output.Sum(nil))
+			a.publicTerminal, err = a.retainPublicTerminal(settled, denied.Result, rejectedTurn.Turn, rejectedPrompt.Completion, &denied, mixed)
+			if err != nil {
+				return result, err
+			}
 		}
 		// Owned cleanup cancels the native publication context. Publish the
 		// correlated rejection on the original caller context after joining it.
@@ -868,7 +882,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	if err := a.profile.checkInitialized(); err != nil {
 		return result, err
 	}
-	if profile == plainTextInput {
+	if profile == plainTextInput || profile == publicInput && !control.hasRich() && a.profile.mode != domain.PlanMode {
 		facts, err := retainTextTerminal(result, turn, completed)
 		if err != nil {
 			return result, err
@@ -903,11 +917,18 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	if len(settled.retries) != 0 {
 		return result, incompatible()
 	}
+	if profile == publicInput && (control.hasRich() || a.profile.mode == domain.PlanMode) {
+		settled.prompt = queue.prompt
+		a.publicTerminal, err = a.retainPublicTerminal(settled, result, turn, completed, nil, mixed)
+		if err != nil {
+			return result, err
+		}
+	}
 	if err := publish(InputObservation{Kind: InputCompleted, Result: &result}); err != nil {
 		return result, err
 	}
 	settled.prompt = queue.prompt
-	if profile == plainTextInput {
+	if settled.terminalFacts != nil {
 		a.completedText = &settled
 	}
 	return result, nil

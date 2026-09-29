@@ -68,3 +68,7 @@ Update this contract, command/session/protocol contracts, project index, evidenc
 - [Connect protocol](protos-delidev-v1-contract.md)
 - [Complete requirements](cmds-delidev-requirements.md)
 - [Repository defaults](repository-defaults.md)
+
+### Original Grok interactions
+
+The retained inbox additionally accepts the exclusive pinned Grok file-permission, question and Plan-approval sources described in the session contract. Source validation includes their original native request and disjoint payload instead of translating into another harness. Publication creates one unread entry atomically; exact receipts, response delivery/acceptance/closure and native mode changes preserve that entry's independent read revision. Existing joined reads, current owner response operations, notification eligibility and CLI semantics apply unchanged. Reading or presenting an inbox entry neither grants a reply nor renews stale/Stop/revoked execution authority. Rich native terminal notification remains separate from original interaction read state and the workspace-cleanup report.
