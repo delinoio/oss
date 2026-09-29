@@ -23,6 +23,7 @@ const (
 	BudgetReached        Code = "budget_reached"
 	ResourceExhausted    Code = "resource_exhausted"
 	CursorExpired        Code = "cursor_expired"
+	ProviderDisabled     Code = "provider_disabled"
 	Canceled             Code = "canceled"
 	Internal             Code = "internal"
 )
@@ -64,7 +65,7 @@ func (e *Error) ExitCode() int {
 		return 3
 	case ServerUnavailable, Unavailable:
 		return 4
-	case Conflict, ConfirmationRequired, RecoveryRequired, CursorExpired, BudgetReached:
+	case Conflict, ConfirmationRequired, RecoveryRequired, CursorExpired, ProviderDisabled, BudgetReached:
 		return 5
 	case Unsupported:
 		return 6

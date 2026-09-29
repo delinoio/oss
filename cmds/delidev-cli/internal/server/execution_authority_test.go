@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -252,6 +253,63 @@ func TestExecutionGrantRPCAndRelayRetainOnlyScopedAuthority(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatal("owner RPC credential issued a Worker execution grant")
 	}
+}
+
+func TestProviderDisableBlocksNewGrantButPreservesRegisteredTurnReplay(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"resp_after_provider_off","object":"response","status":"completed","output":[]}`)
+	}))
+	defer upstream.Close()
+	f := newAuthorityFixture(t, upstream.URL)
+	if response := f.registerGrant(t); response.Replayed {
+		t.Fatal("first registered turn unexpectedly replayed")
+	}
+	if err := setAuthorityProviderEnabled(f, false); err != nil {
+		t.Fatal(err)
+	}
+	if response := f.registerGrant(t); !response.Replayed {
+		t.Fatal("exact registered-grant replay was not observational after disable")
+	}
+	response := f.request(t, f.token, `{"model":"fixture-model"}`)
+	if response.StatusCode != http.StatusOK {
+		t.Fatal("provider disable revoked the original registered turn", response.StatusCode)
+	}
+
+	blocked := newAuthorityFixture(t, upstream.URL)
+	if err := setAuthorityProviderEnabled(blocked, false); err != nil {
+		t.Fatal(err)
+	}
+	r := connect.NewRequest(blocked.register)
+	r.Header().Set("Authorization", "Bearer "+blocked.workerToken)
+	_, err := blocked.client.RegisterExecution(context.Background(), r)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || rpc.ClientError(err).Code != domain.ProviderDisabled {
+		t.Fatalf("disabled provider received a fresh execution grant: %v", err)
+	}
+	err = blocked.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		_, err := tx.ExecutionGrant(blocked.register.CredentialDigest)
+		return err
+	})
+	if domain.SafeError(err).Code != domain.Unauthenticated {
+		t.Fatalf("failed first grant left durable authority: %v", err)
+	}
+}
+
+func setAuthorityProviderEnabled(f *authorityFixture, enabled bool) error {
+	providerID := f.input.Configuration.ProviderID
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.provider-activation", providerID, func(tx *store.Tx) (any, error) {
+		record, err := tx.Get(domain.ProviderKind, providerID)
+		if err != nil {
+			return nil, err
+		}
+		provider, err := store.Decode[domain.Provider](record)
+		if err != nil {
+			return nil, err
+		}
+		provider.SetEnabled(enabled)
+		return tx.Put(domain.ProviderKind, providerID, record.Revision, "", "", provider)
+	})
+	return err
 }
 
 func TestExecutionGrantCannotSurviveEpochReplacementOrAccountRevocation(t *testing.T) {

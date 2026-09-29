@@ -30,6 +30,97 @@ func (s *Service) ListProviderPresets(ctx context.Context, req *connect.Request[
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
+
+func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Request[pb.ListProviderInventoryRequest]) (*connect.Response[pb.ListProviderInventoryResponse], error) {
+	actor, ok := domain.PrincipalFrom(ctx)
+	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Only an owner or paired client can inspect provider inventory.", "Use an authorized product client."), req.Header().Get(rpc.CorrelationHeader))
+	}
+	f := store.ProviderInventorySearch{Query: req.Msg.Query, EnabledOnly: req.Msg.EnabledOnly, Limit: int(req.Msg.PageSize)}
+	if f.Limit == 0 {
+		f.Limit = 50
+	}
+	raw, _ := json.Marshal(f)
+	hash := sha256.Sum256(raw)
+	scope := "provider-inventory:" + hex.EncodeToString(hash[:])
+	if req.Msg.PageToken != "" {
+		cursor, err := s.Identity.DecodeCursor(req.Msg.PageToken, scope)
+		if err != nil {
+			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+		}
+		f.After, f.Epoch = string(cursor.After), cursor.Sequence
+	}
+	entries, more, epoch, err := s.Store.ProviderInventoryPage(ctx, orderedProviderPresets(), f)
+	if err != nil {
+		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+	}
+	message := &pb.ListProviderInventoryResponse{Capabilities: []pb.ProviderInventoryCapability{
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_PROVIDER_ACTIVATION,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER,
+	}}
+	for _, entry := range entries {
+		wire := &pb.ProviderInventoryEntry{PresetId: wireProviderPreset(entry.PresetID), ProviderId: string(entry.ProviderID), DisplayName: entry.DisplayName, Enabled: entry.Enabled, TotalAccounts: entry.TotalAccounts, ConnectedAccounts: entry.ConnectedAccounts, AccountCountsAvailable: entry.AccountCountsAvailable}
+		if entry.Provider != nil {
+			wire.Provider = rpc.Resource(*entry.Provider)
+		}
+		message.Entries = append(message.Entries, wire)
+	}
+	if more && len(entries) > 0 {
+		message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: domain.ID(entries[len(entries)-1].CursorKey()), Sequence: epoch})
+		if err != nil {
+			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+		}
+	}
+	response := connect.NewResponse(message)
+	rpc.CopyCorrelation(response, req.Header())
+	return response, nil
+}
+
+func orderedProviderPresets() []domain.ProviderPreset {
+	all := providers.Presets()
+	byID := make(map[domain.ProviderPresetID]domain.ProviderPreset, len(all))
+	for _, preset := range all {
+		byID[preset.ID] = preset
+	}
+	order := []domain.ProviderPresetID{domain.PresetOpenAI, domain.PresetAnthropic, domain.PresetOpenRouter, domain.PresetVercel, domain.PresetXAI, domain.PresetDeepSeek, domain.PresetOllama, domain.PresetLMStudio, domain.PresetVLLM}
+	result := make([]domain.ProviderPreset, 0, len(order))
+	for _, id := range order {
+		if preset, ok := byID[id]; ok {
+			result = append(result, preset)
+		}
+	}
+	return result
+}
+
+func wireProviderPreset(id *domain.ProviderPresetID) pb.ProviderPresetId {
+	if id == nil {
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_UNSPECIFIED
+	}
+	switch *id {
+	case domain.PresetVercel:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_VERCEL_AI_GATEWAY
+	case domain.PresetOpenRouter:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_OPENROUTER
+	case domain.PresetOpenAI:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_OPENAI
+	case domain.PresetAnthropic:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_ANTHROPIC
+	case domain.PresetXAI:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_XAI
+	case domain.PresetDeepSeek:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_DEEPSEEK
+	case domain.PresetOllama:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_OLLAMA
+	case domain.PresetLMStudio:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_LM_STUDIO
+	case domain.PresetVLLM:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_VLLM
+	default:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_UNSPECIFIED
+	}
+}
 func (s *Service) DiscoverModels(ctx context.Context, req *connect.Request[pb.DiscoverModelsRequest]) (*connect.Response[pb.DiscoverModelsResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	meta := req.Msg.Mutation
@@ -192,7 +283,7 @@ func catalogPlan(tx *store.Tx, provider domain.ID, result accountInspection) ([]
 	return plan, nil
 }
 func (s *Service) SearchModels(ctx context.Context, req *connect.Request[pb.SearchModelsRequest]) (*connect.Response[pb.SearchModelsResponse], error) {
-	f := store.ModelSearch{Query: req.Msg.Query, ProviderID: domain.ID(req.Msg.ProviderId), IncludeHidden: req.Msg.IncludeHidden, Limit: int(req.Msg.PageSize)}
+	f := store.ModelSearch{Query: req.Msg.Query, ProviderID: domain.ID(req.Msg.ProviderId), IncludeHidden: req.Msg.IncludeHidden, EnabledProvidersOnly: req.Msg.EnabledProvidersOnly, Limit: int(req.Msg.PageSize)}
 	if f.Limit == 0 {
 		f.Limit = 50
 	}

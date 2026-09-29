@@ -16,6 +16,12 @@ CREATE INDEX model_display ON entities(json_extract(body,'$.provider_id'),COALES
 CREATE INDEX event_kind_cursor ON events(kind,sequence);
 PRAGMA user_version=3;
 `
+
+const providerActivationSchema = `
+CREATE UNIQUE INDEX provider_preset_unique ON entities(json_extract(body,'$.preset_id'))
+ WHERE kind='provider' AND json_type(body,'$.preset_id')='text' AND json_extract(body,'$.preset_id')<>'';
+PRAGMA user_version=21;
+`
 const recordColumns = "id,kind,revision,session_id,project_id,body,created_at,updated_at"
 
 func (t *Tx) ValidateModelIdentity(id domain.ID, model domain.Model) error {
@@ -37,6 +43,14 @@ func (t *Tx) ValidateModelIdentity(id domain.ID, model domain.Model) error {
 func (t *Tx) ModelSuppressed(provider domain.ID, native string) (bool, error) {
 	var found bool
 	err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM model_suppressions WHERE provider_id=? AND native_id=?)", provider, native).Scan(&found)
+	return found, storageError(err)
+}
+
+func (t *Tx) ProviderPresetExists(preset domain.ProviderPresetID, except domain.ID) (bool, error) {
+	var found bool
+	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(
+SELECT 1 FROM entities WHERE kind='provider' AND id<>? AND json_extract(body,'$.preset_id')=?
+)`, except, preset).Scan(&found)
 	return found, storageError(err)
 }
 
@@ -64,12 +78,13 @@ func (t *Tx) modelRecords(query string, args ...any) ([]Record, error) {
 }
 
 type ModelSearch struct {
-	Query         string    `json:"query"`
-	ProviderID    domain.ID `json:"provider_id,omitempty"`
-	IncludeHidden bool      `json:"include_hidden"`
-	Limit         int       `json:"-"`
-	After         domain.ID `json:"-"`
-	Epoch         uint64    `json:"-"`
+	Query                string    `json:"query"`
+	ProviderID           domain.ID `json:"provider_id,omitempty"`
+	IncludeHidden        bool      `json:"include_hidden"`
+	EnabledProvidersOnly bool      `json:"enabled_providers_only"`
+	Limit                int       `json:"-"`
+	After                domain.ID `json:"-"`
+	Epoch                uint64    `json:"-"`
 }
 
 func (f ModelSearch) Validate() error {
@@ -110,6 +125,9 @@ func (s *Store) SearchModels(ctx context.Context, f ModelSearch) ([]Record, []Re
 		}
 		query := "SELECT " + recordColumns + " FROM entities WHERE kind='model'"
 		args := []any{}
+		if f.EnabledProvidersOnly {
+			query += " AND EXISTS(SELECT 1 FROM entities p WHERE p.kind='provider' AND p.id=json_extract(entities.body,'$.provider_id') AND COALESCE(json_extract(p.body,'$.enabled'),1)=1 AND json_extract(p.body,'$.protocol')<>'native-subscription')"
+		}
 		if f.ProviderID != "" {
 			query += " AND json_extract(body,'$.provider_id')=?"
 			args = append(args, f.ProviderID)
@@ -219,7 +237,8 @@ func (s *Store) CatalogCandidates(ctx context.Context, after domain.ID, limit in
 FROM entities a JOIN entities p ON p.id=json_extract(a.body,'$.provider_id') AND p.kind='provider'
 WHERE a.kind='account' AND a.id>? AND json_extract(a.body,'$.type')='api'
 AND json_extract(a.body,'$.enabled')=1 AND json_type(a.body,'$.connection')='object'
-AND COALESCE(json_type(a.body,'$.removal'),'null')='null' AND json_extract(p.body,'$.discovery')=1
+AND COALESCE(json_type(a.body,'$.removal'),'null')='null'
+AND COALESCE(json_extract(p.body,'$.enabled'),1)=1 AND json_extract(p.body,'$.protocol')<>'native-subscription' AND json_extract(p.body,'$.discovery')=1
 AND (COALESCE(json_extract(a.body,'$.catalog.connection_id'),'')<>json_extract(a.body,'$.connection.id')
 OR unixepoch(json_extract(a.body,'$.catalog.observed_at'))+MAX(?,COALESCE(json_extract(a.body,'$.catalog.retry_after_seconds'),0))<=unixepoch(?))
 ORDER BY a.id LIMIT ?`
