@@ -5,9 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
-	"path/filepath"
 	"slices"
-	"strings"
 	"syscall"
 	"time"
 
@@ -24,19 +22,9 @@ func systemctl(ctx context.Context, args ...string) error {
 func userBus(ctx context.Context) (*dbus.Conn, error) {
 	// Only an existing same-user Unix bus is eligible. Do not let a missing
 	// session fall back to dbus-launch, a remote address or a system manager.
-	address := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
-	path := ""
-	if address != "" {
-		if !strings.HasPrefix(address, "unix:path=") || strings.ContainsAny(address, ";%,\r\n\x00") {
-			return nil, unavailable()
-		}
-		path = strings.TrimPrefix(address, "unix:path=")
-	} else {
-		base := os.Getenv("XDG_RUNTIME_DIR")
-		if !filepath.IsAbs(base) {
-			return nil, unavailable()
-		}
-		path = filepath.Join(base, "bus")
+	path, err := existingBusPath(os.Getenv("DBUS_SESSION_BUS_ADDRESS"), os.Getenv("XDG_RUNTIME_DIR"))
+	if err != nil {
+		return nil, err
 	}
 	info, err := os.Lstat(path)
 	if err != nil || info.Mode()&os.ModeSocket == 0 {

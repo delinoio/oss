@@ -1,11 +1,21 @@
 package userservice
 
 import (
+	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
+
+func TestMissingGUIDomainCannotAuthorizeNativeControl(t *testing.T) {
+	// A read-only lookup of a nonexistent UID never touches this user's jobs.
+	s := Spec{User: "4294967295", Name: "io.delino.delidev.missing-domain", DefinitionPath: filepath.Join(t.TempDir(), "absent.plist")}
+	if _, err := (nativeBackend{}).Inspect(context.Background(), s); domain.SafeError(err).Code != domain.Unavailable {
+		t.Fatal("missing GUI domain accepted", err)
+	}
+}
 
 func TestLaunchdCachedDefinitionIsVerifiedEvenWithoutPID(t *testing.T) {
 	s := Spec{Kind: Server, ID: domain.NewID(), Name: "io.delino.delidev.fixture", Binary: "/Applications/DeliDev/delidev", Root: "/private/fixture", DefinitionPath: "/Users/fixture/Library/LaunchAgents/service.plist"}
