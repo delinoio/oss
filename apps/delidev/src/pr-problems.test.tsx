@@ -8,6 +8,7 @@ import { EntityKind, IntegrationService, ResourceService, ResourceSchema, PullRe
 import { ciObservation } from "./github-ci-fixture";
 import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
+import { PRWorkflowProvider } from "./pr-workflow";
 import { OpenPRProblemHistory, PRProblemHistory, readPRProblem } from "./pr-problems";
 
 function fixture() {
@@ -28,7 +29,7 @@ function fixture() {
   const proofGet = vi.fn(async () => ({ resource: undefined as Resource | undefined }));
   const transport = createRouterTransport(router => { router.service(IntegrationService, { listPullRequestProblems: list, dismissPullRequestProblem: dismiss, refreshPullRequestProblems: collect }); router.service(ResourceService, { getResource: proofGet }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = (toggle = false) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{toggle ? <OpenPRProblemHistory selection={selection} /> : <PRProblemHistory selection={selection} />}</MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (toggle = false) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><PRWorkflowProvider>{toggle ? <OpenPRProblemHistory selection={selection} /> : <PRProblemHistory selection={selection} />}</PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
   return { selection, row, set, body, list, dismiss, collect, proofGet, client, view };
 }
 it("retains original approved feedback and dismisses only its exact local version", async () => {

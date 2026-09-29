@@ -188,28 +188,32 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return storageError(err)
 		}
 	}
-	// The unmerged backup branch also used version 21 before provider activation
-	// landed on main. Recognize its retained table and add the missing index;
-	// never drop its original deletion jobs or external obligations.
+	// Previous unmerged backup layouts used versions 21 and 22. Detect their
+	// retained deletion table before adding schema 23. Only the backup layout
+	// of version 22 still needs the hosted-provider defaults; main's version 22
+	// already applied them and must preserve subsequent explicit deletions.
 	var existingDeletionTable bool
-	if version == 21 {
-		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='backup_deletions')").Scan(&existingDeletionTable); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='backup_deletions')").Scan(&existingDeletionTable); err != nil {
+		return storageError(err)
+	}
+	if version == 21 && existingDeletionTable {
+		var providerIndex bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name='provider_preset_unique')").Scan(&providerIndex); err != nil {
 			return storageError(err)
 		}
-		if existingDeletionTable {
-			var providerIndex bool
-			if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name='provider_preset_unique')").Scan(&providerIndex); err != nil {
+		if !providerIndex {
+			if _, err := tx.ExecContext(ctx, providerActivationSchema); err != nil {
 				return storageError(err)
-			}
-			if !providerIndex {
-				if _, err := tx.ExecContext(ctx, providerActivationSchema); err != nil {
-					return storageError(err)
-				}
 			}
 		}
 	}
+	if version < 22 || (version == 22 && existingDeletionTable) {
+		if err := seedHostedProviders(ctx, tx); err != nil {
+			return err
+		}
+	}
 	if existingDeletionTable {
-		if _, err := tx.ExecContext(ctx, "PRAGMA user_version=22;"); err != nil {
+		if _, err := tx.ExecContext(ctx, "PRAGMA user_version=23;"); err != nil {
 			return storageError(err)
 		}
 	} else {

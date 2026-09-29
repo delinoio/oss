@@ -2493,10 +2493,44 @@ also untested. Component coverage is not counted as native visual evidence. No
 Rust, RPC, schema, or generated source changed; generated `dist` output is
 removed from the worktree.
 
-After merging the current PR branch with `origin/main`, `apps/delidev` `pnpm
-test` passes 69 files / 826 tests, type checking and production build. This
-validates the combined Token Usage and sidebar changes; generated app/client
-`dist` output is removed afterward.
+### Issue #1059 contextual desktop navigation and standalone Pull requests (2026-09-29)
+
+The desktop now has one shared menu rail with Sessions, Pull requests, Usage,
+Schedules, Activity, Inbox and Search context panes. Draft/applied filters and
+per-menu scroll positions stay in connection memory. Pull requests uses the
+existing exact-repository authority and explicit Load flow; disposable reads
+are removed on exit while detail navigation, collection selection, allowance
+confirmations and exact mutation retries remain reachable.
+
+The original `apps/delidev` `pnpm test` run passed on macOS arm64: 69 test
+files / 822 tests, generated API-client build, TypeScript type-checking and the
+Rsbuild production build. After integrating the daily/model Usage analytics,
+the complete command passes with 70 test files / 827 tests, including the
+updated sidebar filter flow, actual Go service integration, generated API-client
+build, TypeScript type-checking and Rsbuild production build. These runs do not
+establish native drawer focus, background inertness, visual layout, or behavior
+at the 960×640, 1,100/1,101px, 759/760px and 200% zoom boundaries. No native
+DeliDev window was captured for this change; Windows and Linux native acceptance
+remains untested. The #1059 navigation and Pull requests work adds no separate
+GitHub backend path, RPC, Rust, or relational database schema. The merged
+branch also includes #1052 analytics, #1047 provider-inventory/account-filter
+RPC, schema, client and Go server changes, and #1060 desktop recovery work from
+`main`. An earlier combined analytics/sidebar run passed 69 test files / 826
+tests. After integrating `main` through #1060, `apps/delidev` `pnpm test`
+passes 72 test files / 848 tests, generated API-client build, TypeScript
+type-checking and Rsbuild production build. `pnpm proto:check` passes
+formatting/lint, breaking-change and generated-source freshness checks.
+`go test ./cmds/delidev-cli/internal/cli -count=1` and
+`go vet ./cmds/delidev-cli/...` pass. One full CLI-module test run had a single
+`TestCLISessionAcceptanceQueueAndArchive` failure because the workspace file
+reader was unavailable during concurrent Go runs; the isolated CLI-package
+rerun passed.
+`cargo test -p delidev-desktop` passes 12 tests; four tests that require a
+built Go sidecar remain ignored. The repository-wide `cargo test` command
+compiled DeliDev but could not finish because five unrelated `binpm` CLI tests
+fail on macOS temporary-path canonicalization and relative `BINPM_HOME`
+validation. App and API-client `dist` directories produced by validation are
+removed from the worktree.
 
 ### PR #1063 main integration (2026-09-29)
 
@@ -2808,3 +2842,20 @@ the separately recorded PR-match and Windows workspace failures remain unresolve
   Real accounts, hosted inference, private GitHub operations/product Git push,
   Windows/Linux native execution, production signing and publication remain
   outside this verification. The one-shot repair does not monitor subsequent CI.
+
+### PR #1063 contextual navigation and provider-default merge (2026-09-29)
+
+Merged main through `1f51c33e`, retaining contextual sidebars and the standalone
+Pull requests surface with the live prerequisite checklist and managed Backups.
+Settings retains both its complete sixteen-category coverage and the new valid
+zero-account provider behavior.
+
+Schema 23 reconciles both prior version-22 layouts. The unmerged backup layout
+keeps its original deletion jobs and receives hosted defaults once; main's
+already-seeded layout gains the backup table without recreating explicitly deleted
+providers. Saved Off settings and identities survive both paths, alongside the
+existing version-21 compatibility and backup-before-migration boundary. The added
+fixture initially used a TEXT write for a BLOB-owned document; it now exercises
+the real typed mutation path. Focused backup/default/migration race tests pass
+(19.485s). Full desktop `pnpm test` passes 74 files / 886 tests, type checking,
+eight packaging tests and production build. No Rust or wire schema changed.

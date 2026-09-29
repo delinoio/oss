@@ -440,7 +440,7 @@ func TestBackupDeletionMigrationFromBothVersion21Layouts(t *testing.T) {
 			}
 			defer reopened.Close()
 			var version, index int
-			if err := reopened.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != 22 {
+			if err := reopened.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != SchemaVersion {
 				t.Fatal(version, err)
 			}
 			if err := reopened.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name='provider_preset_unique' AND type='index'").Scan(&index); err != nil || index != 1 {
@@ -565,5 +565,86 @@ func TestBackupDeletionClaimPreservesReopenedOriginal(t *testing.T) {
 	}
 	if err := verifyDeletionImage(ctx, claimed, in); err != nil {
 		t.Fatal("claimed original lost", err)
+	}
+}
+
+func TestBackupDeletionMigrationFromBothVersion22Layouts(t *testing.T) {
+	for _, backupLayout := range []bool{false, true} {
+		t.Run(fmt.Sprint(backupLayout), func(t *testing.T) {
+			s, root, ctx, in := deletionFixture(t)
+			var openAI, anthropic domain.ID
+			for preset, target := range map[string]*domain.ID{"openai": &openAI, "anthropic": &anthropic} {
+				if err := s.db.QueryRow("SELECT id FROM entities WHERE kind='provider' AND json_extract(body,'$.preset_id')=?", preset).Scan(target); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.Mutate(ctx, domain.NewID(), "fixture.saved-off", nil, func(tx *Tx) (any, error) {
+				row, err := tx.Get(domain.ProviderKind, openAI)
+				if err != nil {
+					return nil, err
+				}
+				provider, err := Decode[domain.Provider](row)
+				if err != nil {
+					return nil, err
+				}
+				provider.SetEnabled(false)
+				return tx.Put(domain.ProviderKind, openAI, row.Revision, "", "", provider)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.db.Exec("DELETE FROM entities WHERE id=?", anthropic); err != nil {
+				t.Fatal(err)
+			}
+			var job Record
+			if backupLayout {
+				var err error
+				job, _, err = s.DeleteBackup(ctx, domain.NewID(), in)
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := s.db.Exec("DROP TABLE backup_deletions"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.db.Exec("PRAGMA user_version=22"); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := Open(ctx, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			row, err := reopened.Get(ctx, domain.ProviderKind, openAI)
+			provider, decodeErr := Decode[domain.Provider](row)
+			if err != nil || decodeErr != nil || row.Revision != 2 || provider.EnabledValue() {
+				t.Fatal("saved Off identity changed", row, err, decodeErr)
+			}
+			var version, hosted, table int
+			if err := reopened.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != SchemaVersion {
+				t.Fatal(version, err)
+			}
+			if err := reopened.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='backup_deletions'").Scan(&table); err != nil || table != 1 {
+				t.Fatal(table, err)
+			}
+			if err := reopened.db.QueryRow("SELECT count(*) FROM entities WHERE kind='provider' AND json_extract(body,'$.preset_id')='anthropic'").Scan(&hosted); err != nil {
+				t.Fatal(err)
+			}
+			want := 0
+			if backupLayout {
+				want = 1
+			}
+			if hosted != want {
+				t.Fatal("provider defaults crossed the wrong migration boundary", hosted, want)
+			}
+			if backupLayout {
+				row, err := reopened.RunBackupDeletion(ctx, job.ID, in.ServerID)
+				value, decodeErr := Decode[domain.Job](row)
+				if err != nil || decodeErr != nil || value.State != domain.JobSucceeded {
+					t.Fatal(value, err, decodeErr)
+				}
+			}
+		})
 	}
 }
