@@ -3094,3 +3094,50 @@ the 15-second scenario deadline are unchanged. Complete desktop `pnpm test`
 passes 74 files / 941 tests, TypeScript checking, eight native package verifier
 tests and the production build. The new hosted run is not observed in this
 one-shot repair.
+
+### PR #1063 unlocked native Quit investigation (2026-09-29)
+
+A fresh macOS arm64 ad-hoc bundle dry run at baseline `bfe823f7` passed sidecar,
+CEF/helper/resource/license, architecture, macOS 13 metadata and strict nested
+signature verification. A separate temporary diagnostic crate changed only the
+private data/cache/log destinations; the original product source, shutdown logic,
+Tauri revision and CEF distribution were unchanged. Its copied bundle was signed
+ad-hoc separately, and the original release binary was restored afterward.
+
+The unlocked native UI allowed a real application-menu Quit. The structured
+request at 08:40:02.321129Z preceded Exit at 08:44:14.170544Z, notification/tray
+joins immediately afterward and runtime return at 08:44:33.986925Z. The owned
+process and helpers were then absent. No agent-issued signal or forced-success
+path was used. The 271.666-second delay still fails responsive Quit acceptance.
+A sample during the wait again places a CEF worker in `SecItemCopyMatching`;
+the main thread was still servicing the native event loop. Access to the native
+SecurityAgent UI was blocked by the computer-use tool, so prompt contents,
+handling and the exact decryption/signature condition were not established.
+
+Upstream [CEF issue #2692](https://github.com/chromiumembedded/cef/issues/2692)
+documents shared Keychain-name behavior, and
+[commit fa874acb](https://github.com/chromiumembedded/cef/commit/fa874acb9dd4a0ebf607245543b2f20d27d04916)
+adds custom names in a later runtime. The corresponding patch/API is absent from
+the pinned `g8042e43` distribution. That is a candidate dependency constraint,
+not proof that upgrading resolves this shutdown. No pin change, mock Keychain,
+encryption downgrade or real credential grant was performed.
+
+The existing default listener was occupied, so the new private server startup
+failed closed; no unrelated server was stopped or replaced. This run adds no
+connected-session retention, macOS 13, Windows/Linux or production-signing
+acceptance. The native review remains unresolved pending a safe reproducible
+shutdown fix and prompt/signature evidence.
+
+### PR #1063 fourth repair validation (2026-09-29)
+
+The four new review repairs have focused real SQLite/Connect race coverage,
+including same-server image substitution, unchanged lost-publication recovery,
+exact 8 GiB rejection and typed waited CLI failure. The server backup race group
+passes (5.755s), and Go vet passes for all DeliDev packages. Desktop `pnpm test`
+passes 74 files / 941 tests, type checking, eight package verifier tests and build.
+The native package dry run above predates the Go/frontend repairs and is not a
+native runtime test of their final contents. No repository Rust code or generated
+protobuf contract changed in this invocation. Prior root Cargo, API-client and
+Buf results remain prior evidence. Generated desktop/client `dist` output is
+removed after verification. The single final PR inventory still contained one
+frontend CI failure (repaired locally above); no post-push green CI is claimed.

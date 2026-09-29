@@ -550,6 +550,19 @@ independent Go server remained available. Do not add forced process termination
 as a product success path or call this native unsupported; closure remains an
 unresolved acceptance issue pending an observed complete native shutdown.
 
+A later unlocked macOS arm64 menu test at baseline `bfe823f7` reached the actual
+Quit menu item. In an ad-hoc diagnostic copy with only private data/cache/log
+paths changed, Exit occurred 251.849 seconds after the request and the runtime
+returned at 271.666 seconds; the original native process and its helpers then
+were absent without an agent-issued signal. The sampled CEF worker waited in
+`SecItemCopyMatching`; the native permission UI was inaccessible to the automation
+and its handling was not observed. This confirms eventual shutdown for that one
+run, not responsive Quit or a resolved review. The test's new private server
+could not bind the occupied default port, so it provides no new connected-server
+retention acceptance. Preserve the original pin and encryption; do not use a
+mock Keychain, force-exit success or unseen prompt handling as a fix.
+
+
 ### Combined desktop navigation and backup surfaces
 
 Managed Backups is a System category in the full-window Settings workspace,
