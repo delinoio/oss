@@ -2716,6 +2716,14 @@ on every failed retry. Store race tests passed (5.089s), including inaccessible
 intent state, repeated identical failure without revision growth, hash mismatch,
 failed directory synchronization and subsequent successful recovery.
 
+### PR #1063 deletion intent capacity recovery (2026-09-29)
+
+Startup inventory counts canonical intent filenames separately from ignored
+atomic-write remnants, retaining the 4,096-obligation cap and a separate
+8,192-entry directory bound. Real filesystem boundary tests cover 4,096 intents
+plus remnants, both independent overflow cases and preservation of pending
+evidence. The deletion store race suite passed in 5.402s.
+
 ## 2026-09-29: PR #1060 account-setup merge validation
 
 - Merged main's guided API account setup and provider activation while preserving all desktop recovery rules and both branches' evidence records. The combined Settings surface retains current-device revocation guards; the CLI retains explicit local registration inspection/recovery alongside the new provider operations.

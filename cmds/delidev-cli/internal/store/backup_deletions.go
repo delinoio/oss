@@ -280,28 +280,13 @@ func (s *Store) RestoreBackupDeletionIntents(ctx context.Context, server domain.
 	if err := security.CheckPrivateDir(root); err != nil {
 		return storageError(err)
 	}
-	dir, err := os.Open(root)
+	ids, err := backupDeletionIntentIDs(root)
 	if err != nil {
-		return storageError(err)
+		return err
 	}
-	defer dir.Close()
-	entries, err := dir.ReadDir(MaxBackupInventory + 1)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return storageError(err)
-	}
-	if len(entries) > MaxBackupInventory {
-		return backupUnavailable()
-	}
-	for _, entry := range entries {
+	for _, id := range ids {
 		if err := ctx.Err(); err != nil {
 			return domain.SafeError(err)
-		}
-		if strings.HasPrefix(entry.Name(), ".pending-") {
-			continue
-		}
-		id := domain.ID(strings.TrimSuffix(entry.Name(), ".json"))
-		if !strings.HasSuffix(entry.Name(), ".json") || id.Validate() != nil {
-			return backupUnavailable()
 		}
 		v, err := s.readDeletionIntent(id)
 		if err != nil {
@@ -315,6 +300,41 @@ func (s *Store) RestoreBackupDeletionIntents(ctx context.Context, server domain.
 		}
 	}
 	return nil
+}
+
+// Atomic-write remnants are not obligations. Bound the entire inventory
+// separately so crash recovery can retain all obligations without an unbounded
+// allocation or silently deleting private incomplete-write evidence.
+const maxBackupDeletionEntries = 2 * MaxBackupInventory
+
+func backupDeletionIntentIDs(root string) ([]domain.ID, error) {
+	dir, err := os.Open(root)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer dir.Close()
+	entries, err := dir.ReadDir(maxBackupDeletionEntries + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, storageError(err)
+	}
+	if len(entries) > maxBackupDeletionEntries {
+		return nil, backupUnavailable()
+	}
+	ids := make([]domain.ID, 0, min(len(entries), MaxBackupInventory))
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".pending-") {
+			continue
+		}
+		id := domain.ID(strings.TrimSuffix(entry.Name(), ".json"))
+		if !strings.HasSuffix(entry.Name(), ".json") || id.Validate() != nil {
+			return nil, backupUnavailable()
+		}
+		ids = append(ids, id)
+		if len(ids) > MaxBackupInventory {
+			return nil, backupUnavailable()
+		}
+	}
+	return ids, nil
 }
 
 func (s *Store) BackupDeletionJobs(ctx context.Context, after domain.ID, limit int) ([]Record, error) {

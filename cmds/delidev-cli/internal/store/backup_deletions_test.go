@@ -32,6 +32,45 @@ func deletionFixture(t *testing.T) (*Store, string, context.Context, BackupDelet
 	}
 	return s, root, ctx, BackupDeletionInput{Actor: actor, ServerID: server, Backup: checked.Backup, ExpectedRevision: 1, SHA256: checked.SHA256}
 }
+
+func TestBackupDeletionInventorySeparatesObligationsFromPendingRemnants(t *testing.T) {
+	root := t.TempDir()
+	write := func(name string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, name), []byte("retained fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range MaxBackupInventory {
+		write(string(domain.NewID()) + ".json")
+	}
+	write(".pending-interrupted")
+	ids, err := backupDeletionIntentIDs(root)
+	if err != nil || len(ids) != MaxBackupInventory {
+		t.Fatal("an atomic-write remnant displaced a recoverable obligation", len(ids), err)
+	}
+	extra := string(domain.NewID()) + ".json"
+	write(extra)
+	if _, err := backupDeletionIntentIDs(root); err == nil {
+		t.Fatal("obligation limit was relaxed")
+	}
+	if err := os.Remove(filepath.Join(root, extra)); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < maxBackupDeletionEntries-MaxBackupInventory; i++ {
+		write(fmt.Sprintf(".pending-%d", i))
+	}
+	if ids, err := backupDeletionIntentIDs(root); err != nil || len(ids) != MaxBackupInventory {
+		t.Fatal("bounded crash remnants prevented inventory", len(ids), err)
+	}
+	write(".pending-overflow")
+	if _, err := backupDeletionIntentIDs(root); err == nil {
+		t.Fatal("independent directory inventory limit was ignored")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".pending-interrupted")); err != nil {
+		t.Fatal("recovery discarded private pending evidence", err)
+	}
+}
 func TestBackupDeletionDurableJobReplayAndConcurrentClaims(t *testing.T) {
 	s, root, ctx, in := deletionFixture(t)
 	request := domain.NewID()

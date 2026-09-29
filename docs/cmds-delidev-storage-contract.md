@@ -119,7 +119,10 @@ including unchanged pending outcomes. Maintenance emits `backup_deletion_pending
 with only the job ID and typed code; persisting uncertainty must not hide an
 ongoing filesystem failure or inflate revisions on identical retries.
 At most 4,096 deletion obligations may be accepted; capacity failure preserves all
-existing obligations rather than evicting them.
+existing obligations rather than evicting them. Startup inventory separately
+limits the directory to 8,192 entries and the canonical obligation filenames to
+4,096. Ignored `.pending-*` atomic-write remnants count only toward the directory
+bound; recovery retains them and validates every selected obligation's contents.
 
 `delidev backup delete --id ID --expected-revision REV --size-bytes BYTES
 --modified-at TIME --sha256 SHA256 --confirm` uses the original inspection values.
