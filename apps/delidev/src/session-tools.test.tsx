@@ -4,11 +4,11 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, ResourceService, SessionService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionTools } from "./session-tools";
-import { CreateSession } from "./views";
+import { NewSession } from "./new-session";
 
 function fixture() {
   const execution = newRequestId();
@@ -23,6 +23,7 @@ function fixture() {
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Later-page agent" }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Worker" }) });
   const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1, capabilities: [SystemCapability.AUTOMATIC_TITLES_V1] }) });
     router.service(SessionService, { createSession, recoverSessionWorkspace: workspace, recoverSessionExecution: recover, prepareSessionWorkspace: prepare, renameSession: rename, controlSession: control });
     router.service(ResourceService, { getResource: (request) => ({ resource: request.id === project.id ? project : undefined }), listResources: (request) => request.filter?.kind === EntityKind.AGENT && !request.filter.pageToken ? { resources: [], nextPageToken: "later" } : { resources: [project, agent, machine].filter((row) => row.kind === request.filter?.kind) } });
   });
@@ -96,10 +97,10 @@ it("keeps a stale name draft and blocks a recovery confirmation selected before 
 
 it("selects an Agent from later pages and preserves an explicit per-repository starting override", async () => {
   const value = fixture();
-  render(value.view(<CreateSession visible close={() => {}} open={() => {}} />));
-  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Explicit session" } });
+  render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
   await screen.findByRole("option", { name: "Project" });
   fireEvent.change(screen.getByLabelText("Project"), { target: { value: value.project.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
   const choices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
   fireEvent.click(await choices.findByRole("button", { name: "More choices" }));
   fireEvent.change(screen.getByLabelText("Agent Worker"), { target: { value: (await screen.findByRole("option", { name: "Later-page agent" }) as HTMLOptionElement).value } });
@@ -118,7 +119,9 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   fireEvent.click(screen.getByRole("button", { name: "Create session" }));
   await waitFor(() => expect(value.createSession).toHaveBeenCalledTimes(1));
   const request = value.createSession.mock.calls[0][0] as { documentJson: Uint8Array; localWorkerToken: string };
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toMatchObject({ source: "MANUAL", estimated_cost_budget: { currency: "USD", threshold: "0.000000000000001" }, workspace: "worktree", project_id: value.project.id, agent_id: value.agent.id, starting: [{ repository_id: repository, reference: { type: "remote-branch", name: "feature/source", remote: "upstream" } }] });
+  const input = JSON.parse(new TextDecoder().decode(request.documentJson));
+  expect(input).toMatchObject({ name_mode: "automatic", source: "MANUAL", estimated_cost_budget: { currency: "USD", threshold: "0.000000000000001" }, workspace: "worktree", project_id: value.project.id, agent_id: value.agent.id, starting: [{ repository_id: repository, reference: { type: "remote-branch", name: "feature/source", remote: "upstream" } }] });
+  expect(input).not.toHaveProperty("name");
   expect(request.localWorkerToken).toBe("");
 });
 
@@ -126,10 +129,10 @@ it("reads fresh matching Local Worker proof for creation and retains that exact 
   const value = fixture();
   const proof = vi.fn(async () => ({ machineId: value.machine.id, token: "A".repeat(43) }));
   value.createSession.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
-  render(value.view(<CreateSession visible close={() => {}} open={() => {}} readLocalWorker={proof} />));
-  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Local session" } });
+  render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} readLocalWorker={proof} />));
   await screen.findByRole("option", { name: "Project" });
   fireEvent.change(screen.getByLabelText("Project"), { target: { value: value.project.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
   await waitFor(() => expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).value).toBe(value.machine.id));
   expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true);

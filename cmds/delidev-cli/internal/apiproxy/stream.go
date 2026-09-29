@@ -78,6 +78,7 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 	reader := bufio.NewReaderSize(io.LimitReader(body, maxStream+1), 32<<10)
 	controller := http.NewResponseController(w)
 	total := 0
+	titleTextBytes := 0
 	fragments := newStreamGuard(guard)
 	defer fragments.clear()
 	write := func(frame []byte) error {
@@ -141,6 +142,11 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 		}
 		if event != "" && kind != "" && event != kind {
 			return started, errInvalidDocument
+		}
+		if lease.Scope.Purpose == domain.SessionTitleUsage {
+			if err := validateTitleResponseFrame(kind, object, &titleTextBytes); err != nil {
+				return started, err
+			}
 		}
 		if kind == "error" || nonNull(object["error"]) {
 			code, nativeCode := nativeErrorCode(object["error"], domain.Unavailable)
@@ -213,6 +219,59 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 			return started, nil
 		}
 	}
+}
+
+func validateTitleResponseFrame(kind string, object map[string]json.RawMessage, textBytes *int) error {
+	if strings.Contains(kind, "function_call") || strings.Contains(kind, "tool") || strings.Contains(kind, "reasoning") {
+		return errInvalidDocument
+	}
+	switch kind {
+	case "response.output_text.delta":
+		var delta string
+		if json.Unmarshal(object["delta"], &delta) != nil || !utf8.ValidString(delta) {
+			return errInvalidDocument
+		}
+		*textBytes += len(delta)
+		if *textBytes > 4<<10 {
+			return errInvalidDocument
+		}
+	case "response.output_item.added", "response.output_item.done":
+		var item struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(object["item"], &item) != nil || item.Type != "message" {
+			return errInvalidDocument
+		}
+	case "response.completed":
+		var response struct {
+			Output []struct {
+				Type    string `json:"type"`
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"output"`
+		}
+		if json.Unmarshal(object["response"], &response) != nil {
+			return errInvalidDocument
+		}
+		completedBytes := 0
+		for _, item := range response.Output {
+			if item.Type != "message" {
+				return errInvalidDocument
+			}
+			for _, part := range item.Content {
+				if part.Type != "output_text" || !utf8.ValidString(part.Text) {
+					return errInvalidDocument
+				}
+				completedBytes += len(part.Text)
+			}
+		}
+		if completedBytes > 4<<10 || *textBytes > 4<<10 {
+			return errInvalidDocument
+		}
+	}
+	return nil
 }
 
 func nonNull(raw json.RawMessage) bool {

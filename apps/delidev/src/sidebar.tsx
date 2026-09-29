@@ -6,6 +6,7 @@ import { EntityKind, ResourceQuery, SessionQuery, SystemQuery, type Resource } f
 import { document, resourceName, text, Workspace, workspaceNames } from "./documents";
 import { Surface } from "./views";
 import { SettingsEntryDestination } from "./settings";
+import { sessionTitleLabel } from "./session-title";
 
 enum ExecutionStatus {
   NotStarted = "not-started",
@@ -113,7 +114,8 @@ function SessionRow({ row, selected, open }: { row: Resource; selected: boolean;
   const outcome = text(data.outcome);
   const archive = text(data.archive);
   const workspace = workspaceLabel(text(data.workspace));
-  const description = `Session: ${workspace} ${title}. Execution state: ${executionLabel(outcome)}. Archive state: ${archiveLabel(archive)}. Workspace: ${workspace}.`;
+  const titleState = sessionTitleLabel(data);
+  const description = `Session: ${workspace} ${title}. Execution state: ${executionLabel(outcome)}. Archive state: ${archiveLabel(archive)}. Workspace: ${workspace}.${titleState ? ` ${titleState}.` : ""}`;
   const showTooltip = () => {
     const rect = element.current?.getBoundingClientRect();
     if (!rect) return;
@@ -134,6 +136,7 @@ function SessionRow({ row, selected, open }: { row: Resource; selected: boolean;
     <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={showTooltip} onPointerLeave={() => setTooltip(undefined)} onFocus={showTooltip} onBlur={() => setTooltip(undefined)} onClick={() => open(row.id)}>
       <Icon name={workspaceIcon} className="sidebar-workspace-icon" />
       <span className="sidebar-session-title">{title}</span>
+      {titleState ? <span className="sidebar-session-title-state">{titleState.replace(/^Title /, "")}</span> : null}
       <StatusGlyph outcome={outcome} archive={archive} />
     </button>
     <span className="sidebar-sr-only" id={tooltipId}>{description}</span>
@@ -145,7 +148,7 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   projectId: string; label: string; fallback?: boolean; fallbackRows?: Resource[]; expanded: boolean; toggle: () => void; page: string; setPage: (page: string) => void; includeArchived: boolean; selected: string; open: (id: string) => void;
 }) {
   const id = projectId;
-  const sessions = useQuery(SessionQuery.listSessions, { projectId: id, includeArchived, pageSize: 50, pageToken: page }, { enabled: expanded && !fallback });
+  const sessions = useQuery(SessionQuery.listSessions, { projectId: id, includeArchived, pageSize: 50, pageToken: page }, { enabled: expanded && !fallback, refetchInterval: expanded && !fallback ? 15000 : false, refetchIntervalInBackground: false });
   const rows = fallback ? uniqueSessions(fallbackRows) : uniqueSessions(sessions.data?.sessions ?? []);
   const loaded = fallback || sessions.data !== undefined;
   return <section className="sidebar-project-group" data-project-id={id}>
@@ -181,7 +184,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
   const newProjectPointerInside = useRef(false);
   const newProjectFocused = useRef(false);
   const projects = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.PROJECT, pageSize: 50, pageToken: projectsPage } });
-  const sessions = useQuery(SessionQuery.listSessions, { projectId: "", includeArchived, pageSize: 50, pageToken: globalPage });
+  const sessions = useQuery(SessionQuery.listSessions, { projectId: "", includeArchived, pageSize: 50, pageToken: globalPage }, { refetchInterval: 15000, refetchIntervalInBackground: false });
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
   const projectRows = projects.data?.resources ?? [];
   const knownProjectIds = useMemo(() => new Set(projectRows.map((row) => row.id)), [projectRows]);
@@ -256,7 +259,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
           <button type="button" className="sidebar-header-button" aria-label="Search" onClick={() => navigate(Surface.Search)}><Icon name="search" /></button>
         </div>
       </header>
-      <button type="button" className="sidebar-new-session" onClick={(event) => { event.currentTarget.focus(); newSession(); }}><Icon name="plus" />New session</button>
+      <button type="button" className="sidebar-new-session" aria-current={surface === Surface.NewSession ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newSession(); }}><Icon name="plus" />New session</button>
       <div className="sidebar-list" aria-label="Project and session navigation">
         <header className="sidebar-projects-heading"><h2>Projects</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label="New project" onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button></header>
         {newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>New project</div>, window.document.body) : null}

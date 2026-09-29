@@ -1,5 +1,7 @@
 # DeliDev CLI
 
+- Automatic titles follow `docs/cmds-delidev-session-titles-contract.md`. Preserve omitted `name_mode` receipt JSON for existing manual callers, bind title inference to the exact original successful Worker/device/instance/server epoch, use a separately negotiated auxiliary stream, and persist a send claim before any native/provider side effect. Keep title-purpose usage separate from conversation response counts while including known title cost once in lifetime budget gates.
+
 - `account list` accepts optional closed `--account-type api|subscription` and `--provider-id UUID` selectors through the list-only Connect request. Preserve the unfiltered default for existing callers; filters are applied before SQL pagination and bound to cursors. Snapshots and event streams must not inherit them.
 
 - GitHub PATs use the direct OS credential service under `docs/cmds-delidev-credentials-contract.md`, separate from account wrapping material. Persist only scoped generation intents, keyed commitments and irreversible tombstones; never persist PAT payloads or unkeyed hashes. Match exact staged retries, refuse regeneration of a missing sealed entry, record denial before native deletion, and never let an old mutation affect a replacement generation. The protected server owner key is copied only for the store lifetime and cleared after joined closure. Public integration authorization, cancellation and receipts must be composed separately.

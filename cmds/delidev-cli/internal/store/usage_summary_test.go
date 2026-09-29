@@ -319,3 +319,31 @@ func TestUsageSummaryHalfOpenTimeZeroAndGroupBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionTitleUsageStaysOutOfConversationSummary(t *testing.T) {
+	s, _ := openTest(t)
+	f := seedSearch(t, s, "title usage", domain.NotArchived)
+	conversation := responseRecord(f)
+	conversation.Usage.ResponseDigest = fmt.Sprintf("%064x", 901)
+	if _, _, err := writeResponse(s, domain.NewID(), conversation); err != nil {
+		t.Fatal(err)
+	}
+	title := responseRecord(f)
+	title.Purpose = domain.SessionTitleUsage
+	title.Usage.ResponseDigest = fmt.Sprintf("%064x", 902)
+	title.ThreadID, title.TurnID, title.Sequence = string(domain.NewID()), string(domain.NewID()), 1
+	titleID := domain.NewID()
+	if _, _, err := writeResponse(s, titleID, title); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := s.ResponseUsage(context.Background(), titleID)
+	if err != nil || retained.Record.Purpose != domain.SessionTitleUsage {
+		t.Fatalf("title purpose was not durably retained: %+v %v", retained, err)
+	}
+	selection := usageWindow()
+	selection.SessionID = f.session
+	result, err := readUsage(s, selection)
+	if err != nil || result.Totals.Responses != 1 || result.Groups[0].Totals.Responses != 1 {
+		t.Fatalf("title usage entered conversation-turn counts: %+v %v", result, err)
+	}
+}

@@ -56,3 +56,23 @@ func TestJournalReusesCompletionAndPreservesInterruptedExecution(t *testing.T) {
 		t.Fatalf("changed assignment reused journal: %v", err)
 	}
 }
+
+func TestAuxiliaryTitleCapabilityRequiresServerEcho(t *testing.T) {
+	if auxiliaryTitleCapability(nil) {
+		t.Fatal("missing AttachWorker response enabled the auxiliary stream")
+	}
+	resource := func(capabilities []domain.WorkerCapability) *pb.Resource {
+		t.Helper()
+		body, err := json.Marshal(domain.Machine{Name: "Worker", OS: "darwin", Architecture: "arm64", WorkerCapabilities: capabilities})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &pb.Resource{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, SchemaVersion: 1, DocumentJson: body}
+	}
+	if auxiliaryTitleCapability(resource(nil)) || !auxiliaryTitleCapability(resource([]domain.WorkerCapability{domain.AutomaticTitlesCodexV1})) {
+		t.Fatal("auxiliary title lane did not follow the server's typed capability echo")
+	}
+	if auxiliaryTitleCapability(&pb.Resource{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, SchemaVersion: 1, DocumentJson: []byte("invalid")}) {
+		t.Fatal("malformed machine response enabled the auxiliary stream")
+	}
+}

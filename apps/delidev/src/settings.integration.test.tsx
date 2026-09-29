@@ -12,7 +12,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { BudgetState, ProviderInventoryCapability, ProviderPresetId, ProviderService, SessionService, UsageService, ConfigurationService, EntityKind, ResourceService, ScheduleService, SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
-import { CreateSession } from "./views";
 import { SessionBudget } from "./session-budget";
 import { Usage } from "./usage";
 import { Schedules } from "./schedules";
@@ -233,24 +232,21 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   const save = async (kind: EntityKind, value: Record<string, unknown>) => (await configurations.saveConfiguration({ kind, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(value) })).resource!;
   const providerConfig = await save(EntityKind.PROVIDER, { name: "Schedule fixture provider", endpoint: providerOrigin, protocol: "openai-chat", authentication: "keyless", discovery: false });
   const model = await save(EntityKind.MODEL, { name: "Schedule fixture model", provider_id: providerConfig.id, native_id: "fixture-model", harnesses: ["codex"], manual: true, metadata_source: "unknown" });
-  await save(EntityKind.AGENT, { name: "Accountless schedule agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } });
+  const accountlessAgent = await save(EntityKind.AGENT, { name: "Accountless schedule agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } });
   cleanup();
   const scheduleClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const readLocalWorker = async () => {
     const credential = JSON.parse(await readFile(join(workerRoot, "device.json"), "utf8"));
     return { machineId: credential.machine_id as string, token: credential.token as string };
   };
-  render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><CreateSession visible close={() => {}} open={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
-  change("Name", "Owned Local session");
-  change("Project", (await screen.findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
-  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true));
-  change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
-  change("First message", "Local proof fixture without inference");
-  fireEvent.click(screen.getByText("Optional estimated-cost budget"));
-  fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
-  change("Budget currency", "USD"); change("Estimated-cost threshold", "0.000000000000001");
-  fireEvent.click(screen.getByRole("button", { name: "Create session" }));
+  const localProof = await readLocalWorker();
+  const project = (await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.PROJECT } })).resources.find((row) => document(row).name === "Owned project")!;
+  const localCreation = await createClient(SessionService, transport).createSession({
+    requestId: newRequestId(),
+    documentJson: encode({ name: "Owned Local session", workspace: "local", project_id: project.id, agent_id: accountlessAgent.id, machine_id: localProof.machineId, prompt: "Local proof fixture without inference", mode: "execute", source: "MANUAL", estimated_cost_budget: { currency: "USD", threshold: "0.000000000000001" } }),
+    localWorkerToken: localProof.token,
+  });
+  expect(localCreation.change?.session?.id).toBeTruthy();
   await waitFor(async () => {
     const sessions = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.SESSION } });
     expect(sessions.resources.some((row) => document(row).workspace === "local" && document(row).name === "Owned Local session")).toBe(true);

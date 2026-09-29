@@ -29,6 +29,7 @@ import { SessionTools } from "./session-tools";
 import { SessionPullRequests } from "./session-pull-requests";
 import { QueuedInput } from "./queue";
 import { StartupRejection } from "./startup-rejection";
+import { sessionTitlePresentation } from "./session-title";
 
 function useSessionStream(id: string) {
   const transport = useTransport();
@@ -200,6 +201,7 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   const observed = live.resources.get(id);
   const session = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
   const data = readDocument(session);
+  const titlePresentation = sessionTitlePresentation(data);
   const rows = useMemo(() => {
     // The stream records creation order. UUIDs from different Workers are not
     // an append sequence, even when each Worker generates UUID-v7 values.
@@ -220,7 +222,7 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
     void control.send({ mutation: { id, expectedRevision: session.revision, requestId: newRequestId() }, action: value });
   };
   return <div className={`session-workspace${panel !== SessionPanel.Closed ? " files-open" : ""}`}><section className="session" aria-label="Current session">
-    <header className="session-header"><div><h2>{resourceName(session)}</h2><p>{workspaceNames[text(data.workspace) as Workspace] || "Workspace"} · {text(data.outcome)} · {text(data.dispatch)} · {text(data.archive)}</p></div>
+    <header className="session-header"><div><h2>{resourceName(session)}</h2><p>{workspaceNames[text(data.workspace) as Workspace] || "Workspace"} · {text(data.outcome)} · {text(data.dispatch)} · {text(data.archive)}</p>{titlePresentation ? <p className="session-title-status" role="status">{titlePresentation.label}{titlePresentation.detail ? ` · ${titlePresentation.detail}` : ""}</p> : null}</div>
       <div className="actions"><button ref={filesButton} aria-expanded={panel === SessionPanel.Files} aria-controls={`files-${id}`} onClick={() => setPanel(panel === SessionPanel.Files ? SessionPanel.Closed : SessionPanel.Files)}>Files</button><button ref={diffButton} aria-expanded={panel === SessionPanel.Diff} aria-controls={`diff-${id}`} onClick={() => setPanel(panel === SessionPanel.Diff ? SessionPanel.Closed : SessionPanel.Diff)}>Diff</button><button disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>Stop</button>
         <button disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? "Restore" : "Archive"}</button>
         <button disabled={!session || control.busy || control.uncertain || budgetBlocked || Object.hasOwn(data, "startup_rejection") || text(data.archive) !== "active"} onClick={() => action(SessionAction.RESUME)}>Resume</button></div></header>

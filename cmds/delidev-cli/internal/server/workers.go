@@ -64,10 +64,23 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Worker and server versions differ.", "Install a matching Worker version."), correlation)
 	}
 	machine, instance := domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId)
+	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
+	for _, capability := range req.Msg.Capabilities {
+		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1:
+			capabilities = append(capabilities, domain.AutomaticTitlesCodexV1)
+		default:
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported an unknown native capability.", "Upgrade the Worker and report only verified capability identifiers."), correlation)
+		}
+	}
+	if len(capabilities) > 1 {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported a duplicate native capability.", "Report each verified capability once."), correlation)
+	}
 	input := struct {
 		Machine, Instance domain.ID
 		Version           string
-	}{machine, instance, req.Msg.Version}
+		Capabilities      []domain.WorkerCapability
+	}{machine, instance, req.Msg.Version, capabilities}
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "worker.attach", input, func(tx *store.Tx) (any, error) {
 		r, m, err := activeMachine(tx, machine)
 		if err != nil {
@@ -102,6 +115,12 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 					if err := finishLostNativeExecution(tx, record, job); err != nil {
 						return nil, err
 					}
+					if job.Type == domain.GenerateSessionTitleJob {
+						if err := finishLostSessionTitle(tx, record); err != nil {
+							return nil, err
+						}
+						continue
+					}
 					if err := finishSessionWorkspace(tx, record.ID); err != nil {
 						return nil, err
 					}
@@ -117,7 +136,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		if err := tx.SetWorkerInstance(machine, instance, now); err != nil {
 			return nil, err
 		}
-		m.LastSeen, m.Version = now, req.Msg.Version
+		m.LastSeen, m.Version, m.WorkerCapabilities = now, req.Msg.Version, capabilities
 		return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
 	})
 	if err != nil {
@@ -461,6 +480,9 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 				}
 			}
 			return finishNativeExecution(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
+		}
+		if job.Type == domain.GenerateSessionTitleJob {
+			return finishSessionTitle(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
 		}
 		if problem == nil {
 			outputJSON := req.Msg.OutputJson

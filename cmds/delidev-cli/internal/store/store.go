@@ -168,7 +168,10 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			return fail(err)
 		}
 		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema); err == nil {
-			err = tx.Commit()
+			err = applySessionTitleSchema(ctx, tx)
+			if err == nil {
+				err = tx.Commit()
+			}
 		} else {
 			tx.Rollback()
 		}

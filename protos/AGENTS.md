@@ -14,6 +14,7 @@
 - Keep protobuf package names, enum identifiers, compatibility, and generated-client rules stable and documented before implementation.
 - Write schemas and comments in English.
 - DeliDev `SystemService.GetOverview` is owner/paired-client-only. Preserve exact uint64 ownership/request/Worker counts, observation time and server UTC usage boundaries; no resource bodies, credentials, native identities or paths enter this presentation response. Worker-compatible `GetStatus` stays separate. Connected Workers require independently sampled stream presence plus current database authorization and a fresh lease; observations never authorize execution or cleanup.
+- DeliDev automatic titles add an opt-in session name mode and typed server capability independently of the typed Worker capability. Keep `WatchAuxiliaryWork` isolated from ordinary `WatchWork`, preserve exact current generated Go/TypeScript bindings, and follow `docs/cmds-delidev-session-titles-contract.md` for compatibility and ownership rules.
 
 ### Scope in This Domain
 
