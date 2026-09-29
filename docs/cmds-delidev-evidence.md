@@ -2157,3 +2157,20 @@ and parent directory with internal links, and separately verify nested preview
 and listing behavior. Focused workspace race tests and vet pass on macOS arm64;
 the workspace test package cross-compiles for Windows amd64. This fixture does
 not establish live Windows link-race behavior or make user-owned files atomic.
+
+### Issue #1044 project-grouped desktop sidebar (2026-09-29)
+
+The DeliDev desktop sidebar now uses the bounded project/session navigation
+contract in `docs/apps-delidev-desktop-contract.md`. The complete app command
+`pnpm test` passes on macOS arm64: 68 test files / 804 tests, TypeScript
+type-checking and the Rsbuild production build. App integration fixtures verify
+that the Pull requests shortcut enters Repositories without a GitHub query
+until the user explicitly opens the repository browser, and that parent and
+nested settings drafts defer that destination.
+
+The native sidecar and Tauri desktop binary built, then the desktop process
+started with a temporary data directory and logged tray readiness. A CUA
+accessibility/screenshot request for the running DeliDev window timed out, so
+this records native startup but does not claim a captured native viewport or
+visual screenshot acceptance. No Rust, protocol or generated source changed;
+the app's generated `dist` output is removed from the worktree.

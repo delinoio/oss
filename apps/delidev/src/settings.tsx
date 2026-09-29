@@ -4,7 +4,7 @@ import { Integrations } from "./integrations";
 import { ConfigurationTransfer } from "./configuration-transfer";
 import { ModelPricing } from "./pricing";
 import { NotificationSettings } from "./notification-settings";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { ConfigurationQuery, EntityKind, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -42,9 +42,11 @@ export function ConfigurationEditor({ kind, initial, active, saved, cancel }: { 
   </form>;
 }
 
+export enum SettingsEntryDestination { Repositories = "repositories" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations }
+enum SettingsWorkflow { Integrations = "integrations", Notifications = "notifications", Transfer = "transfer" }
 
-export function Settings({ close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string }) {
+export function Settings({ close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }) {
   const [kind, setKind] = useState(EntityKind.PROVIDER);
   const [area, setArea] = useState(SettingsArea.Configuration);
   const [device, setDevice] = useState<Resource>();
@@ -55,14 +57,33 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   const [routing, setRouting] = useState<Resource>();
   const [account, setAccount] = useState<Resource>();
  const [pricing,setPricing]=useState<Resource>();
+  const [childWorkflows, setChildWorkflows] = useState<ReadonlySet<SettingsWorkflow>>(() => new Set());
   const client = useQueryClient();
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration });
   const tabs = [[EntityKind.PROVIDER, "Providers"], [EntityKind.MODEL, "Models"], [EntityKind.ACCOUNT, "AI accounts"], [EntityKind.AGENT, "Agent Workers"], [EntityKind.TEMPLATE, "Instructions"], [EntityKind.PROJECT, "Projects"], [EntityKind.REPOSITORY, "Repositories"], [EntityKind.MACHINE, "Execution Workers"], [EntityKind.DEVICE, "Paired devices"], [EntityKind.SETTINGS, "Server preferences"]] as const;
+  const reportChildWorkflow = useCallback((workflow: SettingsWorkflow, active: boolean) => setChildWorkflows((current) => {
+    if (current.has(workflow) === active) return current;
+    const next = new Set(current);
+    if (active) next.add(workflow); else next.delete(workflow);
+    return next;
+  }), []);
+  const reportIntegrationWorkflow = useCallback((active: boolean) => reportChildWorkflow(SettingsWorkflow.Integrations, active), [reportChildWorkflow]);
+  const reportTransferWorkflow = useCallback((active: boolean) => reportChildWorkflow(SettingsWorkflow.Transfer, active), [reportChildWorkflow]);
+  const reportNotificationWorkflow = useCallback((active: boolean) => reportChildWorkflow(SettingsWorkflow.Notifications, active), [reportChildWorkflow]);
+  const parentWorkflow = Boolean(editing || account || deleting || routing || machine || device || pricing);
+  const workflowProtected = parentWorkflow || childWorkflows.size > 0;
+  useEffect(() => {
+    if (!visible || entryDestination !== SettingsEntryDestination.Repositories || workflowProtected) return;
+    setKind(EntityKind.REPOSITORY);
+    setArea(SettingsArea.Configuration);
+    setPage("");
+    destinationConsumed?.();
+  }, [destinationConsumed, entryDestination, visible, workflowProtected]);
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
-  return <Modal title="Settings" close={close} visible={visible}><nav aria-label="Settings categories">{tabs.map(([value, label]) => <button key={value} disabled={Boolean(editing || account || deleting || routing || machine || device || pricing)} aria-pressed={area === SettingsArea.Configuration && kind === value} onClick={() => { setKind(value); setArea(SettingsArea.Configuration); setPage(""); }}>{label}</button>)}<button disabled={Boolean(editing || account || deleting || routing || machine || device || pricing)} aria-pressed={area === SettingsArea.Integrations} onClick={() => setArea(SettingsArea.Integrations)}>Integrations</button><button disabled={Boolean(editing || account || deleting || routing || machine || device || pricing)} aria-pressed={area === SettingsArea.Diagnostics} onClick={() => setArea(SettingsArea.Diagnostics)}>Diagnostics</button><button disabled={Boolean(editing || account || deleting || routing || machine || device || pricing)} aria-pressed={area === SettingsArea.Notifications} onClick={() => setArea(SettingsArea.Notifications)}>Notifications</button><button disabled={Boolean(editing || account || deleting || routing || machine || device || pricing)} aria-pressed={area === SettingsArea.Transfer} onClick={() => setArea(SettingsArea.Transfer)}>Import / Export</button></nav>
-    <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} /></div>
-    <div hidden={area !== SettingsArea.Transfer}><ConfigurationTransfer active={visible && area === SettingsArea.Transfer} /></div>
-    <div hidden={area !== SettingsArea.Notifications}><NotificationSettings active={visible && area === SettingsArea.Notifications} /></div>
+  return <Modal title="Settings" close={close} visible={visible}><nav aria-label="Settings categories">{tabs.map(([value, label]) => <button key={value} disabled={parentWorkflow} aria-pressed={area === SettingsArea.Configuration && kind === value} onClick={() => { setKind(value); setArea(SettingsArea.Configuration); setPage(""); }}>{label}</button>)}<button disabled={parentWorkflow} aria-pressed={area === SettingsArea.Integrations} onClick={() => setArea(SettingsArea.Integrations)}>Integrations</button><button disabled={parentWorkflow} aria-pressed={area === SettingsArea.Diagnostics} onClick={() => setArea(SettingsArea.Diagnostics)}>Diagnostics</button><button disabled={parentWorkflow} aria-pressed={area === SettingsArea.Notifications} onClick={() => setArea(SettingsArea.Notifications)}>Notifications</button><button disabled={parentWorkflow} aria-pressed={area === SettingsArea.Transfer} onClick={() => setArea(SettingsArea.Transfer)}>Import / Export</button></nav>
+    <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} onWorkflowReadyChange={reportIntegrationWorkflow} /></div>
+    <div hidden={area !== SettingsArea.Transfer}><ConfigurationTransfer active={visible && area === SettingsArea.Transfer} onWorkflowReadyChange={reportTransferWorkflow} /></div>
+    <div hidden={area !== SettingsArea.Notifications}><NotificationSettings active={visible && area === SettingsArea.Notifications} onWorkflowReadyChange={reportNotificationWorkflow} /></div>
     <div hidden={area !== SettingsArea.Diagnostics}><Doctor active={visible && area === SettingsArea.Diagnostics} /></div>
     <div hidden={area !== SettingsArea.Configuration}>
     {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
