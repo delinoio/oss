@@ -121,6 +121,32 @@ it("still reports a real provider inventory read failure", async () => {
   expect(await screen.findByRole("alert")).toBeTruthy();
 });
 
+it("retains the exact first-activation retry after inventory reveals the saved preset", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true, enabled: true, preset_id: "ollama" });
+  let entry = create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, accountCountsAvailable: true });
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
+  const value = fixture([provider], { readProviderInventory: () => ({ entries: [entry], capabilities }) });
+  value.save.mockImplementationOnce(async () => {
+    entry = create(ProviderInventoryEntrySchema, { ...entry, providerId: provider.id, provider, enabled: true });
+    throw new ConnectError("Activation acknowledgment lost", Code.Unavailable);
+  });
+  render(value.view(<Settings visible close={() => {}} />));
+  const originalSwitch = await screen.findByRole("switch", { name: "Turn on Local provider" });
+  fireEvent.click(originalSwitch);
+  const savedSwitch = await screen.findByRole("switch", { name: "Turn off Local provider" });
+  expect(savedSwitch).toBe(originalSwitch);
+  expect((savedSwitch as HTMLButtonElement).disabled).toBe(true);
+  expect(value.save).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Models" }));
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry the same change" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[1][0]).toEqual(value.save.mock.calls[0][0]);
+  expect(input(value.save.mock.calls[1][0]).mutation).toMatchObject({ id: "", expectedRevision: 0n });
+  await waitFor(() => expect((screen.getByRole("switch", { name: "Turn off Local provider" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByRole("button", { name: "Retry the same change" })).toBeNull();
+});
+
 it("uses server-owned preset key guidance and inert documentation in the API account wizard", async () => {
   const provider = resource(EntityKind.PROVIDER, { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true, preset_id: "openai" });
   const value = fixture([], {

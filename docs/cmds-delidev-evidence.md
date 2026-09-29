@@ -2800,6 +2800,13 @@ neither a published nor pending image. Backup store/server race suites passed
 - On macOS arm64 with Node.js 24.20.0, `apps/delidev` `pnpm test` passed 74 files / 943 tests, all eight packaging dry-run tests, type checking, and the production build. CLI, server, store, and workspace Go package tests passed; `go vet ./cmds/delidev-cli/...` passed.
 - Root `TMPDIR=/private/tmp cargo test -- --test-threads=1` passed after building the macOS pnport/fspy injection prerequisites. Opt-in native sidecar and installed-renderer tests remain ignored by their declared requirements. `git lfs fsck` passed, and app/client generated `dist` directories were removed after validation.
 
+## 2026-09-30: PR #1061 first-activation retry verification
+
+- Reproduced the remaining first-activation acknowledgment-loss gap: after a virtual local preset became a saved provider in refreshed inventory, its UUID replaced the retained mutation key and enabled a new toggle while the original creation request remained uncertain.
+- Managed-preset rows and toggle intents now keep their preset identity across that transition. The regression fixture verifies the original switch survives, remains disabled, and offers the exact original request after navigating away and back; successful receipt replay clears uncertainty without replacing its empty creation ID or revision.
+- The focused regression failed before the change and passed afterward. With Node.js 24.20.0 on macOS arm64, `pnpm test` in `apps/delidev` passed 74 files / 944 tests, eight package dry-run tests, typechecking and the production build. `go test -race ./cmds/delidev-cli/internal/cli -run '^TestVersionedCLIMutationRevisionAndMissingInput$' -count=1` passed, independently confirming the existing managed CLI preset/custom-copy repair. `git lfs fsck` passed.
+- No Rust, protocol or backend implementation changed in this pass. Generated app/client `dist` output is removed after validation. Native desktop layout/keyboard and real provider/inference acceptance remain unverified; these fixtures do not close that evidence gap.
+
 ### PR #1063 atomic deletion claim repair (2026-09-29)
 
 Managed backup deletion moves the published image using a native atomic

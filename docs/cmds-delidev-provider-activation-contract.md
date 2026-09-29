@@ -46,7 +46,7 @@ Proto additions are backward-compatible: provider inventory request/response and
 
 Portable export/import carries optional activation and preset identity. Missing values retain legacy semantics. Imports reject duplicate preset identity within the bundle or against target state atomically, including a recheck at deferred apply. Existing explicit equal-configuration reuse remains valid; imports never merge by name/URL or import connection/readiness evidence. New choices and mutations recheck enabled state at the authoritative server boundary.
 
-The feature does not add feature flags. Older same-version servers that ignore additive filters are detected through the required validated inventory capabilities before the desktop enables workflows. Keep normal exact request/revision, conflict, uncertain-response and current-state retry behavior.
+The feature does not add feature flags. Older same-version servers that ignore additive filters are detected through the required validated inventory capabilities before the desktop enables workflows. Keep normal exact request/revision, conflict, uncertain-response and current-state retry behavior. Managed-preset rows and retained toggle intents use stable preset identity before and after first activation assigns a provider UUID. A refreshed saved resource cannot discard or replace the original uncertain creation request: keep the switch disabled and offer only its exact retained retry through navigation until acknowledgment resolves it. Custom providers retain their UUID-based identity.
 
 ## Validation and evidence
 
