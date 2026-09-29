@@ -49,4 +49,11 @@ func TestSessionTitleOutputAllowsUnavailableUsageAndRejectsForeignProject(t *tes
 	}
 }
 
+func TestSessionTitleUnsupportedWorkerOutcomeRemainsUnsupported(t *testing.T) {
+	state, reason := titleFailureOutcome(domain.Fail(domain.Unsupported, "The pinned title profile is unsupported.", "Keep the title unsupported."))
+	if state != domain.TitleUnsupported || reason != domain.TitleReasonUnsupportedAgent {
+		t.Fatalf("unsupported Worker outcome = %q/%q, want %q/%q", state, reason, domain.TitleUnsupported, domain.TitleReasonUnsupportedAgent)
+	}
+}
+
 func int64ptr(value int64) *int64 { return &value }

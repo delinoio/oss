@@ -159,6 +159,8 @@ func titleFailureReason(err *domain.Error) domain.SessionTitleReason {
 	switch err.Code {
 	case domain.Canceled:
 		return domain.TitleReasonCanceled
+	case domain.Unsupported:
+		return domain.TitleReasonUnsupportedAgent
 	case domain.Unauthenticated, domain.PermissionDenied:
 		return domain.TitleReasonAuthorityLost
 	case domain.RecoveryRequired:
@@ -168,6 +170,22 @@ func titleFailureReason(err *domain.Error) domain.SessionTitleReason {
 	default:
 		return domain.TitleReasonInferenceFailed
 	}
+}
+
+func titleFailureOutcome(err *domain.Error) (domain.SessionTitleState, domain.SessionTitleReason) {
+	state, reason := domain.TitleFailed, titleFailureReason(err)
+	if err == nil {
+		return state, reason
+	}
+	switch err.Code {
+	case domain.Canceled, domain.Unauthenticated, domain.PermissionDenied:
+		state = domain.TitleSkipped
+	case domain.Unsupported:
+		state = domain.TitleUnsupported
+	case domain.RecoveryRequired:
+		state = domain.TitleUncertain
+	}
+	return state, reason
 }
 
 func validateSessionTitleOutput(output json.RawMessage, input domain.AuxiliaryTitleInput, projectID domain.ID) (domain.AuxiliaryTitleResult, error) {
@@ -230,16 +248,7 @@ func finishSessionTitle(tx *store.Tx, record store.Record, job domain.Job, expec
 			job.State = domain.JobFailed
 		}
 		if session.NameOwner == domain.AutomaticNameOwner && session.NameGeneration == input.NameGeneration {
-			session.TitleState, session.TitleReason = domain.TitleFailed, titleFailureReason(reported)
-			if reported.Code == domain.Unauthenticated || reported.Code == domain.PermissionDenied {
-				session.TitleState = domain.TitleSkipped
-			}
-			if job.State == domain.JobCanceled {
-				session.TitleState = domain.TitleSkipped
-			}
-			if job.State == domain.JobUncertain {
-				session.TitleState = domain.TitleUncertain
-			}
+			session.TitleState, session.TitleReason = titleFailureOutcome(reported)
 		}
 	} else {
 		job.State, job.Output, job.Problem = domain.JobSucceeded, output, nil
