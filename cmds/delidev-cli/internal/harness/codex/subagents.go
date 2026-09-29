@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"slices"
 	"strconv"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -174,6 +175,8 @@ func (c *Client) ObserveResolvedActivity(ctx context.Context, event Event) (Even
 // InspectDescendants uses only read operations. It does not load/resume children
 // or reuse their direct-input capability. All pages validate before publication.
 func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	if err := c.acquireControl(ctx); err != nil {
 		return Event{}, err
 	}
