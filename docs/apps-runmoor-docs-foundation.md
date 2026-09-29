@@ -18,6 +18,7 @@
 - Canonical production URL: `https://oss.delino.io/runmoor`.
 - Stable clean routes: `/runmoor/`, `/runmoor/install`, `/runmoor/configuration`, `/runmoor/commands`, `/runmoor/docker`, `/runmoor/tart`, and `/runmoor/operations`.
 - The overview and six guides are owned by this content section and published under `/runmoor` without removing their content, verification limitations, fork policies, shared-kernel boundaries, or external software licensing guidance. Links use the consolidated site's `/runmoor` base.
+- The operations guide explains that service start, stop, and uninstall use the same configuration path recorded at installation, and provides safe inspection and recovery steps for a configuration mismatch without exposing repository-internal paths.
 - Every page includes the shared site selector with Runmoor selected via `aria-current`; it must offer the root, Nodeup, binpm, async-commit-hook, and clibox subpaths.
 - Use the default Rspress theme with every stable route in the navigation and sidebar, plus visible GitHub repository links in the social navigation and footer.
 - Validate top-navigation, sidebar, social-link, and document-footer regions separately on every stable page. Removing a link from one region must fail even when article content or another region still links to that destination.
