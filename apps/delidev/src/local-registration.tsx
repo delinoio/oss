@@ -6,7 +6,7 @@ import { Modal } from "./ui";
 export interface NativeConnection { endpoint: string; token: string; server_id: string; device_id: string }
 export enum RegistrationState { Authorized = "authorized", Revoked = "revoked", Recovering = "recovering" }
 export interface DesktopRegistration { state: RegistrationState; server_id: string; device_id: string; revision: string; request_id?: string }
-interface RecoveryRequest { deviceId: string; revision: string; requestId: string }
+interface RecoveryRequest { serverId: string; deviceId: string; revision: string; requestId: string }
 const id = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function registration(value: DesktopRegistration): DesktopRegistration {
   if (!value || !Object.values(RegistrationState).includes(value.state) || !id.test(value.server_id) || !id.test(value.device_id)
@@ -34,21 +34,26 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered }: { busy: 
     operating.current = true; setBusy(true); setError(undefined);
     try {
       const value = registration(await invoke<DesktopRegistration>("inspect_local_registration"));
+      if (pending && pending.serverId !== value.server_id) throw "invalid-evidence";
       setStatus(value);
       if (value.state === RegistrationState.Recovering) {
-        const original = { deviceId: value.device_id, revision: value.revision, requestId: value.request_id! };
+        const original = { serverId: value.server_id, deviceId: value.device_id, revision: value.revision, requestId: value.request_id! };
         if (pending && (pending.deviceId !== original.deviceId || pending.revision !== original.revision || pending.requestId !== original.requestId)) throw "invalid-evidence";
         setPending(original);
+      } else if (pending && (pending.deviceId !== value.device_id || pending.revision !== value.revision)) {
+        // Go has no pending recovery and verified a different current registration.
+        // Retire the completed request; any new recovery needs fresh confirmation.
+        setPending(undefined); setConfirm(false);
       }
     } catch (reason) { setError(reason); setStatus(undefined); }
     finally { operating.current = false; setBusy(false); }
   };
   const recover = async () => {
     if (busy || operating.current || !status || (status.state === RegistrationState.Authorized && !pending)) return;
-    const original = pending ?? { deviceId: status.device_id, revision: status.revision, requestId: newRequestId() };
+    const original = pending ?? { serverId: status.server_id, deviceId: status.device_id, revision: status.revision, requestId: newRequestId() };
     operating.current = true; setPending(original); setBusy(true); setError(undefined);
     try {
-      const connection = await invoke<NativeConnection>("recover_local_registration", { ...original });
+      const connection = await invoke<NativeConnection>("recover_local_registration", { deviceId: original.deviceId, revision: original.revision, requestId: original.requestId });
       if (!id.test(connection.device_id) || connection.device_id === original.deviceId || connection.server_id !== status.server_id || connection.endpoint !== "http://127.0.0.1:46310") throw "invalid-evidence";
       await recovered(connection);
       setPending(undefined); setConfirm(false); setStatus(undefined);

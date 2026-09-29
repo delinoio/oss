@@ -52,6 +52,71 @@ it("uses the original durable request after restart", async () => {
   await waitFor(() => expect(f.recovered).toHaveBeenCalledOnce());
   expect(native.invoke.mock.calls[1][1].requestId).toBe(f.status.request_id);
 });
+it.each([RegistrationState.Authorized, RegistrationState.Revoked])("retires a completed request when inspection finds an %s replacement", async (state) => {
+  const f = fixture();
+  const replacement = { ...f.status, state, device_id: f.connection.device_id, revision: "2" };
+  const nextConnection = { ...f.connection, device_id: newRequestId() };
+  f.recovered.mockRejectedValueOnce("timed-out");
+  native.invoke.mockResolvedValueOnce(f.status).mockResolvedValueOnce(f.connection)
+    .mockResolvedValueOnce(replacement).mockResolvedValueOnce(nextConnection);
+  render(<f.View />);
+  fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Re-register this desktop" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm desktop re-registration" }));
+  await screen.findByRole("alert");
+  const previousRequest = native.invoke.mock.calls[1][1];
+  fireEvent.click(screen.getByRole("button", { name: "Close Re-register this desktop" }));
+  fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Continue desktop recovery" })).toBeNull());
+  expect(native.invoke).toHaveBeenCalledTimes(3);
+  if (state === RegistrationState.Authorized) {
+    expect(screen.queryByRole("button", { name: "Re-register this desktop" })).toBeNull();
+    return;
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Re-register this desktop" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm desktop re-registration" }));
+  await waitFor(() => expect(f.recovered).toHaveBeenLastCalledWith(nextConnection));
+  expect(native.invoke.mock.calls[3][1]).toEqual({ deviceId: replacement.device_id, revision: "2", requestId: expect.any(String) });
+  expect(native.invoke.mock.calls[3][1].requestId).not.toBe(previousRequest.requestId);
+});
+it("keeps the original uncertain request when inspection still shows the same revoked registration", async () => {
+  const f = fixture();
+  native.invoke.mockResolvedValueOnce(f.status).mockRejectedValueOnce("timed-out")
+    .mockResolvedValueOnce(f.status).mockResolvedValueOnce(f.connection);
+  render(<f.View />);
+  fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Re-register this desktop" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm desktop re-registration" }));
+  await screen.findByRole("alert");
+  fireEvent.click(screen.getByRole("button", { name: "Close Re-register this desktop" }));
+  fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
+  await waitFor(() => expect(screen.getByRole<HTMLButtonElement>("button", { name: "Continue desktop recovery" }).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Continue desktop recovery" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry original desktop recovery" }));
+  await waitFor(() => expect(f.recovered).toHaveBeenCalledOnce());
+  expect(native.invoke.mock.calls[1]).toEqual(native.invoke.mock.calls[3]);
+});
+it("refuses to discard an uncertain request for a different in-progress recovery", async () => {
+  const f = fixture();
+  native.invoke.mockResolvedValueOnce(f.status).mockRejectedValueOnce("timed-out");
+  render(<f.View />);
+  fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Re-register this desktop" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm desktop re-registration" }));
+  await screen.findByRole("alert");
+  const original = native.invoke.mock.calls[1][1];
+  fireEvent.click(screen.getByRole("button", { name: "Close Re-register this desktop" }));
+  native.invoke.mockResolvedValueOnce({ ...f.status, state: RegistrationState.Recovering, device_id: newRequestId(), request_id: newRequestId() });
+  fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("button", { name: "Continue desktop recovery" })).toBeNull();
+  native.invoke.mockResolvedValueOnce({ ...f.status, state: RegistrationState.Recovering, request_id: original.requestId }).mockResolvedValueOnce(f.connection);
+  fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Continue desktop recovery" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry original desktop recovery" }));
+  await waitFor(() => expect(f.recovered).toHaveBeenCalledOnce());
+  expect(native.invoke.mock.calls[4]).toEqual(native.invoke.mock.calls[1]);
+});
 it("does not offer replacement for an authorized device or malformed evidence", async () => {
   const f = fixture(RegistrationState.Authorized); render(<f.View />);
   fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
