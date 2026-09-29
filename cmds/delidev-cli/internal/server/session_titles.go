@@ -69,13 +69,14 @@ func hasTitleCapability(values []domain.WorkerCapability) bool {
 // queueAutomaticSessionTitle runs inside the verified terminal transaction.
 // The durable operation identity is retained even when the frozen profile is
 // unsupported, so reconnects and later configuration changes cannot reroute it.
-func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.Session, sourceRecord store.Record, input domain.ExecutionJobInput) error {
+func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.Session, sourceRecord store.Record, input domain.ExecutionJobInput, recovered bool) error {
 	if session.NameOwner != domain.AutomaticNameOwner || session.NameMode != domain.AutomaticSessionName || session.TitleState != domain.TitleWaiting || session.TitleOperationID != "" || session.InitialExecution == nil {
 		return nil
 	}
 	session.TitleOperationID = domain.NewID()
 	sourceJob, err := store.Decode[domain.Job](sourceRecord)
-	if err != nil || sourceJob.Type != domain.ExecuteSessionJob || sourceJob.State != domain.JobClaimed || sourceJob.MachineID != input.MachineID || sourceJob.AssignedDeviceID.Validate() != nil || sourceJob.InstanceID.Validate() != nil {
+	sourceStateValid := sourceJob.State == domain.JobClaimed || (recovered && (sourceJob.State == domain.JobUncertain || sourceJob.State.Terminal()))
+	if err != nil || sourceJob.Type != domain.ExecuteSessionJob || !sourceStateValid || sourceJob.MachineID != input.MachineID || sourceJob.AssignedDeviceID.Validate() != nil || sourceJob.InstanceID.Validate() != nil {
 		session.TitleState, session.TitleReason = domain.TitleFailed, domain.TitleReasonInvalidOutput
 		return nil
 	}
