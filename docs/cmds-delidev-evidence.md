@@ -2256,3 +2256,27 @@ After merging the current PR branch with `origin/main`, `apps/delidev` `pnpm
 test` passes 69 files / 826 tests, type checking and production build. This
 validates the combined Token Usage and sidebar changes; generated app/client
 `dist` output is removed afterward.
+
+### Issue #1047 account categories and guided API connection (2026-09-29)
+
+Settings now has separate AI Subscription Accounts and API Accounts, server-
+filtered by account type and provider before pagination. The API account wizard
+uses enabled inventory entries, server-owned preset key guidance and existing
+account preferences. It saves metadata once, re-reads the provider immediately
+before connection, retains the created account on connection failure, and
+keeps validation/discovery as separate explicit actions. Provider-filter
+changes reset the account page token.
+
+`apps/delidev` `pnpm test` passes 70 files / 837 tests, API-client build,
+TypeScript type-checking and the Rsbuild production build. The real temporary
+Go-server integration uses an owned loopback keyless provider to create,
+connect and validate an account, then configure a model and Agent. Relevant
+server, CLI and store filter/provider tests pass under the race detector, and
+`go vet ./cmds/delidev-cli/...` passes. Root Proto lint, breaking-change and
+fresh-generation checks pass after integrating the provider and usage schema
+updates.
+
+No real provider account, hosted inference, external credential or harness was
+used. Native Settings viewport, geometry and keyboard acceptance remain
+unverified. The branch includes the API-provider activation prerequisite from
+PR #1061. Generated app/client `dist` output is removed after validation.

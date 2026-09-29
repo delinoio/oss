@@ -82,7 +82,9 @@ it("activates fixed presets without creating accounts or models and retains iden
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
-  fireEvent.click(await screen.findByRole("switch", { name: "Turn on OpenAI" }));
+  const turnOn = await screen.findByRole("switch", { name: "Turn on OpenAI" });
+  await waitFor(() => expect((turnOn as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(turnOn);
   await screen.findByRole("switch", { name: "Turn off OpenAI" });
   let inventory = await providers.listProviderInventory({ pageSize: 50 });
   let saved = inventory.entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
@@ -92,13 +94,16 @@ it("activates fixed presets without creating accounts or models and retains iden
   expect((await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.ACCOUNT } })).resources).toHaveLength(0);
   expect((await providers.searchModels({ pageSize: 50 })).models).toHaveLength(0);
 
-  fireEvent.click(screen.getByRole("switch", { name: "Turn off OpenAI" }));
-  await screen.findByRole("switch", { name: "Turn on OpenAI" });
+  const turnOff = screen.getByRole("switch", { name: "Turn off OpenAI" });
+  await waitFor(() => expect((turnOff as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(turnOff);
+  const turnOnAgain = await screen.findByRole("switch", { name: "Turn on OpenAI" });
+  await waitFor(() => expect((turnOnAgain as HTMLButtonElement).disabled).toBe(false));
   inventory = await providers.listProviderInventory({ pageSize: 50 });
   saved = inventory.entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
   expect(saved.enabled).toBe(false);
   const retainedID = saved.providerId;
-  fireEvent.click(screen.getByRole("switch", { name: "Turn on OpenAI" }));
+  fireEvent.click(turnOnAgain);
   await screen.findByRole("switch", { name: "Turn off OpenAI" });
   saved = (await providers.listProviderInventory({ pageSize: 50 })).entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
   expect(saved.providerId).toBe(retainedID);
