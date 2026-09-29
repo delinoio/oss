@@ -54,6 +54,13 @@ func (t *Tx) RetainPRHandlingVerification(set domain.ID, problems []domain.PRRem
 		}
 		return rows[0], nil
 	}
+	var count int
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM entities WHERE kind='problem' AND json_extract(body,'$.type')='pull-request-handling-verification' AND json_extract(body,'$.set_id')=?`, set).Scan(&count); err != nil {
+		return Record{}, storageError(err)
+	}
+	if count >= domain.MaxRetainedPRProblems {
+		return Record{}, domain.Fail(domain.ResourceExhausted, "The original PR verification history is full.", "Preserve the original proofs; no handling evidence was evicted.")
+	}
 	return t.Put(domain.ProblemKind, domain.NewID(), 0, "", "", v)
 }
 

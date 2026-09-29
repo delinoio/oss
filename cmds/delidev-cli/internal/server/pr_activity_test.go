@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -156,5 +157,24 @@ func TestPRActivityRPCMetadataReceiptsChronologyAndReadIndependence(t *testing.T
 	raw, _ := protojson.Marshal(page.Msg)
 	if strings.Contains(string(raw), strings.Repeat("e", 64)) {
 		t.Fatal("private verifier proof commitment entered activity")
+	}
+	err = f.service.Store.Read(owner, func(tx *store.Tx) error {
+		proof, err := store.Decode[domain.PRHandlingVerification](verified)
+		if err != nil {
+			return err
+		}
+		v := domain.PRActivity{Version: 1, Type: domain.PRActivityRecord, Action: domain.PRActivityVerifiedHandled, SourceID: domain.ID(p.Id), VerificationID: domain.ID(p.Id), SourceRevision: 1, SetID: proof.SetID, RemoteRepositoryID: set.Target.RemoteRepositoryID, PullRequestID: set.Target.PullRequestID, Number: set.Target.Number, Owner: set.Target.Owner, Name: set.Target.Name, Problems: proof.Problems, Actor: proof.Actor}
+		if v.Validate() != nil {
+			t.Fatal("forged verification fixture must otherwise be structurally valid")
+		}
+		body, _ := json.Marshal(v)
+		fake := store.Record{ID: domain.ID(p.Id), Kind: domain.ProblemKind, Revision: 1, Data: body}
+		if err := validatePRActivitySource(tx, fake, v); domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatal("ordinary activity could pretend to be dedicated verification", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

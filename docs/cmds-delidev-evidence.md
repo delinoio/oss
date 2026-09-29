@@ -3212,3 +3212,25 @@ complete. LFS assets were hydrated before builds, and required ignored embed
 output was explicitly generated for Go hooks. No real PAT/account, Git push by
 DeliDev, native remediation, production verifier or multi-platform distribution
 acceptance was performed.
+
+### Issue #1083 source validation and required checks
+
+Dedicated verification source validation rejects a structurally valid ordinary
+activity row claiming verified handling. It rechecks exact stable PR and original
+version references, preserves the first proof across request aliases and caps
+proof history without eviction. Transport pages reserve cursor/framing capacity
+inside their 3 MiB bound. The latest focused server race test passed in 5.557s;
+store/server/CLI PR activity race checks passed in 16.728s/6.280s/2.838s before
+that final response-bound adjustment. `go vet ./cmds/delidev-cli/...` passed.
+
+`pnpm test` in `apps/delidev` passed on Node 24.20.0: 944 tests across 75 files,
+eight native package fixtures, six launch fixtures, typecheck and frontend build.
+The three activity component tests passed separately on Node 24, including
+explicit proof-source inspection and rejection of foreign version ownership.
+`pnpm proto:check` passed lint, compatibility and exact Go/TypeScript freshness.
+
+The first complete `go test -race -p 1 ./cmds/delidev-cli/...` run reported CLI
+workspace-read and detached-worker readiness failures in unchanged native
+fixtures; its CLI package failed after 370.223s. These failures are not reported
+as passed or as PR activity regressions without independent reproduction.
+Isolated reruns and the final captured full race run are recorded below.

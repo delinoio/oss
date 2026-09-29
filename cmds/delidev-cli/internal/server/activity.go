@@ -201,6 +201,10 @@ func validatePRActivitySource(tx *store.Tx, activity store.Record, v domain.PRAc
 		return invalidActivity()
 	}
 	if v.Action == domain.PRActivityVerifiedHandled {
+		proof, err := store.Decode[domain.PRHandlingVerification](activity)
+		if err != nil || proof.Validate() != nil || activity.ID != v.VerificationID || proof.SetID != v.SetID || !slices.Equal(proof.Problems, v.Problems) || proof.Actor != v.Actor {
+			return invalidActivity()
+		}
 		for _, ref := range v.Problems {
 			_, p, err := tx.GetPRProblem(ref.ID)
 			if err != nil {
@@ -217,7 +221,7 @@ func validatePRActivitySource(tx *store.Tx, activity store.Record, v domain.PRAc
 		if err != nil {
 			return err
 		}
-		if r.Revision < v.SourceRevision || attempt.SetID != v.SetID || !slices.Equal(attempt.Problems, v.Problems) || attempt.Mode != v.Mode || v.ExecutionID != "" && v.ExecutionID != attempt.ExecutionID || v.AttemptState != domain.PRRemediationReserved && activity.SessionID != attempt.SessionID {
+		if r.Revision < v.SourceRevision || attempt.SetID != v.SetID || set.Target.Owner != v.Owner || set.Target.Name != v.Name || !slices.Equal(attempt.Problems, v.Problems) || attempt.Mode != v.Mode || v.ExecutionID != "" && v.ExecutionID != attempt.ExecutionID || v.AttemptState != domain.PRRemediationReserved && activity.SessionID != attempt.SessionID {
 			return invalidActivity()
 		}
 		return nil
@@ -226,7 +230,7 @@ func validatePRActivitySource(tx *store.Tx, activity store.Record, v domain.PRAc
 	if err != nil {
 		return err
 	}
-	if r.Revision < v.SourceRevision || p.SetID != v.SetID || p.ContentVersion != v.Problems[0].ContentVersion || activity.SessionID != "" || activity.ProjectID != "" {
+	if r.Revision < v.SourceRevision || p.SetID != v.SetID || p.Target.Owner != v.Owner || p.Target.Name != v.Name || p.ContentVersion != v.Problems[0].ContentVersion || activity.SessionID != "" || activity.ProjectID != "" {
 		return invalidActivity()
 	}
 	if v.Action == domain.PRActivityDismissed && (p.Dismissal == nil || *p.Dismissal != v.Actor) {
@@ -282,7 +286,8 @@ func (s *Service) ListActivity(ctx context.Context, req *connect.Request[pb.List
 				return invalidActivity()
 			}
 			n := max(proto.Size(entry), len(encoded)) + 32
-			if size+n > 3<<20 {
+			// Reserve space for the signed cursor and response capability/framing.
+			if size+n > (3<<20)-8192 {
 				if len(result.Entries) == 0 {
 					return domain.Fail(domain.ResourceExhausted, "The original activity metadata exceeds the page bound.", "Preserve the complete source; no activity was truncated.")
 				}
