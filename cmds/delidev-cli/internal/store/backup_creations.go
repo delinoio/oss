@@ -164,7 +164,7 @@ func (s *Store) runBackupCreation(ctx context.Context, id, server domain.ID, cop
 		retained.State, retained.Problem = domain.JobSucceeded, nil
 	} else {
 		retained.State, retained.Problem = domain.JobUncertain, domain.SafeError(attempt)
-		if retained.Problem.Code == domain.Unauthenticated || retained.Problem.Code == domain.PermissionDenied || retained.Problem.Code == domain.RecoveryRequired {
+		if retained.Problem.Code == domain.Unauthenticated || retained.Problem.Code == domain.PermissionDenied || retained.Problem.Code == domain.RecoveryRequired || retained.Problem.Code == domain.ResourceExhausted {
 			retained.State = domain.JobFailed
 		}
 	}

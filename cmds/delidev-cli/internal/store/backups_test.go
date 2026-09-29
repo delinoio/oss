@@ -166,3 +166,44 @@ func TestManagedBackupInventoryIgnoresUnpublishedScratchAndSortsNewestFirst(t *t
 		t.Fatal("accepted path instead of ID")
 	}
 }
+
+func TestManagedBackupPublicationRejectsOversizedImage(t *testing.T) {
+	s, root, ctx, owner := creationFixture(t)
+	id, err := s.Backup(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "backups", string(id)+".sqlite")
+	// A sparse extension exercises the actual 8 GiB boundary without allocating
+	// that much disk or copying user data. Validation must reject before SQLite.
+	if err := os.Truncate(path, MaxBackupInspectionBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, validate := range []func() error{
+		func() error { return ValidateBackup(ctx, path) },
+		func() error { return validateBackup(ctx, path, &owner) },
+	} {
+		if err := validate(); err == nil || domain.SafeError(err).Code != domain.ResourceExhausted {
+			t.Fatal("oversized image accepted for publication", err)
+		}
+	}
+	after, err := os.Stat(path)
+	if err != nil || !sameBackup(before, after) {
+		t.Fatal("rejected image was changed", err)
+	}
+	row, _, err := s.RequestBackup(ctx, domain.NewID(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := s.runBackupCreation(ctx, row.ID, owner, func(context.Context, domain.ID) (domain.ID, error) {
+		return "", validateBackup(ctx, path, &owner)
+	})
+	job, _, decodeErr := DecodeBackupCreation(current)
+	if err == nil || decodeErr != nil || job.State != domain.JobFailed || job.Problem.Code != domain.ResourceExhausted {
+		t.Fatal("size rejection retried indefinitely", job, err, decodeErr)
+	}
+}

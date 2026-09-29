@@ -29,7 +29,11 @@ operation examines at most 4,096 directory entries, rejects invalid published
 backup identities/private-file ownership, and excludes unpublished scratch files.
 It never returns a partial inventory as complete.
 
-Inspection has a thirty-second deadline and an 8 GiB online image limit. It checks
+Inspection has a thirty-second deadline and an 8 GiB managed image limit.
+Creation and pre-migration backups enforce the same exact copied-image limit
+before publication, preserving the live database on rejection. Durable creation
+settles a size-limit rejection as failed/resource-exhausted; it does not retry
+forever. Unpublished scratch files are removed. It checks
 the canonical UUID-derived path within the private managed directory, rejects
 symlinks and SQLite sidecars, verifies the opened file identity, and copies bounded
 chunks into an exclusive private scratch file while computing SHA-256. SQLite

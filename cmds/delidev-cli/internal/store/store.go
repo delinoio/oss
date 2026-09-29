@@ -851,6 +851,7 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 		return "", storageError(err)
 	}
 	pending := path + ".pending"
+	defer os.Remove(pending)
 	if err := os.Remove(pending); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", storageError(err)
 	}
@@ -901,8 +902,14 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 func ValidateBackup(ctx context.Context, path string) error { return validateBackup(ctx, path, nil) }
 
 func validateBackup(ctx context.Context, path string, owner *domain.ID) error {
-	if err := security.RegularPrivate(path); err != nil {
-		return storageError(err)
+	info, err := backupInfo(path)
+	if err != nil {
+		return err
+	}
+	// Every published image, including a pre-migration image, must remain
+	// inspectable and deletable through the managed backup APIs.
+	if info.Size() > MaxBackupInspectionBytes {
+		return domain.Fail(domain.ResourceExhausted, "The backup exceeds the 8 GiB managed image limit.", "Reduce the live database size before retrying; the original database is unchanged.")
 	}
 	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
 		if _, err := os.Lstat(path + suffix); !errors.Is(err, os.ErrNotExist) {

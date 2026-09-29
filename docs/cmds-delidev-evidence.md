@@ -3053,3 +3053,11 @@ server identity cannot adopt an older image. Real SQLite fixtures reject both an
 unclaimed same-server image and replacement after publication while preserving
 the suspect bytes; the existing restart/lost-completion fixture still reuses its
 original image. The store backup race group passes (11.710s).
+
+### PR #1063 managed image size repair (2026-09-29)
+
+Creation and migration now reject copied images over the same 8 GiB bound used by
+inspection/deletion before publishing them. Size rejection preserves the live
+database, removes unpublished scratch output and settles durable creation as
+failed/resource-exhausted. A real sparse file tests the exact limit without
+allocating 8 GiB; the backup/inspection/migration race group passes (15.103s).
