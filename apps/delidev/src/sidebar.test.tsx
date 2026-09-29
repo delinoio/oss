@@ -39,8 +39,9 @@ function mountSidebar({ projects, sessions }: {
   const openSession = vi.fn();
   const openSettings = vi.fn();
   const newSession = vi.fn();
-  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Sidebar surface={Surface.Sessions} selectedSessionId="" navigate={vi.fn()} openSession={openSession} newSession={newSession} openSettings={openSettings} /></QueryClientProvider></TransportProvider>);
-  return { ...view, client, openSession, openSettings, newSession, projectRequests, sessionRequests };
+  const navigate = vi.fn();
+  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Sidebar surface={Surface.Sessions} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} openSettings={openSettings} /></QueryClientProvider></TransportProvider>);
+  return { ...view, client, navigate, openSession, openSettings, newSession, projectRequests, sessionRequests };
 }
 
 it("keeps equal-name projects separate, includes empty projects, and only reads expanded project pages", async () => {
@@ -236,7 +237,7 @@ it("retries an expanded project's exact session page without refetching other sc
   expect(value.sessionRequests.filter((request) => !request.projectId)).toHaveLength(1);
 });
 
-it("routes the icon rail only to existing destinations and opens Pull requests through Settings", async () => {
+it("routes the icon rail to the matching surface and opens New project through Settings", async () => {
   const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }) });
   await screen.findByRole("button", { name: "Sessions" });
   const newProject = screen.getByRole("button", { name: "New project" });
@@ -247,7 +248,7 @@ it("routes the icon rail only to existing destinations and opens Pull requests t
   fireEvent.click(newProject);
   expect(value.openSettings).toHaveBeenCalledWith("new-project");
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
-  expect(value.openSettings).toHaveBeenCalledWith("repositories");
+  expect(value.navigate).toHaveBeenCalledWith(Surface.PullRequests);
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
   expect(value.newSession).toHaveBeenCalledOnce();
   expect(value.sessionRequests).toHaveLength(1);

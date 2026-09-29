@@ -10,6 +10,7 @@ import { MutationIntents } from "./mutation";
 import { defaultRemediationPolicy } from "./remediation-policy";
 import { readPRProblemSet } from "./pr-problems";
 import { PRRemediationHistory } from "./pr-remediation-history";
+import { PRWorkflowProvider } from "./pr-workflow";
 import { readRemediationAttempt, readRemediationChain } from "./pr-remediation-model";
 
 function fixture() {
@@ -24,7 +25,7 @@ function fixture() {
   const resume = vi.fn(async (request: { mutation?: { requestId: string } }) => ({ problemSet: set, requestId: request.mutation?.requestId }));
   const transport = createRouterTransport(router => { router.service(IntegrationService, { listPullRequestRemediationAttempts: history, resumePullRequestRemediation: resume }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const view = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><PRRemediationHistory selection={selection} validateSet={row => Boolean(readPRProblemSet(row, selection))} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><PRWorkflowProvider><PRRemediationHistory selection={selection} validateSet={row => Boolean(readPRProblemSet(row, selection))} /></PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
   return { view, history, resume, set, attempts, value, resource, replaceSet: (next: Resource) => { set = next; } };
 }
 

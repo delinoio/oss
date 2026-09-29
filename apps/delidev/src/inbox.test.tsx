@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, InboxReadState, InboxService, InboxSource, InboxViewSchema, InteractionService, ResourceSchema, newRequestId, type InboxView } from "@delinoio/delidev-api-client";
+import { EntityKind, InboxReadState, InboxService, InboxSource, InboxViewSchema, InteractionService, ResourceSchema, ResourceService, newRequestId, type InboxView } from "@delinoio/delidev-api-client";
 import { document, encode } from "./documents";
 import { Inbox } from "./inbox";
 import { MutationIntents } from "./mutation";
@@ -23,6 +23,7 @@ function fixture() {
   const answer = vi.fn((_request: unknown) => ({ interaction }));
   const transport = createRouterTransport((router) => {
     router.service(InboxService, { listInbox: list, getInboxEntry: get, setInboxReadState: setRead });
+    router.service(ResourceService, { listResources: () => ({ resources: [] }) });
     router.service(InteractionService, { respondQuestion: answer });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
@@ -63,8 +64,11 @@ it("applies source and read filters on the server and resets the active cursor",
   fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ pageToken: "cursor-2" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: InboxSource.INTERACTION } });
+  expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ source: InboxSource.UNSPECIFIED, readState: InboxReadState.UNSPECIFIED, pageToken: "cursor-2" });
+  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ source: InboxSource.INTERACTION, readState: InboxReadState.UNSPECIFIED, pageToken: "" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "Read state" }), { target: { value: InboxReadState.UNREAD } });
+  fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ source: InboxSource.INTERACTION, readState: InboxReadState.UNREAD, pageToken: "" }));
 });
 
@@ -78,6 +82,7 @@ it("preserves editable response fields when selection and server filters change"
   fireEvent.click(screen.getByRole("button", { name: /Execution succeeded, Refactor authentication, Read/ }));
   await screen.findByText("Original terminal observation");
   fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: InboxSource.INTERACTION } });
+  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await screen.findByRole("button", { name: /Agent question/ });
   fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
   expect((await screen.findByRole("textbox", { name: "Your answer" }) as HTMLTextAreaElement).value).toBe("Passkeys and SSO");
