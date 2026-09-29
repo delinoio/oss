@@ -3217,7 +3217,8 @@ Executed on macOS arm64 with private temporary state and controlled fixtures:
   interrupted-input refusal, stable close identity across resize progress,
   original pre-native journal proof and unknown-ownership refusal.
 - `go vet ./cmds/delidev-cli/...` passes. Windows amd64 process-test compilation
-  and CLI-package cross-build pass; the native ConPTY fixture is retained for
+  and CLI-package cross-build pass. Linux amd64 and Windows arm64 CLI-package
+  cross-builds also pass; the native ConPTY fixture is retained for
   Windows CI and was not executed on this macOS host.
 - Protocol format/lint and the baseline breaking check pass. Generated Go,
   TypeScript and Connect Query bindings include distinct response types for
