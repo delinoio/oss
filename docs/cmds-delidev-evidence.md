@@ -2231,6 +2231,16 @@ component/keyboard tests and production build are evidence for this change, not
 native-window or hosted billing acceptance. Generated app/client `dist`
 directories are removed after validation.
 
+
+## 2026-09-29: Explicit revoked desktop registration recovery
+
+- Implemented fixed-scope owner-authenticated local registration inspection and explicit revoked-client replacement, request/revision-bound private recovery and original-file archives, separate candidate pairing, serialized journaled publication, immutable completion receipts, bounded retained history, and same-request retry after response loss. Ordinary bootstrap/supervision never replaces revocation. Missing original grant/pairing/completion evidence fails closed. No server RPC or database migration was added.
+- The main-window native capability and React recovery confirmation preserve decimal revisions and original uncertain requests, independently verify the adopted client, and keep owner credentials out of renderer IPC. The current desktop is excluded from app revocation and the confirmation handler independently refuses it; other-device/owner administration remains available.
+- `go test -race ./cmds/delidev-cli/internal/cli ./cmds/delidev-cli/internal/worker` and `go vet ./cmds/delidev-cli/...` passed. Subsequent focused `go test -race ./cmds/delidev-cli/internal/cli -run TestDesktopRecovery -count=1` verifies final grant/completion guards. Real temporary server fixtures cover unchanged original revocation, one replacement across replay, lost CreatePairing/PairDevice responses with byte-identical requests, interrupted publication, stale revisions, concurrent locking, remote override refusal, missing owner/token authority, altered archives, and lost grant/pairing/completion journals. No fixture uses user credentials or inference.
+- `pnpm test` from `apps/delidev` passed typechecking, 69 test files / 814 tests and the production frontend build. Coverage includes explicit confirmation, duplicate clicks, uncertain retry through dialog hiding, pending-request recovery after remount, large exact revisions, malformed/foreign evidence, self-revocation rejection and preserved other-device retry behavior.
+- The native host build and the explicitly enabled real-sidecar `real_sidecar_connect_reuse_revocation_and_exit` test passed on macOS arm64. The latter verifies replacement/replay through the Rust/Go boundary, normal reconnect and the unchanged independent Worker credential. A locally assembled ad hoc development app bundle showed the recovered connection and Paired devices with the original revoked client, authorized replacement/current-client label, omitted self-revocation action and unchanged Worker. The existing local scope's recovery journal was complete and authenticated inspection confirmed the replacement; server and Worker identities and the connected Worker were unchanged. This is macOS development evidence, not signed release or Windows/Linux UI acceptance.
+- Root `cargo test` passed after setting `TMPDIR=/private/tmp` and preparing the documented macOS pnport companion with `cargo build -p pnport -p fspy_preload_unix --features fspy_preload_unix/pnport`. The first unprepared runs exposed the existing binpm `/var` versus `/private/var` temporary-path mismatch and absent pnport injection artifact; no unrelated source changes were made. Generated repository-owned `dist` output is removed after verification and commit hooks.
+
 ### Issue #1054 sidebar project creation and query retries (2026-09-29)
 
 The Projects header now uses an icon-only New project action that opens the
@@ -2257,6 +2267,40 @@ test` passes 69 files / 826 tests, type checking and production build. This
 validates the combined Token Usage and sidebar changes; generated app/client
 `dist` output is removed afterward.
 
+## 2026-09-29: PR #1060 credential provenance repair
+
+- Merged current main while retaining both desktop recovery and sidebar validation records. The merged desktop frontend passed its full `pnpm test` command.
+- Added an independently retained credential commitment after fresh authenticated fixed-scope pairing. Revoked inspection and initial recovery reject altered tokens or pairing IDs and missing/damaged commitments before intent creation; completed recovery receipts continue to bind subsequent replacement credentials. Legacy already-revoked scopes without either original proof remain explicitly unsupported for replacement.
+- Temporary-server regression tests reproduce the previous acceptance of fabricated revoked credentials and verify rejection without modifying the credential files or registering another device. Lost-response fixtures now pair through their proxy from the outset instead of modifying original credential evidence. Focused recovery/local-pairing race tests passed.
+
+### PR #1060 original pairing evidence repair
+
+- Original local-pairing evidence is mandatory before revoked eligibility or initial recovery, with exact request/server/endpoint and retained grant-to-credential pairing checks. Pending journal loads reject an absent original pairing commitment, and retries recheck the archived relationship.
+- Focused temporary-server race tests cover missing/malformed journals, foreign server/endpoint/request/grant identity, journal commitment loss, unchanged original files and zero additional registrations on rejection. The complete recovery/local-pairing fixture group passed, including response loss and interrupted publication.
+
+### PR #1060 native endpoint precondition repair
+
+- Native inspection and recovery now send their compiled endpoint as a guard; Go checks the original owner-authorized endpoint before any recovery state or pairing mutation. The final native connection check remains an additional check.
+- Temporary-server Go coverage verifies incompatible endpoints leave original credential bytes, device count and recovery/grant files unchanged, while the matching endpoint succeeds. Native command tests verify both operations forward the fixed endpoint. The explicit real-sidecar fixture exercises rejection by a production connector against the temporary alternate listener before successful guarded recovery and replay.
+
+- Repair validation: focused recovery/local-pairing race tests and native tests (12 passed; 4 opt-in fixtures ignored) passed. The fresh built sidecar explicitly passed the recovery/reconnect fixture. Merged frontend validation passed 69 files / 827 tests, typechecking and production build.
+- Root `cargo test` ran with `TMPDIR=/private/tmp` and the prepared macOS pnport companion. The first attempt stopped at the unrelated clibox `wrappers_preserve_a_leading_literal_workload_separator` timeout; a second with `RUST_TEST_THREADS=2` stopped at `managed_service_forwards_shutdown_output_before_readiness_timeout` returning an HTTP readiness failure instead of timeout. Both tests passed isolated reruns. No clibox source was changed, and the complete workspace suite is not reported as passing for this repair. An initial sidecar test accidentally selected the previous debug binary and rejected the new guard; the repeated test used the freshly generated native sidecar and passed. Generated repository-owned `dist` output is removed after validation and commit hooks.
+
+- `go vet ./cmds/delidev-cli/...` passed. The full Go package run passed CLI, server, Worker and the other packages, but its workspace package failed the unchanged one-second `TestInspectPropagatesRemoteHeadExecutionFailures` fixture (`absent`/`timeout` received early working-tree inspection failures). Its isolated rerun passed. This is recorded separately from the passing focused recovery race tests; the full Go run is not claimed green.
+
+## 2026-09-29: PR #1060 interrupted fresh pairing repair
+
+- Preserved both usage and recovery validation histories while merging main. The merged frontend passed 70 test files / 832 tests, typechecking and production build.
+- Fresh fixed-scope client pairing now authenticates and synchronizes the exact credential commitment before publishing the active credential and retiring its original pending request. The optional pairing publication hook never reconstructs proof during existing-credential reuse.
+- The regression fixture first reproduced active credential publication despite a failed proof write. Focused race tests now cover failure before proof publication, interruption after durable proof but before credential publication, unchanged pending request/token bytes, one accepted device across retries, later revocation/recovery, and no proof reconstruction for ordinary legacy reuse.
+
+### PR #1060 stale renderer recovery request repair
+
+- Fresh same-server inspection of a non-recovering replacement retires the previous pending request and confirmation. A revoked replacement needs a new explicit request; an authorized replacement exposes no registration action. Unchanged revoked observations preserve exact retry identity, and conflicting in-progress/foreign-server observations remain blocked without discarding the original request.
+- Component regressions reproduce failed renderer adoption followed by an authorized or later-revoked replacement. They verify no automatic mutation, a fresh explicit request for the new revoked device, unchanged request replay for the same registration, and refusal to overwrite an in-progress recovery.
+- Final validation passed: frontend `pnpm test` (70 files / 836 tests, typecheck and production build), focused desktop recovery/local-pairing race tests, `go vet ./cmds/delidev-cli/...`, the full Worker race package, and the opt-in real-sidecar native recovery fixture using the freshly built arm64 sidecar.
+- The combined CLI/Worker race run failed unchanged `TestCLISessionAcceptanceQueueAndArchive` at a workspace review read with `unavailable`; its isolated race rerun passed. No CLI-wide green result is claimed for this run. The fixture and workspace reader match main, and existing root Cargo timing-test limitations above remain recorded. Generated repository-owned `dist` directories are removed after validation.
+
 ### Issue #1047 account categories and guided API connection (2026-09-29)
 
 Settings now has separate AI Subscription Accounts and API Accounts, server-
@@ -2280,3 +2324,9 @@ No real provider account, hosted inference, external credential or harness was
 used. Native Settings viewport, geometry and keyboard acceptance remain
 unverified. The branch includes the API-provider activation prerequisite from
 PR #1061. Generated app/client `dist` output is removed after validation.
+
+## 2026-09-29: PR #1060 account-setup merge validation
+
+- Merged main's guided API account setup and provider activation while preserving all desktop recovery rules and both branches' evidence records. The combined Settings surface retains current-device revocation guards; the CLI retains explicit local registration inspection/recovery alongside the new provider operations.
+- Merged frontend `pnpm test` passes 71 files / 847 tests, typechecking and production build. Focused CLI desktop recovery, local pairing and account race tests pass, and `go vet ./cmds/delidev-cli/...` passes. This merge changes no Rust source and does not replace the previously recorded native/full-suite evidence limits.
+- Git LFS objects were hydrated and verified. Required generated embeds were built for Go checks and hooks; repository-owned generated `dist` directories are removed after validation.

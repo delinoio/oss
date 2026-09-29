@@ -122,6 +122,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	command := remaining[0]
 	rest := remaining[1:]
+	if command == "device" && len(rest) > 0 && (rest[0] == "inspect-local" || rest[0] == "recover-local") {
+		value, err := desktopRecoveryCommand(ctx, o, rest)
+		return emit(value, err)
+	}
 	if command == "server" && len(rest) > 0 && (rest[0] == "start" || rest[0] == "run" || rest[0] == "ensure") {
 		value, err := start(ctx, o, rest, streams)
 		return emit(value, err)
@@ -809,6 +813,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   device create-pairing --type worker|client --name NAME
   device pair --device-dir PATH --code-stdin
   device pair-local --device-dir PATH
+  device inspect-local
+  --request-id UUID device recover-local --id UUID --revision N
   device inspect --device-dir PATH
   device revoke --id ID --revision N
   worker pair --worker-dir PATH --name NAME --code-stdin

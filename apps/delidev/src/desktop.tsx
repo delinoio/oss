@@ -10,7 +10,7 @@ import { LocalServerControls, LocalServerState, LocalServerStatusText, type Loca
 import type { ControlLocalWorker, LocalWorkerStatus } from "./local-worker-controls";
 import { verifyLocalServer } from "./connection";
 
-interface NativeConnection { endpoint: string; token: string; server_id: string; device_id: string }
+import { LocalRegistrationRecovery, type NativeConnection } from "./local-registration";
 const nativeProblems: Record<string, string> = {
   stopped: "The server was explicitly stopped. Start it only when you intend to resume its local lifecycle.",
   busy: "A local connection attempt is already running. Wait for it to finish.",
@@ -18,7 +18,7 @@ const nativeProblems: Record<string, string> = {
   "sidecar-failed": "The local server could not connect. Inspect DeliDev server status and its private log, then retry.",
   "timed-out": "Local startup has not completed. Check server status before retrying; accepted work may continue.",
   incompatible: "The running server uses a different version or listener. Preserve its sessions and use a compatible client or explicitly stop it before changing the server.",
-  "credential-unavailable": "This desktop credential is unavailable or revoked. Inspect the original device registration; it will not be replaced automatically.",
+  "credential-unavailable": "This desktop credential is unavailable or revoked. Use Check desktop registration to inspect it and explicitly recover a revoked local registration.",
   "permission-denied": "The local connection is not authorized. Check the selected device and private-directory permissions.",
   "invalid-evidence": "The retained local connection requires inspection. Preserve its original pairing and server data.",
   "storage-unavailable": "The private DeliDev configuration directory is unavailable. Check this computer's user configuration.",
@@ -43,18 +43,24 @@ function LocalDesktop() {
   const [transport, setTransport] = useState<Transport>();
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
+  const connecting = useRef(false);
+  const acceptConnection = async (connection: NativeConnection) => {
+    const candidate = createDeliDevTransport({ origin: connection.endpoint, getToken: () => connection.token });
+    await verifyLocalServer(candidate, connection.server_id);
+    const old = previous.current;
+    if (!old || old.server_id !== connection.server_id || old.device_id !== connection.device_id || old.endpoint !== connection.endpoint || old.token !== connection.token) setTransport(candidate);
+    previous.current = connection;
+    setConnectionEpoch((epoch) => epoch + 1);
+    setError(undefined);
+  };
   const connect = async () => {
-    if (busy) return;
+    if (busy || connecting.current) return;
+    connecting.current = true;
     setBusy(true); setError(undefined);
     try {
       const connection = await invoke<NativeConnection>("connect_local");
-      const candidate = createDeliDevTransport({ origin: connection.endpoint, getToken: () => connection.token });
-      await verifyLocalServer(candidate, connection.server_id);
-      const old = previous.current;
-      if (!old || old.server_id !== connection.server_id || old.device_id !== connection.device_id || old.endpoint !== connection.endpoint || old.token !== connection.token) setTransport(candidate);
-      previous.current = connection;
-      setConnectionEpoch((epoch) => epoch + 1);
-    } catch (reason) { setError(reason); } finally { setBusy(false); }
+      await acceptConnection(connection);
+    } catch (reason) { setError(reason); } finally { connecting.current = false; setBusy(false); }
   };
   const readLocalWorker = async () => {
     const selected = previous.current;
@@ -68,8 +74,9 @@ function LocalDesktop() {
     if (!selected || previous.current !== selected) throw new Error("Local Worker connection changed");
     return value;
   };
+  const registration = isTauri() ? <LocalRegistrationRecovery busy={busy} setBusy={setBusy} recovered={acceptConnection} /> : null;
   const problem = typeof error === "string" && Object.hasOwn(nativeProblems, error) ? <p role="alert">{nativeProblems[error]}</p> : <Problem error={error} />;
-  return <>{transport ? <App pairingAuthority={previous.current ? { endpoint: previous.current.endpoint, serverId: previous.current.server_id } : undefined} currentDeviceId={previous.current?.device_id} controlLocalWorker={controlLocalWorker} readLocalWorker={readLocalWorker} transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} localServer={<><LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} /><button onClick={() => setShowSaved(true)}>Saved servers</button></>} /> : <main className="connect-page"><h1>DeliDev</h1><h2>Connect to your local server</h2><p>The server and its sessions continue when you close DeliDev.</p>{isTauri() ? <><button className="primary" disabled={busy} onClick={() => void connect()}>{busy ? "Connecting…" : "Start or connect"}</button><button onClick={() => setShowSaved(true)}>Saved servers</button></> : <p>Open the DeliDev desktop app to connect. Browser clients are not supported.</p>}{isTauri() ? <LocalServerStatusText status={status} /> : null}{problem}</main>}<SavedConnections visible={showSaved} close={() => setShowSaved(false)} actions={savedActions} /></>;
+  return <>{transport ? <App pairingAuthority={previous.current ? { endpoint: previous.current.endpoint, serverId: previous.current.server_id } : undefined} currentDeviceId={previous.current?.device_id} controlLocalWorker={controlLocalWorker} readLocalWorker={readLocalWorker} transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} localServer={<><LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} />{registration}<button onClick={() => setShowSaved(true)}>Saved servers</button></>} /> : <main className="connect-page"><h1>DeliDev</h1><h2>Connect to your local server</h2><p>The server and its sessions continue when you close DeliDev.</p>{isTauri() ? <><button className="primary" disabled={busy} onClick={() => void connect()}>{busy ? "Connecting…" : "Start or connect"}</button><button onClick={() => setShowSaved(true)}>Saved servers</button></> : <p>Open the DeliDev desktop app to connect. Browser clients are not supported.</p>}{isTauri() ? <LocalServerStatusText status={status} /> : null}{problem}{registration}</main>}<SavedConnections visible={showSaved} close={() => setShowSaved(false)} actions={savedActions} /></>;
 }
 const savedActions: SavedConnectionActions = {
   list: () => invoke<SavedConnection[]>("saved_connections"),

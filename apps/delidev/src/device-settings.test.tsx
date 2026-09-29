@@ -40,15 +40,29 @@ it("retains the original revocation after uncertainty and a peer revision", asyn
   expect(value.revoke.mock.calls[0][0]).toEqual(value.revoke.mock.calls[1][0]);
   expect(value.revoke.mock.calls[0][0]).toMatchObject({ mutation: { id: value.original.id, expectedRevision: 3n } });
 });
-it("preserves self-revocation confirmation across modal visibility and blocks a stale new request", async () => {
+it("excludes the current desktop from revocation and guards direct confirmations", async () => {
   const value = fixture();
   const view = render(value.view(<Settings visible currentDeviceId={value.original.id} close={() => {}} />));
   fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
+  await screen.findByText("This desktop client cannot revoke its own registration.");
+  expect(screen.queryByRole("button", { name: "Revoke Paired desktop" })).toBeNull();
+  view.unmount();
+  render(value.view(<DeviceRevocation initial={value.original} currentDeviceId={value.original.id} active close={() => {}} revoked={() => {}} />));
+  await screen.findByText(/It cannot be revoked from this app/);
+  const confirm = screen.getByRole("button", { name: "Confirm device revocation" }) as HTMLButtonElement;
+  expect(confirm.disabled).toBe(true);
+  fireEvent.click(confirm);
+  expect(value.revoke).not.toHaveBeenCalled();
+});
+it("preserves another device's confirmation and blocks a stale new request", async () => {
+  const value = fixture();
+  const current = newRequestId();
+  const view = render(value.view(<Settings visible currentDeviceId={current} close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
   fireEvent.click(await screen.findByRole("button", { name: "Revoke Paired desktop" }));
-  await screen.findByText(/This is the current desktop's authorization/);
-  view.rerender(value.view(<Settings visible={false} currentDeviceId={value.original.id} close={() => {}} />));
+  view.rerender(value.view(<Settings visible={false} currentDeviceId={current} close={() => {}} />));
   value.state.current = create(ResourceSchema, { ...value.original, revision: 5n });
-  view.rerender(value.view(<Settings visible currentDeviceId={value.original.id} close={() => {}} />));
+  view.rerender(value.view(<Settings visible currentDeviceId={current} close={() => {}} />));
   await value.client.invalidateQueries();
   await screen.findByText(/This device changed after the confirmation/);
   expect((screen.getByRole("button", { name: "Confirm device revocation" }) as HTMLButtonElement).disabled).toBe(true);
