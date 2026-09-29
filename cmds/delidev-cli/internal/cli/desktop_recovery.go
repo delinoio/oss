@@ -105,6 +105,37 @@ func verifyOriginalDesktopCredential(owner, digest string) error {
 	return nil
 }
 
+func verifyOriginalDesktopPairing(owner, root string, saved worker.Credential) error {
+	raw, err := security.ReadPrivate(filepath.Join(root, "local-pairing.json"), 4096)
+	if errors.Is(err, os.ErrNotExist) {
+		return recoveryRequired()
+	}
+	if err != nil {
+		return err
+	}
+	var attempt localPairingAttempt
+	if domain.Decode(raw, &attempt) != nil || attempt.RequestID.Validate() != nil || attempt.ServerID != saved.ServerID || attempt.Endpoint != saved.Endpoint {
+		return recoveryRequired()
+	}
+	grants := filepath.Join(owner, "pairing-codes")
+	if err := security.CheckPrivateDir(grants); err != nil {
+		return err
+	}
+	raw, err = security.ReadPrivate(filepath.Join(grants, string(attempt.RequestID)+".json"), 32<<10)
+	defer clear(raw)
+	if errors.Is(err, os.ErrNotExist) {
+		return recoveryRequired()
+	}
+	if err != nil {
+		return err
+	}
+	var grant worker.PairingCode
+	if domain.Decode(raw, &grant) != nil || grant.Validate() != nil || grant.ServerID != saved.ServerID || grant.Endpoint != saved.Endpoint || grant.PairingID != saved.PairingID {
+		return recoveryRequired()
+	}
+	return nil
+}
+
 func recoveryRequired() error {
 	return domain.Fail(domain.RecoveryRequired, "The original desktop recovery evidence is unavailable or changed.", "Preserve the original registration and private recovery files; do not reset the server.")
 }
@@ -143,7 +174,7 @@ func loadDesktopRecovery(root string) (*desktopRecovery, error) {
 			}
 		}
 	}
-	if value.Original[0] == "" || ((value.Phase == recoveryPublishing || value.Phase == recoveryComplete) && (value.Replacement[0] == "" || value.Replacement[1] == "" || value.Replacement[2] != "")) {
+	if value.Original[0] == "" || value.Original[1] == "" || ((value.Phase == recoveryPublishing || value.Phase == recoveryComplete) && (value.Replacement[0] == "" || value.Replacement[1] == "" || value.Replacement[2] != "")) {
 		return nil, recoveryRequired()
 	}
 	if value.Phase == recoveryComplete {
@@ -356,6 +387,9 @@ func desktopRecoveryCommand(ctx context.Context, o options, args []string) (any,
 		}
 		state := desktopAuthorized
 		if device.Revoked {
+			if err := verifyOriginalDesktopPairing(o.dataDir, root, saved); err != nil {
+				return nil, err
+			}
 			if record == nil {
 				raw, digest, err := desktopFile(root, "device.json")
 				clear(raw)
@@ -417,6 +451,9 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 		}
 		if saved.Type != domain.ClientDevice || saved.ServerID != serverID || saved.Endpoint != c.endpoint || saved.DeviceID != id {
 			return nil, recoveryRequired()
+		}
+		if err := verifyOriginalDesktopPairing(o.dataDir, root, saved); err != nil {
+			return nil, err
 		}
 		device, rev, err := desktopDevice(ctx, c, id)
 		if err != nil {
@@ -494,6 +531,13 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 			return nil, recoveryRequired()
 		}
 	}
+	original, err := worker.LoadCredential(archive)
+	if err != nil {
+		return nil, err
+	}
+	if err := verifyOriginalDesktopPairing(o.dataDir, archive, original); err != nil {
+		return nil, err
+	}
 	savePhase := func(phase desktopRecoveryPhase) error {
 		record.Phase = phase
 		if err := writeRecoveryJSON(filepath.Join(o.dataDir, "desktop-recovery.json"), record); err != nil {
@@ -562,11 +606,7 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 		if saved.DeviceID == id {
 			return nil, recoveryRequired()
 		}
-		attempt := struct {
-			RequestID domain.ID `json:"request_id"`
-			ServerID  domain.ID `json:"server_id"`
-			Endpoint  string    `json:"endpoint"`
-		}{o.requestID, serverID, c.endpoint}
+		attempt := localPairingAttempt{o.requestID, serverID, c.endpoint}
 		if err := writeRecoveryJSON(filepath.Join(candidate, "local-pairing.json"), attempt); err != nil {
 			return nil, err
 		}

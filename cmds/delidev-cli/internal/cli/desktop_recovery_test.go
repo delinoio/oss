@@ -117,6 +117,97 @@ func TestDesktopRecoveryRequiresOriginalCredentialCommitment(t *testing.T) {
 	}
 }
 
+func TestDesktopRecoveryRequiresOriginalLocalPairing(t *testing.T) {
+	for _, mutation := range []string{"missing", "damaged", "foreign-server", "foreign-endpoint", "foreign-request", "foreign-grant"} {
+		t.Run(mutation, func(t *testing.T) {
+			root, original := desktopFixture(t)
+			revokeDesktop(t, root, original)
+			clientRoot := filepath.Join(root, "desktop-client")
+			path := filepath.Join(clientRoot, "local-pairing.json")
+			raw, err := security.ReadPrivate(path, 4096)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var attempt map[string]any
+			if err := json.Unmarshal(raw, &attempt); err != nil {
+				t.Fatal(err)
+			}
+			switch mutation {
+			case "missing":
+				err = os.Remove(path)
+			case "damaged":
+				err = security.WriteAtomic(path, []byte("{}"))
+			case "foreign-server":
+				attempt["server_id"] = domain.NewID()
+				err = writeRecoveryJSON(path, attempt)
+			case "foreign-endpoint":
+				attempt["endpoint"] = "http://127.0.0.1:1"
+				err = writeRecoveryJSON(path, attempt)
+			case "foreign-request":
+				attempt["request_id"] = domain.NewID()
+				err = writeRecoveryJSON(path, attempt)
+			case "foreign-grant":
+				grantPath := filepath.Join(root, "pairing-codes", attempt["request_id"].(string)+".json")
+				var grant worker.PairingCode
+				raw, err = security.ReadPrivate(grantPath, 32<<10)
+				if err == nil {
+					err = domain.Decode(raw, &grant)
+				}
+				if err == nil {
+					grant.PairingID = domain.NewID()
+					err = writeRecoveryJSON(grantPath, grant)
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, err := desktopHashes(clientRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, args := range [][]string{{"device", "inspect-local"}, recoveryArgs(original, domain.NewID())} {
+				if code, result := cliRun(t, root, args, ""); code == 0 || result["error"].(map[string]any)["code"] != "recovery_required" {
+					t.Fatal("missing or contradictory original pairing accepted", result)
+				}
+			}
+			if _, err := os.Lstat(filepath.Join(root, "desktop-recovery.json")); !os.IsNotExist(err) {
+				t.Fatal("invalid original pairing created recovery intent")
+			}
+			after, err := desktopHashes(clientRoot)
+			if err != nil || after != before {
+				t.Fatal("original pairing evidence replaced", err)
+			}
+			if code, result := cliRun(t, root, []string{"device", "list"}, ""); code != 0 || len(result["result"].(map[string]any)["resources"].([]any)) != 1 {
+				t.Fatal("invalid original pairing created a replacement", result)
+			}
+		})
+	}
+}
+
+func TestDesktopRecoveryRejectsMissingOriginalPairingCommitment(t *testing.T) {
+	root, original := desktopFixture(t)
+	revokeDesktop(t, root, original)
+	request := domain.NewID()
+	args := recoveryArgs(original, request)
+	if code, result := cliRun(t, root, args, ""); code != 0 {
+		t.Fatal(result)
+	}
+	record, err := loadDesktopRecovery(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Phase = recoveryPrepared
+	record.Original[1] = ""
+	if err := writeRecoveryJSON(filepath.Join(root, "desktop-recovery.json"), record); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{args, {"device", "inspect-local"}, {"device", "pair-local", "--device-dir", filepath.Join(root, "desktop-client")}} {
+		if code, result := cliRun(t, root, args, ""); code == 0 || result["error"].(map[string]any)["code"] != "recovery_required" {
+			t.Fatal("missing original pairing commitment accepted", result)
+		}
+	}
+}
+
 func TestDesktopRecoveryRetainsOriginalAndUsesOneReplacement(t *testing.T) {
 	root, original := desktopFixture(t)
 	clientRoot := filepath.Join(root, "desktop-client")

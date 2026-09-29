@@ -2214,3 +2214,8 @@ removed from the worktree.
 - Merged current main while retaining both desktop recovery and sidebar validation records. The merged desktop frontend passed its full `pnpm test` command.
 - Added an independently retained credential commitment after fresh authenticated fixed-scope pairing. Revoked inspection and initial recovery reject altered tokens or pairing IDs and missing/damaged commitments before intent creation; completed recovery receipts continue to bind subsequent replacement credentials. Legacy already-revoked scopes without either original proof remain explicitly unsupported for replacement.
 - Temporary-server regression tests reproduce the previous acceptance of fabricated revoked credentials and verify rejection without modifying the credential files or registering another device. Lost-response fixtures now pair through their proxy from the outset instead of modifying original credential evidence. Focused recovery/local-pairing race tests passed.
+
+### PR #1060 original pairing evidence repair
+
+- Original local-pairing evidence is mandatory before revoked eligibility or initial recovery, with exact request/server/endpoint and retained grant-to-credential pairing checks. Pending journal loads reject an absent original pairing commitment, and retries recheck the archived relationship.
+- Focused temporary-server race tests cover missing/malformed journals, foreign server/endpoint/request/grant identity, journal commitment loss, unchanged original files and zero additional registrations on rejection. The complete recovery/local-pairing fixture group passed, including response loss and interrupted publication.
