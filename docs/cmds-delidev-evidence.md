@@ -3141,3 +3141,53 @@ protobuf contract changed in this invocation. Prior root Cargo, API-client and
 Buf results remain prior evidence. Generated desktop/client `dist` output is
 removed after verification. The single final PR inventory still contained one
 frontend CI failure (repaired locally above); no post-push green CI is claimed.
+
+### macOS desktop development launcher repair (2026-09-29)
+
+The reported `cef` 150.0.0 library-loader panic came from `dev:desktop` executing
+the unbundled Cargo binary, whose relative Frameworks path does not exist.
+The launcher now prepares the same frontend/sidecar and uses the immutable
+Tauri CLI's macOS development bundler. Local `desktop-host` explicitly exposes
+`tauri/cef`; the launch keeps embedded assets, original notices, ad-hoc signing,
+application argv separation and credential-free build children. Windows/Linux
+retain direct Cargo execution; no runtime pin or production policy changes.
+
+On macOS arm64, a checkout with no prior development bundle built and launched
+the original host successfully with a temporary data directory containing spaces
+and Korean characters. Native accessibility inspection confirmed the DeliDev
+window and embedded `tauri.localhost` connection UI; the same entry point opened
+it again after termination. The existing bundle verifier passed native main,
+sidecar, CEF and helper architecture, required CEF data, macOS 13 metadata and
+strict nested ad-hoc signature checks. Repository/CEF/Chromium notices matched
+their source bytes. There was no missing-framework panic on either launch.
+
+The existing independent server occupied port 46310. The temporary sidecar log
+confirmed listener binding failure, and the UI showed the bounded connection
+failure/retry state; the existing server remained running. This does not prove
+a successful fresh connection or connected-session retention. Application-menu
+Quit logged `runtime-requested` but had not returned after more than a minute;
+the previously documented native Quit issue remains unresolved. Explicit SIGINT
+then exercised the launcher's process-group cleanup and returned 130 after the
+main/helper processes disappeared. The restarted run also cleaned up on SIGTERM
+and returned 143. These are cancellation results, not normal-Quit acceptance.
+
+Node 24 `pnpm test` passed 74 frontend files / 941 tests, type checking, eight
+packaging verifier tests, six launcher tests and the production build. The
+launcher tests cover platform selection, literal Unicode/space-bearing argv,
+relative Cargo output resolution, release-credential exclusion, preparation
+failure, child failure and real signal forwarding during preparation/execution.
+The native packaging CI contract fixture also passed. The CEF-enabled desktop
+Cargo tests passed 15 library and seven binary tests, with four opt-in tests
+ignored. LFS objects were hydrated and `git lfs fsck` passed.
+
+Root `cargo test` initially failed five binpm CLI cases comparing macOS `/var`
+temporary paths against their canonical `/private/var` spelling. Re-running with
+`TMPDIR=/private/tmp` resolved those cases. The complete root
+`cargo test --no-fail-fast` run then finished with exactly two failed targets:
+clibox's `wait` integration target (two failures) and clibox-wait's library
+target (one failure), all reporting `DnsConfiguration` while initializing the
+system resolver. Every other target passed; these failures are outside the
+desktop launcher change and are not hidden by a passing focused suite. Generated
+desktop/client `dist` and temporary smoke data were removed after verification.
+No successful fresh-server connection, responsive native Quit, macOS x64/13
+runtime, Windows/Linux runtime or production signing is claimed.
