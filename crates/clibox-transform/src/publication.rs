@@ -38,9 +38,6 @@ impl Publication {
         let Some(path) = &publication.destination else {
             return Ok((publication, None));
         };
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        let original = inspect(path, replace)?;
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         inspect(path, replace)?;
         let parent = path
             .parent()
@@ -73,10 +70,6 @@ impl Publication {
                     staging_io_error("set-staging-file-mode", error, Code::Permissions)
                 })?;
 
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            if original.is_none() {
-                inherit_new_output_permissions(parent, temporary)?;
-            }
             temporary.as_file().try_clone().map_err(|error| {
                 staging_io_error("open-staging-writer", error, Code::WriteFailed)
             })?
@@ -146,6 +139,18 @@ impl Publication {
                 readonly = original.metadata.permissions().readonly();
             }
             preserve_permissions(&original, &temporary_path)?;
+        } else {
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            {
+                // The destination may have disappeared after prepare. Match
+                // direct-parent creation semantics from the final state, not
+                // the state observed before transformation bytes were written.
+                let parent = path
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or(Path::new("."));
+                inherit_new_output_permissions(parent, self.temporary.as_ref().unwrap())?;
+            }
         }
         // Cancellation during flushing/permission work must still prevent publication.
         before_commit()?;
@@ -1071,6 +1076,85 @@ mod tests {
             .success());
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn missing_destination_at_publish_gets_parent_inherited_acl() {
+        use std::{
+            ffi::{CStr, CString},
+            os::unix::ffi::OsStrExt,
+            process::Command,
+        };
+
+        unsafe extern "C" {
+            fn acl_get_link_np(path: *const libc::c_char, kind: libc::c_int) -> *mut libc::c_void;
+            fn acl_to_text(acl: *mut libc::c_void, length: *mut libc::ssize_t)
+                -> *mut libc::c_char;
+            fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
+        }
+        fn acl_text(path: &Path) -> String {
+            let path = CString::new(path.as_os_str().as_bytes()).unwrap();
+            unsafe {
+                let acl = acl_get_link_np(path.as_ptr(), 0x100);
+                assert!(
+                    !acl.is_null(),
+                    "ACL query failed: {}",
+                    io::Error::last_os_error()
+                );
+                let text = acl_to_text(acl, std::ptr::null_mut());
+                assert!(!text.is_null());
+                let value = CStr::from_ptr(text).to_string_lossy().into_owned();
+                acl_free(text.cast());
+                acl_free(acl);
+                value
+            }
+        }
+
+        let directory = tempfile::tempdir().unwrap();
+        assert!(Command::new("/bin/chmod")
+            .args([
+                "+a",
+                "everyone allow read,readattr,readextattr,readsecurity,file_inherit"
+            ])
+            .arg(directory.path())
+            .status()
+            .unwrap()
+            .success());
+        let expected_probe = Builder::new()
+            .prefix(".clibox-expected-")
+            .tempfile_in(directory.path())
+            .unwrap();
+        let expected_acl = acl_text(expected_probe.path());
+        let expected_mode = fs::metadata(expected_probe.path()).unwrap().permissions();
+        drop(expected_probe);
+        assert!(expected_acl.contains("everyone:") && expected_acl.contains(":allow"));
+
+        let path = directory.path().join("destination");
+        fs::write(&path, b"original").unwrap();
+        assert!(Command::new("/bin/chmod")
+            .args(["-N"])
+            .arg(&path)
+            .status()
+            .unwrap()
+            .success());
+        let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
+        file.as_mut().unwrap().write_all(b"replacement").unwrap();
+        drop(file);
+        fs::remove_file(&path).unwrap();
+
+        publication.publish(|| Ok(())).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"replacement");
+        assert_eq!(acl_text(&path), expected_acl);
+        assert_eq!(fs::metadata(&path).unwrap().permissions(), expected_mode);
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+        assert!(Command::new("/bin/chmod")
+            .args(["-RN"])
+            .arg(&path)
+            .status()
+            .unwrap()
+            .success());
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_posix_access_acl_is_preserved() {
@@ -1123,6 +1207,102 @@ mod tests {
             acl.len() as isize
         );
         assert_eq!(actual, acl);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_missing_destination_at_publish_gets_parent_inherited_acl() {
+        use std::{
+            ffi::CString,
+            os::{fd::AsRawFd, unix::ffi::OsStrExt},
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        // Give direct children a named-user ACL. tempfile's 0600 creation mode
+        // masks its effective group-class rights, but the inherited access ACL
+        // remains observable and must be copied to the published new output.
+        let mut default_acl = 2u32.to_le_bytes().to_vec();
+        for (tag, permissions, id) in [
+            (1u16, 7u16, u32::MAX),
+            (2, 4, 65534),
+            (4, 0, u32::MAX),
+            (16, 4, u32::MAX),
+            (32, 0, u32::MAX),
+        ] {
+            default_acl.extend_from_slice(&tag.to_le_bytes());
+            default_acl.extend_from_slice(&permissions.to_le_bytes());
+            default_acl.extend_from_slice(&id.to_le_bytes());
+        }
+        let directory_path = CString::new(dir.path().as_os_str().as_bytes()).unwrap();
+        let default_key = c"system.posix_acl_default";
+        assert_eq!(
+            unsafe {
+                libc::setxattr(
+                    directory_path.as_ptr(),
+                    default_key.as_ptr(),
+                    default_acl.as_ptr().cast(),
+                    default_acl.len(),
+                    0,
+                )
+            },
+            0,
+            "could not set fixture default ACL: {}",
+            io::Error::last_os_error()
+        );
+
+        let expected_probe = Builder::new()
+            .prefix(".clibox-expected-")
+            .tempfile_in(dir.path())
+            .unwrap();
+        let key = c"system.posix_acl_access";
+        let expected_len = unsafe {
+            libc::fgetxattr(
+                expected_probe.as_file().as_raw_fd(),
+                key.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        assert!(expected_len > 0);
+        let mut expected_acl = vec![0; expected_len as usize];
+        assert_eq!(
+            unsafe {
+                libc::fgetxattr(
+                    expected_probe.as_file().as_raw_fd(),
+                    key.as_ptr(),
+                    expected_acl.as_mut_ptr().cast(),
+                    expected_acl.len(),
+                )
+            },
+            expected_len
+        );
+        drop(expected_probe);
+
+        let path = dir.path().join("destination");
+        fs::write(&path, b"original").unwrap();
+        let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
+        file.as_mut().unwrap().write_all(b"replacement").unwrap();
+        drop(file);
+        fs::remove_file(&path).unwrap();
+
+        publication.publish(|| Ok(())).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"replacement");
+        let output = fs::OpenOptions::new().read(true).open(&path).unwrap();
+        let mut actual = vec![0; expected_acl.len()];
+        assert_eq!(
+            unsafe {
+                libc::fgetxattr(
+                    output.as_raw_fd(),
+                    key.as_ptr(),
+                    actual.as_mut_ptr().cast(),
+                    actual.len(),
+                )
+            },
+            expected_acl.len() as isize
+        );
+        assert_eq!(actual, expected_acl);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[cfg(windows)]
