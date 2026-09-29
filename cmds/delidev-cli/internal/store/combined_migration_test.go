@@ -52,7 +52,7 @@ func TestMigrationPreservesBothVersion23Layouts(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := s.db.Exec("DELETE FROM entities WHERE kind='provider' AND json_extract(body,'$.preset_id')='anthropic'; PRAGMA user_version=23;"); err != nil {
+			if _, err := s.db.Exec("DELETE FROM entities WHERE kind='provider' AND json_extract(body,'$.preset_id')='anthropic'; DROP TABLE IF EXISTS native_accounting; PRAGMA user_version=23;"); err != nil {
 				t.Fatal(err)
 			}
 			if err := s.Close(); err != nil {

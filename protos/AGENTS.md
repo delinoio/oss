@@ -140,3 +140,5 @@
 - DeliDev `RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose typed durable creation observations without changing legacy synchronous `CreateBackup`. Reserved image IDs are not publication proof; retain pending/succeeded/failed enum states, exact request IDs and revisions, bounded actor-bound cursors, and decimal-safe uint64 values. Follow `docs/cmds-delidev-storage-contract.md`.
 
 - DeliDev provider activation follows `docs/cmds-delidev-provider-activation-contract.md`: provider inventory is owner/client-only and capability-bearing; provider ID scopes only account list pages; the optional enabled-provider model filter remains additive and cursor-bound. Generate all Go and TypeScript bindings from the canonical proto.
+
+- DeliDev native accounting requires explicit NATIVE_UNITS_V1 request/response negotiation and the corresponding SystemCapability. Keep AccountingUnitKind and measured/unavailable unit counts distinct from legacy response fields, preserve exact decimal totals and unavailable Grok costs, expose no private source references, and regenerate both clients. Follow the usage contract.

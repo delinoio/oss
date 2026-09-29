@@ -111,7 +111,11 @@ func TestCLISearchRetainedConversationsAndFilters(t *testing.T) {
 	if !ok || analytics["time_zone"] != "Asia/Seoul" || len(analytics["days"].([]any)) == 0 {
 		t.Fatal("daily usage CLI omitted server analytics", dailyResult)
 	}
-	for _, bad := range [][]string{{"usage"}, {"usage", "summary", "--from", "yesterday"}, {"usage", "summary", "--account-id", "invalid"}, {"usage", "summary", "--project-id", string(domain.NewID()), "--general-chat"}, {"usage", "summary", "--timezone", "UTC"}, {"usage", "summary", "--granularity", "day"}, {"usage", "summary", "--granularity", "hour", "--timezone", "UTC"}} {
+	nativeCode, nativeResult := cliRun(t, root, []string{"usage", "summary", "--accounting-profile", "native-units-v1"}, "")
+	if nativeCode != 0 || nativeResult["result"].(map[string]any)["accounting_profile"] != "USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1" {
+		t.Fatal("CLI lost negotiated accounting profile", nativeResult)
+	}
+	for _, bad := range [][]string{{"usage", "summary", "--accounting-profile", "unknown"}, {"usage"}, {"usage", "summary", "--from", "yesterday"}, {"usage", "summary", "--account-id", "invalid"}, {"usage", "summary", "--project-id", string(domain.NewID()), "--general-chat"}, {"usage", "summary", "--timezone", "UTC"}, {"usage", "summary", "--granularity", "day"}, {"usage", "summary", "--granularity", "hour", "--timezone", "UTC"}} {
 		if code, _ := cliRun(t, root, bad, ""); code == 0 {
 			t.Fatal("invalid usage scope accepted", bad)
 		}

@@ -132,7 +132,7 @@ func TestResponseUsageMigrationPreservesHistoryWithoutInventingRequests(t *testi
 		t.Run(map[bool]string{false: "migrate", true: "rollback"}[conflict], func(t *testing.T) {
 			s, root := openTest(t)
 			f := seedSearch(t, s, "pre-migration", domain.Archived)
-			if _, err := s.db.Exec(dropPricingFixtureSchema + "DROP TABLE response_usage; PRAGMA user_version=13;"); err != nil {
+			if _, err := s.db.Exec(dropPricingFixtureSchema + "DROP TABLE response_usage; DROP TABLE IF EXISTS native_accounting; PRAGMA user_version=13;"); err != nil {
 				t.Fatal(err)
 			}
 			if conflict {

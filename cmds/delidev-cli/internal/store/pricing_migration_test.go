@@ -22,7 +22,7 @@ func TestPricingMigrationNeverInventsHistoricalBasis(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = s.db.Exec(dropPricingFixtureSchema + "PRAGMA user_version=14;"); err != nil {
+			if _, err = s.db.Exec(dropPricingFixtureSchema + "DROP TABLE IF EXISTS native_accounting; PRAGMA user_version=14;"); err != nil {
 				t.Fatal(err)
 			}
 			if conflict {

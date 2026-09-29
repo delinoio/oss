@@ -174,7 +174,7 @@ func TestSearchMigrationBackfillsAndBacksUpWithoutRewritingMessages(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = s.db.Exec(dropSearchFixtureSchema + "PRAGMA user_version=12;"); err != nil {
+			if _, err = s.db.Exec(dropSearchFixtureSchema + "DROP TABLE IF EXISTS native_accounting; PRAGMA user_version=12;"); err != nil {
 				t.Fatal(err)
 			}
 			if conflict {

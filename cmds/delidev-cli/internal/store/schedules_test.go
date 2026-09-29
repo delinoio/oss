@@ -191,7 +191,7 @@ func TestScheduleMigrationPreservesV10InboxAndRefusesUnknownScheduleState(t *tes
 					t.Fatal(err)
 				}
 			}
-			if _, err := s.db.Exec(dropScheduleFixtureSchema + "PRAGMA user_version=10"); err != nil {
+			if _, err := s.db.Exec(dropScheduleFixtureSchema + "DROP TABLE IF EXISTS native_accounting; PRAGMA user_version=10"); err != nil {
 				t.Fatal(err)
 			}
 			s.Close()

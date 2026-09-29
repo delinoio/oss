@@ -3191,3 +3191,30 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+### Issue #1100 native Grok accounting (2026-09-30)
+
+The implementation adds future-only GrokClosedInput retention after original
+closed first-text history and owned cleanup, with distinct negotiated Codex and
+Grok totals across RPC/CLI/desktop usage views. Fixtures retain response input
+11/output 5 independently from total 16, measured zero and maximum uint64, reject
+changed/missing history and incomplete cleanup, exclude pre-text/partial-text Stop
+and success racing Stop, replay the completion once, reopen retained state and
+preserve original attribution. A mixed Codex/Grok fixture preserves legacy Codex
+20 and Grok 16 as separate kinds without adding a Grok price or response count.
+Migration fixtures reconstruct their actual pre-accounting table inventories;
+schema 25 preserves raw historical bytes, publishes a valid pre-migration backup
+and inserts no historical units. A foreign accounting layout is rejected.
+
+Executed focused race validation passed for domain unsigned accounting,
+store migration/no-backfill and server Grok/mixed accounting tests. The ordinary
+store suite passed after legacy migration-fixture updates. Go vet passed for
+`./cmds/delidev-cli/...`. The isolated Usage, Grok accounting and Settings
+integration frontend suites passed (19 tests); an initial full frontend run had
+one unrelated Settings integration wait failure under concurrent test load.
+Final full-suite and protocol evidence is recorded below when complete.
+
+These are temporary SQLite, controlled publication/provider and jsdom fixtures;
+no real Grok account, installed native inference, native desktop visual,
+other-platform or release acceptance was performed. Existing native original
+history/cleanup adapters are reused without broadening their first-text profile.
