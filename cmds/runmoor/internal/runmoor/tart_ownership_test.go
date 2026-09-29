@@ -139,6 +139,115 @@ func TestTartOwnershipIsRecheckedAfterVMInspection(t *testing.T) {
 	}
 }
 
+func TestTartOwnedCommandUsesTheVerifiedDirectoryAfterNameReplacement(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	driver, fixture := fakeTart(c)
+	ownedBackup := vmPath(c, name) + ".owned"
+	foreignFile := filepath.Join(vmPath(c, name), "foreign-data")
+	var aliasedName string
+	fixture.beforePinned = func(args []string, _ *os.File) {
+		if len(args) < 2 || args[0] != "set" {
+			t.Errorf("pinned Tart arguments = %q, want set against an alias", args)
+			return
+		}
+		aliasedName = args[1]
+		if aliasedName == name {
+			t.Error("Tart still received the replaceable VM name")
+		}
+		if target, err := os.Readlink(filepath.Join(c.Storage.Data, "tart", "vms", aliasedName)); err != nil || target != "/dev/fd/3" {
+			t.Errorf("pinned alias target = %q, %v", target, err)
+		}
+		if err := os.Rename(vmPath(c, name), ownedBackup); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := os.WriteFile(foreignFile, []byte("foreign VM"), 0600); err != nil {
+			t.Error(err)
+		}
+	}
+	_, err := driver.runOwned(context.Background(), c, s.View().Installation, id, name, []string{"set", name, "--cpu", "2"}, nil)
+	requireCode(t, err, ErrOwnership)
+	if aliasedName == "" {
+		t.Fatal("owned Tart command did not use the pinned command executor")
+	}
+	backupInfo, err := os.Stat(ownedBackup)
+	if err != nil || fixture.pinnedSetIdentity != name || fixture.pinnedSetInfo == nil || !os.SameFile(fixture.pinnedSetInfo, backupInfo) {
+		t.Fatal("the Tart operation was not bound to the verified VM descriptor", err)
+	}
+	if _, err = os.Stat(foreignFile); err != nil {
+		t.Fatal("replacement VM data was removed", err)
+	}
+}
+
+func TestTartStartUsesTheVerifiedDirectoryAfterNameReplacement(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	driver, fixture := fakeTart(c)
+	ownedBackup := vmPath(c, name) + ".owned"
+	foreignFile := filepath.Join(vmPath(c, name), "foreign-data")
+	var aliasedName string
+	fixture.beforeStartPinned = func(args []string, _ *os.File) {
+		if len(args) == 0 || args[len(args)-1] == name {
+			t.Errorf("Tart start arguments = %q, want a pinned alias", args)
+			return
+		}
+		aliasedName = args[len(args)-1]
+		if target, err := os.Readlink(filepath.Join(c.Storage.Data, "tart", "vms", aliasedName)); err != nil || target != "/dev/fd/3" {
+			t.Errorf("pinned start alias target = %q, %v", target, err)
+		}
+		if err := os.Rename(vmPath(c, name), ownedBackup); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := os.WriteFile(foreignFile, []byte("foreign VM"), 0600); err != nil {
+			t.Error(err)
+		}
+	}
+	_, err := driver.startOwned(c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
+	requireCode(t, err, ErrOwnership)
+	if aliasedName != tartRunAlias(id) {
+		t.Fatalf("Tart start alias = %q, want %q", aliasedName, tartRunAlias(id))
+	}
+	if !fixture.running[name] {
+		t.Fatal("Tart did not start the VM reached through the verified descriptor")
+	}
+	if _, err = os.Stat(foreignFile); err != nil {
+		t.Fatal("replacement VM data was removed", err)
+	}
+	if err = removeTartRunAlias(c, tartRunAlias(id)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTartRejectsInvalidEmbeddedOwnershipMarkers(t *testing.T) {
 	for _, mode := range []string{"missing", "corrupt", "symlink", "unsafe permissions", "wrong installation", "wrong entity", "wrong VM"} {
 		t.Run(mode, func(t *testing.T) {

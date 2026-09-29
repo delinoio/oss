@@ -23,12 +23,27 @@ type CommandExecutor interface {
 	Run(context.Context, string, []string, []string, io.Reader) ([]byte, error)
 	Start(string, []string, []string) (int, error)
 }
+
+// PinnedCommandExecutor lets an owned Tart operation keep the verified VM
+// directory open across Tart's name lookup. The descriptor is exposed to Tart
+// as fd 3 by os/exec and the corresponding VM name resolves through /dev/fd/3.
+type PinnedCommandExecutor interface {
+	RunPinned(context.Context, string, []string, []string, io.Reader, *os.File) ([]byte, error)
+	StartPinned(string, []string, []string, *os.File) (int, error)
+}
 type OSCommand struct{}
 
 func (OSCommand) Run(ctx context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
+	return runOSCommand(ctx, name, args, env, in, nil)
+}
+func (OSCommand) RunPinned(ctx context.Context, name string, args, env []string, in io.Reader, dir *os.File) ([]byte, error) {
+	return runOSCommand(ctx, name, args, env, in, []*os.File{dir})
+}
+func runOSCommand(ctx context.Context, name string, args, env []string, in io.Reader, files []*os.File) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = env
 	cmd.Stdin = in
+	cmd.ExtraFiles = files
 	out := &boundedBuffer{Limit: 64 << 10}
 	cmd.Stdout = out
 	cmd.Stderr = io.Discard
@@ -36,8 +51,15 @@ func (OSCommand) Run(ctx context.Context, name string, args, env []string, in io
 	return out.Bytes(), err
 }
 func (OSCommand) Start(name string, args, env []string) (int, error) {
+	return startOSCommand(name, args, env, nil)
+}
+func (OSCommand) StartPinned(name string, args, env []string, dir *os.File) (int, error) {
+	return startOSCommand(name, args, env, []*os.File{dir})
+}
+func startOSCommand(name string, args, env []string, files []*os.File) (int, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Env = env
+	cmd.ExtraFiles = files
 	// A detached process must inherit real null descriptors. io.Discard makes
 	// os/exec create parent-owned pipes that close on manager exit and can
 	// terminate a surviving VM with SIGPIPE when it next writes a diagnostic.
@@ -225,27 +247,53 @@ func vmDirectoryInfo(c Config, name string) (os.FileInfo, error) {
 	return info, nil
 }
 
-func verifyVMOwnerAt(c Config, pathName, identityName, installation, entity string) error {
+func openVerifiedVMOwnerAt(c Config, pathName, identityName, installation, entity string) (*os.File, error) {
 	if !safeName.MatchString(pathName) || !safeName.MatchString(identityName) {
-		return ambiguousVMOwnership()
+		return nil, ambiguousVMOwnership()
 	}
 	if err := verifyVMOwnerRecord(c, identityName, installation, entity); err != nil {
-		return err
+		return nil, err
 	}
 	before, err := vmDirectoryInfo(c, pathName)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	b, err := readPrivate(vmOwnerMarkerPath(c, pathName), 4096)
+	dir, err := openTartVMDirectory(vmPath(c, pathName))
+	if err != nil {
+		return nil, ambiguousVMOwnership()
+	}
+	keepOpen := false
+	defer func() {
+		if !keepOpen {
+			_ = dir.Close()
+		}
+	}()
+	opened, err := dir.Stat()
+	if err != nil || !os.SameFile(before, opened) {
+		return nil, ambiguousVMOwnership()
+	}
+	b, err := readTartVMOwnerMarker(dir, 4096)
 	var marker vmOwner
 	if err != nil || json.Unmarshal(b, &marker) != nil || marker != (vmOwner{installation, entity, identityName}) {
-		return ambiguousVMOwnership()
+		return nil, ambiguousVMOwnership()
 	}
 	after, err := vmDirectoryInfo(c, pathName)
 	if err != nil || !os.SameFile(before, after) {
-		return ambiguousVMOwnership()
+		return nil, ambiguousVMOwnership()
 	}
-	return verifyVMOwnerRecord(c, identityName, installation, entity)
+	if err = verifyVMOwnerRecord(c, identityName, installation, entity); err != nil {
+		return nil, err
+	}
+	keepOpen = true
+	return dir, nil
+}
+
+func verifyVMOwnerAt(c Config, pathName, identityName, installation, entity string) error {
+	dir, err := openVerifiedVMOwnerAt(c, pathName, identityName, installation, entity)
+	if dir != nil {
+		_ = dir.Close()
+	}
+	return err
 }
 
 func verifyVMOwner(c Config, name, installation, entity string) error {
@@ -307,25 +355,136 @@ func publishVMOwnerMarker(c Config, name, installation, entity string) error {
 }
 
 func (t *TartDriver) runOwned(ctx context.Context, c Config, installation, entity, name string, args []string, in io.Reader) ([]byte, error) {
-	if err := verifyVMOwner(c, name, installation, entity); err != nil {
+	return t.runOwnedAt(ctx, c, name, name, installation, entity, args, in)
+}
+
+func (t *TartDriver) runOwnedAt(ctx context.Context, c Config, pathName, identityName, installation, entity string, args []string, in io.Reader) ([]byte, error) {
+	dir, err := openVerifiedVMOwnerAt(c, pathName, identityName, installation, entity)
+	if err != nil {
 		return nil, err
 	}
-	b, runErr := t.run(ctx, c, args, in)
-	if err := verifyVMOwner(c, name, installation, entity); err != nil {
+	defer dir.Close()
+	alias, cleanupAlias, err := createTartCommandAlias(c, "rm-op-"+newID())
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupAlias()
+	pinnedArgs, replaced := replaceCommandVMName(args, pathName, alias)
+	if !replaced {
+		return nil, ambiguousVMOwnership()
+	}
+	executor, ok := t.Exec.(PinnedCommandExecutor)
+	if !ok {
+		return nil, problem(ErrDependency, "The Tart command runner cannot bind operations to an owned VM.", "Use the supported Runmoor release and preserve the VM until its ownership can be verified.")
+	}
+	b, runErr := executor.RunPinned(ctx, c.TartExecutable, pinnedArgs, tartEnv(c), in, dir)
+	if runErr != nil {
+		runErr = problem(ErrDependency, "Tart command failed.", "Check Tart 2.x.x, Guest Agent RPC and the private VM directory.")
+	}
+	if err := verifyVMOwnerAt(c, pathName, identityName, installation, entity); err != nil {
 		return nil, err
 	}
 	return b, runErr
 }
 
-func (t *TartDriver) runOwnedAt(ctx context.Context, c Config, pathName, identityName, installation, entity string, args []string, in io.Reader) ([]byte, error) {
-	if err := verifyVMOwnerAt(c, pathName, identityName, installation, entity); err != nil {
-		return nil, err
+func replaceCommandVMName(args []string, original, replacement string) ([]string, bool) {
+	result := append([]string(nil), args...)
+	replaced := false
+	for i, arg := range result {
+		if arg == original {
+			result[i] = replacement
+			replaced = true
+		}
 	}
-	b, runErr := t.run(ctx, c, args, in)
-	if err := verifyVMOwnerAt(c, pathName, identityName, installation, entity); err != nil {
-		return nil, err
+	return result, replaced
+}
+
+func (t *TartDriver) startOwned(c Config, name, installation, entity string, args []string) (int, error) {
+	dir, err := openVerifiedVMOwnerAt(c, name, name, installation, entity)
+	if err != nil {
+		return 0, err
 	}
-	return b, runErr
+	defer dir.Close()
+	current, err := t.vmOwned(context.Background(), c, name, installation, entity)
+	if err != nil {
+		return 0, err
+	}
+	if current.Running {
+		return 0, problem(ErrPreparation, "The owned Tart VM is already running.", "Wait for it to stop before starting it again.")
+	}
+	alias := tartRunAlias(entity)
+	if err = removeStaleTartRunAlias(c, alias); err != nil {
+		return 0, err
+	}
+	if _, _, err = createTartCommandAlias(c, alias); err != nil {
+		return 0, err
+	}
+	pinnedArgs, replaced := replaceCommandVMName(args, name, alias)
+	if !replaced {
+		_ = removeTartRunAlias(c, alias)
+		return 0, ambiguousVMOwnership()
+	}
+	executor, ok := t.Exec.(PinnedCommandExecutor)
+	if !ok {
+		_ = removeTartRunAlias(c, alias)
+		return 0, problem(ErrDependency, "The Tart command runner cannot bind operations to an owned VM.", "Use the supported Runmoor release and preserve the VM until its ownership can be verified.")
+	}
+	pid, runErr := executor.StartPinned(c.TartExecutable, pinnedArgs, tartEnv(c), dir)
+	if runErr != nil {
+		_ = removeTartRunAlias(c, alias)
+		return 0, problem(ErrDependency, "Tart command failed.", "Check Tart 2.x.x, Guest Agent RPC and the private VM directory.")
+	}
+	if err = verifyVMOwnerAt(c, name, name, installation, entity); err != nil {
+		return 0, err
+	}
+	return pid, nil
+}
+
+func tartRunAlias(entity string) string { return "rm-run-" + entity }
+
+func createTartCommandAlias(c Config, alias string) (string, func(), error) {
+	if !safeName.MatchString(alias) {
+		return "", nil, ambiguousVMOwnership()
+	}
+	vmRoot := filepath.Join(c.Storage.Data, "tart", "vms")
+	if err := privateDir(vmRoot); err != nil {
+		return "", nil, err
+	}
+	path := filepath.Join(vmRoot, alias)
+	if err := os.Symlink("/dev/fd/3", path); err != nil {
+		if os.IsExist(err) {
+			return "", nil, ambiguousVMOwnership()
+		}
+		return "", nil, problem(ErrPermission, "Cannot create a private Tart VM identity alias.", "Check Tart storage permissions and preserve the owned VM.")
+	}
+	return alias, func() {
+		if target, err := os.Readlink(path); err == nil && target == "/dev/fd/3" {
+			_ = os.Remove(path)
+		}
+	}, nil
+}
+
+func removeTartRunAlias(c Config, alias string) error {
+	path := filepath.Join(c.Storage.Data, "tart", "vms", alias)
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return ambiguousVMOwnership()
+	}
+	target, err := os.Readlink(path)
+	if err != nil || target != "/dev/fd/3" {
+		return ambiguousVMOwnership()
+	}
+	if err = os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return problem(ErrCleanup, "Cannot remove the stopped Tart VM identity alias.", "Preserve the VM and inspect its private Tart storage before retrying.")
+	}
+	return nil
+}
+
+func removeStaleTartRunAlias(c Config, alias string) error {
+	return removeTartRunAlias(c, alias)
 }
 
 func (t *TartDriver) vmOwned(ctx context.Context, c Config, name, installation, entity string) (vmInfo, error) {
@@ -350,17 +509,6 @@ func (t *TartDriver) vmOwnedAt(ctx context.Context, c Config, pathName, identity
 		return v, problem(ErrDependency, "Tart returned an incompatible VM description.", "Check the installed Tart 2.x.x release.")
 	}
 	return v, nil
-}
-
-func (t *TartDriver) startOwned(c Config, name, installation, entity string, args []string) (int, error) {
-	if err := verifyVMOwner(c, name, installation, entity); err != nil {
-		return 0, err
-	}
-	pid, runErr := t.Exec.Start(c.TartExecutable, args, tartEnv(c))
-	if err := verifyVMOwner(c, name, installation, entity); err != nil {
-		return 0, err
-	}
-	return pid, runErr
 }
 
 func imageDigestOwned(ctx context.Context, c Config, name, installation, entity string) (string, error) {
@@ -578,6 +726,9 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 	if e != nil {
 		return e
 	}
+	if !v.Running {
+		return removeTartRunAlias(c, tartRunAlias(r.ID))
+	}
 	if v.Running {
 		// Tart addresses VMs by name. Recheck after get and immediately before
 		// stopping so a name replacement during inspection is left untouched.
@@ -591,7 +742,7 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 			return e
 		}
 		if !v.Running {
-			return nil
+			return removeTartRunAlias(c, tartRunAlias(r.ID))
 		}
 		if !waitContext(ctx, 200*time.Millisecond) {
 			return problem(ErrCleanup, "Tart VM termination could not be confirmed.", "Restore Tart access and retry cleanup; its reservation remains held.")
@@ -730,6 +881,9 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 		return problem(ErrCleanup, "Cannot inspect the Tart cleanup directory.", "Check private data directory permissions; its reservation remains held.")
 	}
 	if err := cleanupTartVMAt(ctx, t, c, deletionName, name, s.Installation, r.ID); err != nil {
+		return err
+	}
+	if err := removeTartRunAlias(c, tartRunAlias(r.ID)); err != nil {
 		return err
 	}
 	return removeVMOwnerRecord(c, name, s.Installation, r.ID)

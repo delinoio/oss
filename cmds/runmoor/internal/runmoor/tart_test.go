@@ -13,15 +13,19 @@ import (
 )
 
 type tartFixture struct {
-	mu           sync.Mutex
-	c            Config
-	running      map[string]bool
-	commands     [][]string
-	jit          string
-	version      string
-	rejectGuest  bool
-	afterGet     func(string)
-	beforeDelete func(string)
+	mu                sync.Mutex
+	c                 Config
+	running           map[string]bool
+	commands          [][]string
+	jit               string
+	version           string
+	rejectGuest       bool
+	afterGet          func(string)
+	beforeDelete      func(string)
+	beforePinned      func([]string, *os.File)
+	beforeStartPinned func([]string, *os.File)
+	pinnedSetIdentity string
+	pinnedSetInfo     os.FileInfo
 }
 
 func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
@@ -104,6 +108,60 @@ func (f *tartFixture) Start(_ string, args, env []string) (int, error) {
 	f.running[args[len(args)-1]] = true
 	return 123, nil
 }
+func (f *tartFixture) canonicalPinnedArgs(args, env []string, dir *os.File) ([]string, error) {
+	b, err := readTartVMOwnerMarker(dir, 4096)
+	if err != nil {
+		return nil, err
+	}
+	var owner vmOwner
+	if err = json.Unmarshal(b, &owner); err != nil {
+		return nil, err
+	}
+	home := filepath.Join(f.c.Storage.Data, "tart")
+	for _, value := range env {
+		if strings.HasPrefix(value, "TART_HOME=") {
+			home = strings.TrimPrefix(value, "TART_HOME=")
+		}
+	}
+	result := append([]string(nil), args...)
+	for i, arg := range result {
+		if target, linkErr := os.Readlink(filepath.Join(home, "vms", arg)); linkErr == nil && target == "/dev/fd/3" {
+			result[i] = owner.VM
+		}
+	}
+	return result, nil
+}
+func (f *tartFixture) RunPinned(ctx context.Context, name string, args, env []string, in io.Reader, dir *os.File) ([]byte, error) {
+	if f.beforePinned != nil {
+		hook := f.beforePinned
+		f.beforePinned = nil
+		hook(args, dir)
+	}
+	canonical, err := f.canonicalPinnedArgs(args, env, dir)
+	if err != nil {
+		return nil, err
+	}
+	if len(canonical) > 0 && canonical[0] == "set" {
+		f.pinnedSetIdentity = canonical[1]
+		f.pinnedSetInfo, err = dir.Stat()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return f.Run(ctx, name, canonical, env, in)
+}
+func (f *tartFixture) StartPinned(name string, args, env []string, dir *os.File) (int, error) {
+	if f.beforeStartPinned != nil {
+		hook := f.beforeStartPinned
+		f.beforeStartPinned = nil
+		hook(args, dir)
+	}
+	canonical, err := f.canonicalPinnedArgs(args, env, dir)
+	if err != nil {
+		return 0, err
+	}
+	return f.Start(name, canonical, env)
+}
 func fakeTart(c Config) (*TartDriver, *tartFixture) {
 	f := &tartFixture{c: c, running: map[string]bool{}, version: "2.37.0"}
 	return &TartDriver{Exec: f, HostCheck: func(context.Context) error { return nil }}, f
@@ -156,6 +214,14 @@ func (f *startingTartCommand) Start(string, []string, []string) (int, error) {
 	f.started = true
 	return 123, nil
 }
+func (f *startingTartCommand) StartPinned(name string, args, env []string, dir *os.File) (int, error) {
+	f.started = true
+	canonical, err := f.tartFixture.canonicalPinnedArgs(args, env, dir)
+	if err != nil {
+		return 0, err
+	}
+	return f.tartFixture.Start(name, canonical, env)
+}
 func (f *startingTartCommand) Run(ctx context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
 	if f.started && args[0] == "get" {
 		f.polls++
@@ -166,6 +232,18 @@ func (f *startingTartCommand) Run(ctx context.Context, name string, args, env []
 		}
 	}
 	return f.tartFixture.Run(ctx, name, args, env, in)
+}
+func (f *startingTartCommand) RunPinned(ctx context.Context, name string, args, env []string, in io.Reader, dir *os.File) ([]byte, error) {
+	if f.beforePinned != nil {
+		hook := f.beforePinned
+		f.beforePinned = nil
+		hook(args, dir)
+	}
+	canonical, err := f.tartFixture.canonicalPinnedArgs(args, env, dir)
+	if err != nil {
+		return nil, err
+	}
+	return f.Run(ctx, name, canonical, env, in)
 }
 
 func TestImageOpenWaitsForConfirmedVMStartup(t *testing.T) {

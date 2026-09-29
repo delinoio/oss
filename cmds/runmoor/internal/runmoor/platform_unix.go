@@ -74,6 +74,36 @@ func privateVMDirectory(path string) (os.FileInfo, error) {
 	}
 	return st, nil
 }
+func openTartVMDirectory(path string) (*os.File, error) {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), path)
+	info, err := f.Stat()
+	if err != nil || !info.IsDir() || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		_ = f.Close()
+		return nil, os.ErrPermission
+	}
+	return f, nil
+}
+func readTartVMOwnerMarker(dir *os.File, limit int64) ([]byte, error) {
+	fd, err := unix.Openat(int(dir.Fd()), vmOwnerMarkerName, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), vmOwnerMarkerName)
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		return nil, os.ErrPermission
+	}
+	b, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil || int64(len(b)) > limit {
+		return nil, os.ErrInvalid
+	}
+	return b, nil
+}
 func syncPrivateDir(path string) error {
 	dir, err := os.Open(path)
 	if err != nil {

@@ -93,6 +93,24 @@ func (c cancelBeforeDigestCommand) Run(ctx context.Context, name string, args, e
 	}
 	return out, err
 }
+func (c cancelBeforeDigestCommand) RunPinned(ctx context.Context, name string, args, env []string, in io.Reader, dir *os.File) ([]byte, error) {
+	executor, ok := c.CommandExecutor.(PinnedCommandExecutor)
+	if !ok {
+		return nil, errors.New("fixture does not support pinned Tart commands")
+	}
+	out, err := executor.RunPinned(ctx, name, args, env, in, dir)
+	if len(args) > 0 && args[0] == "get" {
+		c.cancel()
+	}
+	return out, err
+}
+func (c cancelBeforeDigestCommand) StartPinned(name string, args, env []string, dir *os.File) (int, error) {
+	executor, ok := c.CommandExecutor.(PinnedCommandExecutor)
+	if !ok {
+		return 0, errors.New("fixture does not support pinned Tart commands")
+	}
+	return executor.StartPinned(name, args, env, dir)
+}
 
 func TestTartPreparationCancelsBeforeDigestAndClone(t *testing.T) {
 	c, s := fixtureStore(t)
