@@ -66,6 +66,10 @@ func (s *Store) ListAccountsByProviderPage(ctx context.Context, filter Filter, p
 		var err error
 		query := "SELECT " + recordColumns + " FROM entities WHERE kind='account' AND json_extract(body,'$.provider_id')=?"
 		args := []any{provider}
+		if filter.AccountType != "" {
+			query += " AND json_extract(body,'$.type')=?"
+			args = append(args, filter.AccountType)
+		}
 		if filter.SessionID != "" {
 			query += " AND session_id=?"
 			args = append(args, filter.SessionID)

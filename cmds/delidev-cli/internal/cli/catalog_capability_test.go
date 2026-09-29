@@ -62,6 +62,26 @@ func TestAccountListProviderFilterRequiresInventoryCapability(t *testing.T) {
 	if resources.calls != 1 || resources.request.ProviderId != id {
 		t.Fatalf("supported provider filter was not sent: %+v", resources.request)
 	}
+
+	resources.calls = 0
+	provider.capabilities = []pb.ProviderInventoryCapability{pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER}
+	if _, err := listWithProviderFilter(context.Background(), c, filter, id, pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API); domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatalf("legacy server ignored account-type filtering: %v", err)
+	}
+	if resources.calls != 0 || provider.inventoryCalls != 4 {
+		t.Fatalf("account list ran before type capability check: resources=%d inventory=%d", resources.calls, provider.inventoryCalls)
+	}
+
+	provider.capabilities = []pb.ProviderInventoryCapability{
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER,
+	}
+	if _, err := listWithProviderFilter(context.Background(), c, filter, id, pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API); err != nil {
+		t.Fatal(err)
+	}
+	if resources.calls != 1 || resources.request.ProviderId != id || resources.request.AccountType != pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API {
+		t.Fatalf("supported account filters were not sent together: %+v", resources.request)
+	}
 }
 
 func TestEnabledProviderModelSearchRequiresInventoryCapability(t *testing.T) {

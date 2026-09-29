@@ -29,7 +29,7 @@ func resourceWireSize(resource *pb.Resource) (int, error) {
 	return max(proto.Size(resource), len(encoded)) + 16, nil
 }
 
-func (s *Service) filter(input *pb.Filter, providerID ...string) (store.Filter, error) {
+func resourceFilter(input *pb.Filter) (store.Filter, error) {
 	if input == nil {
 		return store.Filter{}, domain.Fail(domain.MissingInput, "A resource filter is required.", "Select a resource kind.")
 	}
@@ -45,18 +45,16 @@ func (s *Service) filter(input *pb.Filter, providerID ...string) (store.Filter, 
 		return store.Filter{}, domain.Fail(domain.InvalidArgument, "Page size exceeds 200.", "Request a smaller page.")
 	}
 	f := store.Filter{Kind: kind, SessionID: domain.ID(input.SessionId), ProjectID: domain.ID(input.ProjectId), Limit: int(limit)}
-	providerScope := ""
-	if len(providerID) > 0 && providerID[0] != "" {
-		if kind != domain.AccountKind {
-			return f, domain.Fail(domain.InvalidArgument, "Provider filtering is only available for account lists.", "Use provider_id only with account resources.")
-		}
-		if err := domain.ID(providerID[0]).Validate(); err != nil {
-			return f, err
-		}
-		providerScope = providerID[0]
+	return f, nil
+}
+
+func (s *Service) filter(input *pb.Filter) (store.Filter, error) {
+	f, err := resourceFilter(input)
+	if err != nil {
+		return f, err
 	}
 	if input.PageToken != "" {
-		cursor, err := s.Identity.DecodeCursor(input.PageToken, listScope(f, providerScope))
+		cursor, err := s.Identity.DecodeCursor(input.PageToken, scope(f))
 		if err != nil {
 			return f, err
 		}
@@ -64,6 +62,46 @@ func (s *Service) filter(input *pb.Filter, providerID ...string) (store.Filter, 
 	}
 	return f, nil
 }
+
+func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, error) {
+	if input == nil {
+		return store.Filter{}, domain.Fail(domain.MissingInput, "A resource list request is required.", "Select a resource kind.")
+	}
+	f, err := resourceFilter(input.Filter)
+	if err != nil {
+		return f, err
+	}
+	if input.ProviderId != "" {
+		if f.Kind != domain.AccountKind {
+			return f, domain.Fail(domain.InvalidArgument, "Provider filtering is supported only for account lists.", "Select account as the resource kind.")
+		}
+		f.ProviderID = domain.ID(input.ProviderId)
+		if err := f.ProviderID.Validate(); err != nil {
+			return f, err
+		}
+	}
+	switch input.AccountType {
+	case pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_UNSPECIFIED:
+	case pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API:
+		f.AccountType = domain.APIAccount
+	case pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_SUBSCRIPTION:
+		f.AccountType = domain.SubscriptionAccount
+	default:
+		return f, domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription.")
+	}
+	if (f.AccountType != "" || f.ProviderID != "") && f.Kind != domain.AccountKind {
+		return f, domain.Fail(domain.InvalidArgument, "Account type filtering is supported only for account lists.", "Select account as the resource kind.")
+	}
+	if input.Filter.PageToken != "" {
+		cursor, err := s.Identity.DecodeCursor(input.Filter.PageToken, scope(f))
+		if err != nil {
+			return f, err
+		}
+		f.After = cursor.After
+	}
+	return f, nil
+}
+
 func (s *Service) GetResource(ctx context.Context, req *connect.Request[pb.GetResourceRequest]) (*connect.Response[pb.GetResourceResponse], error) {
 	kind, err := rpc.Kind(req.Msg.Kind)
 	if err != nil {
@@ -78,16 +116,16 @@ func (s *Service) GetResource(ctx context.Context, req *connect.Request[pb.GetRe
 	return response, nil
 }
 func (s *Service) ListResources(ctx context.Context, req *connect.Request[pb.ListResourcesRequest]) (*connect.Response[pb.ListResourcesResponse], error) {
-	f, err := s.filter(req.Msg.Filter, req.Msg.ProviderId)
+	f, err := s.listFilter(req.Msg)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	var records []store.Record
 	var more bool
-	if req.Msg.ProviderId == "" {
+	if f.ProviderID == "" {
 		records, more, err = s.Store.ListPage(ctx, f)
 	} else {
-		records, more, err = s.Store.ListAccountsByProviderPage(ctx, f, domain.ID(req.Msg.ProviderId))
+		records, more, err = s.Store.ListAccountsByProviderPage(ctx, f, f.ProviderID)
 	}
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
@@ -111,7 +149,7 @@ func (s *Service) ListResources(ctx context.Context, req *connect.Request[pb.Lis
 	}
 	if len(result.Resources) < len(records) || more {
 		last := result.Resources[len(result.Resources)-1]
-		result.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: listScope(f, req.Msg.ProviderId), After: domain.ID(last.Id)})
+		result.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope(f), After: domain.ID(last.Id)})
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 		}
@@ -247,10 +285,9 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return nil, rpc.Error(err, correlation)
 		}
-		if !provider.Discovery || !provider.EnabledValue() {
+		if !provider.Discovery {
 			s.cancelCatalogChecks(record.ID)
 		}
-		s.logger.InfoContext(ctx, "api_provider_state_saved", "provider_id", record.ID, "revision", current.Revision, "enabled", provider.EnabledValue(), "preset_id", provider.PresetID)
 	}
 	message := &pb.SaveConfigurationResponse{RequestId: string(result.RequestID), Replayed: result.Replayed}
 	if record.Kind == domain.JobKind {

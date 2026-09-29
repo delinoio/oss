@@ -418,7 +418,7 @@ func (s *Service) StopServer(ctx context.Context, req *connect.Request[pb.StopSe
 	return response, nil
 }
 func scope(f store.Filter) string {
-	return fmt.Sprintf("page:%s:%s:%s", f.Kind, f.SessionID, f.ProjectID)
+	return fmt.Sprintf("page:%s:%s:%s:%s:%s", f.Kind, f.SessionID, f.ProjectID, f.AccountType, f.ProviderID)
 }
 
 func listScope(f store.Filter, providerID string) string {

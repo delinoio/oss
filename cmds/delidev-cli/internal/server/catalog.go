@@ -65,6 +65,7 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_PROVIDER_ACTIVATION,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER,
 	}}
 	for _, entry := range entries {
 		wire := &pb.ProviderInventoryEntry{PresetId: wireProviderPreset(entry.PresetID), ProviderId: string(entry.ProviderID), DisplayName: entry.DisplayName, Enabled: entry.Enabled, TotalAccounts: entry.TotalAccounts, ConnectedAccounts: entry.ConnectedAccounts, AccountCountsAvailable: entry.AccountCountsAvailable}

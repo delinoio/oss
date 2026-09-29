@@ -46,6 +46,18 @@ func TestCLIAccountKeylessLifecycleAndReplay(t *testing.T) {
 		t.Fatalf("account: %+v", value)
 	}
 	id := value["result"].(map[string]any)["resource"].(map[string]any)["id"].(string)
+	code, value = cliRun(t, root, []string{"account", "list", "--account-type", "api", "--provider-id", provider, "--limit", "1"}, "")
+	if code != 0 || len(value["result"].(map[string]any)["resources"].([]any)) != 1 {
+		t.Fatalf("scoped account list: %+v", value)
+	}
+	code, value = cliRun(t, root, []string{"account", "list", "--account-type", "subscription"}, "")
+	if code != 0 || len(value["result"].(map[string]any)["resources"].([]any)) != 0 {
+		t.Fatalf("subscription account list included an API account: %+v", value)
+	}
+	code, value = cliRun(t, root, []string{"account", "list", "--account-type", "invalid"}, "")
+	if code != 2 || value["error"].(map[string]any)["code"] != "invalid_argument" {
+		t.Fatalf("unknown account type accepted: %+v", value)
+	}
 	requestID := string(domain.NewID())
 	args := []string{"account", "connect", "--id", id, "--revision", "1", "--keyless", "--request-id", requestID}
 	code, value = cliRun(t, root, args, "")

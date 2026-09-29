@@ -86,8 +86,8 @@ export function ApiProviderSettings({
   changed: () => void;
   createCustom: (data?: Document) => void;
   editCustom: (resource: Resource) => void;
-  manageAccounts: (providerID: string) => void;
-  addAccount: (providerID: string) => void;
+  manageAccounts: (providerID: string, entry: ProviderInventoryEntry) => void;
+  addAccount: (providerID: string, entry: ProviderInventoryEntry) => void;
   deleteCustom: (resource: Resource) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -117,8 +117,8 @@ export function ApiProviderSettings({
       <div className="actions">
         <button type="button" disabled={!entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
           if (!entry.providerId) return;
-          if (entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.enabled) addAccount(entry.providerId);
-          else manageAccounts(entry.providerId);
+          if (entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.enabled) addAccount(entry.providerId, entry);
+          else manageAccounts(entry.providerId, entry);
         }}>{!entry.accountCountsAvailable || entry.totalAccounts > 0n ? "Manage accounts" : "Add account"}</button>
         {entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled && entry.providerId ? <span>Turn on this provider to add an account.</span> : null}
         {entry.presetId === ProviderPresetId.UNSPECIFIED && entry.provider ? <><button type="button" onClick={() => editCustom(entry.provider!)}>Edit custom provider</button><button type="button" onClick={() => deleteCustom(entry.provider!)}>Delete custom provider</button></> : null}

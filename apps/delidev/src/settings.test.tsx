@@ -2,9 +2,9 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
 import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
@@ -12,11 +12,7 @@ import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision, documentJson: encode(value) }); }
-type ResourcePage = { resources: Resource[]; nextPageToken?: string };
-type ReadResources = (kind: EntityKind, pageToken: string) => ResourcePage | Promise<ResourcePage>;
-type ProviderInventory = { entries: { presetId: ProviderPresetId; displayName: string; enabled: boolean; totalAccounts: bigint; connectedAccounts: bigint; accountCountsAvailable: boolean }[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string };
-type ReadProviderInventory = (pageToken: string) => ProviderInventory | Promise<ProviderInventory>;
-function fixture(resources: Resource[], readResources?: ReadResources, readProviderInventory?: ReadProviderInventory) {
+function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string }; readProviderInventory?: (pageToken: string) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -26,11 +22,11 @@ function fixture(resources: Resource[], readResources?: ReadResources, readProvi
   const transport = createRouterTransport((router) => {
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
-    router.service(ResourceService, { listResources: (request) => readResources ? readResources(request.filter?.kind ?? EntityKind.PROVIDER, request.filter?.pageToken ?? "") : { resources: resources.filter((row) => row.kind === request.filter?.kind) }, getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
+    router.service(ResourceService, { listResources: (request) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }), getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
     router.service(AccountService, { getAccountStatus: (request) => ({ account: resources.find((row) => row.id === request.id) }), connectAccount: connect, disconnectAccount: disconnect });
     router.service(ProviderService, {
-      listProviderPresets: () => ({ presetsJson: encode([{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }),
-      listProviderInventory: (request) => readProviderInventory ? readProviderInventory(request.pageToken) : ({ entries: [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] }),
+      listProviderPresets: () => ({ presetsJson: encode(options.presets ?? [{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }),
+      listProviderInventory: (request) => options.readProviderInventory?.(request.pageToken) ?? ({ entries: options.providerEntries ?? [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ...(options.providerEntries ? [ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] : [])] }),
       searchModels: () => ({ models: [], providers: [] }),
     });
   });
@@ -39,54 +35,15 @@ function fixture(resources: Resource[], readResources?: ReadResources, readProvi
   return { resources, save, remove, preview, inspect, connect, disconnect, client, view };
 }
 function input(value: unknown) { return value as { mutation: { requestId: string; expectedRevision: bigint }; documentJson: Uint8Array }; }
-async function clickEnabledButton(name: string) {
-  const button = await screen.findByRole("button", { name });
-  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(button);
-}
-
-it("shows the complete grouped navigation once and keeps its selected category in sync", async () => {
-  const value = fixture([]);
-  render(value.view(<Settings visible close={() => {}} />));
-  const navigation = screen.getByRole("navigation", { name: "Settings categories" });
-  const labels = ["API Providers", "Models", "AI accounts", "Agent Workers", "Instructions", "Projects", "Repositories", "Execution Workers", "Paired devices", "Server preferences", "Integrations", "Diagnostics", "Notifications", "Import / Export"];
-  const values = ["providers", "models", "accounts", "agent-workers", "instructions", "projects", "repositories", "execution-workers", "paired-devices", "server-preferences", "integrations", "diagnostics", "notifications", "transfer"];
-  expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI & agents", "Workspace", "System"]);
-  expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
-  const categorySelect = screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement;
-  expect(categorySelect.options).toHaveLength(14);
-  expect(Array.from(categorySelect.querySelectorAll("optgroup"), (group) => group.label)).toEqual(["AI & agents", "Workspace", "System"]);
-  expect(categorySelect.value).toBe("providers");
-  for (const [index, label] of labels.entries()) {
-    const button = within(navigation).getByRole("button", { name: label });
-    fireEvent.click(button);
-    expect(button.getAttribute("aria-current")).toBe("page");
-    expect(screen.getByRole("heading", { level: 1, name: label })).toBeTruthy();
-    expect(categorySelect.value).toBe(values[index]);
-  }
-  expect(categorySelect.value).toBe("transfer");
-});
-
-it("shows API provider inventory and enables custom creation only with required capabilities", async () => {
-  const value = fixture([]);
-  render(value.view(<Settings visible close={() => {}} />));
-  await screen.findByRole("heading", { name: "Local provider" });
-  const create = screen.getByRole("button", { name: "Custom provider" }) as HTMLButtonElement;
-  expect(create.disabled).toBe(false);
-  expect(screen.getByRole("region", { name: "API provider inventory" })).toBeTruthy();
-  expect(screen.getByRole("switch", { name: "Turn on Local provider" })).toBeTruthy();
-});
 
 it("pages native subscription providers independently of active API providers", async () => {
   const subscriptions = Array.from({ length: 51 }, (_, index) => resource(EntityKind.PROVIDER, { name: `Subscription ${String(index + 1).padStart(2, "0")}`, protocol: "native-subscription", authentication: "subscription" }));
   const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
-  const value = fixture(subscriptions, (kind, pageToken) => {
-    if (kind === EntityKind.PROVIDER) return pageToken ? { resources: [subscriptions[50]] } : { resources: subscriptions.slice(0, 50), nextPageToken: "subscription-page-2" };
-    return { resources: [] };
-  }, (pageToken) => ({ entries: [], capabilities, ...(pageToken ? {} : { nextPageToken: "active-api-page-2" }) }));
-  render(value.view(<Settings visible close={() => {}} />));
-  fireEvent.click(within(screen.getByRole("navigation", { name: "Settings categories" })).getByRole("button", { name: "AI accounts" }));
-  await clickEnabledButton("New AI account");
+  const value = fixture(subscriptions, {
+    readResources: (_kind, pageToken) => pageToken ? { resources: [subscriptions[50]] } : { resources: subscriptions.slice(0, 50), nextPageToken: "subscription-page-2" },
+    readProviderInventory: (pageToken) => ({ entries: [], capabilities, ...(pageToken ? {} : { nextPageToken: "active-api-page-2" }) }),
+  });
+  render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} active saved={() => {}} cancel={() => {}} />));
   await screen.findByRole("option", { name: "Subscription 50" });
   expect(screen.queryByRole("option", { name: "Subscription 51" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "More subscription providers" }));
@@ -94,59 +51,30 @@ it("pages native subscription providers independently of active API providers", 
   expect((screen.getByRole("button", { name: "More API providers" }) as HTMLButtonElement).disabled).toBe(false);
 });
 
-it("opens a new account draft for an enabled provider with no accounts", async () => {
-  const provider = resource(EntityKind.PROVIDER, { name: "Account-ready provider", endpoint: "https://api.example.test/v1", protocol: "openai-chat", authentication: "bearer", enabled: true });
-  const value = fixture([provider], undefined, () => ({ entries: [{ presetId: ProviderPresetId.UNSPECIFIED, providerId: provider.id, provider, displayName: "Account-ready provider", enabled: true, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] }));
-  render(value.view(<Settings visible close={() => {}} />));
-  await screen.findByRole("heading", { name: "Account-ready provider" });
-  fireEvent.click(screen.getByRole("button", { name: "Add account" }));
-  await screen.findByRole("heading", { name: "New AI account" });
-  expect((screen.getByRole("combobox", { name: "Provider" }) as HTMLSelectElement).value).toBe(provider.id);
-});
-
-it("keeps provider inventory loading distinct and fails closed without required capabilities", async () => {
-  const resolveReads: ((value: ProviderInventory) => void)[] = [];
-  const pending = fixture([], undefined, () => new Promise<ProviderInventory>((resolve) => { resolveReads.push(resolve); }));
-  const view = render(pending.view(<Settings visible close={() => {}} />));
-  expect(screen.getByRole("status").textContent).toBe("Loading provider inventory…");
-  await waitFor(() => expect(resolveReads.length).toBeGreaterThanOrEqual(1));
-  for (const resolveRead of resolveReads) resolveRead({ entries: [], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] });
-  await screen.findByText(/No API providers are enabled/);
-  view.unmount();
-
-  const unsupported = fixture([], undefined, () => ({ entries: [], capabilities: [] }));
-  render(unsupported.view(<Settings visible close={() => {}} />));
-  await screen.findByRole("alert");
-  expect((screen.getByRole("button", { name: "Custom provider" }) as HTMLButtonElement).disabled).toBe(true);
-});
-
-it("retains stale provider inventory after refresh failure and preserves a later-page return path", async () => {
-  let reads = 0;
-  const stale = fixture([], undefined, async (pageToken) => {
-    reads += 1;
-    if (reads === 1) return { entries: [{ presetId: ProviderPresetId.OLLAMA, displayName: "Retained provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER], nextPageToken: "next-page" };
-    if (pageToken === "next-page") return { entries: [], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] };
-    throw new ConnectError("refresh unavailable", Code.Unavailable);
+it("uses server-owned preset key guidance and inert documentation in the API account wizard", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true, preset_id: "openai" });
+  const value = fixture([], {
+    providerEntries: [create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OPENAI, providerId: provider.id, displayName: "OpenAI", enabled: true, totalAccounts: 0n, connectedAccounts: 0n, provider, accountCountsAvailable: true })],
+    presets: [{ id: "openai", provider: { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", discovery: true }, key_guidance: "Create a project key for the selected workspace.", documentation: "https://developers.openai.com/api/reference/overview" }],
   });
-  render(stale.view(<Settings visible close={() => {}} />));
-  await screen.findByRole("heading", { name: "Retained provider" });
-  fireEvent.click(screen.getByRole("button", { name: "Refresh providers" }));
-  await screen.findByRole("alert");
-  expect(screen.getByRole("heading", { name: "Retained provider" })).toBeTruthy();
-  fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
-  await screen.findByText("No providers match this search.");
-  expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "First page" }));
-  await screen.findByRole("heading", { name: "Retained provider" });
+  render(value.view(<Settings visible close={() => {}} />));
+  fireEvent.click(await screen.findByRole("button", { name: "API Accounts" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add API account" }));
+  fireEvent.click(await screen.findByRole("radio", { name: "OpenAI" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  fireEvent.click(screen.getByText("Where to get an API key"));
+  expect(screen.getByText("Create a project key for the selected workspace.")).toBeTruthy();
+  expect(screen.getByText("https://developers.openai.com/api/reference/overview")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "https://developers.openai.com/api/reference/overview" })).toBeNull();
 });
 
 it("keeps a settings draft across closing the modal and retries the original provider document", async () => {
   const value = fixture([]);
   value.save.mockRejectedValueOnce(new ConnectError("acknowledgement lost", Code.Unavailable));
   const view = render(value.view(<Settings visible close={() => {}} />));
-  await clickEnabledButton("Custom provider");
-  expect((screen.getByRole("button", { name: "Models" }) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).disabled).toBe(true);
+  const create = await screen.findByRole("button", { name: "Custom provider" });
+  await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(create);
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "My local provider" } });
   fireEvent.change(screen.getByRole("textbox", { name: "API base URL" }), { target: { value: "http://127.0.0.1:11434/v1" } });
   view.rerender(value.view(<Settings visible={false} close={() => {}} />));

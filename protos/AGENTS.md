@@ -1,5 +1,7 @@
 ### Instructions for `protos/`
 
+- DeliDev account `provider_id` and `account_type` are additive selectors on `ListResourcesRequest` only. Keep them out of shared `Filter`, snapshots and event streams; bind both into the signed resource-page cursor and retain unspecified account type as the historical all-types behavior.
+
 - DeliDev ConfigurationService export/preview/apply follows `docs/cmds-delidev-configuration-transfer-contract.md`. Versioned bounded JSON excludes credentials and runtime evidence. Signed previews bind actor/server/exact before/after plan; import mutation receipts are reference-only and never replay side effects. Worker credentials cannot invoke these owner/client operations.
 
 - DeliDev `ReadSessionWorkspace` is owner/client-only. `WatchWorkspaceReads`/`ReportWorkspaceRead` are current owning-Worker-only observation APIs bound to the primary stream; they never claim durable jobs, refresh execution leases, create receipts or persist file bodies. Preserve the closed query/result schemas, exact relative-root selection, per-machine bound, deadline and late/duplicate/foreign result rejection in `docs/cmds-delidev-files-contract.md`.
@@ -86,6 +88,8 @@
 - DeliDev schema generation includes `packages/delidev-api-client/src/gen` TypeScript/Connect Query output. Keep root freshness, Turbo source/output tracking and the shared protocol CI client/real-Go-server checks synchronized; never handwrite generated descriptors or move business authority into the client.
 
 - DeliDev `UsageService.GetUsageSummary` exposes bounded owner/client-only exact-response subtotals with original attribution, decimal-string counters, separate measured/unavailable counts and explicit coverage/cost enums. No native response digest, thread/turn identity or prompt enters the aggregate. Current labels are optional; reads recheck authorization and never return partial totals after capacity failure.
+
+- Additive GetUsageSummary daily/model analytics use `UsageTimeGranularity`, an explicit IANA timezone, and optional response analytics; omitted/UNSPECIFIED fields preserve the existing summary behavior. DAY analytics are present even when empty and contain exact same-snapshot UsageTotals with chronological clipped day bounds, complete sorted model identities, and server-owned Other aggregation. Regenerate Go and TypeScript/Connect Query output from the canonical schema and preserve encoded response-size limits.
 
 - DeliDev pricing RPCs are owner/client-only with actor-bound exact receipts and independent pricing revisions. Keep nullable decimal rates, immutable historical source/date/currency/mode/exclusions, separate per-currency amounts and category evidence. A retry returns its accepted version without reselecting it, and estimates never establish actual spend or complete native telemetry.
 

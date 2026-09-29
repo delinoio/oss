@@ -98,13 +98,14 @@ function OrderedLinks({ label, kind, links, change, active, weighted = false, ex
   </fieldset>;
 }
 
-function ProviderFields({ data, change }: FieldsProps) {
+function ProviderFields({ data, change, subscriptionOnly = false }: FieldsProps) {
+  if (subscriptionOnly) return <><TextField label="Name" value={data.name} change={(name) => change({ ...data, name })} required /><p>Subscription providers use native-subscription protocol, subscription authentication and an empty endpoint. Login is not available.</p></>;
   return <><TextField label="Name" value={data.name} change={(name) => change({ ...data, name })} required />
     <Choice label="API protocol" value={data.protocol} choices={[Protocol.Responses, Protocol.Chat, Protocol.Anthropic]} change={(protocol) => change({ ...data, protocol })} />
     <TextField label="API base URL" value={data.endpoint} max={4096} change={(endpoint) => change({ ...data, endpoint })} required /><p>Localhost refers to the server computer. Keys are entered separately in the account connection form.</p><Choice label="Authentication" value={data.authentication} choices={[Authentication.Bearer, Authentication.Key, Authentication.Keyless]} change={(authentication) => change({ ...data, authentication })} /><Check label="Discover models automatically for connected accounts" value={data.discovery} change={(discovery) => change({ ...data, discovery })} />
   </>;
 }
-interface FieldsProps { data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void }
+interface FieldsProps { data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean }
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   const { data, change, active, existing } = props;
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });

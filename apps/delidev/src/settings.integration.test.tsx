@@ -23,11 +23,6 @@ import { document, encode } from "./documents";
 let directory: string, transport: Transport, providerOrigin: string, binary: string, scope: string;
 let process: ChildProcess | undefined, worker: ChildProcess | undefined, provider: Server | undefined;
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
-async function clickEnabledButton(name: string) {
-  const button = await screen.findByRole("button", { name });
-  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(button);
-}
 afterEach(() => vi.unstubAllGlobals());
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "delidev-settings-"));
@@ -77,31 +72,19 @@ function runCLI(args: string[], input?: string): Promise<string> {
     child.stdin!.end(input);
   });
 }
-afterAll(async () => {
-  await stopChild(worker);
-  if (process && process.exitCode === null) {
-    try { await createClient(SystemService, transport).stopServer({ requestId: newRequestId() }, { timeoutMs: 2000 }); } catch { /* Cleanup still owns exactly this child. */ }
-    const until = Date.now() + 3000;
-    while (process.exitCode === null && Date.now() < until) await pause();
-    if (process.exitCode === null) {
-      const exit = new Promise<void>((resolve) => process!.once("exit", () => resolve()));
-      process.kill("SIGKILL"); await exit;
-    }
-  }
-  if (provider) await new Promise<void>((resolve) => provider!.close(() => resolve()));
-  if (directory) await rm(directory, { recursive: true, force: true });
-});
 
 it("activates fixed presets without creating accounts or models and retains identity across off/on", async () => {
   const providers = createClient(ProviderService, transport);
   const initial = await providers.listProviderInventory({ pageSize: 50 });
-  expect(initial.capabilities).toEqual(expect.arrayContaining([ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER]));
+  expect(initial.capabilities).toEqual(expect.arrayContaining([ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER]));
   expect(initial.entries.filter((entry) => entry.presetId !== ProviderPresetId.UNSPECIFIED)).toHaveLength(9);
   expect(initial.entries.every((entry) => !entry.enabled && !entry.providerId && entry.accountCountsAvailable)).toBe(true);
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
-  fireEvent.click(await screen.findByRole("switch", { name: "Turn on OpenAI" }));
+  const turnOn = await screen.findByRole("switch", { name: "Turn on OpenAI" });
+  await waitFor(() => expect((turnOn as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(turnOn);
   await screen.findByRole("switch", { name: "Turn off OpenAI" });
   let inventory = await providers.listProviderInventory({ pageSize: 50 });
   let saved = inventory.entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
@@ -111,13 +94,16 @@ it("activates fixed presets without creating accounts or models and retains iden
   expect((await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.ACCOUNT } })).resources).toHaveLength(0);
   expect((await providers.searchModels({ pageSize: 50 })).models).toHaveLength(0);
 
-  fireEvent.click(screen.getByRole("switch", { name: "Turn off OpenAI" }));
-  await screen.findByRole("switch", { name: "Turn on OpenAI" });
+  const turnOff = screen.getByRole("switch", { name: "Turn off OpenAI" });
+  await waitFor(() => expect((turnOff as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(turnOff);
+  const turnOnAgain = await screen.findByRole("switch", { name: "Turn on OpenAI" });
+  await waitFor(() => expect((turnOnAgain as HTMLButtonElement).disabled).toBe(false));
   inventory = await providers.listProviderInventory({ pageSize: 50 });
   saved = inventory.entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
   expect(saved.enabled).toBe(false);
   const retainedID = saved.providerId;
-  fireEvent.click(screen.getByRole("switch", { name: "Turn on OpenAI" }));
+  fireEvent.click(turnOnAgain);
   await screen.findByRole("switch", { name: "Turn off OpenAI" });
   saved = (await providers.listProviderInventory({ pageSize: 50 })).entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
   expect(saved.providerId).toBe(retainedID);
@@ -143,34 +129,39 @@ it("configures a real Go server through the settings forms and explicitly valida
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
-  await clickEnabledButton("Custom provider");
+  const create = await screen.findByRole("button", { name: "Custom provider" });
+  await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(create);
   change("Name", "Owned local API"); change("API base URL", providerOrigin); change("API protocol", "openai-chat"); change("Authentication", "keyless");
   fireEvent.click(screen.getByRole("checkbox", { name: "Discover models automatically for connected accounts" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));
   await screen.findByRole("heading", { name: "Owned local API" });
-  fireEvent.click(screen.getByRole("button", { name: "AI accounts" }));
-  await clickEnabledButton("New AI account");
-  change("Account alias", "Owned keyless account");
-  const option = await screen.findByRole("option", { name: "Owned local API" });
-  change("Provider", (option as HTMLOptionElement).value);
-  fireEvent.click(screen.getByRole("button", { name: "Save AI account" }));
+  fireEvent.click(screen.getByRole("button", { name: "API Accounts" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
+  fireEvent.click(await screen.findByRole("radio", { name: "Owned local API" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  change("Account name", "Owned keyless account");
+  fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
   await screen.findByRole("heading", { name: "Owned keyless account" });
-  fireEvent.click(screen.getByRole("button", { name: "Manage connection" }));
-  await screen.findByText("Explicitly connect this keyless local endpoint on the server computer.");
-  fireEvent.click(screen.getByRole("button", { name: "Connect account" }));
+  const manageAccount = await screen.findByRole("button", { name: "Manage account" });
+  await waitFor(() => expect((manageAccount as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(manageAccount);
   await screen.findByText("Health: unverified · Credential connected");
   fireEvent.click(screen.getByRole("button", { name: "Validate account" }));
   await screen.findByText("Health: ready · Credential connected");
   fireEvent.click(screen.getByRole("button", { name: "Back to accounts" }));
   fireEvent.click(screen.getByRole("button", { name: "Models" }));
-  await clickEnabledButton("New Model");
-  await screen.findByRole("option", { name: "Owned local API" });
+  const newModel = await screen.findByRole("button", { name: "New Model" });
+  await waitFor(() => expect((newModel as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(newModel);
+  await screen.findByLabelText("Native model ID");
+  const option = await screen.findByRole("option", { name: "Owned local API" }) as HTMLOptionElement;
   change("Provider", (option as HTMLOptionElement).value); change("Native model ID", "fixture-model"); change("Display name", "Owned model");
   fireEvent.click(screen.getByRole("checkbox", { name: "codex" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Model" }));
   await screen.findByRole("heading", { name: "Owned model" });
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  await clickEnabledButton("New Agent Worker");
+  fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
   change("Name", "Configured agent");
   change("Model", (await screen.findByRole("option", { name: "Owned model" }) as HTMLOptionElement).value);
   change("Add AI account", (await screen.findByRole("option", { name: "Owned keyless account · ready" }) as HTMLOptionElement).value);
@@ -206,7 +197,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
-  await clickEnabledButton("New Repository");
+  fireEvent.click(screen.getByRole("button", { name: "New Repository" }));
   change("Name", "Owned repository");
   change("Execution Worker", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
   change("Absolute checkout path on this Worker", checkout);
@@ -219,7 +210,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   const repositories = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.REPOSITORY } });
   expect(document(repositories.resources[0]).checkouts).toEqual([expect.objectContaining({ path: canonical })]);
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
-  await clickEnabledButton("New Project");
+  fireEvent.click(screen.getByRole("button", { name: "New Project" }));
   change("Name", "Owned project");
   change("Add Repository", (await screen.findByRole("option", { name: "Owned repository" }) as HTMLOptionElement).value);
   fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
@@ -377,7 +368,7 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  await clickEnabledButton("New Server preferences");
+  fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
   const edit = await screen.findByRole("button", { name: "Edit Server preferences" });
   const resources = createClient(ResourceService, transport);
@@ -401,11 +392,12 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
 it("reads unavailable usage through the actual Go service without inventing cost", async () => {
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Usage active open={()=>{}} /></QueryClientProvider></TransportProvider>);
- await screen.findByText("Known subtotals · incomplete coverage");
+ await screen.findByText("Incomplete coverage");
  expect(screen.getByText(/No exact response usage is recorded/)).toBeTruthy();
  expect(screen.getByText("Actual API cost:").parentElement!.textContent).toContain("Unavailable");
+ fireEvent.click(screen.getByRole("button", { name: "Filters" }));
  fireEvent.click(screen.getByRole("checkbox",{name:"General Chat only"}));
- fireEvent.click(screen.getByRole("button",{name:"Apply usage filters"}));
+ fireEvent.click(screen.getByRole("button",{name:"Apply filters"}));
  await waitFor(()=>expect(screen.queryByText("Loading usage…")).toBeNull());
  cleanup();client.clear();
 });
@@ -455,7 +447,7 @@ it("persists native Claude permission selection through the desktop and real Go 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  await clickEnabledButton("New Agent Worker");
+  fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
   change("Name", "Native Claude settings"); change("Harness", "claude-code");
   await screen.findByRole("option", { name: "Claude settings model" });

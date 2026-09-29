@@ -2178,6 +2178,59 @@ this records native startup but does not claim a captured native viewport or
 visual screenshot acceptance. No Rust, protocol or generated source changed;
 the app's generated `dist` output is removed from the worktree.
 
+### Account type and provider list filters (2026-09-29)
+
+`ListResourcesRequest` now carries additive list-only provider and closed account-type selectors. Go maps the closed enum to existing API/subscription account values and applies both selectors in indexed resource SQL before the page limit; signed cursors bind both selectors. The shared snapshot filter and event stream are unchanged. `account list` exposes the same optional selectors.
+
+Focused real-server Connect tests cover 102 interleaved API/subscription accounts across providers, old unfiltered callers, combined type/provider pages, mismatched-cursor rejection, incompatible resource kinds, unknown enum rejection and unchanged full snapshots. The dedicated CLI fixture verifies API/provider selection, subscription-only results and invalid enum text. Both focused package tests pass. Full CLI race/vet, root protocol breaking/freshness, frontend split-menu/wizard and actual desktop geometry/keyboard acceptance remain pending; no provider inference or credentialed endpoint was used.
+### API provider activation (#1046)
+
+Issue #1046 adds presence-aware activation, canonical preset identity, bounded inventory/account filtering, active-provider model filtering, and admission checks at dispatch/Resume and durable execution registration. The dedicated server fixtures cover legacy provider omission, provider-scoped account cursors, exact concurrent activation, disabled discovery, dispatch/Resume, grant ordering and observational replay. Portable tests also reject explicit malformed activation fields and duplicate managed presets at preview, target collision and deferred-apply recheck.
+
+`pnpm test` in `apps/delidev` passes type checking, all 67 test files / 794 tests, and the production build. `go vet ./cmds/delidev-cli/...` passes. The added portable-field and import-collision tests pass under `go test -race` in the server package. Root `pnpm proto:lint`, `pnpm proto:breaking` and staged `pnpm proto:fresh` pass.
+
+The required complete `go test -race ./cmds/delidev-cli/...` run passed the affected `internal/cli`, `internal/server`, and `internal/store` packages, along with the other packages, but `internal/harness/grok` reached its ten-minute package timeout in `TestQuestionControllerOriginalClaimsAndUncertainty/question-claim-failure` while `inspectProfile` waited for its process wire. That unchanged focused Grok case passes alone under the race detector in 7.794 seconds. The cause of the combined-run timeout is not established; the complete command is not a passing result.
+
+Native desktop layout and keyboard checks were not performed for this change; the frontend fixtures do not establish native-window behavior. No real provider account or inference readiness was tested. Preserve that evidence gap during review and follow `docs/cmds-delidev-provider-activation-contract.md`.
+
+### Issue #1052 daily and model token analytics (2026-09-29)
+
+The Token Usage page now presents the six exact measures, persistent coverage,
+applied-scope timestamps, daily token trends and ranked model/API comparisons
+while retaining the existing Usage navigation, session details and separate
+historical cost evidence. The additive `GetUsageSummary` DAY query aggregates
+from the same authorized response snapshot, buckets by first-retention time in
+the requested IANA zone, and returns complete exact model groups plus a
+server-summed Other group. The CLI exposes the same optional analytics. The
+desktop uses the existing generated Connect client and renders a compatible
+summary when an older server omits analytics.
+
+The store fixture verifies zero, missing-counter, no-response and clipped-day
+distinctions, price timestamp independence, deduplication, model/overall
+reconciliation and measured/unavailable counts. Domain fixtures cover clipped
+calendar boundaries, 23/25-hour DST days and a skipped civil date. Keyboard
+chart traversal, all six measures in full data tables, filter drafts and
+loading/error scope labeling are covered by component tests. Focused Go race
+tests pass for domain, store, server and CLI, and `go vet ./cmds/delidev-cli/...`
+passes. The required default `go test -race ./cmds/delidev-cli/...` invocation
+hits Go's 10-minute package timeout in the existing Grok
+`TestQuestionControllerOriginalClaimsAndUncertainty/question-foreign-proposal`
+fixture while its helper waits for profile inspection; the other packages,
+including the changed usage packages, report pass. The complete suite passes
+with `go test -race -timeout 30m ./cmds/delidev-cli/...`; Grok completed in
+876.760s, server in 417.567s, store in 144.471s, worker in 212.671s and
+workspace in 390.328s. The app suite passes 69 files /
+809 tests, TypeScript type-checking and production build. Generated API client
+lint, 3 files / 41 tests and build pass; protocol lint and breaking checks pass.
+Repeated `pnpm proto:generate` leaves generated files byte-for-byte unchanged.
+
+No native viewport screenshot was captured for this increment; the running
+DeliDev desktop windows were not built from this worktree, and the attempted
+screen capture did not return a reviewable viewport. Responsive CSS, browser
+component/keyboard tests and production build are evidence for this change, not
+native-window or hosted billing acceptance. Generated app/client `dist`
+directories are removed after validation.
+
 ### Issue #1054 sidebar project creation and query retries (2026-09-29)
 
 The Projects header now uses an icon-only New project action that opens the
@@ -2199,22 +2252,58 @@ also untested. Component coverage is not counted as native visual evidence. No
 Rust, RPC, schema, or generated source changed; generated `dist` output is
 removed from the worktree.
 
-### API provider activation (#1046)
+After merging the current PR branch with `origin/main`, `apps/delidev` `pnpm
+test` passes 69 files / 826 tests, type checking and production build. This
+validates the combined Token Usage and sidebar changes; generated app/client
+`dist` output is removed afterward.
 
-Issue #1046 adds presence-aware activation, canonical preset identity, bounded inventory/account filtering, active-provider model filtering, and admission checks at dispatch/Resume and durable execution registration. The dedicated server fixtures cover legacy provider omission, provider-scoped account cursors, exact concurrent activation, disabled discovery, dispatch/Resume, grant ordering and observational replay. Portable tests also reject explicit malformed activation fields and duplicate managed presets at preview, target collision and deferred-apply recheck.
+### Issue #1047 account categories and guided API connection (2026-09-29)
 
-Before merging main, `pnpm test` in `apps/delidev` passed type checking, all 67 test files / 794 tests, and the production build. `go vet ./cmds/delidev-cli/...` passed. The added portable-field and import-collision tests passed under `go test -race` in the server package. Root `pnpm proto:lint`, `pnpm proto:breaking` and staged `pnpm proto:fresh` passed.
+Settings now has separate AI Subscription Accounts and API Accounts, server-
+filtered by account type and provider before pagination. The API account wizard
+uses enabled inventory entries, server-owned preset key guidance and existing
+account preferences. It saves metadata once, re-reads the provider immediately
+before connection, retains the created account on connection failure, and
+keeps validation/discovery as separate explicit actions. Provider-filter
+changes reset the account page token.
 
-The initial complete `go test -race ./cmds/delidev-cli/...` run passed the affected `internal/cli`, `internal/server`, and `internal/store` packages, along with the other packages, but `internal/harness/grok` reached its ten-minute package timeout in `TestQuestionControllerOriginalClaimsAndUncertainty/question-claim-failure` while `inspectProfile` waited for its process wire. That unchanged focused Grok case passed alone under the race detector in 7.794 seconds. The cause of the combined-run timeout was not established; the complete command was not a passing result.
+`apps/delidev` `pnpm test` passes 70 files / 837 tests, API-client build,
+TypeScript type-checking and the Rsbuild production build. The real temporary
+Go-server integration uses an owned loopback keyless provider to create,
+connect and validate an account, then configure a model and Agent. Relevant
+server, CLI and store filter/provider tests pass under the race detector, and
+`go vet ./cmds/delidev-cli/...` passes. Root Proto lint, breaking-change and
+fresh-generation checks pass after integrating the provider and usage schema
+updates.
 
-Native desktop layout and keyboard checks were not performed for this change; the frontend fixtures do not establish native-window behavior. No real provider account or inference readiness was tested. Preserve that evidence gap during review and follow `docs/cmds-delidev-provider-activation-contract.md`.
+No real provider account, hosted inference, external credential or harness was
+used. Native Settings viewport, geometry and keyboard acceptance remain
+unverified. The branch includes the API-provider activation prerequisite from
+PR #1061. Generated app/client `dist` output is removed after validation.
 
-#### PR #1061 merge and review repairs (2026-09-29)
+#### PR #1061 merge-conflict repair (2026-09-29)
 
-Seven independent review findings were repaired in separate commits: provider rows add an account with the selected provider, native-subscription selector pagination has its own cursor, provider inventory pagination follows SQLite's exact Unicode name order, filtered CLI reads check server capabilities first, legacy preset JSON omits nested activation provenance, provider-filtered account lists compose with session/project scope, and fresh databases install schema v21's unique activation index. The provider activation contract records the legacy payload shape, composed filters and fresh-schema guarantee. Tests also update the simulated old-schema fixtures to remove the new index before migration.
+The merge with the current `main` keeps the API-provider activation behavior
+and the newer split account categories, guided API account flow, and daily/model
+usage analytics. It also preserves the review repairs for selected-provider
+account creation, independent native-subscription pagination, exact SQLite
+Unicode provider ordering, filtered CLI capability checks, legacy preset JSON
+compatibility, composed provider/session/project account filters, and fresh
+database installation of the provider uniqueness index. Provider and account
+type filters remain bound to list cursors and are applied before pagination.
 
-After merging main and applying the repairs, `pnpm test` in `apps/delidev` passed type checking, 68 test files / 824 tests, and the production build. `go vet ./cmds/delidev-cli/...` passed. Focused tests for the seven findings passed; the complete store package also passed without race detection. Root `git lfs pull` hydrated tracked assets before Rust compilation.
+`apps/delidev` `pnpm test` passes 70 files / 838 tests, TypeScript type-checking,
+the API-client build and the production build. The runner used Node 26.7.0; pnpm
+reported the existing React Forge Node 24 engine mismatch as a warning. Proto
+lint, breaking-change and fresh-generation checks pass. `go vet
+./cmds/delidev-cli/...` and the complete CLI race package pass. The full
+`go test -race -timeout 30m ./cmds/delidev-cli/...` run passed Grok, server and
+store packages but was not fully green: an initial assertion in the new CLI
+test had the wrong expected call count, and three unchanged workspace Git
+fixture subtests reported inaccessible paths. The corrected CLI package passes
+under the race detector, and the exact failing workspace test passes on its
+focused race rerun; the cause of the full-suite workspace failure was not
+established. Generated app/client `dist` output is removed afterward.
 
-The final `go test -race ./cmds/delidev-cli/...` run passed `internal/cli` (140.555s), `internal/server` (cached), `internal/store` (61.071s), and the remaining packages, but `internal/harness/grok` hit its ten-minute package timeout in `TestQuestionControllerOriginalClaimsAndUncertainty/question-missing-rpc`. That exact subtest passes alone under the race detector in 9.093s, so the required complete command remains non-passing on this host.
-
-`cargo test -p delidev-desktop` passed 10 tests; four sidecar-dependent tests were ignored. Root `cargo test` first failed five `binpm` path assertions because this macOS host reports equivalent temporary paths as `/var/...` and `/private/var/...`. With canonical `TMPDIR`, those tests passed, but one unrelated `clibox` readiness-timing test failed in the workspace run and passed alone in 1.37s. A serialized root retry then stalled in a nested `clibox` process fixture for more than four minutes and was interrupted. The full root Rust suite therefore remains unverified on this host; DeliDev's package test passed. Generated `dist` output was removed after validation.
+No real provider account or hosted inference was used. Native Settings geometry,
+keyboard behavior and hosted provider acceptance remain unverified.

@@ -22,6 +22,17 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	if err := f.Validate(); err != nil {
 		return result, err
 	}
+	var dayBuckets []domain.UsageAnalyticsDay
+	var modelGroups map[usageModelKey]*domain.UsageAnalyticsModel
+	if f.Granularity == domain.UsageTimeGranularityDay {
+		var err error
+		dayBuckets, err = f.UsageDayBuckets()
+		if err != nil {
+			return result, err
+		}
+		result.Analytics = &domain.UsageAnalytics{Granularity: f.Granularity, TimeZone: f.TimeZone, Days: dayBuckets, Models: []domain.UsageAnalyticsModel{}}
+		modelGroups = make(map[usageModelKey]*domain.UsageAnalyticsModel)
+	}
 	where := "r.created_at>=? AND r.created_at<?"
 	args := []any{f.From.UnixMilli(), f.Until.UnixMilli()}
 	for _, part := range []struct {
@@ -36,7 +47,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	if f.GeneralChat {
 		where += " AND r.project_id=''"
 	}
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT r.body,e.body,COALESCE(e.pricing_id,''),COALESCE(p.model_id,''),COALESCE(p.provider_id,''),COALESCE(p.revision,0),COALESCE(p.body,''),COALESCE(p.created_at,0) FROM response_usage r LEFT JOIN response_estimates e ON e.usage_id=r.id LEFT JOIN pricing_versions p ON p.id=e.pricing_id WHERE `+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT r.body,r.created_at,e.body,COALESCE(e.pricing_id,''),COALESCE(p.model_id,''),COALESCE(p.provider_id,''),COALESCE(p.revision,0),COALESCE(p.body,''),COALESCE(p.created_at,0) FROM response_usage r LEFT JOIN response_estimates e ON e.usage_id=r.id LEFT JOIN pricing_versions p ON p.id=e.pricing_id WHERE `+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
 	if err != nil {
 		return result, storageError(err)
 	}
@@ -53,8 +64,8 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 			}
 			var body, estimateBody, priceBody []byte
 			var price PricingVersion
-			var created int64
-			if err := rows.Scan(&body, &estimateBody, &price.ID, &price.ModelID, &price.ProviderID, &price.Revision, &priceBody, &created); err != nil {
+			var responseCreated, pricingCreated int64
+			if err := rows.Scan(&body, &responseCreated, &estimateBody, &price.ID, &price.ModelID, &price.ProviderID, &price.Revision, &priceBody, &pricingCreated); err != nil {
 				return storageError(err)
 			}
 			var record domain.ResponseUsageRecord
@@ -75,7 +86,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					if price.ID.Validate() != nil || price.ModelID.Validate() != nil || price.ProviderID.Validate() != nil || price.Revision == 0 || len(priceBody) > 16<<10 || domain.Decode(priceBody, &price.Basis) != nil || price.Basis.Validate() != nil {
 						return corrupt()
 					}
-					price.CreatedAt = time.UnixMilli(created).UTC()
+					price.CreatedAt = time.UnixMilli(pricingCreated).UTC()
 					retained = &domain.PricingUsage{Pricing: price}
 					prices[price.ID] = retained
 				}
@@ -104,11 +115,48 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 			group.Totals.Add(record.Usage.Counts)
 			group.Estimates.Add(estimate)
 			result.Totals.Add(record.Usage.Counts)
+			if result.Analytics != nil {
+				created := time.UnixMilli(responseCreated).UTC()
+				day := sort.Search(len(dayBuckets), func(index int) bool { return created.Before(dayBuckets[index].Until) })
+				if day >= len(dayBuckets) || created.Before(dayBuckets[day].From) {
+					return corrupt()
+				}
+				dayBuckets[day].Totals.Add(record.Usage.Counts)
+				key := usageModelKey{Provider: record.ProviderID, Model: record.ModelID}
+				model := modelGroups[key]
+				if model == nil {
+					if len(modelGroups) >= maxUsageGroups || len(modelGroups) >= domain.UsageModelGroupLimit {
+						return usageReadLimit()
+					}
+					model = &domain.UsageAnalyticsModel{ProviderID: record.ProviderID, ModelID: record.ModelID}
+					modelGroups[key] = model
+				}
+				model.Totals.Add(record.Usage.Counts)
+			}
 		}
 		return storageError(rows.Err())
 	}()
 	if err != nil {
 		return domain.UsageSummary{}, err
+	}
+	if result.Analytics != nil {
+		for _, model := range modelGroups {
+			result.Analytics.Models = append(result.Analytics.Models, *model)
+		}
+		domain.SortUsageAnalyticsModels(result.Analytics.Models)
+		if len(result.Analytics.Models) > domain.UsageRankedModelLimit {
+			other := &domain.UsageOtherModels{}
+			for _, model := range result.Analytics.Models[domain.UsageRankedModelLimit:] {
+				if model.Totals.Total.MeasuredResponses == 0 || model.Totals.Total.KnownTotal == "" {
+					continue
+				}
+				other.ModelCount++
+				other.Totals.Merge(model.Totals)
+			}
+			if other.ModelCount > 0 {
+				result.Analytics.OtherModels = other
+			}
+		}
 	}
 	keys := make([]string, 0, len(groups))
 	for key := range groups {
@@ -131,6 +179,11 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 		return domain.UsageSummary{}, err
 	}
 	return result, nil
+}
+
+type usageModelKey struct {
+	Provider domain.ID
+	Model    domain.ID
 }
 
 // This is an explicit coverage indicator for executions accepted in the same

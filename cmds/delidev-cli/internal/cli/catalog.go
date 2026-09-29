@@ -143,13 +143,22 @@ func requireProviderInventoryCapability(ctx context.Context, c client, capabilit
 	return domain.Fail(domain.Unsupported, "The server does not support this provider inventory capability.", "Update the DeliDev server before using this provider-filtered command.")
 }
 
-func listWithProviderFilter(ctx context.Context, c client, filter *pb.Filter, providerID string) (*pb.ListResourcesResponse, error) {
+func listWithProviderFilter(ctx context.Context, c client, filter *pb.Filter, providerID string, accountType ...pb.AccountTypeFilter) (*pb.ListResourcesResponse, error) {
 	if providerID != "" {
 		if err := requireProviderInventoryCapability(ctx, c, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER); err != nil {
 			return nil, err
 		}
 	}
-	response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: filter, ProviderId: providerID}))
+	selectedType := pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_UNSPECIFIED
+	if len(accountType) > 0 {
+		selectedType = accountType[0]
+	}
+	if selectedType != pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_UNSPECIFIED {
+		if err := requireProviderInventoryCapability(ctx, c, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER); err != nil {
+			return nil, err
+		}
+	}
+	response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: filter, ProviderId: providerID, AccountType: selectedType}))
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}

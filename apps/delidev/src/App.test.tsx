@@ -3,7 +3,7 @@ import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode } from "./documents";
 
@@ -45,11 +45,6 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
     router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: async () => ({ preferences }) });
     router.service(IntegrationService, { queryRepositoryIntegration: githubQuery });
     router.service(ConfigurationService, { saveConfiguration });
-    router.service(ProviderService, {
-      listProviderPresets: () => ({ presetsJson: encode([{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true } }]) }),
-      listProviderInventory: () => ({ entries: [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] }),
-      searchModels: () => ({ models: [], providers: [] }),
-    });
   });
   return { transport, session, message, enqueues, controls, status, githubQuery, saveConfiguration, projectRequests, sessionRequests };
 }
@@ -82,16 +77,15 @@ it("defers a New Project entry behind a retained parent editor", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  const newProvider = await screen.findByRole("button", { name: "Custom provider" });
-  await waitFor(() => expect((newProvider as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(newProvider);
+  fireEvent.click(await screen.findByRole("button", { name: "Instructions" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
   const providerName = screen.getByRole("textbox", { name: "Name" });
-  fireEvent.change(providerName, { target: { value: "Retained provider draft" } });
+  fireEvent.change(providerName, { target: { value: "Retained instructions draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "New project" }));
   expect(screen.getByRole("textbox", { name: "Name" })).toBe(providerName);
-  expect((providerName as HTMLInputElement).value).toBe("Retained provider draft");
-  expect(screen.getByRole("button", { name: "Save Provider" })).toBeTruthy();
+  expect((providerName as HTMLInputElement).value).toBe("Retained instructions draft");
+  expect(screen.getByRole("button", { name: "Save Instructions" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
   expect(await screen.findByRole("heading", { name: "New Project" })).toBeTruthy();
   await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
@@ -431,14 +425,13 @@ it("defers the PR entry while a parent configuration editor draft is open", asyn
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  const newProvider = await screen.findByRole("button", { name: "Custom provider" });
-  await waitFor(() => expect((newProvider as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(newProvider);
+  fireEvent.click(await screen.findByRole("button", { name: "Instructions" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
   const name = await screen.findByRole("textbox", { name: "Name" });
-  fireEvent.change(name, { target: { value: "Retained provider draft" } });
+  fireEvent.change(name, { target: { value: "Retained instructions draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained provider draft");
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained instructions draft");
   expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("false");
   fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));

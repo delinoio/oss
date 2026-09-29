@@ -282,10 +282,8 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			}
 		}
 		if len(rest) > 0 && (rest[0] == "presets" || rest[0] == "inventory" || rest[0] == "discover" || presetCreate) {
-			if rest[0] != "presets" {
-				if rest[0] != "inventory" {
-					ensureRequest(&o)
-				}
+			if rest[0] != "presets" && rest[0] != "inventory" {
+				ensureRequest(&o)
 			}
 			value, err := providerCatalog(ctx, c, o, rest)
 			return emit(value, err)
@@ -444,7 +442,8 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	page := fs.String("page-token", "", "page token")
 	project := fs.String("project-id", "", "project scope")
 	session := fs.String("session-id", "", "session scope")
-	providerID := fs.String("provider-id", "", "provider scope for account lists")
+	accountType := fs.String("account-type", "", "account type: api or subscription")
+	providerID := fs.String("provider-id", "", "account provider ID")
 	if err := parse(fs, rest); err != nil {
 		return emit(nil, err)
 	}
@@ -453,21 +452,31 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		if *limit > 200 || *limit == 0 {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Invalid page size.", "Use 1 through 200."))
 		}
+		if (*accountType != "" || *providerID != "") && kind != domain.AccountKind {
+			return emit(nil, domain.Fail(domain.InvalidArgument, "Account filters require account resources.", "Select account as the resource kind."))
+		}
+		if action == "snapshot" && (*accountType != "" || *providerID != "") {
+			return emit(nil, domain.Fail(domain.InvalidArgument, "Account filters apply only to paginated account lists.", "Use account list instead of account snapshot."))
+		}
 		f := &pb.Filter{Kind: rpc.WireKind(kind), PageSize: uint32(*limit), PageToken: *page, ProjectId: *project, SessionId: *session}
 		if action == "snapshot" {
-			if *providerID != "" {
-				return emit(nil, domain.Fail(domain.InvalidArgument, "Provider filtering is available only for account lists.", "Use list --provider-id with the account command."))
-			}
 			response, err := c.resources.GetSnapshot(ctx, request(c, &pb.GetSnapshotRequest{Filter: f}))
 			if err != nil {
 				return emit(nil, rpc.ClientError(err))
 			}
 			return emit(map[string]any{"resources": resourcesJSON(response.Msg.Resources), "cursor": response.Msg.Cursor}, nil)
 		}
-		if *providerID != "" && kind != domain.AccountKind {
-			return emit(nil, domain.Fail(domain.InvalidArgument, "Provider filtering is available only for account lists.", "Use --provider-id with account list."))
+		var selectedType pb.AccountTypeFilter
+		switch *accountType {
+		case "":
+		case "api":
+			selectedType = pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API
+		case "subscription":
+			selectedType = pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_SUBSCRIPTION
+		default:
+			return emit(nil, domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription."))
 		}
-		response, err := listWithProviderFilter(ctx, c, f, *providerID)
+		response, err := listWithProviderFilter(ctx, c, f, *providerID, selectedType)
 		if err != nil {
 			return emit(nil, err)
 		}
@@ -814,7 +823,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account disconnect --id ID --revision N
   account validate --id ID --revision N
   account status --id ID
-  account list [--provider-id ID] [--limit N] [--page-token TOKEN]
+  account list [--provider-id ID] [--account-type api|subscription] [--limit N] [--page-token TOKEN]
   integration create --input FILE|-
   integration edit --id ID --revision N --input FILE|-
   integration replace-token --id ID --revision N --pat-stdin
@@ -869,7 +878,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   usage pricing get --model-id ID
   usage pricing version --id ID
   usage pricing set --model-id ID --model-revision M --revision N --input PATH [--request-id ID]
-  usage summary [--from RFC3339] [--until RFC3339] [--session-id ID] [--project-id ID | --general-chat] [--account-id ID] [--provider-id ID] [--model-id ID]
+  usage summary [--from RFC3339] [--until RFC3339] [--granularity day --timezone IANA] [--session-id ID] [--project-id ID | --general-chat] [--account-id ID] [--provider-id ID] [--model-id ID]
   activity list [--session-id ID] [--project-id ID] [--limit N] [--page-token TOKEN]
   search --query TEXT [--session-id ID] [--project-id ID] [--agent-id ID] [--account-id ID]
     [--outcome all|not-started|running|succeeded|failed|stopped] [--archive all|active|archiving|archived]
