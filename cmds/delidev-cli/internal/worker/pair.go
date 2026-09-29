@@ -115,15 +115,26 @@ func writeJSON(path string, value any) error {
 // acceptance. A lost response can therefore retry exactly without creating a
 // new device or replacing an existing credential.
 func Pair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string) (Credential, error) {
-	return pair(ctx, root, grant, kind, name, false)
+	return pair(ctx, root, grant, kind, name, false, nil)
+}
+
+// PairWithCommitment publishes caller-owned proof of the accepted credential
+// before publishing device.json or retiring the exact pending pairing journal.
+// Failure or interruption retains the original request/token for receipt replay;
+// an existing credential never invokes commit or gains reconstructed proof.
+func PairWithCommitment(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string, commit func(Credential) error) (Credential, error) {
+	if commit == nil {
+		return Credential{}, domain.Fail(domain.InvalidArgument, "A credential commitment is required.", "Retain the original pairing proof before publishing its credential.")
+	}
+	return pair(ctx, root, grant, kind, name, false, commit)
 }
 
 // RetryPair requires the original private pairing journal or completed device.
 // It cannot recreate lost request/token ownership from a saved grant alone.
 func RetryPair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string) (Credential, error) {
-	return pair(ctx, root, grant, kind, name, true)
+	return pair(ctx, root, grant, kind, name, true, nil)
 }
-func pair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string, existing bool) (Credential, error) {
+func pair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string, existing bool, commit func(Credential) error) (Credential, error) {
 	var zero Credential
 	if err := grant.Validate(); err != nil {
 		return zero, err
@@ -209,6 +220,11 @@ func pair(ctx context.Context, root string, grant PairingCode, kind domain.Devic
 	}
 	if response.Msg.ServerId != string(grant.ServerID) || response.Msg.Device == nil || response.Msg.Device.Id != string(pending.Credential.DeviceID) || (kind == domain.WorkerDevice && (response.Msg.Machine == nil || response.Msg.Machine.Id != string(pending.Credential.MachineID))) {
 		return zero, domain.Fail(domain.RecoveryRequired, "Pairing acknowledged a different device or server identity.", "Preserve this private scope and inspect the selected server.")
+	}
+	if commit != nil {
+		if err := commit(pending.Credential); err != nil {
+			return zero, err
+		}
 	}
 	if err := writeJSON(credentialPath(root), pending.Credential); err != nil {
 		return zero, err
