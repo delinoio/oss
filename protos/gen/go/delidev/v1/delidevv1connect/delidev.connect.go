@@ -98,6 +98,12 @@ const (
 	// SystemServiceListBackupCreationsProcedure is the fully-qualified name of the SystemService's
 	// ListBackupCreations RPC.
 	SystemServiceListBackupCreationsProcedure = "/delidev.v1.SystemService/ListBackupCreations"
+	// SystemServiceRestoreBackupProcedure is the fully-qualified name of the SystemService's
+	// RestoreBackup RPC.
+	SystemServiceRestoreBackupProcedure = "/delidev.v1.SystemService/RestoreBackup"
+	// SystemServiceGetBackupRestoreProcedure is the fully-qualified name of the SystemService's
+	// GetBackupRestore RPC.
+	SystemServiceGetBackupRestoreProcedure = "/delidev.v1.SystemService/GetBackupRestore"
 	// ResourceServiceGetResourceProcedure is the fully-qualified name of the ResourceService's
 	// GetResource RPC.
 	ResourceServiceGetResourceProcedure = "/delidev.v1.ResourceService/GetResource"
@@ -395,6 +401,8 @@ type SystemServiceClient interface {
 	RequestBackup(context.Context, *connect.Request[v1.RequestBackupRequest]) (*connect.Response[v1.RequestBackupResponse], error)
 	GetBackupCreation(context.Context, *connect.Request[v1.GetBackupCreationRequest]) (*connect.Response[v1.GetBackupCreationResponse], error)
 	ListBackupCreations(context.Context, *connect.Request[v1.ListBackupCreationsRequest]) (*connect.Response[v1.ListBackupCreationsResponse], error)
+	RestoreBackup(context.Context, *connect.Request[v1.RestoreBackupRequest]) (*connect.Response[v1.RestoreBackupResponse], error)
+	GetBackupRestore(context.Context, *connect.Request[v1.GetBackupRestoreRequest]) (*connect.Response[v1.GetBackupRestoreResponse], error)
 }
 
 // NewSystemServiceClient constructs a client for the delidev.v1.SystemService service. By default,
@@ -486,6 +494,18 @@ func NewSystemServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(systemServiceMethods.ByName("ListBackupCreations")),
 			connect.WithClientOptions(opts...),
 		),
+		restoreBackup: connect.NewClient[v1.RestoreBackupRequest, v1.RestoreBackupResponse](
+			httpClient,
+			baseURL+SystemServiceRestoreBackupProcedure,
+			connect.WithSchema(systemServiceMethods.ByName("RestoreBackup")),
+			connect.WithClientOptions(opts...),
+		),
+		getBackupRestore: connect.NewClient[v1.GetBackupRestoreRequest, v1.GetBackupRestoreResponse](
+			httpClient,
+			baseURL+SystemServiceGetBackupRestoreProcedure,
+			connect.WithSchema(systemServiceMethods.ByName("GetBackupRestore")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -504,6 +524,8 @@ type systemServiceClient struct {
 	requestBackup       *connect.Client[v1.RequestBackupRequest, v1.RequestBackupResponse]
 	getBackupCreation   *connect.Client[v1.GetBackupCreationRequest, v1.GetBackupCreationResponse]
 	listBackupCreations *connect.Client[v1.ListBackupCreationsRequest, v1.ListBackupCreationsResponse]
+	restoreBackup       *connect.Client[v1.RestoreBackupRequest, v1.RestoreBackupResponse]
+	getBackupRestore    *connect.Client[v1.GetBackupRestoreRequest, v1.GetBackupRestoreResponse]
 }
 
 // GetStatus calls delidev.v1.SystemService.GetStatus.
@@ -571,6 +593,16 @@ func (c *systemServiceClient) ListBackupCreations(ctx context.Context, req *conn
 	return c.listBackupCreations.CallUnary(ctx, req)
 }
 
+// RestoreBackup calls delidev.v1.SystemService.RestoreBackup.
+func (c *systemServiceClient) RestoreBackup(ctx context.Context, req *connect.Request[v1.RestoreBackupRequest]) (*connect.Response[v1.RestoreBackupResponse], error) {
+	return c.restoreBackup.CallUnary(ctx, req)
+}
+
+// GetBackupRestore calls delidev.v1.SystemService.GetBackupRestore.
+func (c *systemServiceClient) GetBackupRestore(ctx context.Context, req *connect.Request[v1.GetBackupRestoreRequest]) (*connect.Response[v1.GetBackupRestoreResponse], error) {
+	return c.getBackupRestore.CallUnary(ctx, req)
+}
+
 // SystemServiceHandler is an implementation of the delidev.v1.SystemService service.
 type SystemServiceHandler interface {
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
@@ -586,6 +618,8 @@ type SystemServiceHandler interface {
 	RequestBackup(context.Context, *connect.Request[v1.RequestBackupRequest]) (*connect.Response[v1.RequestBackupResponse], error)
 	GetBackupCreation(context.Context, *connect.Request[v1.GetBackupCreationRequest]) (*connect.Response[v1.GetBackupCreationResponse], error)
 	ListBackupCreations(context.Context, *connect.Request[v1.ListBackupCreationsRequest]) (*connect.Response[v1.ListBackupCreationsResponse], error)
+	RestoreBackup(context.Context, *connect.Request[v1.RestoreBackupRequest]) (*connect.Response[v1.RestoreBackupResponse], error)
+	GetBackupRestore(context.Context, *connect.Request[v1.GetBackupRestoreRequest]) (*connect.Response[v1.GetBackupRestoreResponse], error)
 }
 
 // NewSystemServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -673,6 +707,18 @@ func NewSystemServiceHandler(svc SystemServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(systemServiceMethods.ByName("ListBackupCreations")),
 		connect.WithHandlerOptions(opts...),
 	)
+	systemServiceRestoreBackupHandler := connect.NewUnaryHandler(
+		SystemServiceRestoreBackupProcedure,
+		svc.RestoreBackup,
+		connect.WithSchema(systemServiceMethods.ByName("RestoreBackup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	systemServiceGetBackupRestoreHandler := connect.NewUnaryHandler(
+		SystemServiceGetBackupRestoreProcedure,
+		svc.GetBackupRestore,
+		connect.WithSchema(systemServiceMethods.ByName("GetBackupRestore")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.SystemService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SystemServiceGetStatusProcedure:
@@ -701,6 +747,10 @@ func NewSystemServiceHandler(svc SystemServiceHandler, opts ...connect.HandlerOp
 			systemServiceGetBackupCreationHandler.ServeHTTP(w, r)
 		case SystemServiceListBackupCreationsProcedure:
 			systemServiceListBackupCreationsHandler.ServeHTTP(w, r)
+		case SystemServiceRestoreBackupProcedure:
+			systemServiceRestoreBackupHandler.ServeHTTP(w, r)
+		case SystemServiceGetBackupRestoreProcedure:
+			systemServiceGetBackupRestoreHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -760,6 +810,14 @@ func (UnimplementedSystemServiceHandler) GetBackupCreation(context.Context, *con
 
 func (UnimplementedSystemServiceHandler) ListBackupCreations(context.Context, *connect.Request[v1.ListBackupCreationsRequest]) (*connect.Response[v1.ListBackupCreationsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SystemService.ListBackupCreations is not implemented"))
+}
+
+func (UnimplementedSystemServiceHandler) RestoreBackup(context.Context, *connect.Request[v1.RestoreBackupRequest]) (*connect.Response[v1.RestoreBackupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SystemService.RestoreBackup is not implemented"))
+}
+
+func (UnimplementedSystemServiceHandler) GetBackupRestore(context.Context, *connect.Request[v1.GetBackupRestoreRequest]) (*connect.Response[v1.GetBackupRestoreResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SystemService.GetBackupRestore is not implemented"))
 }
 
 // ResourceServiceClient is a client for the delidev.v1.ResourceService service.

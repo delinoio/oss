@@ -6,7 +6,7 @@ Go owns managed database backups, session deletion, Worker snapshots and recover
 The approved completion work includes every remaining issue #964 requirement;
 actual account/private-GitHub access and platform distribution validation remain
 deferred. This document distinguishes the implemented backup observation surface
-from permanent session deletion, workspace snapshots and restoration, which remain pending. Managed backup deletion is implemented separately below.
+from permanent session deletion and Worker-local snapshots, which remain pending. Managed backup deletion and database restore are implemented separately below.
 
 ## Managed backup observation
 
@@ -162,14 +162,96 @@ failures. Accepted deletion cannot be canceled. Logical validated image bytes
 removed are not a claim of reclaimed filesystem space; hard links, filesystem
 snapshots and allocation remain outside that measurement.
 
+## Managed database restore
+
+Issue #1080 adds owner/paired-client `SystemService.RestoreBackup` and
+`GetBackupRestore`, with the `MANAGED_BACKUP_RESTORE_V1` status capability.
+`InspectBackup` also returns the exact committed live `restore_revision`. Inspection
+is an observation; eligibility is independently rechecked at replacement.
+
+`delidev backup restore --id ID --expected-revision 1 --size-bytes BYTES
+--modified-at TIME --sha256 SHA256 --expected-restore-revision REV --confirm`
+uses the original inspected image metadata, digest and live revision. Preserve the
+global UUID-v7 `--request-id` on uncertain responses. `backup restore-status
+--id REQUEST-ID` observes that exact original receipt after restarting the server.
+No command implicitly starts a server. Omitted live revision differs from explicit
+zero. Workers and revoked clients cannot inspect, restore or read restore receipts.
+
+The thirty-second cancellable operation holds both the managed-file gate and
+exclusive store gate under the server's process lock. It checks original actor,
+server identity and exact event revision, then refuses live claimed/uncertain jobs,
+active/running/recovery/archiving sessions, uncertain/stopping workspace ownership,
+and pending credential removals/integration operations. Restore never stops a
+Worker to create eligibility. Concurrent mutations/claims cannot cross the final
+validation boundary; a second restore cannot publish in the old epoch.
+
+Copy the image through the inspection identity/hash/sidecar checks into a private
+staging file. The 8 GiB image bound still applies. Reject corrupt, newer-schema,
+foreign-server, replaced or deletion-obligated images without changing live logical
+state or the source. Supported older schemas migrate only in staging through the
+existing backup-first migration, retaining the pre-migration copy. Capture a
+synchronized current `VACUUM INTO` safety image, including committed WAL content,
+outside the replaceable database. Transform only the candidate in one transaction.
+
+The safety image supplies current device descriptors/verifiers, merged deletion
+tombstones, deleted-project policies, model suppressions, backup publication claims
+and permanent backup-removal jobs/receipts. Remove tombstoned entities and deleted
+session children, including indexed transcript content through existing cascades.
+Current paired clients retain their present authorization; old/revoked/deleted
+clients gain none. Pairing codes and execution grants/references are discarded.
+Workers must pair again; no Worker files or credential payloads are restored.
+Restored account and integration definitions are disconnected, without historical
+connection/validation/removal authority. Protected credential storage stays untouched.
+
+Every restored session is paused and recovery-required. Nonterminal historical
+jobs are canceled with a typed quarantine problem; schedules are disabled and their
+next-run timestamps cleared. Historical assignment copies cannot grant native
+recovery/continuation authority. Keep original evidence in the source and safety
+images rather than manufacture cleanup or replay input. Permanent backup-removal
+jobs alone retain their current external obligation and controller semantics.
+Restore request UUIDs remain globally reserved across rollback and unjournaled
+crash evidence, without filesystem reads inside ordinary mutations. Historical
+receipt digests remain reserved, while ordinary receipt contents are
+replaced by a quarantine marker that `Replay`/`Mutate` reject as recovery-required.
+Replacement resource revisions exceed both versions; the event high-water mark
+advances beyond both timelines and expires older cursors for a coherent resnapshot.
+
+`backup-restores/` retains at most 64 attempt directories, without eviction. Each
+contains the synchronized safety image, candidate/staging evidence and a versioned
+actor/server/request/image-bound receipt. `active.json` is the external publication
+barrier, binding original live, safety and candidate SHA-256 values. After a confirmed
+WAL checkpoint and SQLite closure, synchronize that barrier before atomic
+same-volume platform replacement and synchronization of both directories. No
+restore code unlinks live WAL/SHM/journal files. The source backup remains unchanged.
+
+Publication ends the old server epoch and records stopped lifecycle intent. It
+returns `published`, which is distinct from verified startup. Any uncertain outcome
+after SQLite closure also ends the epoch. Startup, under the exclusive server lock
+and before opening SQLite, accepts exactly the journal-pinned original or candidate
+fingerprint: preserve the original and record `rolled-back`, or record `restored`
+for the replacement. Changed safety/live bytes, foreign identity, sidecars or
+conflicting journal evidence fail closed without overwriting either outcome.
+Recovery synchronizes the observed outcome and its receipt before retiring the
+active barrier. Each completed external receipt must still match its immutable
+SQLite request marker before startup migration or authorization. Manual replacement
+with an older image cannot silently bypass that safety boundary. A lost acknowledgment or exact retry reads the retained receipt,
+never publishes another image. Unjournaled interrupted staging remains evidence;
+it is not an accepted restore and cannot be blindly resumed.
+
+Restore logs contain only validated request/backup UUIDs, closed state, correlation
+and safe error codes. Hashes, paths, database bodies and credentials are not logged.
+This operation proves database replacement/recovery only; it does not establish
+real-account, Worker workspace, native harness or platform-distribution acceptance.
+
 ## Remaining implementation
 
 Permanent session deletion requires irrevocable intent, stopped ownership,
-offline-Worker progress and managed-backup removal. Restoration must preserve
-deletion obligations outside the replaced database. Worker-local snapshots must
+offline-Worker progress and managed-backup removal. Database restore enforces
+existing tombstones and external backup-deletion obligations; this does not implement
+the remaining permanent-session-deletion workflow. Worker-local snapshots must
 faithfully preserve all repositories, ignored files, unpushed commits and symlinks
-before deleting any managed source. Those operations are not yet exposed by the
-backup observation APIs; the complete requirements remain authoritative.
+before deleting any managed source. Those remaining operations are not yet exposed by the
+backup APIs; the complete requirements remain authoritative.
 
 ## Validation
 

@@ -391,7 +391,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		value, err := configurationTransfer(ctx, c, o, rest, streams)
 		return emit(value, err)
 	case "backup":
-		if len(rest) > 0 && (rest[0] == "create" || rest[0] == "delete") {
+		if len(rest) > 0 && (rest[0] == "create" || rest[0] == "delete" || rest[0] == "restore") {
 			ensureRequest(&o)
 		}
 		value, err := backupCommand(ctx, c, o, rest)
@@ -900,6 +900,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   backup creations [--limit N] [--page-token TOKEN]
   backup list [--limit N] [--page-token TOKEN]
   backup inspect --id ID
+  backup restore --id ID --expected-revision REV --size-bytes BYTES --modified-at TIME --sha256 SHA256 --expected-restore-revision REV --confirm
+  backup restore-status --id REQUEST-ID
   backup delete --id ID --expected-revision REV --size-bytes BYTES --modified-at TIME --sha256 SHA256 --confirm
   backup deletion --id JOB-ID
   backup deletions [--limit N] [--page-token TOKEN]

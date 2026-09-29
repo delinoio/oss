@@ -68,3 +68,13 @@ export const getBackupCreation = SystemService.method.getBackupCreation;
  * @generated from rpc delidev.v1.SystemService.ListBackupCreations
  */
 export const listBackupCreations = SystemService.method.listBackupCreations;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.RestoreBackup
+ */
+export const restoreBackup = SystemService.method.restoreBackup;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.GetBackupRestore
+ */
+export const getBackupRestore = SystemService.method.getBackupRestore;

@@ -3191,3 +3191,45 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+### Managed database restore for issue #1080 (2026-09-30)
+
+Implemented authenticated owner/paired-client `RestoreBackup`, exact original
+`GetBackupRestore` observations, typed availability/state and equivalent CLI
+commands. Restore binds the inspected image metadata/SHA-256, present live revision,
+original actor/server and UUID-v7 request. It requires settled current native and
+credential ownership; it neither stops a Worker to gain eligibility nor restores
+credentials or Worker files. The Go/TypeScript/Connect Query bindings are generated
+from the canonical additive schema, with no live schema version change.
+
+Private staging and a synchronized current safety snapshot preserve current
+revocations, tombstones and permanent external image-deletion obligations. Paused
+sessions, canceled nonterminal jobs, disabled schedules, disconnected accounts,
+revoked Worker associations and quarantined receipts/assignment authority prevent
+historical work from becoming current execution. A fingerprint-bound external
+journal precedes atomic replacement; the old process ends and startup reconciles
+one original/replacement outcome before opening SQLite. Completed external safety
+boundaries cannot be bypassed by manually substituting an older live database.
+
+Executed focused race verification:
+`go test -race ./cmds/delidev-cli/internal/store ./cmds/delidev-cli/internal/server ./cmds/delidev-cli/internal/cli -run 'BackupRestore|RestoreRPC|RestoreDisconnects|RestoreRollBack|CompletedRestore' -count=1`
+passed (store 194.572s, server 12.585s, CLI 13.539s). Real private SQLite/WAL,
+filesystem and subprocess fixtures cover committed content, exact receipt retries,
+source preservation, concurrent publication, corrupt/newer/foreign/replaced images,
+stale revisions, active/uncertain ownership, current-client versus revoked-client
+access, deletion of sessions/children, retained backup-removal obligations,
+account/Worker disconnection, schedule pause, protected-file preservation,
+private-only schema-23 migration and pre-migration backup, changed safety/live/WAL
+recovery evidence and global request reservation after rollback. Seven actual
+process-exit checkpoints exercise staging, SQLite closure, durable journal,
+receipt, rename, directory synchronization and completion-record interruption.
+Loopback CLI validation includes confirmation, joined server shutdown, explicit
+restart and observation/replay without another replacement.
+
+The generated API-client test suite passed all 41 tests; client lint/typecheck,
+protocol formatting/lint/compatibility and package Go vet passed. No real provider
+accounts, user credentials or Worker workspaces were used. macOS temporary-file
+execution is distinct from unperformed native Windows/Linux filesystem, real
+account/harness, desktop presentation and release/distribution acceptance. The
+remaining permanent session-deletion and Worker-snapshot workflows, and the rest
+of issue #964, remain separate requirements.

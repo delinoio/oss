@@ -1,4 +1,5 @@
 # DeliDev CLI
+- Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Keep generated Connect/CLI parity and typed publication-versus-startup outcomes; never replay restore or native claims after uncertainty.
 - `backup create --wait` returns a typed nonzero exit for failed or unconfirmed completion and retains the accepted request/job result on failure, interruption and read errors. Waiting never creates a replacement job.
 - Managed creation and pre-migration publication share the 8 GiB inspection/deletion bound. Reject oversized copies before publication, preserve the live database and settle durable size-limit failures terminally.
 - Backup publication records the original image metadata and digest in live SQLite before a no-replace rename. Recovery must match that independent claim; same-server identity or a known filename alone never establishes creation provenance. Preserve unclaimed/replaced images as recovery evidence.

@@ -274,6 +274,17 @@ Internal remediation planning now lists original linked session candidates by re
 
 The private Worker observation channel now verifies an existing Local/Worktree session's current PR head, branch, remote operands and clean state without changing files or native ownership. Original candidate revision/project/link checks invalidate stale observations after pause, Archive or unlink. This supplies candidate evidence; public Fix now/coalescing, fresh startup authorization and direct-harness Git writes remain unfinished.
 
-Managed backup creation, inventory, integrity inspection and durable permanent image deletion are connected through owner/client Connect RPC, CLI and desktop Settings. Schema v23 retains ordinary jobs/receipts while immutable external deletion intents survive database rollback. This does not complete permanent session deletion, workspace snapshot/restore or managed database restoration; see the [storage contract](cmds-delidev-storage-contract.md).
+Managed backup creation, inventory, integrity inspection and durable permanent image deletion are connected through owner/client Connect RPC, CLI and desktop Settings. Schema v24 retains ordinary jobs/receipts while immutable external deletion intents survive database rollback. Managed database restoration is implemented separately below; permanent session deletion and Worker workspace snapshot/restore remain required; see the [storage contract](cmds-delidev-storage-contract.md).
 
 Local desktop registration now has explicit owner-verified revoked-client recovery and a current-client revocation guard in the app. The CLI/native boundary retains the original revoked identity and private pairing history, uses a separate candidate and exact durable retry, and preserves server sessions/settings and independent Workers. It does not add automatic repair, remote saved-profile recovery, a new RPC or database migration; see the CLI and desktop contracts and evidence ledger.
+
+### Managed backup restoration
+
+Issue #1080 adds owner/client Connect and CLI restoration bound to exact image
+inspection and live revision. Exclusive maintenance requires settled execution
+ownership, retains current authorization/deletion authority outside replaceable
+SQLite and keeps historical sessions/jobs/schedules paused or quarantined. Atomic
+replacement ends the old epoch; startup reconciles the external journal before
+opening SQLite, with exact receipt reads rather than replay. See the
+[storage contract](cmds-delidev-storage-contract.md); permanent session deletion,
+Worker snapshots and broader #964 acceptance remain separate work.
