@@ -1,10 +1,10 @@
 package runmoor
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -13,17 +13,14 @@ import (
 
 const maxLaunchdArgumentBytes = 1 << 20
 const maxLaunchdArgumentCount = 4096
+const maxLaunchdServiceListBytes = 1 << 20
 
 func requireLaunchdActiveIdentity(ctx context.Context, exec CommandExecutor, definition []byte) error {
-	// launchctl print is explicitly human-oriented and its output is not a stable
-	// API. The legacy list command documents a three-column PID/status/label row;
-	// parse only that bounded row to locate a running service process.
-	output, err := exec.Run(ctx, "launchctl", []string{"list", serviceLabel}, minimalEnv(), nil)
+	// The documented three-column table is available only when list has no
+	// label argument. A label-specific query returns detailed job information.
+	// Parse the bounded table and select only Runmoor's exact label row.
+	output, err := exec.Run(ctx, "launchctl", []string{"list"}, minimalEnv(), nil)
 	if err != nil {
-		var status interface{ ExitCode() int }
-		if errors.As(err, &status) && status.ExitCode() == 113 {
-			return nil
-		}
 		slog.Warn("launchd_service_identity_check_failed", "reason", "service_list_unavailable")
 		return problem(ErrDependency, "Cannot inspect the launchd user service.", "Check the logged-in launchd GUI session and retry service stop or uninstall.")
 	}
@@ -59,26 +56,45 @@ func requireLaunchdActiveIdentity(ctx context.Context, exec CommandExecutor, def
 }
 
 func parseLaunchdServiceListPID(output []byte) (pid int, loaded bool, err error) {
-	if len(output) == 0 || len(output) > 1024 || !utf8.Valid(output) || bytes.IndexByte(output, 0) >= 0 {
+	if len(output) > maxLaunchdServiceListBytes || !utf8.Valid(output) || bytes.IndexByte(output, 0) >= 0 {
 		return 0, false, errInvalidServiceDefinition
 	}
-	fields := strings.Fields(string(output))
-	if len(fields) != 3 || fields[2] != serviceLabel {
-		return 0, false, errInvalidServiceDefinition
-	}
-	if fields[1] != "-" {
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	scanner.Buffer(make([]byte, 1024), 1024)
+	found := false
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) == 0 {
+			continue
+		}
+		if len(fields) == 3 && fields[0] == "PID" && fields[1] == "Status" && fields[2] == "Label" {
+			continue
+		}
+		if len(fields) != 3 {
+			return 0, false, errInvalidServiceDefinition
+		}
+		servicePID := 0
+		if fields[0] != "-" {
+			servicePID, err = strconv.Atoi(fields[0])
+			if err != nil || servicePID <= 0 {
+				return 0, false, errInvalidServiceDefinition
+			}
+		}
 		if _, err := strconv.Atoi(fields[1]); err != nil {
 			return 0, false, errInvalidServiceDefinition
 		}
+		if fields[2] == serviceLabel {
+			if found {
+				return 0, false, errInvalidServiceDefinition
+			}
+			found = true
+			pid = servicePID
+		}
 	}
-	if fields[0] == "-" {
-		return 0, true, nil
-	}
-	pid, err = strconv.Atoi(fields[0])
-	if err != nil || pid <= 0 {
+	if scanner.Err() != nil {
 		return 0, false, errInvalidServiceDefinition
 	}
-	return pid, true, nil
+	return pid, found, nil
 }
 
 func parseLaunchdProcessArguments(data []byte) ([]string, error) {

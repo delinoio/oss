@@ -26,8 +26,8 @@ type launchdUnloadFixture struct {
 
 func (f *launchdUnloadFixture) Run(_ context.Context, name string, args, _ []string, _ io.Reader) ([]byte, error) {
 	f.commands = append(f.commands, name+" "+strings.Join(args, " "))
-	if len(args) == 2 && args[0] == "list" && args[1] == serviceLabel {
-		return nil, serviceExit(113)
+	if len(args) == 1 && args[0] == "list" {
+		return []byte("PID\tStatus\tLabel\n"), nil
 	}
 	if args[0] == "bootout" {
 		return nil, f.bootout
@@ -46,11 +46,14 @@ type launchdIdentityFixture struct {
 
 func (f *launchdIdentityFixture) Run(_ context.Context, name string, args, _ []string, _ io.Reader) ([]byte, error) {
 	f.commands = append(f.commands, name+" "+strings.Join(args, " "))
-	if name == "launchctl" && len(args) == 2 && args[0] == "list" && args[1] == serviceLabel {
+	if name == "launchctl" && len(args) == 1 && args[0] == "list" {
+		output := "PID\tStatus\tLabel\n"
 		if f.inactive {
-			return []byte("-\t0\t" + serviceLabel + "\n"), nil
+			output += "-\t0\t" + serviceLabel + "\n"
+			return []byte(output), nil
 		}
-		return []byte(strconv.Itoa(f.pid) + "\t0\t" + serviceLabel + "\n"), nil
+		output += strconv.Itoa(f.pid) + "\t0\t" + serviceLabel + "\n"
+		return []byte(output), nil
 	}
 	return nil, errors.New("unexpected launchd identity command")
 }
@@ -67,6 +70,49 @@ func TestParseLaunchdProcessArguments(t *testing.T) {
 	got, err := parseLaunchdProcessArguments(data)
 	if err != nil || !sameServiceArguments(got, want) {
 		t.Fatalf("arguments = %q, error = %v", got, err)
+	}
+}
+
+func TestParseLaunchdServiceListPID(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		output     string
+		wantPID    int
+		wantLoaded bool
+		wantError  bool
+	}{
+		{
+			name:       "running job in documented table",
+			output:     "PID\tStatus\tLabel\n123\t0\tother.service\n456\t-15\t" + serviceLabel + "\n",
+			wantPID:    456,
+			wantLoaded: true,
+		},
+		{
+			name:       "loaded inactive job",
+			output:     "PID\tStatus\tLabel\n-\t0\t" + serviceLabel + "\n",
+			wantLoaded: true,
+		},
+		{
+			name:   "not loaded",
+			output: "PID\tStatus\tLabel\n123\t0\tother.service\n",
+		},
+		{
+			name:      "malformed target row",
+			output:    "PID\tStatus\tLabel\nnot-a-pid\t0\t" + serviceLabel + "\n",
+			wantError: true,
+		},
+		{
+			name:      "duplicate target rows",
+			output:    "123\t0\t" + serviceLabel + "\n456\t0\t" + serviceLabel + "\n",
+			wantError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pid, loaded, err := parseLaunchdServiceListPID([]byte(tc.output))
+			if (err != nil) != tc.wantError || pid != tc.wantPID || loaded != tc.wantLoaded {
+				t.Fatalf("parsed PID/state = %d/%t, error = %v; want %d/%t, error=%t", pid, loaded, err, tc.wantPID, tc.wantLoaded, tc.wantError)
+			}
+		})
 	}
 }
 
@@ -98,7 +144,7 @@ func TestLaunchdActionsRejectAnActiveManagerWithDifferentArguments(t *testing.T)
 			fixture := &launchdIdentityFixture{pid: os.Getpid()}
 			err := Service(context.Background(), action, configPath, c, fixture)
 			requireCode(t, err, ErrConfig)
-			if len(fixture.commands) != 1 || fixture.commands[0] != "launchctl list "+serviceLabel {
+			if len(fixture.commands) != 1 || fixture.commands[0] != "launchctl list" {
 				t.Fatalf("mismatched launchd service reached a later command: %v", fixture.commands)
 			}
 			if _, err := os.Stat(unit); err != nil {
@@ -132,7 +178,7 @@ func TestLaunchdActionsRejectAnInactiveLoadedJob(t *testing.T) {
 			fixture := &launchdIdentityFixture{inactive: true}
 			err := Service(context.Background(), action, configPath, c, fixture)
 			requireCode(t, err, ErrDependency)
-			if len(fixture.commands) != 1 || fixture.commands[0] != "launchctl list "+serviceLabel {
+			if len(fixture.commands) != 1 || fixture.commands[0] != "launchctl list" {
 				t.Fatalf("inactive loaded launchd service reached a later command: %v", fixture.commands)
 			}
 			if _, err := os.Stat(unit); err != nil {

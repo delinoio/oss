@@ -242,9 +242,9 @@ type serviceCommandRecorder struct {
 
 func (r *serviceCommandRecorder) Run(_ context.Context, name string, args, _ []string, _ io.Reader) ([]byte, error) {
 	call := name + " " + strings.Join(args, " ")
-	if name == "launchctl" && len(args) == 2 && args[0] == "list" && args[1] == serviceLabel {
+	if name == "launchctl" && len(args) == 1 && args[0] == "list" {
 		// These service fixtures model a definition not loaded in launchd.
-		return nil, serviceExit(113)
+		return []byte("PID\tStatus\tLabel\n"), nil
 	}
 	if name == "systemctl" &&
 		len(args) == 5 &&
