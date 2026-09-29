@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageCostState, UsageCoverage, UsageService, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
+import { EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, UsageTimeGranularity, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
 import { encode } from "./documents";
 
@@ -26,12 +26,13 @@ function fixture() {
 
 it("shows exact known subtotals, missing fields and separate unavailable costs", async () => {
   const f = fixture(); render(f.view());
-  await screen.findByText("Known subtotals · incomplete coverage");
+  await screen.findByText("Incomplete coverage");
   expect(screen.getAllByText(BigInt("18446744073709551614").toLocaleString()).length).toBeGreaterThan(0);
   expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
-  expect(screen.getByText(/2 executions accepted/)).toBeTruthy();
+  expect(screen.getByText(/2 accepted executions/)).toBeTruthy();
   expect(screen.getByText("Actual API cost:").parentElement!.textContent).toContain("Unavailable");
   expect(screen.getByText("Token-price estimate:").parentElement!.textContent).toContain("Unavailable");
+  expect(screen.getByText(/charts are unavailable from this server version/)).toBeTruthy();
   const table = screen.getByRole("table");
   expect(within(table).getByText("General Chat")).toBeTruthy();
   expect(within(table).getByText(f.ids.account)).toBeTruthy();
@@ -43,7 +44,7 @@ it("shows exact known subtotals, missing fields and separate unavailable costs",
 
 it("applies filters explicitly and preserves a draft across navigation", async () => {
   const f = fixture(); const view = render(f.view());
-  await screen.findByText("Known subtotals · incomplete coverage");
+  await screen.findByText("Incomplete coverage");
   fireEvent.change(screen.getByRole("combobox", { name: "Account" }), { target: { value: f.ids.account } });
   fireEvent.click(screen.getByRole("checkbox", { name: "General Chat only" }));
   expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).disabled).toBe(true);
@@ -53,10 +54,23 @@ it("applies filters explicitly and preserves a draft across navigation", async (
   fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
   expect(f.read.mock.calls[1][0]).toMatchObject({ accountId: f.ids.account, generalChat: true, projectId: "" });
-  fireEvent.change(screen.getByLabelText("From (local time)"), { target: { value: "2026-09-25T10:00" } });
-  fireEvent.change(screen.getByLabelText("Until (local time, exclusive)"), { target: { value: "2026-09-24T10:00" } });
+  fireEvent.change(screen.getByLabelText(/^From \(/), { target: { value: "2026-09-25T10:00" } });
+  fireEvent.change(screen.getByLabelText(/^Until \(/), { target: { value: "2026-09-24T10:00" } });
   fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await screen.findByRole("alert"); expect(f.read).toHaveBeenCalledTimes(2);
+});
+
+it("labels a new applied time scope while its result is still loading", async () => {
+  const f = fixture(); render(f.view());
+  await screen.findByText("Incomplete coverage");
+  f.read.mockImplementationOnce(() => new Promise(() => {}));
+  fireEvent.change(screen.getByLabelText(/^From \(/), { target: { value: "2026-09-23T10:00" } });
+  fireEvent.change(screen.getByLabelText(/^Until \(/), { target: { value: "2026-09-24T10:00" } });
+  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+  const applied = screen.getByRole("group", { name: "Applied conditions" });
+  expect(applied.textContent).toContain("2026");
+  expect(applied.textContent).not.toContain("Last 30 days · server time");
+  expect(screen.getByRole("status").textContent).toBe("Loading token usage…");
 });
 
 it("does not invent zero for empty telemetry and marks retained data stale after a failed refresh", async () => {
@@ -65,9 +79,56 @@ it("does not invent zero for empty telemetry and marks retained data stale after
   await screen.findByText(/No exact response usage is recorded/);
   expect(screen.getAllByText("Unavailable").length).toBe(6);
   f.read.mockRejectedValueOnce(new ConnectError("Fixture unavailable", Code.Unavailable));
-  fireEvent.click(screen.getByRole("button", { name: "Refresh usage" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText(/These are the last successfully retrieved values/);
   expect(f.read).toHaveBeenCalledTimes(2);
+});
+
+it("renders daily zero, unavailable and empty evidence with keyboard detail and complete model tables", async () => {
+  const f = fixture();
+  const start = BigInt(Date.UTC(2026, 8, 1));
+  const day = 86_400_000n;
+  const unavailable = { responses: 1, total: { knownTotal: "", measuredResponses: 0, unavailableResponses: 1 } };
+  const models = [100, 90, 80, 70, 60, 0, 0].map((total, index) => ({ providerId: newRequestId(), modelId: newRequestId(), providerName: "Shared API", modelName: `Model ${index + 1}`, totals: { responses: 1, total: { knownTotal: String(total), measuredResponses: 1, unavailableResponses: 0 } } }));
+  models.push({ providerId: newRequestId(), modelId: newRequestId(), providerName: "Retained API", modelName: "Unmeasured model", totals: { responses: 1, total: { knownTotal: "", measuredResponses: 0, unavailableResponses: 1 } } });
+  f.data.analytics = create(UsageAnalyticsSchema, {
+    granularity: UsageTimeGranularity.DAY,
+    timeZone: "UTC",
+    days: [
+      { fromUnixMs: start, untilUnixMs: start + day, totals: { responses: 1, total: { knownTotal: "0", measuredResponses: 1, unavailableResponses: 0 } } },
+      { fromUnixMs: start + day, untilUnixMs: start + day * 2n, totals: unavailable },
+      { fromUnixMs: start + day * 2n, untilUnixMs: start + day * 3n, totals: { responses: 0, total: { knownTotal: "", measuredResponses: 0, unavailableResponses: 0 } } },
+    ],
+    models,
+    otherModels: { modelCount: 2, totals: { responses: 2, total: { knownTotal: "0", measuredResponses: 2, unavailableResponses: 0 } } },
+  });
+  render(f.view());
+  await screen.findByRole("group", { name: /Daily usage chart/ });
+  const daily = screen.getByRole("group", { name: /Daily usage chart/ });
+  fireEvent.focus(daily);
+  expect(screen.getByText(/0 known tokens/)).toBeTruthy();
+  fireEvent.keyDown(daily, { key: "ArrowRight" });
+  expect(screen.getByText(/Unavailable total/)).toBeTruthy();
+  expect(screen.getAllByRole("status").some((element) => element.textContent?.includes("1 responses · 0 measured · 1 unavailable"))).toBe(true);
+  fireEvent.keyDown(daily, { key: "End" });
+  expect(screen.getByText(/No responses recorded/)).toBeTruthy();
+  fireEvent.keyDown(daily, { key: "Escape" });
+  expect(screen.getByText(/Move focus to a chart point/)).toBeTruthy();
+  const toggles = screen.getAllByRole("button", { name: "View data" });
+  fireEvent.click(toggles[0]);
+  const dailyTable = screen.getByRole("table", { name: /All calendar-day intervals/ });
+  expect(screen.getByRole("region", { name: /Daily usage data table/ }).getAttribute("tabindex")).toBe("0");
+  expect(within(dailyTable).getAllByRole("row")).toHaveLength(4);
+  for (const label of ["Known total", "Input", "Cached input", "Cache-write input", "Output", "Reasoning output"]) expect(within(dailyTable).getByRole("columnheader", { name: label })).toBeTruthy();
+  const modelToggle = screen.getByRole("button", { name: "View data" });
+  fireEvent.click(modelToggle);
+  const modelTable = screen.getByRole("table", { name: /Every original provider and model group/ });
+  expect(screen.getByRole("region", { name: /Model usage data table/ }).getAttribute("tabindex")).toBe("0");
+  expect(within(modelTable).getAllByRole("row")).toHaveLength(10);
+  for (const label of ["Known total", "Input", "Cached input", "Cache-write input", "Output", "Reasoning output"]) expect(within(modelTable).getByRole("columnheader", { name: label })).toBeTruthy();
+  expect(within(modelTable).getByText("Unmeasured model")).toBeTruthy();
+  expect(within(modelTable).getByText(/Other models \(2 measured groups\)/)).toBeTruthy();
+  expect(f.read.mock.calls[0][0]).toMatchObject({ granularity: UsageTimeGranularity.DAY, timeZone: expect.any(String) });
 });
 
 it("keeps historical currency subtotals, partial coverage and source basis separate from actual cost", async () => {
