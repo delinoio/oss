@@ -1,6 +1,7 @@
 import type { Resource } from "@delinoio/delidev-api-client";
 import { NativePermissionResponse, NativeQuestionResponse } from "./native-interaction-response";
 import { object } from "./documents";
+import type { InteractionDraftState } from "./inbox-drafts";
 
 const encoder = new TextEncoder();
 function bounded(value: unknown, max: number): value is string { return typeof value === "string" && value.length <= max && !value.includes("\0") && !/[\uD800-\uDFFF]/u.test(value) && encoder.encode(value).length <= max; }
@@ -54,7 +55,7 @@ function nativeStopClosure(data: Record<string, unknown>): boolean {
   return [data.response, data.approval_response].every((value) => { const r = object(value); return value == null || r.state === "canceled" && r.claim == null && r.delivery == null && r.acceptance == null; });
 }
 
-export function NativeInteraction({ data, resource, accepted = () => {} }: { data: Record<string, unknown>; resource?: Resource; accepted?: (value?: Resource) => void }) {
+export function NativeInteraction({ data, resource, accepted = () => {}, draft, saveDraft, submissionAllowed = true, receiptRetryAllowed = true }: { data: Record<string, unknown>; resource?: Resource; accepted?: (value?: Resource) => void; draft?: InteractionDraftState; saveDraft?: (value: InteractionDraftState) => void; submissionAllowed?: boolean; receiptRetryAllowed?: boolean }) {
   const r = object(data.opencode), id = object(data.native_request_id), permission = object(r.permission);
   const question = data.type === "user-question", approval = data.type === "native-approval";
   const valid = (question || approval) && r.version === "1.18.32" && shape(data.opencode, ["version", "native_event_id", "native_message_id", "call_id", "permission", "questions"]) && data.questions == null && data.approval == null && (question ? data.approval_response == null && nativeResponse(data.response, true) : data.response == null && nativeResponse(data.approval_response, false)) && native(r.native_event_id, "evt") && native(r.native_message_id, "msg") && native(data.native_item_id, "prt") && native(data.native_thread_id, "ses") && native(data.native_turn_id, "msg") && r.native_message_id !== data.native_turn_id && bounded(r.call_id, 1024) && r.call_id.trim() && id.kind === "text" && id.number == null && native(id.text, question ? "que" : "per") && ["open", "native-closed", "turn-ended"].includes(String(data.closure)) &&
@@ -66,7 +67,7 @@ export function NativeInteraction({ data, resource, accepted = () => {} }: { dat
     {question && (r.questions as Question[]).length === 0 ? <p>The original question list is empty.</p> : null}
     {data.opencode_closure != null ? <p>{object(data.opencode_closure).decision === "always" ? "OpenCode automatically allowed this pending request after an earlier session allowance." : "OpenCode automatically rejected this pending request after another permission request was rejected."} No native response was sent for this request.</p> : null}
     {data.opencode_stop != null ? <p>This unanswered request was canceled after Stop and verified process cleanup. No answer or rejection was sent.</p> : null}
-    {resource ? question ? <NativeQuestionResponse key={resource.id} resource={resource} questions={r.questions as Question[]} closed={data.closure !== "open" || data.response != null} accepted={accepted} /> : <NativePermissionResponse key={resource.id} resource={resource} closed={data.closure !== "open" || data.approval_response != null} accepted={accepted} /> : null}
+    {resource ? question ? <NativeQuestionResponse key={resource.id} resource={resource} questions={r.questions as Question[]} closed={data.closure !== "open" || data.response != null} accepted={accepted} draft={draft} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : <NativePermissionResponse key={resource.id} resource={resource} closed={data.closure !== "open" || data.approval_response != null} accepted={accepted} draft={draft} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : null}
     <p>{resource ? data.closure === "open" ? "The original request remains pending until its native response is confirmed." : "This retained request is closed." : data.closure === "open" ? "This request is pending. Open its original interaction to respond." : "This retained request is closed."}</p>
   </section>;
 }
