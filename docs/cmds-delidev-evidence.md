@@ -64,7 +64,8 @@ Worker loop for readiness endpoint, exact bytes, status, receipt replay and Stop
 it uses no installed harness or provider account.
 
 Package-wide Go vet passes. Generated-client tests pass 41 tests across three
-files; client and desktop type checking, Buf lint and breaking checks pass.
+files; client and desktop type checking and the complete `pnpm proto:check`
+(format/lint, breaking compatibility and exact generated-binding freshness) pass.
 `apps/delidev` `pnpm test` passes 74 files / 941 tests, eight package-verifier
 fixtures, six development-launcher tests and the production build. The initial
 full Go race invocation fails the existing CLI workspace Git-diff observation
