@@ -124,3 +124,39 @@ func TestProviderInventoryCountsAvailabilityOrderAndCursorEpoch(t *testing.T) {
 		t.Fatalf("provider change did not expire the inventory cursor: %v", err)
 	}
 }
+
+func TestProviderInventoryCursorUsesExactUnicodeNameOrder(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := context.Background()
+	want := []string{"Zulu", "Älfred", "Ångström"}
+	_, err := s.Mutate(ctx, domain.NewID(), "provider-inventory.unicode-fixture", nil, func(tx *Tx) (any, error) {
+		for _, name := range want {
+			if _, err := tx.Put(domain.ProviderKind, domain.NewID(), 0, "", "", domain.Provider{Name: name}); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	search := ProviderInventorySearch{Limit: 1}
+	var names []string
+	for {
+		page, more, epoch, err := s.ProviderInventoryPage(ctx, nil, search)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range page {
+			names = append(names, entry.DisplayName)
+		}
+		if !more {
+			break
+		}
+		search.After, search.Epoch = page[len(page)-1].CursorKey(), epoch
+	}
+	if strings.Join(names, "|") != strings.Join(want, "|") {
+		t.Fatalf("Unicode provider pagination skipped or reordered entries: got %v, want %v", names, want)
+	}
+}

@@ -149,10 +149,10 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 			if !ok {
 				return domain.Fail(domain.CursorExpired, "The provider inventory cursor is invalid.", "Restart provider inventory pagination.")
 			}
-			customQuery += " AND (lower(json_extract(body,'$.name'))>lower(?) OR (lower(json_extract(body,'$.name'))=lower(?) AND id>?))"
+			customQuery += " AND (json_extract(body,'$.name')>? OR (json_extract(body,'$.name')=? AND id>?))"
 			args = append(args, name, name, id)
 		}
-		customQuery += " ORDER BY lower(json_extract(body,'$.name')),id LIMIT ?"
+		customQuery += " ORDER BY json_extract(body,'$.name'),id LIMIT ?"
 		args = append(args, f.Limit+1)
 		custom, err := tx.modelRecords(customQuery, args...)
 		if err != nil {
@@ -167,7 +167,7 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 			if err != nil {
 				return err
 			}
-			entry := ProviderInventoryItem{Provider: &record, ProviderID: record.ID, DisplayName: provider.Name, Enabled: provider.EnabledValue(), key: "custom:" + strings.ToLower(provider.Name) + ":" + string(record.ID)}
+			entry := ProviderInventoryItem{Provider: &record, ProviderID: record.ID, DisplayName: provider.Name, Enabled: provider.EnabledValue(), key: "custom:" + provider.Name + ":" + string(record.ID)}
 			candidates = append(candidates, entry)
 		}
 		sortProviderInventory(candidates)
