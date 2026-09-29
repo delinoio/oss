@@ -7,18 +7,28 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, InteractionService, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { NativePermissionResponse, NativeQuestionResponse } from "./native-interaction-response";
 import { MutationIntents } from "./mutation";
-import type { ReactNode } from "react";
+import { InteractionDraftKind, type InteractionDraftState } from "./inbox-drafts";
+import { useState, type ReactNode } from "react";
 
 type Input = { mutation?: { requestId?: string; id?: string; expectedRevision?: bigint }; responseJson: Uint8Array };
 const question = { text: "Original", header: "Choice", options: [{ label: "Second", description: "" }, { label: "First", description: "" }], multiple: true };
+function RetainedQuestionResponse({ resource, questions, closed, accepted, initialDraft }: { resource: ReturnType<typeof resourceFixture>; questions: typeof question[]; closed: boolean; accepted: () => void; initialDraft: InteractionDraftState }) {
+  const [draft, setDraft] = useState(initialDraft);
+  return <NativeQuestionResponse resource={resource} questions={questions} closed={closed} accepted={accepted} draft={draft} saveDraft={setDraft} />;
+}
+function resourceFixture() {
+  return create(ResourceSchema, { id: newRequestId(), sessionId: newRequestId(), kind: EntityKind.INTERACTION, schemaVersion: 1, revision: 9n });
+}
 function fixture() {
-  const resource = create(ResourceSchema, { id: newRequestId(), sessionId: newRequestId(), kind: EntityKind.INTERACTION, schemaVersion: 1, revision: 9n });
+  const resource = resourceFixture();
   const send = vi.fn(async (_: Input) => ({ interaction: create(ResourceSchema, { ...resource, revision: 10n }) }));
   const accepted = vi.fn();
   const transport = createRouterTransport((r) => r.service(InteractionService, { respondQuestion: send, respondApproval: send }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (child: ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{child}</MutationIntents></QueryClientProvider></TransportProvider>;
-  const questions = (values = [question], closed = false) => view(<NativeQuestionResponse resource={resource} questions={values} closed={closed} accepted={accepted} />);
+  const questions = (values = [question], closed = false, draft?: InteractionDraftState) => view(draft
+    ? <RetainedQuestionResponse resource={resource} questions={values} closed={closed} accepted={accepted} initialDraft={draft} />
+    : <NativeQuestionResponse resource={resource} questions={values} closed={closed} accepted={accepted} />);
   const permission = (closed = false) => view(<NativePermissionResponse resource={resource} closed={closed} accepted={accepted} />);
   return { resource, send, questions, permission };
 }
@@ -33,6 +43,15 @@ it("sends the original ordered matrix and explicit unanswered rows", async () =>
   await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
   expect(decoded(f.send.mock.calls[0][0])).toEqual({ opencode: { answers: [["First", "Second"], []] } });
   expect(f.send.mock.calls[0][0].mutation).toMatchObject({ id: f.resource.id, expectedRevision: 9n });
+});
+
+it("adds question rows when the retained Inbox draft starts with no option rows", async () => {
+  const f = fixture();
+  render(f.questions([question], false, { kind: InteractionDraftKind.OpenCodeQuestion, selected: [], custom: {}, customEnabled: {}, unanswered: {} }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "First" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ opencode: { answers: [["First"]] } });
 });
 
 it("keeps a selected empty string distinct from an unanswered row", async () => {
