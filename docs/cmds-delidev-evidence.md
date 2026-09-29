@@ -3219,7 +3219,9 @@ runtime, Windows/Linux runtime or production signing is claimed.
   copying, second-copy failure, unpushed source HEAD commits, restrictive modes,
   cancellation/changed snapshots and linked-destination refusal. The complete
   Codex package also passes in the serial whole-tree run (183.876s). Go vet and
-  `pnpm proto:check` (lint, breaking and fresh generation) pass.
+  `pnpm proto:check` (lint, breaking and fresh generation) pass. Windows and
+  Linux amd64 `go build ./cmds/delidev-cli/...` cross-compilation passes; this
+  establishes compilation only, without native runtime or platform acceptance.
 - Desktop `pnpm test` passed all 75 files / 942 tests, type checking, eight
   packaging verifier tests, six launcher tests and the production build during
   implementation. Later default five-second unit-test reruns timed out on the
@@ -3233,8 +3235,8 @@ runtime, Windows/Linux runtime or production signing is claimed.
   probe fixtures. The exact CLI session-acceptance timeout also reproduces in
   an isolated source-only checkout of original main
   `b741cec88d68ba84eaf918bbee22ca28bff57ec6` (51.899s). The unchanged Claude
-  initialization fixture passes when isolated on that base (14.362s); no
-  passing complete Go race result is claimed.
+  initialization fixture passes when isolated on that base (14.362s) and this
+  branch (10.760s); no passing complete Go race result is claimed.
 - No user credentials, hosted-account inference, native Windows/Linux or release
   acceptance is claimed. Settled text/reasoning is the initial profile;
   tool/rich/unknown child/goal inheritance, cross-account forks and Sidechat
