@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 20
+const SchemaVersion = 21
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -601,11 +601,13 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 }
 
 type Filter struct {
-	Kind      domain.Kind `json:"kind"`
-	SessionID domain.ID   `json:"session_id,omitempty"`
-	ProjectID domain.ID   `json:"project_id,omitempty"`
-	After     domain.ID   `json:"after,omitempty"`
-	Limit     int         `json:"limit"`
+	Kind        domain.Kind        `json:"kind"`
+	SessionID   domain.ID          `json:"session_id,omitempty"`
+	ProjectID   domain.ID          `json:"project_id,omitempty"`
+	ProviderID  domain.ID          `json:"provider_id,omitempty"`
+	AccountType domain.AccountType `json:"account_type,omitempty"`
+	After       domain.ID          `json:"after,omitempty"`
+	Limit       int                `json:"limit"`
 }
 
 func (f Filter) validate() error {
@@ -615,12 +617,20 @@ func (f Filter) validate() error {
 	if f.Limit < 1 || f.Limit > MaxPage {
 		return domain.Fail(domain.InvalidArgument, "Invalid page size.", "Use a page size between 1 and 200.")
 	}
-	for _, id := range []domain.ID{f.SessionID, f.ProjectID, f.After} {
+	for _, id := range []domain.ID{f.SessionID, f.ProjectID, f.ProviderID, f.After} {
 		if id != "" {
 			if err := id.Validate(); err != nil {
 				return err
 			}
 		}
+	}
+	if f.ProviderID != "" || f.AccountType != "" {
+		if f.Kind != domain.AccountKind {
+			return domain.Fail(domain.InvalidArgument, "Account filters require account resources.", "Select account as the resource kind.")
+		}
+	}
+	if f.AccountType != "" && f.AccountType != domain.APIAccount && f.AccountType != domain.SubscriptionAccount {
+		return domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription.")
 	}
 	return nil
 }
@@ -628,8 +638,20 @@ func list(ctx context.Context, q queryer, f Filter) ([]Record, error) {
 	if err := f.validate(); err != nil {
 		return nil, err
 	}
+	return listRows(ctx, q, f, f.Limit)
+}
+
+func listRows(ctx context.Context, q queryer, f Filter, limit int) ([]Record, error) {
 	query := "SELECT id,kind,revision,session_id,project_id,body,created_at,updated_at FROM entities WHERE kind=? AND id>?"
 	args := []any{f.Kind, f.After}
+	if f.ProviderID != "" {
+		query += " AND json_extract(CAST(body AS TEXT),'$.provider_id')=?"
+		args = append(args, f.ProviderID)
+	}
+	if f.AccountType != "" {
+		query += " AND json_extract(CAST(body AS TEXT),'$.type')=?"
+		args = append(args, f.AccountType)
+	}
 	if f.SessionID != "" {
 		query += " AND session_id=?"
 		args = append(args, f.SessionID)
@@ -639,7 +661,7 @@ func list(ctx context.Context, q queryer, f Filter) ([]Record, error) {
 		args = append(args, f.ProjectID)
 	}
 	query += " ORDER BY id LIMIT ?"
-	args = append(args, f.Limit)
+	args = append(args, limit)
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, storageError(err)
@@ -660,6 +682,26 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
 	return list(ctx, s.db, f)
+}
+
+// ListPage returns one bounded page and whether an additional record exists.
+// Fetching the extra row avoids a phantom empty page when the total is exactly
+// divisible by the requested page size.
+func (s *Store) ListPage(ctx context.Context, f Filter) ([]Record, bool, error) {
+	if err := f.validate(); err != nil {
+		return nil, false, err
+	}
+	s.gate.RLock()
+	defer s.gate.RUnlock()
+	rows, err := listRows(ctx, s.db, f, f.Limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	more := len(rows) > f.Limit
+	if more {
+		rows = rows[:f.Limit]
+	}
+	return rows, more, nil
 }
 
 // Snapshot establishes the cursor and state in the same read transaction. It is

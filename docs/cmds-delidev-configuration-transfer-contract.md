@@ -73,3 +73,7 @@ Update this contract, project/catalog links and scoped AGENTS for new portable k
 - [Configuration and storage](cmds-delidev-contract.md)
 - [Accounts](cmds-delidev-accounts-contract.md)
 - [Desktop](apps-delidev-desktop-contract.md)
+
+### Provider activation fields
+
+Portable provider documents preserve optional `enabled` and `preset_id`. Missing activation uses the historical enabled default; update omission preserves stored false. Managed preset identity is validated against pinned server values. An import cannot create duplicate managed preset identity within the bundle or target database; collision checks occur both at preview and deferred apply. Explicit equal-configuration reuse remains valid. Imports never merge providers by name/URL or transfer account connection/readiness/key state. See [provider activation](cmds-delidev-provider-activation-contract.md).

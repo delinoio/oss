@@ -178,8 +178,15 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return storageError(err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, prRemediationSchema); err != nil {
-		return storageError(err)
+	if version < 20 {
+		if _, err := tx.ExecContext(ctx, prRemediationSchema); err != nil {
+			return storageError(err)
+		}
+	}
+	if version < 21 {
+		if _, err := tx.ExecContext(ctx, providerActivationSchema); err != nil {
+			return storageError(err)
+		}
 	}
 	return storageError(tx.Commit())
 }

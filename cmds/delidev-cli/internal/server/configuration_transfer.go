@@ -45,6 +45,24 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 	if err != nil {
 		return nil, err
 	}
+	if kind == domain.ProviderKind {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return nil, err
+		}
+		if field, present := fields["enabled"]; present {
+			var enabled bool
+			if bytes.Equal(bytes.TrimSpace(field), []byte("null")) || json.Unmarshal(field, &enabled) != nil {
+				return nil, domain.Fail(domain.InvalidArgument, "Provider availability must be a boolean.", "Set enabled to true or false.")
+			}
+		}
+		if field, present := fields["preset_id"]; present {
+			var preset string
+			if bytes.Equal(bytes.TrimSpace(field), []byte("null")) || json.Unmarshal(field, &preset) != nil || !domain.ProviderPresetID(preset).Valid() {
+				return nil, domain.Fail(domain.InvalidArgument, "Invalid managed preset identity.", "Use a supported preset identifier or omit preset_id for a custom provider.")
+			}
+		}
+	}
 	before, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
@@ -243,6 +261,26 @@ func (v *configurationOverlay) ValidateModelIdentity(id domain.ID, model domain.
 		}
 	}
 	return nil
+}
+
+func (v *configurationOverlay) ProviderPresetExists(preset domain.ProviderPresetID, except domain.ID) (bool, error) {
+	found, err := v.tx.ProviderPresetExists(preset, except)
+	if err != nil || found {
+		return found, err
+	}
+	for id, record := range v.staged {
+		if id == except || record.Kind != domain.ProviderKind {
+			continue
+		}
+		provider, err := store.Decode[domain.Provider](record)
+		if err != nil {
+			return false, err
+		}
+		if provider.PresetID != nil && *provider.PresetID == preset {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSelection) (domain.ConfigurationImportPlan, error) {
