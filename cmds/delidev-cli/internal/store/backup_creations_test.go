@@ -217,6 +217,50 @@ func TestBackupCreationRejectsRevokedOriginalActor(t *testing.T) {
 	}
 }
 
+func TestBackupCreationRevocationWinsBeforeImageWriteGate(t *testing.T) {
+	s, root, ownerCtx, owner := creationFixture(t)
+	device := domain.NewID()
+	if _, err := s.Mutate(ownerCtx, domain.NewID(), "fixture.device", nil, func(tx *Tx) (any, error) {
+		return tx.Put(domain.DeviceKind, device, 0, "", "", domain.Device{Name: "Fixture", Type: domain.ClientDevice})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	actor := domain.Principal{Type: domain.ClientDevice, DeviceID: device}
+	clientCtx := domain.WithPrincipal(context.Background(), actor)
+	row, _, err := s.RequestBackup(clientCtx, domain.NewID(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, intent, _ := DecodeBackupCreation(row)
+	copyReached := false
+	current, err := s.runBackupCreation(ownerCtx, row.ID, owner, func(work context.Context, id domain.ID) (domain.ID, error) {
+		copyReached = true
+		if observed, ok := domain.PrincipalFrom(work); !ok || observed != actor {
+			t.Fatal("maintenance substituted its own backup authority")
+		}
+		// A successful preliminary read is insufficient. Commit revocation at
+		// the real copy boundary, after acceptance and before the write gate.
+		if err := s.Read(work, func(tx *Tx) error { return tx.Authorize() }); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Mutate(ownerCtx, domain.NewID(), "fixture.revoke", nil, func(tx *Tx) (any, error) {
+			return tx.Put(domain.DeviceKind, device, 1, "", "", domain.Device{Name: "Fixture", Type: domain.ClientDevice, Revoked: true})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return s.BackupID(work, id)
+	})
+	job, _, decodeErr := DecodeBackupCreation(current)
+	if !copyReached || err == nil || decodeErr != nil || job.State != domain.JobFailed || job.Problem.Code != domain.Unauthenticated {
+		t.Fatal("revocation lost to stale backup authority", job, err, decodeErr)
+	}
+	for _, suffix := range []string{".sqlite", ".sqlite.pending"} {
+		if _, err := os.Lstat(filepath.Join(root, "backups", string(intent.BackupID)+suffix)); !os.IsNotExist(err) {
+			t.Fatal("revoked client caused a filesystem side effect", suffix, err)
+		}
+	}
+}
+
 func TestBackupCreationWaitersHonorCancellationDuringOtherImageOwnership(t *testing.T) {
 	s, _, ctx, owner := creationFixture(t)
 	row, _, err := s.RequestBackup(ctx, domain.NewID(), owner)

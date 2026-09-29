@@ -75,6 +75,11 @@ later removed image. External permanent deletion always wins, including between
 image publication and job settlement. Revoked authority, corrupt ownership or a
 deletion obligation ends the job with a typed failure; transient storage failure
 remains pending. Unchanged failures do not grow revisions or mutation receipts.
+The original creation actor reaches `BackupID` unchanged. Its final authorization
+occurs under the exclusive store gate retained through image creation and
+publication, after any earlier read; a revocation that commits before that gate
+prevents even the unpublished image from being created. Maintenance owner
+authority is used only to retain the job outcome.
 Success records historical publication, not current file availability, integrity
 at a later time, credential recovery or database restoration.
 

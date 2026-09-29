@@ -2731,6 +2731,15 @@ validated metadata. Deterministic copy-boundary tests create each sidecar while
 retaining identical original image bytes, verify refusal without source changes,
 and verify successful recovery after removal. Managed-backup race tests passed.
 
+### PR #1063 backup creation revocation boundary (2026-09-29)
+
+Durable creation passes the original principal into the actual copy, which now
+authorizes under the exclusive store gate retained through VACUUM/publication.
+A real SQLite regression commits revocation after successful preliminary
+authorization at the copy boundary and verifies a terminal unauthorized job with
+neither a published nor pending image. Backup store/server race suites passed
+(15.125s / 5.998s), including owner recovery and original creation retries.
+
 ## 2026-09-29: PR #1060 account-setup merge validation
 
 - Merged main's guided API account setup and provider activation while preserving all desktop recovery rules and both branches' evidence records. The combined Settings surface retains current-device revocation guards; the CLI retains explicit local registration inspection/recovery alongside the new provider operations.

@@ -125,6 +125,10 @@ func (s *Store) BackupCreationJobs(ctx context.Context, after domain.ID, limit i
 // the job update, BackupID validates and synchronizes that same image on retry.
 // An external deletion obligation wins and can never be repaired by recreating it.
 func (s *Store) RunBackupCreation(ctx context.Context, id, server domain.ID) (Record, error) {
+	return s.runBackupCreation(ctx, id, server, s.BackupID)
+}
+
+func (s *Store) runBackupCreation(ctx context.Context, id, server domain.ID, copyImage func(context.Context, domain.ID) (domain.ID, error)) (Record, error) {
 	if err := lockBackupContext(ctx, &s.backupCreationGate); err != nil {
 		return Record{}, err
 	}
@@ -146,15 +150,12 @@ func (s *Store) RunBackupCreation(ctx context.Context, id, server domain.ID) (Re
 	if job.State != domain.JobQueued && job.State != domain.JobUncertain {
 		return row, backupUnavailable()
 	}
-	// Recheck the original device before copying private data. Revocation cannot
-	// create a new backup through a queued request that has not yet run.
+	// BackupID rechecks this original principal inside the exclusive store gate;
+	// maintenance ownership must never become the authority for private copying.
 	bounded, cancel := context.WithTimeout(ctx, BackupCreationTimeout)
 	defer cancel()
 	work := domain.WithPrincipal(bounded, original.Input.Actor)
-	attempt := s.Read(work, func(tx *Tx) error { return tx.Authorize() })
-	if attempt == nil {
-		_, attempt = s.BackupID(bounded, original.BackupID)
-	}
+	_, attempt := copyImage(work, original.BackupID)
 	if ctx.Err() != nil {
 		return row, domain.SafeError(ctx.Err())
 	}

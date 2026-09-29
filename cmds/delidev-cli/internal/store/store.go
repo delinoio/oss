@@ -814,6 +814,12 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 	}
 	s.gate.Lock()
 	defer s.gate.Unlock()
+	// This lock also excludes revocation mutations. Check the original actor
+	// after acquiring it and retain it through VACUUM/publication, so revocation
+	// that committed first cannot leave a new private backup on disk.
+	if err := s.readLocked(ctx, func(tx *Tx) error { return tx.Authorize() }); err != nil {
+		return "", err
+	}
 	var owner domain.ID
 	if err := s.db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&owner); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", storageError(err)
@@ -919,6 +925,11 @@ func init() {
 func (s *Store) Read(ctx context.Context, read func(*Tx) error) error {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	return s.readLocked(ctx, read)
+}
+
+// Caller holds either gate mode for the entire transaction.
+func (s *Store) readLocked(ctx context.Context, read func(*Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return storageError(err)
