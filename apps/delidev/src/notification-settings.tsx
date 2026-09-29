@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { InboxQuery, newRequestId, type NotificationPreferences } from "@delinoio/delidev-api-client";
@@ -6,7 +6,7 @@ import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import { NativeNotificationSettings } from "./notification-presentation";
 
-export function NotificationSettings({ active }: { active: boolean }) {
+export function NotificationSettings({ active, showCategoryIntro = true, onWorkflowReadyChange }: { active: boolean; showCategoryIntro?: boolean; onWorkflowReadyChange?: (active: boolean) => void }) {
   const client = useQueryClient();
   const current = useQuery(InboxQuery.getNotificationPreferences, {}, { enabled: active, refetchInterval: active ? 5000 : false });
   const [draft, setDraft] = useState<NotificationPreferences>();
@@ -14,7 +14,11 @@ export function NotificationSettings({ active }: { active: boolean }) {
   const stale = Boolean(draft && current.data?.preferences && current.data.preferences.revision !== draft.revision);
   const blocked = mutation.busy || mutation.uncertain;
   const value = draft ?? current.data?.preferences;
-  return <section><h2>Desktop notifications</h2><p>These preferences belong to this client on the selected server. Inbox requests stay available when notifications are disabled or cannot be delivered.</p>
+  useEffect(() => {
+    onWorkflowReadyChange?.(Boolean(draft || mutation.busy || mutation.uncertain));
+    return () => onWorkflowReadyChange?.(false);
+  }, [draft, mutation.busy, mutation.uncertain, onWorkflowReadyChange]);
+  return <section>{showCategoryIntro ? <><h2>Desktop notifications</h2><p>These preferences belong to this client on the selected server. Inbox requests stay available when notifications are disabled or cannot be delivered.</p></> : null}
     <NativeNotificationSettings active={active} />
     <Problem error={current.error || mutation.error} />
     {value ? <form onSubmit={(event) => { event.preventDefault(); if (!draft || blocked || stale || current.error || current.isFetching) return; void mutation.send({ requestId: newRequestId(), preferences: draft }); }}>

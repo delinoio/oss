@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
@@ -12,7 +12,9 @@ import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[]) {
+type ResourcePage = { resources: Resource[]; nextPageToken?: string };
+type ReadResources = (kind: EntityKind, pageToken: string) => ResourcePage | Promise<ResourcePage>;
+function fixture(resources: Resource[], readResources?: ReadResources) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -22,7 +24,7 @@ function fixture(resources: Resource[]) {
   const transport = createRouterTransport((router) => {
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
-    router.service(ResourceService, { listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }), getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
+    router.service(ResourceService, { listResources: (request) => readResources ? readResources(request.filter?.kind ?? EntityKind.PROVIDER, request.filter?.pageToken ?? "") : { resources: resources.filter((row) => row.kind === request.filter?.kind) }, getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
     router.service(AccountService, { getAccountStatus: (request) => ({ account: resources.find((row) => row.id === request.id) }), connectAccount: connect, disconnectAccount: disconnect });
     router.service(ProviderService, { listProviderPresets: () => ({ presetsJson: encode([{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }) });
   });
@@ -31,13 +33,96 @@ function fixture(resources: Resource[]) {
   return { resources, save, remove, preview, inspect, connect, disconnect, client, view };
 }
 function input(value: unknown) { return value as { mutation: { requestId: string; expectedRevision: bigint }; documentJson: Uint8Array }; }
+async function clickEnabledButton(name: string) {
+  const button = await screen.findByRole("button", { name });
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(button);
+}
+
+it("shows the complete grouped navigation once and keeps its selected category in sync", async () => {
+  const value = fixture([]);
+  render(value.view(<Settings visible close={() => {}} />));
+  const navigation = screen.getByRole("navigation", { name: "Settings categories" });
+  const labels = ["Providers", "Models", "AI accounts", "Agent Workers", "Instructions", "Projects", "Repositories", "Execution Workers", "Paired devices", "Server preferences", "Integrations", "Diagnostics", "Notifications", "Import / Export", "Backups"];
+  const values = ["providers", "models", "accounts", "agent-workers", "instructions", "projects", "repositories", "execution-workers", "paired-devices", "server-preferences", "integrations", "diagnostics", "notifications", "transfer", "backups"];
+  expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI & agents", "Workspace", "System"]);
+  expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
+  const categorySelect = screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement;
+  expect(categorySelect.options).toHaveLength(15);
+  expect(Array.from(categorySelect.querySelectorAll("optgroup"), (group) => group.label)).toEqual(["AI & agents", "Workspace", "System"]);
+  expect(categorySelect.value).toBe("providers");
+  for (const [index, label] of labels.entries()) {
+    const button = within(navigation).getByRole("button", { name: label });
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("heading", { level: 1, name: label })).toBeTruthy();
+    expect(categorySelect.value).toBe(values[index]);
+  }
+  expect(categorySelect.value).toBe("backups");
+});
+
+it("shows the provider empty state and one create action only after the empty first page succeeds", async () => {
+  const value = fixture([]);
+  render(value.view(<Settings visible close={() => {}} />));
+  await screen.findByRole("region", { name: "No providers yet" });
+  expect(screen.getByText("Add a provider to configure your models and AI accounts.")).toBeTruthy();
+  expect(screen.getAllByRole("button", { name: "New Provider" })).toHaveLength(1);
+  expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
+});
+
+it("keeps initial provider loading distinct from emptiness and does not offer creation after a read failure", async () => {
+  let resolveRead!: (value: ResourcePage) => void;
+  const pending = fixture([], () => new Promise<ResourcePage>((resolve) => { resolveRead = resolve; }));
+  const view = render(pending.view(<Settings visible close={() => {}} />));
+  expect(screen.getByRole("status").textContent).toBe("Loading providers…");
+  expect(screen.queryByRole("region", { name: "No providers yet" })).toBeNull();
+  await waitFor(() => expect(resolveRead).toBeTypeOf("function"));
+  resolveRead({ resources: [] });
+  await screen.findByRole("region", { name: "No providers yet" });
+  view.unmount();
+
+  const failed = fixture([], async () => { throw new ConnectError("permission denied", Code.PermissionDenied); });
+  render(failed.view(<Settings visible close={() => {}} />));
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("region", { name: "No providers yet" })).toBeNull();
+  expect((screen.getByRole("button", { name: "New Provider" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("retains stale provider rows after a refresh error and preserves an empty later-page return path", async () => {
+  const saved = resource(EntityKind.PROVIDER, { name: "Retained provider" });
+  let reads = 0;
+  const stale = fixture([saved], async () => {
+    reads += 1;
+    if (reads === 1) return { resources: [saved] };
+    throw new ConnectError("refresh unavailable", Code.Unavailable);
+  });
+  const view = render(stale.view(<Settings visible close={() => {}} />));
+  await screen.findByRole("heading", { name: "Retained provider" });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+  expect(screen.getByRole("heading", { name: "Retained provider" })).toBeTruthy();
+  expect(screen.getByRole("alert")).toBeTruthy();
+  view.unmount();
+
+  const paged = fixture([], (kind, pageToken) => kind !== EntityKind.PROVIDER
+    ? { resources: [] }
+    : pageToken ? { resources: [] } : { resources: [saved], nextPageToken: "next-page" });
+  render(paged.view(<Settings visible close={() => {}} />));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(await screen.findByRole("button", { name: "Next page" }));
+  await screen.findByText("No providers on this page.");
+  expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true);
+});
 
 it("keeps a settings draft across closing the modal and retries the original provider document", async () => {
   const value = fixture([]);
   value.save.mockRejectedValueOnce(new ConnectError("acknowledgement lost", Code.Unavailable));
   const view = render(value.view(<Settings visible close={() => {}} />));
-  fireEvent.click(screen.getByRole("button", { name: "New Provider" }));
+  await clickEnabledButton("New Provider");
   await screen.findByRole("option", { name: "Local provider" });
+  expect((screen.getByRole("button", { name: "Models" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).disabled).toBe(true);
   fireEvent.change(screen.getByRole("combobox", { name: "Provider preset" }), { target: { value: "ollama" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "My local provider" } });
   view.rerender(value.view(<Settings visible={false} close={() => {}} />));

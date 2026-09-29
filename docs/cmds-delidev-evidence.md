@@ -21,7 +21,7 @@ The desktop/CLI/server/Worker implementation is in progress. The 2026-09-28 part
 | Terminal/files/diff/reviews/Sidechat/forwarding | Worker-backed file browsing, bounded Git comparisons and durable local review submission implemented; terminals, Sidechat and forwarding pending | Real temporary Git/Connect/SQLite and desktop component fixtures; bounded macOS native file/diff/review evidence recorded below |
 | GitHub PAT/query/PR evidence/remediation | Named native PAT profiles, scoped queries/forms, PR links/diffs, active-rule/CI/reviewer evidence, durable problem versions/dismissal and remediation history/allowance implemented. Private attempt coordination, exact-head preparation, startup rejection/recovery and current workspace matching implemented; public Fix now, automatic controller/session selection and harness commit/push remain pending | Real SQLite/Connect/isolated Git, scripted GitHub and CLI/desktop tests; bounded native/form evidence below. Actual token/private/SSO acceptance deferred by the owner; no end-to-end remediation success claimed |
 | Usage/costs/budgets, diagnostics/doctor | Exact Codex response ledger, bounded RPC/CLI/dashboard summaries, immutable historical token prices and session estimated-cost budget gates/forms implemented; bounded version-2 doctor implemented. Complete native resume/child/fork/other-harness usage and remaining diagnostics still required | Real SQLite/Connect/UI tests and private installed Codex macOS scripted-provider evidence below; no hosted actual-billing or complete telemetry claim |
-| Search/activity/inbox, config import/export | Native question/approval/terminal inbox persistence and independent read-state RPC/CLI with joined current-source/session inspection and bounded pagination implemented; retained typed-message search with original-execution account filters, Archive and bounded authenticated RPC/CLI pages implemented; metadata-only execution/terminal/schedule activity RPC/CLI implemented; client-specific notification preferences/reservations and native desktop presentation are implemented with actual OS delivery acceptance still pending; version-1 configuration export/preview/import is implemented for the eight editable configuration kinds with explicit machine mapping and atomic Worker validation; PR activity and additional portable surfaces remain pending | Atomic publication, source uniqueness, read-state isolation and migration/reopen fixtures; native evidence recorded below |
+| Search/activity/inbox, config import/export | Native question/approval/terminal inbox persistence and independent read-state RPC/CLI with joined current-source/session inspection and bounded pagination implemented; retained typed-message search with original-execution account filters, Archive and bounded authenticated RPC/CLI pages implemented; metadata-only execution/terminal/schedule activity RPC/CLI implemented; client-specific notification preferences/reservations and a filtered desktop Inbox list/detail workspace with typed bounded connection-memory response drafts are implemented; actual OS delivery acceptance remains pending; version-1 configuration export/preview/import is implemented for the eight editable configuration kinds with explicit machine mapping and atomic Worker validation; PR activity and additional portable surfaces remain pending | Atomic publication, source uniqueness, read-state isolation and migration/reopen fixtures; desktop `pnpm test` passes 67 files / 798 tests, type checking and production build; actual OS notification delivery remains unverified |
 | Deletion/managed backups/offline cleanup/storage | Pending | Pending |
 | CLI build/distribution and OS lifecycle | Pending | Native Windows/Linux evidence pending |
 
@@ -36,6 +36,9 @@ The TypeScript direct-Connect integration boundary is now implemented in `packag
 - 2026-09-24: `go test -race ./cmds/delidev-cli/...`, package vet, Buf formatting/lint, and generated Go bindings validated. The native macOS executable was exercised against an isolated temporary data directory. Linux arm64 cross-compilation succeeded; this does not establish native Linux behavior.
 - 2026-09-24: Windows amd64 cross-compilation succeeded. Native Windows runtime remains unverified. Real temporary Git preparation tests and package race tests/vet pass on macOS arm64.
 - A subsequent Git-registration regression exposed the macOS `/var` parent alias during rollback. Worker roots now canonicalize before ownership journals are created; the real Git regression and package race/vet checks were rerun after the fix.
+
+### Inbox workspace increment (2026-09-29)
+Issue #1049 replaces the standalone Inbox cards with one persistent responsive list/detail workspace. Component coverage verifies server enum filters and 20-entry paging, revision-bound read-state changes, exact selection, sequential and overlapping notification re-reads with stale-result suppression, draft retention across selection/filter changes, and rejection of a foreign joined source. From the repository root, `apps/delidev` `pnpm test` passes all 67 files / 798 tests, TypeScript checking, API-client build and Rsbuild production build. The workspace implementation does not change the protocol or server. Tests establish frontend behavior only; native OS notification delivery and supported-platform acceptance remain unverified.
 
 ## Native interface discovery (not execution validation)
 - Installed read-only version/help checks: Codex CLI `0.151.0`, Claude Code `2.1.236`, OpenCode `1.18.20`. No `grok` executable was found on this machine. No user credential files were read and no inference was invoked by these checks.
@@ -2389,3 +2392,93 @@ unimplemented product paths above.
   The Go toolchain's third-party `src/cmd/dist` source and installed dependency
   contents were preserved. No real account, private GitHub repository, paid
   inference, Git push, remote workflow dispatch or public release was exercised.
+### Issue #1044 project-grouped desktop sidebar (2026-09-29)
+
+The DeliDev desktop sidebar now uses the bounded project/session navigation
+contract in `docs/apps-delidev-desktop-contract.md`. The complete app command
+`pnpm test` passes on macOS arm64: 68 test files / 804 tests, TypeScript
+type-checking and the Rsbuild production build. App integration fixtures verify
+that the Pull requests shortcut enters Repositories without a GitHub query
+until the user explicitly opens the repository browser, and that parent and
+nested settings drafts defer that destination.
+
+The native sidecar and Tauri desktop binary built, then the desktop process
+started with a temporary data directory and logged tray readiness. A CUA
+accessibility/screenshot request for the running DeliDev window timed out, so
+this records native startup but does not claim a captured native viewport or
+visual screenshot acceptance. No Rust, protocol or generated source changed;
+the app's generated `dist` output is removed from the worktree.
+
+### Issue #1052 daily and model token analytics (2026-09-29)
+
+The Token Usage page now presents the six exact measures, persistent coverage,
+applied-scope timestamps, daily token trends and ranked model/API comparisons
+while retaining the existing Usage navigation, session details and separate
+historical cost evidence. The additive `GetUsageSummary` DAY query aggregates
+from the same authorized response snapshot, buckets by first-retention time in
+the requested IANA zone, and returns complete exact model groups plus a
+server-summed Other group. The CLI exposes the same optional analytics. The
+desktop uses the existing generated Connect client and renders a compatible
+summary when an older server omits analytics.
+
+The store fixture verifies zero, missing-counter, no-response and clipped-day
+distinctions, price timestamp independence, deduplication, model/overall
+reconciliation and measured/unavailable counts. Domain fixtures cover clipped
+calendar boundaries, 23/25-hour DST days and a skipped civil date. Keyboard
+chart traversal, all six measures in full data tables, filter drafts and
+loading/error scope labeling are covered by component tests. Focused Go race
+tests pass for domain, store, server and CLI, and `go vet ./cmds/delidev-cli/...`
+passes. The required default `go test -race ./cmds/delidev-cli/...` invocation
+hits Go's 10-minute package timeout in the existing Grok
+`TestQuestionControllerOriginalClaimsAndUncertainty/question-foreign-proposal`
+fixture while its helper waits for profile inspection; the other packages,
+including the changed usage packages, report pass. The complete suite passes
+with `go test -race -timeout 30m ./cmds/delidev-cli/...`; Grok completed in
+876.760s, server in 417.567s, store in 144.471s, worker in 212.671s and
+workspace in 390.328s. The app suite passes 69 files /
+809 tests, TypeScript type-checking and production build. Generated API client
+lint, 3 files / 41 tests and build pass; protocol lint and breaking checks pass.
+Repeated `pnpm proto:generate` leaves generated files byte-for-byte unchanged.
+
+No native viewport screenshot was captured for this increment; the running
+DeliDev desktop windows were not built from this worktree, and the attempted
+screen capture did not return a reviewable viewport. Responsive CSS, browser
+component/keyboard tests and production build are evidence for this change, not
+native-window or hosted billing acceptance. Generated app/client `dist`
+directories are removed after validation.
+
+### Issue #1054 sidebar project creation and query retries (2026-09-29)
+
+The Projects header now uses an icon-only New project action that opens the
+existing Settings editor, preserves protected and uncertain drafts, and returns
+through the existing save invalidation path. Each failed project, global-session,
+and expanded project-session query retries only its current page. The full
+`apps/delidev` `pnpm test` command passes on macOS arm64: 68 test files / 810
+tests, TypeScript type-checking, API-client generation/build, and the Rsbuild
+production build. Tests cover fresh and deferred entry, draft/request identity,
+exact query pages, and active-page invalidation after save.
+
+The native Tauri desktop binary built and launched on macOS arm64 with a private
+temporary data directory. The observed window remained at the local-server
+connection screen; the fixed `127.0.0.1:46310` listener belonged to another
+worktree, so it was not used. The Projects sidebar was therefore not reached:
+native pointer/keyboard behavior and the 960×640, 1,099/1,100/1,101-wide, and
+1,440×900 viewports remain unverified. Windows and Linux native acceptance is
+also untested. Component coverage is not counted as native visual evidence. No
+Rust, RPC, schema, or generated source changed; generated `dist` output is
+removed from the worktree.
+
+After merging the current PR branch with `origin/main`, `apps/delidev` `pnpm
+test` passes 69 files / 826 tests, type checking and production build. This
+validates the combined Token Usage and sidebar changes; generated app/client
+`dist` output is removed afterward.
+
+### PR #1063 main integration (2026-09-29)
+
+Merged main through `5d47286f` while preserving the project sidebar, full-window
+Settings, Inbox workspace, token analytics, maximized native window declarations
+and app icon. Backups is connected to the Settings System group and the live
+prerequisite checklist remains in the session welcome surface. Generated Go and
+TypeScript bindings are regenerated from the combined additive schema. The
+prior native package evidence remains bound to its original revision; this merge
+does not establish new native package or Quit acceptance.

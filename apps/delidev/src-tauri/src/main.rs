@@ -614,6 +614,8 @@ async fn open_connection(
         .title(title)
         .inner_size(1280.0, 820.0)
         .min_inner_size(960.0, 640.0)
+        .decorations(true)
+        .maximized(true)
         .incognito(true)
         .on_navigation(|url| {
             trusted_url(url)

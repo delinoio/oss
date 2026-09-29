@@ -3,11 +3,11 @@ import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, InboxService, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode } from "./documents";
 
-function fixture(interactions: Resource[] = []) {
+function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
   const message = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ role: "assistant", text: '<script>window.invalid = true</script>', state: "completed" }) });
@@ -16,21 +16,150 @@ function fixture(interactions: Resource[] = []) {
   const enqueues = vi.fn(async () => ({ change: { session } }));
   const controls = vi.fn(async () => ({ change: { session } }));
   const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1 }));
+  const githubQuery = vi.fn(async () => ({ schemaVersion: 1, documentJson: encode({}) }));
+  const saveConfiguration = vi.fn(async (request: { kind: EntityKind; documentJson: Uint8Array }) => ({ resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson }) }));
+  const projectRequests: string[] = [];
+  const sessionRequests: { projectId: string; includeArchived: boolean; pageToken: string }[] = [];
+  const preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status });
-    router.service(SessionService, { listSessions: () => ({ sessions: [session, other] }), listQueue: () => ({ inputs: [] }), enqueueInput: enqueues, controlSession: controls });
+    router.service(SessionService, { listSessions: (request) => {
+      if (!paginated) return { sessions: [session, other] };
+      sessionRequests.push({ projectId: request.projectId, includeArchived: request.includeArchived, pageToken: request.pageToken });
+      if (request.projectId) return { sessions: [], ...(request.pageToken ? {} : { nextPageToken: "project-session-next" }) };
+      return request.pageToken ? { sessions: [] } : { sessions: [session, other], nextPageToken: "global-next" };
+    }, listQueue: () => ({ inputs: [] }), enqueueInput: enqueues, controlSession: controls });
     router.service(ResourceService, {
       getSnapshot: (request) => ({ resources: [request.filter?.sessionId === other.id ? other : session], cursor: "snapshot" }),
-      listResources: (request) => ({ resources: request.filter?.kind === EntityKind.MESSAGE ? [message] : request.filter?.kind === EntityKind.INTERACTION ? interactions : [] }),
+      listResources: (request) => {
+        if (request.filter?.kind === EntityKind.PROJECT && paginated) {
+          projectRequests.push(request.filter.pageToken);
+          return { resources: projects, ...(request.filter.pageToken ? {} : { nextPageToken: "project-next" }) };
+        }
+        return { resources: request.filter?.kind === EntityKind.MESSAGE ? [message] : request.filter?.kind === EntityKind.INTERACTION ? interactions : request.filter?.kind === EntityKind.REPOSITORY ? repositories : request.filter?.kind === EntityKind.PROJECT ? projects : [] };
+      },
       async *watchEvents(_request, context) {
         await new Promise<void>((resolve) => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); });
       },
     });
-    router.service(InboxService, { listInbox: () => ({ entries: [] }) });
-    router.service(ConfigurationService, {});
+    router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: async () => ({ preferences }) });
+    router.service(IntegrationService, { queryRepositoryIntegration: githubQuery });
+    router.service(ConfigurationService, { saveConfiguration });
   });
-  return { transport, session, message, enqueues, controls, status };
+  return { transport, session, message, enqueues, controls, status, githubQuery, saveConfiguration, projectRequests, sessionRequests };
 }
+
+it("opens the existing New Project form from the plus button, retains its draft, and restores opener focus", async () => {
+  const value = fixture();
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  const opener = await screen.findByRole("button", { name: "New project" });
+  expect(opener.textContent).toBe("");
+  expect(opener.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  fireEvent.click(opener);
+  expect(await screen.findByRole("heading", { name: "New Project" })).toBeTruthy();
+  const name = screen.getByRole("textbox", { name: "Name" });
+  await waitFor(() => expect(window.document.activeElement).toBe(name));
+  fireEvent.change(name, { target: { value: "Retained project" } });
+  expect(value.saveConfiguration).not.toHaveBeenCalled();
+  expect(value.enqueues).not.toHaveBeenCalled();
+  expect(value.controls).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  expect(window.document.activeElement).toBe(opener);
+  fireEvent.click(opener);
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect((name as HTMLInputElement).value).toBe("Retained project");
+  expect(screen.getAllByRole("heading", { name: "New Project" })).toHaveLength(1);
+  expect(value.saveConfiguration).not.toHaveBeenCalled();
+});
+
+it("defers a New Project entry behind a retained parent editor", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  const newProvider = await screen.findByRole("button", { name: "New Provider" });
+  await waitFor(() => expect((newProvider as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(newProvider);
+  const providerName = screen.getByRole("textbox", { name: "Name" });
+  fireEvent.change(providerName, { target: { value: "Retained provider draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "New project" }));
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(providerName);
+  expect((providerName as HTMLInputElement).value).toBe("Retained provider draft");
+  expect(screen.getByRole("button", { name: "Save Provider" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  expect(await screen.findByRole("heading", { name: "New Project" })).toBeTruthy();
+  await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
+  expect(value.saveConfiguration).not.toHaveBeenCalled();
+});
+
+it("resumes an uncertain New Project save with the same editor and immutable request", async () => {
+  const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository" }) });
+  const value = fixture([], [repository]);
+  value.saveConfiguration.mockRejectedValueOnce(new ConnectError("The save response was lost.", Code.Unavailable));
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  const opener = await screen.findByRole("button", { name: "New project" });
+  fireEvent.click(opener);
+  const name = await screen.findByRole("textbox", { name: "Name" });
+  fireEvent.change(name, { target: { value: "Sidebar project" } });
+  fireEvent.change(await screen.findByRole("combobox", { name: "Add Repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  const retry = await screen.findByRole("button", { name: "Retry the same configuration" });
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(opener);
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect((name as HTMLInputElement).value).toBe("Sidebar project");
+  expect(screen.getByRole("button", { name: "Retry the same configuration" })).toBe(retry);
+  fireEvent.click(retry);
+  await waitFor(() => expect(value.saveConfiguration).toHaveBeenCalledTimes(2));
+  expect(value.saveConfiguration.mock.calls[0][0]).toEqual(value.saveConfiguration.mock.calls[1][0]);
+  expect(await screen.findByRole("button", { name: "New Project" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Projects" }).getAttribute("aria-pressed")).toBe("true");
+  expect(value.enqueues).not.toHaveBeenCalled();
+  expect(value.controls).not.toHaveBeenCalled();
+});
+
+it("invalidates the loaded sidebar pages after saving without resetting their cursors or archive filter", async () => {
+  const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository" }) });
+  const project = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Existing project" }) });
+  const value = fixture([], [repository], [project], true);
+  render(<App transport={value.transport} />);
+  await screen.findByRole("button", { name: `Existing project. Project ID: ${project.id}` });
+  fireEvent.click(screen.getByRole("button", { name: "Next project page" }));
+  await waitFor(() => expect(value.projectRequests).toContain("project-next"));
+  fireEvent.click(screen.getByRole("button", { name: "Next session page" }));
+  await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === "" && request.pageToken === "global-next")).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: `Existing project. Project ID: ${project.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: "Next page of Existing project sessions" }));
+  await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === project.id && request.pageToken === "project-session-next")).toBe(true));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
+  await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === "" && request.includeArchived && request.pageToken === "")).toBe(true));
+  fireEvent.click(await screen.findByRole("button", { name: "Next session page" }));
+  await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === "" && request.includeArchived && request.pageToken === "global-next")).toBe(true));
+  fireEvent.click(await screen.findByRole("button", { name: "Next page of Existing project sessions" }));
+  await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === "" && request.includeArchived && request.pageToken === "global-next")).toBe(true));
+  await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === project.id && request.includeArchived && request.pageToken === "project-session-next")).toBe(true));
+
+  const currentProjectReads = value.projectRequests.filter((page) => page === "project-next").length;
+  const currentGlobalReads = value.sessionRequests.filter((request) => request.projectId === "" && request.includeArchived && request.pageToken === "global-next").length;
+  const currentProjectSessionReads = value.sessionRequests.filter((request) => request.projectId === project.id && request.includeArchived && request.pageToken === "project-session-next").length;
+  const sessionRequestsBeforeSave = value.sessionRequests.length;
+  fireEvent.click(screen.getByRole("button", { name: "New project" }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Name" }), { target: { value: "New bounded project" } });
+  fireEvent.change(await screen.findByRole("combobox", { name: "Add Repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  expect(await screen.findByRole("button", { name: "New Project" })).toBeTruthy();
+  await waitFor(() => expect(value.projectRequests.filter((page) => page === "project-next")).toHaveLength(currentProjectReads + 1));
+  await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === "" && request.includeArchived && request.pageToken === "global-next")).toHaveLength(currentGlobalReads + 1));
+  await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === project.id && request.includeArchived && request.pageToken === "project-session-next")).toHaveLength(currentProjectSessionReads + 1));
+  const refreshed = value.sessionRequests.slice(sessionRequestsBeforeSave);
+  expect(refreshed).toContainEqual({ projectId: "", includeArchived: true, pageToken: "global-next" });
+  expect(refreshed).toContainEqual({ projectId: project.id, includeArchived: true, pageToken: "project-session-next" });
+});
 
 it("keeps the draft and session mounted across settings and navigation, and renders native text inertly", async () => {
   const value = fixture();
@@ -44,7 +173,7 @@ it("keeps the draft and session mounted across settings and navigation, and rend
   expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Settings" }));
   expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Keep my unsent input");
   fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
-  await screen.findByText("No retained requests or completions.");
+  await screen.findByText("No retained requests or execution results.");
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe("Keep my unsent input");
@@ -279,4 +408,79 @@ it.each(["valid", "mixed", "null"])("renders closed Grok user history through se
   expect(screen.queryByText("Original verified Grok input")).toBeNull();
  }
  expect(value.enqueues).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled();
+});
+
+it("opens the PR shortcut in Repositories without reading GitHub until the repository browser is activated", async () => {
+  const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository", integration_id: newRequestId(), github_owner: "owner", github_name: "repo" }) });
+  const value = fixture([], [repository]);
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
+  await screen.findByRole("button", { name: "Browse GitHub items" });
+  expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true");
+  expect(value.githubQuery).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  await waitFor(() => expect(value.githubQuery).toHaveBeenCalledTimes(1));
+});
+
+it("defers the PR entry while a parent configuration editor draft is open", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  const newProvider = await screen.findByRole("button", { name: "New Provider" });
+  await waitFor(() => expect((newProvider as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(newProvider);
+  const name = await screen.findByRole("textbox", { name: "Name" });
+  fireEvent.change(name, { target: { value: "Retained provider draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained provider draft");
+  expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(value.enqueues).not.toHaveBeenCalled();
+  expect(value.controls).not.toHaveBeenCalled();
+});
+
+it("defers the PR entry until a nested integration profile draft is canceled", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
+  const name = screen.getByRole("textbox", { name: "Profile name" });
+  fireEvent.change(name, { target: { value: "Retained GitHub profile draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  expect((screen.getByRole("textbox", { name: "Profile name" }) as HTMLInputElement).value).toBe("Retained GitHub profile draft");
+  expect(screen.getByRole("button", { name: "Integrations" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(value.githubQuery).not.toHaveBeenCalled();
+});
+
+it("retains and defers around notification and import drafts until their explicit cancel path", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Questions and approval requests" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  expect((screen.getByRole("checkbox", { name: "Questions and approval requests" }) as HTMLInputElement).checked).toBe(false);
+  expect(screen.getByRole("button", { name: "Notifications" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
+  const importDraft = screen.getByRole("textbox", { name: "Configuration JSON" });
+  fireEvent.change(importDraft, { target: { value: "{\"version\":1" } });
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  expect((screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement).value).toBe("{\"version\":1");
+  expect(screen.getByRole("button", { name: "Import / Export" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.change(importDraft, { target: { value: "" } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
 });

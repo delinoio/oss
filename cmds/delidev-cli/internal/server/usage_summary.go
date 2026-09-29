@@ -35,7 +35,7 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 	if from == 0 {
 		from = until - (30 * 24 * time.Hour).Milliseconds()
 	}
-	f := domain.UsageSelection{From: time.UnixMilli(from), Until: time.UnixMilli(until), SessionID: domain.ID(req.Msg.SessionId), ProjectID: domain.ID(req.Msg.ProjectId), AccountID: domain.ID(req.Msg.AccountId), ProviderID: domain.ID(req.Msg.ProviderId), ModelID: domain.ID(req.Msg.ModelId), GeneralChat: req.Msg.GeneralChat}
+	f := domain.UsageSelection{From: time.UnixMilli(from), Until: time.UnixMilli(until), SessionID: domain.ID(req.Msg.SessionId), ProjectID: domain.ID(req.Msg.ProjectId), AccountID: domain.ID(req.Msg.AccountId), ProviderID: domain.ID(req.Msg.ProviderId), ModelID: domain.ID(req.Msg.ModelId), GeneralChat: req.Msg.GeneralChat, Granularity: domain.UsageTimeGranularity(req.Msg.Granularity), TimeZone: req.Msg.TimeZone}
 	if err := f.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
@@ -61,7 +61,40 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 			result.Pricing = append(result.Pricing, pricingUsage(value))
 		}
 		result.AcceptedExecutionsWithoutResponse = summary.AcceptedExecutionsWithoutResponse
-		labels := map[domain.ID]string{}
+		type usageLabelKey struct {
+			kind domain.Kind
+			id   domain.ID
+		}
+		labels := map[usageLabelKey]string{}
+		usageLabel := func(kind domain.Kind, id domain.ID) (string, error) {
+			key := usageLabelKey{kind: kind, id: id}
+			if label, known := labels[key]; known {
+				return label, nil
+			}
+			resource, err := tx.Get(kind, id)
+			if err != nil && domain.SafeError(err).Code != domain.NotFound {
+				return "", err
+			}
+			label := ""
+			if err == nil {
+				var value struct {
+					Name  string `json:"name"`
+					Alias string `json:"alias"`
+				}
+				if json.Unmarshal(resource.Data, &value) != nil {
+					return "", invalidUsageSummary()
+				}
+				label = value.Name
+				if kind == domain.AccountKind {
+					label = value.Alias
+				}
+				if domain.Text(label, "usage display label", 1024, false) != nil {
+					return "", invalidUsageSummary()
+				}
+			}
+			labels[key] = label
+			return label, nil
+		}
 		for _, group := range summary.Groups {
 			row := &pb.UsageGroup{SessionId: string(group.SessionID), ProjectId: string(group.ProjectID), AccountId: string(group.AccountID), ProviderId: string(group.ProviderID), ModelId: string(group.ModelID), Totals: usageTotals(group.Totals), Estimates: estimateTotals(group.Estimates)}
 			for _, part := range []struct {
@@ -72,33 +105,34 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 				if part.id == "" {
 					continue
 				}
-				label, known := labels[part.id]
-				if !known {
-					resource, err := tx.Get(part.kind, part.id)
-					if err != nil && domain.SafeError(err).Code != domain.NotFound {
-						return err
-					}
-					if err == nil {
-						var value struct {
-							Name  string `json:"name"`
-							Alias string `json:"alias"`
-						}
-						if json.Unmarshal(resource.Data, &value) != nil {
-							return invalidUsageSummary()
-						}
-						label = value.Name
-						if part.kind == domain.AccountKind {
-							label = value.Alias
-						}
-						if domain.Text(label, "usage display label", 1024, false) != nil {
-							return invalidUsageSummary()
-						}
-					}
-					labels[part.id] = label
+				label, err := usageLabel(part.kind, part.id)
+				if err != nil {
+					return err
 				}
 				*part.target = label
 			}
 			result.Groups = append(result.Groups, row)
+		}
+		if analytics := summary.Analytics; analytics != nil {
+			wire := &pb.UsageAnalytics{Granularity: pb.UsageTimeGranularity(analytics.Granularity), TimeZone: analytics.TimeZone, Days: make([]*pb.UsageAnalyticsDay, 0, len(analytics.Days)), Models: make([]*pb.UsageAnalyticsModel, 0, len(analytics.Models))}
+			for _, day := range analytics.Days {
+				wire.Days = append(wire.Days, &pb.UsageAnalyticsDay{FromUnixMs: day.From.UnixMilli(), UntilUnixMs: day.Until.UnixMilli(), Totals: usageTotals(day.Totals)})
+			}
+			for _, model := range analytics.Models {
+				provider, err := usageLabel(domain.ProviderKind, model.ProviderID)
+				if err != nil {
+					return err
+				}
+				name, err := usageLabel(domain.ModelKind, model.ModelID)
+				if err != nil {
+					return err
+				}
+				wire.Models = append(wire.Models, &pb.UsageAnalyticsModel{ProviderId: string(model.ProviderID), ModelId: string(model.ModelID), ProviderName: provider, ModelName: name, Totals: usageTotals(model.Totals)})
+			}
+			if other := analytics.OtherModels; other != nil {
+				wire.OtherModels = &pb.UsageOtherModels{ModelCount: other.ModelCount, Totals: usageTotals(other.Totals)}
+			}
+			result.Analytics = wire
 		}
 		encoded, err := protojson.Marshal(result)
 		if err != nil {
@@ -112,7 +146,11 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	s.logger.DebugContext(ctx, "usage_summary_read_completed", "correlation_id", correlation, "group_count", len(result.Groups), "response_count", result.Totals.Responses)
+	dayBucketCount, modelGroupCount := 0, 0
+	if result.Analytics != nil {
+		dayBucketCount, modelGroupCount = len(result.Analytics.Days), len(result.Analytics.Models)
+	}
+	s.logger.DebugContext(ctx, "usage_summary_read_completed", "correlation_id", correlation, "group_count", len(result.Groups), "response_count", result.Totals.Responses, "day_bucket_count", dayBucketCount, "model_group_count", modelGroupCount)
 	response := connect.NewResponse(result)
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil

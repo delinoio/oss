@@ -23,6 +23,11 @@ import { document, encode } from "./documents";
 let directory: string, transport: Transport, providerOrigin: string, binary: string, scope: string;
 let process: ChildProcess | undefined, worker: ChildProcess | undefined, provider: Server | undefined;
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
+async function clickEnabledButton(name: string) {
+  const button = await screen.findByRole("button", { name });
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(button);
+}
 afterEach(() => vi.unstubAllGlobals());
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "delidev-settings-"));
@@ -91,13 +96,13 @@ it("configures a real Go server through the settings forms and explicitly valida
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
-  fireEvent.click(await screen.findByRole("button", { name: "New Provider" }));
+  await clickEnabledButton("New Provider");
   change("Name", "Owned local API"); change("API base URL", providerOrigin); change("API protocol", "openai-chat"); change("Authentication", "keyless");
   fireEvent.click(screen.getByRole("checkbox", { name: "Discover models automatically for connected accounts" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));
   await screen.findByRole("heading", { name: "Owned local API" });
   fireEvent.click(screen.getByRole("button", { name: "AI accounts" }));
-  fireEvent.click(screen.getByRole("button", { name: "New AI account" }));
+  await clickEnabledButton("New AI account");
   change("Account alias", "Owned keyless account");
   const option = await screen.findByRole("option", { name: "Owned local API" });
   change("Provider", (option as HTMLOptionElement).value);
@@ -111,14 +116,14 @@ it("configures a real Go server through the settings forms and explicitly valida
   await screen.findByText("Health: ready · Credential connected");
   fireEvent.click(screen.getByRole("button", { name: "Back to accounts" }));
   fireEvent.click(screen.getByRole("button", { name: "Models" }));
-  fireEvent.click(screen.getByRole("button", { name: "New Model" }));
+  await clickEnabledButton("New Model");
   await screen.findByRole("option", { name: "Owned local API" });
   change("Provider", (option as HTMLOptionElement).value); change("Native model ID", "fixture-model"); change("Display name", "Owned model");
   fireEvent.click(screen.getByRole("checkbox", { name: "codex" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Model" }));
   await screen.findByRole("heading", { name: "Owned model" });
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
+  await clickEnabledButton("New Agent Worker");
   change("Name", "Configured agent");
   change("Model", (await screen.findByRole("option", { name: "Owned model" }) as HTMLOptionElement).value);
   change("Add AI account", (await screen.findByRole("option", { name: "Owned keyless account · ready" }) as HTMLOptionElement).value);
@@ -154,7 +159,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
-  fireEvent.click(screen.getByRole("button", { name: "New Repository" }));
+  await clickEnabledButton("New Repository");
   change("Name", "Owned repository");
   change("Execution Worker", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
   change("Absolute checkout path on this Worker", checkout);
@@ -167,7 +172,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   const repositories = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.REPOSITORY } });
   expect(document(repositories.resources[0]).checkouts).toEqual([expect.objectContaining({ path: canonical })]);
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
-  fireEvent.click(screen.getByRole("button", { name: "New Project" }));
+  await clickEnabledButton("New Project");
   change("Name", "Owned project");
   change("Add Repository", (await screen.findByRole("option", { name: "Owned repository" }) as HTMLOptionElement).value);
   fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
@@ -325,7 +330,7 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }));
+  await clickEnabledButton("New Server preferences");
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
   const edit = await screen.findByRole("button", { name: "Edit Server preferences" });
   const resources = createClient(ResourceService, transport);
@@ -349,11 +354,12 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
 it("reads unavailable usage through the actual Go service without inventing cost", async () => {
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Usage active open={()=>{}} /></QueryClientProvider></TransportProvider>);
- await screen.findByText("Known subtotals · incomplete coverage");
+ await screen.findByText("Incomplete coverage");
  expect(screen.getByText(/No exact response usage is recorded/)).toBeTruthy();
  expect(screen.getByText("Actual API cost:").parentElement!.textContent).toContain("Unavailable");
+ fireEvent.click(screen.getByRole("button", { name: "Filters" }));
  fireEvent.click(screen.getByRole("checkbox",{name:"General Chat only"}));
- fireEvent.click(screen.getByRole("button",{name:"Apply usage filters"}));
+ fireEvent.click(screen.getByRole("button",{name:"Apply filters"}));
  await waitFor(()=>expect(screen.queryByText("Loading usage…")).toBeNull());
  cleanup();client.clear();
 });
@@ -403,7 +409,7 @@ it("persists native Claude permission selection through the desktop and real Go 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
+  await clickEnabledButton("New Agent Worker");
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
   change("Name", "Native Claude settings"); change("Harness", "claude-code");
   await screen.findByRole("option", { name: "Claude settings model" });
