@@ -3201,3 +3201,18 @@ runtime, Windows/Linux runtime or production signing is claimed.
 - Full frontend `pnpm test` passed on Node.js 24: 74 files / 942 tests, native Swift fixtures, package/launch scripts, typecheck and production build. Repository contract checks passed (95), workflow validation passed, and the native Rust core/host checks passed (15 core tests plus seven host tests; four existing tests ignored). Earlier concurrent frontend attempts timed out in unrelated existing tests; a constrained run also had a temporary Git initialization failure, before the full command passed.
 - Initial root `cargo test` attempts did not pass: eight untouched `clibox-fspy` macOS process/injection tests failed during concurrent compilation, and a four-thread repeat stopped at `clibox`'s `cancellation_forwards_shutdown_output_before_returning`. The latter passed alone with one test thread. No source in those crates was changed.
 - The final root `cargo test -- --test-threads=1` with canonical `TMPDIR=/private/tmp` and the existing CEF cache passed every workspace unit/integration target, including the earlier clibox failures. It then exited at `clibox-system` doctest compilation with `E0463` for `objc2_app_kit` and `objc2_foundation`; that crate is unchanged. A separate root `cargo test --doc -- --test-threads=1` rebuilt dependencies and passed all workspace doctests. These two completed checks cover the workspace test targets, while the failed full-command invocation remains recorded. Generated desktop/client `dist` directories were removed after compilation and packaging.
+
+### PR #1120 real-server GitHub profile wait repair (2026-09-30)
+
+The hosted protocol/client job passed 941 of 942 desktop tests but timed out
+waiting for `Rename Real server profile` after saving a profile. The fixture now
+delays the original profile save and profile-list reads by 600 ms each. This
+reproduced the same missing-button failure under the default one-second wait;
+bounded five-second waits for the created and renamed profile pass. The real
+Go server and CLI still verify the exact saved fields and final revision 2.
+Production RPC behavior, retries and the 30-second scenario deadline are
+unchanged. Full desktop `pnpm test` then passed 74 files / 942 tests, type
+checking, packaging/launcher checks, native Swift fixtures and the production
+build. Generated desktop/client `dist` output was removed after verification.
+No new Rust, Go, protocol or platform acceptance changes were made; the repaired
+hosted CI result remains pending after the push.

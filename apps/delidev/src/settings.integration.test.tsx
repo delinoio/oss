@@ -500,16 +500,28 @@ it("persists native Claude permission selection through the desktop and real Go 
 
 it("saves and renames GitHub profiles through the real Go server and CLI", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  // Exercise the hosted CI timeout with sequential save and list latency. The
+  // fixture must wait for the actual refreshed profile, without replaying saves.
+  const slowTransport: Transport = {
+    ...transport,
+    async unary(method, signal, timeoutMs, header, input, contextValues) {
+      const profileList = method.name === "ListResources" && (input as { filter?: { kind?: EntityKind } }).filter?.kind === EntityKind.INTEGRATION;
+      if (method.name === "SaveIntegrationProfile" || profileList) {
+        await new Promise(resolve => setTimeout(resolve, 600));
+      }
+      return transport.unary(method, signal, timeoutMs, header, input, contextValues);
+    },
+  };
+  render(<TransportProvider transport={slowTransport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
   fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Real server profile" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "fixture-owner" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }, { timeout: 5000 }));
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Renamed server profile" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  await screen.findByRole("button", { name: "Manage Renamed server profile" });
+  await screen.findByRole("button", { name: "Manage Renamed server profile" }, { timeout: 5000 });
   const output = JSON.parse(await runCLI(["integration", "list"]));
   const row = output.result.resources.find((value: { data: { name: string } }) => value.data.name === "Renamed server profile");
   expect(row).toBeTruthy();
