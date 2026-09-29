@@ -223,7 +223,10 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 	if err := applySessionTitleSchema(ctx, tx); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "PRAGMA user_version=24;"); err != nil {
+	if _, err := tx.ExecContext(ctx, requestDiagnosticSchema); err != nil {
+		return storageError(err)
+	}
+	if _, err := tx.ExecContext(ctx, "PRAGMA user_version=25;"); err != nil {
 		return storageError(err)
 	}
 	return storageError(tx.Commit())

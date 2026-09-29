@@ -1,5 +1,9 @@
 # DeliDev native API relay contract
 
+## Metadata-only request publication
+
+Issue #1103 adds an original-lease diagnostic projection around each single authorized HTTP invocation. Before transmission, persist one generated correlation/record identity and its send claim; exact publication receipts do not make another HTTP attempt. After response/cancellation, publish only closed status/error, observed elapsed latency, allowlisted settings and protected-value-checked opaque request/response IDs. Completion is bounded and joined before lease/storage release; failed or interrupted settlement retains uncertainty. This table is not a usage source and does not modify native retry, authorization, request/response byte forwarding or credential lifetime. Native input/effective settings remain a separate exact-identity publication. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for limits and reads.
+
 ## Scope
 `cmds/delidev-cli/internal/apiproxy` implements the internal server-only native HTTP/JSON/SSE relay. The server router now registers the relay with durable execution authority and native-reference storage. The Worker now creates/registers an execution token and supplies it to Codex for an independently accepted first assignment. The public first dispatcher now produces the immutable assignment after current configuration/account/workspace/Worker checks; only the owning Worker may register its scoped credential. This document describes the implemented relay and authority boundaries; fixture authorization does not establish complete native execution acceptance.
 

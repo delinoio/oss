@@ -88,6 +88,9 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if err := applyExecutionEvent(tx, jobRecord, input, actor.DeviceID, sr, &session, ir, &queued, event); err != nil {
 			return nil, err
 		}
+		if err := projectNativeDiagnostic(tx, input, event, domain.ID(meta.RequestId)); err != nil {
+			return nil, err
+		}
 		if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
 			return nil, err
 		}

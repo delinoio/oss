@@ -228,6 +228,59 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	guard := newSecretGuard(key, []byte(token))
+	attempted := false
+	purpose := lease.Scope.Purpose
+	if purpose == "" {
+		purpose = domain.ConversationUsage
+	}
+	diagnostic := domain.RequestDiagnostic{ID: domain.ID(correlation), CorrelationID: domain.ID(correlation), SessionID: lease.Scope.SessionID, ExecutionID: lease.Scope.ExecutionID, AccountID: lease.Scope.AccountID, ConnectionID: lease.Scope.ConnectionID, ProviderID: lease.Scope.ProviderID, ModelID: lease.Scope.ModelID, Harness: lease.Scope.Harness, Source: domain.DiagnosticProxyHTTP, Operation: diagnosticOperation(operation), State: domain.DiagnosticInProgress, Purpose: purpose, ObservedAt: started.UTC(), HTTPAttempted: &attempted}
+	if values := r.Header.Values("X-Client-Request-Id"); len(values) == 1 && domain.SafeDiagnosticID(values[0]) && !guard.contains(values[0]) {
+		diagnostic.NativeRequestID = values[0]
+	}
+	diagnosticRequestSettings(raw, operation, &diagnostic, guard)
+	observations := diagnosticObservations{value: &diagnostic}
+	publishDiagnostic := func(work context.Context) error {
+		if lease.PublishDiagnostic == nil {
+			return nil
+		}
+		if err := lease.PublishDiagnostic(work, diagnostic); err != nil {
+			return err
+		}
+		diagnostic.Revision++
+		return nil
+	}
+	if err := publishDiagnostic(ctx); err != nil {
+		code = safeCode(err)
+		fail(errorStatus(err), code)
+		return
+	}
+	defer func() {
+		finished := time.Now().UTC()
+		diagnostic.FinishedAt = &finished
+		duration := uint64(time.Since(started).Milliseconds())
+		diagnostic.DurationMS = &duration
+		diagnostic.ErrorCode = code
+		if status >= 100 && status <= 599 {
+			observed := uint32(status)
+			diagnostic.HTTPStatus = &observed
+		}
+		diagnostic.State = domain.DiagnosticSucceeded
+		if code != "" {
+			diagnostic.State = domain.RequestDiagnosticFailed
+		}
+		if code == domain.Canceled || ctx.Err() != nil {
+			diagnostic.State = domain.DiagnosticCanceled
+			diagnostic.ErrorCode = domain.Canceled
+		}
+		// A canceled HTTP context cannot publish its own completion. Bounded
+		// metadata settlement remains inside the original joined lease lifetime.
+		settle, stop := context.WithTimeout(context.Background(), 3*time.Second)
+		defer stop()
+		if err := publishDiagnostic(settle); err != nil {
+			h.logger.Warn("request_diagnostic_settlement_failed", "correlation_id", correlation, "error_code", safeCode(err))
+		}
+	}()
+
 	upstream, err := upstreamRequest(ctx, r, raw, lease.Scope, key, operation, stream, correlation)
 	if err != nil {
 		code = safeCode(err)
@@ -243,6 +296,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer upstream.Header.Del("Authorization")
 	defer upstream.Header.Del("x-api-key")
+	attempted = true
+	if err := publishDiagnostic(ctx); err != nil {
+		attempted = false
+		code = safeCode(err)
+		fail(errorStatus(err), code)
+		return
+	}
 	submitted = true
 	phase = phaseRequest
 	response, err := h.client.Do(upstream)
@@ -252,6 +312,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer response.Body.Close()
+	if values := response.Header.Values("X-Request-Id"); len(values) == 1 && domain.SafeDiagnosticID(values[0]) && !guard.contains(values[0]) {
+		diagnostic.ProviderRequestID = values[0]
+	}
 	status = response.StatusCode
 	phase = phaseHeaders
 	if status != http.StatusOK {
@@ -281,7 +344,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if stream {
 		phase = phaseStream
-		if started, err := relayStream(ctx, w, response.Body, operation, lease, guard, correlation); err != nil {
+		if started, err := relayStream(ctx, w, response.Body, operation, lease, guard, correlation, &observations); err != nil {
 			var native *nativeFailure
 			if errors.As(err, &native) {
 				code = native.code
@@ -340,6 +403,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadGateway, code)
 		return
 	}
+	diagnosticResponse(object, &observations, guard)
 	if ctx.Err() != nil {
 		code = domain.Canceled
 		return

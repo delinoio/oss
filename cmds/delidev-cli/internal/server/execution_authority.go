@@ -131,7 +131,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil || model.ProviderID != input.Configuration.ProviderID || !slices.Contains(model.Harnesses, input.Configuration.Harness) {
 		return empty, executionDenied()
 	}
-	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, Provider: provider, Operations: operations}
+	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
 	if err := scope.Validate(); err != nil {
 		return empty, executionDenied()
 	}
@@ -234,6 +234,37 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	}()
 	var once sync.Once
 	lease := &apiproxy.Lease{Scope: scope, Context: leaseContext}
+	// Begin/HTTP-send claims require live authority. Completion only updates an
+	// existing exact original observation, even after Stop or account revocation.
+	// It grants no inference and is joined before lease/storage closure.
+	lease.PublishDiagnostic = func(ctx context.Context, value domain.RequestDiagnostic) error {
+		if value.SessionID != scope.SessionID || value.ExecutionID != scope.ExecutionID || value.AccountID != scope.AccountID || value.ConnectionID != scope.ConnectionID || value.ProviderID != scope.ProviderID || value.ModelID != scope.ModelID || value.Source != domain.DiagnosticProxyHTTP {
+			return executionDenied()
+		}
+		publication := domain.NewID()
+		value.PublicationRequestID = publication
+		_, err := a.service.Store.Mutate(ctx, publication, "request-diagnostic.publish", value, func(tx *store.Tx) (any, error) {
+			if value.State == domain.DiagnosticInProgress {
+				if leaseContext.Err() != nil {
+					return nil, executionDenied()
+				}
+				if _, err := a.scope(tx, grant); err != nil {
+					return nil, err
+				}
+			} else if value.Revision == 0 {
+				return nil, executionDenied()
+			}
+			if err := tx.PutRequestDiagnostic(value, value.Revision); err != nil {
+				return nil, err
+			}
+			return struct {
+				ID       domain.ID
+				Revision uint64
+			}{value.ID, value.Revision + 1}, nil
+		})
+		return err
+	}
+
 	if scope.Purpose == domain.SessionTitleUsage {
 		lease.BeforeSubmit = func(ctx context.Context, operation apiproxy.Operation) error {
 			if leaseContext.Err() != nil {

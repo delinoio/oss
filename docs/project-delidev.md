@@ -1,5 +1,7 @@
 # Project: DeliDev
 
+Issue #1103 adds metadata-only model-request diagnostics through bounded authenticated session/execution reads, equivalent CLI and a session Diagnostics panel. Original native-input publications and individual proxy HTTP send claims retain separate provenance; missing settings/latency remain unavailable and receipt replay creates no attempt. Schema v25 preserves historical records and session-deletion cleanup. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md) and its protocol, storage, proxy, client and desktop integration contracts. Controlled implementation tests do not establish real-account or native platform/release acceptance.
+
 ## Goal
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 is normative; the historical web platform in #722 is not inherited.
 

@@ -244,6 +244,9 @@ const (
 	// ProviderServiceResolveModelProcedure is the fully-qualified name of the ProviderService's
 	// ResolveModel RPC.
 	ProviderServiceResolveModelProcedure = "/delidev.v1.ProviderService/ResolveModel"
+	// SessionServiceListRequestDiagnosticsProcedure is the fully-qualified name of the SessionService's
+	// ListRequestDiagnostics RPC.
+	SessionServiceListRequestDiagnosticsProcedure = "/delidev.v1.SessionService/ListRequestDiagnostics"
 	// SessionServiceLinkSessionPullRequestProcedure is the fully-qualified name of the SessionService's
 	// LinkSessionPullRequest RPC.
 	SessionServiceLinkSessionPullRequestProcedure = "/delidev.v1.SessionService/LinkSessionPullRequest"
@@ -2393,6 +2396,7 @@ func (UnimplementedProviderServiceHandler) ResolveModel(context.Context, *connec
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
 	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
 	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -2428,6 +2432,12 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		listRequestDiagnostics: connect.NewClient[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse](
+			httpClient,
+			baseURL+SessionServiceListRequestDiagnosticsProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ListRequestDiagnostics")),
+			connect.WithClientOptions(opts...),
+		),
 		linkSessionPullRequest: connect.NewClient[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse](
 			httpClient,
 			baseURL+SessionServiceLinkSessionPullRequestProcedure,
@@ -2565,6 +2575,7 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	listRequestDiagnostics   *connect.Client[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse]
 	linkSessionPullRequest   *connect.Client[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse]
 	unlinkSessionPullRequest *connect.Client[v1.UnlinkSessionPullRequestRequest, v1.UnlinkSessionPullRequestResponse]
 	readSessionReviewContext *connect.Client[v1.ReadSessionReviewContextRequest, v1.ReadSessionReviewContextResponse]
@@ -2587,6 +2598,11 @@ type sessionServiceClient struct {
 	editLocalReviewComment   *connect.Client[v1.EditLocalReviewCommentRequest, v1.EditLocalReviewCommentResponse]
 	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
 	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
+}
+
+// ListRequestDiagnostics calls delidev.v1.SessionService.ListRequestDiagnostics.
+func (c *sessionServiceClient) ListRequestDiagnostics(ctx context.Context, req *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error) {
+	return c.listRequestDiagnostics.CallUnary(ctx, req)
 }
 
 // LinkSessionPullRequest calls delidev.v1.SessionService.LinkSessionPullRequest.
@@ -2701,6 +2717,7 @@ func (c *sessionServiceClient) SubmitLocalReview(ctx context.Context, req *conne
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
 	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
 	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -2732,6 +2749,12 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
+	sessionServiceListRequestDiagnosticsHandler := connect.NewUnaryHandler(
+		SessionServiceListRequestDiagnosticsProcedure,
+		svc.ListRequestDiagnostics,
+		connect.WithSchema(sessionServiceMethods.ByName("ListRequestDiagnostics")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceLinkSessionPullRequestHandler := connect.NewUnaryHandler(
 		SessionServiceLinkSessionPullRequestProcedure,
 		svc.LinkSessionPullRequest,
@@ -2866,6 +2889,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceListRequestDiagnosticsProcedure:
+			sessionServiceListRequestDiagnosticsHandler.ServeHTTP(w, r)
 		case SessionServiceLinkSessionPullRequestProcedure:
 			sessionServiceLinkSessionPullRequestHandler.ServeHTTP(w, r)
 		case SessionServiceUnlinkSessionPullRequestProcedure:
@@ -2918,6 +2943,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ListRequestDiagnostics is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.LinkSessionPullRequest is not implemented"))
