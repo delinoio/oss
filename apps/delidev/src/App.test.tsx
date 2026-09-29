@@ -212,6 +212,27 @@ it("retries the exact accepted message identity after uncertainty instead of sen
   expect(calls[0][0]).toEqual(calls[1][0]);
 });
 
+it("clears the accepted message draft after its session view unmounts", async () => {
+  const value = fixture();
+  let resolveEnqueue!: (result: Awaited<ReturnType<typeof value.enqueues>>) => void;
+  value.enqueues.mockImplementationOnce(() => new Promise((resolve) => { resolveEnqueue = resolve; }));
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(composer, { target: { value: "Accepted while another session is open" } });
+  fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  await waitFor(() => expect(value.enqueues).toHaveBeenCalledTimes(1));
+
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Other session/ }));
+  expect(await screen.findByRole("heading", { name: "Other session" })).toBeTruthy();
+  await act(async () => { resolveEnqueue({ change: { session: value.session } }); });
+
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const returnedComposer = await screen.findByRole("textbox", { name: "Message" });
+  expect(returnedComposer).not.toBe(composer);
+  expect((returnedComposer as HTMLTextAreaElement).value).toBe("");
+});
+
 it("opens execution configuration without changing the unsent session draft or dispatching work", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);

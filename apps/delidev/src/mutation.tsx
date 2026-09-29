@@ -84,8 +84,9 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
     registry.put(key, empty);
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.
-    if (!mounted.current) return;
-    try { accepted?.(result, retained); } catch (error) { setLocalError({ key, error }); }
+    try { accepted?.(result, retained); } catch (error) {
+      if (mounted.current) setLocalError({ key, error });
+    }
   };
   return { send, retry: () => send(), ...state, error: localError?.key === key ? localError.error : state.error };
 }
