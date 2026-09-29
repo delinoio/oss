@@ -3240,3 +3240,26 @@ These are temporary SQLite, controlled publication/provider and jsdom fixtures;
 no real Grok account, installed native inference, native desktop visual,
 other-platform or release acceptance was performed. Existing native original
 history/cleanup adapters are reused without broadening their first-text profile.
+
+
+### PR #1108 Usage review repairs (2026-09-30)
+
+Three separate UI repairs preserve the accounting boundary: native-only groups
+stay in Grok tables and do not replace the response detail empty state; responses
+with missing counters still appear in response details. Grok daily rows expose
+both exact localized endpoints with an exclusive Until, including clipped
+partial-day intervals. Original project IDs remain visible alongside duplicate
+or later-renamed labels. The focused response-detail tests passed (eight), and
+the final Grok accounting suite passed (four), including a clipped Asia/Seoul
+interval and duplicate/renamed project fixtures.
+
+The complete frontend `pnpm test` command passed under Node 24.21.0 and pnpm
+10.26.2 with one Vitest worker: 75 files / 947 tests, type checking, eight bundle
+dry-run fixtures, six desktop launcher fixtures and the production build. The
+runtime was selected explicitly through `vp env exec --node 24
+--package-manager pnpm@10.26.2`; an earlier follow-up full command also passed
+947 tests under the wrapper's Node 26.7.0 selection. These passes supersede the
+earlier local frontend timeout result for the repaired UI; they do not change
+the recorded Go full-suite limitations or establish native visual, real-account,
+other-platform or release acceptance. No Go or Rust source changed in these UI
+repairs. Generated frontend/client dist directories are removed after validation.
