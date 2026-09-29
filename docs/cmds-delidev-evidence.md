@@ -2246,3 +2246,30 @@ Focused real SQLite/Connect/CLI race tests pass (store 3.751s, server 2.258s, CL
   race/vet and final generated drift validation are recorded after completion.
 - No physical free-space result, database restore, session deletion, Worker
   snapshot or native Windows/Linux validation is inferred from these tests.
+
+### CEF accessibility and shutdown observation (2026-09-29)
+
+- The saved-window accessibility gap was reproduced and corrected by enabling
+  each trusted browser's native accessibility state after page load. In an actual
+  macOS arm64 bundle, a newly opened authenticated server window then exposed
+  its semantic headings, navigation, checklist and controls to native automation.
+- Added redacted exit-requested/exit-completed diagnostics. Repeated Quit checks
+  exceeded the native automation tool's five-second observation window. An Alloy
+  diagnostic build subsequently logged native runtime exit 67.896 seconds after
+  the request, with the independent server still serving. This proves delayed
+  native completion for that diagnostic build, not prompt shutdown. Default-mode
+  prompt shutdown remains an unresolved native acceptance concern.
+- Menu rerouting, speculative browser-close sequencing and an alternate runtime
+  style did not establish prompt shutdown and were removed. The committed change
+  retains only the verified per-document accessibility fix and exit diagnostics;
+  it never substitutes forced process termination for successful CEF cleanup.
+- The schema-21 full Go run exposed historical migration fixtures that removed
+  only tables through schema 20. Their shared downgrade setup now also removes
+  the new table, preserving the intended original-schema assertions. The entire
+  store race suite passed after this correction (60.079s).
+- Final verification: the complete `go test -race -timeout 30m
+  ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...` passed, as did
+  API-client tests (41), desktop tests (69 files, 800 tests), desktop typecheck/build,
+  Buf lint/breaking/generated drift, focused CEF native tests and root `cargo test`.
+  Root Cargo used `TMPDIR=/private/tmp` with the required pnport preload built;
+  native build/test invocations were serialized to avoid shared-target interference.

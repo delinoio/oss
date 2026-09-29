@@ -8,6 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
     Connection, Connector, LocalServerStatus, LocalWorkerAction, LocalWorkerProof,
     LocalWorkerStatus, NativeFailure, RemovedConnections, SavedConnection, SavedConnectionState,
@@ -498,6 +499,31 @@ fn saved_csp(policy: &str, origin: &str) -> Result<String, NativeFailure> {
     );
     Ok(Csp::from(directives).to_string())
 }
+// The pinned CEF runtime applies macOS accessibility notifications only to
+// browsers that already exist. Enable each trusted document explicitly so a
+// saved-server window created afterward also exposes its semantic content.
+// Remove this workaround when the runtime carries accessibility state forward
+// to every newly created browser; no content or accessibility tree is logged.
+fn enable_document_accessibility(window: &WebviewWindow<Cef>) {
+    if window
+        .with_webview(|view| {
+            if let Some(host) = view.browser().host() {
+                host.set_accessibility_state(cef::State::ENABLED);
+            } else {
+                tracing::warn!(
+                    operation = "document_accessibility",
+                    code = "browser-unavailable"
+                );
+            }
+        })
+        .is_err()
+    {
+        tracing::warn!(
+            operation = "document_accessibility",
+            code = "window-unavailable"
+        );
+    }
+}
 fn create_main(app: &AppHandle<Cef>) -> tauri::Result<WebviewWindow<Cef>> {
     let config = &app.config().app.windows[0];
     WebviewWindowBuilder::from_config(app, config)?
@@ -507,8 +533,11 @@ fn create_main(app: &AppHandle<Cef>) -> tauri::Result<WebviewWindow<Cef>> {
             tracing::info!(operation = "main_navigation", allowed);
             allowed
         })
-        .on_page_load(|_, payload| {
+        .on_page_load(|window, payload| {
             tracing::info!(operation="main_page",phase=?payload.event());
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                enable_document_accessibility(&window);
+            }
         })
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()
@@ -591,6 +620,11 @@ async fn open_connection(
                 && (url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost"))
         })
         .on_new_window(|_, _| NewWindowResponse::Deny)
+        .on_page_load(|window, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                enable_document_accessibility(&window);
+            }
+        })
         .on_web_resource_request(move |_, response| {
             if let Some(header) = response.headers_mut().get_mut("Content-Security-Policy") {
                 let policy = header
@@ -724,6 +758,9 @@ fn run() -> Result<(), NativeFailure> {
     let exiting = Arc::clone(&tray);
     let exiting_notifications = Arc::clone(&notifications);
     app.run(move |_app, event| {
+        if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+            tracing::info!(operation = "desktop_exit", state = "runtime-requested");
+        }
         #[cfg(target_os = "macos")]
         if matches!(event, tauri::RunEvent::Reopen { .. }) {
             // macOS app/Dock reopening must reveal the retained main window
@@ -737,6 +774,7 @@ fn run() -> Result<(), NativeFailure> {
             }
         }
         if matches!(event, tauri::RunEvent::Exit) {
+            tracing::info!(operation = "desktop_exit", state = "runtime-exited");
             exiting_notifications.stop();
             exiting.stop();
         }

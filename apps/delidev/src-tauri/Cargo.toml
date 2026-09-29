@@ -11,11 +11,12 @@ default-run = "delidev-desktop"
 [features]
 default = []
 cli = ["dep:tauri-cli"]
-desktop-host = ["dep:tauri", "dep:tauri-build", "dep:tracing-subscriber", "native-notifications"]
+desktop-host = ["dep:cef", "dep:tauri", "dep:tauri-build", "dep:tracing-subscriber", "native-notifications"]
 native-notifications = ["dep:tokio", "dep:mac-usernotifications", "dep:windows", "dep:zbus", "dep:futures-lite"]
 custom-protocol = ["tauri?/custom-protocol"]
 
 [dependencies]
+cef = { version = "=150.0.0", optional = true }
 base64 = "0.22.1"
 dirs = "6"
 serde = { version = "1", features = ["derive"] }

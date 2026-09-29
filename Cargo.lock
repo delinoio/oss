@@ -2806,6 +2806,7 @@ name = "delidev-desktop"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "cef",
  "dirs 6.0.0",
  "futures-lite",
  "mac-usernotifications",

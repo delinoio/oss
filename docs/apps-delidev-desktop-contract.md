@@ -421,3 +421,12 @@ loop. Tray and notification navigation must move authorization to a blocking
 worker and recheck shutdown and notification generations before publication.
 Otherwise the UI loop can wait for its own queued URL request and deadlock.
 Keep these safeguards until the runtime provides nonblocking getters.
+
+Each trusted CEF document explicitly enables the native accessibility tree after
+page load through the UI-loop webview callback. The pinned runtime otherwise
+applies accessibility notifications only to already existing browsers; newly
+opened saved-server windows must also expose their semantic UI. The direct CEF
+dependency matches the runtime's 150.0.0 pin. Remove this workaround only after
+upstream propagates accessibility state to newly created browsers. Structured
+exit-requested/exit-completed logs contain no renderer content. Native shutdown
+latency remains an independently recorded acceptance concern.
