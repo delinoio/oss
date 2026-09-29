@@ -74,15 +74,16 @@ type desktopCredentialCommitment struct {
 // Retain the exact credential only after a new local pairing is authenticated.
 // Revocation deletes the server's token verifier, so metadata alone cannot
 // reconstruct this proof for a legacy or damaged credential after revocation.
-func retainDesktopCredential(owner, root string) error {
-	raw, digest, err := desktopFile(root, "device.json")
-	clear(raw)
+func retainDesktopCredential(owner string, credential worker.Credential) error {
+	// Use the same typed JSON encoding as worker.Pair's pending publication;
+	// the proof must be durable before device.json can select the reuse branch.
+	raw, err := json.Marshal(credential)
 	if err != nil {
 		return err
 	}
-	if digest == "" {
-		return recoveryRequired()
-	}
+	sum := sha256.Sum256(raw)
+	clear(raw)
+	digest := hex.EncodeToString(sum[:])
 	path := filepath.Join(owner, "desktop-registration.json")
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 		return verifyOriginalDesktopCredential(owner, digest)

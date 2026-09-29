@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -27,6 +28,18 @@ func desktopFixture(t *testing.T) (string, worker.Credential) {
 }
 func desktopFixtureEndpoint(t *testing.T, selectEndpoint func(string, server.Endpoint)) (string, worker.Credential) {
 	t.Helper()
+	root := desktopServerFixture(t, selectEndpoint)
+	if code, result := cliRun(t, root, []string{"device", "pair-local", "--device-dir", filepath.Join(root, "desktop-client")}, ""); code != 0 {
+		t.Fatal(result)
+	}
+	credential, err := worker.LoadCredential(filepath.Join(root, "desktop-client"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, credential
+}
+func desktopServerFixture(t *testing.T, selectEndpoint func(string, server.Endpoint)) string {
+	t.Helper()
 	root := filepath.Join(t.TempDir(), "server")
 	ctx, cancel := context.WithCancel(context.Background())
 	ready, done := make(chan struct{}), make(chan error, 1)
@@ -51,14 +64,7 @@ func desktopFixtureEndpoint(t *testing.T, selectEndpoint func(string, server.End
 		}
 		selectEndpoint(root, endpoint)
 	}
-	if code, result := cliRun(t, root, []string{"device", "pair-local", "--device-dir", filepath.Join(root, "desktop-client")}, ""); code != 0 {
-		t.Fatal(result)
-	}
-	credential, err := worker.LoadCredential(filepath.Join(root, "desktop-client"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return root, credential
+	return root
 }
 func revokeDesktop(t *testing.T, root string, credential worker.Credential) {
 	t.Helper()
@@ -68,6 +74,90 @@ func revokeDesktop(t *testing.T, root string, credential worker.Credential) {
 }
 func recoveryArgs(original worker.Credential, request domain.ID) []string {
 	return []string{"--request-id", string(request), "device", "recover-local", "--id", string(original.DeviceID), "--revision", "2"}
+}
+
+func TestDesktopPairingRetriesFailedCommitmentBeforeCredentialPublication(t *testing.T) {
+	root := desktopServerFixture(t, nil)
+	clientRoot := filepath.Join(root, "desktop-client")
+	commitment := filepath.Join(root, "desktop-registration.json")
+	// A directory in place of the private commitment simulates a storage failure
+	// after the server accepts PairDevice but before local proof is published.
+	if err := os.Mkdir(commitment, 0700); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"device", "pair-local", "--device-dir", clientRoot}
+	if code, _ := cliRun(t, root, args, ""); code == 0 {
+		t.Fatal("failed commitment claimed completed pairing")
+	}
+	if _, err := os.Lstat(filepath.Join(clientRoot, "device.json")); !os.IsNotExist(err) {
+		t.Fatal("credential published before its recovery commitment")
+	}
+	raw, err := security.ReadPrivate(filepath.Join(clientRoot, "pairing-pending.json"), 32<<10)
+	if err != nil {
+		t.Fatal("original pairing ownership lost", err)
+	}
+	defer clear(raw)
+	var pending struct {
+		Credential worker.Credential  `json:"credential"`
+		Grant      worker.PairingCode `json:"grant"`
+	}
+	if err := json.Unmarshal(raw, &pending); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(commitment); err != nil {
+		t.Fatal(err)
+	}
+	// Model an interruption after durable proof but before credential publication.
+	// The pending request must still be replayable by the next CLI invocation.
+	_, err = worker.PairWithCommitment(context.Background(), clientRoot, pending.Grant, domain.ClientDevice, "DeliDev desktop", func(candidate worker.Credential) error {
+		if err := retainDesktopCredential(root, candidate); err != nil {
+			return err
+		}
+		return domain.Fail(domain.Unavailable, "Fixture interrupted publication.", "Retry the retained pairing.")
+	})
+	if err == nil {
+		t.Fatal("interrupted publication claimed success")
+	}
+	if _, err := os.Lstat(filepath.Join(clientRoot, "device.json")); !os.IsNotExist(err) {
+		t.Fatal("interrupted callback published the credential")
+	}
+	retained, err := security.ReadPrivate(filepath.Join(clientRoot, "pairing-pending.json"), 32<<10)
+	defer clear(retained)
+	if err != nil || !bytes.Equal(raw, retained) {
+		t.Fatal("interrupted publication changed original pairing ownership", err)
+	}
+	if code, result := cliRun(t, root, args, ""); code != 0 {
+		t.Fatal(result)
+	}
+	saved, err := worker.LoadCredential(clientRoot)
+	if err != nil || saved != pending.Credential {
+		t.Fatal("retry changed the accepted pairing identity", err)
+	}
+	if code, result := cliRun(t, root, []string{"device", "list"}, ""); code != 0 || len(result["result"].(map[string]any)["resources"].([]any)) != 1 {
+		t.Fatal("retry created a second registration", result)
+	}
+	revokeDesktop(t, root, saved)
+	if code, result := cliRun(t, root, recoveryArgs(saved, domain.NewID()), ""); code != 0 {
+		t.Fatal("completed pairing lost recovery eligibility", result)
+	}
+}
+
+func TestDesktopPairingReuseCannotReconstructMissingCommitment(t *testing.T) {
+	root, original := desktopFixture(t)
+	path := filepath.Join(root, "desktop-registration.json")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if code, result := cliRun(t, root, []string{"device", "pair-local", "--device-dir", filepath.Join(root, "desktop-client")}, ""); code != 0 {
+		t.Fatal(result)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatal("ordinary reuse reconstructed missing proof")
+	}
+	revokeDesktop(t, root, original)
+	if code, result := cliRun(t, root, recoveryArgs(original, domain.NewID()), ""); code == 0 || result["error"].(map[string]any)["code"] != "recovery_required" {
+		t.Fatal("legacy credential gained unverified recovery proof", result)
+	}
 }
 
 func TestDesktopRecoveryRequiresOriginalCredentialCommitment(t *testing.T) {

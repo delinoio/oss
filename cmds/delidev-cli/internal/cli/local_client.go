@@ -155,17 +155,19 @@ func pairLocalDevice(ctx context.Context, o options, root string, kind domain.De
 	if grant.ServerID != attempt.ServerID || grant.Endpoint != attempt.Endpoint {
 		return nil, domain.Fail(domain.Conflict, "The retained grant belongs to a different authority.", "Preserve the original local pairing attempt for inspection.")
 	}
-	credential, err := worker.Pair(ctx, root, grant, kind, name)
+	var credential worker.Credential
+	if kind == domain.ClientDevice && recoveryLock != nil {
+		credential, err = worker.PairWithCommitment(ctx, root, grant, kind, name, func(candidate worker.Credential) error {
+			if err := verifyDesktopCredential(ctx, o, candidate); err != nil {
+				return err
+			}
+			return retainDesktopCredential(o.dataDir, candidate)
+		})
+	} else {
+		credential, err = worker.Pair(ctx, root, grant, kind, name)
+	}
 	if err != nil {
 		return nil, err
-	}
-	if kind == domain.ClientDevice && recoveryLock != nil {
-		if err := verifyDesktopCredential(ctx, o, credential); err != nil {
-			return nil, err
-		}
-		if err := retainDesktopCredential(o.dataDir, root); err != nil {
-			return nil, err
-		}
 	}
 	return credentialMetadata(credential), nil
 }
