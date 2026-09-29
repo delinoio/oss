@@ -3279,3 +3279,28 @@ The final integrity/lifecycle race groups pass for store (14.826s), server
 LFS assets were hydrated before builds, required embedded/client/desktop output
 was generated explicitly, and repository-owned generated `dist` directories
 are removed after verification.
+
+### PR #1117 real-server GitHub profile wait repair (2026-09-30)
+
+The Ubuntu protocol/client job in CI run `36628468799` failed while waiting for
+the newly saved profile's Rename button under Testing Library's default
+one-second deadline. The real-server fixture now delays the profile save and
+integration-list refresh by 600 ms each. Their combined latency reproduces the
+same missing-button failure before the fix; bounded five-second waits pass
+while preserving the exact saved/renamed document and revision-2 CLI assertions.
+Production RPC deadlines, mutation retry behavior and the 30-second scenario
+deadline are unchanged. The focused fixture passes with the deterministic delay.
+
+The initial complete Node 24 frontend run with two workers passed 952 tests but
+failed the unchanged App Grok-null presentation case at `App.test.tsx:475`,
+waiting one second for the session button. Several unrelated native Go test
+processes were concurrently consuming host CPU. That failure is recorded
+separately from the repaired profile scenario; lower-concurrency validation
+does not change the App assertions or their deadline.
+
+The complete Node 24 `pnpm test` rerun with `VITEST_MAX_WORKERS=1` passes all
+75 frontend files / 953 tests, type checking, eight native package verifier
+tests, six launcher tests and the production build. Generated client/desktop
+`dist` directories are removed after validation. This fixture-only repair
+changes no runtime code, protocol, Rust source or product contract; the next
+hosted run remains separate evidence.
