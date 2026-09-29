@@ -2587,3 +2587,16 @@ provider index. Legacy migration fixtures now recreate the corresponding origina
 schema before reopening. Focused backup/migration/pricing race checks passed
 (19.344s), desktop `pnpm test` passed 72 files / 873 tests plus typecheck, eight
 package tests and build, and Buf lint/breaking against current main passed.
+
+### PR #1063 CI repair: delayed pairing observations (2026-09-29)
+
+The CI Protocol and Client job failed in the real-server Settings pairing test
+while waiting for the private-document reveal button. Delaying the first pairing
+read by 1.2 seconds reproduces that exact failure with Testing Library's default
+one-second wait. Pairing integration now uses explicit five-second observation
+waits inside a bounded 30-second test. Both client and Worker cases gate the
+actual server response to verify no reveal is available before the fresh read,
+then delay its delivery beyond one second and retain the single-use consumption
+and cache-secret checks. Production issuance and reveal rules are unchanged.
+The focused 16 tests passed; final desktop `pnpm test` passed 72 files / 873 tests,
+TypeScript checking, eight packaging tests and the production build.
