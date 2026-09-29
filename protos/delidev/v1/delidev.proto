@@ -13,6 +13,7 @@ service SystemService {
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
   rpc InspectBackup(InspectBackupRequest) returns (InspectBackupResponse);
   rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse);
+  rpc GetBackupDeletion(GetBackupDeletionRequest) returns (GetBackupDeletionResponse);
   rpc ListBackupDeletions(ListBackupDeletionsRequest) returns (ListBackupDeletionsResponse);
   rpc RequestBackup(RequestBackupRequest) returns (RequestBackupResponse);
   rpc GetBackupCreation(GetBackupCreationRequest) returns (GetBackupCreationResponse);
@@ -1632,4 +1633,11 @@ message ListBackupCreationsRequest {
 message ListBackupCreationsResponse {
   repeated BackupCreationJob jobs = 1;
   string next_page_token = 2;
+}
+
+message GetBackupDeletionRequest {
+  string id = 1;
+}
+message GetBackupDeletionResponse {
+  BackupDeletionJob job = 1;
 }

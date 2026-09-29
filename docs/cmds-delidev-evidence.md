@@ -2522,3 +2522,17 @@ observation. Reopening with changed bytes/hash cannot reuse a previously checked
 box. Submitted uncertain retries remain bound to their original request. All six
 backup component tests and type checking passed, including changed-image cases
 across hiding and explicit reinspection plus exact uncertain retry preservation.
+
+### PR #1063 review repair: accepted backup job observation (2026-09-29)
+
+Added owner/client `GetBackupDeletion` and CLI `backup deletion --id JOB-ID`.
+Settings retains accepted creation/deletion IDs independently of history pages,
+pauses their reads while hidden, preserves concurrent accepted jobs, and refreshes
+inventory after each observed completion. Tracking has an explicit 20-entry bound
+per kind; terminal entries can be dismissed without changing durable history.
+Focused server/CLI race tests passed (6.185s / 6.660s), including the 21st deletion
+outside the first history page, original pending/completed state, paired-client
+access, revoked/Worker denial and wrong job type rejection. Eight backup UI tests,
+type checking, Buf lint and additive compatibility against the previous PR commit
+passed. Main concurrently gained Provider inventory APIs in #1065; compatibility
+against that advanced baseline requires merging it before final validation.

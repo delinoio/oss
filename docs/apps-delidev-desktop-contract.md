@@ -514,3 +514,10 @@ The first-session checklist rejects malformed installation shapes and contradict
 installation/protocol/problem observations as Unknown. Validate retained version,
 observation time, capability lists and known optional fields before counting any
 handshake; a valid unchecked, missing or failed observation still means Needs setup.
+
+Backups tracks accepted creation/deletion IDs independently of ascending history
+pages, using the single-job Connect reads. Keep at most 20 local entries per kind,
+allow explicit dismissal only for terminal observations, and preserve pending
+entries through navigation. Each successful directly observed revision refreshes
+the image inventory; reads stop while hidden and uncertain acceptance retries
+still use only their original request.

@@ -77,6 +77,27 @@ func (s *Service) DeleteBackup(ctx context.Context, req *connect.Request[pb.Dele
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
+func (s *Service) GetBackupDeletion(ctx context.Context, req *connect.Request[pb.GetBackupDeletionRequest]) (*connect.Response[pb.GetBackupDeletionResponse], error) {
+	correlation := req.Header().Get(rpc.CorrelationHeader)
+	if err := s.authorizeBackups(ctx); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	row, err := s.Store.Get(ctx, domain.JobKind, domain.ID(req.Msg.Id))
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	job, err := backupDeletionMessage(row)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	if err := s.authorizeBackups(ctx); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	response := connect.NewResponse(&pb.GetBackupDeletionResponse{Job: job})
+	rpc.CopyCorrelation(response, req.Header())
+	return response, nil
+}
+
 func (s *Service) ListBackupDeletions(ctx context.Context, req *connect.Request[pb.ListBackupDeletionsRequest]) (*connect.Response[pb.ListBackupDeletionsResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	if err := s.authorizeBackups(ctx); err != nil {

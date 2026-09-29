@@ -45,6 +45,11 @@ export const inspectBackup = SystemService.method.inspectBackup;
 export const deleteBackup = SystemService.method.deleteBackup;
 
 /**
+ * @generated from rpc delidev.v1.SystemService.GetBackupDeletion
+ */
+export const getBackupDeletion = SystemService.method.getBackupDeletion;
+
+/**
  * @generated from rpc delidev.v1.SystemService.ListBackupDeletions
  */
 export const listBackupDeletions = SystemService.method.listBackupDeletions;

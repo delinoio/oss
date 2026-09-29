@@ -90,6 +90,19 @@ func backupCommand(ctx context.Context, c client, o options, args []string) (any
 			return nil, rpc.ClientError(err)
 		}
 		return backupOutput(result.Msg)
+	case "deletion":
+		id := f.String("id", "", "original backup deletion job UUID")
+		if err := parse(f, args[1:]); err != nil {
+			return nil, err
+		}
+		if err := domain.ID(*id).Validate(); err != nil {
+			return nil, err
+		}
+		result, err := c.system.GetBackupDeletion(ctx, request(c, &pb.GetBackupDeletionRequest{Id: *id}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		return backupOutput(result.Msg)
 	case "deletions":
 		limit := f.Uint("limit", 20, "page size, from 1 to 99")
 		page := f.String("page-token", "", "original deletion page token")

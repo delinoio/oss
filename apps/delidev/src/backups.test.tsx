@@ -1,7 +1,7 @@
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SystemService, BackupCreationState, BackupDeletionState, newRequestId } from "@delinoio/delidev-api-client";
 import { Backups } from "./backups";
@@ -15,12 +15,15 @@ function fixture() {
   const creation = { id: newRequestId(), backupId: id, revision: 1n, state: BackupCreationState.PENDING, problemCode: "" };
   const create = vi.fn(async (_input: unknown) => ({ job: creation, requestId: newRequestId(), replayed: false }));
   const creations = vi.fn(async () => ({ jobs: [creation] }));
-  const remove = vi.fn(async (_input: unknown) => ({ job: { id: newRequestId(), backupId: id, revision: 1n, state: BackupDeletionState.PENDING } }));
+  const deletion = { id: newRequestId(), backupId: id, revision: 1n, state: BackupDeletionState.PENDING };
+  const getCreation = vi.fn(async (_input: { id: string }) => ({ job: creation }));
+  const getDeletion = vi.fn(async (_input: { id: string }) => ({ job: deletion }));
+  const remove = vi.fn(async (_input: unknown) => ({ job: deletion }));
   const deletions = vi.fn(async () => ({ jobs: [] }));
-  const transport = createRouterTransport(router => router.service(SystemService, { listBackups: list, inspectBackup: inspect, requestBackup: create, listBackupCreations: creations, deleteBackup: remove, listBackupDeletions: deletions }));
+  const transport = createRouterTransport(router => router.service(SystemService, { listBackups: list, inspectBackup: inspect, requestBackup: create, getBackupCreation: getCreation, getBackupDeletion: getDeletion, listBackupCreations: creations, deleteBackup: remove, listBackupDeletions: deletions }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Backups active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { id, list, inspect, create, creation, creations, remove, deletions, view };
+  return { id, list, inspect, create, creation, creations, deletion, getCreation, getDeletion, remove, deletions, client, view };
 }
 
 it("lists metadata without inspecting automatically and preserves exact byte counts", async () => {
@@ -116,4 +119,55 @@ it.each(["hide", "reinspect"])("requires fresh deletion confirmation after %s re
   fireEvent.click(remove);
   await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(1));
   expect(f.remove.mock.calls[0]![0]).toMatchObject({ backup: { id: f.id, sizeBytes: 123n }, sha256: "b".repeat(64) });
+});
+
+it("polls each accepted operation beyond the first history page and refreshes inventory on completion", async () => {
+  const f = fixture();
+  const oldJobs = Array.from({ length: 20 }, () => ({ ...f.creation, id: newRequestId(), backupId: newRequestId(), state: BackupCreationState.SUCCEEDED }));
+  f.creations.mockResolvedValue({ jobs: oldJobs });
+  f.deletions.mockResolvedValue({ jobs: [] });
+  const view = render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
+  const created = await screen.findByRole("article", { name: `Tracked creation ${f.creation.id}` });
+  await within(created).findByText("Accepted creation pending");
+  expect(f.getCreation.mock.calls[0]![0].id).toBe(f.creation.id);
+  fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: `I confirm permanent deletion of backup ${f.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Permanently delete selected backup" }));
+  const removed = await screen.findByRole("article", { name: `Tracked deletion ${f.deletion.id}` });
+  await within(removed).findByText("Accepted deletion pending");
+  expect(f.getDeletion.mock.calls[0]![0].id).toBe(f.deletion.id);
+  // Pause still-pending direct reads without discarding either accepted identity.
+  view.rerender(f.view(false));
+  const creationReads = f.getCreation.mock.calls.length, deletionReads = f.getDeletion.mock.calls.length;
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 2100)); });
+  expect(f.getCreation).toHaveBeenCalledTimes(creationReads);
+  expect(f.getDeletion).toHaveBeenCalledTimes(deletionReads);
+  const reads = f.list.mock.calls.length;
+  f.getCreation.mockResolvedValue({ job: { ...f.creation, revision: 2n, state: BackupCreationState.SUCCEEDED } });
+  view.rerender(f.view());
+  await within(created).findByText("Accepted creation completed");
+  await waitFor(() => expect(f.list.mock.calls.length).toBeGreaterThan(reads));
+  const afterCreation = f.list.mock.calls.length;
+  f.getDeletion.mockResolvedValue({ job: { ...f.deletion, revision: 2n, state: BackupDeletionState.SUCCEEDED } });
+  await within(removed).findByText("Accepted deletion completed", {}, { timeout: 4000 });
+  await waitFor(() => expect(f.list.mock.calls.length).toBeGreaterThan(afterCreation));
+});
+
+it("retains multiple accepted creations and marks a failed direct refresh stale", async () => {
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
+  await screen.findByText("Accepted creation pending");
+  const next = { ...f.creation, id: newRequestId(), backupId: newRequestId() };
+  f.create.mockResolvedValueOnce({ job: next, requestId: newRequestId(), replayed: false });
+  f.getCreation.mockImplementation(async input => ({ job: input.id === next.id ? next : f.creation }));
+  fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
+  await screen.findByRole("article", { name: `Tracked creation ${next.id}` });
+  const first = screen.getByRole("article", { name: `Tracked creation ${f.creation.id}` });
+  f.getCreation.mockRejectedValueOnce(new ConnectError("read failed", Code.Unavailable));
+  fireEvent.click(within(first).getByRole("button", { name: `Refresh tracked creation ${f.creation.id}` }));
+  await within(first).findByText("The last observation is stale; current job status is unavailable.");
+  expect(within(first).getByText("Accepted creation status unavailable")).toBeTruthy();
+  expect(f.create).toHaveBeenCalledTimes(2);
 });

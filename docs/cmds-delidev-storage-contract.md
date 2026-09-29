@@ -120,7 +120,9 @@ existing obligations rather than evicting them.
 `delidev backup delete --id ID --expected-revision REV --size-bytes BYTES
 --modified-at TIME --sha256 SHA256 --confirm` uses the original inspection values.
 The global `--request-id` permits exact retry after an uncertain response.
-`delidev backup deletions` lists retained status after restart. Settings requires
+`delidev backup deletions` lists retained status after restart.
+`delidev backup deletion --id JOB-ID` and `GetBackupDeletion` read one exact
+original job independently of history pagination. Settings requires
 an explicit inspection and permanent-deletion checkbox bound to that exact
 observation. Hiding the view or refreshing/replacing its inspection clears fresh
 confirmation; already submitted uncertain requests retain their original bytes.
@@ -163,3 +165,11 @@ SQLite validation rejects adjacent WAL/SHM/journal files, including during legac
 creation and migration-image checks; it never ingests external sidecar state or
 opens a backup as a writable live database. Foreign/corrupt images remain intact
 and end a durable creation with recovery-required rather than false success.
+
+Settings retains up to 20 accepted jobs per operation type in connection memory
+and observes each directly through `GetBackupCreation` or `GetBackupDeletion`.
+History page changes do not replace these identities. Pending/failed reads poll
+only while the view is active; terminal observations stop polling and each newly
+observed successful revision refreshes the image inventory. Failed refreshes are
+stale/unavailable, not success. Dismissing terminal tracking frees local capacity
+without deleting server history, canceling work or repeating acceptance.

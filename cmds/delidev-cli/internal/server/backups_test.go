@@ -140,3 +140,69 @@ func TestBackupCreationRPCSeparatesAcceptanceFromPublicationAndRetainsOriginalJo
 		t.Fatal("cursor changed page scope")
 	}
 }
+
+func TestBackupDeletionReadObservesExactJobBeyondHistoryAndRejectsOtherAuthority(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := s.Store.BindIdentity(ctx, s.Identity.ServerID); err != nil {
+		t.Fatal(err)
+	}
+	var latest *pb.BackupDeletionJob
+	for range 21 {
+		created, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: created.Msg.Id}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		accepted, err := s.DeleteBackup(ctx, connect.NewRequest(&pb.DeleteBackupRequest{RequestId: string(domain.NewID()), Backup: checked.Msg.Backup, Sha256: checked.Msg.Sha256}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		latest = accepted.Msg.Job
+	}
+	page, err := s.ListBackupDeletions(ctx, connect.NewRequest(&pb.ListBackupDeletionsRequest{}))
+	if err != nil || len(page.Msg.Jobs) != 20 || page.Msg.NextPageToken == "" {
+		t.Fatal(page, err)
+	}
+	for _, job := range page.Msg.Jobs {
+		if job.Id == latest.Id {
+			t.Fatal("new job unexpectedly on first page")
+		}
+	}
+	request := connect.NewRequest(&pb.GetBackupDeletionRequest{Id: latest.Id})
+	pending, err := s.GetBackupDeletion(ctx, request)
+	if err != nil || pending.Msg.Job.Id != latest.Id || pending.Msg.Job.State != pb.BackupDeletionState_BACKUP_DELETION_STATE_PENDING {
+		t.Fatal(pending, err)
+	}
+	if _, err := s.Store.RunBackupDeletion(ctx, domain.ID(latest.Id), s.Identity.ServerID); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := s.GetBackupDeletion(ctx, request)
+	if err != nil || completed.Msg.Job.State != pb.BackupDeletionState_BACKUP_DELETION_STATE_SUCCEEDED || completed.Msg.Job.Revision <= pending.Msg.Job.Revision {
+		t.Fatal(completed, err)
+	}
+	clientID := domain.NewID()
+	doctorPut(t, s, domain.DeviceKind, clientID, 0, domain.Device{Type: domain.ClientDevice})
+	client := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.ClientDevice, DeviceID: clientID})
+	if _, err := s.GetBackupDeletion(client, request); err != nil {
+		t.Fatal(err)
+	}
+	doctorPut(t, s, domain.DeviceKind, clientID, 1, domain.Device{Type: domain.ClientDevice, Revoked: true})
+	if _, err := s.GetBackupDeletion(client, request); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal(err)
+	}
+	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
+	if _, err := s.GetBackupDeletion(worker, request); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal(err)
+	}
+	created, err := s.RequestBackup(ctx, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetBackupDeletion(ctx, connect.NewRequest(&pb.GetBackupDeletionRequest{Id: created.Msg.Job.Id})); err == nil {
+		t.Fatal("creation job returned as deletion")
+	}
+}

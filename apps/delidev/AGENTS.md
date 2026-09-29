@@ -1,4 +1,5 @@
 # DeliDev desktop
+- Backup job observation uses owner/client `GetBackupCreation` and `GetBackupDeletion` independently of bounded history pages. Keep accepted IDs and exact revisions through navigation, refresh inventory after observed completion, and never replay a mutation to poll status. Follow `docs/cmds-delidev-storage-contract.md`.
 - Keep managed Backups in the full-window Settings System group and retain its mounted workflow across category changes. The live prerequisite checklist belongs in the project-sidebar session welcome surface; preserve Inbox and connection-memory drafts while integrating it.
 - Native package dry runs follow `docs/apps-delidev-packaging-contract.md`. Keep one source-backed six-target matrix, matching native hosts, bounded build environments, LFS hydration, exact package architecture/resources/notices and revision-bound digests. Windows/Linux static package checks and macOS ad-hoc signing never establish production signing, native runtime acceptance or publication. Preserve the pinned Debian main/sidecar layout without ambient PATH lookup.
 

@@ -877,6 +877,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   backup list [--limit N] [--page-token TOKEN]
   backup inspect --id ID
   backup delete --id ID --expected-revision REV --size-bytes BYTES --modified-at TIME --sha256 SHA256 --confirm
+  backup deletion --id JOB-ID
   backup deletions [--limit N] [--page-token TOKEN]
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]

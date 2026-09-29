@@ -86,7 +86,11 @@ func TestBackupCLIUsesServerInventoryAndChecksOriginalImage(t *testing.T) {
 		if len(jobs) != 1 {
 			t.Fatal(value)
 		}
-		state := jobs[0].(map[string]any)
+		code, value = cliRun(t, root, []string{"backup", "deletion", "--id", job.(string)}, "")
+		if code != 0 {
+			t.Fatal(code, value)
+		}
+		state := value["result"].(map[string]any)["job"].(map[string]any)
 		if state["id"] != job {
 			t.Fatal(value)
 		}
