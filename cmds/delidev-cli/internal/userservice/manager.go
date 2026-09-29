@@ -82,20 +82,24 @@ func (m *Manager) observe(ctx context.Context, r record) (Status, error) {
 		return status, failure()
 	}
 	status.LoginEnabled = observation.Enabled
+	lock, lockErr := security.TryLock(m.path("-runtime.lock"))
+	if lock != nil {
+		defer lock.Close()
+	}
+	if lockErr != nil && domain.SafeError(lockErr).Code != domain.Conflict {
+		return status, failure()
+	}
+	active := lockErr != nil
+	// The controller publishes completion before releasing this lock. Read its
+	// journal after probing the lock, retaining a free lock through observation,
+	// so an old pending snapshot cannot race a newly confirmed controller exit.
+	// Every observer holds the state gate to exclude competing Run admission.
 	running, err := m.runtime(r.Spec.ID)
 	if err != nil || (running.ID != "" && running.ID != r.Spec.ID) {
 		status.State = Uncertain
 		status.CleanupConfirmed = false
 		return status, failure()
 	}
-	lock, lockErr := security.TryLock(m.path("-runtime.lock"))
-	if lock != nil {
-		lock.Close()
-	}
-	if lockErr != nil && domain.SafeError(lockErr).Code != domain.Conflict {
-		return status, failure()
-	}
-	active := lockErr != nil
 	if observation.PID != 0 {
 		// A native-manager PID is not authority by itself. Match the independently
 		// published launch identity and query its executable, user and exact birth.
@@ -280,7 +284,7 @@ func (m *Manager) Control(ctx context.Context, action Action, id domain.ID, revi
 			return err
 		}
 		if !installing {
-			if _, err := m.observe(ctx, r); err != nil {
+			if _, err := m.Status(ctx); err != nil {
 				return err
 			}
 		}
@@ -340,7 +344,7 @@ func (m *Manager) Control(ctx context.Context, action Action, id domain.ID, revi
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			result.Status, err = m.observe(ctx, r)
+			result.Status, err = m.Status(ctx)
 			if err == nil && result.Status.State == Running {
 				break
 			}
@@ -361,7 +365,7 @@ func (m *Manager) Control(ctx context.Context, action Action, id domain.ID, revi
 			result.Status.CleanupConfirmed = true
 		}
 	} else {
-		result.Status, err = m.observe(ctx, r)
+		result.Status, err = m.Status(ctx)
 	}
 	return result, err
 }
