@@ -94,6 +94,13 @@ func codexTitleExecutable(resource *pb.Resource) string {
 	return ""
 }
 
+func fatalTitleProfileProbeError(err error) error {
+	if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
+		return err
+	}
+	return nil
+}
+
 func Run(ctx context.Context, config Config) (resultErr error) {
 	credential, err := LoadCredential(config.Root)
 	if err != nil {
@@ -185,6 +192,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				verifiedTitleProfile, probeErr = harness.VerifyCodexTitleProfile(probeCtx, config.Root, domain.NewID(), executable, config.Logger)
 				stopProbe()
 				if probeErr != nil {
+					if fatal := fatalTitleProfileProbeError(probeErr); fatal != nil {
+						return fatal
+					}
 					config.Logger.WarnContext(ctx, "automatic title capability probe failed", "machine_id", credential.MachineID, "code", domain.SafeError(probeErr).Code)
 				}
 			}

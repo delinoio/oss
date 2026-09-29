@@ -77,6 +77,17 @@ func TestAuxiliaryTitleCapabilityRequiresServerEcho(t *testing.T) {
 	}
 }
 
+func TestTitleProfileProbeCleanupFailureStopsWorker(t *testing.T) {
+	recovery := domain.Fail(domain.RecoveryRequired, "The title probe process could not be reconciled.", "Preserve its private journal and stop the Worker.")
+	if got := fatalTitleProfileProbeError(recovery); got != recovery {
+		t.Fatalf("uncertain title probe cleanup was downgraded: %v", got)
+	}
+	unsupported := domain.Fail(domain.Unsupported, "The configured title profile is unsupported.", "Continue without automatic title capability.")
+	if got := fatalTitleProfileProbeError(unsupported); got != nil {
+		t.Fatalf("ordinary unsupported profile stopped the Worker: %v", got)
+	}
+}
+
 func TestCodexTitleExecutableUsesVerifiedConfiguredInstallation(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "custom-codex")
 	resource := func(installation domain.Installation) *pb.Resource {
