@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -97,5 +98,88 @@ func TestLaunchdUninstallPreservesDefinitionUntilUnloaded(t *testing.T) {
 	}
 	if _, err := os.Stat(unit); !os.IsNotExist(err) {
 		t.Fatal("confirmed absence did not allow uninstall")
+	}
+}
+
+type launchdStartFixture struct {
+	results  []error
+	commands []string
+}
+
+func (f *launchdStartFixture) Run(_ context.Context, name string, args, _ []string, _ io.Reader) ([]byte, error) {
+	f.commands = append(f.commands, name+" "+strings.Join(args, " "))
+	index := len(f.commands) - 1
+	if index < len(f.results) {
+		return nil, f.results[index]
+	}
+	return nil, nil
+}
+
+func (*launchdStartFixture) Start(string, []string, []string) (int, error) { return 0, nil }
+
+func TestLaunchdStartReloadsValidatedDefinitionBeforeStarting(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd service")
+	}
+	for _, tc := range []struct {
+		name         string
+		results      []error
+		loaded       bool
+		bootoutFails bool
+		wantErr      bool
+	}{
+		{
+			name:    "loaded job is booted out and reloaded from disk",
+			results: []error{nil, nil, nil},
+			loaded:  true,
+		},
+		{
+			name:    "unloaded job bootstraps validated definition",
+			results: []error{serviceExit(113), nil},
+		},
+		{
+			name:         "failed bootout does not bootstrap",
+			results:      []error{nil, serviceExit(5)},
+			loaded:       true,
+			bootoutFails: true,
+			wantErr:      true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			unit := servicePath()
+			if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+				t.Fatal(err)
+			}
+			configPath := filepath.Join(home, "config.toml")
+			definition, err := serviceDefinition("darwin", filepath.Join(home, "runmoor"), configPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			commands := &launchdStartFixture{results: tc.results}
+			err = Service(context.Background(), "start", configPath, Config{}, commands)
+			if tc.wantErr {
+				requireCode(t, err, ErrDependency)
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			got := append([]string(nil), commands.commands...)
+			domain := "gui/" + strconv.Itoa(os.Getuid())
+			want := []string{"launchctl print " + domain + "/" + serviceLabel}
+			if tc.loaded {
+				want = append(want, "launchctl bootout "+domain+" "+unit)
+			}
+			if !tc.bootoutFails {
+				want = append(want, "launchctl bootstrap "+domain+" "+unit)
+			}
+			if strings.Join(got, "\n") != strings.Join(want, "\n") {
+				t.Fatalf("launchctl commands = %v, want %v", got, want)
+			}
+		})
 	}
 }

@@ -168,7 +168,18 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 		}
 		if runtime.GOOS == "darwin" {
 			if _, e := exec.Run(ctx, "launchctl", []string{"print", domain + "/" + serviceLabel}, minimalEnv(), nil); e == nil {
-				return run("launchctl", "kickstart", domain+"/"+serviceLabel)
+				// launchctl caches a job's arguments when it is bootstrapped, and
+				// `print` output is not a stable interface for verifying them. Remove
+				// the loaded job, then bootstrap the securely validated on-disk plist.
+				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
+					return e
+				}
+				if e := run("launchctl", "bootout", domain, unit); e != nil {
+					return e
+				}
+			}
+			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
+				return e
 			}
 			return run("launchctl", "bootstrap", domain, unit)
 		}
