@@ -4,12 +4,21 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use tempfile::{Builder, TempPath};
+use tempfile::Builder;
+#[cfg(not(windows))]
+use tempfile::NamedTempFile;
+#[cfg(windows)]
+use tempfile::TempPath;
 
 use crate::transform_error::{Code, Error, Result};
 
 pub struct Publication {
+    #[cfg(not(windows))]
+    temporary: Option<NamedTempFile>,
+    #[cfg(windows)]
     temporary: Option<TempPath>,
+    #[cfg(unix)]
+    staging_directory: Option<StagingDirectory>,
     destination: Option<PathBuf>,
     replace: bool,
 }
@@ -17,42 +26,116 @@ pub struct Publication {
 impl Publication {
     pub fn prepare(destination: Option<PathBuf>, replace: bool) -> Result<(Self, Option<File>)> {
         let mut publication = Self {
+            #[cfg(not(windows))]
             temporary: None,
+            #[cfg(windows)]
+            temporary: None,
+            #[cfg(unix)]
+            staging_directory: None,
             destination,
             replace,
         };
         let Some(path) = &publication.destination else {
             return Ok((publication, None));
         };
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        let original = inspect(path, replace)?;
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         inspect(path, replace)?;
         let parent = path
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new("."));
-        let file = Builder::new()
-            .prefix(".clibox-")
-            .tempfile_in(parent)
-            .map_err(|_| Error::runtime(Code::WriteFailed))?;
-        let (file, temporary) = file.into_parts();
-        publication.temporary = Some(temporary);
+        #[cfg(unix)]
+        let file = {
+            let directory = StagingDirectory::new(parent)?;
+            let temporary = Builder::new()
+                .prefix(".clibox-")
+                .tempfile_in(directory.path())
+                .map_err(|error| {
+                    staging_io_error("create-staging-file", error, Code::WriteFailed)
+                })?;
+            publication.staging_directory = Some(directory);
+            publication.temporary = Some(temporary);
+
+            use std::os::unix::fs::PermissionsExt;
+            let temporary = publication.temporary.as_ref().unwrap();
+            #[cfg(target_os = "macos")]
+            clear_extended_acl_fd(temporary.as_file())
+                .map_err(|error| staging_io_error("clear-staging-acl", error, Code::Permissions))?;
+            // tempfile's requested mode is subject to umask. Reset it through
+            // the open handle so the stage file remains owner-only until final
+            // permissions are applied immediately before publication.
+            temporary
+                .as_file()
+                .set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(|error| {
+                    staging_io_error("set-staging-file-mode", error, Code::Permissions)
+                })?;
+
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if original.is_none() {
+                inherit_new_output_permissions(parent, temporary)?;
+            }
+            temporary.as_file().try_clone().map_err(|error| {
+                staging_io_error("open-staging-writer", error, Code::WriteFailed)
+            })?
+        };
+        #[cfg(all(not(unix), not(windows)))]
+        let file = {
+            let temporary = Builder::new()
+                .prefix(".clibox-")
+                .tempfile_in(parent)
+                .map_err(|_| Error::runtime(Code::WriteFailed))?;
+            let file = temporary
+                .as_file()
+                .try_clone()
+                .map_err(|_| Error::runtime(Code::WriteFailed))?;
+            publication.temporary = Some(temporary);
+            file
+        };
+        #[cfg(windows)]
+        let file = {
+            let temporary = Builder::new()
+                .prefix(".clibox-")
+                .tempfile_in(parent)
+                .map_err(|_| Error::runtime(Code::WriteFailed))?;
+            let (file, temporary) = temporary.into_parts();
+            publication.temporary = Some(temporary);
+            file
+        };
         Ok((publication, Some(file)))
+    }
+
+    fn temporary_path(&self) -> &Path {
+        #[cfg(windows)]
+        {
+            self.temporary.as_ref().unwrap()
+        }
+        #[cfg(not(windows))]
+        {
+            self.temporary.as_ref().unwrap().path()
+        }
     }
 
     pub fn publish(mut self, before_commit: impl FnOnce() -> Result<()>) -> Result<()> {
         let Some(path) = &self.destination else {
             return Ok(());
         };
-        let temporary = self.temporary.as_ref().unwrap();
+        let temporary_path = self.temporary_path().to_path_buf();
         // Flush through a writable handle before restoring a read-only mode/ACL.
         // FlushFileBuffers on Windows does not accept a read-only handle.
-        fs::OpenOptions::new()
+        #[cfg(windows)]
+        let flush = fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .open(temporary)
-            .and_then(|file| file.sync_all())
-            .map_err(|_| Error::runtime(Code::WriteFailed))?;
+            .open(&temporary_path)
+            .and_then(|file| file.sync_all());
+        #[cfg(not(windows))]
+        let flush = self.temporary.as_ref().unwrap().as_file().sync_all();
+        flush.map_err(|_| Error::runtime(Code::WriteFailed))?;
         #[cfg(windows)]
-        let mut windows = WindowsPublication::prepare(temporary)?;
+        let mut windows = WindowsPublication::prepare(&temporary_path)?;
         #[cfg(windows)]
         let mut readonly = false;
         // Recheck link/type policy and copy current permissions at publication,
@@ -62,7 +145,7 @@ impl Publication {
             {
                 readonly = original.metadata.permissions().readonly();
             }
-            preserve_permissions(&original, temporary)?;
+            preserve_permissions(&original, &temporary_path)?;
         }
         // Cancellation during flushing/permission work must still prevent publication.
         before_commit()?;
@@ -75,21 +158,237 @@ impl Publication {
         {
             let temporary = self.temporary.take().unwrap();
             if self.replace {
-                temporary
-                    .persist(path)
-                    .map_err(|_| Error::runtime(Code::PublishFailed))?;
+                if let Err(error) = temporary.persist(path) {
+                    self.temporary = Some(error.file);
+                    return Err(Error::runtime(Code::PublishFailed));
+                }
             } else {
-                temporary.persist_noclobber(path).map_err(|error| {
-                    Error::runtime(if error.error.kind() == io::ErrorKind::AlreadyExists {
+                if let Err(error) = temporary.persist_noclobber(path) {
+                    let code = if error.error.kind() == io::ErrorKind::AlreadyExists {
                         Code::OutputExists
                     } else {
                         Code::PublishFailed
-                    })
-                })?;
+                    };
+                    self.temporary = Some(error.file);
+                    return Err(Error::runtime(code));
+                }
             }
         }
         Ok(())
     }
+}
+
+impl Drop for Publication {
+    fn drop(&mut self) {
+        #[cfg(target_os = "macos")]
+        if let Some(temporary) = &self.temporary {
+            // The final ACL may deny unlink after permission restoration. Clear
+            // it through the retained descriptor before NamedTempFile attempts
+            // cleanup; the owner-only staging directory still contains access.
+            if let Err(error) = clear_extended_acl_fd(temporary.as_file()) {
+                tracing::debug!(
+                    action = "cleanup-acl",
+                    os_code = error.raw_os_error(),
+                    "temporary ACL cleanup failed"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+struct StagingDirectory(tempfile::TempDir);
+
+#[cfg(unix)]
+impl StagingDirectory {
+    fn new(parent: &Path) -> Result<Self> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = Self(
+            Builder::new()
+                .prefix(".clibox-")
+                .tempdir_in(parent)
+                .map_err(|error| {
+                    staging_io_error("create-staging-directory", error, Code::WriteFailed)
+                })?,
+        );
+        #[cfg(target_os = "macos")]
+        clear_extended_acl_path(directory.path()).map_err(|error| {
+            staging_io_error("clear-staging-directory-acl", error, Code::Permissions)
+        })?;
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).map_err(
+            |error| staging_io_error("set-staging-directory-mode", error, Code::Permissions),
+        )?;
+        let mode = fs::metadata(directory.path())
+            .map_err(|error| {
+                staging_io_error("inspect-staging-directory-mode", error, Code::Permissions)
+            })?
+            .permissions()
+            .mode()
+            & 0o777;
+        if mode != 0o700 {
+            tracing::debug!(
+                action = "verify-staging-directory-mode",
+                observed_mode = mode,
+                "owner-only staging directory could not be established"
+            );
+            return Err(Error::runtime(Code::Permissions));
+        }
+        Ok(directory)
+    }
+
+    fn path(&self) -> &Path {
+        self.0.path()
+    }
+}
+
+#[cfg(unix)]
+impl Drop for StagingDirectory {
+    fn drop(&mut self) {
+        #[cfg(target_os = "macos")]
+        if let Err(error) = clear_extended_acl_path(self.path()) {
+            tracing::debug!(
+                action = "cleanup-acl",
+                os_code = error.raw_os_error(),
+                "staging directory ACL cleanup failed"
+            );
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn clear_extended_acl_path(path: &Path) -> io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+
+    unsafe extern "C" {
+        fn acl_init(count: libc::c_int) -> *mut libc::c_void;
+        fn acl_set_file(
+            path: *const libc::c_char,
+            kind: libc::c_int,
+            acl: *mut libc::c_void,
+        ) -> libc::c_int;
+        fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
+    }
+    const ACL_TYPE_EXTENDED: libc::c_int = 0x100;
+
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    // An empty extended ACL removes inherited grants and denials while the
+    // stage is still empty. The mode is set independently after this call.
+    unsafe {
+        let acl = acl_init(0);
+        if acl.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let result = acl_set_file(path.as_ptr(), ACL_TYPE_EXTENDED, acl);
+        acl_free(acl);
+        if result != 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn clear_extended_acl_fd(file: &File) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+
+    unsafe extern "C" {
+        fn acl_init(count: libc::c_int) -> *mut libc::c_void;
+        fn acl_set_fd_np(fd: libc::c_int, acl: *mut libc::c_void, kind: libc::c_int)
+            -> libc::c_int;
+        fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
+    }
+    const ACL_TYPE_EXTENDED: libc::c_int = 0x100;
+
+    unsafe {
+        let acl = acl_init(0);
+        if acl.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let result = acl_set_fd_np(file.as_raw_fd(), acl, ACL_TYPE_EXTENDED);
+        acl_free(acl);
+        if result != 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+struct AclProbe(NamedTempFile);
+
+#[cfg(target_os = "macos")]
+impl AclProbe {
+    fn clear_acl(&self) -> io::Result<()> {
+        clear_extended_acl_fd(self.0.as_file())
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for AclProbe {
+    fn drop(&mut self) {
+        if let Err(error) = self.clear_acl() {
+            tracing::debug!(
+                action = "cleanup-acl",
+                os_code = error.raw_os_error(),
+                "metadata probe ACL cleanup failed"
+            );
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn inherit_new_output_permissions(parent: &Path, temporary: &NamedTempFile) -> Result<()> {
+    // Capture the mode and ACL a new file would inherit directly from its
+    // destination parent. The empty probe never contains transformed bytes.
+    // On macOS it is required because ACL inheritance happens at file creation;
+    // on Linux it preserves umask and default-ACL behavior across the extra
+    // private staging directory.
+    let probe = Builder::new()
+        .prefix(".clibox-")
+        .tempfile_in(parent)
+        .map_err(|error| staging_io_error("create-permission-probe", error, Code::Permissions))?;
+    let metadata = probe
+        .as_file()
+        .metadata()
+        .map_err(|error| staging_io_error("read-permission-probe", error, Code::Permissions))?;
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+
+        let probe = AclProbe(probe);
+        let path = std::ffi::CString::new(probe.0.path().as_os_str().as_bytes())
+            .map_err(|_| Error::runtime(Code::Permissions))?;
+        let original = Original { metadata, path };
+        let copy = preserve_permissions(&original, temporary.path());
+        let cleanup = probe
+            .clear_acl()
+            .map_err(|_| Error::runtime(Code::Permissions));
+        copy?;
+        cleanup
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let original = Original {
+            metadata,
+            file: probe
+                .as_file()
+                .try_clone()
+                .map_err(|_| Error::runtime(Code::Permissions))?,
+        };
+        preserve_permissions(&original, temporary.path())
+    }
+}
+
+#[cfg(unix)]
+fn staging_io_error(action: &'static str, error: io::Error, code: Code) -> Error {
+    tracing::debug!(
+        action,
+        os_code = error.raw_os_error(),
+        "transformation staging operation failed"
+    );
+    Error::runtime(code)
 }
 
 #[cfg(windows)]
@@ -702,6 +1001,74 @@ mod tests {
         );
         assert_eq!(fs::read(path).unwrap(), b"original");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn cancellation_cleans_a_temporary_after_restrictive_acl_copy() {
+        use std::{
+            ffi::{CStr, CString},
+            os::unix::ffi::OsStrExt,
+            process::Command,
+        };
+
+        unsafe extern "C" {
+            fn acl_get_link_np(path: *const libc::c_char, kind: libc::c_int) -> *mut libc::c_void;
+            fn acl_to_text(acl: *mut libc::c_void, length: *mut libc::ssize_t)
+                -> *mut libc::c_char;
+            fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
+        }
+        fn acl_text(path: &Path) -> String {
+            let path = CString::new(path.as_os_str().as_bytes()).unwrap();
+            unsafe {
+                let acl = acl_get_link_np(path.as_ptr(), 0x100);
+                assert!(
+                    !acl.is_null(),
+                    "ACL query failed: {}",
+                    io::Error::last_os_error()
+                );
+                let text = acl_to_text(acl, std::ptr::null_mut());
+                assert!(!text.is_null());
+                let value = CStr::from_ptr(text).to_string_lossy().into_owned();
+                acl_free(text.cast());
+                acl_free(acl);
+                value
+            }
+        }
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("destination");
+        fs::write(&path, b"original").unwrap();
+        assert!(Command::new("/bin/chmod")
+            .args(["+a", "everyone deny delete"])
+            .arg(&path)
+            .status()
+            .unwrap()
+            .success());
+        let original_acl = acl_text(&path);
+        let original_mode = fs::metadata(&path).unwrap().permissions();
+        let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
+        file.as_mut().unwrap().write_all(b"replacement").unwrap();
+        drop(file);
+        let temporary_path = publication.temporary.as_ref().unwrap().path().to_path_buf();
+
+        let result = publication.publish(|| {
+            assert_eq!(acl_text(&temporary_path), original_acl);
+            Err(Error::runtime(Code::Cancelled))
+        });
+
+        assert_eq!(result.unwrap_err().code, Code::Cancelled);
+        assert_eq!(fs::read(&path).unwrap(), b"original");
+        assert_eq!(acl_text(&path), original_acl);
+        assert_eq!(fs::metadata(&path).unwrap().permissions(), original_mode);
+        assert!(!temporary_path.exists());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+        assert!(Command::new("/bin/chmod")
+            .args(["-N"])
+            .arg(&path)
+            .status()
+            .unwrap()
+            .success());
     }
 
     #[cfg(target_os = "linux")]

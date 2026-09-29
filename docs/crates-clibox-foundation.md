@@ -273,11 +273,12 @@ clibox hash verify --check CHECKSUM_FILE
 
 ### File publication
 
-- Prepare file output in a temporary file in the destination directory and publish it only after processing succeeds.
+- Keep Unix transformation output inside a same-filesystem, owner-only staging directory with effective `0700` access through processing, final permission restoration, and atomic rename. On macOS, clear inherited extended ACLs from the staging directory and file before writing transformed bytes; fail before writing if privacy cannot be established, and never alter the destination directory's ACL.
 - Preserve existing access permissions when replacing a file; fail rather than silently discarding them. Ordinary forced output replacement requires metadata/security access but not read access to existing contents; in-place transformation still requires readable input.
+- Preserve the final new-file permissions that direct creation in the destination directory would provide, including umask and inherited ACL behavior. On Linux and macOS, capture that metadata with an empty probe and copy it to the private staged file; the probe never contains transformed bytes. Retain cleanup authority after restrictive final ACLs are copied.
 - Reject symbolic-link and multiply-linked destinations for replacement. `text --in-place` requires one explicitly selected regular input file and cannot be combined with `--output` or `--text`.
 - Do not create automatic backups or check for concurrent modifications. Atomic replacement does not provide locking or lost-update protection; the last successful replacement wins.
-- Clean up unpublished temporary files on handled failures/cancellation. Completed replacements are not undone.
+- Clean up both the unpublished staged file and its container on handled failures/cancellation, including after final permissions are copied. Completed replacements are not undone.
 - Verification reports are complete results even when they report mismatches or per-entry errors: publish the completed report and return code `1`. `--quiet` produces no result file and conflicts with `--output`.
 
 ### Text replacement
