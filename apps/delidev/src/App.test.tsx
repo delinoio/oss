@@ -77,7 +77,9 @@ it("defers a New Project entry behind a retained parent editor", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New Provider" }));
+  const newProvider = await screen.findByRole("button", { name: "New Provider" });
+  await waitFor(() => expect((newProvider as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(newProvider);
   const providerName = screen.getByRole("textbox", { name: "Name" });
   fireEvent.change(providerName, { target: { value: "Retained provider draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
@@ -171,7 +173,7 @@ it("keeps the draft and session mounted across settings and navigation, and rend
   expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Settings" }));
   expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Keep my unsent input");
   fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
-  await screen.findByText("No retained requests or completions.");
+  await screen.findByText("No retained requests or execution results.");
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe("Keep my unsent input");
@@ -424,7 +426,9 @@ it("defers the PR entry while a parent configuration editor draft is open", asyn
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New Provider" }));
+  const newProvider = await screen.findByRole("button", { name: "New Provider" });
+  await waitFor(() => expect((newProvider as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(newProvider);
   const name = await screen.findByRole("textbox", { name: "Name" });
   fireEvent.change(name, { target: { value: "Retained provider draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
