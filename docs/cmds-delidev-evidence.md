@@ -3025,3 +3025,22 @@ The local Grok initialization, original Plan-claim and bounded discovery race
 group passes (144.080s). The added structured failure/latency and redaction
 assertions pass separately (18.522s). Go vet passes for the final Grok and
 workspace code. These fixtures use no account login or paid inference.
+
+### PR #1063 final repair validation (2026-09-29)
+
+The final workspace package's complete race suite passes (323.460s), extending
+coverage beyond the focused Git fixtures to execution, recovery and PR workspace
+matching. The current repair also passes repository CI contracts (95 tests),
+desktop tests (74 files / 894 tests, type checking, eight packaging verifier
+tests and build), API client tests (41), Buf lint/breaking/generated-drift,
+Go vet and Git LFS integrity. Both generated app/client `dist` directories were
+removed after validation.
+
+The removed original checkout was unavailable; repair continued in a clean
+linked checkout of the same PR branch after the managed-worktree API could not
+resolve the missing repository. No Rust source was authored in this repair;
+the previous root Cargo/native package results above are prior evidence, not
+new runs. No native Windows run, new CEF Quit acceptance, signed release or
+real-account/inference/product-push validation was performed. Windows Grok
+initialization and CEF shutdown remain unresolved; metadata batching still
+needs a hosted Windows result before its CI failure is declared fixed.
