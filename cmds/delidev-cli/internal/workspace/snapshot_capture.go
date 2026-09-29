@@ -216,7 +216,22 @@ func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo P
 	}
 	return syncSnapshotDir(filepath.Join(target, ".git"))
 }
-func (m *Manager) validateSnapshotGit(ctx context.Context, session domain.ID, repo PreparedRepository, path string) error {
+
+type snapshotGitValidationPhase string
+
+const (
+	snapshotGitCommits  snapshotGitValidationPhase = "commits"
+	snapshotGitObjects  snapshotGitValidationPhase = "objects"
+	snapshotGitLocation snapshotGitValidationPhase = "location"
+)
+
+func (m *Manager) validateSnapshotGit(ctx context.Context, session domain.ID, repo PreparedRepository, path string) (returned error) {
+	phase := snapshotGitCommits
+	defer func() {
+		if returned != nil {
+			m.Logger.Warn("snapshot_git_validation_failed", "session_id", session, "repository_id", repo.ID, "phase", phase, "code", domain.SafeError(returned).Code)
+		}
+	}()
 	git := m.Git
 	git.OwnerID = session
 	git.readOnly = true
@@ -226,11 +241,13 @@ func (m *Manager) validateSnapshotGit(ctx context.Context, session domain.ID, re
 			return ResultUncertain()
 		}
 	}
+	phase = snapshotGitObjects
 	if _, err := git.run(ctx, path, "fsck", "--full", "--no-dangling"); err != nil {
 		return ResultUncertain()
 	}
 	// Native index references, including staged conflict entries, must resolve
 	// locally. fsck verifies the index without running clean/textconv filters.
+	phase = snapshotGitLocation
 	fields, err := git.revParseFields(ctx, path, 2, "--git-common-dir", "--absolute-git-dir")
 	expected := filepath.Join(path, ".git")
 	if err != nil || !sameNativePath(fields[0], expected) || !sameNativePath(fields[1], expected) {

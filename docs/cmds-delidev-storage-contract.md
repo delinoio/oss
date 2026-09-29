@@ -271,6 +271,13 @@ inventory comparisons verify every recoverable copy. Whole source data and Git
 state are compared again before publication and before any source removal; an
 index-only change invalidates the exact cleanup preview.
 
+Windows offline Git commands explicitly enable `core.longpaths` at command scope
+because private operation/repository paths can exceed the default 260-character
+limit and ambient configuration is excluded. This does not modify source Git
+configuration. Failed independent Git checks log only the closed commit/object/
+location phase, session/repository IDs and stable error code, never paths, native
+output or workspace content.
+
 Cleanup requires an exact successful original preview. Every repository is
 published and re-read before a single atomic no-replace rename claims the entire
 source root for deletion. An independently synchronized immutable removal intent

@@ -3264,3 +3264,17 @@ storage faults, no user credentials or native AI inference. They do not establis
 native Windows/Linux runtime acceptance, real provider/private-GitHub access,
 physical reclaimed-space attribution, a desktop storage-management surface,
 permanent session/dependent Sidechat deletion or database restoration.
+
+### PR #1121 Windows snapshot CI repair (2026-09-30)
+
+Windows Go CI at `ba87a337` failed three new Git-backed snapshot cases after
+successful previews. Their default runner temporary roots put copied loose Git
+objects beyond 260 characters. Offline commands discard system/global settings;
+Git for Windows disables long paths by default. Snapshot checks now enable
+`core.longpaths` per Windows command while preserving source configuration and
+all offline/identity checks. Closed commit/object/location failure phases improve
+redacted diagnostics. The new independent-copy regression uses a Git directory
+longer than 280 characters, retains staged content and validates after taking the
+original repository offline. It passes on macOS arm64 with the race detector
+(5.394s; `/tmp/delidev-1121-long-path.log`). Native Windows revalidation remains
+pending; a local macOS pass is not Windows acceptance.

@@ -78,6 +78,12 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	defer cancel()
 	commandArgs := []string{"-C", root, "-c", "core.quotePath=false", "-c", "color.ui=false"}
 	if g.offline {
+		// Private snapshot paths include operation/repository IDs and can exceed
+		// MAX_PATH. Offline checks ignore the system setting, so opt in per command
+		// without changing source configuration while Git for Windows requires it.
+		if runtime.GOOS == "windows" {
+			commandArgs = append(commandArgs, "-c", "core.longpaths=true")
+		}
 		commandArgs = append(commandArgs, "-c", "core.worktree="+root, "-c", "core.bare=false", "-c", "protocol.allow=never", "-c", "core.fsmonitor=false", "-c", "core.hooksPath="+g.HooksDir, "-c", "gc.auto=0", "-c", "maintenance.auto=false")
 	}
 	if g.readOnly {

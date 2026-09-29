@@ -42,6 +42,46 @@ func storageDo(t *testing.T, m *Manager, input StorageRequest) StorageResult {
 	}
 	return result
 }
+
+func TestSnapshotGitAtLongPrivatePath(t *testing.T) {
+	m := manager(t)
+	input, sources := snapshotRequest(t, m, false)
+	repo := input.Manifest.Repositories[0]
+	// A source setting must not defeat the command-local Windows opt-in. The
+	// independent copy needs to work with no ambient global/system configuration.
+	gitTest(t, sources[0], "config", "core.longpaths", "false")
+	if err := os.WriteFile(filepath.Join(repo.Path, "tracked.txt"), []byte("staged long-path snapshot\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitTest(t, repo.Path, "add", "tracked.txt")
+	target, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for len(filepath.Join(target, ".git")) <= 280 {
+		target = filepath.Join(target, strings.Repeat("snapshot-path-", 5))
+	}
+	if err := os.MkdirAll(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.copySnapshotGit(context.Background(), input.Preparation.SessionID, repo, target); err != nil {
+		t.Fatal("independent Git copy at a long path", err)
+	}
+	if actual := gitTest(t, target, "-c", "core.longpaths=true", "show", ":tracked.txt"); actual != "staged long-path snapshot" {
+		t.Fatal("staged content was not retained", actual)
+	}
+	if actual := gitTest(t, sources[0], "config", "core.longpaths"); actual != "false" {
+		t.Fatal("source configuration changed", actual)
+	}
+	if err := os.Rename(sources[0], sources[0]+"-offline"); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Rename(sources[0]+"-offline", sources[0])
+	if err := m.validateSnapshotGit(context.Background(), input.Preparation.SessionID, repo, target); err != nil {
+		t.Fatal("long-path copy depends on original Git data", err)
+	}
+}
+
 func TestWorkspaceSnapshotFaithfullyRestoresEveryRepository(t *testing.T) {
 	m := manager(t)
 	input, sources := snapshotRequest(t, m, true)
