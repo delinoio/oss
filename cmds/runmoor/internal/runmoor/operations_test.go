@@ -741,8 +741,8 @@ func TestUserServiceLifecycleUsesIsolatedUserDirectory(t *testing.T) {
 			t.Fatalf("non-systemctl action %v received Linux session context", command)
 		}
 	}
-	if runtime.GOOS == "linux" && systemctlCalls != 7 {
-		t.Fatalf("systemctl calls = %d, want seven across install/start/stop/uninstall", systemctlCalls)
+	if runtime.GOOS == "linux" && systemctlCalls != 11 {
+		t.Fatalf("systemctl calls = %d, want eleven including active-identity checks across install/start/stop/uninstall", systemctlCalls)
 	}
 }
 func TestCapacityWaitIsVisibleWithoutPreemptingWork(t *testing.T) {

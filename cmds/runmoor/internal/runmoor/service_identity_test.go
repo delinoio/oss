@@ -176,7 +176,18 @@ type serviceCommandRecorder struct {
 }
 
 func (r *serviceCommandRecorder) Run(_ context.Context, name string, args, _ []string, _ io.Reader) ([]byte, error) {
-	r.calls = append(r.calls, name+" "+strings.Join(args, " "))
+	call := name + " " + strings.Join(args, " ")
+	if name == "systemctl" &&
+		len(args) == 5 &&
+		args[0] == "--user" &&
+		args[1] == "show" &&
+		args[2] == "--property=MainPID" &&
+		args[3] == "--value" &&
+		args[4] == systemdServiceName {
+		// These service fixtures model an installed but inactive unit.
+		return []byte("0\n"), nil
+	}
+	r.calls = append(r.calls, call)
 	if r.onRun != nil {
 		r.onRun(name, args)
 	}
