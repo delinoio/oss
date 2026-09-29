@@ -2,6 +2,7 @@ package runmoor
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"os"
@@ -25,6 +26,9 @@ type launchdUnloadFixture struct {
 
 func (f *launchdUnloadFixture) Run(_ context.Context, name string, args, _ []string, _ io.Reader) ([]byte, error) {
 	f.commands = append(f.commands, name+" "+strings.Join(args, " "))
+	if len(args) == 2 && args[0] == "list" && args[1] == serviceLabel {
+		return nil, serviceExit(113)
+	}
 	if args[0] == "bootout" {
 		return nil, f.bootout
 	}
@@ -32,6 +36,123 @@ func (f *launchdUnloadFixture) Run(_ context.Context, name string, args, _ []str
 		return nil, f.service
 	}
 	return nil, f.domain
+}
+
+type launchdIdentityFixture struct {
+	pid      int
+	inactive bool
+	commands []string
+}
+
+func (f *launchdIdentityFixture) Run(_ context.Context, name string, args, _ []string, _ io.Reader) ([]byte, error) {
+	f.commands = append(f.commands, name+" "+strings.Join(args, " "))
+	if name == "launchctl" && len(args) == 2 && args[0] == "list" && args[1] == serviceLabel {
+		if f.inactive {
+			return []byte("-\t0\t" + serviceLabel + "\n"), nil
+		}
+		return []byte(strconv.Itoa(f.pid) + "\t0\t" + serviceLabel + "\n"), nil
+	}
+	return nil, errors.New("unexpected launchd identity command")
+}
+
+func (*launchdIdentityFixture) Start(string, []string, []string) (int, error) {
+	return 0, errors.New("unexpected service spawn")
+}
+
+func TestParseLaunchdProcessArguments(t *testing.T) {
+	data := make([]byte, 4)
+	binary.NativeEndian.PutUint32(data, 4)
+	data = append(data, []byte("/fixture/runmoor\x00\x00/fixture/runmoor\x00run\x00--config\x00/fixture/config.toml\x00")...)
+	want := []string{"/fixture/runmoor", "run", "--config", "/fixture/config.toml"}
+	got, err := parseLaunchdProcessArguments(data)
+	if err != nil || !sameServiceArguments(got, want) {
+		t.Fatalf("arguments = %q, error = %v", got, err)
+	}
+}
+
+func TestLaunchdActionsRejectAnActiveManagerWithDifferentArguments(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd service")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	unit := servicePath()
+	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(home, "config.toml")
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := serviceDefinition("darwin", binary, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := fixtureConfig(t)
+	for _, action := range []string{"stop", "uninstall"} {
+		t.Run(action, func(t *testing.T) {
+			fixture := &launchdIdentityFixture{pid: os.Getpid()}
+			err := Service(context.Background(), action, configPath, c, fixture)
+			requireCode(t, err, ErrConfig)
+			if len(fixture.commands) != 1 || fixture.commands[0] != "launchctl list "+serviceLabel {
+				t.Fatalf("mismatched launchd service reached a later command: %v", fixture.commands)
+			}
+			if _, err := os.Stat(unit); err != nil {
+				t.Fatalf("mismatched launchd service definition was removed: %v", err)
+			}
+		})
+	}
+}
+
+func TestLaunchdActionsRejectAnInactiveLoadedJob(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd service")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	unit := servicePath()
+	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(home, "config.toml")
+	definition, err := serviceDefinition("darwin", "/fixture/runmoor", configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := fixtureConfig(t)
+	for _, action := range []string{"stop", "uninstall"} {
+		t.Run(action, func(t *testing.T) {
+			fixture := &launchdIdentityFixture{inactive: true}
+			err := Service(context.Background(), action, configPath, c, fixture)
+			requireCode(t, err, ErrDependency)
+			if len(fixture.commands) != 1 || fixture.commands[0] != "launchctl list "+serviceLabel {
+				t.Fatalf("inactive loaded launchd service reached a later command: %v", fixture.commands)
+			}
+			if _, err := os.Stat(unit); err != nil {
+				t.Fatalf("inactive loaded launchd service definition was removed: %v", err)
+			}
+		})
+	}
+}
+
+func TestLaunchdProcessCommandLineUsesKernelArguments(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd process inspection is available on macOS")
+	}
+	args, err := launchdProcessCommandLine(os.Getpid())
+	if err != nil {
+		t.Fatal("could not inspect current process arguments")
+	}
+	if len(args) == 0 || args[0] != os.Args[0] {
+		t.Fatalf("process argv[0] = %q, want %q", args, os.Args[0])
+	}
 }
 
 func TestLaunchdUnloadRequiresConfirmedAbsence(t *testing.T) {

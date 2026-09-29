@@ -224,68 +224,76 @@ func cleanAbsoluteServicePath(path string) (string, error) {
 }
 
 func launchdServiceConfig(data []byte) (string, error) {
+	args, err := launchdServiceArguments(data)
+	if err != nil {
+		return "", err
+	}
+	_, config, err := serviceInvocation(args, "run")
+	return config, err
+}
+
+func launchdServiceArguments(data []byte) ([]string, error) {
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	dec.Strict = true
 	var root xml.StartElement
 	for {
 		tok, err := dec.Token()
 		if err != nil {
-			return "", errInvalidServiceDefinition
+			return nil, errInvalidServiceDefinition
 		}
 		switch value := tok.(type) {
 		case xml.StartElement:
 			root = value
 		case xml.CharData:
 			if strings.TrimSpace(string(value)) != "" {
-				return "", errInvalidServiceDefinition
+				return nil, errInvalidServiceDefinition
 			}
 		case xml.Directive:
 			if string(value) != `DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"` {
-				return "", errInvalidServiceDefinition
+				return nil, errInvalidServiceDefinition
 			}
 		case xml.ProcInst:
 			if value.Target != "xml" {
-				return "", errInvalidServiceDefinition
+				return nil, errInvalidServiceDefinition
 			}
 		default:
-			return "", errInvalidServiceDefinition
+			return nil, errInvalidServiceDefinition
 		}
 		if root.Name.Local != "" {
 			break
 		}
 	}
 	if root.Name.Local != "plist" || root.Name.Space != "" || len(root.Attr) != 1 || root.Attr[0].Name.Local != "version" || root.Attr[0].Value != "1.0" {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	start, err := nextPlistStart(dec)
 	if err != nil || start.Name.Local != "dict" || start.Name.Space != "" {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	dict, err := decodePlistValue(dec, start)
 	if err != nil || dict.kind != "dict" {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	end, err := dec.Token()
 	if err != nil {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	rootEnd, ok := end.(xml.EndElement)
 	if !ok || rootEnd.Name != root.Name {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	if err := ensurePlistEOF(dec); err != nil {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	if !validLaunchdDefinition(dict.dict) {
-		return "", errInvalidServiceDefinition
+		return nil, errInvalidServiceDefinition
 	}
 	array := dict.dict["ProgramArguments"].array
 	args := make([]string, len(array))
 	for i := range array {
 		args[i] = array[i].text
 	}
-	_, config, err := serviceInvocation(args, "run")
-	return config, err
+	return args, nil
 }
 
 type plistValue struct {

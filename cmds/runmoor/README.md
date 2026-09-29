@@ -385,6 +385,13 @@ manager with `runmoor stop --config ORIGINAL_CONFIG_PATH`, then retry the
 service action with the installed configuration. Runmoor does not include
 either configuration path in the error message.
 
+On macOS, service stop and uninstall verify a running launchd manager's
+invocation before draining or unloading it. If the loaded job is inactive or
+its invocation differs from the installed plist, Runmoor preserves the
+definition and asks you to inspect and reconcile the loaded job in your GUI
+session before retrying. For a running manager, gracefully stop it with its
+original `--config` path, then retry using the installed configuration.
+
 Service start, stop, and uninstall must use the same `--config` path recorded
 when the service was installed. A different path returns `CONFIG_INVALID`
 before Runmoor contacts a manager or changes the service. Inspect the installed

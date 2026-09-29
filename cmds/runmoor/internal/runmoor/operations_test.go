@@ -561,6 +561,9 @@ func (f *serviceFixture) Run(_ context.Context, name string, args, env []string,
 		}
 		return []byte(pid + "\n"), nil
 	}
+	if name == "launchctl" && len(args) == 2 && args[0] == "list" && args[1] == serviceLabel {
+		return nil, serviceExit(113)
+	}
 	if name == "launchctl" && len(args) > 0 && args[0] == "print" {
 		return nil, errors.New("not loaded")
 	}

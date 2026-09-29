@@ -283,6 +283,10 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
 				return e
 			}
+		} else if runtime.GOOS == "darwin" {
+			if e := requireLaunchdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
+				return e
+			}
 		}
 		if _, e := SendControl(ctx, c, ControlRequest{Action: "stop"}); e == nil {
 			if e = waitStopped(ctx, c, ""); e != nil {
@@ -305,6 +309,9 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			}
 		}
 		if runtime.GOOS == "darwin" {
+			if e := requireLaunchdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
+				return e
+			}
 			if e := unloadLaunchd(ctx, domain, unit, exec); e != nil {
 				return e
 			}

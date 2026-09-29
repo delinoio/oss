@@ -23,12 +23,18 @@ definition and resolve its problem before retrying service commands.
 Paths containing `..` that resolve through a symlink to a different file are
 also rejected; use the installed absolute configuration path directly.
 
-If a Linux service action reports that the active manager does not match the
-installed service, gracefully stop it with
+If a Linux service action or a macOS service stop/uninstall reports that the
+active manager does not match the installed service, gracefully stop it with
 `runmoor stop --config ORIGINAL_CONFIG_PATH`, then retry the service action
 with the installed configuration. This lets the active manager drain using
 the configuration it was started with before systemd operates on the
 replacement definition.
+
+On macOS, stop and uninstall preserve the plist when launchd reports a loaded
+job without a running process, because Runmoor cannot verify the arguments
+cached by launchd in that state. Inspect and reconcile the loaded job in the
+logged-in GUI session before retrying. If the manager is running, stop it with
+its original configuration path first.
 
 ## Recover an Ubuntu user service
 
