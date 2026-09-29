@@ -467,11 +467,11 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		if *providerID != "" && kind != domain.AccountKind {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Provider filtering is available only for account lists.", "Use --provider-id with account list."))
 		}
-		response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: f, ProviderId: *providerID}))
+		response, err := listWithProviderFilter(ctx, c, f, *providerID)
 		if err != nil {
-			return emit(nil, rpc.ClientError(err))
+			return emit(nil, err)
 		}
-		return emit(map[string]any{"resources": resourcesJSON(response.Msg.Resources), "next_page_token": response.Msg.NextPageToken}, nil)
+		return emit(map[string]any{"resources": resourcesJSON(response.Resources), "next_page_token": response.NextPageToken}, nil)
 	case "get", "inspect":
 		if err := domain.ID(*id).Validate(); err != nil {
 			return emit(nil, err)

@@ -118,9 +118,40 @@ func modelCatalog(ctx context.Context, c client, args []string) (any, error) {
 	if *limit < 1 || *limit > 200 {
 		return nil, domain.Fail(domain.InvalidArgument, "Invalid model page size.", "Use --limit between 1 and 200.")
 	}
+	if *enabledProviders {
+		if err := requireProviderInventoryCapability(ctx, c, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER); err != nil {
+			return nil, err
+		}
+	}
 	response, err := c.providers.SearchModels(ctx, request(c, &pb.SearchModelsRequest{Query: *query, ProviderId: *provider, IncludeHidden: *hidden, PageSize: uint32(*limit), PageToken: *page, EnabledProvidersOnly: *enabledProviders}))
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}
 	return map[string]any{"models": resourcesJSON(response.Msg.Models), "providers": resourcesJSON(response.Msg.Providers), "next_page_token": response.Msg.NextPageToken}, nil
+}
+
+func requireProviderInventoryCapability(ctx context.Context, c client, capability pb.ProviderInventoryCapability) error {
+	response, err := c.providers.ListProviderInventory(ctx, request(c, &pb.ListProviderInventoryRequest{PageSize: 1}))
+	if err != nil {
+		return rpc.ClientError(err)
+	}
+	for _, supported := range response.Msg.Capabilities {
+		if supported == capability {
+			return nil
+		}
+	}
+	return domain.Fail(domain.Unsupported, "The server does not support this provider inventory capability.", "Update the DeliDev server before using this provider-filtered command.")
+}
+
+func listWithProviderFilter(ctx context.Context, c client, filter *pb.Filter, providerID string) (*pb.ListResourcesResponse, error) {
+	if providerID != "" {
+		if err := requireProviderInventoryCapability(ctx, c, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER); err != nil {
+			return nil, err
+		}
+	}
+	response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: filter, ProviderId: providerID}))
+	if err != nil {
+		return nil, rpc.ClientError(err)
+	}
+	return response.Msg, nil
 }
