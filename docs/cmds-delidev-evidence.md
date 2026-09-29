@@ -3233,3 +3233,20 @@ execution is distinct from unperformed native Windows/Linux filesystem, real
 account/harness, desktop presentation and release/distribution acceptance. The
 remaining permanent session-deletion and Worker-snapshot workflows, and the rest
 of issue #964, remain separate requirements.
+
+Post-commit `pnpm proto:check` also passed the exact generated-source freshness
+check against the committed restore schema. Windows amd64 and Linux arm64 CLI
+cross-builds passed; cross-compilation is not native filesystem acceptance.
+Generated repository-owned `dist` output was removed after validation.
+
+The full `go test -race -p 1 ./cmds/delidev-cli/...` attempts reported a failure in
+`TestCLISessionAcceptanceQueueAndArchive`: its unchanged creation-diff observation
+returned `Unavailable` at `sessions_test.go:239`. The isolated current-head fixture
+also failed there (67.796s package result), with the bounded Git observation reaching
+its 15-second deadline. A source-only temporary archive of the original base
+`b741cec88d68ba84eaf918bbee22ca28bff57ec6` failed the same isolated fixture
+(72.878s package result), returning `Unavailable` at the earlier worktree file-read
+observation at `sessions_test.go:215`. This is evidence of a pre-existing workspace
+observation failure in the current environment, not a passing full suite. Other
+packages in the full runs were still executing when this evidence was recorded;
+no complete full-suite pass or PR CI pass is claimed.
