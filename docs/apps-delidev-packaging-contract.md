@@ -11,6 +11,8 @@ updater trust and Windows/Linux execution remain separate requirements.
 ## Runtime and Language
 
 Node.js 24 orchestrates the existing pinned Rust/Tauri CEF packager and Go sidecar.
+CI installs the repository's `nightly-2026-01-01` Rust toolchain and explicitly
+selects the matrix's native host, including Windows arm64.
 The Tauri revision remains `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; `cef`
 150.0.0 resolves to native CEF 150.0.10 / Chromium 150.0.7871.101. No packaging
 operation starts a DeliDev server, Worker, harness or account login.

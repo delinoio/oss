@@ -21,6 +21,8 @@ test('DeliDev package dry runs cannot obtain publication or production signing a
   }
   assert.doesNotMatch(source, /secrets\.|id-token:|packages: write|contents: write/);
   const packaging = workflow.jobs.package;
+  assert.equal(packaging.steps.find(step => step.uses?.startsWith('dtolnay/rust-toolchain@')).with.toolchain, readFileSync('rust-toolchain', 'utf8').trim());
+  assert.ok(packaging.steps.some(step => step.run === 'rustup set default-host ${{ matrix.target }}'));
   assert.equal(packaging['runs-on'], '${{ matrix.runner }}');
   assert.equal(packaging.strategy['fail-fast'], false);
   assert.ok(packaging.steps.some(step => step.uses?.startsWith('actions/checkout@') && step.with.lfs === true));
