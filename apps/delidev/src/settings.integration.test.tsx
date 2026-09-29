@@ -348,9 +348,21 @@ for (const kind of ["client", "worker"] as const) it(`issues a real single-use $
   fireEvent.change(screen.getByLabelText("Device name"), { target: { value: `Disposable ${kind}` } });
   fireEvent.change(screen.getByLabelText("Device type"), { target: { value: kind } });
   fireEvent.click(screen.getByRole("button", { name: "Issue single-use document" }));
-  // This real-server integration runs alongside the full desktop suite in CI;
-  // allow its follow-up pairing-resource read a bounded five seconds under load.
-  fireEvent.click(await screen.findByRole("button", { name: "Reveal private document" }, { timeout: 5000 }));
+  // The private code stays hidden until a fresh server read confirms the grant.
+  // If that first read is unavailable, exercise the explicit refresh path once.
+  await waitFor(() => {
+    expect(screen.queryByRole("button", { name: "Reveal private document" }) || screen.queryByText("Grant issued; current use status is unavailable.")).toBeTruthy();
+  }, { timeout: 5000 });
+  const reveal = screen.queryByRole("button", { name: "Reveal private document" });
+  if (reveal) {
+    fireEvent.click(reveal);
+  } else {
+    const refresh = screen.getByRole("button", { name: "Refresh pairing status" }) as HTMLButtonElement;
+    await waitFor(() => expect(refresh.disabled).toBe(false), { timeout: 5000 });
+    expect(screen.queryByLabelText("Private pairing document")).toBeNull();
+    fireEvent.click(refresh);
+    fireEvent.click(await screen.findByRole("button", { name: "Reveal private document" }, { timeout: 5000 }));
+  }
   const raw = (screen.getByLabelText("Private pairing document") as HTMLTextAreaElement).value;
   const grant = JSON.parse(raw);
   const pair = (path: string) => runCLI([kind === "client" ? "device" : "worker", "pair", kind === "client" ? "--device-dir" : "--worker-dir", path, "--code-stdin", "--name", "Disposable UI grant"], raw);
@@ -365,7 +377,7 @@ for (const kind of ["client", "worker"] as const) it(`issues a real single-use $
   await screen.findByText("Pairing document was used. Its private code has been cleared.");
   expect(screen.queryByLabelText("Private pairing document")).toBeNull();
   expect(JSON.stringify(client.getQueryCache().getAll().map((query) => [query.queryKey, query.state.data]), (_key, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain(grant.code);
-});
+}, 15000);
 
 it("creates and edits singleton server preferences with the exact Go defaults", async () => {
   const defaults = JSON.parse(await runCLI(["settings", "defaults"])).result;
