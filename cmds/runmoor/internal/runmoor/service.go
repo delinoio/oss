@@ -277,6 +277,13 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			}
 			definitionSnapshot = &snapshot
 		}
+		if runtime.GOOS == "linux" {
+			// Reject a stale active manager before sending drain control to the
+			// requested configuration or opening its offline state.
+			if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
+				return e
+			}
+		}
 		if _, e := SendControl(ctx, c, ControlRequest{Action: "stop"}); e == nil {
 			if e = waitStopped(ctx, c, ""); e != nil {
 				return e
@@ -302,6 +309,13 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 				return e
 			}
 		} else {
+			// Recheck after draining in case the active service changed while
+			// control or offline cleanup was in progress.
+			if runtime.GOOS == "linux" {
+				if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
+					return e
+				}
+			}
 			if e := run("systemctl", "--user", "disable", "--now", systemdServiceName); e != nil {
 				return e
 			}

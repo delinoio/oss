@@ -531,10 +531,12 @@ func TestGuestStateUsesCanonicalPrivateTemporaryDirectory(t *testing.T) {
 }
 
 type serviceFixture struct {
-	commands      [][]string
-	envs          [][]string
-	failSystemctl bool
-	systemdPID    string
+	commands           [][]string
+	envs               [][]string
+	failSystemctl      bool
+	systemdPID         string
+	systemdPIDSequence []string
+	systemdPIDCalls    int
 }
 
 func (f *serviceFixture) Run(_ context.Context, name string, args, env []string, _ io.Reader) ([]byte, error) {
@@ -550,6 +552,10 @@ func (f *serviceFixture) Run(_ context.Context, name string, args, env []string,
 	}
 	if name == "systemctl" && len(args) >= 3 && args[1] == "show" {
 		pid := f.systemdPID
+		if f.systemdPIDCalls < len(f.systemdPIDSequence) {
+			pid = f.systemdPIDSequence[f.systemdPIDCalls]
+		}
+		f.systemdPIDCalls++
 		if pid == "" {
 			pid = "0"
 		}
@@ -615,7 +621,7 @@ func TestFailedSystemctlStartKeepsDefinitionAndRedactsSessionFailure(t *testing.
 	}
 }
 
-func TestSystemdStartRejectsAnActiveManagerWithDifferentArguments(t *testing.T) {
+func TestSystemdActionsRejectAnActiveManagerWithDifferentArguments(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("systemd user service")
 	}
@@ -641,14 +647,38 @@ func TestSystemdStartRejectsAnActiveManagerWithDifferentArguments(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	fixture := &serviceFixture{systemdPID: strconv.Itoa(os.Getpid())}
-	err = Service(context.Background(), "start", configPath, c, fixture)
-	requireCode(t, err, ErrConfig)
-	if strings.Contains(err.Error(), configPath) || strings.Contains(err.Error(), binary) {
-		t.Fatalf("service identity details leaked: %v", err)
-	}
-	if len(fixture.commands) != 1 || !strings.Contains(strings.Join(fixture.commands[0], " "), "show") {
-		t.Fatalf("mismatched active service reached reload/start: %v", fixture.commands)
+	pid := strconv.Itoa(os.Getpid())
+	for _, tc := range []struct {
+		name     string
+		action   string
+		sequence []string
+	}{
+		{name: "start", action: "start", sequence: []string{pid}},
+		{name: "stop before drain", action: "stop", sequence: []string{pid}},
+		{name: "uninstall before drain", action: "uninstall", sequence: []string{pid}},
+		{name: "stop before disable", action: "stop", sequence: []string{"0", pid}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := &serviceFixture{systemdPIDSequence: tc.sequence}
+			err := Service(context.Background(), tc.action, configPath, c, fixture)
+			requireCode(t, err, ErrConfig)
+			if strings.Contains(err.Error(), configPath) || strings.Contains(err.Error(), binary) {
+				t.Fatalf("service identity details leaked: %v", err)
+			}
+			if len(fixture.commands) != len(tc.sequence) {
+				t.Fatalf("commands = %v, want only %d active identity checks", fixture.commands, len(tc.sequence))
+			}
+			for _, command := range fixture.commands {
+				if len(command) < 3 || command[0] != "systemctl" || command[2] != "show" {
+					t.Fatalf("mismatched active service reached another manager command: %v", fixture.commands)
+				}
+			}
+			if tc.action == "uninstall" {
+				if _, err := os.Stat(unit); err != nil {
+					t.Fatalf("mismatched active service definition was removed: %v", err)
+				}
+			}
+		})
 	}
 }
 

@@ -379,11 +379,11 @@ runmoor service uninstall
 
 These commands manage a launchd or systemd **user** service with the same drain semantics. Install the binary at a persistent location first. Installation does not overwrite an existing service definition. Uninstall preserves data/configuration and refuses to abandon known live executions when the manager cannot be contacted. Run the service in a functioning user session; availability after logout/reboot depends on that OS session, and Runmoor does not change system login policy.
 
-On Linux, `service start` refuses to reload a unit when its active manager was
-started with a different invocation than the installed unit. Gracefully stop
-that manager with `runmoor stop --config ORIGINAL_CONFIG_PATH`, then retry
-`runmoor service start` with the installed configuration. Runmoor does not
-include either configuration path in the error message.
+On Linux, service start, stop, and uninstall refuse to operate on an active
+manager whose invocation differs from the installed unit. Gracefully stop that
+manager with `runmoor stop --config ORIGINAL_CONFIG_PATH`, then retry the
+service action with the installed configuration. Runmoor does not include
+either configuration path in the error message.
 
 Service start, stop, and uninstall must use the same `--config` path recorded
 when the service was installed. A different path returns `CONFIG_INVALID`
