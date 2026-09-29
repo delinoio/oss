@@ -19,7 +19,17 @@ func TestForkCopiesTwoDirtyRepositoriesAndPreservesSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	var before []string
+	var heads []string
 	for _, repo := range source.Repositories {
+		if err := os.WriteFile(filepath.Join(repo.Path, "unpushed.txt"), []byte("source-only commit\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		gitTest(t, repo.Path, "add", "unpushed.txt")
+		gitTest(t, repo.Path, "-c", "core.hooksPath="+m.Git.HooksDir, "commit", "-m", "source-only unpushed fork fixture")
+		heads = append(heads, gitTest(t, repo.Path, "rev-parse", "HEAD"))
+		if heads[len(heads)-1] == repo.StartingCommit {
+			t.Fatal("fixture did not advance the actual source HEAD")
+		}
 		if err := os.WriteFile(filepath.Join(repo.Path, "tracked.txt"), []byte("staged\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -43,6 +53,9 @@ func TestForkCopiesTwoDirtyRepositoriesAndPreservesSource(t *testing.T) {
 		t.Fatal("invalid published child")
 	}
 	for i, repo := range child.Repositories {
+		if repo.StartingCommit != heads[i] || gitTest(t, repo.Path, "rev-parse", "HEAD") != heads[i] || gitTest(t, source.Repositories[i].Path, "rev-parse", "HEAD") != heads[i] {
+			t.Fatal("fork moved or omitted the actual unpushed source commit")
+		}
 		if repo.Path == source.Repositories[i].Path || gitTest(t, repo.Path, "rev-parse", "--abbrev-ref", "HEAD") != "HEAD" {
 			t.Fatal("shared or attached child")
 		}
