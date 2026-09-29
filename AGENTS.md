@@ -368,7 +368,7 @@ enum RustiaComponent {
 
 ### CI Baseline
 
-Repository-wide quality CI is defined in `.github/workflows/CI.yml`. The three-OS Go test matrix uses an explicit 20-minute per-package watchdog for native Git, shell and durable SQLite integration; this is not a product command timeout.
+Repository-wide quality CI is defined in `.github/workflows/CI.yml`. The Go test matrix uses an explicit per-package watchdog of 20 minutes on Linux/macOS and 40 minutes on hosted Windows for native Git, shell and durable SQLite integration. Windows serializes package binaries with `-p=1`; product operation deadlines remain unchanged. Remove the extra Windows budget when its full suites fit 20 minutes and its serialization when they pass at default package parallelism.
 
 Coverage expectations:
 - `go-quality`: generates and validates the ignored administrator and ach UI bundles, then runs `go fmt ./...` (failing if formatting changes are applied) and `go vet ./...` on Ubuntu.

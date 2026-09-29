@@ -410,8 +410,8 @@ test("local CI commands are documented by repository contracts", () => {
   for (const command of ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:security", "test:adapters"]) assert.ok(project.includes(command), command);
 });
 
-test("native Go integration retains a bounded watchdog and serialized Windows package tests", () => {
-  assert.equal(namedStep(workflow.jobs["go-test"], "Run go test").run, "go test ${{ matrix.os == 'windows-latest' && '-p=1' || '' }} -timeout=20m ./...");
+test("native Go integration retains host-specific bounded watchdogs and serialized Windows package tests", () => {
+  assert.equal(namedStep(workflow.jobs["go-test"], "Run go test").run, "go test ${{ matrix.os == 'windows-latest' && '-p=1' || '' }} -timeout=${{ matrix.os == 'windows-latest' && '40m' || '20m' }} ./...");
 });
 
 

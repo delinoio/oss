@@ -170,10 +170,11 @@ jobs:
 
       - name: Run go test
         # Native Git, PowerShell and durable SQLite integration exceed Go's
-        # default package budget on hosted Windows. Serialize Windows test
-        # binaries across packages to avoid starving their bounded protocols;
-        # remove this override when hosted Windows passes at default parallelism.
-        run: go test ${{ matrix.os == 'windows-latest' && '-p=1' || '' }} -timeout=20m ./...
+        # 20-minute package budget on hosted Windows. Give that host 40 minutes
+        # and serialize package binaries to avoid starving bounded protocols.
+        # Remove the extra budget when its full suites fit 20 minutes, and the
+        # serialization when they pass at default package parallelism.
+        run: go test ${{ matrix.os == 'windows-latest' && '-p=1' || '' }} -timeout=${{ matrix.os == 'windows-latest' && '40m' || '20m' }} ./...
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
