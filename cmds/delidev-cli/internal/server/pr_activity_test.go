@@ -55,12 +55,16 @@ func TestPRActivityRPCMetadataReceiptsChronologyAndReadIndependence(t *testing.T
 	client := delidevv1connect.NewActivityServiceClient(f.httpServer.Client(), f.url)
 	query := &pb.ListActivityRequest{PageSize: 1}
 	var entries []*pb.ActivityEntry
+	var firstCursor string
 	for {
 		page, err := client.ListActivity(context.Background(), ownerRequest(f.service.Identity, query))
 		if err != nil || len(page.Msg.Entries) != 1 || len(page.Msg.Capabilities) != 1 || page.Msg.Capabilities[0] != pb.ActivityCapability_ACTIVITY_CAPABILITY_PR_HANDLING_V1 {
 			t.Fatal("activity page", err)
 		}
 		entries = append(entries, page.Msg.Entries...)
+		if firstCursor == "" {
+			firstCursor = page.Msg.NextPageToken
+		}
 		query.PageToken = page.Msg.NextPageToken
 		if query.PageToken == "" {
 			break
@@ -105,6 +109,8 @@ func TestPRActivityRPCMetadataReceiptsChronologyAndReadIndependence(t *testing.T
 	if err != nil || len(page.Msg.Entries) != 4 || page.Msg.Entries[0].PullRequest.AttemptState != pb.ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_RESERVED || page.Msg.Entries[0].PullRequest.Mode != pb.ActivityPRMode_ACTIVITY_PR_MODE_MANUAL {
 		t.Fatal("attempt projection", err)
 	}
+	_, err = client.ListActivity(context.Background(), ownerRequest(f.service.Identity, &pb.ListActivityRequest{PageSize: 1, PageToken: firstCursor}))
+	wantAccountCode(t, err, domain.CursorExpired)
 	for _, kind := range []pb.ActivityKind{pb.ActivityKind_ACTIVITY_KIND_PR_PROBLEM_OBSERVED, pb.ActivityKind_ACTIVITY_KIND_PR_PROBLEM_DISMISSED} {
 		found := false
 		for _, entry := range page.Msg.Entries {
