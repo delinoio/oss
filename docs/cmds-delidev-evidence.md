@@ -2769,3 +2769,13 @@ that read within its existing 65-second observation deadline. It never repeats
 start, changes a generation, replaces credentials or suppresses other errors.
 The native macOS race fixture passes; this is not a Windows runtime result or a
 claim that the other recorded Windows Git/Grok timeouts have been repaired.
+
+### PR #1063 remote-HEAD failure fixture phase (2026-09-29)
+
+The full macOS workspace run showed the remote-HEAD error fixture expiring in
+its preliminary working-tree inspection instead of the intended `symbolic-ref`
+operation. Its fixture-only per-command bound is now ten seconds, the intentional
+blocked HEAD command lasts thirty seconds, and every case must prove that HEAD
+inspection actually started. The focused race group passes (14.868s), covering
+native absent/invalid exits and timeout. Product Git/read deadlines are unchanged;
+the separately recorded PR-match and Windows workspace failures remain unresolved.
