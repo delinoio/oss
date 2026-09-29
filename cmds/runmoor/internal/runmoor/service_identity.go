@@ -86,7 +86,7 @@ func requireNoSystemdDropIns(unit string) error {
 	// validation can reject either ambiguity before contacting systemd or opening
 	// offline state.
 	for _, root := range systemdUserUnitDirs(unit) {
-		shadow := filepath.Join(root, serviceLabel+".service")
+		shadow := filepath.Join(root, systemdServiceName)
 		if filepath.Clean(shadow) != filepath.Clean(unit) {
 			if _, err := os.Lstat(shadow); err == nil {
 				return errInvalidServiceDefinition

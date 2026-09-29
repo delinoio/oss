@@ -13,6 +13,7 @@ import (
 )
 
 const serviceLabel = "io.delino.runmoor"
+const systemdServiceName = "runmoor.service"
 
 func xmlText(s string) string {
 	var b bytes.Buffer
@@ -71,7 +72,7 @@ func servicePath() string {
 	if !filepath.IsAbs(base) {
 		base = filepath.Join(home, ".config")
 	}
-	return filepath.Join(base, "systemd", "user", "runmoor.service")
+	return filepath.Join(base, "systemd", "user", systemdServiceName)
 }
 
 func unloadLaunchd(ctx context.Context, domain, unit string, exec CommandExecutor) error {
@@ -183,7 +184,7 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			}
 			return run("launchctl", "bootstrap", domain, unit)
 		}
-		return run("systemctl", "--user", "enable", "--now", "runmoor.service")
+		return run("systemctl", "--user", "enable", "--now", systemdServiceName)
 	case "stop", "uninstall":
 		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 			snapshot, e := validateServiceConfigMatch(runtime.GOOS, unit, path)
@@ -217,7 +218,7 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 				return e
 			}
 		} else {
-			if e := run("systemctl", "--user", "disable", "--now", "runmoor.service"); e != nil {
+			if e := run("systemctl", "--user", "disable", "--now", systemdServiceName); e != nil {
 				return e
 			}
 		}

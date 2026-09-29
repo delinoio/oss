@@ -305,7 +305,7 @@ func TestSystemdUserServiceLookupRejectsShadowUnitsAndDropIns(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataHome)
 	t.Setenv("XDG_DATA_DIRS", dataDirs)
 
-	unit := filepath.Join(configHome, "systemd", "user", serviceLabel+".service")
+	unit := filepath.Join(configHome, "systemd", "user", systemdServiceName)
 	roots := systemdUserUnitDirs(unit)
 	wantRoots := []string{
 		filepath.Join(configHome, "systemd", "user.control"),
@@ -342,7 +342,7 @@ func TestSystemdUserServiceLookupRejectsShadowUnitsAndDropIns(t *testing.T) {
 			if err := os.MkdirAll(root, 0700); err != nil {
 				t.Fatal(err)
 			}
-			shadow := filepath.Join(root, serviceLabel+".service")
+			shadow := filepath.Join(root, systemdServiceName)
 			if err := os.WriteFile(shadow, []byte("[Service]\nExecStart=/tmp/foreign\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
