@@ -224,3 +224,12 @@ identity. A valid older same-server image at a reserved path, a replaced publish
 image, or a legacy image without a claim is preserved and reports recovery-required;
 none can complete the pending job. A crash after rename retains the original
 claim and exact bytes across restart without recopying the live database.
+
+Schema 25 retains the complete schema-24 backup/provider/title layout and adds
+only the future native-accounting table/indexes defined by the [usage
+contract](cmds-delidev-usage-contract.md). Initialization and migration create the
+same layout; migration publishes the existing validated synchronized backup
+before one transaction and leaves historical native observations untouched.
+Derived native-accounting rows cascade with permanent session removal and are
+retained by Archive and consistent database backups. A conflicting preexisting
+accounting layout fails without adopting or rewriting it.
