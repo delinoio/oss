@@ -127,13 +127,25 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	// The publisher lock precedes the session lock throughout the Worker. A live
 	// owner must finish cancellation and release its handles before removal.
 	locks := []*security.Lock{}
+	jobLocks := []*security.Lock{}
 	defer func() {
 		for i := len(locks) - 1; i >= 0; i-- {
 			locks[i].Close()
 		}
+		for i := len(jobLocks) - 1; i >= 0; i-- {
+			jobLocks[i].Close()
+		}
 	}()
 	allowAbsentWorkspace := true
 	for _, copy := range w.Copies {
+		// Native execution and final journal/report publication retain this
+		// outer lock after workspace and outbox locks are released. Join it
+		// first so a completed operation cannot recreate its journal mid-delete.
+		jobLock, e := security.TryLock(filepath.Join(root, "jobs", string(copy.JobID)+".lock"))
+		if e != nil {
+			return proof, domain.SessionDeletionPending()
+		}
+		jobLocks = append(jobLocks, jobLock)
 		folder := filepath.Join(root, "jobs", string(copy.JobID))
 		if _, e := os.Lstat(folder); e == nil {
 			if e := security.CheckPrivateDir(folder); e != nil {

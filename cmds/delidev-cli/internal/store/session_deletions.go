@@ -644,13 +644,16 @@ func (s *Store) persistSessionDeletionAck(ctx context.Context, v SessionDeletion
 	if e := sessionDeletionAckReceipt(ctx, tx, v, w); e != nil {
 		return e
 	}
+	// An atomic rename can succeed before directory synchronization fails.
+	// Fence unrelated receipts until recovery reserves this original UUID.
+	s.deletionFault = true
 	if e := s.writeSessionDeletion(v); e != nil {
 		return e
 	}
 	if e := tx.Commit(); e != nil {
-		s.deletionFault = true
 		return storageError(e)
 	}
+	s.deletionFault = false
 	return nil
 }
 func sessionDeletionAckReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion, w SessionDeletionWorker) error {

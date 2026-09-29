@@ -3222,3 +3222,18 @@ timeouts while the machine ran concurrent validation; a package-serialized
 30-minute-timeout rerun is pending. Protocol lint passed; breaking/freshness and
 final complete race results will be recorded after completion. No Rust or app
 frontend code changed, and no generated dist output was needed for these checks.
+
+
+Final ownership review additionally joins the original Worker job lock through
+cleanup so terminal journal publication cannot recreate a removed copy. The new
+fixture proves pending progress while that final owner holds its lock, then one
+successful cleanup after release. Completed proof refuses a foreign replacement.
+The Worker deletion group passes (55.185s). A SQL receipt-failure trigger verifies
+synchronized intent survives rollback, all ordinary storage reads/mutations and
+backup creation stay fenced, and recovery reconstructs the same request without
+new native work. The final store deletion group passes (24.309s), including
+unrelated request-ID acknowledgement rejection. Protocol lint, breaking and full
+regeneration/freshness pass, and the generated API-client build passes; its dist
+is generated verification output and is removed before delivery. The complete
+serialized race rerun still hits the existing CLI live-diff deadline; a clean
+origin/main fixture comparison and final package results remain pending.

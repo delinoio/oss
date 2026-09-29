@@ -173,3 +173,43 @@ func TestSessionDeletionWorkerKeepsMissingWorkspaceWithoutOriginalProofPending(t
 		t.Fatal("original evidence removed", e)
 	}
 }
+
+func TestSessionDeletionWorkerWaitsForOriginalFinalJournalOwner(t *testing.T) {
+	c, w, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	l, e := security.TryLock(filepath.Join(c.Root, "jobs", string(w.Copies[0].JobID)+".lock"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e := deleteSessionCopies(context.Background(), c, w); e == nil {
+		t.Fatal("deleted while original job still owned final publication")
+	}
+	if _, e := os.Stat(manifest.PrimaryPath); e != nil {
+		t.Fatal("removed live-owned workspace", e)
+	}
+	if e := l.Close(); e != nil {
+		t.Fatal(e)
+	}
+	if p, e := deleteSessionCopies(context.Background(), c, w); e != nil || !p.Complete {
+		t.Fatal(p, e)
+	}
+}
+
+func TestSessionDeletionWorkerPreservesReplacementAfterCompletedCleanup(t *testing.T) {
+	c, w, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	if _, e := deleteSessionCopies(context.Background(), c, w); e != nil {
+		t.Fatal(e)
+	}
+	path := filepath.Join(c.Root, "workspaces", string(manifest.SessionID))
+	if e := os.Mkdir(path, 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.WriteFile(filepath.Join(path, "replacement"), []byte("foreign"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := deleteSessionCopies(context.Background(), c, w); e == nil {
+		t.Fatal("completed cleanup ignored a replacement")
+	}
+	if b, e := os.ReadFile(filepath.Join(path, "replacement")); e != nil || string(b) != "foreign" {
+		t.Fatal("foreign replacement removed", e)
+	}
+}

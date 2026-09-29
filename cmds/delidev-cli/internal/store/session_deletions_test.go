@@ -165,6 +165,9 @@ func TestSessionDeletionRequiresOriginalOfflineWorkerAcknowledgment(t *testing.T
 	}
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: device, MachineID: machine})
 	report := domain.NewID()
+	if _, e := s.AcknowledgeSessionDeletion(worker, sr.ID, v.ID, v.RequestID, instance, v.Workers[0].Work.Digest()); e == nil {
+		t.Fatal("acknowledgement borrowed an unrelated request receipt")
+	}
 	if _, e := s.AcknowledgeSessionDeletion(worker, sr.ID, v.ID, report, domain.NewID(), v.Workers[0].Work.Digest()); e == nil {
 		t.Fatal("foreign instance acknowledged")
 	}
@@ -247,5 +250,41 @@ func TestSessionDeletionRetiresSharedRemediationOperandsWithoutRefundingCounters
 	})
 	if e != nil {
 		t.Fatal("shared history became invalid", e)
+	}
+}
+
+func TestSessionDeletionRecoversIntentBeforeLostSQLAcknowledgment(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	server, request := domain.NewID(), domain.NewID()
+	if e := s.BindIdentity(ctx, server); e != nil {
+		t.Fatal(e)
+	}
+	session, _, _ := deletionSession(t, s, "interrupted")
+	if _, e := s.db.Exec("CREATE TRIGGER lost_deletion_ack BEFORE INSERT ON receipts WHEN NEW.id='" + string(request) + "' BEGIN SELECT RAISE(ABORT,'fixture'); END"); e != nil {
+		t.Fatal(e)
+	}
+	if _, _, e := s.DeleteSession(ctx, request, session.ID, server, session.Revision); e == nil {
+		t.Fatal("lost SQL acknowledgement was reported successful")
+	}
+	original, e := s.readSessionDeletion(session.ID)
+	if e != nil || original.RequestID != request {
+		t.Fatal("original intent missing", e)
+	}
+	if _, e := s.Get(ctx, domain.SessionKind, session.ID); e == nil {
+		t.Fatal("unreconciled intent did not fence store admission")
+	}
+	if _, e := s.db.Exec("DROP TRIGGER lost_deletion_ack"); e != nil {
+		t.Fatal(e)
+	}
+	if e := s.RestoreSessionDeletionIntents(ctx, server); e != nil {
+		t.Fatal(e)
+	}
+	recovered, replay, e := s.DeleteSession(ctx, request, session.ID, server, session.Revision)
+	if e != nil || !replay || recovered.ID != original.ID {
+		t.Fatal("recovery replaced original intent", recovered, e)
+	}
+	if _, e := s.PurgeDeletedSession(ctx, session.ID); e != nil {
+		t.Fatal(e)
 	}
 }

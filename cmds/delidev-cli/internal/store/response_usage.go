@@ -98,6 +98,9 @@ func (s *Store) ResponseUsage(ctx context.Context, id domain.ID) (ResponseUsage,
 	}
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return value, domain.SessionDeletionPending()
+	}
 	var body []byte
 	var created int64
 	if err := s.db.QueryRowContext(ctx, "SELECT body,created_at FROM response_usage WHERE id=?", id).Scan(&body, &created); err != nil {
