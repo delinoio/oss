@@ -2344,7 +2344,7 @@ missing product integration as native unsupported.
 
 | Plan area | Implemented in this change | Still required |
 | --- | --- | --- |
-| Storage/deletion/recovery | Managed backup inventory/inspection, durable creation/deletion, external deletion obligations and schema-21 migration | Permanent session/dependent Sidechat deletion, whole-workspace snapshots, cleanup/restore and atomic database recovery |
+| Storage/deletion/recovery | Managed backup inventory/inspection, durable creation/deletion, external deletion obligations and schema-22 migration (including both prior schema-21 layouts) | Permanent session/dependent Sidechat deletion, whole-workspace snapshots, cleanup/restore and atomic database recovery |
 | Four harnesses/sessions | Existing native/public foundations retained | Remaining Grok repository/continuation/interactions, native Fork, complete Sidechat/compaction/context/subagent public composition |
 | Authentication/quota/usage | Existing API-key lifecycle and usage foundation retained | Subscription/headless workflows, quota refresh/notifications, account-switch fidelity and remaining usage/credit integration |
 | Session tools/browser | Pinned CEF shell, async URL authorization and per-document accessibility | Worker PTY/ConPTY, forwarding, account profiles/tabs and distributed profile deletion; native Quit acceptance |
@@ -2624,3 +2624,32 @@ that unchanged budget immediately before the read, matching the server's actual
 dispatch boundary and the sibling mismatch fixture. Its focused race test passed
 again in 18.147s. The unborn-diff failure remains intermittent and is not called
 fixed by this test correction.
+
+### PR #1063 repair final validation (2026-09-29)
+
+- Desktop `pnpm test`: 72 files / 873 tests, TypeScript checking, eight native
+  packaging tests and production build passed. API client: 41 tests passed.
+- Full DeliDev `go vet`, including the final fixture corrections, passed. Buf
+  lint, breaking against main `96b81fd4`, generated-source freshness and Git LFS
+  integrity passed. This repair introduces no Rust changes; earlier native and
+  root Cargo evidence above is historical, not a new execution at this head.
+- `go test -race -timeout 30m ./cmds/delidev-cli/...` finished with the three
+  observation failures detailed above. Other packages passed, including Grok
+  (1015.033s), server (988.558s), store (321.600s) and Worker (562.507s).
+- A sequential JSON run subsequently completed the entire CLI package with a
+  pass in 210.574s. Its driver was stopped after the current test child exited
+  naturally to avoid repeating already-passing packages; that interrupted driver
+  is not reported as a successful complete-suite command.
+- The final full workspace package race retry completed in 514.707s with
+  failures in `TestInspectPropagatesRemoteHeadExecutionFailures` (unexpected
+  `invalid_argument` during setup) and
+  `TestPRWorkspaceMatchPreservesMismatchesAndDistinguishesUnknownAccess`
+  (`unavailable` timeout). The original unborn-diff and first PR-match failures
+  did not recur in that run. These macOS native-process/observation failures
+  remain unresolved; neither the whole Go race suite nor product verification
+  is declared complete. No production timeout or ownership guard was relaxed.
+- Generated repository-owned app/client `dist` directories were removed; the
+  external Go toolchain's `src/cmd/dist` source remains intact. No real provider
+  account, paid inference, PAT/private repository or product-driven push was
+  used. Publication of this code PR is separate from the deferred product push
+  acceptance.
