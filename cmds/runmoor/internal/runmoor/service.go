@@ -91,13 +91,31 @@ func unloadLaunchd(ctx context.Context, domain, unit string, exec CommandExecuto
 	return problem(ErrDependency, "Cannot confirm that launchd unloaded the Runmoor service.", "Check the logged-in launchd user session and retry service stop or uninstall; the service definition has been preserved.")
 }
 
+func serviceCommandEnv(goos, command string) []string {
+	env := minimalEnv()
+	if goos != "linux" || command != "systemctl" {
+		return env
+	}
+	// OSCommand replaces the inherited process environment with the supplied
+	// allowlist, while systemctl --user locates the logged-in manager through
+	// these selectors. Keep this exception limited to Linux systemctl; remove it
+	// only if service commands preserve session lookup through another tested
+	// mechanism. Do not inherit arbitrary variables or invent a session address.
+	for _, key := range []string{"XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"} {
+		if value, present := os.LookupEnv(key); present {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
+}
+
 func Service(ctx context.Context, action, path string, c Config, exec CommandExecutor) error {
 	unit := servicePath()
 	uid := strconv.Itoa(os.Getuid())
 	domain := "gui/" + uid
 	var definitionSnapshot *serviceDefinitionSnapshot
 	run := func(name string, args ...string) error {
-		_, e := exec.Run(ctx, name, args, minimalEnv(), nil)
+		_, e := exec.Run(ctx, name, args, serviceCommandEnv(runtime.GOOS, name), nil)
 		if e != nil {
 			return problem(ErrDependency, "User service command failed.", "Check the logged-in launchd or systemd user session and run doctor.")
 		}
