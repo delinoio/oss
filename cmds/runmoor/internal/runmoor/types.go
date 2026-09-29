@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "0.2.3"
+const Version = "0.2.4"
 
 // Revision is populated by release builds; development builds remain explicit.
 var Revision = "development"
