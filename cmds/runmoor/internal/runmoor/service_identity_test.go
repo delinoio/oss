@@ -292,6 +292,9 @@ func TestServiceActionsRejectSystemdDropInsBeforeSideEffects(t *testing.T) {
 }
 
 func TestSystemdUserServiceLookupRejectsShadowUnitsAndDropIns(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("systemd user unit search paths are Linux-only")
+	}
 	home := t.TempDir()
 	configHome := filepath.Join(home, "config")
 	configDirs := filepath.Join(home, "config-dirs")
