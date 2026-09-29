@@ -257,6 +257,11 @@ func (m *Manager) Control(ctx context.Context, action Action, id domain.ID, revi
 	r.Revision++
 	r.Receipts = append(r.Receipts, Receipt{ID: id, Digest: input})
 	r.Events = append(r.Events, Event{Revision: r.Revision, RequestID: id, Action: action, Desired: r.Desired})
+	// Native observation and lock admission can outlive client revocation. Check
+	// current authority again before intent can cancel an already running owner.
+	if err = m.authorize(ctx); err != nil {
+		return result, err
+	}
 	if err = m.save(r); err != nil {
 		return result, err
 	}

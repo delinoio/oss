@@ -454,3 +454,29 @@ func TestManagedIntentRetainsNativeSupervisorOwnership(t *testing.T) {
 		t.Fatal("removed registration retained supervisor ownership")
 	}
 }
+
+func TestRevocationDuringObservationCannotPublishStopIntent(t *testing.T) {
+	m, f := fixture(t)
+	control(t, m, Install, 0)
+	control(t, m, Start, 1)
+	checks := 0
+	m.Authorize = func(context.Context) error {
+		checks++
+		if checks > 1 {
+			return domain.Fail(domain.PermissionDenied, "The fixture client was revoked.", "Use a currently authorized client.")
+		}
+		return nil
+	}
+	if _, err := m.Control(context.Background(), Stop, domain.NewID(), 2, "fixture-user"); domain.SafeError(err).Code != domain.PermissionDenied {
+		t.Fatal("revoked Stop accepted", err)
+	}
+	r, err := m.load()
+	if err != nil || r.Revision != 2 || r.Desired != Running {
+		t.Fatal("revoked Stop changed controller intent", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.writes[Stop] != 0 {
+		t.Fatal("revoked Stop mutated native registration")
+	}
+}
