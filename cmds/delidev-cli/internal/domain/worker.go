@@ -66,6 +66,7 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 type JobType string
 
 const (
+	DeleteBackupJob        JobType = "delete-backup"
 	InspectRepositoryJob   JobType = "inspect-repository"
 	SaveRepositoryJob      JobType = "save-repository"
 	ImportConfigurationJob JobType = "import-configuration"
@@ -104,13 +105,13 @@ type Job struct {
 }
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob}, j.Type) {
+	if !slices.Contains([]JobType{DeleteBackupJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {
 		return Fail(InvalidArgument, "Unknown Worker job state.", "Reload the accepted job.")
 	}
-	if j.Type != SaveRepositoryJob && j.Type != ImportConfigurationJob {
+	if j.Type != SaveRepositoryJob && j.Type != ImportConfigurationJob && j.Type != DeleteBackupJob {
 		if err := j.MachineID.Validate(); err != nil {
 			return err
 		}

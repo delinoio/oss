@@ -12,6 +12,8 @@ service SystemService {
   rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse);
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
   rpc InspectBackup(InspectBackupRequest) returns (InspectBackupResponse);
+  rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse);
+  rpc ListBackupDeletions(ListBackupDeletionsRequest) returns (ListBackupDeletionsResponse);
 }
 service ResourceService {
   rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
@@ -1502,6 +1504,7 @@ message ManagedBackup {
   string id = 1;
   uint64 size_bytes = 2;
   string modified_at = 3;
+  uint64 revision = 4;
 }
 message ListBackupsRequest {
   uint32 page_size = 1;
@@ -1519,4 +1522,42 @@ message InspectBackupResponse {
   string sha256 = 2;
   uint32 schema_version = 3;
   string server_id = 4;
+}
+
+// Accepted deletions cannot be canceled or undone by restoring a database image.
+enum BackupDeletionState {
+  BACKUP_DELETION_STATE_UNSPECIFIED = 0;
+  BACKUP_DELETION_STATE_PENDING = 1;
+  BACKUP_DELETION_STATE_SUCCEEDED = 2;
+}
+message BackupDeletionJob {
+  string id = 1;
+  string backup_id = 2;
+  uint64 revision = 3;
+  BackupDeletionState state = 4;
+  string accepted_at = 5;
+  string finished_at = 6;
+  string problem_code = 7;
+  // Logical image bytes only, not reclaimed filesystem space.
+  uint64 image_bytes = 8;
+  // False after recovery if the original unlink could not be observed.
+  bool removal_observed = 9;
+}
+message DeleteBackupRequest {
+  string request_id = 1;
+  ManagedBackup backup = 2;
+  string sha256 = 3;
+}
+message DeleteBackupResponse {
+  BackupDeletionJob job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ListBackupDeletionsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+message ListBackupDeletionsResponse {
+  repeated BackupDeletionJob jobs = 1;
+  string next_page_token = 2;
 }

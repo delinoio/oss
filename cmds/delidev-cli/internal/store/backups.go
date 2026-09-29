@@ -36,6 +36,8 @@ type BackupInspection struct {
 // BackupInventory reads metadata only. Integrity is a separate explicit operation,
 // so listing many backups cannot silently perform thousands of database checks.
 func (s *Store) BackupInventory(ctx context.Context) ([]Backup, error) {
+	s.backupGate.Lock()
+	defer s.backupGate.Unlock()
 	s.gate.RLock()
 	defer s.gate.RUnlock()
 	if s.closed {
@@ -119,6 +121,11 @@ func backupUnavailable() error {
 // exact inspected bytes, not a later read of a potentially replaced file.
 func (s *Store) InspectBackup(ctx context.Context, id, expectedServer domain.ID) (BackupInspection, error) {
 	var result BackupInspection
+	s.backupGate.Lock()
+	defer s.backupGate.Unlock()
+	if err := s.backupNotDeleted(ctx, id); err != nil {
+		return result, err
+	}
 	if err := id.Validate(); err != nil {
 		return result, err
 	}

@@ -22,18 +22,19 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 20
+const SchemaVersion = 21
 const applicationID = 0x444c4456
 const MaxPage = 200
 
 type Store struct {
-	db       *sql.DB
-	root     string
-	lock     *security.Lock
-	gate     sync.RWMutex
-	notifyMu sync.Mutex
-	notify   chan struct{}
-	closed   bool
+	db         *sql.DB
+	root       string
+	lock       *security.Lock
+	gate       sync.RWMutex
+	backupGate sync.Mutex
+	notifyMu   sync.Mutex
+	notify     chan struct{}
+	closed     bool
 }
 
 type Record struct {
@@ -100,7 +101,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			lock.Close()
 		}
 	}()
-	for _, name := range []string{"backups", "secrets"} {
+	for _, name := range []string{"backups", "secrets", "backup-deletions"} {
 		if err := security.PrivateDir(filepath.Join(root, name)); err != nil {
 			return nil, storageError(err)
 		}
@@ -167,7 +168,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema); err == nil {
+		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema+backupDeletionSchema); err == nil {
 			err = tx.Commit()
 		} else {
 			tx.Rollback()
@@ -245,6 +246,8 @@ func corrupt() error {
 }
 
 func (s *Store) Close() error {
+	s.backupGate.Lock()
+	defer s.backupGate.Unlock()
 	s.gate.Lock()
 	defer s.gate.Unlock()
 	if s.closed {
@@ -756,6 +759,11 @@ func (s *Store) Backup(ctx context.Context) (domain.ID, error) {
 }
 
 func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
+	s.backupGate.Lock()
+	defer s.backupGate.Unlock()
+	if err := s.backupNotDeleted(ctx, id); err != nil {
+		return "", err
+	}
 	if err := id.Validate(); err != nil {
 		return "", err
 	}

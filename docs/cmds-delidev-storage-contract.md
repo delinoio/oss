@@ -6,7 +6,7 @@ Go owns managed database backups, session deletion, Worker snapshots and recover
 The approved completion work includes every remaining issue #964 requirement;
 actual account/private-GitHub access and platform distribution validation remain
 deferred. This document distinguishes the implemented backup observation surface
-from deletion, workspace snapshots and restoration, which remain pending.
+from permanent session deletion, workspace snapshots and restoration, which remain pending. Managed backup deletion is implemented separately below.
 
 ## Managed backup observation
 
@@ -46,6 +46,49 @@ content or credentials. No inspection opens a credential store, changes the
 original image, restores a database or proves Worker/browser/credential recovery.
 Failed reinspection removes the desktop's earlier success indication.
 
+## Permanent managed backup deletion
+
+`SystemService.DeleteBackup` accepts an owner/client UUID-v7 request bound to the
+original inspected backup ID, immutable live revision 1, byte count, modification
+time and SHA-256. `ListBackupDeletions` provides signed actor/page-size-bound job
+pagination (20 default, 99 maximum). The same request returns the current original
+job. Other requests cannot replace an accepted deletion, and Workers cannot call
+these operations. A queued acceptance is not proof of file removal.
+
+Schema 21 adds a backup-to-job/request index through the existing synchronized
+backup-first migration. Deletions use the existing durable job and request-receipt
+infrastructure. Backup creation/inspection/deletion share a server lock; accepted
+SQL ownership immediately prevents an old creation request from recreating the
+image. Before acknowledging acceptance or performing any unlink, the server synchronizes a versioned,
+private, metadata-only intent in `backup-deletions/`, outside the replaceable
+SQLite database. The intent binds original server, actor, request, job and image.
+It is never removed after completion. Startup reconstructs missing job/receipt
+metadata from those intents before serving requests and rejects conflicting or
+foreign obligations. Restoring a database alone cannot revoke an external intent.
+This obligation recovery does not expose database restoration as a product feature.
+
+The controller processes bounded pages and retries pending cleanup every two
+seconds, with a thirty-second cancellable attempt. It independently verifies the
+original regular private file, metadata, complete SHA-256 and opened identity;
+symlinks, changed bytes and adjacent SQLite/pending sidecars keep cleanup pending.
+The original read handle closes before unlink for Windows compatibility. Successful
+unlink and parent-directory synchronization precede completion publication. After
+a crash between unlink and publication, confirmed absence can complete the job,
+but the original removal byte count remains explicitly unknown. Completed jobs
+continue to enforce their external obligation if the managed image reappears.
+At most 4,096 deletion obligations may be accepted; capacity failure preserves all
+existing obligations rather than evicting them.
+
+`delidev backup delete --id ID --expected-revision REV --size-bytes BYTES
+--modified-at TIME --sha256 SHA256 --confirm` uses the original inspection values.
+The global `--request-id` permits exact retry after an uncertain response.
+`delidev backup deletions` lists retained status after restart. Settings requires
+an explicit inspection and permanent-deletion checkbox, retains uncertain requests
+across navigation, and presents pending/completed jobs with separate cleanup
+failures. Accepted deletion cannot be canceled. Logical validated image bytes
+removed are not a claim of reclaimed filesystem space; hard links, filesystem
+snapshots and allocation remain outside that measurement.
+
 ## Remaining implementation
 
 Permanent session deletion requires irrevocable intent, stopped ownership,
@@ -61,6 +104,9 @@ Use real private SQLite/WAL backups for image/hash preservation, subsequent live
 writes, corrupt/foreign/missing files, sidecars, symlinks and cancellation. Test
 authenticated pagination/cursor invalidation, Worker and revoked-client denial,
 CLI decimal precision, hidden-screen reads, explicit inspection and exact retries.
+Also test concurrent deletion receipts, stale revisions/metadata, failed intent
+persistence, changed content, missing unlink acknowledgment, database rollback
+without journal rollback, exact CLI confirmation and migration from schema 20.
 Run DeliDev Go race tests/vet, protocol checks, API-client tests and desktop
 `pnpm test`. Keep real-platform evidence separate from fixtures and builds.
 

@@ -52,3 +52,42 @@ func TestBackupPagesAndInspectionRecheckAuthorityAndInventory(t *testing.T) {
 		t.Fatal("revoked client inspected backup", err)
 	}
 }
+
+func TestBackupDeletionRPCIsOwnerClientOnlyAndReturnsCurrentOriginalJob(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := s.Store.BindIdentity(ctx, s.Identity.ServerID); err != nil {
+		t.Fatal(err)
+	}
+	created, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspected, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: created.Msg.Id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &pb.DeleteBackupRequest{RequestId: string(domain.NewID()), Backup: inspected.Msg.Backup, Sha256: inspected.Msg.Sha256}
+	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
+	if _, err := s.DeleteBackup(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal(err)
+	}
+	if _, err := s.ListBackupDeletions(worker, connect.NewRequest(&pb.ListBackupDeletionsRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal(err)
+	}
+	accepted, err := s.DeleteBackup(ctx, connect.NewRequest(request))
+	if err != nil || accepted.Msg.Job.State != pb.BackupDeletionState_BACKUP_DELETION_STATE_PENDING {
+		t.Fatal(accepted, err)
+	}
+	if _, err := s.Store.RunBackupDeletion(ctx, domain.ID(accepted.Msg.Job.Id), s.Identity.ServerID); err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := s.DeleteBackup(ctx, connect.NewRequest(request))
+	if err != nil || !repeated.Msg.Replayed || repeated.Msg.Job.Id != accepted.Msg.Job.Id || repeated.Msg.Job.State != pb.BackupDeletionState_BACKUP_DELETION_STATE_SUCCEEDED {
+		t.Fatal(repeated, err)
+	}
+	listing, err := s.ListBackupDeletions(ctx, connect.NewRequest(&pb.ListBackupDeletionsRequest{PageSize: 1}))
+	if err != nil || len(listing.Msg.Jobs) != 1 || listing.Msg.Jobs[0].Id != accepted.Msg.Job.Id {
+		t.Fatal(listing, err)
+	}
+}

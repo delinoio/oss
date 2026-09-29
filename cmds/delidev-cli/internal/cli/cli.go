@@ -387,7 +387,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		value, err := configurationTransfer(ctx, c, o, rest, streams)
 		return emit(value, err)
 	case "backup":
-		if len(rest) > 0 && rest[0] == "create" {
+		if len(rest) > 0 && (rest[0] == "create" || rest[0] == "delete") {
 			ensureRequest(&o)
 		}
 		value, err := backupCommand(ctx, c, o, rest)
@@ -874,6 +874,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   backup create
   backup list [--limit N] [--page-token TOKEN]
   backup inspect --id ID
+  backup delete --id ID --expected-revision REV --size-bytes BYTES --modified-at TIME --sha256 SHA256 --confirm
+  backup deletions [--limit N] [--page-token TOKEN]
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]
   KIND get --id ID

@@ -1,5 +1,8 @@
 # DeliDev CLI
 
+- Managed backup deletion uses existing durable jobs/receipts and schema-21 indexing, plus immutable synchronized `backup-deletions/` intents outside SQLite before unlink. Preserve exact inspected revision/metadata/hash, original actor/request identity, startup obligation reconstruction, creation-replay suppression, bounded pending retries and source preservation on mismatch. Never evict deletion obligations or equate logical image bytes with reclaimed disk space; follow `docs/cmds-delidev-storage-contract.md`.
+
+
 - The first-session checklist uses authenticated status and explicitly requested doctor/configuration reads only. Keep retained Worker handshakes, connected/enabled Workers, saved account health and Agent configuration as separate observations, never a combined execution-readiness grant. Reject foreign/malformed reports, preserve incomplete inventory and failed refresh states, and do not run discovery, login, provider validation or inference from the check.
 
 - CEF URL getters block on the native UI loop at the pinned revision. Keep every command reaching URL authorization asynchronous and move native callback authorization off that loop; recheck shutdown and notification generations before publishing navigation. Bundling must enable the local `custom-protocol` feature as well as `tauri/cef`.

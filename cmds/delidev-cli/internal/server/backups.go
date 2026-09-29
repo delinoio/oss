@@ -25,7 +25,7 @@ func (s *Service) authorizeBackups(ctx context.Context) error {
 }
 
 func backupMessage(value store.Backup) *pb.ManagedBackup {
-	return &pb.ManagedBackup{Id: string(value.ID), SizeBytes: value.Bytes, ModifiedAt: value.ModifiedAt.Format(time.RFC3339Nano)}
+	return &pb.ManagedBackup{Id: string(value.ID), SizeBytes: value.Bytes, ModifiedAt: value.ModifiedAt.Format(time.RFC3339Nano), Revision: 1}
 }
 
 func (s *Service) ListBackups(ctx context.Context, req *connect.Request[pb.ListBackupsRequest]) (*connect.Response[pb.ListBackupsResponse], error) {

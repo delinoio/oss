@@ -2226,3 +2226,23 @@ Focused real SQLite/Connect/CLI race tests pass (store 3.751s, server 2.258s, CL
   remains unverified. This is a native accessibility/automation evidence gap,
   not proof of native unsupported behavior. macOS 13 runtime, Windows/Linux,
   account browser isolation/persistence, signing and release remain unverified.
+
+### Durable managed backup deletion (2026-09-29)
+
+- Implemented schema-21 backup deletion jobs, original inspection/revision-bound
+  acceptance, independent synchronized deletion intents, creation-replay denial,
+  joined retry maintenance and startup reconstruction after database rollback.
+  Owner/client RPC, explicit CLI confirmation and Settings inspection/confirmation
+  use the same operations; job history remains queryable after restart.
+- Real SQLite/file race tests cover concurrent identical requests, independent
+  duplicate rejection, stale metadata/revision, altered image hashes, intent-path
+  failure, recovery after original unlink without its DB receipt, old-DB replacement
+  with the external intent preserved, and backup-first migration from schema 20.
+  RPC tests cover Worker denial/current original-job replay; CLI tests drive the
+  live authenticated server/controller and require confirmation. A first CLI run
+  caught a missing automatic mutation request ID; the fixed path passed.
+- Desktop `pnpm test` passed 69 files / 800 tests, typecheck and production build;
+  API-client tests passed 41. Buf lint and breaking checks passed. Complete Go
+  race/vet and final generated drift validation are recorded after completion.
+- No physical free-space result, database restore, session deletion, Worker
+  snapshot or native Windows/Linux validation is inferred from these tests.

@@ -3,20 +3,22 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { SystemService, BackupDeletionState, newRequestId } from "@delinoio/delidev-api-client";
 import { Backups } from "./backups";
 import { MutationIntents } from "./mutation";
 
 function fixture() {
   const id = newRequestId();
-  const backup = { id, sizeBytes: 9007199254740993n, modifiedAt: "2026-09-29T00:00:00Z" };
+  const backup = { id, revision: 1n, sizeBytes: 9007199254740993n, modifiedAt: "2026-09-29T00:00:00Z" };
   const list = vi.fn(async () => ({ backups: [backup] }));
   const inspect = vi.fn(async () => ({ backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() }));
   const create = vi.fn(async (_input: unknown) => ({ id, requestId: newRequestId(), replayed: false }));
-  const transport = createRouterTransport(router => router.service(SystemService, { listBackups: list, inspectBackup: inspect, createBackup: create }));
+  const remove = vi.fn(async (_input: unknown) => ({ job: { id: newRequestId(), backupId: id, revision: 1n, state: BackupDeletionState.PENDING } }));
+  const deletions = vi.fn(async () => ({ jobs: [] }));
+  const transport = createRouterTransport(router => router.service(SystemService, { listBackups: list, inspectBackup: inspect, createBackup: create, deleteBackup: remove, listBackupDeletions: deletions }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Backups active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { id, list, inspect, create, view };
+  return { id, list, inspect, create, remove, deletions, view };
 }
 
 it("lists metadata without inspecting automatically and preserves exact byte counts", async () => {
@@ -48,4 +50,26 @@ it("retries an uncertain creation with its original request after hiding setting
   await waitFor(() => expect(f.create).toHaveBeenCalledTimes(2));
   expect(f.create.mock.calls[0]![0]).toEqual(f.create.mock.calls[1]![0]);
   await screen.findByText(`Backup created: ${f.id}`);
+});
+
+
+it("requires inspected confirmation and retains the exact deletion after an uncertain response", async () => {
+  const f = fixture();
+  f.remove.mockRejectedValueOnce(new ConnectError("Acknowledgement lost", Code.Unavailable));
+  const view = render(f.view());
+  expect(screen.queryByRole("button", { name: "Permanently delete selected backup" })).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  const button = await screen.findByRole("button", { name: "Permanently delete selected backup" });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("checkbox", { name: `I confirm permanent deletion of backup ${f.id}` }));
+  fireEvent.click(button);
+  await screen.findByRole("button", { name: "Retry the same backup deletion" });
+  const first = f.remove.mock.calls[0]![0];
+  expect(first).toMatchObject({ backup: { id: f.id, revision: 1n, sizeBytes: 9007199254740993n }, sha256: "a".repeat(64) });
+  view.rerender(f.view(false));
+  view.rerender(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same backup deletion" }));
+  await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(2));
+  expect(f.remove.mock.calls[1]![0]).toEqual(first);
+  await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
 });
