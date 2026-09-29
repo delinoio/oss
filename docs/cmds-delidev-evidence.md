@@ -3081,3 +3081,16 @@ all four harnesses and bounded credential observations. Valid failed storage
 remains a separate setup observation and does not hide a complete Worker report.
 Type checking and the prerequisite component suite pass (74 tests), including
 missing fields, unknown closed values, contradictory results and uint64 overflow.
+
+### PR #1063 real-server model selector wait repair (2026-09-29)
+
+The hosted frontend job failed while waiting for the Claude model option under
+Testing Library's default one-second deadline. The real-server fixture now
+deterministically delays the provider capability read and subsequent model query
+by 600 ms each. That reproduces the same missing-option failure before the fix;
+a bounded five-second wait passes while retaining exact model selection, persisted
+permission and invalid-edit rejection assertions. Production RPC deadlines and
+the 15-second scenario deadline are unchanged. Complete desktop `pnpm test`
+passes 74 files / 941 tests, TypeScript checking, eight native package verifier
+tests and the production build. The new hosted run is not observed in this
+one-shot repair.

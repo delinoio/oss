@@ -468,12 +468,24 @@ it("persists native Claude permission selection through the desktop and real Go 
   const provider = await save(EntityKind.PROVIDER, { name: "Claude settings API", endpoint: providerOrigin, protocol: "anthropic-messages", authentication: "keyless", discovery: false });
   const model = await save(EntityKind.MODEL, { name: "Claude settings model", provider_id: provider.id, native_id: "claude-settings-fixture", harnesses: ["claude-code"], manual: true, metadata_source: "user-declared" });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  // Model choices wait for a provider-capability read and then model search.
+  // Keep both real RPCs and exercise ordinary delayed replies deterministically;
+  // the component-test library's default one-second wait is not a server SLA.
+  const slowTransport: Transport = {
+    ...transport,
+    async unary(method, signal, timeoutMs, header, input, contextValues) {
+      if ((method.name === "ListProviderInventory" && (input as { pageSize?: number }).pageSize === 200) || method.name === "SearchModels") {
+        await new Promise(resolve => setTimeout(resolve, 600));
+      }
+      return transport.unary(method, signal, timeoutMs, header, input, contextValues);
+    },
+  };
+  render(<TransportProvider transport={slowTransport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
   change("Name", "Native Claude settings"); change("Harness", "claude-code");
-  await screen.findByRole("option", { name: "Claude settings model" });
+  await screen.findByRole("option", { name: "Claude settings model" }, { timeout: 5000 });
   change("Model", model.id); change("Claude permission mode", "dontAsk");
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await screen.findByRole("heading", { name: "Native Claude settings" });
