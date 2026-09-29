@@ -14,6 +14,7 @@ const validText = (v: string, limit: number) => !v.includes("\0") && !/[\uD800-\
 export function NativeClaudeResponse({ resource, questions, closed, accepted, draft, saveDraft, submissionAllowed = true, receiptRetryAllowed = true }: { resource: Resource; questions?: ClaudeQuestion[]; closed: boolean; accepted: (value?: Resource) => void; draft?: InteractionDraftState; saveDraft?: (value: InteractionDraftState) => void; submissionAllowed?: boolean; receiptRetryAllowed?: boolean }) {
   const [editable, setEditable] = useEditableInteractionDraft<Extract<InteractionDraftState, { kind: InteractionDraftKind.Claude }>>(InteractionDraftKind.Claude, () => ({ kind: InteractionDraftKind.Claude, selected: questions?.map(() => []) ?? [], custom: {}, customEnabled: {}, skipped: {}, denial: false, reason: "", interrupt: false }), draft, saveDraft);
   const { selected, custom, customEnabled, skipped, denial, reason, interrupt } = editable;
+  const selectedRows = questions?.map((_, index) => selected[index] ?? []) ?? [];
   const questionMutation = useRetainedMutation(`claude-answer:${resource.id}`, InteractionQuery.respondQuestion, (r) => accepted(r.interaction));
   const approvalMutation = useRetainedMutation(`claude-approve:${resource.id}`, InteractionQuery.respondApproval, (r) => accepted(r.interaction));
   const mutation = questions ? questionMutation : approvalMutation;
@@ -36,11 +37,11 @@ export function NativeClaudeResponse({ resource, questions, closed, accepted, dr
         {interrupt ? <p>Claude will stop after this denial. Further input remains paused until the original execution is reconciled.</p> : null}
       </> : questions ? questions.map((q, i) => <fieldset key={q.question}><legend>{q.header}</legend><p>{q.question}</p>
         {q.options.map((o) => <label className="checkbox" key={o.label}><input type={q.multiSelect ? "checkbox" : "radio"} name={`claude-${resource.id}-${i}`} checked={!customEnabled[i] && !skipped[i] && (selected[i] ?? []).includes(o.label)} onChange={(event) => {
-          setEditable({ ...editable, skipped: { ...skipped, [i]: false }, customEnabled: { ...customEnabled, [i]: false }, selected: selected.map((row, index) => index !== i ? row : event.target.checked ? q.multiSelect ? [...row, o.label] : [o.label] : row.filter((v) => v !== o.label)) });
+          setEditable({ ...editable, skipped: { ...skipped, [i]: false }, customEnabled: { ...customEnabled, [i]: false }, selected: selectedRows.map((row, index) => index !== i ? row : event.target.checked ? q.multiSelect ? [...row, o.label] : [o.label] : row.filter((v) => v !== o.label)) });
         }} /><span>{o.label}<small>{o.description}</small></span></label>)}
         <label className="checkbox"><input type="checkbox" checked={customEnabled[i] ?? false} onChange={(event) => setEditable({ ...editable, customEnabled: { ...customEnabled, [i]: event.target.checked }, skipped: { ...skipped, [i]: false } })} />Use an exact custom answer for question {i + 1}</label>
         {customEnabled[i] ? <label>Custom answer for question {i + 1}<textarea value={custom[i] ?? ""} onChange={(event) => setEditable({ ...editable, custom: { ...custom, [i]: event.target.value } })} /></label> : null}
-        <label className="checkbox"><input type="checkbox" checked={skipped[i] ?? false} onChange={(event) => setEditable({ ...editable, skipped: { ...skipped, [i]: event.target.checked }, ...(event.target.checked ? { customEnabled: { ...customEnabled, [i]: false }, selected: selected.map((row, index) => index === i ? [] : row) } : {}) })} />Leave question {i + 1} unanswered</label>
+        <label className="checkbox"><input type="checkbox" checked={skipped[i] ?? false} onChange={(event) => setEditable({ ...editable, skipped: { ...skipped, [i]: event.target.checked }, ...(event.target.checked ? { customEnabled: { ...customEnabled, [i]: false }, selected: selectedRows.map((row, index) => index === i ? [] : row) } : {}) })} />Leave question {i + 1} unanswered</label>
       </fieldset>) : <p>Allow this original request with its unchanged input.</p>}
       <button className="primary" disabled={Boolean(missing) || invalid || oversized}>{denial ? "Send denial to Claude" : questions ? "Send answers to Claude" : "Allow this Claude request"}</button>
     </fieldset>
