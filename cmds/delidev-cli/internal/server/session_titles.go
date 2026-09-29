@@ -213,6 +213,14 @@ func validateSessionTitleOutput(output json.RawMessage, input domain.AuxiliaryTi
 }
 
 func finishLostSessionTitle(tx *store.Tx, record store.Record) error {
+	jobRecord, err := tx.Get(domain.JobKind, record.ID)
+	if err != nil {
+		return err
+	}
+	job, err := store.Decode[domain.Job](jobRecord)
+	if err != nil || job.Type != domain.GenerateSessionTitleJob {
+		return domain.Fail(domain.RecoveryRequired, "The revoked title job is inconsistent.", "Preserve its session and inspect the original title assignment before changing state.")
+	}
 	sr, session, err := sessionRecord(tx, record.SessionID)
 	if err != nil {
 		return err
@@ -220,8 +228,26 @@ func finishLostSessionTitle(tx *store.Tx, record store.Record) error {
 	if session.TitleJobID != record.ID || session.TitleOperationID == "" {
 		return nil
 	}
-	if session.TitleState == domain.TitleRunning || session.TitleState == domain.TitleQueued {
-		session.TitleState, session.TitleReason = domain.TitleUncertain, domain.TitleReasonCleanupUncertain
+	switch job.State {
+	case domain.JobCanceled:
+		if session.TitleState == domain.TitleRunning || session.TitleState == domain.TitleQueued {
+			session.TitleState, session.TitleReason = domain.TitleSkipped, domain.TitleReasonAuthorityLost
+		}
+	case domain.JobUncertain:
+		if session.TitleState == domain.TitleRunning || session.TitleState == domain.TitleQueued {
+			session.TitleState, session.TitleReason = domain.TitleUncertain, domain.TitleReasonCleanupUncertain
+		}
+	default:
+		return nil
+	}
+	if job.State == domain.JobCanceled && session.Archive == domain.ArchivePending && session.ActiveExecutionID == "" && session.Recovery == domain.NoRecovery {
+		stopped, err := stopSessionWorkspace(tx, &session)
+		if err != nil {
+			return err
+		}
+		if stopped && session.Recovery == domain.NoRecovery {
+			session.Archive = domain.Archived
+		}
 	}
 	_, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
 	return err

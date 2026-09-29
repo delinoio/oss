@@ -233,3 +233,74 @@ func TestReplacingExpiredWorkerPreservesUncertainty(t *testing.T) {
 		t.Fatalf("stale process reported after replacement: %v", err)
 	}
 }
+
+func TestWorkerRevocationSettlesQueuedAndClaimedTitleJobs(t *testing.T) {
+	for _, state := range []string{"queued", "claimed"} {
+		t.Run(state, func(t *testing.T) {
+			f := recoveredAutomaticTitleFixture(t)
+			_, recovery := acceptRecovery(t, f)
+			completeRecovery(t, f, recovery.ExecutionRecoveryJob)
+			initialSessionRecord, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var session domain.Session
+			if domain.Decode(initialSessionRecord.Data, &session) != nil || session.TitleJobID == "" {
+				t.Fatalf("recovery did not create a title job: %+v", session)
+			}
+			if state == "claimed" {
+				if _, err := claimTitleJob(context.Background(), f.service, f.input.MachineID, f.instance, f.device, session.TitleJobID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.archive-pending", session.TitleJobID, func(tx *store.Tx) (any, error) {
+				r, value, err := sessionRecord(tx, f.input.SessionID)
+				if err != nil {
+					return nil, err
+				}
+				value.Archive = domain.ArchivePending
+				return tx.Put(r.Kind, r.ID, r.Revision, r.ID, r.ProjectID, value)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			deviceRecord, err := f.service.Store.Get(context.Background(), domain.DeviceKind, f.device)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var device domain.Device
+			if domain.Decode(deviceRecord.Data, &device) != nil {
+				t.Fatal("could not read paired Worker before revocation")
+			}
+			devices := delidevv1connect.NewDeviceServiceClient(f.http.Client(), f.http.URL)
+			_, err = devices.RevokeDevice(context.Background(), ownerRequest(f.service.Identity, &pb.RevokeDeviceRequest{Mutation: &pb.Mutation{
+				RequestId: string(domain.NewID()), Id: string(f.device), ExpectedRevision: deviceRecord.Revision,
+			}}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			jobRecord, err := f.service.Store.Get(context.Background(), domain.JobKind, session.TitleJobID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var job domain.Job
+			if domain.Decode(jobRecord.Data, &job) != nil {
+				t.Fatal("could not read revoked title job")
+			}
+			updatedSession, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if domain.Decode(updatedSession.Data, &session) != nil {
+				t.Fatal("could not read session after Worker revocation")
+			}
+			if state == "queued" {
+				if job.State != domain.JobCanceled || session.TitleState != domain.TitleSkipped || session.TitleReason != domain.TitleReasonAuthorityLost || session.Archive != domain.Archived {
+					t.Fatalf("queued title or pending archive was not settled: job=%+v session=%+v", job, session)
+				}
+			} else if job.State != domain.JobUncertain || session.TitleState != domain.TitleUncertain || session.TitleReason != domain.TitleReasonCleanupUncertain || session.Archive != domain.ArchivePending {
+				t.Fatalf("claimed title cleanup uncertainty was lost: job=%+v session=%+v", job, session)
+			}
+		})
+	}
+}

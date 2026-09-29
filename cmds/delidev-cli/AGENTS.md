@@ -6,6 +6,8 @@
 
 - A Codex title profile probe that returns `RecoveryRequired` aborts the connected Worker before its primary lane; only a definite unsupported or absent capability may continue without automatic-title support.
 
+- Worker revocation settles queued title jobs as skipped/authority-lost and completes pending Archive when workspace ownership is clear; claimed title jobs become uncertain/cleanup-uncertain and keep Archive pending until cleanup is confirmed.
+
 - `account list` accepts optional closed `--account-type api|subscription` and `--provider-id UUID` selectors through the list-only Connect request. Preserve the unfiltered default for existing callers; filters are applied before SQL pagination and bound to cursors. Snapshots and event streams must not inherit them.
 
 - GitHub PATs use the direct OS credential service under `docs/cmds-delidev-credentials-contract.md`, separate from account wrapping material. Persist only scoped generation intents, keyed commitments and irreversible tombstones; never persist PAT payloads or unkeyed hashes. Match exact staged retries, refuse regeneration of a missing sealed entry, record denial before native deletion, and never let an old mutation affect a replacement generation. The protected server owner key is copied only for the store lifetime and cleared after joined closure. Public integration authorization, cancellation and receipts must be composed separately.

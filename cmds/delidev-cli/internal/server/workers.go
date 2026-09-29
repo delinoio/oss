@@ -672,6 +672,12 @@ func revokeMachineJobs(tx *store.Tx, machine domain.ID) error {
 				if err := finishLostNativeExecution(tx, record, job); err != nil {
 					return err
 				}
+				if job.Type == domain.GenerateSessionTitleJob {
+					if err := finishLostSessionTitle(tx, record); err != nil {
+						return err
+					}
+					continue
+				}
 				if err := finishSessionWorkspace(tx, record.ID); err != nil {
 					return err
 				}

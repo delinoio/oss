@@ -44,6 +44,8 @@ Title response usage uses purpose `session-title`, exact original session/projec
 
 The server does not call the provider directly. Only the original paired Worker can receive the assignment, and a completed conversation grant cannot authorize a title request. Title relay scope permits exactly one Responses operation and is bound to the immutable assignment. Execution registration rejects a second send claim under a new request ID; exact retries replay the original mutation receipt. A successful title report is accepted only after both the durable execution-registration send claim and the first title-relay HTTP request claim exist; typed pre-send failures may be reported without either claim. This prevents an assigned Worker from fabricating title text or usage without using the closed relay. Credentials remain in the existing protected Worker/server boundary; prompts, title text, provider responses, tokens and digests are excluded from logs.
 
+Worker revocation cancels an unassigned title and records `skipped`/`authority-lost`; a pending Archive may finish when session workspace ownership is clear. A claimed title becomes `uncertain`/`cleanup-uncertain`, and Archive stays pending until the native title runtime's cleanup is confirmed.
+
 The Worker uses a private temporary native home/work directory and joined process ownership. Cleanup must be confirmed before a successful title report. Uncertain process cleanup remains explicit and cannot trigger another native request. Fixed instructions, an effective read-only sandbox, no tools and disabled retry limits are all required; sandbox mode alone is insufficient.
 
 ## Logging
