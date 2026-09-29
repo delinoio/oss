@@ -2971,3 +2971,10 @@ backup race groups pass in domain, server, Worker and relay packages. Desktop
 `pnpm test` passes 74 files / 894 tests, type checking, eight package verifier
 tests and production build. This merge does not resolve the recorded native
 CEF Quit or Windows integration acceptance gaps.
+
+### PR #1063 LFS contract repair (2026-09-29)
+
+The CI asset contract still referenced `icon-source.png` after the verified
+retina rename. Its exact pointer/attribute assertion now targets
+`icon-source@2x.png`; all size, committed-pointer and hydration checks remain.
+The complete repository CI-contract suite passes all 95 tests locally.

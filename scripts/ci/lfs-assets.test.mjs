@@ -12,7 +12,7 @@ const assetExtensions = new Set([
   ".webp", ".woff", ".woff2", ".xlsx", ".zip",
 ]);
 const lfsAssets = [
-  "apps/delidev/src-tauri/icons/icon-source.png",
+  "apps/delidev/src-tauri/icons/icon-source@2x.png",
   "apps/devhud/src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
   "crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
   "packages/react-forge/examples/audio-studio-assets/brushed-roughness.png",
