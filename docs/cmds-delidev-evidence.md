@@ -2197,3 +2197,32 @@ Focused real SQLite/Connect/CLI race tests pass (store 3.751s, server 2.258s, CL
 - The CEF packaging check detected the old npm Tauri API minor version; it is now
   aligned to the workspace's existing `@tauri-apps/api` 2.11.1 pin. This is a
   compatibility correction, not a claim that security advisories are resolved.
+
+### Completion work validation and native CEF correction (2026-09-29)
+
+- Full `go test -race -timeout 30m ./cmds/delidev-cli/...` and `go vet
+  ./cmds/delidev-cli/...` passed. The first race run reached Go's default ten-minute
+  timeout in the Grok fixture package; its unchanged rerun completed in 889.478s.
+  API-client tests (41) and `pnpm proto:check` passed, including generated drift.
+- Root `cargo test` passed with canonical `TMPDIR=/private/tmp` after explicitly
+  building `fspy_preload_unix --features pnport`, required by the existing pnport
+  integration tests. No unrelated Rust sources changed. Native DeliDev library
+  and desktop-host tests passed (12 library plus 7 binary; 4 opt-in tests ignored).
+- `pnpm --dir apps/delidev bundle:native --debug --bundles app` produced a macOS
+  arm64 app with the Go sidecar, CEF framework and helper applications. Actual
+  bundled execution exposed a UI-loop deadlock in synchronous URL-authorizing
+  IPC handlers. A native stack sample identified the blocked CEF getter; commands
+  now run asynchronously and tray/notification navigation authorizes off-loop.
+  The bundle also explicitly enables the local custom-protocol feature required
+  by the saved-window guard.
+- In a private accountless temporary server scope, the corrected bundle opened
+  a saved authenticated server, displayed explicit prerequisite observations,
+  created a managed backup and displayed successful database/server-identity
+  inspection in Settings. No AI account, inference, PAT or Git push was used.
+  SIGTERM exited the corrected app while the independent server stayed available.
+- Saved-window HTML was visually usable but absent from the native accessibility
+  tree. UI automation timed out after the Quit shortcut, although a native stack
+  sample showed the UI loop idle rather than blocked; normal menu/shortcut quit
+  remains unverified. This is a native accessibility/automation evidence gap,
+  not proof of native unsupported behavior. macOS 13 runtime, Windows/Linux,
+  account browser isolation/persistence, signing and release remain unverified.

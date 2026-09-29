@@ -87,7 +87,7 @@ async fn connect_local(
 }
 
 #[tauri::command]
-fn local_server_status(
+async fn local_server_status(
     window: WebviewWindow<Cef>,
     supervision: tauri::State<'_, Arc<Supervision>>,
 ) -> Result<LocalServerStatus, NativeFailure> {
@@ -148,6 +148,10 @@ struct SavedBinding {
 #[derive(Default)]
 struct SavedWindows(Mutex<BTreeMap<String, SavedBinding>>);
 
+// CEF URL getters enqueue work on its UI loop and wait for a response. Every
+// command reaching this check must execute asynchronously off that loop; a
+// synchronous IPC handler can deadlock both the window and application quit.
+// Keep this boundary while the pinned runtime uses blocking URL getters.
 fn trusted_main(window: &WebviewWindow<Cef>) -> Result<(), NativeFailure> {
     if window.label() != "main"
         || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
@@ -178,7 +182,7 @@ fn saved_binding(
         .ok_or(NativeFailure::PermissionDenied)
 }
 #[tauri::command]
-fn connection_context(
+async fn connection_context(
     window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
 ) -> Result<Option<SavedConnection>, NativeFailure> {
@@ -510,7 +514,7 @@ fn create_main(app: &AppHandle<Cef>) -> tauri::Result<WebviewWindow<Cef>> {
         .build()
 }
 #[tauri::command]
-fn show_connection_manager(
+async fn show_connection_manager(
     window: WebviewWindow<Cef>,
     app: AppHandle<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,

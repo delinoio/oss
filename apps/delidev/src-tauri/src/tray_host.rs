@@ -92,7 +92,7 @@ fn authorized(window: &WebviewWindow<Cef>, windows: &SavedWindows) -> Result<(),
     }
 }
 #[tauri::command]
-pub fn begin_tray(
+pub async fn begin_tray(
     window: WebviewWindow<Cef>,
     app: AppHandle<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
@@ -118,7 +118,7 @@ pub fn begin_tray(
     Ok(scope)
 }
 #[tauri::command]
-pub fn publish_tray(
+pub async fn publish_tray(
     window: WebviewWindow<Cef>,
     app: AppHandle<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
@@ -135,7 +135,7 @@ pub fn publish_tray(
     Ok(())
 }
 #[tauri::command]
-pub fn read_tray_action(
+pub async fn read_tray_action(
     window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
@@ -157,7 +157,7 @@ pub fn read_tray_action(
     }))
 }
 #[tauri::command]
-pub fn acknowledge_tray_action(
+pub async fn acknowledge_tray_action(
     window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
@@ -484,7 +484,23 @@ fn navigate(
     inbox_id: Option<String>,
     notification_scope: Option<String>,
 ) {
+    // Tray and notification callbacks originate on the native event loop.
+    // CEF URL authorization waits for that loop, so perform it on a worker.
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        navigate_off_loop(&app, action, inbox_id, notification_scope);
+    });
+}
+fn navigate_off_loop(
+    app: &AppHandle<Cef>,
+    action: Activation,
+    inbox_id: Option<String>,
+    notification_scope: Option<String>,
+) {
     let host = app.state::<Arc<TrayHost>>();
+    if host.stop.load(Ordering::Acquire) {
+        return;
+    }
     let Some(window) = app.get_webview_window(&action.label) else {
         return;
     };
@@ -502,6 +518,14 @@ fn navigate(
         {
             return;
         }
+    }
+    if host.stop.load(Ordering::Acquire)
+        || notification_scope.as_ref().is_some_and(|scope| {
+            !app.state::<Arc<super::NotificationHost>>()
+                .current(&action.label, scope)
+        })
+    {
+        return;
     }
     if let Ok(mut state) = host.state.lock() {
         state.pending.insert(

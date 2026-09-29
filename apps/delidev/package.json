@@ -15,7 +15,7 @@
     "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
     "build:native": "pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && cargo build --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop",
     "dev:desktop": "pnpm build:native && cargo run --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop --",
-    "bundle:native": "pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && cargo run --manifest-path src-tauri/Cargo.toml --features cli --bin delidev-tauri-cli -- build --features desktop-host,tauri/cef"
+    "bundle:native": "pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && cargo run --manifest-path src-tauri/Cargo.toml --features cli --bin delidev-tauri-cli -- build --features desktop-host,custom-protocol,tauri/cef"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",

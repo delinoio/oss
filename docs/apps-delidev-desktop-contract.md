@@ -383,7 +383,8 @@ SystemService exposes owner/client backup creation, metadata pagination and expl
 
 `pnpm bundle:native` builds frontend assets and the target Go sidecar before
 invoking a package-local CLI compiled from the same immutable Tauri revision.
-It explicitly enables `tauri/cef` so the upstream bundler selects CEF resources,
+It explicitly enables the local `custom-protocol` feature so saved-window
+authorization recognizes bundled assets, and `tauri/cef` so the upstream bundler selects CEF resources,
 helper applications and platform entitlements. Pass `--debug --bundles app` on
 macOS for a local development bundle. No signing credentials or publication are
 configured by this command. The executable-only `build:native` command remains
@@ -413,3 +414,10 @@ first-page bound. Missing results from a partial page remain unknown; malformed,
 foreign and failed observations cannot leave a previous successful badge visible.
 Inactive welcome/settings presentation starts no checklist read. All results remain
 in the connection's existing nonpersistent query scope.
+
+CEF URL authorization uses blocking runtime getters at the pinned revision.
+Commands reaching those getters must run asynchronously outside the native UI
+loop. Tray and notification navigation must move authorization to a blocking
+worker and recheck shutdown and notification generations before publication.
+Otherwise the UI loop can wait for its own queued URL request and deadlock.
+Keep these safeguards until the runtime provides nonblocking getters.

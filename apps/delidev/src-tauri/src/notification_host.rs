@@ -60,7 +60,7 @@ fn instance(
     }
 }
 #[tauri::command]
-pub fn begin_notifications(
+pub async fn begin_notifications(
     window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
@@ -79,7 +79,7 @@ pub fn begin_notifications(
     Ok(scope)
 }
 #[tauri::command]
-pub fn end_notifications(
+pub async fn end_notifications(
     window: WebviewWindow<Cef>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,

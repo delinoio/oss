@@ -2,6 +2,8 @@
 
 - The first-session checklist uses authenticated status and explicitly requested doctor/configuration reads only. Keep retained Worker handshakes, connected/enabled Workers, saved account health and Agent configuration as separate observations, never a combined execution-readiness grant. Reject foreign/malformed reports, preserve incomplete inventory and failed refresh states, and do not run discovery, login, provider validation or inference from the check.
 
+- CEF URL getters block on the native UI loop at the pinned revision. Keep every command reaching URL authorization asynchronous and move native callback authorization off that loop; recheck shutdown and notification generations before publishing navigation. Bundling must enable the local `custom-protocol` feature as well as `tauri/cef`.
+
 - Desktop uses CEF at the existing immutable Tauri revision and the CEF helper entry point, with macOS 13 retained. Bind capabilities to trusted webview labels, never window-wide labels that grant future external child views app authority. Keep engine migration distinct from account-browser persistence and cleanup evidence.
 
 - DeliDev managed backup operations follow `docs/cmds-delidev-storage-contract.md`. Keep owner/client-only authorization, bounded metadata pagination, exact creation retries and source-preserving integrity inspection. Inspection must read an identity-checked private copy, reject sidecars/foreign server identity, recheck authorization after I/O and never imply restoration or credential/Worker recovery. Preserve exact byte counts and clear stale success after failed reinspection.
