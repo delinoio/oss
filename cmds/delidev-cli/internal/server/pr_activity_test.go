@@ -164,6 +164,27 @@ func TestPRActivityRPCMetadataReceiptsChronologyAndReadIndependence(t *testing.T
 	if strings.Contains(string(raw), strings.Repeat("e", 64)) {
 		t.Fatal("private verifier proof commitment entered activity")
 	}
+	// A later collection can rename the shared set without rewriting original
+	// problem versions. Historical attempts and proof navigation must survive it.
+	_, err = f.service.Store.Mutate(owner, domain.NewID(), "fixture.rename-current-pr-set", nil, func(tx *store.Tx) (any, error) {
+		row, current, err := tx.GetPRProblemSet(domain.ID(collected.Msg.ProblemSet.Id))
+		if err != nil {
+			return nil, err
+		}
+		current.Target.Owner, current.Target.Name = "renamed-owner", "renamed-repo"
+		return tx.Put(row.Kind, row.ID, row.Revision, "", "", current)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err = client.ListActivity(context.Background(), ownerRequest(f.service.Identity, &pb.ListActivityRequest{}))
+	if err != nil {
+		t.Fatal("repository rename invalidated historical activity", err)
+	}
+	afterRename, _ := protojson.Marshal(page.Msg)
+	if string(afterRename) != string(raw) {
+		t.Fatal("repository rename rewrote original activity navigation metadata")
+	}
 	err = f.service.Store.Read(owner, func(tx *store.Tx) error {
 		proof, err := store.Decode[domain.PRHandlingVerification](verified)
 		if err != nil {

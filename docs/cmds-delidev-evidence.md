@@ -3244,3 +3244,14 @@ same fixture's `unavailable` workspace-reader classification at the preceding
 workspace observation failure; it does not establish its root cause or repair.
 The latest PR activity server race check, including mutation-invalidated cursor
 rejection, passed in 4.673s.
+
+### PR #1118 original navigation through repository rename
+
+A controlled current-set rename reproduced `RecoveryRequired` for an older
+reservation before the fix (server PR activity target 8.697s). Historical
+attempt membership now checks stable remote PR identity without comparing
+mutable current repository labels. Dedicated verification navigation uses the
+immutable original problem target rather than the current shared set. The same
+loopback test requires the entire activity response to remain byte-identical
+after that rename, including the proof entry; it passed under race in 5.686s.
+This is retained-source verification, not real provider rename acceptance.

@@ -128,11 +128,13 @@ func activityEntry(tx *store.Tx, r store.Record) (*pb.ActivityEntry, error) {
 			if readErr != nil || proof.Validate() != nil {
 				return nil, invalidActivity()
 			}
-			_, set, readErr := tx.GetPRProblemSet(proof.SetID)
+			_, original, readErr := tx.GetPRProblem(proof.Problems[0].ID)
 			if readErr != nil {
 				return nil, readErr
 			}
-			target := set.Target
+			// Original version navigation is immutable even when later collection
+			// changes the current set's repository owner or name.
+			target := original.Target
 			v = domain.PRActivity{Version: 1, Type: domain.PRActivityRecord, Action: domain.PRActivityVerifiedHandled, SourceID: r.ID, SourceRevision: r.Revision, VerificationID: r.ID, SetID: proof.SetID, RemoteRepositoryID: target.RemoteRepositoryID, PullRequestID: target.PullRequestID, Number: target.Number, Owner: target.Owner, Name: target.Name, Problems: proof.Problems, Actor: proof.Actor}
 		} else {
 			v, err = store.Decode[domain.PRActivity](r)
@@ -221,7 +223,7 @@ func validatePRActivitySource(tx *store.Tx, activity store.Record, v domain.PRAc
 		if err != nil {
 			return err
 		}
-		if r.Revision < v.SourceRevision || attempt.SetID != v.SetID || set.Target.Owner != v.Owner || set.Target.Name != v.Name || !slices.Equal(attempt.Problems, v.Problems) || attempt.Mode != v.Mode || v.ExecutionID != "" && v.ExecutionID != attempt.ExecutionID || v.AttemptState != domain.PRRemediationReserved && activity.SessionID != attempt.SessionID {
+		if r.Revision < v.SourceRevision || attempt.SetID != v.SetID || !slices.Equal(attempt.Problems, v.Problems) || attempt.Mode != v.Mode || v.ExecutionID != "" && v.ExecutionID != attempt.ExecutionID || v.AttemptState != domain.PRRemediationReserved && activity.SessionID != attempt.SessionID {
 			return invalidActivity()
 		}
 		return nil
