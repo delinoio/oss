@@ -73,19 +73,19 @@ function runCLI(args: string[], input?: string): Promise<string> {
   });
 }
 
-it("activates fixed presets without creating accounts or models and retains identity across off/on", async () => {
+it("starts with hosted presets on without accounts or models and retains identity across off/on", async () => {
   const providers = createClient(ProviderService, transport);
   const initial = await providers.listProviderInventory({ pageSize: 50 });
   expect(initial.capabilities).toEqual(expect.arrayContaining([ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER]));
   expect(initial.entries.filter((entry) => entry.presetId !== ProviderPresetId.UNSPECIFIED)).toHaveLength(9);
-  expect(initial.entries.every((entry) => !entry.enabled && !entry.providerId && entry.accountCountsAvailable)).toBe(true);
+  expect(initial.entries.filter((entry) => [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId)).every((entry) => !entry.enabled && !entry.providerId && entry.accountCountsAvailable)).toBe(true);
+  expect(initial.entries.filter((entry) => ![ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId)).every((entry) => entry.enabled && !!entry.providerId && entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.connectedAccounts === 0n)).toBe(true);
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
-  const turnOn = await screen.findByRole("switch", { name: "Turn on OpenAI" });
-  await waitFor(() => expect((turnOn as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(turnOn);
-  await screen.findByRole("switch", { name: "Turn off OpenAI" });
+  const turnOff = await screen.findByRole("switch", { name: "Turn off OpenAI" });
+  await waitFor(() => expect((turnOff as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByText("Account required")).toBeNull();
   let inventory = await providers.listProviderInventory({ pageSize: 50 });
   let saved = inventory.entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
   expect(saved.enabled).toBe(true);
@@ -94,8 +94,6 @@ it("activates fixed presets without creating accounts or models and retains iden
   expect((await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.ACCOUNT } })).resources).toHaveLength(0);
   expect((await providers.searchModels({ pageSize: 50 })).models).toHaveLength(0);
 
-  const turnOff = screen.getByRole("switch", { name: "Turn off OpenAI" });
-  await waitFor(() => expect((turnOff as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(turnOff);
   const turnOnAgain = await screen.findByRole("switch", { name: "Turn on OpenAI" });
   await waitFor(() => expect((turnOnAgain as HTMLButtonElement).disabled).toBe(false));

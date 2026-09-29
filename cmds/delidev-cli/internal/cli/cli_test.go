@@ -72,7 +72,7 @@ func TestVersionedCLIMutationRevisionAndMissingInput(t *testing.T) {
 		t.Fatalf("stale revision accepted: %d %+v", code, value)
 	}
 	code, value = cliRun(t, root, []string{"provider", "list"}, "")
-	if code != 0 || len(value["result"].(map[string]any)["resources"].([]any)) != 1 {
+	if code != 0 || len(value["result"].(map[string]any)["resources"].([]any)) != 7 {
 		t.Fatalf("list failed: %d %+v", code, value)
 	}
 	code, value = cliRun(t, root, []string{"provider", "edit", "--id", id}, input)
@@ -82,6 +82,10 @@ func TestVersionedCLIMutationRevisionAndMissingInput(t *testing.T) {
 	code, value = cliRun(t, root, []string{"provider", "presets"}, "")
 	if code != 0 || len(value["result"].(map[string]any)["presets"].([]any)) != 9 {
 		t.Fatalf("preset listing failed: %d %+v", code, value)
+	}
+	code, value = cliRun(t, root, []string{"provider", "create", "--preset", "openrouter", "--request-id", string(domain.NewID())}, "")
+	if code != 5 || value["error"].(map[string]any)["code"] != "conflict" {
+		t.Fatalf("seeded hosted preset did not report an existing identity: %d %+v", code, value)
 	}
 	presetArgs := []string{"provider", "create", "--preset", "openrouter", "--name", "My router", "--request-id", string(domain.NewID())}
 	code, value = cliRun(t, root, presetArgs, "")
