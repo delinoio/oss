@@ -2760,3 +2760,12 @@ The real-filesystem deletion race suite passes (7.852s), including replacement
 between initial validation and claim, preservation of an existing destination,
 late WAL/SHM/journal/pending files, interrupted directory synchronization,
 restart recovery, reopened original preservation and existing durable-job cases.
+
+### PR #1063 Worker observation contention fixture (2026-09-29)
+
+The Windows CI lifecycle fixture failed while reading replacement status because
+its bounded metadata-lock wait returned `Conflict`. The fixture now retries only
+that read within its existing 65-second observation deadline. It never repeats
+start, changes a generation, replaces credentials or suppresses other errors.
+The native macOS race fixture passes; this is not a Windows runtime result or a
+claim that the other recorded Windows Git/Grok timeouts have been repaired.
