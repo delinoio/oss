@@ -51,6 +51,7 @@ type client struct {
 	devices       delidevv1connect.DeviceServiceClient
 	workers       delidevv1connect.WorkerServiceClient
 	accounts      delidevv1connect.AccountServiceClient
+	subscriptions delidevv1connect.SubscriptionServiceClient
 	integrations  delidevv1connect.IntegrationServiceClient
 	providers     delidevv1connect.ProviderServiceClient
 	sessions      delidevv1connect.SessionServiceClient
@@ -317,8 +318,8 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(value, err)
 		}
 	case "account":
-		if len(rest) > 0 && (rest[0] == "connect" || rest[0] == "disconnect" || rest[0] == "status" || rest[0] == "validate") {
-			if rest[0] != "status" {
+		if len(rest) > 0 && (rest[0] == "connect" || rest[0] == "disconnect" || rest[0] == "status" || rest[0] == "validate" || rest[0] == "login" || rest[0] == "logout" || rest[0] == "refresh" || rest[0] == "cancel-login" || rest[0] == "login-progress") {
+			if rest[0] != "status" && rest[0] != "login-progress" {
 				ensureRequest(&o)
 			}
 			value, err := accountCommand(ctx, c, o, rest, streams)
@@ -686,6 +687,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),
 		sessions:      delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...),
 		accounts:      delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...),
+		subscriptions: delidevv1connect.NewSubscriptionServiceClient(httpClient, endpoint, opts...),
 		integrations:  delidevv1connect.NewIntegrationServiceClient(httpClient, endpoint, opts...),
 		providers:     delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...),
 		devices:       delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...),
@@ -823,6 +825,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   machine discover --id ID --revision N [--input FILE|-] [--protocol] [--wait]
   account connect --id ID --revision N (--key-stdin | --keyless)
   account disconnect --id ID --revision N
+  account login --id ID --revision N --machine-id ID [--device-code]
+  account login-progress --id ID --operation-id ID
+  account cancel-login --id ID --revision N
+  account refresh --id ID --revision N --machine-id ID
+  account logout --id ID --revision N --machine-id ID
   account validate --id ID --revision N
   account status --id ID
   integration create --input FILE|-

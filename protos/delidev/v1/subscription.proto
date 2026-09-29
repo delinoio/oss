@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package delidev.v1;
+
+import "delidev/v1/delidev.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+enum SubscriptionAction {
+  SUBSCRIPTION_ACTION_UNSPECIFIED = 0;
+  SUBSCRIPTION_ACTION_LOGIN = 1;
+  SUBSCRIPTION_ACTION_REFRESH = 2;
+  SUBSCRIPTION_ACTION_LOGOUT = 3;
+  SUBSCRIPTION_ACTION_EXECUTE = 4;
+}
+
+// Public lifecycle operations and an independently authorized protected Worker
+// lane. Bundles never enter Resource, Job, events, receipts, or execution output.
+service SubscriptionService {
+  rpc RequestSubscription(RequestSubscriptionRequest) returns (RequestSubscriptionResponse);
+  rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse);
+  rpc GetSubscriptionProgress(GetSubscriptionProgressRequest) returns (GetSubscriptionProgressResponse);
+  rpc WatchSubscription(WatchSubscriptionRequest) returns (stream WatchSubscriptionResponse);
+  rpc TakeSubscription(TakeSubscriptionRequest) returns (TakeSubscriptionResponse);
+  rpc PublishSubscriptionProgress(PublishSubscriptionProgressRequest) returns (PublishSubscriptionProgressResponse);
+  rpc FinishSubscription(FinishSubscriptionRequest) returns (FinishSubscriptionResponse);
+}
+
+message RequestSubscriptionRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  SubscriptionAction action = 3;
+  bool device_code = 4;
+}
+message RequestSubscriptionResponse {
+  Resource account = 1;
+  string operation_id = 2;
+  bool replayed = 3;
+}
+message CancelSubscriptionRequest {
+  Mutation mutation = 1;
+}
+message CancelSubscriptionResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+message GetSubscriptionProgressRequest {
+  string account_id = 1;
+  string operation_id = 2;
+}
+message GetSubscriptionProgressResponse {
+  // Short-lived presentation data, never persisted or logged.
+  string url = 1;
+  string user_code = 2;
+  bool canceled = 3;
+}
+message WatchSubscriptionRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+message WatchSubscriptionResponse {
+  Resource account = 1;
+}
+message TakeSubscriptionRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  // Original public operation or independently owned execution job.
+  string operation_id = 4;
+  SubscriptionAction action = 5;
+}
+message TakeSubscriptionResponse {
+  string lease_id = 1;
+  string generation_id = 2;
+  bytes bundle = 3;
+  uint64 lease_revision = 4;
+  bytes installation_json = 5;
+}
+message PublishSubscriptionProgressRequest {
+  string account_id = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string url = 5;
+  string user_code = 6;
+}
+message PublishSubscriptionProgressResponse {
+  bool canceled = 1;
+}
+message FinishSubscriptionRequest {
+  Mutation mutation = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string generation_id = 5;
+  bytes bundle = 6;
+  bool cleanup_confirmed = 7;
+  bool refresh_confirmed = 8;
+  bool succeeded = 9;
+}
+message FinishSubscriptionResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}

@@ -387,6 +387,7 @@ message AttachWorkerRequest {
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
   WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 = 1;
+  WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1 = 2;
 }
 message AttachWorkerResponse {
   Resource machine = 1;

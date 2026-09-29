@@ -332,3 +332,7 @@ counts without replaying acceptance or filesystem work. Regenerate Go, TypeScrip
 and Connect Query bindings together.
 
 Provider activation adds an owner/client-only `ProviderService.ListProviderInventory`, closed capability/preset enums, account-list-only `ListResourcesRequest.provider_id`, and additive `SearchModels.enabled_providers_only`. Omitted model filtering preserves existing behavior. Provider enabled and preset provenance remain optional fields in the canonical provider JSON document for legacy compatibility. Inventory capabilities let clients detect older servers that ignore filters; Workers cannot read it. See [provider activation](cmds-delidev-provider-activation-contract.md), and regenerate Go messages/Connect handlers and TypeScript Connect Query bindings together.
+
+## Managed Codex subscriptions
+
+The additive `subscription.proto` defines owner/client RequestSubscription, CancelSubscription and GetSubscriptionProgress plus separately authorized Worker WatchSubscription, TakeSubscription, PublishSubscriptionProgress and FinishSubscription. Secret bytes exist only in bounded protected Take/Finish fields, never ordinary resources/jobs/events or receipt payloads. The closed action enum, managed-Codex Worker capability and original lease revision/generation fences follow [the subscription contract](cmds-delidev-subscription-contract.md). Subscription publication registrations return no API proxy path or API relay authority. Historical account/snapshot JSON omits the optional subscription extension when absent.

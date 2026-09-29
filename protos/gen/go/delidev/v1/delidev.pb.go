@@ -342,8 +342,9 @@ func (DeviceType) EnumDescriptor() ([]byte, []int) {
 type WorkerCapability int32
 
 const (
-	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED               WorkerCapability = 0
-	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 WorkerCapability = 1
+	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1      WorkerCapability = 1
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1 WorkerCapability = 2
 )
 
 // Enum value maps for WorkerCapability.
@@ -351,10 +352,12 @@ var (
 	WorkerCapability_name = map[int32]string{
 		0: "WORKER_CAPABILITY_UNSPECIFIED",
 		1: "WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1",
+		2: "WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1",
 	}
 	WorkerCapability_value = map[string]int32{
-		"WORKER_CAPABILITY_UNSPECIFIED":               0,
-		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1": 1,
+		"WORKER_CAPABILITY_UNSPECIFIED":                    0,
+		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1":      1,
+		"WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1": 2,
 	}
 )
 
@@ -17729,10 +17732,11 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"DeviceType\x12\x1b\n" +
 	"\x17DEVICE_TYPE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12DEVICE_TYPE_CLIENT\x10\x01\x12\x16\n" +
-	"\x12DEVICE_TYPE_WORKER\x10\x02*f\n" +
+	"\x12DEVICE_TYPE_WORKER\x10\x02*\x9c\x01\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
-	"+WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1\x10\x01*\xeb\x01\n" +
+	"+WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1\x10\x01\x124\n" +
+	"0WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1\x10\x02*\xeb\x01\n" +
 	" PullRequestProblemCollectionKind\x124\n" +
 	"0PULL_REQUEST_PROBLEM_COLLECTION_KIND_UNSPECIFIED\x10\x00\x121\n" +
 	"-PULL_REQUEST_PROBLEM_COLLECTION_KIND_FEEDBACK\x10\x01\x12+\n" +

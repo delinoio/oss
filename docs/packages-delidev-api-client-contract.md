@@ -123,3 +123,7 @@ counts without replaying acceptance or filesystem work. Regenerate Go, TypeScrip
 and Connect Query bindings together.
 
 Generated `ProviderQuery` exposes bounded provider inventory and the client maps typed `provider_disabled` failures. Desktop provider/model consumers require provider activation, active-provider model filtering and account-provider filtering capabilities; split account views and their wizard additionally require `ACCOUNT_TYPE_FILTER`. Use generated inventory/model queries; do not infer availability from generic resource pages or query unfiltered providers as fallback. Preserve exact mutation requests across uncertain outcomes. See [provider activation](cmds-delidev-provider-activation-contract.md).
+
+## Managed Codex subscription clients
+
+The generated SubscriptionService/action types and closed managed-Codex Worker capability are exported with a SubscriptionQuery namespace. Owner/client lifecycle and login-presentation requests remain separate from the protected Go Worker bundle channel. Bundle bytes may never enter query keys, saved state, synchronized resources, errors or ordinary outputs. See [managed subscriptions](cmds-delidev-subscription-contract.md); generated clients alone do not enable desktop login or prove account/platform acceptance.

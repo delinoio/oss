@@ -57,36 +57,40 @@ type Service struct {
 	delidevv1connect.UnimplementedDeviceServiceHandler
 	delidevv1connect.UnimplementedWorkerServiceHandler
 	delidevv1connect.UnimplementedAccountServiceHandler
+	delidevv1connect.UnimplementedSubscriptionServiceHandler
 	delidevv1connect.UnimplementedProviderServiceHandler
 	delidevv1connect.UnimplementedIntegrationServiceHandler
-	integrationOnce    sync.Once
-	integrationGate    chan struct{}
-	integrationChecks  map[domain.ID]*integrationCheck
-	integrationSecrets integrationSecrets
-	ownedPAT           *credentials.PATStore
-	github             githubIdentity
-	githubAccess       githubRepositoryAccess
-	githubQueries      githubRepositoryQueries
-	accountOnce        sync.Once
-	accountGate        chan struct{}
-	accountChecks      map[domain.ID]map[domain.ID]accountCheck
-	accountSecrets     accountSecrets
-	ownedVault         *credentials.Vault
-	Store              *store.Store
-	Identity           security.Identity
-	Endpoint           Endpoint
-	logger             *slog.Logger
-	stop               context.CancelFunc
-	stopping           atomic.Bool
-	connectionsMu      sync.Mutex
-	connections        map[domain.ID]map[domain.ID]context.CancelFunc
-	pairAttempts       map[string]attemptWindow
-	workerStreams      map[domain.ID]workerStream
-	auxiliaryStreams   map[domain.ID]workerStream
-	workspaceReadsMu   sync.Mutex
-	workspaceReaders   map[domain.ID]*workspaceReader
-	executionOnce      sync.Once
-	executionAuthority *executionAuthority
+	integrationOnce      sync.Once
+	integrationGate      chan struct{}
+	integrationChecks    map[domain.ID]*integrationCheck
+	integrationSecrets   integrationSecrets
+	ownedPAT             *credentials.PATStore
+	github               githubIdentity
+	githubAccess         githubRepositoryAccess
+	githubQueries        githubRepositoryQueries
+	accountOnce          sync.Once
+	accountGate          chan struct{}
+	accountChecks        map[domain.ID]map[domain.ID]accountCheck
+	accountSecrets       accountSecrets
+	ownedVault           *credentials.Vault
+	subscriptionOnce     sync.Once
+	subscriptionEpoch    domain.ID
+	subscriptionProgress map[domain.ID]subscriptionProgress
+	Store                *store.Store
+	Identity             security.Identity
+	Endpoint             Endpoint
+	logger               *slog.Logger
+	stop                 context.CancelFunc
+	stopping             atomic.Bool
+	connectionsMu        sync.Mutex
+	connections          map[domain.ID]map[domain.ID]context.CancelFunc
+	pairAttempts         map[string]attemptWindow
+	workerStreams        map[domain.ID]workerStream
+	auxiliaryStreams     map[domain.ID]workerStream
+	workspaceReadsMu     sync.Mutex
+	workspaceReaders     map[domain.ID]*workspaceReader
+	executionOnce        sync.Once
+	executionAuthority   *executionAuthority
 }
 
 func LoadEndpoint(root string) (Endpoint, error) {
@@ -205,6 +209,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	child, stop := context.WithCancel(ctx)
 	defer stop()
 	service := &Service{Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
+		return err
+	}
 	defer service.closeAccountSecrets()
 	defer service.closeIntegrationSecrets()
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())
@@ -317,6 +324,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	mux.Handle(delidevv1connect.NewDeviceServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewWorkerServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewAccountServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewSubscriptionServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewProviderServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewIntegrationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewSessionServiceHandler(s, options...))
