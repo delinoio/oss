@@ -2393,10 +2393,13 @@ request and stream retries were zero; the temporary probe, title home/work
 directory and owned process records were removed.
 
 This evidence used no login, user account, external provider or real billing;
-the response and usage came from the deterministic local fixture. The frontend
-`pnpm test` run on the merged branch passes 70 files / 843 tests, TypeScript
-checking and production build, including loading, empty-page, permission-denied
-and connection-failure selector states. Proto lint, breaking and generation-freshness
-checks pass. Native Tauri screenshot/keyboard acceptance at 960×640, hosted
+the response and usage came from the deterministic local fixture. Before the
+latest-main merge, the frontend `pnpm test` run passed 70 files / 843 tests.
+After merging current main, the frontend `pnpm test` command passes 72 files /
+856 tests, TypeScript checking and the production build, including loading,
+empty-page, permission-denied, connection-failure and new-session selector
+states. `go vet ./cmds/delidev-cli/...`, focused race tests for the server,
+store, worker, domain and API proxy packages, and `pnpm proto:check` pass on the
+merged branch. Native Tauri screenshot/keyboard acceptance at 960×640, hosted
 provider/account behavior and cross-platform native title inference remain
 unverified. Generated app/client `dist` output is removed after validation.
