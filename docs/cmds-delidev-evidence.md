@@ -2198,9 +2198,10 @@ passes. The required default `go test -race ./cmds/delidev-cli/...` invocation
 hits Go's 10-minute package timeout in the existing Grok
 `TestQuestionControllerOriginalClaimsAndUncertainty/question-foreign-proposal`
 fixture while its helper waits for profile inspection; the other packages,
-including the changed usage packages, report pass. The complete command is
-being rerun with a 30-minute package timeout; its result will replace this
-pending note before PR handoff. The app suite passes 69 files /
+including the changed usage packages, report pass. The complete suite passes
+with `go test -race -timeout 30m ./cmds/delidev-cli/...`; Grok completed in
+876.760s, server in 417.567s, store in 144.471s, worker in 212.671s and
+workspace in 390.328s. The app suite passes 69 files /
 809 tests, TypeScript type-checking and production build. Generated API client
 lint, 3 files / 41 tests and build pass; protocol lint and breaking checks pass.
 Repeated `pnpm proto:generate` leaves generated files byte-for-byte unchanged.
