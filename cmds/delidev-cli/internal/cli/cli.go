@@ -863,7 +863,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   usage pricing get --model-id ID
   usage pricing version --id ID
   usage pricing set --model-id ID --model-revision M --revision N --input PATH [--request-id ID]
-  usage summary [--from RFC3339] [--until RFC3339] [--session-id ID] [--project-id ID | --general-chat] [--account-id ID] [--provider-id ID] [--model-id ID]
+  usage summary [--from RFC3339] [--until RFC3339] [--granularity day --timezone IANA] [--session-id ID] [--project-id ID | --general-chat] [--account-id ID] [--provider-id ID] [--model-id ID]
   activity list [--session-id ID] [--project-id ID] [--limit N] [--page-token TOKEN]
   search --query TEXT [--session-id ID] [--project-id ID] [--agent-id ID] [--account-id ID]
     [--outcome all|not-started|running|succeeded|failed|stopped] [--archive all|active|archiving|archived]

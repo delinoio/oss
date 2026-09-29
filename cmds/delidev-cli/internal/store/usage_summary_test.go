@@ -15,6 +15,169 @@ func readUsage(s *Store, f domain.UsageSelection) (domain.UsageSummary, error) {
 	err := s.Read(context.Background(), func(tx *Tx) error { var err error; result, err = tx.UsageSummary(f); return err })
 	return result, err
 }
+
+func writeUsageAt(t *testing.T, s *Store, record domain.ResponseUsageRecord, observed time.Time) domain.ID {
+	t.Helper()
+	id := domain.NewID()
+	if _, _, err := writeResponse(s, id, record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("UPDATE response_usage SET created_at=? WHERE id=?", observed.UnixMilli(), id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func usageCounts(input, output, total int64) *domain.NativeTokenCounts {
+	cached, reasoning := int64(0), int64(0)
+	return &domain.NativeTokenCounts{Input: &input, Cached: &cached, Output: &output, Reasoning: &reasoning, Total: &total}
+}
+
+func TestUsageSummaryDailyAndModelAnalyticsShareRetentionSnapshot(t *testing.T) {
+	s, _ := openTest(t)
+	fixture := seedSearch(t, s, "source", domain.Archived)
+	zone, err := time.LoadLocation("Asia/Seoul")
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := time.Date(2026, 9, 1, 0, 0, 0, 0, zone)
+	until := time.Date(2026, 9, 5, 12, 0, 0, 0, zone)
+	provider, modelA, modelB := domain.NewID(), domain.NewID(), domain.NewID()
+	base := responseRecord(fixture)
+	base.ProviderID, base.ModelID = provider, modelA
+	price := preparePrice(t, s, base)
+	if _, err := s.db.Exec("UPDATE pricing_versions SET created_at=? WHERE id=?", time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC).UnixMilli(), price.ID); err != nil {
+		t.Fatal(err)
+	}
+	write := func(model domain.ID, input, output, total int64, at time.Time, digest int) {
+		record := base
+		record.ModelID = model
+		record.Sequence = uint64(digest)
+		record.Usage.ResponseDigest = fmt.Sprintf("%064x", digest)
+		if total < 0 {
+			record.Usage.Counts = nil
+		} else {
+			record.Usage.Counts = usageCounts(input, output, total)
+		}
+		writeUsageAt(t, s, record, at)
+	}
+	write(modelA, 100, 20, 120, time.Date(2026, 9, 1, 12, 0, 0, 0, zone), 1)
+	write(modelA, 0, 0, 0, time.Date(2026, 9, 2, 12, 0, 0, 0, zone), 2)
+	write(modelB, 0, 0, -1, time.Date(2026, 9, 3, 12, 0, 0, 0, zone), 3)
+	write(modelA, 20, 10, 30, time.Date(2026, 9, 5, 10, 0, 0, 0, zone), 4)
+	write(modelB, 10, 5, 15, time.Date(2026, 9, 5, 11, 0, 0, 0, zone), 5)
+	write(modelA, 900, 100, 1000, from.Add(-time.Millisecond), 6)
+	write(modelA, 900, 100, 1000, until, 7)
+	missing := seedSearch(t, s, "accepted without response", domain.NotArchived)
+	if _, err := s.db.Exec("UPDATE entities SET created_at=? WHERE kind='job' AND json_extract(body,'$.input.execution_id')=?", time.Date(2026, 9, 4, 12, 0, 0, 0, zone).UnixMilli(), missing.execution); err != nil {
+		t.Fatal(err)
+	}
+	// A duplicate publication preserves the response's first-retention timestamp.
+	duplicate := base
+	duplicate.Sequence++
+	duplicate.Usage.ResponseDigest = fmt.Sprintf("%064x", 1)
+	duplicate.Usage.Counts = usageCounts(100, 20, 120)
+	if retained, replayed, err := writeResponse(s, domain.NewID(), duplicate); err != nil || !replayed {
+		t.Fatalf("duplicate response was not deduplicated: %s %t %v", retained, replayed, err)
+	}
+	selection := domain.UsageSelection{From: from, Until: until, Granularity: domain.UsageTimeGranularityDay, TimeZone: "Asia/Seoul"}
+	summary, err := readUsage(s, selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Totals.Responses != 5 || summary.Totals.Total.KnownTotal != "165" || summary.Totals.Total.MeasuredResponses != 4 || summary.Totals.Total.UnavailableResponses != 1 || summary.AcceptedExecutionsWithoutResponse != 1 {
+		t.Fatalf("wrong overall total or coverage: %+v", summary)
+	}
+	if summary.Analytics == nil || summary.Analytics.TimeZone != "Asia/Seoul" || len(summary.Analytics.Days) != 5 {
+		t.Fatalf("daily analytics missing or not clipped: %+v", summary.Analytics)
+	}
+	wantTotals := []string{"120", "0", "", "", "45"}
+	wantResponses := []uint32{1, 1, 1, 0, 2}
+	wantMeasured := []uint32{1, 1, 0, 0, 2}
+	wantUnavailable := []uint32{0, 0, 1, 0, 0}
+	for i, day := range summary.Analytics.Days {
+		measure := day.Totals.Total
+		if measure.KnownTotal != wantTotals[i] || day.Totals.Responses != wantResponses[i] || measure.MeasuredResponses != wantMeasured[i] || measure.UnavailableResponses != wantUnavailable[i] {
+			t.Fatalf("day %d lost zero/missing/no-record distinction: %+v", i, day)
+		}
+		if i > 0 && !summary.Analytics.Days[i-1].Until.Equal(day.From) {
+			t.Fatalf("day buckets have a gap: %+v", summary.Analytics.Days)
+		}
+	}
+	if summary.Analytics.Days[0].Totals.Total.KnownTotal != "120" || !summary.Analytics.Days[0].From.Equal(from) || !summary.Analytics.Days[4].Until.Equal(until) {
+		t.Fatalf("day buckets used pricing time or changed the selected endpoints: %+v", summary.Analytics.Days)
+	}
+	models := summary.Analytics.Models
+	if len(models) != 2 || models[0].ModelID != modelA || models[0].Totals.Total.KnownTotal != "150" || models[1].ModelID != modelB || models[1].Totals.Total.KnownTotal != "15" || models[1].Totals.Total.UnavailableResponses != 1 || summary.Analytics.OtherModels != nil {
+		t.Fatalf("model totals did not reconcile with overall total: %+v", summary.Analytics)
+	}
+	if models[0].Totals.Total.KnownTotal != "150" || summary.Totals.Total.KnownTotal != "165" {
+		t.Fatal("daily/model/overall totals do not reconcile")
+	}
+	legacy, err := readUsage(s, domain.UsageSelection{From: from, Until: until})
+	if err != nil || legacy.Analytics != nil {
+		t.Fatalf("unspecified granularity changed the original summary shape: %+v %v", legacy, err)
+	}
+}
+
+func TestUsageSummaryModelRankingAndOtherModels(t *testing.T) {
+	for _, scenario := range []struct {
+		name   string
+		values []int64
+		other  string
+	}{
+		{name: "ranked zeros", values: []int64{100, 90, 80, 70, 60, 0, 0, -1}, other: "0"},
+		{name: "nonzero other", values: []int64{100, 90, 80, 70, 60, 50, 40, -1}, other: "90"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			s, _ := openTest(t)
+			fixture := seedSearch(t, s, "source", domain.NotArchived)
+			base := responseRecord(fixture)
+			provider := domain.NewID()
+			for index, total := range scenario.values {
+				record := base
+				record.ProviderID = provider
+				record.ModelID = domain.NewID()
+				record.Sequence = uint64(index + 1)
+				record.Usage.ResponseDigest = fmt.Sprintf("%064x", index+1)
+				if total < 0 {
+					record.Usage.Counts = nil
+				} else {
+					record.Usage.Counts = usageCounts(total, 0, total)
+				}
+				writeUsageAt(t, s, record, time.Date(2026, 9, 1, index, 0, 0, 0, time.UTC))
+			}
+			selection := domain.UsageSelection{From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), Until: time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC), Granularity: domain.UsageTimeGranularityDay, TimeZone: "UTC"}
+			summary, err := readUsage(s, selection)
+			if err != nil || summary.Analytics == nil || len(summary.Analytics.Models) != len(scenario.values) {
+				t.Fatalf("missing complete model analytics: %+v %v", summary.Analytics, err)
+			}
+			if summary.Analytics.Models[0].Totals.Total.KnownTotal != "100" || summary.Analytics.Models[1].Totals.Total.KnownTotal != "90" {
+				t.Fatalf("models are not exactly ranked: %+v", summary.Analytics.Models)
+			}
+			if summary.Analytics.Models[len(summary.Analytics.Models)-1].Totals.Total.MeasuredResponses != 0 {
+				t.Fatalf("unmeasured model was ranked as zero: %+v", summary.Analytics.Models)
+			}
+			other := summary.Analytics.OtherModels
+			if other == nil || other.ModelCount != 2 || other.Totals.Total.KnownTotal != scenario.other || other.Totals.Total.MeasuredResponses != 2 {
+				t.Fatalf("other models did not aggregate only the measured groups after five: %+v", other)
+			}
+		})
+	}
+}
+
+func TestSortUsageAnalyticsModelsUsesExactIntegerAndOriginalIdTuple(t *testing.T) {
+	models := []domain.UsageAnalyticsModel{
+		{ProviderID: "provider-b", ModelID: "model-a", Totals: domain.UsageTotals{Total: domain.UsageMeasure{KnownTotal: "18446744073709551614", MeasuredResponses: 1}}},
+		{ProviderID: "provider-a", ModelID: "model-b", Totals: domain.UsageTotals{Total: domain.UsageMeasure{KnownTotal: "18446744073709551614", MeasuredResponses: 1}}},
+		{ProviderID: "provider-a", ModelID: "model-a", Totals: domain.UsageTotals{Total: domain.UsageMeasure{KnownTotal: "9", MeasuredResponses: 1}}},
+		{ProviderID: "provider-a", ModelID: "model-c", Totals: domain.UsageTotals{Total: domain.UsageMeasure{UnavailableResponses: 1}}},
+	}
+	domain.SortUsageAnalyticsModels(models)
+	if models[0].ProviderID != "provider-a" || models[0].ModelID != "model-b" || models[1].ProviderID != "provider-b" || models[1].ModelID != "model-a" || models[2].Totals.Total.KnownTotal != "9" || models[3].Totals.Total.KnownTotal != "" {
+		t.Fatalf("model ordering rounded totals or used labels: %+v", models)
+	}
+}
 func usageWindow() domain.UsageSelection {
 	return domain.UsageSelection{From: time.Now().Add(-time.Hour), Until: time.Now().Add(time.Hour)}
 }
@@ -135,6 +298,14 @@ func TestUsageSummaryHalfOpenTimeZeroAndGroupBounds(t *testing.T) {
 	assertCode(t, err, domain.ResourceExhausted)
 	if summary.Totals.Responses != 0 || len(summary.Groups) != 0 {
 		t.Fatal("bound returned misleading partial total")
+	}
+	dailyBound := usageWindow()
+	dailyBound.Granularity = domain.UsageTimeGranularityDay
+	dailyBound.TimeZone = "UTC"
+	summary, err = readUsage(s, dailyBound)
+	assertCode(t, err, domain.ResourceExhausted)
+	if summary.Analytics != nil || summary.Totals.Responses != 0 || len(summary.Groups) != 0 {
+		t.Fatal("daily analytics capacity failure returned a partial summary")
 	}
 	narrow := usageWindow()
 	narrow.ModelID = record.ModelID
