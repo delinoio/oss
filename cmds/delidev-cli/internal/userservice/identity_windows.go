@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
@@ -63,11 +64,29 @@ func verifyProcess(s Spec, r runtimeRecord) error {
 	}
 	buf := make([]uint16, 32768)
 	n := uint32(len(buf))
-	if windows.QueryFullProcessImageName(h, 0, &buf[0], &n) != nil || !strings.EqualFold(windows.UTF16ToString(buf[:n]), s.Binary) {
+	if windows.QueryFullProcessImageName(h, 0, &buf[0], &n) != nil || verifyProcessImage(s, windows.UTF16ToString(buf[:n])) != nil {
 		return failure()
 	}
 	p, err = process.ProcessIdentity(r.PID)
 	if err != nil || p.Birth != r.Birth {
+		return failure()
+	}
+	return nil
+}
+
+func verifyProcessImage(s Spec, image string) error {
+	// Win32 can report an 8.3 spelling from process creation, while installation
+	// retains EvalSymlinks' long spelling. Resolve both observations under the
+	// same path contract, then require the original file identity as well.
+	if !filepath.IsAbs(image) {
+		return failure()
+	}
+	canonical, err := filepath.EvalSymlinks(image)
+	if err != nil || !strings.EqualFold(canonical, s.Binary) {
+		return failure()
+	}
+	identity, err := fileIdentity(canonical)
+	if err != nil || identity != s.BinaryIdentity {
 		return failure()
 	}
 	return nil
