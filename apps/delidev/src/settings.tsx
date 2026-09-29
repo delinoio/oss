@@ -4,7 +4,7 @@ import { Integrations } from "./integrations";
 import { ConfigurationTransfer } from "./configuration-transfer";
 import { ModelPricing } from "./pricing";
 import { NotificationSettings } from "./notification-settings";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { ConfigurationQuery, EntityKind, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -42,7 +42,9 @@ export function ConfigurationEditor({ kind, initial, active, saved, cancel }: { 
   </form>;
 }
 
+export enum SettingsEntryDestination { Repositories = "repositories" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations }
+enum SettingsWorkflow { Integrations = "integrations", Notifications = "notifications", Transfer = "transfer" }
 enum SettingsCategory {
   Providers = "providers", Models = "models", Accounts = "accounts", AgentWorkers = "agent-workers", Instructions = "instructions",
   Projects = "projects", Repositories = "repositories", ExecutionWorkers = "execution-workers", PairedDevices = "paired-devices",
@@ -94,7 +96,7 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
   return <svg className="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={settingsIcons[category]} /></svg>;
 }
 
-export function Settings({ close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string }) {
+export function Settings({ close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }) {
   const [selectedCategory, setSelectedCategory] = useState(SettingsCategory.Providers);
   const [device, setDevice] = useState<Resource>();
   const [page, setPage] = useState("");
@@ -102,8 +104,9 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   const [machine, setMachine] = useState<Resource>();
   const [deleting, setDeleting] = useState<Resource>();
   const [routing, setRouting] = useState<Resource>();
-  const [account, setAccount] = useState<Resource>();
+ const [account, setAccount] = useState<Resource>();
  const [pricing,setPricing]=useState<Resource>();
+  const [childWorkflows, setChildWorkflows] = useState<ReadonlySet<SettingsWorkflow>>(() => new Set());
   const client = useQueryClient();
   const selected = settingsCategories[selectedCategory];
   const area = selected.area;
@@ -113,10 +116,27 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
     : kind === EntityKind.MACHINE && !controlLocalWorker ? "Configure these entries through the DeliDev CLI."
     : selected.description;
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration });
-  const categoryLocked = Boolean(editing || account || deleting || routing || machine || device || pricing);
+  const reportChildWorkflow = useCallback((workflow: SettingsWorkflow, active: boolean) => setChildWorkflows((current) => {
+    if (current.has(workflow) === active) return current;
+    const next = new Set(current);
+    if (active) next.add(workflow); else next.delete(workflow);
+    return next;
+  }), []);
+  const reportIntegrationWorkflow = useCallback((active: boolean) => reportChildWorkflow(SettingsWorkflow.Integrations, active), [reportChildWorkflow]);
+  const reportTransferWorkflow = useCallback((active: boolean) => reportChildWorkflow(SettingsWorkflow.Transfer, active), [reportChildWorkflow]);
+  const reportNotificationWorkflow = useCallback((active: boolean) => reportChildWorkflow(SettingsWorkflow.Notifications, active), [reportChildWorkflow]);
+  const parentWorkflow = Boolean(editing || account || deleting || routing || machine || device || pricing);
+  const workflowProtected = parentWorkflow || childWorkflows.size > 0;
+  const categoryLocked = workflowProtected;
   const configurationList = area === SettingsArea.Configuration && !categoryLocked;
   const successfulEmptyFirstPage = !page && Boolean(result.data && result.data.resources.length === 0 && !result.error && !result.data.nextPageToken);
   const hidePagination = successfulEmptyFirstPage;
+  useEffect(() => {
+    if (!visible || entryDestination !== SettingsEntryDestination.Repositories || workflowProtected) return;
+    setSelectedCategory(SettingsCategory.Repositories);
+    setPage("");
+    destinationConsumed?.();
+  }, [destinationConsumed, entryDestination, visible, workflowProtected]);
   const chooseCategory = (category: SettingsCategory) => {
     setSelectedCategory(category);
     if (settingsCategories[category].area === SettingsArea.Configuration) setPage("");
@@ -150,9 +170,9 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
           </div> : null}
         </div>
         <div className="settings-panels">
-          <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} showCategoryIntro={false} /></div>
-          <div hidden={area !== SettingsArea.Transfer}><ConfigurationTransfer active={visible && area === SettingsArea.Transfer} showCategoryIntro={false} /></div>
-          <div hidden={area !== SettingsArea.Notifications}><NotificationSettings active={visible && area === SettingsArea.Notifications} showCategoryIntro={false} /></div>
+          <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} showCategoryIntro={false} onWorkflowReadyChange={reportIntegrationWorkflow} /></div>
+          <div hidden={area !== SettingsArea.Transfer}><ConfigurationTransfer active={visible && area === SettingsArea.Transfer} showCategoryIntro={false} onWorkflowReadyChange={reportTransferWorkflow} /></div>
+          <div hidden={area !== SettingsArea.Notifications}><NotificationSettings active={visible && area === SettingsArea.Notifications} showCategoryIntro={false} onWorkflowReadyChange={reportNotificationWorkflow} /></div>
           <div hidden={area !== SettingsArea.Diagnostics}><Doctor active={visible && area === SettingsArea.Diagnostics} showCategoryIntro={false} /></div>
           <div hidden={area !== SettingsArea.Configuration}>
             {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
