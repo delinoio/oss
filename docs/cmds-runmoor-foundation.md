@@ -78,6 +78,8 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 
 launchd and systemd user services invoke the same foreground manager and drain control path. Definitions contain executable/config references only, never copied credential values. File credential references are recommended for restart persistence. A manager-only failure must not implicitly kill detached live work. Install does not overwrite existing definitions; uninstall preserves configuration, images and unresolved state.
 
+Every Linux `systemctl --user` invocation, including service installation and uninstallation `daemon-reload`, receives the normal minimal command environment plus `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS` only when the caller supplied them. Runmoor does not invent session selectors or inherit other caller variables for service commands. Missing or unreachable user-session context remains a safe dependency failure without exposing environment values or subprocess stderr. The shared `minimalEnv` remains unchanged for Tart, guests, and unrelated subprocesses.
+
 A launchd bootout failure is returned as a safe dependency error and leaves the plist intact unless a separate exact-service query returns service-not-found and the GUI domain remains reachable. An arbitrary query failure or a still-loaded definition cannot count as a successful stop or uninstall.
 
 ## Storage
@@ -160,6 +162,13 @@ Use `log/slog` text or JSON for lifecycle transitions, preparation duration, ret
 - Extracted the public macOS arm64 archive in a temporary directory and executed `runmoor version`, which returned `runmoor 0.1.3 (514ff0a2af4c79a9448b3148c512e416e0b00cf6)`. Temporary downloaded archives and extracted executables were removed; no user installation or service was changed.
 - The same release workflow completed all 60 jobs successfully, including native stable-repository publication and all 26 public Linux installation checks. Native package availability and evidence are recorded in `docs/repository-linux-packages-contract.md`.
 - Confirmed preservation of the immutable, asset-free `runmoor@v0.1.1` release (ID `392272909`) and the unpublished `runmoor@v0.1.2` draft with eight assets (ID `392298946`). This release verification does not certify live runner assignment or real Tart execution.
+
+### Linux user-session service environment validation (2026-09-29, issue #1010)
+
+- Service environment fixtures preserve each supplied selector exactly, including spaces and additional `=` characters in the bus address; cover both selectors, each selector alone, and both absent. They verify unrelated fixture credentials stay out of the child environment and selectors are limited to Linux `systemctl` commands.
+- The service lifecycle fixture captures child environments across install, start, stop and uninstall, including both `daemon-reload` calls. A Linux-only failed-start fixture checks the safe dependency diagnostic, selector preservation, credential exclusion and preservation of the installed definition.
+- Passed `go test ./cmds/runmoor/...`, `go vet ./cmds/runmoor/...`, targeted race tests for the service environment/lifecycle fixtures, and Linux amd64 test-binary cross-compilation. The full race suite passed once on retry, but a later full run again hit the existing guest-bootstrap readiness timing checks in `TestGuestBootstrapConfirmsRunnerBeforeResettingPreparationFailures`; no service test failed.
+- Validation ran on macOS, so the Linux-only service lifecycle/failure fixtures and a read-only connection check against a logged-in Ubuntu user manager were not executed locally. No service was installed or changed on the host.
 
 ## Dependencies and Integrations
 
