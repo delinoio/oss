@@ -18,7 +18,7 @@ The desktop/CLI/server/Worker implementation is in progress. The 2026-09-28 part
 | Workspace preparation, Local protection, forks, snapshots | Worker-local inspection, exact reference resolution, detached multi-repository preparation, primary cwd, Local protection, General Chat isolation, durable preparation/cleanup manifests implemented; multi-repository native Codex dispatch/continuation with exact primary/runtime roots and authenticated Local existing-checkout and unborn-branch execution implemented; inspection and session preparation RPC/CLI integrated with atomic complete-manifest publication and immutable job cancellation; original-journal preparation recovery and explicit partial cleanup, including Local metadata-only cleanup, integrated; native forks and snapshots pending | Real temporary Git: subdirectory/linked inspection, detached commits, retry reuse, partial rollback, dirty Local preservation, remote fetch advancement/failure, disabled fetch, cancellation, explicit missing-default failure; real CLI/Worker General Chat/multi-repository preparation and Archive retention |
 | Sessions, queue, Steer, interactions, Plan, archive/recovery | Durable session/initial-input acceptance, ordered bounded queue, revision-checked content edits/removal tombstones, session lists/rename, workspace jobs and never-executed preparation-aware Stop/Archive/Restore integrated through Connect/CLI; accepted first Codex Worker jobs and terminal cleanup reports integrated; first-native Stop/Archive/paused Restore and bounded Worker interruption integrated; public owner non-secret question responses and journaled Worker delivery and exact live native acceptance integrated; public first dispatch/snapshot/routing, FIFO continuation, explicit Resume and selected-input Steer integrated; public approval response delivery, exact live permission acceptance and pinned single-use approval execution evidence integrated; automatic same-connection inspection after uncertain response delivery and retained completion recovery after Worker restart integrated; paired Worker Local origin and existing-checkout native execution integrated; issues #1056/#1057 add automatic title ownership/auxiliary jobs and chat-first session creation; other approval acceptance/history recovery and forks remain pending | Real SQLite/Connect/CLI acceptance/restart/replay, concurrent FIFO order, mode preservation, scoped pages, stale/cross-session edit denial, archive visibility/paused restore and uncertainty refusal; actual private Worker first-turn execution/completion and revocation verified with installed Codex and seeded readiness, and public CLI Execute/Plan first dispatch, FIFO follow-ups, Stop/Resume, selected-input Steer and post-Steer continuation pass with actual discovery and keyless loopback validation without seeded readiness; installed Codex title inference and chat-first frontend evidence are recorded below |
 | Schedules, overlap/skip/wait, durable occurrences | Calendar/storage, bounded coordinator and owner/client ScheduleService/CLI implemented, including atomic independent sessions, Overlap/Skip/Wait, offline history, cleanup-gated FIFO, Local origin and reference-deletion disabling; Project/Agent deletion preserves retained session execution under final project restrictions; remaining native harness/platform acceptance pending | Calendar/SQLite/coordinator/Connect/CLI fixtures cover timezone/DST, receipts, rollback, capacity/FIFO/history after deletion/restart, role/provenance and cursor gates; installed macOS Codex manual Run now verifies native Worktree Execute and Local Plan; a separate actual cron timer verifies Worktree Execute, independent history after deletion and continuation, all with a keyless scripted provider |
-| Terminal/files/diff/reviews/Sidechat/forwarding | Worker-backed file browsing, bounded Git comparisons and durable local review submission implemented; terminals, Sidechat and forwarding pending | Real temporary Git/Connect/SQLite and desktop component fixtures; bounded macOS native file/diff/review evidence recorded below |
+| Terminal/files/diff/reviews/Sidechat/forwarding | Worker-backed file browsing, bounded Git comparisons and durable local review submission implemented; authenticated session development-server forwarding is implemented through Go/Connect/CLI; terminals and Sidechat pending | Real temporary Git/Connect/SQLite and desktop component fixtures; bounded macOS native file/diff/review and forwarding evidence recorded below |
 | GitHub PAT/query/PR evidence/remediation | Named native PAT profiles, scoped queries/forms, PR links/diffs, active-rule/CI/reviewer evidence, durable problem versions/dismissal and remediation history/allowance implemented. Private attempt coordination, exact-head preparation, startup rejection/recovery and current workspace matching implemented; public Fix now, automatic controller/session selection and harness commit/push remain pending | Real SQLite/Connect/isolated Git, scripted GitHub and CLI/desktop tests; bounded native/form evidence below. Actual token/private/SSO acceptance deferred by the owner; no end-to-end remediation success claimed |
 | Usage/costs/budgets, diagnostics/doctor | Exact Codex response ledger, bounded RPC/CLI/dashboard summaries, immutable historical token prices and session estimated-cost budget gates/forms implemented; bounded version-2 doctor implemented. Complete native resume/child/fork/other-harness usage and remaining diagnostics still required | Real SQLite/Connect/UI tests and private installed Codex macOS scripted-provider evidence below; no hosted actual-billing or complete telemetry claim |
 | Search/activity/inbox, config import/export | Native question/approval/terminal inbox persistence and independent read-state RPC/CLI with joined current-source/session inspection and bounded pagination implemented; retained typed-message search with original-execution account filters, Archive and bounded authenticated RPC/CLI pages implemented; metadata-only execution/terminal/schedule activity RPC/CLI implemented; client-specific notification preferences/reservations and a filtered desktop Inbox list/detail workspace with typed bounded connection-memory response drafts are implemented; actual OS delivery acceptance remains pending; version-1 configuration export/preview/import is implemented for the eight editable configuration kinds with explicit machine mapping and atomic Worker validation; PR activity and additional portable surfaces remain pending | Atomic publication, source uniqueness, read-state isolation and migration/reopen fixtures; desktop `pnpm test` passes 67 files / 798 tests, type checking and production build; actual OS notification delivery remains unverified |
@@ -39,6 +39,43 @@ The TypeScript direct-Connect integration boundary is now implemented in `packag
 
 ### Inbox workspace increment (2026-09-29)
 Issue #1049 replaces the standalone Inbox cards with one persistent responsive list/detail workspace. Component coverage verifies server enum filters and 20-entry paging, revision-bound read-state changes, exact selection, sequential and overlapping notification re-reads with stale-result suppression, draft retention across selection/filter changes, and rejection of a foreign joined source. From the repository root, `apps/delidev` `pnpm test` passes all 67 files / 798 tests, TypeScript checking, API-client build and Rsbuild production build. The workspace implementation does not change the protocol or server. Tests establish frontend behavior only; native OS notification delivery and supported-platform acceptance remain unverified.
+
+### Session development-server forwarding increment (2026-09-30)
+
+Issue #1089 adds authenticated session/machine/device-bound Go/Connect/CLI
+forwarding. The client owns one explicitly selected or OS-assigned loopback
+listener; the Worker dials only the selected IPv4 loopback development port.
+Actor-bound durable receipts, one-time native claims, bounded opaque traffic,
+ordered connection frames and independent retained cleanup receipts prevent
+reconnect or response loss from reopening native lifetimes. Agent Stop preserves
+forwards; Archive, deletion and revocation close traffic authority. Every Archive
+completion path retains the independent forward cleanup gate. Additive protocol
+and client capabilities preserve older Worker behavior.
+
+On macOS arm64 with Go 1.26.8, focused real SQLite/Connect/TCP fixtures pass for
+336,000 exact bidirectional binary bytes and half-close, occupied explicit ports,
+original start/claim replay, foreign clients/sessions, revoked credentials,
+bounded traffic order/backpressure, stopped reconnect, Stop versus Archive and
+lost cleanup delivery/acknowledgment without touching a replacement listener,
+and session deletion closing both original handle lifetimes.
+Private-journal race tests also pass for missing, incomplete, changed and foreign
+original proof. A separate CLI race fixture passes through the actual paired
+Worker loop for readiness endpoint, exact bytes, status, receipt replay and Stop;
+it uses no installed harness or provider account.
+
+Package-wide Go vet passes. Generated-client tests pass 41 tests across three
+files; client and desktop type checking, Buf lint and breaking checks pass.
+`apps/delidev` `pnpm test` passes 74 files / 941 tests, eight package-verifier
+fixtures, six development-launcher tests and the production build. The initial
+full Go race invocation fails the existing CLI workspace Git-diff observation
+deadline; an isolated rerun also fails a workspace file observation deadline.
+The same isolated Git-diff fixture also fails on the unchanged base revision
+`b741cec88d68ba84eaf918bbee22ca28bff57ec6` with retained workspace recovery
+required under concurrent host test load. No full-suite pass is claimed while
+the remaining package run is unfinished. Required generated embedded assets were built for
+the root commit hook; generated repository-owned `dist` output is removed after
+validation. These temporary loopback fixtures do not establish remote TLS,
+real-account/provider, supported native desktop or release acceptance.
 
 ## Native interface discovery (not execution validation)
 - Installed read-only version/help checks: Codex CLI `0.151.0`, Claude Code `2.1.236`, OpenCode `1.18.20`. No `grok` executable was found on this machine. No user credential files were read and no inference was invoked by these checks.
