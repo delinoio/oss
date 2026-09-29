@@ -56,3 +56,74 @@ func TestJournalReusesCompletionAndPreservesInterruptedExecution(t *testing.T) {
 		t.Fatalf("changed assignment reused journal: %v", err)
 	}
 }
+
+func TestAuxiliaryTitleCapabilityRequiresServerEcho(t *testing.T) {
+	if auxiliaryTitleCapability(nil) {
+		t.Fatal("missing AttachWorker response enabled the auxiliary stream")
+	}
+	resource := func(capabilities []domain.WorkerCapability) *pb.Resource {
+		t.Helper()
+		body, err := json.Marshal(domain.Machine{Name: "Worker", OS: "darwin", Architecture: "arm64", WorkerCapabilities: capabilities})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &pb.Resource{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, SchemaVersion: 1, DocumentJson: body}
+	}
+	if auxiliaryTitleCapability(resource(nil)) || !auxiliaryTitleCapability(resource([]domain.WorkerCapability{domain.AutomaticTitlesCodexV1})) {
+		t.Fatal("auxiliary title lane did not follow the server's typed capability echo")
+	}
+	if auxiliaryTitleCapability(&pb.Resource{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, SchemaVersion: 1, DocumentJson: []byte("invalid")}) {
+		t.Fatal("malformed machine response enabled the auxiliary stream")
+	}
+}
+
+func TestTitleProfileProbeCleanupFailureStopsWorker(t *testing.T) {
+	recovery := domain.Fail(domain.RecoveryRequired, "The title probe process could not be reconciled.", "Preserve its private journal and stop the Worker.")
+	if got := fatalTitleProfileProbeError(recovery); got != recovery {
+		t.Fatalf("uncertain title probe cleanup was downgraded: %v", got)
+	}
+	unsupported := domain.Fail(domain.Unsupported, "The configured title profile is unsupported.", "Continue without automatic title capability.")
+	if got := fatalTitleProfileProbeError(unsupported); got != nil {
+		t.Fatalf("ordinary unsupported profile stopped the Worker: %v", got)
+	}
+}
+
+func TestCodexTitleExecutableUsesVerifiedConfiguredInstallation(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "custom-codex")
+	resource := func(installation domain.Installation) *pb.Resource {
+		t.Helper()
+		body, err := json.Marshal(domain.Machine{
+			Name: "Worker", OS: "darwin", Architecture: "arm64",
+			Installations: []domain.Installation{installation},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &pb.Resource{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, SchemaVersion: 1, DocumentJson: body}
+	}
+	verified := domain.Installation{
+		Harness: domain.Codex, State: domain.InstallationDetected, ResolvedPath: executable,
+		Version: domain.CodexProtocolVersion, ProtocolVerified: true,
+		Protocol: &domain.ProtocolObservation{Protocol: domain.CodexAppServer, State: domain.ProtocolVerified},
+	}
+	if got := codexTitleExecutable(resource(verified)); got != executable {
+		t.Fatalf("configured Codex executable = %q, want %q", got, executable)
+	}
+	for name, mutate := range map[string]func(*domain.Installation){
+		"missing executable":   func(i *domain.Installation) { i.ResolvedPath = "" },
+		"relative executable":  func(i *domain.Installation) { i.ResolvedPath = "codex" },
+		"wrong version":        func(i *domain.Installation) { i.Version = "0.0.0" },
+		"unverified protocol":  func(i *domain.Installation) { i.ProtocolVerified = false },
+		"wrong protocol":       func(i *domain.Installation) { i.Protocol.Protocol = domain.OpenCodeHTTP },
+		"unsupported protocol": func(i *domain.Installation) { i.Protocol.State = domain.ProtocolUnsupported },
+	} {
+		t.Run(name, func(t *testing.T) {
+			installation := verified
+			installation.Protocol = &domain.ProtocolObservation{Protocol: verified.Protocol.Protocol, State: verified.Protocol.State}
+			mutate(&installation)
+			if got := codexTitleExecutable(resource(installation)); got != "" {
+				t.Fatalf("unsupported configured installation selected executable %q", got)
+			}
+		})
+	}
+}

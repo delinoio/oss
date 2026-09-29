@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 
@@ -108,6 +109,34 @@ func TestSessionAcceptanceRestartAndCurrentReceipt(t *testing.T) {
 		if connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatal("generic configuration bypassed lifecycle")
 		}
+	}
+}
+
+func TestAutomaticSessionAcceptanceKeepsPlaceholderAndManualReceipts(t *testing.T) {
+	f := newAccountFixture(t)
+	selection, _ := sessionSelection(t, f)
+	selection.Source = domain.ManualSession
+	selection.NameMode = domain.AutomaticSessionName
+	selection.Name = ""
+	request, change := createSessionFixture(t, f, selection)
+	value := sessionBody(t, change.Session)
+	if value.Name != "New session" || value.NameMode != domain.AutomaticSessionName || value.NameOwner != domain.AutomaticNameOwner || value.NameGeneration != 1 || value.TitleState != domain.TitleWaiting || value.TitleJobID != "" {
+		t.Fatalf("automatic creation did not return its immediate placeholder: %+v", value)
+	}
+	replay, err := sessionClient(f).CreateSession(context.Background(), ownerRequest(f.identity, request))
+	if err != nil || !replay.Msg.Change.Replayed || sessionBody(t, replay.Msg.Change.Session).Name != "New session" {
+		t.Fatalf("automatic receipt replay changed creation: %v", err)
+	}
+	selection.Name = "caller supplied"
+	raw, _ := json.Marshal(selection)
+	if _, err := sessionClient(f).CreateSession(context.Background(), ownerRequest(f.identity, &pb.CreateSessionRequest{RequestId: string(domain.NewID()), DocumentJson: raw})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("automatic creation accepted a caller title: %v", err)
+	}
+	legacy := selection
+	legacy.NameMode, legacy.Name = "", "Legacy manual title"
+	legacyRaw, err := json.Marshal(legacy)
+	if err != nil || strings.Contains(string(legacyRaw), "name_mode") {
+		t.Fatalf("omitted naming mode changed the legacy request shape: %s %v", legacyRaw, err)
 	}
 }
 
