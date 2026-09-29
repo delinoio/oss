@@ -154,12 +154,15 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		if !validRunnerPath(req.RunnerPath) {
 			return nil, problem(ErrConfig, "Runner path must be an absolute clean guest path.", "Use the same absolute guest directory as runner_path in TOML, without '..', NUL or line breaks.")
 		}
-		if e := m.reserve(c, im.ID); e != nil {
-			return nil, e
-		}
 		v, e := m.Tart.vm(ctx, c, im.VM)
 		if e != nil {
 			return nil, m.imageFailure(im.ID, e)
+		}
+		if e = validateTartGuestOS(v.OS); e != nil {
+			return nil, m.imageFailure(im.ID, e)
+		}
+		if e := m.reserve(c, im.ID); e != nil {
+			return nil, e
 		}
 		if !v.Running {
 			if _, e = m.Tart.Exec.Start(c.TartExecutable, []string{"run", "--no-graphics", "--no-audio", im.VM}, tartEnv(c)); e != nil {

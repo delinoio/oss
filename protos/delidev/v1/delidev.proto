@@ -148,6 +148,12 @@ message GetStatusResponse {
   string listener = 5;
   string started_at = 6;
   bool stopping = 7;
+  repeated SystemCapability capabilities = 8;
+}
+enum SystemCapability {
+  SYSTEM_CAPABILITY_UNSPECIFIED = 0;
+  // Session creation can opt into server-owned, Worker-executed automatic titles.
+  SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 = 1;
 }
 message StopServerRequest {
   string request_id = 1;
@@ -258,6 +264,8 @@ service WorkerService {
   rpc ReportWorkspaceRead(ReportWorkspaceReadRequest) returns (ReportWorkspaceReadResponse);
   rpc AttachWorker(AttachWorkerRequest) returns (AttachWorkerResponse);
   rpc WatchWork(WatchWorkRequest) returns (stream WatchWorkResponse);
+  // An independent lane. Older Workers remain primary-only.
+  rpc WatchAuxiliaryWork(WatchAuxiliaryWorkRequest) returns (stream WatchAuxiliaryWorkResponse);
   rpc ReportWork(ReportWorkRequest) returns (ReportWorkResponse);
   rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
   rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
@@ -374,6 +382,11 @@ message AttachWorkerRequest {
   string machine_id = 2;
   string instance_id = 3;
   string version = 4;
+  repeated WorkerCapability capabilities = 5;
+}
+enum WorkerCapability {
+  WORKER_CAPABILITY_UNSPECIFIED = 0;
+  WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 = 1;
 }
 message AttachWorkerResponse {
   Resource machine = 1;
@@ -382,6 +395,16 @@ message AttachWorkerResponse {
 message WatchWorkRequest {
   string machine_id = 1;
   string instance_id = 2;
+}
+message WatchAuxiliaryWorkRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+message WatchAuxiliaryWorkResponse {
+  Resource job = 1;
+  bool heartbeat = 2;
+  string cancel_job_id = 3;
+  bool cancel_requested = 4;
 }
 message WatchWorkResponse {
   Resource job = 1;

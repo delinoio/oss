@@ -98,7 +98,7 @@ pagination (20 default, 99 maximum). The same request returns the current origin
 job. Other requests cannot replace an accepted deletion, and Workers cannot call
 these operations. A queued acceptance is not proof of file removal.
 
-Schema 23 adds a backup-to-job/request index after the main provider migrations in 21 and 22 through the existing synchronized
+Schema 24 combines the backup-to-job/request index and automatic-title usage/claims after the main provider migrations in 21 and 22 through the existing synchronized
 backup-first migration. Deletions use the existing durable job and request-receipt
 infrastructure. Backup creation/inspection/deletion share a server lock; accepted
 SQL ownership immediately prevents an old creation request from recreating the
@@ -197,13 +197,15 @@ observed successful revision refreshes the image inventory. Failed refreshes are
 stale/unavailable, not success. Dismissing terminal tracking frees local capacity
 without deleting server history, canceling work or repeating acceptance.
 
-Schema 23 follows main's provider-activation schema 21 and hosted defaults in 22. Upgrading a pre-merge
+Schema 24 follows main's provider activation in 21, hosted defaults in 22 and the separate backup/title layouts of version 23. Upgrading a pre-merge
 schema-21 backup database recognizes its existing deletion table, adds the
 missing provider preset index and retains every job, receipt and external
 obligation. Both schema-21 layouts receive a verified pre-migration backup;
 index creation and version advancement commit atomically or leave the original
-database intact. Fresh schema-23 stores include both indexes and hosted defaults from initialization.
+database intact. Fresh schema-24 stores include both indexes and hosted defaults from initialization.
 A pre-merge schema-22 backup database retains its deletion table/jobs and receives
 hosted defaults once. Main schema 22 already applied defaults: add only the
 deletion table and preserve later explicit provider deletions, identities and Off
 settings. Detect the prior layout before changing either table or version.
+
+Both version-23 layouts migrate to 24 under the same pre-migration backup and transaction. The backup layout gains the missing title usage column, index and send/HTTP claim tables; the title layout gains the backup deletion index. Preserve existing usage attribution, original job identities, both once-only claims and explicit provider deletions. Never queue title inference or reseed providers while merging these layouts.

@@ -212,14 +212,19 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return err
 		}
 	}
-	if existingDeletionTable {
-		if _, err := tx.ExecContext(ctx, "PRAGMA user_version=23;"); err != nil {
-			return storageError(err)
-		}
-	} else {
+	if !existingDeletionTable {
 		if _, err := tx.ExecContext(ctx, backupDeletionSchema); err != nil {
 			return storageError(err)
 		}
+	}
+	// Main and the unmerged backup branch both used schema 23. The title
+	// migration inspects its own column and creates only missing indexes and
+	// claim tables, preserving existing usage and one-time inference claims.
+	if err := applySessionTitleSchema(ctx, tx); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "PRAGMA user_version=24;"); err != nil {
+		return storageError(err)
 	}
 	return storageError(tx.Commit())
 }

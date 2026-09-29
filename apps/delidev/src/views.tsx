@@ -1,19 +1,15 @@
-import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   ActivityKind, ActivityQuery, EntityKind, ResourceQuery,
-  SearchArchiveState, SearchExecutionOutcome, SearchQuery, SessionQuery, newRequestId,
+  SearchArchiveState, SearchExecutionOutcome, SearchQuery,
 } from "@delinoio/delidev-api-client";
-import { document, encode, items, Mode, object, resourceName, text, Workspace } from "./documents";
-import { useRetainedMutation } from "./mutation";
-import { Modal, Problem } from "./ui";
+import { document, text } from "./documents";
+import { Problem } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
-import { StartingReferences } from "./schedules";
-import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { SidebarSurface, useCloseSidebarDrawer, useSidebarDrawerOpen } from "./sidebar-context";
 
-export enum Surface { Sessions = "sessions", PullRequests = "pull-requests", Usage = "usage", Schedules = "schedules", Activity = "activity", Inbox = "inbox", Search = "search" }
+export enum Surface { Sessions = "sessions", NewSession = "new-session", PullRequests = "pull-requests", Usage = "usage", Schedules = "schedules", Activity = "activity", Inbox = "inbox", Search = "search" }
 function Pager({ page, next, setPage, busy }: { page: string; next?: string; setPage: (value: string) => void; busy: boolean }) {
   return <nav aria-label="Results pages"><button disabled={!page || busy} onClick={() => setPage("")}>First page</button><button disabled={!next || busy} onClick={() => setPage(next!)}>Next page</button></nav>;
 }
@@ -84,44 +80,3 @@ export function Activity({ active, open }: { active: boolean; open: (id: string)
 }
 
 export { Settings } from "./settings";
-
-export function CreateSession({ close, open, visible, readLocalWorker }: { close: () => void; open: (id: string) => void; visible: boolean; readLocalWorker?: ReadLocalWorkerProof }) {
-  const local = useLocalWorkerProof(readLocalWorker);
-  const [workspace, setWorkspace] = useState(Workspace.Worktree);
-  const [project, setProject] = useState("");
-  const [agent, setAgent] = useState("");
-  const [machine, setMachine] = useState("");
-  const [name, setName] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState(Mode.Execute);
-  const [starting, setStarting] = useState<unknown[]>([]);
-  const [promptLimit, setPromptLimit] = useState(false);
- const [budget,setBudget]=useState(emptyBudget);
- const [budgetProblem,setBudgetProblem]=useState("");
-  const selectedProject = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: project }, { enabled: visible && Boolean(project) });
-  const mutation = useRetainedMutation("create-session", SessionQuery.createSession, (result) => { if (result.change?.session) { setPrompt(""); setName(""); open(result.change.session.id); close(); } });
-  const restrictions = object(document(selectedProject.data?.resource).agents);
-  const blocked = mutation.busy || mutation.uncertain || local.busy;
-  const submit = async () => {
-    if (blocked) return;
-    let estimatedBudget;
-    try {estimatedBudget=budgetInput(budget);setBudgetProblem("");} catch(error){setBudgetProblem(error instanceof Error ? error.message : "Review the budget.");return;}
-    const selection = { estimated_cost_budget: estimatedBudget, name, prompt, agent_id: agent, machine_id: machine, project_id: project || undefined, workspace: project ? workspace : Workspace.GeneralChat, starting: project && workspace === Workspace.Worktree ? starting : undefined, mode, source: "MANUAL" };
-    const proof = selection.workspace === Workspace.Local ? await local.load(machine) : undefined;
-    if (selection.workspace === Workspace.Local && !proof) return;
-    void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), localWorkerToken: proof?.token });
-  };
-  return <Modal title="New session" close={close} visible={visible}><form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-    <fieldset disabled={blocked}><label>Name<input autoFocus required maxLength={256} value={name} onChange={(event) => setName(event.target.value)} /></label>
-      <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={project} active={visible} change={(id) => { setProject(id); setAgent(""); setStarting([]); setWorkspace(Workspace.Worktree); }} />
-      {project ? <><p>A separate detached worktree is prepared for every project repository. Select Local explicitly to use this computer's original checkouts as-is.</p><div className="actions"><button type="button" aria-pressed={workspace === Workspace.Worktree} onClick={() => setWorkspace(Workspace.Worktree)}>Use separate Worktrees</button><button type="button" disabled={!local.available} aria-pressed={workspace === Workspace.Local} onClick={() => { void local.load().then((proof) => { if (proof) { setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }}>Use this computer's Local checkouts</button></div>{workspace === Workspace.Local ? <p>Existing local checkouts are shared explicitly, including their current branches and uncommitted changes. No fetch or starting-reference selection occurs.</p> : <StartingReferences key={project} project={project} starting={starting} change={setStarting} active={visible} />}</> : <p>General Chat uses an isolated projectless directory on the selected Worker.</p>}
-      <ResourceChoice label="Agent Worker" kind={EntityKind.AGENT} value={agent} active={visible} required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} change={setAgent} />
-      {restrictions.configured === true && items(restrictions.ids).length === 0 ? <p>This project explicitly allows no Agent Workers. Update its restrictions before creating a session.</p> : null}
-      <ResourceChoice label="Execution Worker" kind={EntityKind.MACHINE} value={machine} active={visible} disabled={Boolean(project) && workspace === Workspace.Local} required change={setMachine} />
-      <label>Mode<select value={mode} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>Execute</option><option value={Mode.Plan}>Plan</option></select></label>
-      <details><summary>Optional estimated-cost budget</summary><BudgetFields draft={budget} change={setBudget} /></details>
-      <label>First message<textarea required rows={5} maxLength={262144} value={prompt} onChange={(event) => { const value = event.target.value; if (new TextEncoder().encode(value).byteLength > 256 << 10) { setPromptLimit(true); return; } setPrompt(value); setPromptLimit(false); }} /></label><button className="primary" disabled={!agent || !machine || !name.trim() || !prompt.trim()}>Create session</button>
-    </fieldset>{budgetProblem ? <p role="alert">{budgetProblem}</p> : null}<Problem error={mutation.error} />{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same session creation</button> : null}
-    <Problem error={selectedProject.error} />{local.problem ? <p role="alert">{local.problem}</p> : null}{promptLimit ? <p role="alert">The first message exceeds 256 KiB. The previous draft is retained.</p> : null}
-  </form></Modal>;
-}

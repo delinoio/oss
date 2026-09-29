@@ -154,6 +154,9 @@ const (
 	WorkerServiceAttachWorkerProcedure = "/delidev.v1.WorkerService/AttachWorker"
 	// WorkerServiceWatchWorkProcedure is the fully-qualified name of the WorkerService's WatchWork RPC.
 	WorkerServiceWatchWorkProcedure = "/delidev.v1.WorkerService/WatchWork"
+	// WorkerServiceWatchAuxiliaryWorkProcedure is the fully-qualified name of the WorkerService's
+	// WatchAuxiliaryWork RPC.
+	WorkerServiceWatchAuxiliaryWorkProcedure = "/delidev.v1.WorkerService/WatchAuxiliaryWork"
 	// WorkerServiceReportWorkProcedure is the fully-qualified name of the WorkerService's ReportWork
 	// RPC.
 	WorkerServiceReportWorkProcedure = "/delidev.v1.WorkerService/ReportWork"
@@ -1331,6 +1334,8 @@ type WorkerServiceClient interface {
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
 	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest]) (*connect.ServerStreamForClient[v1.WatchWorkResponse], error)
+	// An independent lane. Older Workers remain primary-only.
+	WatchAuxiliaryWork(context.Context, *connect.Request[v1.WatchAuxiliaryWorkRequest]) (*connect.ServerStreamForClient[v1.WatchAuxiliaryWorkResponse], error)
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
 	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
@@ -1374,6 +1379,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+WorkerServiceWatchWorkProcedure,
 			connect.WithSchema(workerServiceMethods.ByName("WatchWork")),
+			connect.WithClientOptions(opts...),
+		),
+		watchAuxiliaryWork: connect.NewClient[v1.WatchAuxiliaryWorkRequest, v1.WatchAuxiliaryWorkResponse](
+			httpClient,
+			baseURL+WorkerServiceWatchAuxiliaryWorkProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("WatchAuxiliaryWork")),
 			connect.WithClientOptions(opts...),
 		),
 		reportWork: connect.NewClient[v1.ReportWorkRequest, v1.ReportWorkResponse](
@@ -1433,6 +1444,7 @@ type workerServiceClient struct {
 	reportWorkspaceRead   *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
 	attachWorker          *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
 	watchWork             *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
+	watchAuxiliaryWork    *connect.Client[v1.WatchAuxiliaryWorkRequest, v1.WatchAuxiliaryWorkResponse]
 	reportWork            *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
 	inspectRepository     *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
 	discoverHarnesses     *connect.Client[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse]
@@ -1461,6 +1473,11 @@ func (c *workerServiceClient) AttachWorker(ctx context.Context, req *connect.Req
 // WatchWork calls delidev.v1.WorkerService.WatchWork.
 func (c *workerServiceClient) WatchWork(ctx context.Context, req *connect.Request[v1.WatchWorkRequest]) (*connect.ServerStreamForClient[v1.WatchWorkResponse], error) {
 	return c.watchWork.CallServerStream(ctx, req)
+}
+
+// WatchAuxiliaryWork calls delidev.v1.WorkerService.WatchAuxiliaryWork.
+func (c *workerServiceClient) WatchAuxiliaryWork(ctx context.Context, req *connect.Request[v1.WatchAuxiliaryWorkRequest]) (*connect.ServerStreamForClient[v1.WatchAuxiliaryWorkResponse], error) {
+	return c.watchAuxiliaryWork.CallServerStream(ctx, req)
 }
 
 // ReportWork calls delidev.v1.WorkerService.ReportWork.
@@ -1509,6 +1526,8 @@ type WorkerServiceHandler interface {
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
 	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest], *connect.ServerStream[v1.WatchWorkResponse]) error
+	// An independent lane. Older Workers remain primary-only.
+	WatchAuxiliaryWork(context.Context, *connect.Request[v1.WatchAuxiliaryWorkRequest], *connect.ServerStream[v1.WatchAuxiliaryWorkResponse]) error
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
 	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
@@ -1548,6 +1567,12 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		WorkerServiceWatchWorkProcedure,
 		svc.WatchWork,
 		connect.WithSchema(workerServiceMethods.ByName("WatchWork")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceWatchAuxiliaryWorkHandler := connect.NewServerStreamHandler(
+		WorkerServiceWatchAuxiliaryWorkProcedure,
+		svc.WatchAuxiliaryWork,
+		connect.WithSchema(workerServiceMethods.ByName("WatchAuxiliaryWork")),
 		connect.WithHandlerOptions(opts...),
 	)
 	workerServiceReportWorkHandler := connect.NewUnaryHandler(
@@ -1608,6 +1633,8 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 			workerServiceAttachWorkerHandler.ServeHTTP(w, r)
 		case WorkerServiceWatchWorkProcedure:
 			workerServiceWatchWorkHandler.ServeHTTP(w, r)
+		case WorkerServiceWatchAuxiliaryWorkProcedure:
+			workerServiceWatchAuxiliaryWorkHandler.ServeHTTP(w, r)
 		case WorkerServiceReportWorkProcedure:
 			workerServiceReportWorkHandler.ServeHTTP(w, r)
 		case WorkerServiceInspectRepositoryProcedure:
@@ -1647,6 +1674,10 @@ func (UnimplementedWorkerServiceHandler) AttachWorker(context.Context, *connect.
 
 func (UnimplementedWorkerServiceHandler) WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest], *connect.ServerStream[v1.WatchWorkResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchWork is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) WatchAuxiliaryWork(context.Context, *connect.Request[v1.WatchAuxiliaryWorkRequest], *connect.ServerStream[v1.WatchAuxiliaryWorkResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchAuxiliaryWork is not implemented"))
 }
 
 func (UnimplementedWorkerServiceHandler) ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error) {
