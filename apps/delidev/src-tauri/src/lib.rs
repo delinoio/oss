@@ -26,6 +26,9 @@ pub use connections::{
     RemovedConnections, SavedConnection, SavedConnectionState, canonical_id, connection_origin,
 };
 
+mod desktop_recovery;
+pub use desktop_recovery::{DesktopRegistration, DesktopRegistrationState};
+
 mod local_worker;
 pub use local_worker::{LocalWorkerAction, LocalWorkerState, LocalWorkerStatus};
 
@@ -260,6 +263,11 @@ impl Connector {
         ])?;
         let metadata: DeviceMetadata =
             serde_json::from_value(metadata).map_err(|_| NativeFailure::InvalidEvidence)?;
+        self.read_local_connection(metadata)
+    }
+
+    fn read_local_connection(&self, metadata: DeviceMetadata) -> Result<Connection> {
+        let client_root = self.root.join("desktop-client");
         // Go enforces platform-specific privacy and strict credential validation
         // before this fixed file is read. No owner material crosses the bridge.
         let inspected = self.run(&[

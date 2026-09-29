@@ -596,4 +596,12 @@
 
 - Backup creation recovery must independently match the published image's server identity to the live scope. Validate immutable SQLite images without adjacent WAL/SHM/journal state, preserving foreign or corrupt originals instead of adopting them by filename. Migration backup validation follows the same sidecar refusal.
 
+- Explicit local desktop recovery follows the desktop and CLI contracts: only original local owner authority may replace a positively verified revoked fixed-scope client. Preserve its original request/revision, archived private files and candidate pairing journal; gate partial publication with stable recovery/pairing locks, reject lost/altered evidence, and never turn bootstrap, supervision, inspection or a lost receipt into a fresh registration. Keep owner secrets out of IPC and retain all server/session/Worker state. The desktop hides and independently guards current-client revocation; other-device/owner administration remains available.
+
+- Revoked desktop eligibility must bind the entire credential, including token and pairing identity, to the private commitment retained after fresh authenticated local pairing or a prior immutable completed recovery receipt. Synchronize fresh proof before publishing the active credential or retiring the pending pairing journal; interruptions must retry that exact accepted pairing. Never reconstruct missing original proof from revoked metadata or ordinary reuse; legacy revoked scopes without proof remain recovery-required.
+
+- Require and validate the original local desktop pairing journal and its request-bound grant before revoked eligibility or recovery intent. Both original credential and pairing commitments are mandatory on journal load; validate archived pairing ownership on retries and never reconstruct absent original pairing evidence.
+
+- Enforce the optional desktop `--expected-endpoint` guard against the authenticated owner client before any recovery journal, archive or pairing mutation. The guard never selects another endpoint, and a mismatch preserves the original credential and all recovery state.
+
 - DeliDev API provider activation follows `docs/cmds-delidev-provider-activation-contract.md`. Preserve missing-enabled legacy semantics, immutable managed preset identity, unique preset activation across writes/imports, metadata-only structured logs, and transaction-order admission. Never revoke a committed current-turn grant when a provider is turned Off.
