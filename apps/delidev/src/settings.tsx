@@ -4,7 +4,7 @@ import { Integrations } from "./integrations";
 import { ConfigurationTransfer } from "./configuration-transfer";
 import { ModelPricing } from "./pricing";
 import { NotificationSettings } from "./notification-settings";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { ConfigurationQuery, EntityKind, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -20,21 +20,32 @@ import { useRetainedMutation } from "./mutation";
 import { Modal, Problem } from "./ui";
 import { PairingGrant, type PairingAuthority } from "./pairing-grant";
 
-export function ConfigurationEditor({ kind, initial, active, saved, cancel }: { kind: EntityKind; initial?: Resource; active: boolean; saved: () => void; cancel: () => void }) {
+export function ConfigurationEditor({ kind, initial, active, saved, cancel, focusName = false, nameFocused }: { kind: EntityKind; initial?: Resource; active: boolean; saved: () => void; cancel: () => void; focusName?: boolean; nameFocused?: () => void }) {
   const [data, setData] = useState<Document>(() => initial ? document(initial) : newConfiguration(kind));
   const [job, setJob] = useState<Resource | "unknown">();
   const [childPending, setChildPending] = useState(false);
   const [problem, setProblem] = useState("");
+  const form = useRef<HTMLFormElement>(null);
   const current = useQuery(ResourceQuery.getResource, { kind, id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
   const mutation = useRetainedMutation(`configuration:${kind}:${initial?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result) => { if (result.job) setJob(result.job); else if (result.resource) saved(); else setJob("unknown"); });
   const stale = Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
   const blocked = mutation.busy || mutation.uncertain;
+  useEffect(() => {
+    if (!active || !focusName || kind !== EntityKind.PROJECT || initial || blocked) return;
+    const frame = window.requestAnimationFrame(() => {
+      const name = form.current?.querySelector<HTMLInputElement>("input");
+      if (!name || name.disabled) return;
+      name.focus();
+      nameFocused?.();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active, blocked, focusName, initial, kind, nameFocused]);
   const change = (value: Document) => {
     if (encode(value).byteLength > 1 << 20 || (kind === EntityKind.TEMPLATE && new TextEncoder().encode(text(value.contents)).byteLength > 128 << 10)) { setProblem("This configuration is too large. Shorten the text before adding more content."); return; }
     setData(value); setProblem("");
   };
   if (job) return <section><h3>{kindNames[kind]} save accepted</h3>{job === "unknown" ? <p role="alert">The server acknowledged this request without a readable result. Inspect its receipt before starting another save.</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>Configuration saved after Worker validation.</p><button onClick={saved}>Done</button></> : state === JobState.Failed || state === JobState.Canceled ? <button onClick={() => setJob(undefined)}>Return to retained draft</button> : null}</TrackedJob>}</section>;
-  return <form onSubmit={(event) => { event.preventDefault(); if (blocked || childPending || stale || (initial && current.error)) return; void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: 1, documentJson: encode(data) }); }}>
+  return <form ref={form} onSubmit={(event) => { event.preventDefault(); if (blocked || childPending || stale || (initial && current.error)) return; void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: 1, documentJson: encode(data) }); }}>
     <h3>{initial ? "Edit" : "New"} {kindNames[kind]}</h3>
     <fieldset disabled={blocked}><ConfigurationFields kind={kind} data={data} change={change} active={active} existing={Boolean(initial)} pendingOperation={setChildPending} /></fieldset>
     {stale ? <p role="alert">This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving.</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error || mutation.error} />
@@ -42,7 +53,7 @@ export function ConfigurationEditor({ kind, initial, active, saved, cancel }: { 
   </form>;
 }
 
-export enum SettingsEntryDestination { Repositories = "repositories" }
+export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations }
 enum SettingsWorkflow { Integrations = "integrations", Notifications = "notifications", Transfer = "transfer" }
 
@@ -58,6 +69,8 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   const [account, setAccount] = useState<Resource>();
  const [pricing,setPricing]=useState<Resource>();
   const [childWorkflows, setChildWorkflows] = useState<ReadonlySet<SettingsWorkflow>>(() => new Set());
+  const [focusNewProjectName, setFocusNewProjectName] = useState(false);
+  const handledDestination = useRef<SettingsEntryDestination | undefined>(undefined);
   const client = useQueryClient();
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration });
   const tabs = [[EntityKind.PROVIDER, "Providers"], [EntityKind.MODEL, "Models"], [EntityKind.ACCOUNT, "AI accounts"], [EntityKind.AGENT, "Agent Workers"], [EntityKind.TEMPLATE, "Instructions"], [EntityKind.PROJECT, "Projects"], [EntityKind.REPOSITORY, "Repositories"], [EntityKind.MACHINE, "Execution Workers"], [EntityKind.DEVICE, "Paired devices"], [EntityKind.SETTINGS, "Server preferences"]] as const;
@@ -73,12 +86,30 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   const parentWorkflow = Boolean(editing || account || deleting || routing || machine || device || pricing);
   const workflowProtected = parentWorkflow || childWorkflows.size > 0;
   useEffect(() => {
-    if (!visible || entryDestination !== SettingsEntryDestination.Repositories || workflowProtected) return;
-    setKind(EntityKind.REPOSITORY);
+    if (!entryDestination) {
+      handledDestination.current = undefined;
+      return;
+    }
+    if (!visible || handledDestination.current === entryDestination) return;
+    if (entryDestination === SettingsEntryDestination.NewProject && editing && kind === EntityKind.PROJECT && !editing.initial) {
+      handledDestination.current = entryDestination;
+      destinationConsumed?.();
+      return;
+    }
+    if (workflowProtected) return;
     setArea(SettingsArea.Configuration);
     setPage("");
+    if (entryDestination === SettingsEntryDestination.Repositories) {
+      setKind(EntityKind.REPOSITORY);
+    } else {
+      setKind(EntityKind.PROJECT);
+      setEditing({ key: newRequestId() });
+      setFocusNewProjectName(true);
+    }
+    handledDestination.current = entryDestination;
     destinationConsumed?.();
-  }, [destinationConsumed, entryDestination, visible, workflowProtected]);
+  }, [destinationConsumed, editing, entryDestination, kind, visible, workflowProtected]);
+  const projectNameFocused = useCallback(() => setFocusNewProjectName(false), []);
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
   return <Modal title="Settings" close={close} visible={visible}><nav aria-label="Settings categories">{tabs.map(([value, label]) => <button key={value} disabled={parentWorkflow} aria-pressed={area === SettingsArea.Configuration && kind === value} onClick={() => { setKind(value); setArea(SettingsArea.Configuration); setPage(""); }}>{label}</button>)}<button disabled={parentWorkflow} aria-pressed={area === SettingsArea.Integrations} onClick={() => setArea(SettingsArea.Integrations)}>Integrations</button><button disabled={parentWorkflow} aria-pressed={area === SettingsArea.Diagnostics} onClick={() => setArea(SettingsArea.Diagnostics)}>Diagnostics</button><button disabled={parentWorkflow} aria-pressed={area === SettingsArea.Notifications} onClick={() => setArea(SettingsArea.Notifications)}>Notifications</button><button disabled={parentWorkflow} aria-pressed={area === SettingsArea.Transfer} onClick={() => setArea(SettingsArea.Transfer)}>Import / Export</button></nav>
     <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} onWorkflowReadyChange={reportIntegrationWorkflow} /></div>
@@ -88,7 +119,7 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
     <div hidden={area !== SettingsArea.Configuration}>
     {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
     {pairingAuthority ? <div hidden={kind !== EntityKind.DEVICE || Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} /></div> : null}
-    {pricing ? <ModelPricing model={pricing} active={visible} close={() => {setPricing(undefined);void result.refetch();}} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={() => { setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={kind} initial={editing.initial} active={visible} saved={done} cancel={() => setEditing(undefined)} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : <>
+    {pricing ? <ModelPricing model={pricing} active={visible} close={() => {setPricing(undefined);void result.refetch();}} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={() => { setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={kind} initial={editing.initial} active={visible} saved={done} cancel={() => setEditing(undefined)} focusName={focusNewProjectName} nameFocused={projectNameFocused} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : <>
       <header><p>Saved on the selected server.</p><button onClick={() => void result.refetch()}>Refresh settings</button></header>
       {editableKinds.includes(kind) && (kind !== EntityKind.SETTINGS || result.data?.resources.length === 0) ? <button className="primary" disabled={kind === EntityKind.SETTINGS && Boolean(result.error || result.isFetching)} onClick={() => setEditing({ key: newRequestId() })}>New {kindNames[kind]}</button> : kind === EntityKind.DEVICE ? <p>Pair devices using a short-lived document. Local Worker registration is available in Execution Workers.</p> : kind === EntityKind.MACHINE && !controlLocalWorker ? <p>Configure these entries through the DeliDev CLI.</p> : null}
       <Problem error={result.error} />{result.data?.resources.map((row) => { const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</h3>{kind === EntityKind.DEVICE ? <DeviceDetails resource={row} currentDeviceId={currentDeviceId} /> : null}{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small>{kind === EntityKind.REPOSITORY ? <><RepositoryGitHubAccess selected={row} active={visible && area === SettingsArea.Configuration} /><RepositoryGitHubItems selected={row} active={visible && area === SettingsArea.Configuration} /></> : null}<div className="actions">{kind === EntityKind.DEVICE && data.revoked === false ? <button disabled={row.schemaVersion !== 1} onClick={() => setDevice(row)}>Revoke {resourceName(row)}</button> : null}{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}>Delete {resourceName(row)}</button> : null}{kind === EntityKind.MODEL ? <button disabled={row.schemaVersion !== 1} onClick={() => setPricing(row)}>Token pricing</button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>Preview routing</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>Inspect installed harnesses</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}</div></article>; })}

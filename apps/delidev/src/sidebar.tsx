@@ -52,11 +52,12 @@ function SidebarButton({ label, icon, current, onClick, className = "" }: { labe
   </button>;
 }
 
-function QueryProblem({ error, hasData, label }: { error: unknown; hasData: boolean; label: string }) {
+function QueryProblem({ error, hasData, label, retryLabel, fetching, retry }: { error: unknown; hasData: boolean; label: string; retryLabel: string; fetching: boolean; retry: () => void }) {
   if (!error) return null;
   const permissionDenied = error instanceof ConnectError && error.code === Code.PermissionDenied;
-  return <div className="sidebar-query-problem" role="status">
-    {hasData ? `Could not refresh ${label}. Previous data is shown.` : permissionDenied ? `You do not have permission to view ${label}.` : `Could not connect to load ${label}.`}
+  return <div className="sidebar-query-problem">
+    <span role="status">{hasData ? `Could not refresh ${label}. Previous data is shown.` : permissionDenied ? `You do not have permission to view ${label}.` : `Could not connect to load ${label}.`}</span>
+    <button type="button" aria-label={retryLabel} disabled={fetching} onClick={retry}>Retry</button>
   </div>;
 }
 
@@ -140,27 +141,20 @@ function SessionRow({ row, selected, open }: { row: Resource; selected: boolean;
   </>;
 }
 
-function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, page, setPage, includeArchived, selected, open, refreshEpoch = 0 }: {
-  projectId: string; label: string; fallback?: boolean; fallbackRows?: Resource[]; expanded: boolean; toggle: () => void; page: string; setPage: (page: string) => void; includeArchived: boolean; selected: string; open: (id: string) => void; refreshEpoch?: number;
+function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, page, setPage, includeArchived, selected, open }: {
+  projectId: string; label: string; fallback?: boolean; fallbackRows?: Resource[]; expanded: boolean; toggle: () => void; page: string; setPage: (page: string) => void; includeArchived: boolean; selected: string; open: (id: string) => void;
 }) {
   const id = projectId;
   const sessions = useQuery(SessionQuery.listSessions, { projectId: id, includeArchived, pageSize: 50, pageToken: page }, { enabled: expanded && !fallback });
   const rows = fallback ? uniqueSessions(fallbackRows) : uniqueSessions(sessions.data?.sessions ?? []);
   const loaded = fallback || sessions.data !== undefined;
-  const previousPage = useRef(page);
-  const previousRefresh = useRef(refreshEpoch);
-  useEffect(() => {
-    if (!fallback && previousRefresh.current !== refreshEpoch && expanded && page === "" && previousPage.current === "") void sessions.refetch();
-    previousRefresh.current = refreshEpoch;
-    previousPage.current = page;
-  }, [expanded, fallback, page, refreshEpoch, sessions]);
   return <section className="sidebar-project-group" data-project-id={id}>
     <button type="button" className="sidebar-project-row" aria-label={`${label}. Project ID: ${id}`} aria-expanded={expanded} onClick={toggle}>
       <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><Icon name="chevron" className={`sidebar-disclosure ${expanded ? "is-expanded" : ""}`} />
     </button>
     {fallback && expanded ? <p className="sidebar-fallback-explanation">Project details are not in the loaded project page.</p> : null}
     {expanded ? <div className="sidebar-project-sessions">
-      {!fallback ? <QueryProblem error={sessions.error} hasData={loaded} label={`${label} sessions`} /> : null}
+      {!fallback ? <QueryProblem error={sessions.error} hasData={loaded} label={`${label} sessions`} retryLabel={`Retry ${label} sessions`} fetching={sessions.isFetching} retry={() => { void sessions.refetch(); }} /> : null}
       {!fallback && sessions.isPending ? <p className="sidebar-query-state" role="status">Loading {label} sessions…</p> : null}
       {rows.map((row) => <SessionRow key={row.id} row={row} selected={selected === row.id} open={open} />)}
       {!fallback && sessions.data && !sessions.error && rows.length === 0 ? <p className="sidebar-empty">No sessions on this project page.</p> : null}
@@ -182,7 +176,10 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
   const [collapsedFallbacks, setCollapsedFallbacks] = useState<ReadonlySet<string>>(() => new Set());
   const [generalExpanded, setGeneralExpanded] = useState(true);
   const [projectPages, setProjectPages] = useState<ReadonlyMap<string, string>>(() => new Map());
-  const [refreshEpoch, setRefreshEpoch] = useState(0);
+  const [newProjectTooltip, setNewProjectTooltip] = useState<TooltipPosition>();
+  const newProjectButton = useRef<HTMLButtonElement>(null);
+  const newProjectPointerInside = useRef(false);
+  const newProjectFocused = useRef(false);
   const projects = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.PROJECT, pageSize: 50, pageToken: projectsPage } });
   const sessions = useQuery(SessionQuery.listSessions, { projectId: "", includeArchived, pageSize: 50, pageToken: globalPage });
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
@@ -199,16 +196,24 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
     return groups;
   }, [knownProjectIds, sessions.data?.sessions]);
   const generalRows = useMemo(() => uniqueSessions((sessions.data?.sessions ?? []).filter((row) => !row.projectId)), [sessions.data?.sessions]);
-  const refresh = () => {
-    const projectsAtFirst = !projectsPage;
-    const sessionsAtFirst = !globalPage;
-    setProjectsPage("");
-    setGlobalPage("");
-    setProjectPages(new Map());
-    setRefreshEpoch((current) => current + 1);
-    if (projectsAtFirst) void projects.refetch();
-    if (sessionsAtFirst) void sessions.refetch();
+  const showNewProjectTooltip = () => {
+    const rect = newProjectButton.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = Math.min(120, window.innerWidth - 16);
+    const left = rect.right + 6 + width <= window.innerWidth - 8 ? rect.right + 6 : Math.max(8, rect.left - width - 6);
+    const top = rect.bottom + 6 + 32 < window.innerHeight ? rect.bottom + 6 : Math.max(8, rect.top - 38);
+    setNewProjectTooltip({ left, top });
   };
+  const hideNewProjectTooltipWhenInactive = () => {
+    if (!newProjectPointerInside.current && !newProjectFocused.current) setNewProjectTooltip(undefined);
+  };
+  useEffect(() => {
+    if (!newProjectTooltip) return;
+    const dismiss = () => setNewProjectTooltip(undefined);
+    window.document.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
+    return () => { window.document.removeEventListener("scroll", dismiss, true); window.removeEventListener("resize", dismiss); };
+  }, [newProjectTooltip]);
   const setProjectPage = (id: string, page: string) => setProjectPages((current) => {
     const next = new Map(current);
     if (page) next.set(id, page); else next.delete(id);
@@ -253,12 +258,13 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
       </header>
       <button type="button" className="sidebar-new-session" onClick={(event) => { event.currentTarget.focus(); newSession(); }}><Icon name="plus" />New session</button>
       <div className="sidebar-list" aria-label="Project and session navigation">
-        <header className="sidebar-projects-heading"><h2>Projects</h2><button type="button" className="sidebar-refresh" aria-label="Refresh projects and sessions" onClick={refresh}><Icon name="refresh" /></button></header>
+        <header className="sidebar-projects-heading"><h2>Projects</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label="New project" onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button></header>
+        {newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>New project</div>, window.document.body) : null}
         <label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />Include archived</label>
-        <QueryProblem error={projects.error} hasData={Boolean(projects.data)} label="projects" />
+        <QueryProblem error={projects.error} hasData={Boolean(projects.data)} label="projects" retryLabel="Retry project catalog" fetching={projects.isFetching} retry={() => { void projects.refetch(); }} />
         {projects.isPending ? <p className="sidebar-query-state" role="status">Loading projects…</p> : null}
         {!projects.error && projects.data?.resources.length === 0 ? <p className="sidebar-empty">No projects on this page.</p> : null}
-        {projectRows.map((project) => <ProjectGroup key={project.id} projectId={project.id} label={projectName(project)} expanded={expandedProjects.has(project.id)} toggle={() => toggleProject(project.id)} page={projectPages.get(project.id) ?? ""} setPage={(page) => setProjectPage(project.id, page)} includeArchived={includeArchived} selected={selectedSessionId} open={openSession} refreshEpoch={refreshEpoch} />)}
+        {projectRows.map((project) => <ProjectGroup key={project.id} projectId={project.id} label={projectName(project)} expanded={expandedProjects.has(project.id)} toggle={() => toggleProject(project.id)} page={projectPages.get(project.id) ?? ""} setPage={(page) => setProjectPage(project.id, page)} includeArchived={includeArchived} selected={selectedSessionId} open={openSession} />)}
         {[...fallbackGroups].map(([id, rows]) => {
           return <ProjectGroup key={id} projectId={id} label={`Project · ${id}`} fallback fallbackRows={rows} expanded={!collapsedFallbacks.has(id)} toggle={() => toggleFallback(id)} page="" setPage={() => undefined} includeArchived={includeArchived} selected={selectedSessionId} open={openSession} />;
         })}
@@ -267,7 +273,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
           {generalExpanded ? generalRows.map((row) => <SessionRow key={row.id} row={row} selected={selectedSessionId === row.id} open={openSession} />) : null}
           {generalExpanded && sessions.data && !sessions.error && generalRows.length === 0 ? <p className="sidebar-empty">No General Chat sessions on this page.</p> : null}
         </section>
-        <QueryProblem error={sessions.error} hasData={Boolean(sessions.data)} label="sessions" />
+        <QueryProblem error={sessions.error} hasData={Boolean(sessions.data)} label="sessions" retryLabel="Retry global sessions" fetching={sessions.isFetching} retry={() => { void sessions.refetch(); }} />
         {sessions.isPending ? <p className="sidebar-query-state" role="status">Loading sessions…</p> : null}
         <nav className="sidebar-global-pager" aria-label="All sessions pages">
           <button type="button" disabled={!globalPage || sessions.isFetching} onClick={() => setGlobalPage("")}>First session page</button>

@@ -168,15 +168,84 @@ it("keeps cached rows visible and labels them as previous data after a failed re
     sessions: () => ({ sessions: [] }),
   });
   const row = await screen.findByRole("button", { name: `Cached project. Project ID: ${project.id}` });
-  fireEvent.click(screen.getByRole("button", { name: "Refresh projects and sessions" }));
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
   expect(await screen.findByText("Could not refresh projects. Previous data is shown.")).toBeTruthy();
   expect(screen.getByRole("button", { name: `Cached project. Project ID: ${project.id}` })).toBe(row);
-  expect(value.projectRequests).toHaveLength(2);
+  expect(screen.queryByRole("button", { name: "Refresh projects and sessions" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry project catalog" }));
+  await waitFor(() => expect(value.projectRequests).toHaveLength(3));
+  expect(value.projectRequests).toEqual(["", "", ""]);
+  expect(screen.getByRole("button", { name: `Cached project. Project ID: ${project.id}` })).toBe(row);
+});
+
+it("retries only the failed catalog and global-session pages", async () => {
+  const first = resource(EntityKind.PROJECT, "First project");
+  const second = resource(EntityKind.PROJECT, "Second project");
+  const global = resource(EntityKind.SESSION, "First global session");
+  let catalogNextReads = 0, globalNextReads = 0;
+  const value = mountSidebar({
+    projects: (page) => {
+      if (!page) return { resources: [first], nextPageToken: "project-next" };
+      if (++catalogNextReads === 1) throw new ConnectError("Catalog unavailable", Code.Unavailable);
+      return { resources: [second] };
+    },
+    sessions: (request) => {
+      if (request.projectId) return { sessions: [] };
+      if (!request.pageToken) return { sessions: [global], nextPageToken: "global-next" };
+      if (++globalNextReads === 1) throw new ConnectError("Sessions unavailable", Code.Unavailable);
+      return { sessions: [] };
+    },
+  });
+
+  await screen.findByRole("button", { name: `First project. Project ID: ${first.id}` });
+  fireEvent.click(screen.getByRole("button", { name: "Next project page" }));
+  expect(await screen.findByRole("button", { name: "Retry project catalog" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Next session page" }));
+  expect(await screen.findByRole("button", { name: "Retry global sessions" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retry project catalog" }));
+  expect(await screen.findByRole("button", { name: `Second project. Project ID: ${second.id}` })).toBeTruthy();
+  expect(value.projectRequests).toEqual(["", "project-next", "project-next"]);
+  expect(value.sessionRequests.map(({ projectId, pageToken }) => [projectId, pageToken])).toEqual([["", ""], ["", "global-next"]]);
+  expect(screen.getByRole("button", { name: "Retry global sessions" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retry global sessions" }));
+  await waitFor(() => expect(value.sessionRequests).toHaveLength(3));
+  expect(value.sessionRequests[2]).toMatchObject({ projectId: "", pageToken: "global-next", includeArchived: false });
+  expect(value.projectRequests).toEqual(["", "project-next", "project-next"]);
+});
+
+it("retries an expanded project's exact session page without refetching other scopes", async () => {
+  const project = resource(EntityKind.PROJECT, "Named project");
+  const row = resource(EntityKind.SESSION, "Project session", project.id);
+  let nextReads = 0;
+  const value = mountSidebar({
+    projects: () => ({ resources: [project] }),
+    sessions: (request) => {
+      if (!request.projectId) return { sessions: [] };
+      if (!request.pageToken) return { sessions: [row], nextPageToken: "project-session-next" };
+      if (++nextReads === 1) throw new ConnectError("Project sessions unavailable", Code.Unavailable);
+      return { sessions: [row] };
+    },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: `Named project. Project ID: ${project.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: "Next page of Named project sessions" }));
+  expect(await screen.findByRole("button", { name: "Retry Named project sessions" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retry Named project sessions" }));
+  await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === project.id)).toHaveLength(3));
+  expect(value.sessionRequests.filter((request) => request.projectId === project.id).map((request) => request.pageToken)).toEqual(["", "project-session-next", "project-session-next"]);
+  expect(value.projectRequests).toEqual([""]);
+  expect(value.sessionRequests.filter((request) => !request.projectId)).toHaveLength(1);
 });
 
 it("routes the icon rail only to existing destinations and opens Pull requests through Settings", async () => {
   const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }) });
   await screen.findByRole("button", { name: "Sessions" });
+  const newProject = screen.getByRole("button", { name: "New project" });
+  expect(newProject.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  expect(newProject.textContent).toBe("");
+  fireEvent.focus(newProject);
+  expect(window.document.querySelector(".sidebar-action-tooltip")?.textContent).toBe("New project");
+  fireEvent.click(newProject);
+  expect(value.openSettings).toHaveBeenCalledWith("new-project");
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   expect(value.openSettings).toHaveBeenCalledWith("repositories");
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
