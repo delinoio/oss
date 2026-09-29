@@ -194,10 +194,11 @@ func validateModels(raw json.RawMessage, profile apiProfile) error {
 
 func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returned error) {
 	phase := runtimePhase
+	started := time.Now()
 	defer func() {
 		if logger := config.Probe.Process.Logger; logger != nil {
 			if returned != nil {
-				logger.WarnContext(ctx, "Grok Build private API initialization failed", "owner_id", config.Probe.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code)
+				logger.WarnContext(ctx, "Grok Build private API initialization failed", "owner_id", config.Probe.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code, "elapsed_ms", time.Since(started).Milliseconds())
 			} else {
 				logger.InfoContext(ctx, "Grok Build private API initialized", "owner_id", config.Probe.Process.OwnerID, "profile_version", SupportedVersion)
 			}
@@ -233,7 +234,11 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if writeErr != nil || syncErr != nil || closeErr != nil || profile.check() != nil {
 		return nil, apiConfigurationError()
 	}
-	for _, cwd := range []string{prepared.Cwd, config.Workspace} {
+	for index, cwd := range []string{prepared.Cwd, config.Workspace} {
+		phase = runtimeInspectPhase
+		if index == 1 {
+			phase = workspaceInspectPhase
+		}
 		inspection := prepared
 		inspection.Cwd = cwd
 		if err := inspectProfile(ready, inspection, profile); err != nil {
@@ -267,6 +272,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if response.ErrorCode != nil || validateInitializeResult(response.Result, prepared.Cwd, &profile) != nil {
 		return nil, incompatible()
 	}
+	phase = authenticatePhase
 	response, err = connection.Call(ready, domain.NewID(), "authenticate", struct {
 		Method string `json:"methodId"`
 		Meta   struct {

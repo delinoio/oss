@@ -29,12 +29,15 @@ type ProbeConfig struct {
 type probePhase string
 
 const (
-	profilePhase    probePhase = "profile"
-	runtimePhase    probePhase = "runtime"
-	inspectPhase    probePhase = "inspect"
-	launchPhase     probePhase = "launch"
-	initializePhase probePhase = "initialize"
-	cleanupPhase    probePhase = "cleanup"
+	profilePhase          probePhase = "profile"
+	runtimePhase          probePhase = "runtime"
+	inspectPhase          probePhase = "inspect"
+	runtimeInspectPhase   probePhase = "runtime-inspect"
+	workspaceInspectPhase probePhase = "workspace-inspect"
+	authenticatePhase     probePhase = "authenticate"
+	launchPhase           probePhase = "launch"
+	initializePhase       probePhase = "initialize"
+	cleanupPhase          probePhase = "cleanup"
 )
 
 func incompatible() *domain.Error {

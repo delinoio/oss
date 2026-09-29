@@ -199,6 +199,18 @@ func TestAPIInitializationOwnsConfigurationAndNativeAuthority(t *testing.T) {
 				_ = api.Close()
 				t.Fatal("incompatible native API accepted")
 			}
+			if err != nil {
+				lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+				var diagnostic map[string]any
+				if json.Unmarshal([]byte(lines[len(lines)-1]), &diagnostic) != nil {
+					t.Fatal("missing structured initialization failure")
+				}
+				elapsed, hasElapsed := diagnostic["elapsed_ms"].(float64)
+				phase, hasPhase := diagnostic["phase"].(string)
+				if diagnostic["msg"] != "Grok Build private API initialization failed" || !hasPhase || phase == "" || diagnostic["code"] != string(domain.SafeError(err).Code) || !hasElapsed || elapsed < 0 {
+					t.Fatal("initialization failure lost safe phase or latency evidence", diagnostic)
+				}
+			}
 			if err := process.ReconcileOwner(config.Probe.Process.Directory, config.Probe.Process.OwnerID); err != nil {
 				t.Fatal(err)
 			}

@@ -3006,3 +3006,22 @@ tests pass (81.423s), and the complete CLI session/review/Archive scenario passe
 with race detection (46.590s) on macOS arm64. These are local results, not a
 Windows runtime result or a guarantee against arbitrary host starvation; the
 hosted Windows rerun still needs verification.
+
+### PR #1063 Grok initialization investigation (2026-09-29)
+
+The Windows Plan-mode failure occurred in native API initialization, before the
+foreign-mode observation under test. That test discarded its captured private
+fixture log. It now includes the redacted initialization log on failure, and
+API initialization reports elapsed milliseconds plus distinct initial/runtime/
+workspace inspection, launch, initialize, authentication or cleanup phases.
+Production time bounds, process ownership and no-resend rules are unchanged.
+
+The available Windows log does not identify which native inspection failed;
+host contention is a hypothesis, not established cause. This diagnostic repair
+is not a claimed Windows fix. Another native Windows run with the retained
+phase evidence is required to resolve that failure.
+
+The local Grok initialization, original Plan-claim and bounded discovery race
+group passes (144.080s). The added structured failure/latency and redaction
+assertions pass separately (18.522s). Go vet passes for the final Grok and
+workspace code. These fixtures use no account login or paid inference.
