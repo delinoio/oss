@@ -495,9 +495,11 @@ page load through the UI-loop webview callback. The pinned runtime otherwise
 applies accessibility notifications only to already existing browsers; newly
 opened saved-server windows must also expose their semantic UI. The direct CEF
 dependency matches the runtime's 150.0.0 pin. Remove this workaround only after
-upstream propagates accessibility state to newly created browsers. Structured
-exit-requested/exit-completed logs contain no renderer content. Native shutdown
-latency remains an independently recorded acceptance concern.
+upstream propagates accessibility state to newly created browsers. Structured exit logs contain no renderer content and distinguish the runtime
+Exit event, notification task join, tray task join and return from `app.run`.
+The Exit event precedes CEF shutdown and must never be labeled process exit.
+Even a runtime return is separate from observed process termination. Native
+shutdown latency remains an independently recorded acceptance concern.
 
 
 ### Durable backup creation

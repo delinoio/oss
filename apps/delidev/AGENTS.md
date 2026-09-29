@@ -12,7 +12,7 @@
 
 - CEF URL getters block on the native UI loop at the pinned revision. Keep every command reaching URL authorization asynchronous and move native callback authorization off that loop; recheck shutdown and notification generations before publishing navigation. Bundling must enable the local `custom-protocol` feature as well as `tauri/cef`.
 
-- Enable native accessibility for each trusted CEF document after load, including saved-server windows created after the initial accessibility notification. Keep native content out of logs, use the UI-loop callback and retain the matching pinned CEF dependency. Record delayed native browser teardown separately from independent server lifetime.
+- Enable native accessibility for each trusted CEF document after load, including saved-server windows created after the initial accessibility notification. Keep native content out of logs, use the UI-loop callback and retain the matching pinned CEF dependency. Record the Exit event, notification/tray task joins and runtime return separately, without equating an event or join with observed process termination. Record delayed native browser teardown separately from independent server lifetime.
 
 - Desktop uses CEF at the existing immutable Tauri revision and the CEF helper entry point, with macOS 13 retained. Bind capabilities to trusted webview labels, never window-wide labels that grant future external child views app authority. Keep engine migration distinct from account-browser persistence and cleanup evidence.
 

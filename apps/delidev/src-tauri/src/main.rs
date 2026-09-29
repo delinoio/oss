@@ -812,11 +812,17 @@ fn run() -> Result<(), NativeFailure> {
             }
         }
         if matches!(event, tauri::RunEvent::Exit) {
-            tracing::info!(operation = "desktop_exit", state = "runtime-exited");
+            // This event precedes CEF shutdown. Keep host task joins and the
+            // return from app.run separate so an exit event cannot imply that
+            // the native runtime has actually finished.
+            tracing::info!(operation = "desktop_exit", state = "runtime-exit-event");
             exiting_notifications.stop();
+            tracing::info!(operation = "desktop_exit", state = "notifications-joined");
             exiting.stop();
+            tracing::info!(operation = "desktop_exit", state = "tray-joined");
         }
     });
+    tracing::info!(operation = "desktop_exit", state = "runtime-returned");
     notifications.stop();
     tray.stop();
     Ok(())

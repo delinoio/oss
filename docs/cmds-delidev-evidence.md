@@ -2871,3 +2871,45 @@ remain byte-for-byte unchanged. The real macOS arm64 dry run now passes bundle
 creation, macOS 13 metadata, native sidecar/CEF/helper architecture, resources,
 notices and strict nested ad-hoc signature checks. Git LFS integrity passes.
 This packaging result does not establish native Quit or release-signing success.
+
+### PR #1063 exit diagnostics and final repair validation (2026-09-29)
+
+Native exit diagnostics now distinguish the runtime Exit event, notification
+join, tray join and return from `app.run`. The event is no longer named
+`runtime-exited`, because the pinned runtime emits it before CEF shutdown. No
+termination behavior, credential policy, browser persistence or runtime pin was
+changed. The temporary private CEF-cache override used for the diagnostic build
+was removed from the final source.
+
+The isolated macOS arm64 ad-hoc bundle launched successfully. The Mac was locked,
+so the computer-use tool could not activate the Quit menu; no menu acceptance is
+claimed. Cleanup by SIGTERM reached the Exit event after about 33 seconds, then
+completed both notification and tray joins. The process remained alive for more
+than two further minutes without the runtime-return log. A fresh native sample
+placed the main thread inside CEF waiting on a Mach message and one CEF worker
+inside `SecItemCopyMatching` / Keychain decryption. The prior Quit sample contains
+the same Keychain stack. This narrows the investigation but does not prove the
+specific permission/signature condition or establish a safe fix. No keychain
+item was inspected or changed, and no mock-keychain or encryption-disabling
+switch was added. The owned blocked fixture was forcibly cleaned up separately
+from product shutdown. The original CEF Quit review remains unresolved.
+
+Final local checks for this repair:
+
+- Full store and server race suites pass (91.006s and 342.506s). The combined
+  store/server/CLI run fails `TestCLISessionAcceptanceQueueAndArchive` at review
+  creation when a workspace read times out; its isolated race retry passes
+  (74.919s). Neither that retry nor the passing focused migration group makes
+  the complete Go race suite green. Prior workspace PR-match and Windows Git/Grok
+  failures remain open. Production deadlines were not relaxed.
+- Go vet, API-client tests (41), Buf lint/breaking/generated drift and LFS
+  integrity pass. The already recorded merged desktop run remains 74 files /
+  886 tests, type checking, eight package verifier tests and production build.
+- CEF desktop-host binary tests pass (7). Root
+  `TMPDIR=/private/tmp cargo test -- --test-threads=1` passes, with the previously
+  prepared pnport companion binaries. Existing opt-in ignored tests do not
+  establish platform/native acceptance.
+- The real macOS arm64 packaging dry run passes after the icon repair. Windows,
+  Linux, other architectures, actual macOS 13 execution, real accounts/inference,
+  product Git push, release signing/notarization and publication remain unverified
+  or deferred as previously recorded. No release workflow was dispatched.
