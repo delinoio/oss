@@ -2978,3 +2978,14 @@ The CI asset contract still referenced `icon-source.png` after the verified
 retina rename. Its exact pointer/attribute assertion now targets
 `icon-source@2x.png`; all size, committed-pointer and hydration checks remain.
 The complete repository CI-contract suite passes all 95 tests locally.
+
+### PR #1063 sidebar scenario timeout (2026-09-29)
+
+The Linux CI frontend failure exhausted Vitest's default five-second aggregate
+timeout in the multi-page sidebar/settings scenario. That one full-shell test
+now has a bounded 15-second aggregate deadline. Its per-observation deadlines,
+exact request counts, cursors and archive-filter assertions are unchanged; this
+does not change production request deadlines or establish native latency.
+The complete desktop `pnpm test` passes 74 files / 894 tests, TypeScript
+checking, eight packaging verifier tests and the production build on macOS
+arm64. The Linux hosted CI rerun has not been observed.
