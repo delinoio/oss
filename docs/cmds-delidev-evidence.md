@@ -3258,7 +3258,16 @@ Executed checks:
   into two tests with their original retention, deferral and explicit-cancel
   assertions intact. `pnpm test` in `apps/delidev` passed type checking, all
   942 UI tests in 74 files, native package/desktop-launch script fixtures and
-  the frontend production build. No desktop behavior or test timeout was changed.
+  the frontend production build. Desktop behavior and the Vitest test deadline
+  were unchanged.
+- On PR head `dfcace826f48b83fa70a2411cd47e13564ff95f5`, the split draft
+  regressions passed, but the real-server GitHub profile save/rename test
+  exhausted its one-second DOM observation wait after saving. Its two post-save
+  observations now wait up to five seconds for the original Go write and list
+  refresh, within the existing 30-second integration-test deadline. Saves are
+  still invoked once, and exact profile content and CLI revision 2 remain
+  asserted. A fresh `pnpm test` in `apps/delidev` passed type checking, all
+  942 UI tests in 74 files, script fixtures and the production build.
 
 These are isolated temporary protocol/history/process and authenticated RPC
 fixtures. The public fixture's checkpoint digest represents independently
@@ -3266,5 +3275,5 @@ retained Worker proof; it does not launch the installed Claude CLI. No new
 installed-Claude failed-provider run, hosted-account inference, native desktop
 interaction, Windows/Linux runtime, distribution or release acceptance is
 claimed. The Resume/recovery implementation requires no protocol, frontend
-behavior or Rust changes; the separate UI test repair above addresses its
-observed PR CI timeout.
+behavior or Rust changes; the separate UI test repairs above address the
+observed PR CI observation deadlines.

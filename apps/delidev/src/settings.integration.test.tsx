@@ -506,10 +506,13 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Real server profile" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "fixture-owner" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }));
+  // Both save observations include a real Go commit and an invalidated list
+  // query. Restore the one-second DOM default only after full-suite CI
+  // consistently fits it; these bounded waits never replay the save action.
+  fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }, { timeout: 5000 }));
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Renamed server profile" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  await screen.findByRole("button", { name: "Manage Renamed server profile" });
+  await screen.findByRole("button", { name: "Manage Renamed server profile" }, { timeout: 5000 });
   const output = JSON.parse(await runCLI(["integration", "list"]));
   const row = output.result.resources.find((value: { data: { name: string } }) => value.data.name === "Renamed server profile");
   expect(row).toBeTruthy();
