@@ -99,6 +99,20 @@ func TestCLISearchRetainedConversationsAndFilters(t *testing.T) {
 		t.Fatal(usageResult)
 	}
 	usageSummary := usageResult["result"].(map[string]any)
+	if _, present := usageSummary["native_accounting"]; present {
+		t.Fatal("legacy usage JSON acquired unnegotiated fields")
+	}
+	nativeCode, nativeResult := cliRun(t, root, []string{"usage", "summary", "--accounting-profile", "native-input-v1", "--granularity", "day", "--timezone", "UTC"}, "")
+	if nativeCode != 0 {
+		t.Fatal("CLI could not negotiate accounting", nativeResult)
+	}
+	nativeSummary := nativeResult["result"].(map[string]any)
+	if nativeSummary["accounting_profile"] != "USAGE_ACCOUNTING_PROFILE_NATIVE_INPUT_V1" || nativeSummary["native_accounting"] == nil {
+		t.Fatal("CLI lost native accounting profile", nativeSummary)
+	}
+	if code, _ := cliRun(t, root, []string{"usage", "summary", "--accounting-profile", "unknown"}, ""); code == 0 {
+		t.Fatal("unknown CLI accounting profile accepted")
+	}
 	if usageSummary["accepted_executions_without_response"] != float64(1) || usageSummary["actual_cost"] != "USAGE_COST_STATE_UNAVAILABLE" || usageSummary["totals"].(map[string]any)["total"].(map[string]any)["known_total"] != "" {
 		t.Fatal("CLI invented complete usage or cost", usageResult)
 	}

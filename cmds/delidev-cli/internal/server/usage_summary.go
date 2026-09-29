@@ -35,7 +35,7 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 	if from == 0 {
 		from = until - (30 * 24 * time.Hour).Milliseconds()
 	}
-	f := domain.UsageSelection{From: time.UnixMilli(from), Until: time.UnixMilli(until), SessionID: domain.ID(req.Msg.SessionId), ProjectID: domain.ID(req.Msg.ProjectId), AccountID: domain.ID(req.Msg.AccountId), ProviderID: domain.ID(req.Msg.ProviderId), ModelID: domain.ID(req.Msg.ModelId), GeneralChat: req.Msg.GeneralChat, Granularity: domain.UsageTimeGranularity(req.Msg.Granularity), TimeZone: req.Msg.TimeZone}
+	f := domain.UsageSelection{From: time.UnixMilli(from), Until: time.UnixMilli(until), SessionID: domain.ID(req.Msg.SessionId), ProjectID: domain.ID(req.Msg.ProjectId), AccountID: domain.ID(req.Msg.AccountId), ProviderID: domain.ID(req.Msg.ProviderId), ModelID: domain.ID(req.Msg.ModelId), GeneralChat: req.Msg.GeneralChat, Granularity: domain.UsageTimeGranularity(req.Msg.Granularity), TimeZone: req.Msg.TimeZone, AccountingProfile: domain.AccountingProfile(req.Msg.AccountingProfile)}
 	if err := f.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
@@ -51,6 +51,10 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 			return err
 		}
 		result.Totals = usageTotals(summary.Totals)
+		if summary.NativeAccounting != nil {
+			result.NativeAccounting = nativeSummary(*summary.NativeAccounting)
+			result.AccountingProfile = req.Msg.AccountingProfile
+		}
 		result.Estimates = estimateTotals(summary.Estimates)
 		for _, value := range summary.Estimates.Currencies {
 			if value.KnownAmount != "" {
@@ -151,6 +155,9 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 		dayBucketCount, modelGroupCount = len(result.Analytics.Days), len(result.Analytics.Models)
 	}
 	s.logger.DebugContext(ctx, "usage_summary_read_completed", "correlation_id", correlation, "group_count", len(result.Groups), "response_count", result.Totals.Responses, "day_bucket_count", dayBucketCount, "model_group_count", modelGroupCount)
+	if result.NativeAccounting != nil {
+		s.logger.DebugContext(ctx, "native_accounting_read_completed", "correlation_id", correlation, "unit_count", result.NativeAccounting.Totals.Units, "group_count", len(result.NativeAccounting.Groups))
+	}
 	response := connect.NewResponse(result)
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil

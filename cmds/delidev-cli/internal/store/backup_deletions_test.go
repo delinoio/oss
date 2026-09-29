@@ -284,7 +284,7 @@ func TestBackupDeletionRejectsCanceledAndStaleAdmission(t *testing.T) {
 
 func TestBackupDeletionMigrationFrom20PreservesExistingTablesAndBackup(t *testing.T) {
 	s, root, ctx, in := deletionFixture(t)
-	if _, err := s.db.ExecContext(ctx, "DROP INDEX provider_preset_unique; DROP TABLE backup_deletions; PRAGMA user_version=20;"); err != nil {
+	if _, err := s.db.ExecContext(ctx, dropNativeAccountingFixtureSchema+"DROP INDEX provider_preset_unique; DROP TABLE backup_deletions; PRAGMA user_version=20;"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -425,10 +425,10 @@ func TestBackupDeletionMigrationFromBothVersion21Layouts(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := s.db.ExecContext(ctx, "DROP INDEX provider_preset_unique; PRAGMA user_version=21;"); err != nil {
+				if _, err := s.db.ExecContext(ctx, dropNativeAccountingFixtureSchema+"DROP INDEX provider_preset_unique; PRAGMA user_version=21;"); err != nil {
 					t.Fatal(err)
 				}
-			} else if _, err := s.db.ExecContext(ctx, "DROP TABLE backup_deletions; PRAGMA user_version=21;"); err != nil {
+			} else if _, err := s.db.ExecContext(ctx, dropNativeAccountingFixtureSchema+"DROP TABLE backup_deletions; PRAGMA user_version=21;"); err != nil {
 				t.Fatal(err)
 			}
 			if err := s.Close(); err != nil {
@@ -605,7 +605,7 @@ func TestBackupDeletionMigrationFromBothVersion22Layouts(t *testing.T) {
 			} else if _, err := s.db.Exec("DROP TABLE backup_deletions"); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.db.Exec("PRAGMA user_version=22"); err != nil {
+			if _, err := s.db.Exec(dropNativeAccountingFixtureSchema + "PRAGMA user_version=22"); err != nil {
 				t.Fatal(err)
 			}
 			if err := s.Close(); err != nil {

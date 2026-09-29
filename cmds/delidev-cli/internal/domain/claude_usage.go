@@ -331,8 +331,9 @@ const (
 	ClaudeInputResultUsage     ClaudeUsageSource = "input-result"
 )
 
-// Sources overlap. These records never enter the normalized response ledger,
-// price estimates or budgets, and cumulative model snapshots are not deltas.
+// Sources overlap. Raw records never enter the normalized response ledger;
+// only the independently derived correlated main-loop input unit may enter
+// native accounting estimates. Cumulative model snapshots are never deltas.
 type ClaudeUsageObservation struct {
 	Source          ClaudeUsageSource    `json:"source"`
 	NativeEventID   string               `json:"native_event_id"`

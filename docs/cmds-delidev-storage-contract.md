@@ -224,3 +224,5 @@ identity. A valid older same-server image at a reserved path, a replaced publish
 image, or a legacy image without a claim is preserved and reports recovery-required;
 none can complete the pending job. A crash after rename retains the original
 claim and exact bytes across restart without recopying the live database.
+
+Schema 25 adds empty native accounting-unit and native lifetime-estimate tables after the existing synchronized pre-migration backup and within the same atomic schema transaction. Preserve original schema-24 raw usage, response/title ledgers, claims and backups; never backfill raw cumulative/provider/input observations as newly accepted accounting units or reprice history. The original source observation and session own cascading derived data. See the [usage contract](cmds-delidev-usage-contract.md).

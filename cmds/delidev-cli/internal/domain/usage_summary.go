@@ -20,19 +20,23 @@ const (
 )
 
 type UsageSelection struct {
-	From        time.Time
-	Until       time.Time
-	SessionID   ID
-	ProjectID   ID
-	AccountID   ID
-	ProviderID  ID
-	ModelID     ID
-	GeneralChat bool
-	Granularity UsageTimeGranularity
-	TimeZone    string
+	From              time.Time
+	Until             time.Time
+	SessionID         ID
+	ProjectID         ID
+	AccountID         ID
+	ProviderID        ID
+	ModelID           ID
+	GeneralChat       bool
+	Granularity       UsageTimeGranularity
+	TimeZone          string
+	AccountingProfile AccountingProfile
 }
 
 func (f UsageSelection) Validate() error {
+	if f.AccountingProfile != ResponseOnlyAccounting && f.AccountingProfile != NativeInputAccountingV1 {
+		return Fail(InvalidArgument, "Unknown usage accounting profile.", "Select a supported accounting profile explicitly.")
+	}
 	if f.From.UnixMilli() <= 0 || f.Until.UnixMilli() > 253402300799999 || !f.Until.After(f.From) || f.Until.Sub(f.From) > UsageWindowLimit || (f.GeneralChat && f.ProjectID != "") {
 		return Fail(InvalidArgument, "Invalid usage time range or project selection.", "Select a positive half-open time range of at most 366 days, and either a project or General Chat.")
 	}
@@ -224,12 +228,13 @@ type UsageAnalytics struct {
 }
 
 type UsageSummary struct {
-	Estimates                         EstimateTotals  `json:"estimates"`
-	Pricing                           []PricingUsage  `json:"pricing"`
-	Totals                            UsageTotals     `json:"totals"`
-	Groups                            []UsageGroup    `json:"groups"`
-	Analytics                         *UsageAnalytics `json:"analytics,omitempty"`
-	AcceptedExecutionsWithoutResponse uint32          `json:"accepted_executions_without_response"`
+	NativeAccounting                  *NativeAccountingSummary `json:"native_accounting,omitempty"`
+	Estimates                         EstimateTotals           `json:"estimates"`
+	Pricing                           []PricingUsage           `json:"pricing"`
+	Totals                            UsageTotals              `json:"totals"`
+	Groups                            []UsageGroup             `json:"groups"`
+	Analytics                         *UsageAnalytics          `json:"analytics,omitempty"`
+	AcceptedExecutionsWithoutResponse uint32                   `json:"accepted_executions_without_response"`
 }
 
 func SortUsageAnalyticsModels(models []UsageAnalyticsModel) {

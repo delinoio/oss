@@ -154,6 +154,8 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
   // Session creation can opt into server-owned, Worker-executed automatic titles.
   SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 = 1;
+  // Explicitly negotiated exact native input units, independent of responses.
+  SYSTEM_CAPABILITY_NATIVE_INPUT_ACCOUNTING_V1 = 2;
 }
 message StopServerRequest {
   string request_id = 1;
@@ -1216,6 +1218,13 @@ message GetUsageSummaryRequest {
   bool general_chat = 8;
   UsageTimeGranularity granularity = 9;
   string time_zone = 10;
+  UsageAccountingProfile accounting_profile = 11;
+}
+enum UsageAccountingProfile {
+  // Historical response-only shape and counts.
+  USAGE_ACCOUNTING_PROFILE_UNSPECIFIED = 0;
+  // Adds separate native accounting aggregates; never fabricates responses.
+  USAGE_ACCOUNTING_PROFILE_NATIVE_INPUT_V1 = 1;
 }
 enum UsageTimeGranularity {
   USAGE_TIME_GRANULARITY_UNSPECIFIED = 0;
@@ -1280,6 +1289,7 @@ enum UsageCoverage {
   USAGE_COVERAGE_UNSPECIFIED = 0;
   // Exact known subtotals only. Missing/legacy/child telemetry is not zero.
   USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES = 1;
+  USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS = 2;
 }
 enum UsageCostState {
   USAGE_COST_STATE_UNSPECIFIED = 0;
@@ -1300,6 +1310,80 @@ message GetUsageSummaryResponse {
   EstimateTotals estimates = 9;
   repeated PricingUsage pricing = 10;
   UsageAnalytics analytics = 11;
+  // Present only when NATIVE_INPUT_V1 is explicitly requested.
+  NativeAccountingSummary native_accounting = 12;
+  UsageAccountingProfile accounting_profile = 13;
+}
+
+enum NativeAccountingKind {
+  NATIVE_ACCOUNTING_KIND_UNSPECIFIED = 0;
+  NATIVE_ACCOUNTING_KIND_CLAUDE_MAIN_LOOP_INPUT = 1;
+}
+message NativeAccountingMeasure {
+  // Exact decimal integer; empty is unavailable and "0" is measured zero.
+  string known_total = 1;
+  uint32 measured_units = 2;
+  uint32 unavailable_units = 3;
+}
+message NativeCurrencyEstimate {
+  string currency = 1;
+  string known_amount = 2;
+  uint32 complete_units = 3;
+  uint32 partial_units = 4;
+  uint32 unavailable_units = 5;
+}
+message NativeAccountingTotals {
+  NativeAccountingKind kind = 1;
+  uint32 units = 2;
+  NativeAccountingMeasure input = 3;
+  NativeAccountingMeasure cache_read = 4;
+  NativeAccountingMeasure cache_write = 5;
+  NativeAccountingMeasure output = 6;
+  NativeAccountingMeasure thinking = 7;
+  // Claude does not report a main-loop total. Never derive it from categories.
+  NativeAccountingMeasure total = 8;
+  repeated NativeCurrencyEstimate currencies = 9;
+  uint32 unpriced_units = 10;
+}
+message NativeAccountingGroup {
+  string session_id = 1;
+  string project_id = 2;
+  string account_id = 3;
+  string provider_id = 4;
+  string model_id = 5;
+  NativeAccountingTotals totals = 6;
+}
+message NativeAccountingDay {
+  int64 from_unix_ms = 1;
+  int64 until_unix_ms = 2;
+  NativeAccountingTotals totals = 3;
+}
+message NativeEstimateMeasure {
+  string known_amount = 1;
+  string known_tokens = 2;
+  uint32 priced_units = 3;
+  uint32 missing_usage_units = 4;
+  uint32 missing_price_units = 5;
+  uint32 not_applicable_units = 6;
+}
+message NativeAccountingPricing {
+  PricingVersion pricing = 1;
+  NativeAccountingTotals totals = 2;
+  NativeEstimateMeasure input = 3;
+  NativeEstimateMeasure cache_read = 4;
+  NativeEstimateMeasure cache_write = 5;
+  NativeEstimateMeasure output = 6;
+}
+message NativeAccountingSummary {
+  NativeAccountingTotals totals = 1;
+  repeated NativeAccountingGroup groups = 2;
+  // Same explicit timezone and half-open day boundaries as response analytics.
+  repeated NativeAccountingDay days = 3;
+  // Full bounded model inventory; original IDs, without inferred total ranking.
+  repeated NativeAccountingGroup models = 4;
+  repeated NativeAccountingPricing pricing = 5;
+  UsageCoverage coverage = 6;
+  UsageCostState actual_cost = 7;
 }
 
 // User-declared token prices only. No rate or result establishes actual spend.
@@ -1403,6 +1487,9 @@ message BudgetEvidence {
   uint64 complete_responses = 3;
   uint64 partial_responses = 4;
   uint64 unavailable_responses = 5;
+  uint64 complete_native_units = 6;
+  uint64 partial_native_units = 7;
+  uint64 unavailable_native_units = 8;
 }
 message SessionBudgetView {
   Resource session = 1;
@@ -1413,6 +1500,8 @@ message SessionBudgetView {
   uint64 unpriced_responses = 5;
   uint64 other_currency_responses = 6;
   UsageCoverage coverage = 7;
+  uint64 unpriced_native_units = 8;
+  uint64 other_currency_native_units = 9;
 }
 message GetSessionBudgetRequest {
   string session_id = 1;

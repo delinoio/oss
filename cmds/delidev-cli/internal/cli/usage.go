@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -20,6 +21,7 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	until := f.String("until", "", "exclusive RFC3339 timestamp (default: server now)")
 	granularity := f.String("granularity", "", "analytics granularity (day)")
 	timezone := f.String("timezone", "", "explicit IANA timezone for daily analytics")
+	profile := f.String("accounting-profile", "", "accounting profile (native-input-v1; default: response-only)")
 	requestBody := &pb.GetUsageSummaryRequest{}
 	f.StringVar(&requestBody.SessionId, "session-id", "", "original session filter")
 	f.StringVar(&requestBody.ProjectId, "project-id", "", "original project filter")
@@ -29,6 +31,19 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	f.BoolVar(&requestBody.GeneralChat, "general-chat", false, "projectless General Chat only")
 	if err := parse(f, args[1:]); err != nil {
 		return nil, err
+	}
+	if *profile != "" {
+		if *profile != "native-input-v1" {
+			return nil, domain.Fail(domain.InvalidArgument, "Unknown accounting profile.", "Use --accounting-profile native-input-v1, or omit it for response-only reads.")
+		}
+		status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_NATIVE_INPUT_ACCOUNTING_V1) {
+			return nil, domain.Fail(domain.Unsupported, "The server cannot negotiate native input accounting.", "Update the server before requesting this profile.")
+		}
+		requestBody.AccountingProfile = pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_INPUT_V1
 	}
 	if *granularity == "" {
 		if *timezone != "" {
@@ -60,9 +75,26 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}
+	if requestBody.AccountingProfile != pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_UNSPECIFIED && (response.Msg.AccountingProfile != requestBody.AccountingProfile || response.Msg.NativeAccounting == nil) {
+		return nil, domain.Fail(domain.Unsupported, "The server omitted the requested accounting profile.", "Update the server; response-only data cannot satisfy a native accounting read.")
+	}
 	raw, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(response.Msg)
 	if err != nil {
 		return nil, domain.SafeError(err)
+	}
+	if requestBody.AccountingProfile == pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_UNSPECIFIED {
+		// EmitUnpopulated preserves the legacy fields, but the additive negotiated
+		// profile must remain absent for existing response-only JSON consumers.
+		var legacy map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &legacy); err != nil {
+			return nil, domain.SafeError(err)
+		}
+		delete(legacy, "accounting_profile")
+		delete(legacy, "native_accounting")
+		raw, err = json.Marshal(legacy)
+		if err != nil {
+			return nil, domain.SafeError(err)
+		}
 	}
 	return json.RawMessage(raw), nil
 }

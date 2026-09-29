@@ -118,7 +118,7 @@ func TestHostedProviderDefaultsMigrationPreservesSavedOffAndCustom(t *testing.T)
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.ExecContext(ctx, "PRAGMA user_version=21"); err != nil {
+	if _, err := s.db.ExecContext(ctx, dropNativeAccountingFixtureSchema+"PRAGMA user_version=21"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -183,7 +183,7 @@ func TestHostedProviderDefaultsMigrationRollsBackTogether(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.ExecContext(ctx, `CREATE TRIGGER reject_fixture_provider BEFORE INSERT ON entities WHEN NEW.kind='provider' AND json_extract(NEW.body,'$.preset_id')='anthropic' BEGIN SELECT RAISE(ABORT,'fixture rejection'); END; PRAGMA user_version=21;`); err != nil {
+	if _, err := s.db.ExecContext(ctx, dropNativeAccountingFixtureSchema+`CREATE TRIGGER reject_fixture_provider BEFORE INSERT ON entities WHEN NEW.kind='provider' AND json_extract(NEW.body,'$.preset_id')='anthropic' BEGIN SELECT RAISE(ABORT,'fixture rejection'); END; PRAGMA user_version=21;`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {

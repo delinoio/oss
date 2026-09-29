@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 24
+const SchemaVersion = 25
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -176,7 +176,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			err = applySessionTitleSchema(ctx, tx)
 		}
 		if err == nil {
-			_, err = tx.ExecContext(ctx, "PRAGMA user_version=24")
+			_, err = tx.ExecContext(ctx, nativeAccountingSchema)
 		}
 		if err == nil {
 			err = tx.Commit()

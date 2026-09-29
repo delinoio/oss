@@ -20,7 +20,7 @@ CREATE TABLE session_estimate_totals (
 PRAGMA user_version=16;
 `
 
-func (t *Tx) SessionEstimate(session domain.ID, currency domain.Currency) (domain.BudgetEvidence, error) {
+func (t *Tx) responseSessionEstimate(session domain.ID, currency domain.Currency) (domain.BudgetEvidence, error) {
 	value := domain.BudgetEvidence{Currency: currency}
 	if err := session.Validate(); err != nil {
 		return value, err
@@ -34,11 +34,23 @@ func (t *Tx) SessionEstimate(session domain.ID, currency domain.Currency) (domai
 	}
 	return value, value.Validate()
 }
+func (t *Tx) SessionEstimate(session domain.ID, currency domain.Currency) (domain.BudgetEvidence, error) {
+	v, err := t.responseSessionEstimate(session, currency)
+	if err != nil {
+		return v, err
+	}
+	n, err := t.nativeSessionEstimate(session, currency)
+	if err != nil {
+		return v, err
+	}
+	err = v.MergeNative(n)
+	return v, err
+}
 func (t *Tx) addSessionEstimate(session domain.ID, value domain.ResponseEstimate) error {
 	if t.readOnly {
 		return domain.Fail(domain.PermissionDenied, "Read transactions cannot mutate estimates.", "Use original response publication.")
 	}
-	total, err := t.SessionEstimate(session, value.Currency)
+	total, err := t.responseSessionEstimate(session, value.Currency)
 	if err != nil {
 		return err
 	}

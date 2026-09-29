@@ -178,6 +178,13 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	if err != nil {
 		return domain.UsageSummary{}, err
 	}
+	if f.AccountingProfile == domain.NativeInputAccountingV1 {
+		native, err := t.nativeAccountingSummary(f)
+		if err != nil {
+			return domain.UsageSummary{}, err
+		}
+		result.NativeAccounting = &native
+	}
 	return result, nil
 }
 
