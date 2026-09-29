@@ -1310,6 +1310,9 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 			if err = t.confirmTartVMAbsent(c, r); err != nil {
 				return err
 			}
+			if err = removeTartRunAlias(c, tartRunAlias(r.ID)); err != nil {
+				return err
+			}
 			if err = removeVMOwnerRecord(c, name, s.Installation, r.ID); err != nil {
 				return err
 			}

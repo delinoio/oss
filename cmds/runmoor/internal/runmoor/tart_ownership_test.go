@@ -533,6 +533,37 @@ func TestTartCleanupKnownAbsenceIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestTartCleanupKnownAbsenceRemovesStaleRunAliasBeforeOwnerRecord(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := createTartCommandAlias(c, tartRunAlias(id)); err != nil {
+		t.Fatal(err)
+	}
+	driver, _ := fakeTart(c)
+	var checkedPID int
+	driver.processAlive = func(pid int) (bool, error) {
+		checkedPID = pid
+		return false, nil
+	}
+	r := Runner{ID: id, Handle: Handle{VM: name, PID: 4343}}
+	if err := driver.Cleanup(context.Background(), c, r, s.View()); err != nil {
+		t.Fatal(err)
+	}
+	if checkedPID != r.Handle.PID {
+		t.Fatalf("checked Tart PID = %d, want %d", checkedPID, r.Handle.PID)
+	}
+	if _, err := os.Lstat(filepath.Join(c.Storage.Data, "tart", "vms", tartRunAlias(id))); !os.IsNotExist(err) {
+		t.Fatalf("stale Tart run alias remains after cleanup: %v", err)
+	}
+	if _, err := os.Lstat(vmOwnerPath(c, name)); !os.IsNotExist(err) {
+		t.Fatalf("owner record remains after confirmed absent cleanup: %v", err)
+	}
+}
+
 func TestTartMissingCanonicalVMRetainsActiveRun(t *testing.T) {
 	for _, action := range []string{"inspect", "stop", "cleanup"} {
 		t.Run(action, func(t *testing.T) {
