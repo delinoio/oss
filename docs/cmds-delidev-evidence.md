@@ -3250,3 +3250,27 @@ observation at `sessions_test.go:215`. This is evidence of a pre-existing worksp
 observation failure in the current environment, not a passing full suite. Other
 packages in the full runs were still executing when this evidence was recorded;
 no complete full-suite pass or PR CI pass is claimed.
+
+The continuing full local race run subsequently completed with exit status 1.
+The store package passed (514.575s), while the CLI workspace observation failure
+above remained. Grok fixtures reported native initialization/claim failures and
+reached the aggregate ten-minute package timeout. The unchanged native-wire
+fixture also reported a race between its `bytes.Buffer.String` observation at
+`wire_test.go:186` and asynchronous process logging at `process.go:134`. The server
+package reached its aggregate ten-minute timeout while the existing Claude
+callback-settlement fixture ran; the workspace package reached that same timeout
+while the existing local-workspace read fixture ran. The Worker stream-termination
+deadline fixture reported that native work was still running at its assertion.
+These are retained validation failures, not evidence of a successful full race
+suite or a basis to hide uncertainty behind the focused restore results.
+
+Subsequent PR #1114 CI passed at
+`ed2b30ae60ecfcfd06b748a2630b1909f899c90e`: all selected checks and the final CI
+Result succeeded, including Go jobs on Ubuntu, macOS and Windows, Go quality,
+protocol/client, CI contracts and async commit-hook checks. The Windows job log
+confirms `go test -p=1 -timeout=20m ./...` and successful DeliDev CLI, server and
+store packages; these controlled fixtures extend the earlier local/cross-build
+evidence but do not claim real-account, production platform or distribution
+acceptance. CI is distinct from the failed local race invocation. The Codex
+connector reported its review quota limit, so no completed review or approval
+is recorded.
