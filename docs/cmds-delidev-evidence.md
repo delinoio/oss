@@ -3212,7 +3212,29 @@ store suite passed after legacy migration-fixture updates. Go vet passed for
 `./cmds/delidev-cli/...`. The isolated Usage, Grok accounting and Settings
 integration frontend suites passed (19 tests); an initial full frontend run had
 one unrelated Settings integration wait failure under concurrent test load.
-Final full-suite and protocol evidence is recorded below when complete.
+`pnpm proto:check` passed compatibility, lint and regenerated-source freshness.
+The rollback fixture also passed a separate race run after it was added.
+
+The final serialized frontend invocation, `VITEST_MAX_WORKERS=1 pnpm test`,
+passed 942 of 943 tests and failed the existing Settings Git-Worker inspection
+wait; the focused Settings fixture passed. Earlier full runs also had existing
+App/tray/Settings waits fail during host saturation. Type checking passed before
+these failures. Separate bundle dry-run (eight fixtures), desktop launcher (six
+fixtures) and production frontend build commands passed. The full frontend
+command therefore remains failed, despite passing the changed-surface checks.
+
+The complete `go test -race ./cmds/delidev-cli/...` run failed CLI workspace
+reads, native Claude/Grok and workspace timing checks, plus 10-minute package
+timeouts in native/server/store/Worker suites during substantial concurrent host
+load. Its initially compiled accounting migration fixture also contained a
+reserved SQL column name; that fixture was corrected before the committed code
+and then passed focused race and ordinary store validation. A serialized retry
+with a 20-minute package timeout reproduced the existing CLI workspace-read
+failure; it was interrupted after the CLI and connection packages completed to
+avoid continuing duplicate load. It is not a completed or passing full race
+suite. No race diagnostic was observed, and no unrelated timeout was hidden by
+the focused passes. CI and review acceptance remain separate from this local
+evidence.
 
 These are temporary SQLite, controlled publication/provider and jsdom fixtures;
 no real Grok account, installed native inference, native desktop visual,
