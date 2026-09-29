@@ -2305,3 +2305,50 @@ snapshot/session permanent deletion acceptance.
   drift passed. A later recovery-hardening check additionally rejects foreign
   published images and adjacent WAL without changing their bytes; focused real
   backup/migration/store race tests passed (7.510s).
+
+### Final packaged macOS observations and keyless dry run (2026-09-29)
+
+- A final macOS arm64 app/DMG build succeeded using the pinned default CEF runtime.
+  In an isolated accountless server/client fixture, native accessibility exposed
+  the saved server window, Settings and Backups. Creation visibly advanced from
+  pending revision 1 to completed revision 2; the inventory appeared and explicit
+  inspection verified the image, schema 21 and original server identity.
+- Quit emitted the runtime Exit event 0.289154 seconds after the request, but the
+  process remained alive beyond two minutes. Native sampling located its main
+  thread in a CEF internal wait. After unsuccessful normal termination, only the
+  owned test fixture was killed for cleanup; no such force-exit code was added to
+  the product. The independent server remained responsive and was subsequently
+  stopped through its own CLI. This does not supersede the unresolved shutdown
+  acceptance item with a success claim.
+- Strict signature inspection of the ordinary unsigned bundle failed. The new
+  explicit macOS dry run rebuilt with credential-free ad-hoc signing and passed
+  strict nested signature/resource validation, bundle ID, macOS 13 metadata and
+  main/sidecar/CEF/helper architecture checks. Final signed startup logged both
+  initial document loads. CEF also emitted a process-requirement validation warning
+  for the ad-hoc process. The Mac subsequently locked, preventing another UI/Quit
+  check; signed native runtime completion remains unverified. All owned fixtures
+  were cleaned up, and another worktree's existing DeliDev app was left untouched.
+- The verifier's two Node tests pass, including credential/injection environment
+  exclusion and architecture/OS/signature/resource rejection. Native x64, actual
+  macOS 13 execution, Windows/Linux, production certificates, notarization and
+  published releases remain separate unverified evidence.
+
+### Approved completion plan: remaining implementation
+
+This change is a partial implementation of the complete seven-stage plan. It does
+not declare issue #964 or the overall product complete, and it does not reclassify
+missing product integration as native unsupported.
+
+| Plan area | Implemented in this change | Still required |
+| --- | --- | --- |
+| Storage/deletion/recovery | Managed backup inventory/inspection, durable creation/deletion, external deletion obligations and schema-21 migration | Permanent session/dependent Sidechat deletion, whole-workspace snapshots, cleanup/restore and atomic database recovery |
+| Four harnesses/sessions | Existing native/public foundations retained | Remaining Grok repository/continuation/interactions, native Fork, complete Sidechat/compaction/context/subagent public composition |
+| Authentication/quota/usage | Existing API-key lifecycle and usage foundation retained | Subscription/headless workflows, quota refresh/notifications, account-switch fidelity and remaining usage/credit integration |
+| Session tools/browser | Pinned CEF shell, async URL authorization and per-document accessibility | Worker PTY/ConPTY, forwarding, account profiles/tabs and distributed profile deletion; native Quit acceptance |
+| PR remediation | Existing evidence, attempt and workspace foundations retained | Public Fix now/automatic controller, exact fresh execution and verified commit/push outcomes |
+| Remote operations/services/updates | Existing lifecycle foundations retained | SSH installation, complete proxy/service adapters, verified Worker/desktop update flows |
+| Desktop/distribution | Live first-session checklist, macOS arm64 native observations and keyless packaging verification | Quota tray/widget completion, remaining diagnostics/settings integration and all six native build/release paths |
+
+Real provider accounts, PAT/private-repository access, paid inference and actual
+push remain deferred by the user. Those evidence deferrals are distinct from the
+unimplemented product paths above.

@@ -435,3 +435,33 @@ latency remains an independently recorded acceptance concern.
 ### Durable backup creation
 
 `RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose original durable jobs through Connect and generated queries. Current CLI and Settings use that path; the synchronous `CreateBackup` remains compatible. Keep pending acceptance separate from image publication, exact retries across navigation, typed failure/stale observations and integer precision. Jobs resume after server restart without client resubmission, and completed history does not assert current image availability. See the [storage contract](cmds-delidev-storage-contract.md).
+
+### Keyless macOS packaging dry run
+
+`pnpm --dir apps/delidev bundle:macos-dry-run` builds the API client, frontend,
+Go sidecar and pinned native CEF bundle on a native macOS x64/arm64 host. A separate
+`tauri.dry-run.conf.json` selects only the ad-hoc signing identity. The wrapper
+passes an exact allowlist of non-secret system/tool environment values; it excludes
+certificate imports, notarization credentials, updater signing keys, publication
+tokens and executable-injection settings. It neither publishes nor notarizes.
+Normal `bundle:native` remains a separate command and does not promise a verified
+release signature by itself.
+
+After building, require the original bundle ID, minimum macOS 13 metadata and
+matching native architecture for the main executable, Go sidecar, CEF framework
+and five helpers. Require ICU, resource and scale data, then verify nested code
+and sealed resources with `codesign --verify --deep --strict` and independently
+confirm the ad-hoc identity. A mismatch or missing file fails the command. These
+checks prove packaging structure for the selected native host, not Developer ID,
+notarization, update-signature trust, all native runtime behavior or other OS builds.
+Node verifier tests exercise authority filtering and rejection of incompatible
+artifacts. The existing frontend test command runs those separately from jsdom
+component tests under `src`.
+
+The final basic CEF bundle exposed a further shutdown distinction: the runtime
+Exit event can precede actual process termination. A 0.289-second event observation
+followed by a still-live native process after more than two minutes is not a
+successful Quit. Native sampling placed the main-thread wait inside CEF. The
+independent Go server remained available. Do not add forced process termination
+as a product success path or call this native unsupported; closure remains an
+unresolved acceptance issue pending an observed complete native shutdown.
