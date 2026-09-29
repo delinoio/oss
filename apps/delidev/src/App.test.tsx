@@ -300,7 +300,9 @@ it("defers the PR entry while a parent configuration editor draft is open", asyn
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New Provider" }));
+  const newProvider = await screen.findByRole("button", { name: "New Provider" });
+  await waitFor(() => expect((newProvider as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(newProvider);
   const name = await screen.findByRole("textbox", { name: "Name" });
   fireEvent.change(name, { target: { value: "Retained provider draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
