@@ -2482,3 +2482,15 @@ prerequisite checklist remains in the session welcome surface. Generated Go and
 TypeScript bindings are regenerated from the combined additive schema. The
 prior native package evidence remains bound to its original revision; this merge
 does not establish new native package or Quit acceptance.
+
+Post-merge checks passed: desktop `pnpm test` (71 files / 834 tests, typecheck,
+8 packaging tests and production build), API client (41 tests), focused Go race
+tests for backup/usage/migration/Inbox (store 20.841s, server 13.336s, CLI 6.016s),
+complete DeliDev vet, Buf lint/breaking/generated drift and Git LFS integrity.
+Native CEF compilation/tests passed (13 library tests with 4 environment-dependent
+tests ignored, and 7 host tests). No new native UI or package acceptance is
+inferred from these tests.
+
+The complete post-merge root `TMPDIR=/private/tmp cargo test --
+--test-threads=1` also passed. Generated repository-owned app/client `dist`
+directories were removed after validation.
