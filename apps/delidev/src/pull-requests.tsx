@@ -96,9 +96,8 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
     if (!selected || !canLoad) return;
     const term = search.trim();
     const query: GitHubQuery = { kind: ItemKind.PullRequest, operation: term ? QueryOperation.Search : QueryOperation.List, state, page: 1, page_size: pageSize, ...(term ? { search: term } : {}) };
-    const retained = navigation?.scopeKey === scopeKey ? navigation : { scopeKey, query, previous: [] };
-    setNavigation(retained);
-    setLoaded({ repositoryId: selected.id, revision: selected.revision, scopeKey, state, search: term, pageSize, query: retained.query });
+    setNavigation({ scopeKey, query, previous: [] });
+    setLoaded({ repositoryId: selected.id, revision: selected.revision, scopeKey, state, search: term, pageSize, query });
     closeDrawer();
   };
 

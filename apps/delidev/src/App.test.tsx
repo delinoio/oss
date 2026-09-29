@@ -444,6 +444,39 @@ it("opens a dedicated PR workspace and reads GitHub only after Load", async () =
   expect(request).toMatchObject({ kind: "pull-request", operation: "list", state: "open", page: 1, page_size: 20 });
 });
 
+it("resets PR results to page one when Load is submitted again", async () => {
+  const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository", integration_id: newRequestId(), github_owner: "owner", github_name: "repo" }) });
+  const value = fixture([], [repository]);
+  value.githubQuery.mockImplementation(async (request) => {
+    const query = JSON.parse(new TextDecoder().decode(request.queryJson));
+    const data = JSON.parse(new TextDecoder().decode(repository.documentJson));
+    return { schemaVersion: 1, documentJson: encode({
+      repository_id: repository.id,
+      repository_revision: repository.revision.toString(),
+      profile_id: data.integration_id,
+      generation_id: newRequestId(),
+      observed_at: "2026-09-29T00:00:00Z",
+      identity: { id: "17", node_id: "U_17", login: "fixture-user" },
+      repository: { provider: "github.com", id: "37", node_id: "R_37", owner: "owner", name: "repo", private: true },
+      query,
+      items: [{ provider: "github.com", kind: "pull-request", identity_source: "pull-request-api", id: "9007199254740993", node_id: "PR_53", number: "53", title: "Fixture PR", state: "open", created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-28T00:00:00Z", url: "https://github.com/owner/repo/pull/53", draft: false, author: { id: "19", node_id: "U_19", login: "fixture-author", kind: "user", provider_type: "User" } }],
+      ...(query.page === 1 ? { next_page: 2 } : {}),
+    }) };
+  });
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
+  fireEvent.click(await screen.findByRole("button", { name: `Fixture repository. Repository ID: ${repository.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByRole("button", { name: "Next GitHub page" });
+  fireEvent.click(screen.getByRole("button", { name: "Next GitHub page" }));
+  await waitFor(() => expect(JSON.parse(new TextDecoder().decode(value.githubQuery.mock.calls.at(-1)![0].queryJson))).toMatchObject({ operation: "list", page: 2 }));
+
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
+  await waitFor(() => expect(value.githubQuery).toHaveBeenCalledTimes(3));
+  expect(JSON.parse(new TextDecoder().decode(value.githubQuery.mock.calls.at(-1)![0].queryJson))).toMatchObject({ kind: "pull-request", operation: "list", state: "open", page: 1, page_size: 20 });
+  expect(screen.queryByRole("button", { name: "Back to results" })).toBeNull();
+});
+
 it("navigates to standalone PRs while retaining an Instructions draft", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
