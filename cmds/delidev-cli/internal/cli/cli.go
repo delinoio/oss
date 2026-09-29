@@ -52,6 +52,7 @@ type client struct {
 	workers       delidevv1connect.WorkerServiceClient
 	accounts      delidevv1connect.AccountServiceClient
 	integrations  delidevv1connect.IntegrationServiceClient
+	network       delidevv1connect.NetworkServiceClient
 	providers     delidevv1connect.ProviderServiceClient
 	sessions      delidevv1connect.SessionServiceClient
 	interactions  delidevv1connect.InteractionServiceClient
@@ -307,6 +308,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(value, err)
 		}
 		value, err := githubCommand(ctx, c, rest)
+		return emit(value, err)
+	case "network":
+		ensureRequest(&o)
+		value, err := networkCommand(ctx, c, o, rest, streams)
 		return emit(value, err)
 	case "integration":
 		if len(rest) > 0 && rest[0] != "list" && rest[0] != "get" && rest[0] != "snapshot" {
@@ -687,6 +692,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		sessions:      delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...),
 		accounts:      delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...),
 		integrations:  delidevv1connect.NewIntegrationServiceClient(httpClient, endpoint, opts...),
+		network:       delidevv1connect.NewNetworkServiceClient(httpClient, endpoint, opts...),
 		providers:     delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...),
 		devices:       delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...),
 		workers:       delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...),
@@ -829,6 +835,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   integration edit --id ID --revision N --input FILE|-
   integration replace-token --id ID --revision N --pat-stdin
   integration validate|delete --id ID --revision N
+  network profile save --input FILE|- [--id ID --revision N] [--credential-stdin | --clear-credential]
+  network profile list|get|delete [--id ID --revision N] [--limit N --page-token TOKEN]
+  network select [--id ROUTE_ID --revision N] [--machine-id ID] [--profile-id ID --profile-revision N]
+  network status [--machine-id ID]
+  network export-metadata --machine-id ID --revision DESIRED_GENERATION
   integration list|get|snapshot [--id ID]
   integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]
   integration inspect-repository --repository-id ID

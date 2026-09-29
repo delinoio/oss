@@ -3191,3 +3191,11 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+### Issue #1084 explicit server outbound profiles (2026-09-30)
+
+Implemented authenticated NetworkService and equivalent CLI profile/selection/status/metadata operations with generated Go and TypeScript NetworkQuery bindings. Existing revisioned entities/events/actor-bound receipts retain non-secret profiles and independent server/Worker desired generations; immutable selection snapshots preserve original profile and vault credential revisions across edits. Credentials use only the protected network-proxy vault purpose. Deletion denies the profile before retryable native credential cleanup. Every production provider/catalog/validation, inference relay and GitHub adapter now resolves the server route.
+
+Executed focused race fixtures for canonical exact bypass/CIDR/port validation, CONNECT/HTTPS/SOCKS5 routing with direct access denied, independent destination/proxy TLS verification, ignored ambient variables, no fallback, blocked-handshake cancellation and fragmented credential-reflection rejection. Actual loopback client fixtures pass provider inspection, inference relay and fixed-authority GitHub identity reads through CONNECT and SOCKS5. Temporary Connect/SQLite/vault fixtures pass exact save retries, altered receipts/stale revisions, pinned generations, independent Worker selections, signed generation-bound metadata, SQL secret exclusion, uncertain native-write recovery and denial-before-cleanup deletion retry. The real temporary CLI/server profile/selection/retry fixture passes. Client typecheck and all 41 package tests pass.
+
+Full Go race/vet and protocol validation are still in progress at this implementation checkpoint. All accounts/proxies/credentials are controlled fixtures. No real provider/GitHub account, enterprise network, native OS credential lifecycle, Worker bootstrap installation/application, remote platform or release acceptance was performed; #1085 remains the encrypted Worker bootstrap boundary.

@@ -153,7 +153,7 @@ func (s *Service) InspectRepositoryIntegration(ctx context.Context, req *connect
 	selected, err := s.withRepositoryIntegration(ctx, id, "access", correlation, func(readCtx context.Context, token []byte, selected repositoryIntegrationSelection) error {
 		client := s.githubAccess
 		if client == nil {
-			client = gh.New()
+			client = gh.New(s.outboundResolver())
 		}
 		var err error
 		observed, err = client.InspectRepository(readCtx, token, selected.repository.GitHubOwner, selected.repository.GitHubName)

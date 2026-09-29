@@ -26,6 +26,55 @@ service ResourceService {
   rpc WatchEvents(WatchEventsRequest) returns (stream WatchEventsResponse);
 }
 
+// Owner/paired-client configuration only; credentials are write-only.
+service NetworkService {
+  rpc SaveNetworkProfile(SaveNetworkProfileRequest) returns (NetworkMutationResponse);
+  rpc DeleteNetworkProfile(DeleteNetworkProfileRequest) returns (NetworkMutationResponse);
+  rpc SelectNetworkProfile(SelectNetworkProfileRequest) returns (NetworkMutationResponse);
+  rpc GetNetworkRoute(GetNetworkRouteRequest) returns (GetNetworkRouteResponse);
+  rpc ExportWorkerNetworkMetadata(ExportWorkerNetworkMetadataRequest) returns (ExportWorkerNetworkMetadataResponse);
+}
+message SaveNetworkProfileRequest {
+  Mutation mutation = 1;
+  uint32 schema_version = 2;
+  bytes document_json = 3;
+  // Bounded username/password JSON, never returned or persisted in SQLite.
+  bytes credential_json = 4;
+  bool clear_credential = 5;
+}
+message DeleteNetworkProfileRequest {
+  Mutation mutation = 1;
+}
+message SelectNetworkProfileRequest {
+  Mutation mutation = 1;
+  // Empty selects the server; otherwise the exact registered Worker machine.
+  string machine_id = 2;
+  // Empty selects built-in Direct. Nonempty requires an exact current revision.
+  string profile_id = 3;
+  uint64 profile_revision = 4;
+}
+message NetworkMutationResponse {
+  Resource resource = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bool deleted = 4;
+}
+message GetNetworkRouteRequest {
+  string machine_id = 1;
+}
+message GetNetworkRouteResponse {
+  // Absent means the explicit default Direct, generation zero.
+  Resource route = 1;
+}
+message ExportWorkerNetworkMetadataRequest {
+  string machine_id = 1;
+  uint64 desired_generation = 2;
+}
+message ExportWorkerNetworkMetadataResponse {
+  bytes metadata_json = 1;
+  string authentication = 2;
+}
+
 service ConfigurationService {
   rpc ExportConfiguration(ExportConfigurationRequest) returns (ExportConfigurationResponse);
   rpc PreviewConfigurationImport(PreviewConfigurationImportRequest) returns (PreviewConfigurationImportResponse);
@@ -94,6 +143,8 @@ enum EntityKind {
   ENTITY_KIND_JOB = 24;
   ENTITY_KIND_PAIRING = 25;
   ENTITY_KIND_STEER = 26;
+  ENTITY_KIND_NETWORK_PROFILE = 27;
+  ENTITY_KIND_NETWORK_ROUTE = 28;
 }
 
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
@@ -154,6 +205,7 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
   // Session creation can opt into server-owned, Worker-executed automatic titles.
   SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 = 1;
+  SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1 = 2;
 }
 message StopServerRequest {
   string request_id = 1;

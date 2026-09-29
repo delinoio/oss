@@ -140,3 +140,5 @@
 - DeliDev `RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose typed durable creation observations without changing legacy synchronous `CreateBackup`. Reserved image IDs are not publication proof; retain pending/succeeded/failed enum states, exact request IDs and revisions, bounded actor-bound cursors, and decimal-safe uint64 values. Follow `docs/cmds-delidev-storage-contract.md`.
 
 - DeliDev provider activation follows `docs/cmds-delidev-provider-activation-contract.md`: provider inventory is owner/client-only and capability-bearing; provider ID scopes only account list pages; the optional enabled-provider model filter remains additive and cursor-bound. Generate all Go and TypeScript bindings from the canonical proto.
+
+- DeliDev NetworkService is owner/paired-client-only, with additive typed capability and resource kinds. Credentials are write-only separate request bytes; return only revisioned public metadata and signed non-secret Worker desired-generation exports under `docs/cmds-delidev-network-contract.md`. Worker credentials cannot acquire network product operations.

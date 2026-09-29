@@ -186,3 +186,6 @@ Schema v23 adds durable managed-backup deletion indexing and external deletion o
 ### Durable backup creation commands
 
 `backup create [--wait]` now calls `SystemService.RequestBackup` and returns the original accepted job; `--wait` observes completion without canceling the server-owned work when the caller disconnects. `backup creation --id JOB-ID` and `backup creations [--limit N] [--page-token TOKEN]` inspect original status after restart. See the [storage contract](cmds-delidev-storage-contract.md) for the shared controller, identity, retry and deletion boundaries.
+
+### Explicit outbound networking
+Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. See [the network contract](cmds-delidev-network-contract.md); Worker bootstrap/native proxy application remains separate.
