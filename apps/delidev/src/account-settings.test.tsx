@@ -43,6 +43,7 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
     editAccount: vi.fn(),
     deleteAccount: vi.fn(),
     setProviderSearch: vi.fn(),
+    setProviderFilter: vi.fn(),
     loadMoreProviders: vi.fn(),
   };
   const settings = (section: AccountSettingsSection, overrides: Partial<React.ComponentProps<typeof AccountSettings>> = {}) => <AccountSettings
@@ -54,6 +55,7 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
     eligibleProviders={[providerOption]}
     providerSearch=""
     setProviderSearch={callbacks.setProviderSearch}
+    setProviderFilter={callbacks.setProviderFilter}
     providerSearchLoading={false}
     providerSearchHasMore={false}
     loadMoreProviders={callbacks.loadMoreProviders}

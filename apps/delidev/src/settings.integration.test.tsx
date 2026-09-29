@@ -76,7 +76,7 @@ function runCLI(args: string[], input?: string): Promise<string> {
 it("activates fixed presets without creating accounts or models and retains identity across off/on", async () => {
   const providers = createClient(ProviderService, transport);
   const initial = await providers.listProviderInventory({ pageSize: 50 });
-  expect(initial.capabilities).toEqual(expect.arrayContaining([ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER]));
+  expect(initial.capabilities).toEqual(expect.arrayContaining([ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER]));
   expect(initial.entries.filter((entry) => entry.presetId !== ProviderPresetId.UNSPECIFIED)).toHaveLength(9);
   expect(initial.entries.every((entry) => !entry.enabled && !entry.providerId && entry.accountCountsAvailable)).toBe(true);
 
@@ -131,23 +131,26 @@ it("configures a real Go server through the settings forms and explicitly valida
   fireEvent.click(screen.getByRole("checkbox", { name: "Discover models automatically for connected accounts" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));
   await screen.findByRole("heading", { name: "Owned local API" });
-  fireEvent.click(screen.getByRole("button", { name: "AI accounts" }));
-  fireEvent.click(screen.getByRole("button", { name: "New AI account" }));
-  change("Account alias", "Owned keyless account");
-  const option = await screen.findByRole("option", { name: "Owned local API" });
-  change("Provider", (option as HTMLOptionElement).value);
-  fireEvent.click(screen.getByRole("button", { name: "Save AI account" }));
+  fireEvent.click(screen.getByRole("button", { name: "API Accounts" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
+  fireEvent.click(await screen.findByRole("radio", { name: "Owned local API" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  change("Account name", "Owned keyless account");
+  fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
   await screen.findByRole("heading", { name: "Owned keyless account" });
-  fireEvent.click(screen.getByRole("button", { name: "Manage connection" }));
-  await screen.findByText("Explicitly connect this keyless local endpoint on the server computer.");
-  fireEvent.click(screen.getByRole("button", { name: "Connect account" }));
+  const manageAccount = await screen.findByRole("button", { name: "Manage account" });
+  await waitFor(() => expect((manageAccount as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(manageAccount);
   await screen.findByText("Health: unverified · Credential connected");
   fireEvent.click(screen.getByRole("button", { name: "Validate account" }));
   await screen.findByText("Health: ready · Credential connected");
   fireEvent.click(screen.getByRole("button", { name: "Back to accounts" }));
   fireEvent.click(screen.getByRole("button", { name: "Models" }));
-  fireEvent.click(screen.getByRole("button", { name: "New Model" }));
-  await screen.findByRole("option", { name: "Owned local API" });
+  const newModel = await screen.findByRole("button", { name: "New Model" });
+  await waitFor(() => expect((newModel as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(newModel);
+  await screen.findByLabelText("Native model ID");
+  const option = await screen.findByRole("option", { name: "Owned local API" }) as HTMLOptionElement;
   change("Provider", (option as HTMLOptionElement).value); change("Native model ID", "fixture-model"); change("Display name", "Owned model");
   fireEvent.click(screen.getByRole("checkbox", { name: "codex" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Model" }));

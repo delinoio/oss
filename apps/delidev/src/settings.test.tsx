@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
 import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
@@ -12,7 +12,7 @@ import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[]) {
+function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[] } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -25,8 +25,8 @@ function fixture(resources: Resource[]) {
     router.service(ResourceService, { listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }), getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
     router.service(AccountService, { getAccountStatus: (request) => ({ account: resources.find((row) => row.id === request.id) }), connectAccount: connect, disconnectAccount: disconnect });
     router.service(ProviderService, {
-      listProviderPresets: () => ({ presetsJson: encode([{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }),
-      listProviderInventory: () => ({ entries: [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] }),
+      listProviderPresets: () => ({ presetsJson: encode(options.presets ?? [{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }),
+      listProviderInventory: () => ({ entries: options.providerEntries ?? [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ...(options.providerEntries ? [ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] : [])] }),
       searchModels: () => ({ models: [], providers: [] }),
     });
   });
@@ -35,6 +35,23 @@ function fixture(resources: Resource[]) {
   return { resources, save, remove, preview, inspect, connect, disconnect, client, view };
 }
 function input(value: unknown) { return value as { mutation: { requestId: string; expectedRevision: bigint }; documentJson: Uint8Array }; }
+
+it("uses server-owned preset key guidance and inert documentation in the API account wizard", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true, preset_id: "openai" });
+  const value = fixture([], {
+    providerEntries: [create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OPENAI, providerId: provider.id, displayName: "OpenAI", enabled: true, totalAccounts: 0n, connectedAccounts: 0n, provider, accountCountsAvailable: true })],
+    presets: [{ id: "openai", provider: { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", discovery: true }, key_guidance: "Create a project key for the selected workspace.", documentation: "https://developers.openai.com/api/reference/overview" }],
+  });
+  render(value.view(<Settings visible close={() => {}} />));
+  fireEvent.click(await screen.findByRole("button", { name: "API Accounts" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add API account" }));
+  fireEvent.click(await screen.findByRole("radio", { name: "OpenAI" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  fireEvent.click(screen.getByText("Where to get an API key"));
+  expect(screen.getByText("Create a project key for the selected workspace.")).toBeTruthy();
+  expect(screen.getByText("https://developers.openai.com/api/reference/overview")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "https://developers.openai.com/api/reference/overview" })).toBeNull();
+});
 
 it("keeps a settings draft across closing the modal and retries the original provider document", async () => {
   const value = fixture([]);

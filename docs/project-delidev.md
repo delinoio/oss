@@ -60,7 +60,7 @@ API provider availability is server-owned and presence-aware under [issue #1046]
 
 Only observed real-environment results qualify as harness/platform/account integration evidence. Unit fixtures and cross-compilation must remain separately labeled. Unsupported native features must fail explicitly, without emulation.
 
-Account type/provider list selectors are list-only Connect inputs applied by SQLite before page limiting. They do not alter coherent snapshots or event streams. Desktop account menus and the guided API account flow require the provider inventory's explicit account-type-filter capability in addition to the provider activation capabilities; see the account, protocol, catalog and desktop contracts.
+Account type/provider list selectors are list-only Connect inputs applied by SQLite before page limiting. They do not alter coherent snapshots or event streams. Desktop account menus and the guided API account flow require `ACCOUNT_TYPE_FILTER` plus provider activation, active-provider model filtering and account-provider filtering capabilities; see the account, protocol, catalog and desktop contracts.
 
 Grok Build `1.0.41` now participates in native protocol discovery through owned private configuration inspection and ACP initialization, including its original empty startup MCP inventory. The profile rejects inherited settings/extensions and discards native host/path metadata, with no authentication, session creation or inference. Real isolated macOS arm64 discovery evidence is separate from the still-required Grok execution/account/Worker integration and other-platform acceptance; detected or protocol-verified installations retain empty execution capabilities.
 

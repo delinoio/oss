@@ -158,9 +158,7 @@ function AccountCreationWizard({
   const [autoConnect, setAutoConnect] = useState<number>();
   const options = useMemo(() => eligibleProviders.filter((provider) =>
     provider.providerId && provider.enabled && document(provider.provider).protocol !== "native-subscription"), [eligibleProviders]);
-  const providerChoices = useMemo(() => startApiWizard?.provider && !providers.some((provider) => provider.providerId === startApiWizard.providerId)
-    ? [...providers, startApiWizard.provider] : providers, [providers, startApiWizard]);
-  const selectedProvider = providerChoices.find((provider) => provider.providerId === providerId);
+  const selectedProvider = providers.find((provider) => provider.providerId === providerId);
   const selectedProviderDocument = document(selectedProvider?.provider);
   const selectedAuthentication = text(selectedProviderDocument.authentication);
   const selectedProviderContract = selectedProvider ? providerContract(selectedProvider) : undefined;
@@ -289,23 +287,33 @@ function AccountCreationWizard({
       return;
     }
     setAutoConnect(undefined);
-    if (!sameProviderContract(providerContractRef.current, originalProvider)) {
+    void (async () => {
+      setProviderChecking(true);
+      const providerIsCurrent = await verifyProvider(originalProvider);
+      setProviderChecking(false);
+      if (!activeRef.current || generation.current !== autoConnect || !capabilityRef.current) {
+        clearHandoff();
+        autoConnectAllowed.current = false;
+        return;
+      }
+      if (!providerIsCurrent || !sameProviderContract(providerContractRef.current, originalProvider)) {
+        clearHandoff();
+        autoConnectAllowed.current = false;
+        setProviderMismatch(true);
+        return;
+      }
+      const secret = handoffKey.current;
       clearHandoff();
       autoConnectAllowed.current = false;
-      setProviderMismatch(true);
-      return;
-    }
-    const secret = handoffKey.current;
-    clearHandoff();
-    autoConnectAllowed.current = false;
-    if (!keyless && !secret) return;
-    connectGeneration.current = generation.current;
-    void connect.send({
-      mutation: { id: createdAccount.id, expectedRevision: createdAccount.revision, requestId: newRequestId() },
-      keyless,
-      apiKey: secret ? new TextEncoder().encode(secret) : new Uint8Array(),
-    });
-  }, [accountTypeFilteringReady, autoConnect, connect.send, createdAccount, keyless, selectedAuthentication, selectedProvider, selectedProviderDocument.protocol]);
+      if (!keyless && !secret) return;
+      connectGeneration.current = generation.current;
+      void connect.send({
+        mutation: { id: createdAccount.id, expectedRevision: createdAccount.revision, requestId: newRequestId() },
+        keyless,
+        apiKey: secret ? new TextEncoder().encode(secret) : new Uint8Array(),
+      });
+    })();
+  }, [accountTypeFilteringReady, autoConnect, connect.send, createdAccount, keyless, selectedAuthentication, selectedProvider, selectedProviderDocument.endpoint, selectedProviderDocument.protocol]);
 
   const navigateBack = () => {
     if (create.busy || create.uncertain || connect.busy || connect.uncertain) return;
@@ -430,7 +438,7 @@ function AccountCreationWizard({
       <Problem error={providerRead.error} />
       {unknownResponse ? <p role="alert">The server acknowledged a request without a matching account result. Inspect the original request before starting another operation.</p> : null}
       <Problem error={connect.error} />
-      <div className="actions"><button type="button" disabled={create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>Manage account</button><button type="button" disabled={create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={close}>Done</button></div>
+      <div className="actions"><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>Manage account</button><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={close}>Done</button></div>
     </section>;
   }
 
@@ -444,7 +452,7 @@ function AccountCreationWizard({
       <fieldset className="account-provider-choices"><legend>Enabled API providers</legend>{options.map((provider) => <label className="radio" key={provider.providerId}><input type="radio" name="api-account-provider" checked={providerId === provider.providerId} onChange={() => pickProvider(provider.providerId)} />{provider.displayName}</label>)}{searchLoading ? <p role="status">Loading providers…</p> : null}<Problem error={searchError} />
         <div className="actions"><button type="button" disabled={!searchHasMore || searchLoading} onClick={loadMore}>More providers</button></div>
       </fieldset>
-      <button className="primary" type="button" disabled={(!eligibleProviders.some((provider) => provider.providerId === providerId && provider.enabled) && startApiWizard?.providerId !== providerId) || !selectedProvider?.enabled} onClick={() => setStep(WizardStep.Account)}>Continue to account</button>
+      <button className="primary" type="button" disabled={(!eligibleProviders.some((provider) => provider.providerId === providerId && provider.enabled) && initialProviderId !== providerId) || !selectedProvider?.enabled} onClick={() => setStep(WizardStep.Account)}>Continue to account</button>
     </> : <p role="status">Provider choices are unavailable because this server does not report the required provider inventory and account-type filtering capabilities. Update the server before continuing.</p> : <>
       <p>Provider: <strong>{selectedProvider?.displayName ?? "Unavailable"}</strong> <button type="button" disabled={providerChecking || create.busy || create.uncertain} onClick={() => { clearHandoff(); setApiKey(""); setStep(WizardStep.Provider); }}>Change</button></p>
       {!accountTypeFilteringReady ? <p role="status">This server no longer reports the provider inventory and account-type filtering capabilities required here. Update the server before submitting or retrying.</p> : null}
@@ -623,13 +631,14 @@ export function AccountSettings({
 
   return <section className="account-settings" aria-label={section === AccountSettingsSection.Api ? "API account settings" : "AI subscription account settings"}>
     <header><div><p>Accounts are stored on the selected server. Connection, validation, and provider availability are separate states.</p></div>
-      {providerIdFilter ? <button type="button" onClick={clearProviderFilter}>Clear provider filter</button> : null}
+      {providerIdFilter ? <button type="button" onClick={() => { setPage({ section, providerId: "", token: "" }); clearProviderFilter(); }}>Clear provider filter</button> : null}
       {section === AccountSettingsSection.Api ? <button className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProviderId(providerIdFilter); onWorkflowReadyChange?.(true); setWizard(true); }}>Add API account</button> : null}
     </header>
     {section === AccountSettingsSection.Subscription ? <p>Subscription login is not available yet. Existing subscription configuration can still be managed here.</p> : null}
     {!accountTypeFilteringReady ? <div role="status"><p>Account lists require a server that supports account-type filtering. Update the selected server before opening this list or adding an account.</p><Problem error={accountTypeFilteringProblem} /></div> : <>
       <div className="account-provider-filter"><label>Search providers<input type="search" value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} /></label><label>Filter accounts by provider<select value={providerIdFilter} onChange={(event) => {
         const provider = providerSummaries.find((candidate) => candidate.providerId === event.target.value);
+        setPage({ section, providerId: event.target.value, token: "" });
         setProviderFilter(event.target.value, provider);
       }}><option value="">All providers</option>{providerSummaries.map((provider) => <option key={provider.providerId} value={provider.providerId}>{provider.displayName}{provider.enabled ? " · On" : " · Off"}</option>)}{providerIdFilter && !providerSummaries.some((provider) => provider.providerId === providerIdFilter) ? <option value={providerIdFilter}>Selected provider · {providerIdFilter}</option> : null}</select></label><button type="button" disabled={!providerFilterHasMore || providerSearchLoading} onClick={loadMoreProviderFilters}>More provider filters</button></div>
       <Problem error={rows.error} />

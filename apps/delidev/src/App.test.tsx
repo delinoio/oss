@@ -300,14 +300,13 @@ it("defers the PR entry while a parent configuration editor draft is open", asyn
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  const newProvider = await screen.findByRole("button", { name: "New Provider" });
-  await waitFor(() => expect((newProvider as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(newProvider);
+  fireEvent.click(await screen.findByRole("button", { name: "Instructions" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
   const name = await screen.findByRole("textbox", { name: "Name" });
-  fireEvent.change(name, { target: { value: "Retained provider draft" } });
+  fireEvent.change(name, { target: { value: "Retained instructions draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained provider draft");
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained instructions draft");
   expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("false");
   fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));

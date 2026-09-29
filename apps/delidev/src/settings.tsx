@@ -7,8 +7,8 @@ import { NotificationSettings } from "./notification-settings";
 import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { ConfigurationQuery, EntityKind, ProviderInventoryCapability, ProviderQuery, ResourceQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
-import { document, encode, resourceName, text, type Document } from "./documents";
+import { ConfigurationQuery, EntityKind, ProviderInventoryCapability, ProviderPresetId, ProviderQuery, ResourceQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { ConfigurationFields, editableKinds, kindNames, newConfiguration } from "./configuration-fields";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { JobState, TrackedJob } from "./jobs";
@@ -106,7 +106,7 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   const [selectedCategory, setSelectedCategory] = useState(SettingsCategory.Providers);
   const [device, setDevice] = useState<Resource>();
   const [page, setPage] = useState("");
-  const [editing, setEditing] = useState<{ initial?: Resource; initialData?: Document; key: string; subscriptionOnly?: boolean }>();
+  const [editing, setEditing] = useState<{ kind?: EntityKind; initial?: Resource; initialData?: Document; key: string; subscriptionOnly?: boolean }>();
   const [machine, setMachine] = useState<Resource>();
   const [deleting, setDeleting] = useState<Resource>();
   const [routing, setRouting] = useState<Resource>();
@@ -137,14 +137,28 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration && !hasSpecializedPanel });
   const accountInventory = useQuery(ProviderQuery.listProviderInventory, { query: providerSearch, enabledOnly: false, pageSize: 50, pageToken: providerFilterPage }, { enabled: visible && area === SettingsArea.Configuration && isAccountCategory });
   const eligibleInventory = useQuery(ProviderQuery.listProviderInventory, { query: providerSearch, enabledOnly: true, pageSize: 50, pageToken: providerChoicePage }, { enabled: visible && area === SettingsArea.Configuration && isApiAccounts });
+  const providerPresets = useQuery(ProviderQuery.listProviderPresets, {}, { enabled: visible && area === SettingsArea.Configuration && isAccountCategory });
   const accountTypeFilteringReady = Boolean(accountInventory.data && providerInventoryReady(accountInventory.data.capabilities) && accountInventory.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER));
+  const presets = new Map<string, Document>();
+  try {
+    if (providerPresets.data) {
+      const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(providerPresets.data.presetsJson));
+      for (const preset of items(parsed).map(object)) presets.set(text(preset.id), preset);
+    }
+  } catch { /* Preset-specific help stays unavailable when the server response is malformed. */ }
+  const presetNames = new Map<ProviderPresetId, string>([
+    [ProviderPresetId.VERCEL_AI_GATEWAY, "vercel-ai-gateway"], [ProviderPresetId.OPENROUTER, "openrouter"],
+    [ProviderPresetId.OPENAI, "openai"], [ProviderPresetId.ANTHROPIC, "anthropic"], [ProviderPresetId.XAI, "xai"],
+    [ProviderPresetId.DEEPSEEK, "deepseek"], [ProviderPresetId.OLLAMA, "ollama"], [ProviderPresetId.LM_STUDIO, "lm-studio"],
+    [ProviderPresetId.VLLM, "vllm"],
+  ]);
   const providerSummary = (entry: ProviderInventoryEntry): AccountProviderSummary | undefined => entry.providerId && entry.provider?.kind === EntityKind.PROVIDER ? {
     providerId: entry.providerId,
     displayName: entry.displayName,
     enabled: entry.enabled,
     provider: entry.provider,
-    keyGuidance: "Use the provider's documented API key flow.",
-    documentationUrl: "",
+    keyGuidance: text(presets.get(presetNames.get(entry.presetId) ?? "")?.key_guidance) || "Use the provider's documented API key flow.",
+    documentationUrl: text(presets.get(presetNames.get(entry.presetId) ?? "")?.documentation),
   } : undefined;
   const accountProviders = (accountInventory.data?.entries ?? []).map(providerSummary).filter((value): value is AccountProviderSummary => value !== undefined);
   const eligibleProviders = (eligibleInventory.data?.entries ?? []).map(providerSummary).filter((value): value is AccountProviderSummary => value !== undefined && value.enabled);
@@ -223,7 +237,7 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
           {configurationList ? <div className="settings-toolbar">
             <button type="button" onClick={() => void result.refetch()}>Refresh settings</button>
             {editableKinds.includes(kind) && (kind !== EntityKind.SETTINGS || result.data?.resources.length === 0)
-              ? <button type="button" className="primary" disabled={!result.data || (kind === EntityKind.SETTINGS && Boolean(result.error || result.isFetching))} onClick={() => setEditing({ key: newRequestId() })}><span className="settings-action-icon" aria-hidden="true">+</span>New {kindNames[kind]}</button>
+              ? <button type="button" className="primary" disabled={kind === EntityKind.SETTINGS && (!result.data || Boolean(result.error || result.isFetching))} onClick={() => setEditing({ key: newRequestId() })}><span className="settings-action-icon" aria-hidden="true">+</span>New {kindNames[kind]}</button>
               : null}
           </div> : null}
         </div>

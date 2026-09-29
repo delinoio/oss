@@ -18,6 +18,7 @@ The owner and paired clients manage provider/model configuration. Execution Work
 
 | RPC | CLI | Result |
 | --- | --- | --- |
+| `ListProviderInventory` | `provider list [--query TEXT] [--enabled-only] [--limit N] [--page-token TOKEN]` | Bounded active/custom provider inventory, exact account counts and compatibility capabilities |
 | `ListProviderPresets` | `provider presets` | Closed, editable provider defaults with key guidance, documentation and compatibility limits |
 | Existing `SaveConfiguration`, using a selected preset | `provider create --preset PRESET [--name NAME]` | Ordinary saved provider configuration and a durable request receipt |
 | `DiscoverModels` | `provider discover --account-id ID --revision N` | Accepted discovery observation plus current account metadata |
@@ -25,6 +26,8 @@ The owner and paired clients manage provider/model configuration. Execution Work
 | `ResolveModel` | `model resolve --selector UUID_OR_ALIAS_OR_NATIVE_ID [--provider-id ID]` | One canonical model record or a typed missing/ambiguity error |
 
 Mutations accept the normal `--request-id` option. Creating a preset uses its concrete provider document as the saved request input; it does not create an account or imply authentication. `provider create --input FILE|-` remains the custom-provider path. Presets are stable enum-style identifiers:
+
+Provider inventory's closed capability enum separately advertises provider activation, active-provider model filtering, account-provider filtering and `ACCOUNT_TYPE_FILTER`. The first three gate provider/model controls; separate API/subscription account lists and the guided API account flow require all four. Inventory filters are cursor-bound and server-owned; callers must not replace unavailable inventory with generic resource pages.
 
 | Preset | API base | Default protocol | Authentication |
 | --- | --- | --- | --- |
