@@ -3222,7 +3222,12 @@ package deadline under concurrent machine load and also reported existing
 workspace-reader timeouts. The reduced-concurrency run reproduced the existing
 CLI workspace-diff deadline failure; its remaining packages are still running.
 Focused subscription checks and complete compilation pass; the full race suite
-is not reported as passed.
+is not reported as passed. An isolated source archive of the unchanged target
+revision `b741cec88d68ba84eaf918bbee22ca28bff57ec6` also failed
+`TestCLISessionAcceptanceQueueAndArchive` at its creation-diff read with the same
+workspace-reader-unavailable classification (39.78 seconds); the focused current
+branch run failed at its file read (60.58 seconds). This confirms the existing
+reader failure on the baseline without treating either run as passing.
 
 No real subscription login, hosted inference, installed-Codex subscription
 acceptance, native Windows/Linux subscription runtime, release, desktop login
