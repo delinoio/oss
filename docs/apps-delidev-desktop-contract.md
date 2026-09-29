@@ -271,6 +271,15 @@ Expose typed safe problems and correlation IDs, plus independent connection/retr
 ## Build and Test
 Frontend changes require package-local `pnpm test`, typechecking and production Rsbuild verification. Component tests use real generated Connect router transports and explicit test credentials, exercising draft preservation, revision/request identity, authentication failure and inert content. Native Rust work additionally requires root Cargo tests and host-specific lifecycle checks. Generated `dist` is removed from the final worktree.
 
+The real Go Settings integration suite bounds Testing Library asynchronous waits
+to five seconds within that suite and restores the original setting afterward.
+Durable SQLite mutations plus query refreshes are not assumed to finish within
+the ordinary one-second component budget. Its profile fixture delays one real
+save acknowledgment beyond that budget, then verifies exactly two saves and the
+CLI-observed renamed profile at revision two. Operation/test deadlines and
+ordinary component waits retain their existing bounds; no mutation retry is
+introduced.
+
 `pnpm build:native` generates the typed client, frontend and target-specific Go sidecar before building the native host. `pnpm dev:desktop --data-dir /absolute/private/scope` prepares those inputs and runs the embedded frontend through the package-owned launch wrapper. On macOS the wrapper invokes the pinned `delidev-tauri-cli dev` path so the upstream bundler prepares `DeliDev.app`, CEF Frameworks and helper applications before executing the host. A bare `cargo run` lacks this macOS layout and is not the desktop development entry point. The app-owned `desktop-host` feature explicitly includes `tauri/cef` for CLI bundle selection. Windows/Linux retain direct Cargo execution with their adjacent runtime files and sidecar.
 
 The macOS development-only config removes `devUrl`, enables local `custom-protocol`, disables the frontend dev server and Rust watcher, and selects ad-hoc signing. Both preparation and execution receive the native dry-run system/tool environment plus optional `CARGO_TARGET_DIR`, using the pinned distribution in the standard `Library/Caches/tauri-cef` cache; caller CEF overrides and signing/notarization credentials are not inherited. The original distribution's Chromium notices are included alongside existing repository/CEF notices. No runtime pin, default data directory, production configuration or release-signing policy changes. Application arguments, including paths with spaces or Unicode, cross the Cargo/Tauri separators unchanged as argv, never shell text or CLI overrides. Every active preparation/launch child receives termination forwarding, failures stop the sequence, and wrapper diagnostics contain only stable stages and outcomes, not application arguments or private data paths. Node launcher tests run separately from jsdom through `pnpm test:desktop-launch` and are included in `pnpm test`.

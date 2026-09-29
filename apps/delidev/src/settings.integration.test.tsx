@@ -9,7 +9,7 @@ import { webcrypto } from "node:crypto";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, getConfig, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { BudgetState, ProviderInventoryCapability, ProviderPresetId, ProviderService, SessionService, UsageService, ConfigurationService, EntityKind, ResourceService, ScheduleService, SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
 import { SessionBudget } from "./session-budget";
@@ -23,8 +23,14 @@ import { document, encode } from "./documents";
 let directory: string, transport: Transport, providerOrigin: string, binary: string, scope: string;
 let process: ChildProcess | undefined, worker: ChildProcess | undefined, provider: Server | undefined;
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
+const originalAsyncTimeout = getConfig().asyncUtilTimeout;
 afterEach(() => vi.unstubAllGlobals());
 beforeAll(async () => {
+  // Real Go/SQLite writes and their subsequent query refreshes can exceed the
+  // one-second component wait under CI load. Bound only this native suite to
+  // five seconds and restore the original setting after it. Remove this
+  // override if the suite no longer performs native asynchronous operations.
+  configure({ asyncUtilTimeout: 5000 });
   directory = await mkdtemp(join(tmpdir(), "delidev-settings-"));
   binary = join(directory, processInfo.platform === "win32" ? "delidev.exe" : "delidev");
   await promisify(execFile)("go", ["build", "-o", binary, "./cmds/delidev-cli"], { cwd: resolve(processInfo.cwd(), "../.."), timeout: 120000 });
@@ -109,6 +115,7 @@ it("starts with hosted presets on without accounts or models and retains identit
 }, 30000);
 
 afterAll(async () => {
+  configure({ asyncUtilTimeout: originalAsyncTimeout });
   await stopChild(worker);
   if (process && process.exitCode === null) {
     try { await createClient(SystemService, transport).stopServer({ requestId: newRequestId() }, { timeoutMs: 2000 }); } catch { /* Cleanup still owns exactly this child. */ }
@@ -500,7 +507,18 @@ it("persists native Claude permission selection through the desktop and real Go 
 
 it("saves and renames GitHub profiles through the real Go server and CLI", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  let saveCalls = 0;
+  const delayedTransport: Transport = { ...transport, async unary(method, signal, timeoutMs, header, input, contextValues) {
+    const response = await transport.unary(method, signal, timeoutMs, header, input, contextValues);
+    if (method.parent.typeName === "delidev.v1.IntegrationService" && method.name === "SaveIntegrationProfile") {
+      saveCalls++;
+      // Model a durable native save whose acknowledgment exceeds the ordinary
+      // component fixture's one-second wait, without replaying the real write.
+      if (saveCalls === 1) await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+    }
+    return response;
+  } };
+  render(<TransportProvider transport={delayedTransport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
   fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Real server profile" } });
@@ -515,5 +533,6 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
   expect(row).toBeTruthy();
   expect(row.data).toEqual({ name: "Renamed server profile", provider: "github.com", token_kind: "fine-grained", resource_owner: "fixture-owner" });
   expect(row.revision).toBe(2);
+  expect(saveCalls).toBe(2);
   client.clear(); cleanup();
 }, 30000);

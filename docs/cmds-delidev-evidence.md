@@ -3247,3 +3247,22 @@ Native Windows/Linux/macOS queue acceptance, real queued repositories,
 production credentials, remediation dispatch/Git writes and release publication
 were not exercised. Issue #964 remains incomplete; HEADGREEN, required-workflow
 and code-scanning evaluation retain their separate adapter requirements.
+
+### Native Settings wait repair (2026-09-30, PR #1110)
+
+The first PR CI run passed schema/client checks but failed the real Go Settings
+profile test while waiting for `Rename Real server profile`; 944/945 frontend
+tests passed. The fixture used Testing Library's one-second default for the
+durable save and subsequent query refresh. A controlled 1.5-second delay of the
+first real save acknowledgment reproduced that same failure. A five-second
+asynchronous wait scoped to the native Settings suite passed the delayed case,
+including exactly two real saves and CLI inspection of the renamed revision-two
+profile. The original setting is restored afterward; product timeouts, mutation
+retries and ordinary component waits are unchanged.
+
+The final package-local `pnpm test` passed all 74 files / 945 tests, including
+all 11 native Settings cases, plus type checking, eight packaging-verifier tests,
+six launcher tests and the production build. The runtime was Node.js 26.7.0 /
+pnpm 10.26.2. This supersedes the earlier local frontend failure result for the
+repaired fixture; it does not supersede the separate broad Go race failures or
+claim a passing new-head CI run, live queue acceptance or native desktop launch.
