@@ -3278,3 +3278,11 @@ longer than 280 characters, retains staged content and validates after taking th
 original repository offline. It passes on macOS arm64 with the race detector
 (5.394s; `/tmp/delidev-1121-long-path.log`). Native Windows revalidation remains
 pending; a local macOS pass is not Windows acceptance.
+
+The copied-config durability step also opened files read-only before calling
+`Sync`, while Windows `FlushFileBuffers` requires write access. It now opens
+only copied configuration with `O_RDWR`, retains flush failures and checks close
+errors. The long-path, faithful two-repository restoration and stale-preview/
+destination-conflict race regressions pass locally (40.953s;
+`/tmp/delidev-1121-config-flush.log`). This platform API correction still requires
+the next native Windows CI run.

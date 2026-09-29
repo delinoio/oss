@@ -198,10 +198,11 @@ func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo P
 		return ResultUncertain()
 	}
 	// Git config updates are fsynced explicitly; process completion alone cannot
-	// prove that a recoverable copy has reached stable storage.
+	// prove that a recoverable copy has reached stable storage. Windows flushes
+	// require a write-capable handle; open only the independently copied config.
 	for _, config := range []string{"config", "config.worktree"} {
 		path := filepath.Join(target, ".git", config)
-		file, err := os.Open(path)
+		file, err := os.OpenFile(path, os.O_RDWR, 0)
 		if os.IsNotExist(err) {
 			continue
 		}
@@ -209,9 +210,12 @@ func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo P
 			return err
 		}
 		err = file.Sync()
-		file.Close()
+		closeErr := file.Close()
 		if err != nil {
 			return err
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 	}
 	return syncSnapshotDir(filepath.Join(target, ".git"))

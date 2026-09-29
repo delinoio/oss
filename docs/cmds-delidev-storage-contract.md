@@ -277,6 +277,9 @@ limit and ambient configuration is excluded. This does not modify source Git
 configuration. Failed independent Git checks log only the closed commit/object/
 location phase, session/repository IDs and stable error code, never paths, native
 output or workspace content.
+Copied Git configuration is synchronized through write-capable handles, as
+required by Windows flushing; only independent copies are opened for that write
+access, and original configuration remains unchanged.
 
 Cleanup requires an exact successful original preview. Every repository is
 published and re-read before a single atomic no-replace rename claims the entire
