@@ -20,7 +20,7 @@ The store enforces one saved provider for each nonempty preset ID with a durable
 
 Inventory supports search, enabled-only filtering and signed bounded pagination. Filters and relevant provider/account event state are bound to the cursor. Presets are stable and precede saved custom providers; custom providers remain paged. Workers cannot read this owner inventory. A desktop enables provider/model workflows only after a valid inventory response includes all three required capabilities. Missing, unknown or malformed capabilities show update-required/unavailable; callers never substitute a generic provider list or unfiltered model read.
 
-`ListResourcesRequest.provider_id` is list-only and valid only with account kind. It is included in pagination scope. `GetSnapshot` and `WatchEvents` keep their existing scope and behavior. CLI `account list --provider-id` uses the same contract; snapshots and non-account lists reject the flag.
+`ListResourcesRequest.provider_id` is list-only and valid only with account kind. It composes with `session_id` and `project_id` filters, and all three filters are included in pagination scope. `GetSnapshot` and `WatchEvents` keep their existing scope and behavior. CLI `account list --provider-id` uses the same contract; snapshots and non-account lists reject the flag.
 
 ## Catalog and selection
 

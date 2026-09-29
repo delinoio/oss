@@ -64,7 +64,19 @@ func (s *Store) ListAccountsByProviderPage(ctx context.Context, filter Filter, p
 			return err
 		}
 		var err error
-		result, err = tx.modelRecords("SELECT "+recordColumns+" FROM entities WHERE kind='account' AND json_extract(body,'$.provider_id')=? AND id>? ORDER BY id LIMIT ?", provider, filter.After, filter.Limit+1)
+		query := "SELECT " + recordColumns + " FROM entities WHERE kind='account' AND json_extract(body,'$.provider_id')=?"
+		args := []any{provider}
+		if filter.SessionID != "" {
+			query += " AND session_id=?"
+			args = append(args, filter.SessionID)
+		}
+		if filter.ProjectID != "" {
+			query += " AND project_id=?"
+			args = append(args, filter.ProjectID)
+		}
+		query += " AND id>? ORDER BY id LIMIT ?"
+		args = append(args, filter.After, filter.Limit+1)
+		result, err = tx.modelRecords(query, args...)
 		if err == nil && len(result) > filter.Limit {
 			more = true
 			result = result[:filter.Limit]
