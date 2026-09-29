@@ -268,6 +268,8 @@ pub struct Signals {
     terminate: tokio::signal::unix::Signal,
     #[cfg(windows)]
     interrupt: tokio::signal::windows::CtrlC,
+    #[cfg(windows)]
+    ctrl_break: tokio::signal::windows::CtrlBreak,
 }
 
 impl Signals {
@@ -284,17 +286,26 @@ impl Signals {
         {
             Ok(Self {
                 interrupt: tokio::signal::windows::ctrl_c().map_err(|_| Code::SignalHandler)?,
+                ctrl_break: tokio::signal::windows::ctrl_break()
+                    .map_err(|_| Code::SignalHandler)?,
             })
         }
     }
 
     pub async fn cancelled(mut self) -> Code {
-        tokio::select! {
-            result = self.interrupt.recv() => if result.is_some() { Code::Interrupted } else { Code::SignalHandler },
-            result = async {
-                #[cfg(unix)] { self.terminate.recv().await }
-                #[cfg(not(unix))] { std::future::pending::<Option<()>>().await }
-            } => if result.is_some() { Code::Terminated } else { Code::SignalHandler },
+        #[cfg(unix)]
+        {
+            tokio::select! {
+                result = self.interrupt.recv() => if result.is_some() { Code::Interrupted } else { Code::SignalHandler },
+                result = self.terminate.recv() => if result.is_some() { Code::Terminated } else { Code::SignalHandler },
+            }
+        }
+        #[cfg(windows)]
+        {
+            tokio::select! {
+                result = self.interrupt.recv() => if result.is_some() { Code::Interrupted } else { Code::SignalHandler },
+                result = self.ctrl_break.recv() => if result.is_some() { Code::Interrupted } else { Code::SignalHandler },
+            }
         }
     }
 }
