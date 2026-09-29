@@ -106,7 +106,10 @@ impl Code {
             Self::SignalHandler => {
                 "Cannot install or receive cancellation signals; check process signal support."
             }
-            Self::Interrupted => "Wait cancelled by Ctrl+C; the target was left unchanged.",
+            Self::Interrupted => {
+                "Wait cancelled by Ctrl+C or, on Windows, Ctrl+Break; the target was left \
+                 unchanged."
+            }
             Self::Terminated => "Wait cancelled by SIGTERM; the target was left unchanged.",
             Self::OverallTimeout => {
                 "Overall deadline expired; check readiness or increase --timeout."
