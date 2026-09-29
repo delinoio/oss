@@ -1775,7 +1775,7 @@ func (x *SelectNetworkProfileRequest) GetProfileRevision() uint64 {
 	return 0
 }
 
-type NetworkMutationResponse struct {
+type SaveNetworkProfileResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Resource      *Resource              `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
 	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1785,20 +1785,20 @@ type NetworkMutationResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *NetworkMutationResponse) Reset() {
-	*x = NetworkMutationResponse{}
+func (x *SaveNetworkProfileResponse) Reset() {
+	*x = SaveNetworkProfileResponse{}
 	mi := &file_delidev_v1_delidev_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *NetworkMutationResponse) String() string {
+func (x *SaveNetworkProfileResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*NetworkMutationResponse) ProtoMessage() {}
+func (*SaveNetworkProfileResponse) ProtoMessage() {}
 
-func (x *NetworkMutationResponse) ProtoReflect() protoreflect.Message {
+func (x *SaveNetworkProfileResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_delidev_v1_delidev_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1810,33 +1810,169 @@ func (x *NetworkMutationResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use NetworkMutationResponse.ProtoReflect.Descriptor instead.
-func (*NetworkMutationResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use SaveNetworkProfileResponse.ProtoReflect.Descriptor instead.
+func (*SaveNetworkProfileResponse) Descriptor() ([]byte, []int) {
 	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *NetworkMutationResponse) GetResource() *Resource {
+func (x *SaveNetworkProfileResponse) GetResource() *Resource {
 	if x != nil {
 		return x.Resource
 	}
 	return nil
 }
 
-func (x *NetworkMutationResponse) GetRequestId() string {
+func (x *SaveNetworkProfileResponse) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
 	}
 	return ""
 }
 
-func (x *NetworkMutationResponse) GetReplayed() bool {
+func (x *SaveNetworkProfileResponse) GetReplayed() bool {
 	if x != nil {
 		return x.Replayed
 	}
 	return false
 }
 
-func (x *NetworkMutationResponse) GetDeleted() bool {
+func (x *SaveNetworkProfileResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
+type DeleteNetworkProfileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Resource      *Resource              `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	Deleted       bool                   `protobuf:"varint,4,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteNetworkProfileResponse) Reset() {
+	*x = DeleteNetworkProfileResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteNetworkProfileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteNetworkProfileResponse) ProtoMessage() {}
+
+func (x *DeleteNetworkProfileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteNetworkProfileResponse.ProtoReflect.Descriptor instead.
+func (*DeleteNetworkProfileResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *DeleteNetworkProfileResponse) GetResource() *Resource {
+	if x != nil {
+		return x.Resource
+	}
+	return nil
+}
+
+func (x *DeleteNetworkProfileResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *DeleteNetworkProfileResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *DeleteNetworkProfileResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
+type SelectNetworkProfileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Resource      *Resource              `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	Deleted       bool                   `protobuf:"varint,4,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SelectNetworkProfileResponse) Reset() {
+	*x = SelectNetworkProfileResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SelectNetworkProfileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SelectNetworkProfileResponse) ProtoMessage() {}
+
+func (x *SelectNetworkProfileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SelectNetworkProfileResponse.ProtoReflect.Descriptor instead.
+func (*SelectNetworkProfileResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SelectNetworkProfileResponse) GetResource() *Resource {
+	if x != nil {
+		return x.Resource
+	}
+	return nil
+}
+
+func (x *SelectNetworkProfileResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *SelectNetworkProfileResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *SelectNetworkProfileResponse) GetDeleted() bool {
 	if x != nil {
 		return x.Deleted
 	}
@@ -1852,7 +1988,7 @@ type GetNetworkRouteRequest struct {
 
 func (x *GetNetworkRouteRequest) Reset() {
 	*x = GetNetworkRouteRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[4]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1864,7 +2000,7 @@ func (x *GetNetworkRouteRequest) String() string {
 func (*GetNetworkRouteRequest) ProtoMessage() {}
 
 func (x *GetNetworkRouteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[4]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1877,7 +2013,7 @@ func (x *GetNetworkRouteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNetworkRouteRequest.ProtoReflect.Descriptor instead.
 func (*GetNetworkRouteRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{4}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetNetworkRouteRequest) GetMachineId() string {
@@ -1897,7 +2033,7 @@ type GetNetworkRouteResponse struct {
 
 func (x *GetNetworkRouteResponse) Reset() {
 	*x = GetNetworkRouteResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[5]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1909,7 +2045,7 @@ func (x *GetNetworkRouteResponse) String() string {
 func (*GetNetworkRouteResponse) ProtoMessage() {}
 
 func (x *GetNetworkRouteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[5]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1922,7 +2058,7 @@ func (x *GetNetworkRouteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNetworkRouteResponse.ProtoReflect.Descriptor instead.
 func (*GetNetworkRouteResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{5}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetNetworkRouteResponse) GetRoute() *Resource {
@@ -1942,7 +2078,7 @@ type ExportWorkerNetworkMetadataRequest struct {
 
 func (x *ExportWorkerNetworkMetadataRequest) Reset() {
 	*x = ExportWorkerNetworkMetadataRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[6]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1954,7 +2090,7 @@ func (x *ExportWorkerNetworkMetadataRequest) String() string {
 func (*ExportWorkerNetworkMetadataRequest) ProtoMessage() {}
 
 func (x *ExportWorkerNetworkMetadataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[6]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1967,7 +2103,7 @@ func (x *ExportWorkerNetworkMetadataRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ExportWorkerNetworkMetadataRequest.ProtoReflect.Descriptor instead.
 func (*ExportWorkerNetworkMetadataRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{6}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ExportWorkerNetworkMetadataRequest) GetMachineId() string {
@@ -1994,7 +2130,7 @@ type ExportWorkerNetworkMetadataResponse struct {
 
 func (x *ExportWorkerNetworkMetadataResponse) Reset() {
 	*x = ExportWorkerNetworkMetadataResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[7]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2006,7 +2142,7 @@ func (x *ExportWorkerNetworkMetadataResponse) String() string {
 func (*ExportWorkerNetworkMetadataResponse) ProtoMessage() {}
 
 func (x *ExportWorkerNetworkMetadataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[7]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2019,7 +2155,7 @@ func (x *ExportWorkerNetworkMetadataResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ExportWorkerNetworkMetadataResponse.ProtoReflect.Descriptor instead.
 func (*ExportWorkerNetworkMetadataResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{7}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ExportWorkerNetworkMetadataResponse) GetMetadataJson() []byte {
@@ -2049,7 +2185,7 @@ type RespondQuestionRequest struct {
 
 func (x *RespondQuestionRequest) Reset() {
 	*x = RespondQuestionRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[8]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2061,7 +2197,7 @@ func (x *RespondQuestionRequest) String() string {
 func (*RespondQuestionRequest) ProtoMessage() {}
 
 func (x *RespondQuestionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[8]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2074,7 +2210,7 @@ func (x *RespondQuestionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RespondQuestionRequest.ProtoReflect.Descriptor instead.
 func (*RespondQuestionRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{8}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RespondQuestionRequest) GetMutation() *Mutation {
@@ -2102,7 +2238,7 @@ type RespondQuestionResponse struct {
 
 func (x *RespondQuestionResponse) Reset() {
 	*x = RespondQuestionResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[9]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2114,7 +2250,7 @@ func (x *RespondQuestionResponse) String() string {
 func (*RespondQuestionResponse) ProtoMessage() {}
 
 func (x *RespondQuestionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[9]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2127,7 +2263,7 @@ func (x *RespondQuestionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RespondQuestionResponse.ProtoReflect.Descriptor instead.
 func (*RespondQuestionResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{9}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RespondQuestionResponse) GetInteraction() *Resource {
@@ -2164,7 +2300,7 @@ type RespondApprovalRequest struct {
 
 func (x *RespondApprovalRequest) Reset() {
 	*x = RespondApprovalRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[10]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2176,7 +2312,7 @@ func (x *RespondApprovalRequest) String() string {
 func (*RespondApprovalRequest) ProtoMessage() {}
 
 func (x *RespondApprovalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[10]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2189,7 +2325,7 @@ func (x *RespondApprovalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RespondApprovalRequest.ProtoReflect.Descriptor instead.
 func (*RespondApprovalRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{10}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RespondApprovalRequest) GetMutation() *Mutation {
@@ -2217,7 +2353,7 @@ type RespondApprovalResponse struct {
 
 func (x *RespondApprovalResponse) Reset() {
 	*x = RespondApprovalResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[11]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2229,7 +2365,7 @@ func (x *RespondApprovalResponse) String() string {
 func (*RespondApprovalResponse) ProtoMessage() {}
 
 func (x *RespondApprovalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[11]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2242,7 +2378,7 @@ func (x *RespondApprovalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RespondApprovalResponse.ProtoReflect.Descriptor instead.
 func (*RespondApprovalResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{11}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RespondApprovalResponse) GetInteraction() *Resource {
@@ -2287,7 +2423,7 @@ type Resource struct {
 
 func (x *Resource) Reset() {
 	*x = Resource{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[12]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2299,7 +2435,7 @@ func (x *Resource) String() string {
 func (*Resource) ProtoMessage() {}
 
 func (x *Resource) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[12]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2312,7 +2448,7 @@ func (x *Resource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resource.ProtoReflect.Descriptor instead.
 func (*Resource) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{12}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Resource) GetId() string {
@@ -2389,7 +2525,7 @@ type Mutation struct {
 
 func (x *Mutation) Reset() {
 	*x = Mutation{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[13]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2401,7 +2537,7 @@ func (x *Mutation) String() string {
 func (*Mutation) ProtoMessage() {}
 
 func (x *Mutation) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[13]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2414,7 +2550,7 @@ func (x *Mutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mutation.ProtoReflect.Descriptor instead.
 func (*Mutation) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{13}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Mutation) GetRequestId() string {
@@ -2451,7 +2587,7 @@ type Filter struct {
 
 func (x *Filter) Reset() {
 	*x = Filter{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[14]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2463,7 +2599,7 @@ func (x *Filter) String() string {
 func (*Filter) ProtoMessage() {}
 
 func (x *Filter) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[14]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2476,7 +2612,7 @@ func (x *Filter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Filter.ProtoReflect.Descriptor instead.
 func (*Filter) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{14}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Filter) GetKind() EntityKind {
@@ -2526,7 +2662,7 @@ type ErrorDetail struct {
 
 func (x *ErrorDetail) Reset() {
 	*x = ErrorDetail{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[15]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2538,7 +2674,7 @@ func (x *ErrorDetail) String() string {
 func (*ErrorDetail) ProtoMessage() {}
 
 func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[15]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2551,7 +2687,7 @@ func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorDetail.ProtoReflect.Descriptor instead.
 func (*ErrorDetail) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{15}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ErrorDetail) GetCode() string {
@@ -2590,7 +2726,7 @@ type GetStatusRequest struct {
 
 func (x *GetStatusRequest) Reset() {
 	*x = GetStatusRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[16]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2602,7 +2738,7 @@ func (x *GetStatusRequest) String() string {
 func (*GetStatusRequest) ProtoMessage() {}
 
 func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[16]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2615,7 +2751,7 @@ func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetStatusRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{16}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{18}
 }
 
 type GetOverviewRequest struct {
@@ -2626,7 +2762,7 @@ type GetOverviewRequest struct {
 
 func (x *GetOverviewRequest) Reset() {
 	*x = GetOverviewRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[17]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2638,7 +2774,7 @@ func (x *GetOverviewRequest) String() string {
 func (*GetOverviewRequest) ProtoMessage() {}
 
 func (x *GetOverviewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[17]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2651,7 +2787,7 @@ func (x *GetOverviewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOverviewRequest.ProtoReflect.Descriptor instead.
 func (*GetOverviewRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{17}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{19}
 }
 
 type GetOverviewResponse struct {
@@ -2669,7 +2805,7 @@ type GetOverviewResponse struct {
 
 func (x *GetOverviewResponse) Reset() {
 	*x = GetOverviewResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[18]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2681,7 +2817,7 @@ func (x *GetOverviewResponse) String() string {
 func (*GetOverviewResponse) ProtoMessage() {}
 
 func (x *GetOverviewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[18]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2694,7 +2830,7 @@ func (x *GetOverviewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOverviewResponse.ProtoReflect.Descriptor instead.
 func (*GetOverviewResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{18}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetOverviewResponse) GetObservedAt() string {
@@ -2762,7 +2898,7 @@ type GetStatusResponse struct {
 
 func (x *GetStatusResponse) Reset() {
 	*x = GetStatusResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[19]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2774,7 +2910,7 @@ func (x *GetStatusResponse) String() string {
 func (*GetStatusResponse) ProtoMessage() {}
 
 func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[19]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2787,7 +2923,7 @@ func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetStatusResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{19}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetStatusResponse) GetVersion() string {
@@ -2855,7 +2991,7 @@ type StopServerRequest struct {
 
 func (x *StopServerRequest) Reset() {
 	*x = StopServerRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[20]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2867,7 +3003,7 @@ func (x *StopServerRequest) String() string {
 func (*StopServerRequest) ProtoMessage() {}
 
 func (x *StopServerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[20]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2880,7 +3016,7 @@ func (x *StopServerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopServerRequest.ProtoReflect.Descriptor instead.
 func (*StopServerRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{20}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *StopServerRequest) GetRequestId() string {
@@ -2899,7 +3035,7 @@ type StopServerResponse struct {
 
 func (x *StopServerResponse) Reset() {
 	*x = StopServerResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[21]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2911,7 +3047,7 @@ func (x *StopServerResponse) String() string {
 func (*StopServerResponse) ProtoMessage() {}
 
 func (x *StopServerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[21]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2924,7 +3060,7 @@ func (x *StopServerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopServerResponse.ProtoReflect.Descriptor instead.
 func (*StopServerResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{21}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *StopServerResponse) GetRequestId() string {
@@ -2942,7 +3078,7 @@ type GetDoctorRequest struct {
 
 func (x *GetDoctorRequest) Reset() {
 	*x = GetDoctorRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[22]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2954,7 +3090,7 @@ func (x *GetDoctorRequest) String() string {
 func (*GetDoctorRequest) ProtoMessage() {}
 
 func (x *GetDoctorRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[22]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2967,7 +3103,7 @@ func (x *GetDoctorRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDoctorRequest.ProtoReflect.Descriptor instead.
 func (*GetDoctorRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{22}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{24}
 }
 
 type GetDoctorResponse struct {
@@ -2979,7 +3115,7 @@ type GetDoctorResponse struct {
 
 func (x *GetDoctorResponse) Reset() {
 	*x = GetDoctorResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[23]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2991,7 +3127,7 @@ func (x *GetDoctorResponse) String() string {
 func (*GetDoctorResponse) ProtoMessage() {}
 
 func (x *GetDoctorResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[23]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3004,7 +3140,7 @@ func (x *GetDoctorResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDoctorResponse.ProtoReflect.Descriptor instead.
 func (*GetDoctorResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{23}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetDoctorResponse) GetReportJson() []byte {
@@ -3023,7 +3159,7 @@ type CreateBackupRequest struct {
 
 func (x *CreateBackupRequest) Reset() {
 	*x = CreateBackupRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[24]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3035,7 +3171,7 @@ func (x *CreateBackupRequest) String() string {
 func (*CreateBackupRequest) ProtoMessage() {}
 
 func (x *CreateBackupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[24]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3048,7 +3184,7 @@ func (x *CreateBackupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBackupRequest.ProtoReflect.Descriptor instead.
 func (*CreateBackupRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{24}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CreateBackupRequest) GetRequestId() string {
@@ -3069,7 +3205,7 @@ type CreateBackupResponse struct {
 
 func (x *CreateBackupResponse) Reset() {
 	*x = CreateBackupResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[25]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3081,7 +3217,7 @@ func (x *CreateBackupResponse) String() string {
 func (*CreateBackupResponse) ProtoMessage() {}
 
 func (x *CreateBackupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[25]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3094,7 +3230,7 @@ func (x *CreateBackupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBackupResponse.ProtoReflect.Descriptor instead.
 func (*CreateBackupResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{25}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreateBackupResponse) GetId() string {
@@ -3128,7 +3264,7 @@ type GetResourceRequest struct {
 
 func (x *GetResourceRequest) Reset() {
 	*x = GetResourceRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[26]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3140,7 +3276,7 @@ func (x *GetResourceRequest) String() string {
 func (*GetResourceRequest) ProtoMessage() {}
 
 func (x *GetResourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[26]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3153,7 +3289,7 @@ func (x *GetResourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetResourceRequest.ProtoReflect.Descriptor instead.
 func (*GetResourceRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{26}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetResourceRequest) GetKind() EntityKind {
@@ -3179,7 +3315,7 @@ type GetResourceResponse struct {
 
 func (x *GetResourceResponse) Reset() {
 	*x = GetResourceResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[27]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3191,7 +3327,7 @@ func (x *GetResourceResponse) String() string {
 func (*GetResourceResponse) ProtoMessage() {}
 
 func (x *GetResourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[27]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3204,7 +3340,7 @@ func (x *GetResourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetResourceResponse.ProtoReflect.Descriptor instead.
 func (*GetResourceResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{27}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *GetResourceResponse) GetResource() *Resource {
@@ -3227,7 +3363,7 @@ type ListResourcesRequest struct {
 
 func (x *ListResourcesRequest) Reset() {
 	*x = ListResourcesRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[28]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3239,7 +3375,7 @@ func (x *ListResourcesRequest) String() string {
 func (*ListResourcesRequest) ProtoMessage() {}
 
 func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[28]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3252,7 +3388,7 @@ func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResourcesRequest.ProtoReflect.Descriptor instead.
 func (*ListResourcesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{28}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ListResourcesRequest) GetFilter() *Filter {
@@ -3286,7 +3422,7 @@ type ListResourcesResponse struct {
 
 func (x *ListResourcesResponse) Reset() {
 	*x = ListResourcesResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[29]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3298,7 +3434,7 @@ func (x *ListResourcesResponse) String() string {
 func (*ListResourcesResponse) ProtoMessage() {}
 
 func (x *ListResourcesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[29]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3311,7 +3447,7 @@ func (x *ListResourcesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResourcesResponse.ProtoReflect.Descriptor instead.
 func (*ListResourcesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{29}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ListResourcesResponse) GetResources() []*Resource {
@@ -3337,7 +3473,7 @@ type GetSnapshotRequest struct {
 
 func (x *GetSnapshotRequest) Reset() {
 	*x = GetSnapshotRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[30]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3349,7 +3485,7 @@ func (x *GetSnapshotRequest) String() string {
 func (*GetSnapshotRequest) ProtoMessage() {}
 
 func (x *GetSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[30]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3362,7 +3498,7 @@ func (x *GetSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GetSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{30}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *GetSnapshotRequest) GetFilter() *Filter {
@@ -3382,7 +3518,7 @@ type GetSnapshotResponse struct {
 
 func (x *GetSnapshotResponse) Reset() {
 	*x = GetSnapshotResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[31]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3394,7 +3530,7 @@ func (x *GetSnapshotResponse) String() string {
 func (*GetSnapshotResponse) ProtoMessage() {}
 
 func (x *GetSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[31]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3407,7 +3543,7 @@ func (x *GetSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*GetSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{31}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetSnapshotResponse) GetResources() []*Resource {
@@ -3434,7 +3570,7 @@ type WatchEventsRequest struct {
 
 func (x *WatchEventsRequest) Reset() {
 	*x = WatchEventsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[32]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3446,7 +3582,7 @@ func (x *WatchEventsRequest) String() string {
 func (*WatchEventsRequest) ProtoMessage() {}
 
 func (x *WatchEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[32]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3459,7 +3595,7 @@ func (x *WatchEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchEventsRequest.ProtoReflect.Descriptor instead.
 func (*WatchEventsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{32}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *WatchEventsRequest) GetCursor() string {
@@ -3492,7 +3628,7 @@ type WatchEventsResponse struct {
 
 func (x *WatchEventsResponse) Reset() {
 	*x = WatchEventsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[33]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3504,7 +3640,7 @@ func (x *WatchEventsResponse) String() string {
 func (*WatchEventsResponse) ProtoMessage() {}
 
 func (x *WatchEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[33]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3517,7 +3653,7 @@ func (x *WatchEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchEventsResponse.ProtoReflect.Descriptor instead.
 func (*WatchEventsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{33}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *WatchEventsResponse) GetCursor() string {
@@ -3588,7 +3724,7 @@ type SaveConfigurationRequest struct {
 
 func (x *SaveConfigurationRequest) Reset() {
 	*x = SaveConfigurationRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[34]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3600,7 +3736,7 @@ func (x *SaveConfigurationRequest) String() string {
 func (*SaveConfigurationRequest) ProtoMessage() {}
 
 func (x *SaveConfigurationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[34]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3613,7 +3749,7 @@ func (x *SaveConfigurationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveConfigurationRequest.ProtoReflect.Descriptor instead.
 func (*SaveConfigurationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{34}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *SaveConfigurationRequest) GetMutation() *Mutation {
@@ -3657,7 +3793,7 @@ type SaveConfigurationResponse struct {
 
 func (x *SaveConfigurationResponse) Reset() {
 	*x = SaveConfigurationResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[35]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3669,7 +3805,7 @@ func (x *SaveConfigurationResponse) String() string {
 func (*SaveConfigurationResponse) ProtoMessage() {}
 
 func (x *SaveConfigurationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[35]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3682,7 +3818,7 @@ func (x *SaveConfigurationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveConfigurationResponse.ProtoReflect.Descriptor instead.
 func (*SaveConfigurationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{35}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *SaveConfigurationResponse) GetResource() *Resource {
@@ -3723,7 +3859,7 @@ type DeleteConfigurationRequest struct {
 
 func (x *DeleteConfigurationRequest) Reset() {
 	*x = DeleteConfigurationRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[36]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3735,7 +3871,7 @@ func (x *DeleteConfigurationRequest) String() string {
 func (*DeleteConfigurationRequest) ProtoMessage() {}
 
 func (x *DeleteConfigurationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[36]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3748,7 +3884,7 @@ func (x *DeleteConfigurationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteConfigurationRequest.ProtoReflect.Descriptor instead.
 func (*DeleteConfigurationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{36}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *DeleteConfigurationRequest) GetMutation() *Mutation {
@@ -3776,7 +3912,7 @@ type DeleteConfigurationResponse struct {
 
 func (x *DeleteConfigurationResponse) Reset() {
 	*x = DeleteConfigurationResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[37]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3788,7 +3924,7 @@ func (x *DeleteConfigurationResponse) String() string {
 func (*DeleteConfigurationResponse) ProtoMessage() {}
 
 func (x *DeleteConfigurationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[37]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3801,7 +3937,7 @@ func (x *DeleteConfigurationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteConfigurationResponse.ProtoReflect.Descriptor instead.
 func (*DeleteConfigurationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{37}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *DeleteConfigurationResponse) GetId() string {
@@ -3835,7 +3971,7 @@ type PreviewRoutingRequest struct {
 
 func (x *PreviewRoutingRequest) Reset() {
 	*x = PreviewRoutingRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[38]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3847,7 +3983,7 @@ func (x *PreviewRoutingRequest) String() string {
 func (*PreviewRoutingRequest) ProtoMessage() {}
 
 func (x *PreviewRoutingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[38]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3860,7 +3996,7 @@ func (x *PreviewRoutingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewRoutingRequest.ProtoReflect.Descriptor instead.
 func (*PreviewRoutingRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{38}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *PreviewRoutingRequest) GetAgentId() string {
@@ -3886,7 +4022,7 @@ type PreviewRoutingResponse struct {
 
 func (x *PreviewRoutingResponse) Reset() {
 	*x = PreviewRoutingResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[39]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3898,7 +4034,7 @@ func (x *PreviewRoutingResponse) String() string {
 func (*PreviewRoutingResponse) ProtoMessage() {}
 
 func (x *PreviewRoutingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[39]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3911,7 +4047,7 @@ func (x *PreviewRoutingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewRoutingResponse.ProtoReflect.Descriptor instead.
 func (*PreviewRoutingResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{39}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PreviewRoutingResponse) GetRouteJson() []byte {
@@ -3933,7 +4069,7 @@ type ClaimSteerInputRequest struct {
 
 func (x *ClaimSteerInputRequest) Reset() {
 	*x = ClaimSteerInputRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[40]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3945,7 +4081,7 @@ func (x *ClaimSteerInputRequest) String() string {
 func (*ClaimSteerInputRequest) ProtoMessage() {}
 
 func (x *ClaimSteerInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[40]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3958,7 +4094,7 @@ func (x *ClaimSteerInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimSteerInputRequest.ProtoReflect.Descriptor instead.
 func (*ClaimSteerInputRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{40}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ClaimSteerInputRequest) GetMutation() *Mutation {
@@ -4000,7 +4136,7 @@ type ClaimSteerInputResponse struct {
 
 func (x *ClaimSteerInputResponse) Reset() {
 	*x = ClaimSteerInputResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[41]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4012,7 +4148,7 @@ func (x *ClaimSteerInputResponse) String() string {
 func (*ClaimSteerInputResponse) ProtoMessage() {}
 
 func (x *ClaimSteerInputResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[41]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4025,7 +4161,7 @@ func (x *ClaimSteerInputResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimSteerInputResponse.ProtoReflect.Descriptor instead.
 func (*ClaimSteerInputResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{41}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ClaimSteerInputResponse) GetSteer() *Resource {
@@ -4063,7 +4199,7 @@ type ClaimQuestionResponseRequest struct {
 
 func (x *ClaimQuestionResponseRequest) Reset() {
 	*x = ClaimQuestionResponseRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[42]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4075,7 +4211,7 @@ func (x *ClaimQuestionResponseRequest) String() string {
 func (*ClaimQuestionResponseRequest) ProtoMessage() {}
 
 func (x *ClaimQuestionResponseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[42]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4088,7 +4224,7 @@ func (x *ClaimQuestionResponseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimQuestionResponseRequest.ProtoReflect.Descriptor instead.
 func (*ClaimQuestionResponseRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{42}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ClaimQuestionResponseRequest) GetMutation() *Mutation {
@@ -4137,7 +4273,7 @@ type ClaimQuestionResponseResponse struct {
 
 func (x *ClaimQuestionResponseResponse) Reset() {
 	*x = ClaimQuestionResponseResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[43]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4149,7 +4285,7 @@ func (x *ClaimQuestionResponseResponse) String() string {
 func (*ClaimQuestionResponseResponse) ProtoMessage() {}
 
 func (x *ClaimQuestionResponseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[43]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4162,7 +4298,7 @@ func (x *ClaimQuestionResponseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimQuestionResponseResponse.ProtoReflect.Descriptor instead.
 func (*ClaimQuestionResponseResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{43}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ClaimQuestionResponseResponse) GetInteraction() *Resource {
@@ -4193,7 +4329,7 @@ type ClaimApprovalResponseRequest struct {
 
 func (x *ClaimApprovalResponseRequest) Reset() {
 	*x = ClaimApprovalResponseRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[44]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4205,7 +4341,7 @@ func (x *ClaimApprovalResponseRequest) String() string {
 func (*ClaimApprovalResponseRequest) ProtoMessage() {}
 
 func (x *ClaimApprovalResponseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[44]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4218,7 +4354,7 @@ func (x *ClaimApprovalResponseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimApprovalResponseRequest.ProtoReflect.Descriptor instead.
 func (*ClaimApprovalResponseRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{44}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ClaimApprovalResponseRequest) GetMutation() *Mutation {
@@ -4267,7 +4403,7 @@ type ClaimApprovalResponseResponse struct {
 
 func (x *ClaimApprovalResponseResponse) Reset() {
 	*x = ClaimApprovalResponseResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[45]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4279,7 +4415,7 @@ func (x *ClaimApprovalResponseResponse) String() string {
 func (*ClaimApprovalResponseResponse) ProtoMessage() {}
 
 func (x *ClaimApprovalResponseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[45]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4292,7 +4428,7 @@ func (x *ClaimApprovalResponseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimApprovalResponseResponse.ProtoReflect.Descriptor instead.
 func (*ClaimApprovalResponseResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{45}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ClaimApprovalResponseResponse) GetInteraction() *Resource {
@@ -4323,7 +4459,7 @@ type PublishExecutionRequest struct {
 
 func (x *PublishExecutionRequest) Reset() {
 	*x = PublishExecutionRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[46]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4335,7 +4471,7 @@ func (x *PublishExecutionRequest) String() string {
 func (*PublishExecutionRequest) ProtoMessage() {}
 
 func (x *PublishExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[46]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4348,7 +4484,7 @@ func (x *PublishExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishExecutionRequest.ProtoReflect.Descriptor instead.
 func (*PublishExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{46}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *PublishExecutionRequest) GetMutation() *Mutation {
@@ -4389,7 +4525,7 @@ type PublishExecutionResponse struct {
 
 func (x *PublishExecutionResponse) Reset() {
 	*x = PublishExecutionResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[47]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4401,7 +4537,7 @@ func (x *PublishExecutionResponse) String() string {
 func (*PublishExecutionResponse) ProtoMessage() {}
 
 func (x *PublishExecutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[47]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4414,7 +4550,7 @@ func (x *PublishExecutionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishExecutionResponse.ProtoReflect.Descriptor instead.
 func (*PublishExecutionResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{47}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *PublishExecutionResponse) GetAcknowledgedSequence() uint64 {
@@ -4445,7 +4581,7 @@ type RegisterExecutionRequest struct {
 
 func (x *RegisterExecutionRequest) Reset() {
 	*x = RegisterExecutionRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[48]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4457,7 +4593,7 @@ func (x *RegisterExecutionRequest) String() string {
 func (*RegisterExecutionRequest) ProtoMessage() {}
 
 func (x *RegisterExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[48]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4470,7 +4606,7 @@ func (x *RegisterExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterExecutionRequest.ProtoReflect.Descriptor instead.
 func (*RegisterExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{48}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *RegisterExecutionRequest) GetMutation() *Mutation {
@@ -4512,7 +4648,7 @@ type RegisterExecutionResponse struct {
 
 func (x *RegisterExecutionResponse) Reset() {
 	*x = RegisterExecutionResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[49]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4524,7 +4660,7 @@ func (x *RegisterExecutionResponse) String() string {
 func (*RegisterExecutionResponse) ProtoMessage() {}
 
 func (x *RegisterExecutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[49]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4537,7 +4673,7 @@ func (x *RegisterExecutionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterExecutionResponse.ProtoReflect.Descriptor instead.
 func (*RegisterExecutionResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{49}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *RegisterExecutionResponse) GetProxyPath() string {
@@ -4567,7 +4703,7 @@ type CreatePairingRequest struct {
 
 func (x *CreatePairingRequest) Reset() {
 	*x = CreatePairingRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[50]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4579,7 +4715,7 @@ func (x *CreatePairingRequest) String() string {
 func (*CreatePairingRequest) ProtoMessage() {}
 
 func (x *CreatePairingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[50]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4592,7 +4728,7 @@ func (x *CreatePairingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePairingRequest.ProtoReflect.Descriptor instead.
 func (*CreatePairingRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{50}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *CreatePairingRequest) GetRequestId() string {
@@ -4634,7 +4770,7 @@ type CreatePairingResponse struct {
 
 func (x *CreatePairingResponse) Reset() {
 	*x = CreatePairingResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[51]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4646,7 +4782,7 @@ func (x *CreatePairingResponse) String() string {
 func (*CreatePairingResponse) ProtoMessage() {}
 
 func (x *CreatePairingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[51]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4659,7 +4795,7 @@ func (x *CreatePairingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePairingResponse.ProtoReflect.Descriptor instead.
 func (*CreatePairingResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{51}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *CreatePairingResponse) GetPairing() *Resource {
@@ -4698,7 +4834,7 @@ type PairDeviceRequest struct {
 
 func (x *PairDeviceRequest) Reset() {
 	*x = PairDeviceRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[52]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4710,7 +4846,7 @@ func (x *PairDeviceRequest) String() string {
 func (*PairDeviceRequest) ProtoMessage() {}
 
 func (x *PairDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[52]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4723,7 +4859,7 @@ func (x *PairDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairDeviceRequest.ProtoReflect.Descriptor instead.
 func (*PairDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{52}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *PairDeviceRequest) GetRequestId() string {
@@ -4787,7 +4923,7 @@ type PairDeviceResponse struct {
 
 func (x *PairDeviceResponse) Reset() {
 	*x = PairDeviceResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[53]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4799,7 +4935,7 @@ func (x *PairDeviceResponse) String() string {
 func (*PairDeviceResponse) ProtoMessage() {}
 
 func (x *PairDeviceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[53]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4812,7 +4948,7 @@ func (x *PairDeviceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairDeviceResponse.ProtoReflect.Descriptor instead.
 func (*PairDeviceResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{53}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *PairDeviceResponse) GetDevice() *Resource {
@@ -4852,7 +4988,7 @@ type RevokeDeviceRequest struct {
 
 func (x *RevokeDeviceRequest) Reset() {
 	*x = RevokeDeviceRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[54]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4864,7 +5000,7 @@ func (x *RevokeDeviceRequest) String() string {
 func (*RevokeDeviceRequest) ProtoMessage() {}
 
 func (x *RevokeDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[54]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4877,7 +5013,7 @@ func (x *RevokeDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeDeviceRequest.ProtoReflect.Descriptor instead.
 func (*RevokeDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{54}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *RevokeDeviceRequest) GetMutation() *Mutation {
@@ -4898,7 +5034,7 @@ type RevokeDeviceResponse struct {
 
 func (x *RevokeDeviceResponse) Reset() {
 	*x = RevokeDeviceResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[55]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4910,7 +5046,7 @@ func (x *RevokeDeviceResponse) String() string {
 func (*RevokeDeviceResponse) ProtoMessage() {}
 
 func (x *RevokeDeviceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[55]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4923,7 +5059,7 @@ func (x *RevokeDeviceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeDeviceResponse.ProtoReflect.Descriptor instead.
 func (*RevokeDeviceResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{55}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *RevokeDeviceResponse) GetDevice() *Resource {
@@ -4960,7 +5096,7 @@ type AttachWorkerRequest struct {
 
 func (x *AttachWorkerRequest) Reset() {
 	*x = AttachWorkerRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[56]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4972,7 +5108,7 @@ func (x *AttachWorkerRequest) String() string {
 func (*AttachWorkerRequest) ProtoMessage() {}
 
 func (x *AttachWorkerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[56]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4985,7 +5121,7 @@ func (x *AttachWorkerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachWorkerRequest.ProtoReflect.Descriptor instead.
 func (*AttachWorkerRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{56}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *AttachWorkerRequest) GetRequestId() string {
@@ -5033,7 +5169,7 @@ type AttachWorkerResponse struct {
 
 func (x *AttachWorkerResponse) Reset() {
 	*x = AttachWorkerResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[57]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5045,7 +5181,7 @@ func (x *AttachWorkerResponse) String() string {
 func (*AttachWorkerResponse) ProtoMessage() {}
 
 func (x *AttachWorkerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[57]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5058,7 +5194,7 @@ func (x *AttachWorkerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachWorkerResponse.ProtoReflect.Descriptor instead.
 func (*AttachWorkerResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{57}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *AttachWorkerResponse) GetMachine() *Resource {
@@ -5085,7 +5221,7 @@ type WatchWorkRequest struct {
 
 func (x *WatchWorkRequest) Reset() {
 	*x = WatchWorkRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[58]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5097,7 +5233,7 @@ func (x *WatchWorkRequest) String() string {
 func (*WatchWorkRequest) ProtoMessage() {}
 
 func (x *WatchWorkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[58]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5110,7 +5246,7 @@ func (x *WatchWorkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchWorkRequest.ProtoReflect.Descriptor instead.
 func (*WatchWorkRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{58}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *WatchWorkRequest) GetMachineId() string {
@@ -5137,7 +5273,7 @@ type WatchAuxiliaryWorkRequest struct {
 
 func (x *WatchAuxiliaryWorkRequest) Reset() {
 	*x = WatchAuxiliaryWorkRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[59]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5149,7 +5285,7 @@ func (x *WatchAuxiliaryWorkRequest) String() string {
 func (*WatchAuxiliaryWorkRequest) ProtoMessage() {}
 
 func (x *WatchAuxiliaryWorkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[59]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5162,7 +5298,7 @@ func (x *WatchAuxiliaryWorkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchAuxiliaryWorkRequest.ProtoReflect.Descriptor instead.
 func (*WatchAuxiliaryWorkRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{59}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *WatchAuxiliaryWorkRequest) GetMachineId() string {
@@ -5191,7 +5327,7 @@ type WatchAuxiliaryWorkResponse struct {
 
 func (x *WatchAuxiliaryWorkResponse) Reset() {
 	*x = WatchAuxiliaryWorkResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[60]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5203,7 +5339,7 @@ func (x *WatchAuxiliaryWorkResponse) String() string {
 func (*WatchAuxiliaryWorkResponse) ProtoMessage() {}
 
 func (x *WatchAuxiliaryWorkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[60]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5216,7 +5352,7 @@ func (x *WatchAuxiliaryWorkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchAuxiliaryWorkResponse.ProtoReflect.Descriptor instead.
 func (*WatchAuxiliaryWorkResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{60}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *WatchAuxiliaryWorkResponse) GetJob() *Resource {
@@ -5265,7 +5401,7 @@ type WatchWorkResponse struct {
 
 func (x *WatchWorkResponse) Reset() {
 	*x = WatchWorkResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[61]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5277,7 +5413,7 @@ func (x *WatchWorkResponse) String() string {
 func (*WatchWorkResponse) ProtoMessage() {}
 
 func (x *WatchWorkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[61]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5290,7 +5426,7 @@ func (x *WatchWorkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchWorkResponse.ProtoReflect.Descriptor instead.
 func (*WatchWorkResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{61}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *WatchWorkResponse) GetJob() *Resource {
@@ -5353,7 +5489,7 @@ type SteerInputControl struct {
 
 func (x *SteerInputControl) Reset() {
 	*x = SteerInputControl{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[62]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5365,7 +5501,7 @@ func (x *SteerInputControl) String() string {
 func (*SteerInputControl) ProtoMessage() {}
 
 func (x *SteerInputControl) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[62]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5378,7 +5514,7 @@ func (x *SteerInputControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SteerInputControl.ProtoReflect.Descriptor instead.
 func (*SteerInputControl) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{62}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *SteerInputControl) GetJobId() string {
@@ -5414,7 +5550,7 @@ type QuestionResponseControl struct {
 
 func (x *QuestionResponseControl) Reset() {
 	*x = QuestionResponseControl{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[63]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5426,7 +5562,7 @@ func (x *QuestionResponseControl) String() string {
 func (*QuestionResponseControl) ProtoMessage() {}
 
 func (x *QuestionResponseControl) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[63]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5439,7 +5575,7 @@ func (x *QuestionResponseControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionResponseControl.ProtoReflect.Descriptor instead.
 func (*QuestionResponseControl) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{63}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *QuestionResponseControl) GetJobId() string {
@@ -5482,7 +5618,7 @@ type ApprovalResponseControl struct {
 
 func (x *ApprovalResponseControl) Reset() {
 	*x = ApprovalResponseControl{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[64]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5494,7 +5630,7 @@ func (x *ApprovalResponseControl) String() string {
 func (*ApprovalResponseControl) ProtoMessage() {}
 
 func (x *ApprovalResponseControl) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[64]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5507,7 +5643,7 @@ func (x *ApprovalResponseControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApprovalResponseControl.ProtoReflect.Descriptor instead.
 func (*ApprovalResponseControl) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{64}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *ApprovalResponseControl) GetJobId() string {
@@ -5551,7 +5687,7 @@ type ReportWorkRequest struct {
 
 func (x *ReportWorkRequest) Reset() {
 	*x = ReportWorkRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[65]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5563,7 +5699,7 @@ func (x *ReportWorkRequest) String() string {
 func (*ReportWorkRequest) ProtoMessage() {}
 
 func (x *ReportWorkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[65]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5576,7 +5712,7 @@ func (x *ReportWorkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportWorkRequest.ProtoReflect.Descriptor instead.
 func (*ReportWorkRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{65}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *ReportWorkRequest) GetMutation() *Mutation {
@@ -5624,7 +5760,7 @@ type ReportWorkResponse struct {
 
 func (x *ReportWorkResponse) Reset() {
 	*x = ReportWorkResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[66]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5636,7 +5772,7 @@ func (x *ReportWorkResponse) String() string {
 func (*ReportWorkResponse) ProtoMessage() {}
 
 func (x *ReportWorkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[66]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5649,7 +5785,7 @@ func (x *ReportWorkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportWorkResponse.ProtoReflect.Descriptor instead.
 func (*ReportWorkResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{66}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *ReportWorkResponse) GetJob() *Resource {
@@ -5678,7 +5814,7 @@ type InspectRepositoryRequest struct {
 
 func (x *InspectRepositoryRequest) Reset() {
 	*x = InspectRepositoryRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[67]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5690,7 +5826,7 @@ func (x *InspectRepositoryRequest) String() string {
 func (*InspectRepositoryRequest) ProtoMessage() {}
 
 func (x *InspectRepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[67]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5703,7 +5839,7 @@ func (x *InspectRepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectRepositoryRequest.ProtoReflect.Descriptor instead.
 func (*InspectRepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{67}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *InspectRepositoryRequest) GetRequestId() string {
@@ -5745,7 +5881,7 @@ type InspectRepositoryResponse struct {
 
 func (x *InspectRepositoryResponse) Reset() {
 	*x = InspectRepositoryResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[68]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5757,7 +5893,7 @@ func (x *InspectRepositoryResponse) String() string {
 func (*InspectRepositoryResponse) ProtoMessage() {}
 
 func (x *InspectRepositoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[68]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5770,7 +5906,7 @@ func (x *InspectRepositoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectRepositoryResponse.ProtoReflect.Descriptor instead.
 func (*InspectRepositoryResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{68}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *InspectRepositoryResponse) GetJob() *Resource {
@@ -5809,7 +5945,7 @@ type DiscoverHarnessesRequest struct {
 
 func (x *DiscoverHarnessesRequest) Reset() {
 	*x = DiscoverHarnessesRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[69]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5821,7 +5957,7 @@ func (x *DiscoverHarnessesRequest) String() string {
 func (*DiscoverHarnessesRequest) ProtoMessage() {}
 
 func (x *DiscoverHarnessesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[69]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5834,7 +5970,7 @@ func (x *DiscoverHarnessesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoverHarnessesRequest.ProtoReflect.Descriptor instead.
 func (*DiscoverHarnessesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{69}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *DiscoverHarnessesRequest) GetMutation() *Mutation {
@@ -5870,7 +6006,7 @@ type DiscoverHarnessesResponse struct {
 
 func (x *DiscoverHarnessesResponse) Reset() {
 	*x = DiscoverHarnessesResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[70]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5882,7 +6018,7 @@ func (x *DiscoverHarnessesResponse) String() string {
 func (*DiscoverHarnessesResponse) ProtoMessage() {}
 
 func (x *DiscoverHarnessesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[70]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5895,7 +6031,7 @@ func (x *DiscoverHarnessesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoverHarnessesResponse.ProtoReflect.Descriptor instead.
 func (*DiscoverHarnessesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{70}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *DiscoverHarnessesResponse) GetMachine() *Resource {
@@ -5939,7 +6075,7 @@ type ConnectAccountRequest struct {
 
 func (x *ConnectAccountRequest) Reset() {
 	*x = ConnectAccountRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[71]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5951,7 +6087,7 @@ func (x *ConnectAccountRequest) String() string {
 func (*ConnectAccountRequest) ProtoMessage() {}
 
 func (x *ConnectAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[71]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5964,7 +6100,7 @@ func (x *ConnectAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectAccountRequest.ProtoReflect.Descriptor instead.
 func (*ConnectAccountRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{71}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *ConnectAccountRequest) GetMutation() *Mutation {
@@ -5999,7 +6135,7 @@ type ConnectAccountResponse struct {
 
 func (x *ConnectAccountResponse) Reset() {
 	*x = ConnectAccountResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[72]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6011,7 +6147,7 @@ func (x *ConnectAccountResponse) String() string {
 func (*ConnectAccountResponse) ProtoMessage() {}
 
 func (x *ConnectAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[72]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6024,7 +6160,7 @@ func (x *ConnectAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectAccountResponse.ProtoReflect.Descriptor instead.
 func (*ConnectAccountResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{72}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *ConnectAccountResponse) GetAccount() *Resource {
@@ -6057,7 +6193,7 @@ type DisconnectAccountRequest struct {
 
 func (x *DisconnectAccountRequest) Reset() {
 	*x = DisconnectAccountRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[73]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6069,7 +6205,7 @@ func (x *DisconnectAccountRequest) String() string {
 func (*DisconnectAccountRequest) ProtoMessage() {}
 
 func (x *DisconnectAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[73]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6082,7 +6218,7 @@ func (x *DisconnectAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectAccountRequest.ProtoReflect.Descriptor instead.
 func (*DisconnectAccountRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{73}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *DisconnectAccountRequest) GetMutation() *Mutation {
@@ -6106,7 +6242,7 @@ type DisconnectAccountResponse struct {
 
 func (x *DisconnectAccountResponse) Reset() {
 	*x = DisconnectAccountResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[74]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6118,7 +6254,7 @@ func (x *DisconnectAccountResponse) String() string {
 func (*DisconnectAccountResponse) ProtoMessage() {}
 
 func (x *DisconnectAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[74]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6131,7 +6267,7 @@ func (x *DisconnectAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectAccountResponse.ProtoReflect.Descriptor instead.
 func (*DisconnectAccountResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{74}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *DisconnectAccountResponse) GetAccount() *Resource {
@@ -6171,7 +6307,7 @@ type GetAccountStatusRequest struct {
 
 func (x *GetAccountStatusRequest) Reset() {
 	*x = GetAccountStatusRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[75]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6183,7 +6319,7 @@ func (x *GetAccountStatusRequest) String() string {
 func (*GetAccountStatusRequest) ProtoMessage() {}
 
 func (x *GetAccountStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[75]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6196,7 +6332,7 @@ func (x *GetAccountStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountStatusRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{75}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *GetAccountStatusRequest) GetId() string {
@@ -6215,7 +6351,7 @@ type GetAccountStatusResponse struct {
 
 func (x *GetAccountStatusResponse) Reset() {
 	*x = GetAccountStatusResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[76]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6227,7 +6363,7 @@ func (x *GetAccountStatusResponse) String() string {
 func (*GetAccountStatusResponse) ProtoMessage() {}
 
 func (x *GetAccountStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[76]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6240,7 +6376,7 @@ func (x *GetAccountStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetAccountStatusResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{76}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *GetAccountStatusResponse) GetAccount() *Resource {
@@ -6259,7 +6395,7 @@ type ValidateAccountRequest struct {
 
 func (x *ValidateAccountRequest) Reset() {
 	*x = ValidateAccountRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[77]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6271,7 +6407,7 @@ func (x *ValidateAccountRequest) String() string {
 func (*ValidateAccountRequest) ProtoMessage() {}
 
 func (x *ValidateAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[77]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6284,7 +6420,7 @@ func (x *ValidateAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateAccountRequest.ProtoReflect.Descriptor instead.
 func (*ValidateAccountRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{77}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ValidateAccountRequest) GetMutation() *Mutation {
@@ -6308,7 +6444,7 @@ type ValidateAccountResponse struct {
 
 func (x *ValidateAccountResponse) Reset() {
 	*x = ValidateAccountResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[78]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6320,7 +6456,7 @@ func (x *ValidateAccountResponse) String() string {
 func (*ValidateAccountResponse) ProtoMessage() {}
 
 func (x *ValidateAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[78]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6333,7 +6469,7 @@ func (x *ValidateAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateAccountResponse.ProtoReflect.Descriptor instead.
 func (*ValidateAccountResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{78}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ValidateAccountResponse) GetAccount() *Resource {
@@ -6377,7 +6513,7 @@ type RefreshPullRequestProblemsRequest struct {
 
 func (x *RefreshPullRequestProblemsRequest) Reset() {
 	*x = RefreshPullRequestProblemsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[79]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6389,7 +6525,7 @@ func (x *RefreshPullRequestProblemsRequest) String() string {
 func (*RefreshPullRequestProblemsRequest) ProtoMessage() {}
 
 func (x *RefreshPullRequestProblemsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[79]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6402,7 +6538,7 @@ func (x *RefreshPullRequestProblemsRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use RefreshPullRequestProblemsRequest.ProtoReflect.Descriptor instead.
 func (*RefreshPullRequestProblemsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{79}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *RefreshPullRequestProblemsRequest) GetRequestId() string {
@@ -6444,7 +6580,7 @@ type RefreshPullRequestProblemsResponse struct {
 
 func (x *RefreshPullRequestProblemsResponse) Reset() {
 	*x = RefreshPullRequestProblemsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[80]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6456,7 +6592,7 @@ func (x *RefreshPullRequestProblemsResponse) String() string {
 func (*RefreshPullRequestProblemsResponse) ProtoMessage() {}
 
 func (x *RefreshPullRequestProblemsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[80]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6469,7 +6605,7 @@ func (x *RefreshPullRequestProblemsResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use RefreshPullRequestProblemsResponse.ProtoReflect.Descriptor instead.
 func (*RefreshPullRequestProblemsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{80}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *RefreshPullRequestProblemsResponse) GetProblemSet() *Resource {
@@ -6506,7 +6642,7 @@ type ListPullRequestProblemsRequest struct {
 
 func (x *ListPullRequestProblemsRequest) Reset() {
 	*x = ListPullRequestProblemsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[81]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6518,7 +6654,7 @@ func (x *ListPullRequestProblemsRequest) String() string {
 func (*ListPullRequestProblemsRequest) ProtoMessage() {}
 
 func (x *ListPullRequestProblemsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[81]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6531,7 +6667,7 @@ func (x *ListPullRequestProblemsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPullRequestProblemsRequest.ProtoReflect.Descriptor instead.
 func (*ListPullRequestProblemsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{81}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ListPullRequestProblemsRequest) GetRemoteRepositoryId() string {
@@ -6574,7 +6710,7 @@ type ListPullRequestProblemsResponse struct {
 
 func (x *ListPullRequestProblemsResponse) Reset() {
 	*x = ListPullRequestProblemsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[82]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6586,7 +6722,7 @@ func (x *ListPullRequestProblemsResponse) String() string {
 func (*ListPullRequestProblemsResponse) ProtoMessage() {}
 
 func (x *ListPullRequestProblemsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[82]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6599,7 +6735,7 @@ func (x *ListPullRequestProblemsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPullRequestProblemsResponse.ProtoReflect.Descriptor instead.
 func (*ListPullRequestProblemsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{82}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *ListPullRequestProblemsResponse) GetProblemSet() *Resource {
@@ -6633,7 +6769,7 @@ type DismissPullRequestProblemRequest struct {
 
 func (x *DismissPullRequestProblemRequest) Reset() {
 	*x = DismissPullRequestProblemRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[83]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6645,7 +6781,7 @@ func (x *DismissPullRequestProblemRequest) String() string {
 func (*DismissPullRequestProblemRequest) ProtoMessage() {}
 
 func (x *DismissPullRequestProblemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[83]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6658,7 +6794,7 @@ func (x *DismissPullRequestProblemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DismissPullRequestProblemRequest.ProtoReflect.Descriptor instead.
 func (*DismissPullRequestProblemRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{83}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *DismissPullRequestProblemRequest) GetMutation() *Mutation {
@@ -6686,7 +6822,7 @@ type DismissPullRequestProblemResponse struct {
 
 func (x *DismissPullRequestProblemResponse) Reset() {
 	*x = DismissPullRequestProblemResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[84]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6698,7 +6834,7 @@ func (x *DismissPullRequestProblemResponse) String() string {
 func (*DismissPullRequestProblemResponse) ProtoMessage() {}
 
 func (x *DismissPullRequestProblemResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[84]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6711,7 +6847,7 @@ func (x *DismissPullRequestProblemResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use DismissPullRequestProblemResponse.ProtoReflect.Descriptor instead.
 func (*DismissPullRequestProblemResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{84}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *DismissPullRequestProblemResponse) GetProblem() *Resource {
@@ -6747,7 +6883,7 @@ type ListPullRequestRemediationAttemptsRequest struct {
 
 func (x *ListPullRequestRemediationAttemptsRequest) Reset() {
 	*x = ListPullRequestRemediationAttemptsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[85]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6759,7 +6895,7 @@ func (x *ListPullRequestRemediationAttemptsRequest) String() string {
 func (*ListPullRequestRemediationAttemptsRequest) ProtoMessage() {}
 
 func (x *ListPullRequestRemediationAttemptsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[85]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6772,7 +6908,7 @@ func (x *ListPullRequestRemediationAttemptsRequest) ProtoReflect() protoreflect.
 
 // Deprecated: Use ListPullRequestRemediationAttemptsRequest.ProtoReflect.Descriptor instead.
 func (*ListPullRequestRemediationAttemptsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{85}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *ListPullRequestRemediationAttemptsRequest) GetRemoteRepositoryId() string {
@@ -6814,7 +6950,7 @@ type ListPullRequestRemediationAttemptsResponse struct {
 
 func (x *ListPullRequestRemediationAttemptsResponse) Reset() {
 	*x = ListPullRequestRemediationAttemptsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[86]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6826,7 +6962,7 @@ func (x *ListPullRequestRemediationAttemptsResponse) String() string {
 func (*ListPullRequestRemediationAttemptsResponse) ProtoMessage() {}
 
 func (x *ListPullRequestRemediationAttemptsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[86]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6839,7 +6975,7 @@ func (x *ListPullRequestRemediationAttemptsResponse) ProtoReflect() protoreflect
 
 // Deprecated: Use ListPullRequestRemediationAttemptsResponse.ProtoReflect.Descriptor instead.
 func (*ListPullRequestRemediationAttemptsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{86}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *ListPullRequestRemediationAttemptsResponse) GetProblemSet() *Resource {
@@ -6873,7 +7009,7 @@ type ResumePullRequestRemediationRequest struct {
 
 func (x *ResumePullRequestRemediationRequest) Reset() {
 	*x = ResumePullRequestRemediationRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[87]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6885,7 +7021,7 @@ func (x *ResumePullRequestRemediationRequest) String() string {
 func (*ResumePullRequestRemediationRequest) ProtoMessage() {}
 
 func (x *ResumePullRequestRemediationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[87]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6898,7 +7034,7 @@ func (x *ResumePullRequestRemediationRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ResumePullRequestRemediationRequest.ProtoReflect.Descriptor instead.
 func (*ResumePullRequestRemediationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{87}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *ResumePullRequestRemediationRequest) GetMutation() *Mutation {
@@ -6919,7 +7055,7 @@ type ResumePullRequestRemediationResponse struct {
 
 func (x *ResumePullRequestRemediationResponse) Reset() {
 	*x = ResumePullRequestRemediationResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[88]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6931,7 +7067,7 @@ func (x *ResumePullRequestRemediationResponse) String() string {
 func (*ResumePullRequestRemediationResponse) ProtoMessage() {}
 
 func (x *ResumePullRequestRemediationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[88]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6944,7 +7080,7 @@ func (x *ResumePullRequestRemediationResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ResumePullRequestRemediationResponse.ProtoReflect.Descriptor instead.
 func (*ResumePullRequestRemediationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{88}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *ResumePullRequestRemediationResponse) GetProblemSet() *Resource {
@@ -6979,7 +7115,7 @@ type GetGitHubTokenFormRequest struct {
 
 func (x *GetGitHubTokenFormRequest) Reset() {
 	*x = GetGitHubTokenFormRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[89]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6991,7 +7127,7 @@ func (x *GetGitHubTokenFormRequest) String() string {
 func (*GetGitHubTokenFormRequest) ProtoMessage() {}
 
 func (x *GetGitHubTokenFormRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[89]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7004,7 +7140,7 @@ func (x *GetGitHubTokenFormRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGitHubTokenFormRequest.ProtoReflect.Descriptor instead.
 func (*GetGitHubTokenFormRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{89}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *GetGitHubTokenFormRequest) GetProfileId() string {
@@ -7039,7 +7175,7 @@ type GetGitHubTokenFormResponse struct {
 
 func (x *GetGitHubTokenFormResponse) Reset() {
 	*x = GetGitHubTokenFormResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[90]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7051,7 +7187,7 @@ func (x *GetGitHubTokenFormResponse) String() string {
 func (*GetGitHubTokenFormResponse) ProtoMessage() {}
 
 func (x *GetGitHubTokenFormResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[90]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7064,7 +7200,7 @@ func (x *GetGitHubTokenFormResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGitHubTokenFormResponse.ProtoReflect.Descriptor instead.
 func (*GetGitHubTokenFormResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{90}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *GetGitHubTokenFormResponse) GetSchemaVersion() uint32 {
@@ -7093,7 +7229,7 @@ type SaveIntegrationProfileRequest struct {
 
 func (x *SaveIntegrationProfileRequest) Reset() {
 	*x = SaveIntegrationProfileRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[91]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7105,7 +7241,7 @@ func (x *SaveIntegrationProfileRequest) String() string {
 func (*SaveIntegrationProfileRequest) ProtoMessage() {}
 
 func (x *SaveIntegrationProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[91]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7118,7 +7254,7 @@ func (x *SaveIntegrationProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveIntegrationProfileRequest.ProtoReflect.Descriptor instead.
 func (*SaveIntegrationProfileRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{91}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *SaveIntegrationProfileRequest) GetMutation() *Mutation {
@@ -7153,7 +7289,7 @@ type SaveIntegrationProfileResponse struct {
 
 func (x *SaveIntegrationProfileResponse) Reset() {
 	*x = SaveIntegrationProfileResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[92]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7165,7 +7301,7 @@ func (x *SaveIntegrationProfileResponse) String() string {
 func (*SaveIntegrationProfileResponse) ProtoMessage() {}
 
 func (x *SaveIntegrationProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[92]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7178,7 +7314,7 @@ func (x *SaveIntegrationProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveIntegrationProfileResponse.ProtoReflect.Descriptor instead.
 func (*SaveIntegrationProfileResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{92}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *SaveIntegrationProfileResponse) GetProfile() *Resource {
@@ -7213,7 +7349,7 @@ type ReplaceIntegrationTokenRequest struct {
 
 func (x *ReplaceIntegrationTokenRequest) Reset() {
 	*x = ReplaceIntegrationTokenRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[93]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7225,7 +7361,7 @@ func (x *ReplaceIntegrationTokenRequest) String() string {
 func (*ReplaceIntegrationTokenRequest) ProtoMessage() {}
 
 func (x *ReplaceIntegrationTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[93]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7238,7 +7374,7 @@ func (x *ReplaceIntegrationTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplaceIntegrationTokenRequest.ProtoReflect.Descriptor instead.
 func (*ReplaceIntegrationTokenRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{93}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *ReplaceIntegrationTokenRequest) GetMutation() *Mutation {
@@ -7268,7 +7404,7 @@ type ReplaceIntegrationTokenResponse struct {
 
 func (x *ReplaceIntegrationTokenResponse) Reset() {
 	*x = ReplaceIntegrationTokenResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[94]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7280,7 +7416,7 @@ func (x *ReplaceIntegrationTokenResponse) String() string {
 func (*ReplaceIntegrationTokenResponse) ProtoMessage() {}
 
 func (x *ReplaceIntegrationTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[94]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7293,7 +7429,7 @@ func (x *ReplaceIntegrationTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplaceIntegrationTokenResponse.ProtoReflect.Descriptor instead.
 func (*ReplaceIntegrationTokenResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{94}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *ReplaceIntegrationTokenResponse) GetProfile() *Resource {
@@ -7333,7 +7469,7 @@ type ValidateIntegrationProfileRequest struct {
 
 func (x *ValidateIntegrationProfileRequest) Reset() {
 	*x = ValidateIntegrationProfileRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[95]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7345,7 +7481,7 @@ func (x *ValidateIntegrationProfileRequest) String() string {
 func (*ValidateIntegrationProfileRequest) ProtoMessage() {}
 
 func (x *ValidateIntegrationProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[95]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7358,7 +7494,7 @@ func (x *ValidateIntegrationProfileRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ValidateIntegrationProfileRequest.ProtoReflect.Descriptor instead.
 func (*ValidateIntegrationProfileRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{95}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *ValidateIntegrationProfileRequest) GetMutation() *Mutation {
@@ -7380,7 +7516,7 @@ type ValidateIntegrationProfileResponse struct {
 
 func (x *ValidateIntegrationProfileResponse) Reset() {
 	*x = ValidateIntegrationProfileResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[96]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7392,7 +7528,7 @@ func (x *ValidateIntegrationProfileResponse) String() string {
 func (*ValidateIntegrationProfileResponse) ProtoMessage() {}
 
 func (x *ValidateIntegrationProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[96]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7405,7 +7541,7 @@ func (x *ValidateIntegrationProfileResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ValidateIntegrationProfileResponse.ProtoReflect.Descriptor instead.
 func (*ValidateIntegrationProfileResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{96}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *ValidateIntegrationProfileResponse) GetProfile() *Resource {
@@ -7445,7 +7581,7 @@ type DeleteIntegrationProfileRequest struct {
 
 func (x *DeleteIntegrationProfileRequest) Reset() {
 	*x = DeleteIntegrationProfileRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[97]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7457,7 +7593,7 @@ func (x *DeleteIntegrationProfileRequest) String() string {
 func (*DeleteIntegrationProfileRequest) ProtoMessage() {}
 
 func (x *DeleteIntegrationProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[97]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7470,7 +7606,7 @@ func (x *DeleteIntegrationProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteIntegrationProfileRequest.ProtoReflect.Descriptor instead.
 func (*DeleteIntegrationProfileRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{97}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *DeleteIntegrationProfileRequest) GetMutation() *Mutation {
@@ -7494,7 +7630,7 @@ type DeleteIntegrationProfileResponse struct {
 
 func (x *DeleteIntegrationProfileResponse) Reset() {
 	*x = DeleteIntegrationProfileResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[98]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7506,7 +7642,7 @@ func (x *DeleteIntegrationProfileResponse) String() string {
 func (*DeleteIntegrationProfileResponse) ProtoMessage() {}
 
 func (x *DeleteIntegrationProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[98]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7519,7 +7655,7 @@ func (x *DeleteIntegrationProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteIntegrationProfileResponse.ProtoReflect.Descriptor instead.
 func (*DeleteIntegrationProfileResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{98}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *DeleteIntegrationProfileResponse) GetProfile() *Resource {
@@ -7567,7 +7703,7 @@ type InspectRepositoryIntegrationRequest struct {
 
 func (x *InspectRepositoryIntegrationRequest) Reset() {
 	*x = InspectRepositoryIntegrationRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[99]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7579,7 +7715,7 @@ func (x *InspectRepositoryIntegrationRequest) String() string {
 func (*InspectRepositoryIntegrationRequest) ProtoMessage() {}
 
 func (x *InspectRepositoryIntegrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[99]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7592,7 +7728,7 @@ func (x *InspectRepositoryIntegrationRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use InspectRepositoryIntegrationRequest.ProtoReflect.Descriptor instead.
 func (*InspectRepositoryIntegrationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{99}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *InspectRepositoryIntegrationRequest) GetRepositoryId() string {
@@ -7613,7 +7749,7 @@ type InspectRepositoryIntegrationResponse struct {
 
 func (x *InspectRepositoryIntegrationResponse) Reset() {
 	*x = InspectRepositoryIntegrationResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[100]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7625,7 +7761,7 @@ func (x *InspectRepositoryIntegrationResponse) String() string {
 func (*InspectRepositoryIntegrationResponse) ProtoMessage() {}
 
 func (x *InspectRepositoryIntegrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[100]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7638,7 +7774,7 @@ func (x *InspectRepositoryIntegrationResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use InspectRepositoryIntegrationResponse.ProtoReflect.Descriptor instead.
 func (*InspectRepositoryIntegrationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{100}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *InspectRepositoryIntegrationResponse) GetSchemaVersion() uint32 {
@@ -7667,7 +7803,7 @@ type QueryRepositoryIntegrationRequest struct {
 
 func (x *QueryRepositoryIntegrationRequest) Reset() {
 	*x = QueryRepositoryIntegrationRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[101]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7679,7 +7815,7 @@ func (x *QueryRepositoryIntegrationRequest) String() string {
 func (*QueryRepositoryIntegrationRequest) ProtoMessage() {}
 
 func (x *QueryRepositoryIntegrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[101]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7692,7 +7828,7 @@ func (x *QueryRepositoryIntegrationRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use QueryRepositoryIntegrationRequest.ProtoReflect.Descriptor instead.
 func (*QueryRepositoryIntegrationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{101}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *QueryRepositoryIntegrationRequest) GetRepositoryId() string {
@@ -7726,7 +7862,7 @@ type QueryRepositoryIntegrationResponse struct {
 
 func (x *QueryRepositoryIntegrationResponse) Reset() {
 	*x = QueryRepositoryIntegrationResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[102]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7738,7 +7874,7 @@ func (x *QueryRepositoryIntegrationResponse) String() string {
 func (*QueryRepositoryIntegrationResponse) ProtoMessage() {}
 
 func (x *QueryRepositoryIntegrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[102]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7751,7 +7887,7 @@ func (x *QueryRepositoryIntegrationResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use QueryRepositoryIntegrationResponse.ProtoReflect.Descriptor instead.
 func (*QueryRepositoryIntegrationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{102}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *QueryRepositoryIntegrationResponse) GetSchemaVersion() uint32 {
@@ -7780,7 +7916,7 @@ type ListProviderInventoryRequest struct {
 
 func (x *ListProviderInventoryRequest) Reset() {
 	*x = ListProviderInventoryRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[103]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7792,7 +7928,7 @@ func (x *ListProviderInventoryRequest) String() string {
 func (*ListProviderInventoryRequest) ProtoMessage() {}
 
 func (x *ListProviderInventoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[103]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7805,7 +7941,7 @@ func (x *ListProviderInventoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProviderInventoryRequest.ProtoReflect.Descriptor instead.
 func (*ListProviderInventoryRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{103}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *ListProviderInventoryRequest) GetQuery() string {
@@ -7853,7 +7989,7 @@ type ProviderInventoryEntry struct {
 
 func (x *ProviderInventoryEntry) Reset() {
 	*x = ProviderInventoryEntry{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[104]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7865,7 +8001,7 @@ func (x *ProviderInventoryEntry) String() string {
 func (*ProviderInventoryEntry) ProtoMessage() {}
 
 func (x *ProviderInventoryEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[104]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7878,7 +8014,7 @@ func (x *ProviderInventoryEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderInventoryEntry.ProtoReflect.Descriptor instead.
 func (*ProviderInventoryEntry) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{104}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *ProviderInventoryEntry) GetPresetId() ProviderPresetId {
@@ -7948,7 +8084,7 @@ type ListProviderInventoryResponse struct {
 
 func (x *ListProviderInventoryResponse) Reset() {
 	*x = ListProviderInventoryResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[105]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7960,7 +8096,7 @@ func (x *ListProviderInventoryResponse) String() string {
 func (*ListProviderInventoryResponse) ProtoMessage() {}
 
 func (x *ListProviderInventoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[105]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7973,7 +8109,7 @@ func (x *ListProviderInventoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProviderInventoryResponse.ProtoReflect.Descriptor instead.
 func (*ListProviderInventoryResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{105}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *ListProviderInventoryResponse) GetEntries() []*ProviderInventoryEntry {
@@ -8005,7 +8141,7 @@ type ListProviderPresetsRequest struct {
 
 func (x *ListProviderPresetsRequest) Reset() {
 	*x = ListProviderPresetsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[106]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8017,7 +8153,7 @@ func (x *ListProviderPresetsRequest) String() string {
 func (*ListProviderPresetsRequest) ProtoMessage() {}
 
 func (x *ListProviderPresetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[106]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8030,7 +8166,7 @@ func (x *ListProviderPresetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProviderPresetsRequest.ProtoReflect.Descriptor instead.
 func (*ListProviderPresetsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{106}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{108}
 }
 
 type ListProviderPresetsResponse struct {
@@ -8042,7 +8178,7 @@ type ListProviderPresetsResponse struct {
 
 func (x *ListProviderPresetsResponse) Reset() {
 	*x = ListProviderPresetsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[107]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8054,7 +8190,7 @@ func (x *ListProviderPresetsResponse) String() string {
 func (*ListProviderPresetsResponse) ProtoMessage() {}
 
 func (x *ListProviderPresetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[107]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8067,7 +8203,7 @@ func (x *ListProviderPresetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProviderPresetsResponse.ProtoReflect.Descriptor instead.
 func (*ListProviderPresetsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{107}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *ListProviderPresetsResponse) GetPresetsJson() []byte {
@@ -8087,7 +8223,7 @@ type DiscoverModelsRequest struct {
 
 func (x *DiscoverModelsRequest) Reset() {
 	*x = DiscoverModelsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[108]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8099,7 +8235,7 @@ func (x *DiscoverModelsRequest) String() string {
 func (*DiscoverModelsRequest) ProtoMessage() {}
 
 func (x *DiscoverModelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[108]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8112,7 +8248,7 @@ func (x *DiscoverModelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoverModelsRequest.ProtoReflect.Descriptor instead.
 func (*DiscoverModelsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{108}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *DiscoverModelsRequest) GetMutation() *Mutation {
@@ -8134,7 +8270,7 @@ type DiscoverModelsResponse struct {
 
 func (x *DiscoverModelsResponse) Reset() {
 	*x = DiscoverModelsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[109]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8146,7 +8282,7 @@ func (x *DiscoverModelsResponse) String() string {
 func (*DiscoverModelsResponse) ProtoMessage() {}
 
 func (x *DiscoverModelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[109]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8159,7 +8295,7 @@ func (x *DiscoverModelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoverModelsResponse.ProtoReflect.Descriptor instead.
 func (*DiscoverModelsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{109}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *DiscoverModelsResponse) GetAccount() *Resource {
@@ -8205,7 +8341,7 @@ type SearchModelsRequest struct {
 
 func (x *SearchModelsRequest) Reset() {
 	*x = SearchModelsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[110]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8217,7 +8353,7 @@ func (x *SearchModelsRequest) String() string {
 func (*SearchModelsRequest) ProtoMessage() {}
 
 func (x *SearchModelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[110]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8230,7 +8366,7 @@ func (x *SearchModelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchModelsRequest.ProtoReflect.Descriptor instead.
 func (*SearchModelsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{110}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *SearchModelsRequest) GetQuery() string {
@@ -8286,7 +8422,7 @@ type SearchModelsResponse struct {
 
 func (x *SearchModelsResponse) Reset() {
 	*x = SearchModelsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[111]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8298,7 +8434,7 @@ func (x *SearchModelsResponse) String() string {
 func (*SearchModelsResponse) ProtoMessage() {}
 
 func (x *SearchModelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[111]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8311,7 +8447,7 @@ func (x *SearchModelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchModelsResponse.ProtoReflect.Descriptor instead.
 func (*SearchModelsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{111}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *SearchModelsResponse) GetModels() []*Resource {
@@ -8345,7 +8481,7 @@ type ResolveModelRequest struct {
 
 func (x *ResolveModelRequest) Reset() {
 	*x = ResolveModelRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[112]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8357,7 +8493,7 @@ func (x *ResolveModelRequest) String() string {
 func (*ResolveModelRequest) ProtoMessage() {}
 
 func (x *ResolveModelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[112]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8370,7 +8506,7 @@ func (x *ResolveModelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveModelRequest.ProtoReflect.Descriptor instead.
 func (*ResolveModelRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{112}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *ResolveModelRequest) GetSelector() string {
@@ -8396,7 +8532,7 @@ type ResolveModelResponse struct {
 
 func (x *ResolveModelResponse) Reset() {
 	*x = ResolveModelResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[113]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8408,7 +8544,7 @@ func (x *ResolveModelResponse) String() string {
 func (*ResolveModelResponse) ProtoMessage() {}
 
 func (x *ResolveModelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[113]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8421,7 +8557,7 @@ func (x *ResolveModelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveModelResponse.ProtoReflect.Descriptor instead.
 func (*ResolveModelResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{113}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *ResolveModelResponse) GetModel() *Resource {
@@ -8444,7 +8580,7 @@ type LinkSessionPullRequestRequest struct {
 
 func (x *LinkSessionPullRequestRequest) Reset() {
 	*x = LinkSessionPullRequestRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[114]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8456,7 +8592,7 @@ func (x *LinkSessionPullRequestRequest) String() string {
 func (*LinkSessionPullRequestRequest) ProtoMessage() {}
 
 func (x *LinkSessionPullRequestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[114]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8469,7 +8605,7 @@ func (x *LinkSessionPullRequestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LinkSessionPullRequestRequest.ProtoReflect.Descriptor instead.
 func (*LinkSessionPullRequestRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{114}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *LinkSessionPullRequestRequest) GetRequestId() string {
@@ -8511,7 +8647,7 @@ type LinkSessionPullRequestResponse struct {
 
 func (x *LinkSessionPullRequestResponse) Reset() {
 	*x = LinkSessionPullRequestResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[115]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8523,7 +8659,7 @@ func (x *LinkSessionPullRequestResponse) String() string {
 func (*LinkSessionPullRequestResponse) ProtoMessage() {}
 
 func (x *LinkSessionPullRequestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[115]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8536,7 +8672,7 @@ func (x *LinkSessionPullRequestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LinkSessionPullRequestResponse.ProtoReflect.Descriptor instead.
 func (*LinkSessionPullRequestResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{115}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{117}
 }
 
 func (x *LinkSessionPullRequestResponse) GetAssociation() *Resource {
@@ -8570,7 +8706,7 @@ type UnlinkSessionPullRequestRequest struct {
 
 func (x *UnlinkSessionPullRequestRequest) Reset() {
 	*x = UnlinkSessionPullRequestRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[116]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[118]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8582,7 +8718,7 @@ func (x *UnlinkSessionPullRequestRequest) String() string {
 func (*UnlinkSessionPullRequestRequest) ProtoMessage() {}
 
 func (x *UnlinkSessionPullRequestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[116]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[118]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8595,7 +8731,7 @@ func (x *UnlinkSessionPullRequestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnlinkSessionPullRequestRequest.ProtoReflect.Descriptor instead.
 func (*UnlinkSessionPullRequestRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{116}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{118}
 }
 
 func (x *UnlinkSessionPullRequestRequest) GetMutation() *Mutation {
@@ -8623,7 +8759,7 @@ type UnlinkSessionPullRequestResponse struct {
 
 func (x *UnlinkSessionPullRequestResponse) Reset() {
 	*x = UnlinkSessionPullRequestResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[117]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[119]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8635,7 +8771,7 @@ func (x *UnlinkSessionPullRequestResponse) String() string {
 func (*UnlinkSessionPullRequestResponse) ProtoMessage() {}
 
 func (x *UnlinkSessionPullRequestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[117]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[119]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8648,7 +8784,7 @@ func (x *UnlinkSessionPullRequestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnlinkSessionPullRequestResponse.ProtoReflect.Descriptor instead.
 func (*UnlinkSessionPullRequestResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{117}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{119}
 }
 
 func (x *UnlinkSessionPullRequestResponse) GetId() string {
@@ -8683,7 +8819,7 @@ type ReadSessionReviewContextRequest struct {
 
 func (x *ReadSessionReviewContextRequest) Reset() {
 	*x = ReadSessionReviewContextRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[118]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[120]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8695,7 +8831,7 @@ func (x *ReadSessionReviewContextRequest) String() string {
 func (*ReadSessionReviewContextRequest) ProtoMessage() {}
 
 func (x *ReadSessionReviewContextRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[118]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[120]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8708,7 +8844,7 @@ func (x *ReadSessionReviewContextRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadSessionReviewContextRequest.ProtoReflect.Descriptor instead.
 func (*ReadSessionReviewContextRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{118}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{120}
 }
 
 func (x *ReadSessionReviewContextRequest) GetSessionId() string {
@@ -8736,7 +8872,7 @@ type ReadSessionReviewContextResponse struct {
 
 func (x *ReadSessionReviewContextResponse) Reset() {
 	*x = ReadSessionReviewContextResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[119]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[121]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8748,7 +8884,7 @@ func (x *ReadSessionReviewContextResponse) String() string {
 func (*ReadSessionReviewContextResponse) ProtoMessage() {}
 
 func (x *ReadSessionReviewContextResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[119]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[121]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8761,7 +8897,7 @@ func (x *ReadSessionReviewContextResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadSessionReviewContextResponse.ProtoReflect.Descriptor instead.
 func (*ReadSessionReviewContextResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{119}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{121}
 }
 
 func (x *ReadSessionReviewContextResponse) GetDocumentJson() []byte {
@@ -8784,7 +8920,7 @@ type SteerQueuedInputRequest struct {
 
 func (x *SteerQueuedInputRequest) Reset() {
 	*x = SteerQueuedInputRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[120]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8796,7 +8932,7 @@ func (x *SteerQueuedInputRequest) String() string {
 func (*SteerQueuedInputRequest) ProtoMessage() {}
 
 func (x *SteerQueuedInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[120]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8809,7 +8945,7 @@ func (x *SteerQueuedInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SteerQueuedInputRequest.ProtoReflect.Descriptor instead.
 func (*SteerQueuedInputRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{120}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{122}
 }
 
 func (x *SteerQueuedInputRequest) GetMutation() *Mutation {
@@ -8852,7 +8988,7 @@ type SteerQueuedInputResponse struct {
 
 func (x *SteerQueuedInputResponse) Reset() {
 	*x = SteerQueuedInputResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[121]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8864,7 +9000,7 @@ func (x *SteerQueuedInputResponse) String() string {
 func (*SteerQueuedInputResponse) ProtoMessage() {}
 
 func (x *SteerQueuedInputResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[121]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8877,7 +9013,7 @@ func (x *SteerQueuedInputResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SteerQueuedInputResponse.ProtoReflect.Descriptor instead.
 func (*SteerQueuedInputResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{121}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{123}
 }
 
 func (x *SteerQueuedInputResponse) GetSteer() *Resource {
@@ -8924,7 +9060,7 @@ type SessionChange struct {
 
 func (x *SessionChange) Reset() {
 	*x = SessionChange{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[122]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8936,7 +9072,7 @@ func (x *SessionChange) String() string {
 func (*SessionChange) ProtoMessage() {}
 
 func (x *SessionChange) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[122]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8949,7 +9085,7 @@ func (x *SessionChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionChange.ProtoReflect.Descriptor instead.
 func (*SessionChange) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{122}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{124}
 }
 
 func (x *SessionChange) GetSession() *Resource {
@@ -9022,7 +9158,7 @@ type CreateSessionRequest struct {
 
 func (x *CreateSessionRequest) Reset() {
 	*x = CreateSessionRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[123]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9034,7 +9170,7 @@ func (x *CreateSessionRequest) String() string {
 func (*CreateSessionRequest) ProtoMessage() {}
 
 func (x *CreateSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[123]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9047,7 +9183,7 @@ func (x *CreateSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSessionRequest.ProtoReflect.Descriptor instead.
 func (*CreateSessionRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{123}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{125}
 }
 
 func (x *CreateSessionRequest) GetRequestId() string {
@@ -9080,7 +9216,7 @@ type CreateSessionResponse struct {
 
 func (x *CreateSessionResponse) Reset() {
 	*x = CreateSessionResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[124]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9092,7 +9228,7 @@ func (x *CreateSessionResponse) String() string {
 func (*CreateSessionResponse) ProtoMessage() {}
 
 func (x *CreateSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[124]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9105,7 +9241,7 @@ func (x *CreateSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSessionResponse.ProtoReflect.Descriptor instead.
 func (*CreateSessionResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{124}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *CreateSessionResponse) GetChange() *SessionChange {
@@ -9127,7 +9263,7 @@ type ListSessionsRequest struct {
 
 func (x *ListSessionsRequest) Reset() {
 	*x = ListSessionsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[125]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9139,7 +9275,7 @@ func (x *ListSessionsRequest) String() string {
 func (*ListSessionsRequest) ProtoMessage() {}
 
 func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[125]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9152,7 +9288,7 @@ func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsRequest.ProtoReflect.Descriptor instead.
 func (*ListSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{125}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *ListSessionsRequest) GetProjectId() string {
@@ -9193,7 +9329,7 @@ type ListSessionsResponse struct {
 
 func (x *ListSessionsResponse) Reset() {
 	*x = ListSessionsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[126]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9205,7 +9341,7 @@ func (x *ListSessionsResponse) String() string {
 func (*ListSessionsResponse) ProtoMessage() {}
 
 func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[126]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9218,7 +9354,7 @@ func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsResponse.ProtoReflect.Descriptor instead.
 func (*ListSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{126}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *ListSessionsResponse) GetSessions() []*Resource {
@@ -9247,7 +9383,7 @@ type EnqueueInputRequest struct {
 
 func (x *EnqueueInputRequest) Reset() {
 	*x = EnqueueInputRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[127]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9259,7 +9395,7 @@ func (x *EnqueueInputRequest) String() string {
 func (*EnqueueInputRequest) ProtoMessage() {}
 
 func (x *EnqueueInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[127]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9272,7 +9408,7 @@ func (x *EnqueueInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueInputRequest.ProtoReflect.Descriptor instead.
 func (*EnqueueInputRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{127}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *EnqueueInputRequest) GetRequestId() string {
@@ -9305,7 +9441,7 @@ type EnqueueInputResponse struct {
 
 func (x *EnqueueInputResponse) Reset() {
 	*x = EnqueueInputResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[128]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9317,7 +9453,7 @@ func (x *EnqueueInputResponse) String() string {
 func (*EnqueueInputResponse) ProtoMessage() {}
 
 func (x *EnqueueInputResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[128]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9330,7 +9466,7 @@ func (x *EnqueueInputResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueInputResponse.ProtoReflect.Descriptor instead.
 func (*EnqueueInputResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{128}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *EnqueueInputResponse) GetChange() *SessionChange {
@@ -9351,7 +9487,7 @@ type EditQueuedInputRequest struct {
 
 func (x *EditQueuedInputRequest) Reset() {
 	*x = EditQueuedInputRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[129]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9363,7 +9499,7 @@ func (x *EditQueuedInputRequest) String() string {
 func (*EditQueuedInputRequest) ProtoMessage() {}
 
 func (x *EditQueuedInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[129]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9376,7 +9512,7 @@ func (x *EditQueuedInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditQueuedInputRequest.ProtoReflect.Descriptor instead.
 func (*EditQueuedInputRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{129}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *EditQueuedInputRequest) GetMutation() *Mutation {
@@ -9409,7 +9545,7 @@ type EditQueuedInputResponse struct {
 
 func (x *EditQueuedInputResponse) Reset() {
 	*x = EditQueuedInputResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[130]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9421,7 +9557,7 @@ func (x *EditQueuedInputResponse) String() string {
 func (*EditQueuedInputResponse) ProtoMessage() {}
 
 func (x *EditQueuedInputResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[130]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9434,7 +9570,7 @@ func (x *EditQueuedInputResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditQueuedInputResponse.ProtoReflect.Descriptor instead.
 func (*EditQueuedInputResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{130}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *EditQueuedInputResponse) GetChange() *SessionChange {
@@ -9454,7 +9590,7 @@ type RemoveQueuedInputRequest struct {
 
 func (x *RemoveQueuedInputRequest) Reset() {
 	*x = RemoveQueuedInputRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[131]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9466,7 +9602,7 @@ func (x *RemoveQueuedInputRequest) String() string {
 func (*RemoveQueuedInputRequest) ProtoMessage() {}
 
 func (x *RemoveQueuedInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[131]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9479,7 +9615,7 @@ func (x *RemoveQueuedInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveQueuedInputRequest.ProtoReflect.Descriptor instead.
 func (*RemoveQueuedInputRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{131}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *RemoveQueuedInputRequest) GetMutation() *Mutation {
@@ -9505,7 +9641,7 @@ type RemoveQueuedInputResponse struct {
 
 func (x *RemoveQueuedInputResponse) Reset() {
 	*x = RemoveQueuedInputResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[132]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9517,7 +9653,7 @@ func (x *RemoveQueuedInputResponse) String() string {
 func (*RemoveQueuedInputResponse) ProtoMessage() {}
 
 func (x *RemoveQueuedInputResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[132]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9530,7 +9666,7 @@ func (x *RemoveQueuedInputResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveQueuedInputResponse.ProtoReflect.Descriptor instead.
 func (*RemoveQueuedInputResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{132}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *RemoveQueuedInputResponse) GetChange() *SessionChange {
@@ -9551,7 +9687,7 @@ type ListQueueRequest struct {
 
 func (x *ListQueueRequest) Reset() {
 	*x = ListQueueRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[133]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9563,7 +9699,7 @@ func (x *ListQueueRequest) String() string {
 func (*ListQueueRequest) ProtoMessage() {}
 
 func (x *ListQueueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[133]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9576,7 +9712,7 @@ func (x *ListQueueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListQueueRequest.ProtoReflect.Descriptor instead.
 func (*ListQueueRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{133}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *ListQueueRequest) GetSessionId() string {
@@ -9610,7 +9746,7 @@ type ListQueueResponse struct {
 
 func (x *ListQueueResponse) Reset() {
 	*x = ListQueueResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[134]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9622,7 +9758,7 @@ func (x *ListQueueResponse) String() string {
 func (*ListQueueResponse) ProtoMessage() {}
 
 func (x *ListQueueResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[134]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9635,7 +9771,7 @@ func (x *ListQueueResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListQueueResponse.ProtoReflect.Descriptor instead.
 func (*ListQueueResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{134}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *ListQueueResponse) GetInputs() []*Resource {
@@ -9662,7 +9798,7 @@ type ControlSessionRequest struct {
 
 func (x *ControlSessionRequest) Reset() {
 	*x = ControlSessionRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[135]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9674,7 +9810,7 @@ func (x *ControlSessionRequest) String() string {
 func (*ControlSessionRequest) ProtoMessage() {}
 
 func (x *ControlSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[135]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9687,7 +9823,7 @@ func (x *ControlSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlSessionRequest.ProtoReflect.Descriptor instead.
 func (*ControlSessionRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{135}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{137}
 }
 
 func (x *ControlSessionRequest) GetMutation() *Mutation {
@@ -9713,7 +9849,7 @@ type ControlSessionResponse struct {
 
 func (x *ControlSessionResponse) Reset() {
 	*x = ControlSessionResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[136]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[138]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9725,7 +9861,7 @@ func (x *ControlSessionResponse) String() string {
 func (*ControlSessionResponse) ProtoMessage() {}
 
 func (x *ControlSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[136]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[138]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9738,7 +9874,7 @@ func (x *ControlSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlSessionResponse.ProtoReflect.Descriptor instead.
 func (*ControlSessionResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{136}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{138}
 }
 
 func (x *ControlSessionResponse) GetChange() *SessionChange {
@@ -9758,7 +9894,7 @@ type RenameSessionRequest struct {
 
 func (x *RenameSessionRequest) Reset() {
 	*x = RenameSessionRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[137]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[139]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9770,7 +9906,7 @@ func (x *RenameSessionRequest) String() string {
 func (*RenameSessionRequest) ProtoMessage() {}
 
 func (x *RenameSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[137]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[139]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9783,7 +9919,7 @@ func (x *RenameSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameSessionRequest.ProtoReflect.Descriptor instead.
 func (*RenameSessionRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{137}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{139}
 }
 
 func (x *RenameSessionRequest) GetMutation() *Mutation {
@@ -9809,7 +9945,7 @@ type RenameSessionResponse struct {
 
 func (x *RenameSessionResponse) Reset() {
 	*x = RenameSessionResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[138]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[140]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9821,7 +9957,7 @@ func (x *RenameSessionResponse) String() string {
 func (*RenameSessionResponse) ProtoMessage() {}
 
 func (x *RenameSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[138]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[140]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9834,7 +9970,7 @@ func (x *RenameSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameSessionResponse.ProtoReflect.Descriptor instead.
 func (*RenameSessionResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{138}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{140}
 }
 
 func (x *RenameSessionResponse) GetChange() *SessionChange {
@@ -9853,7 +9989,7 @@ type PrepareSessionWorkspaceRequest struct {
 
 func (x *PrepareSessionWorkspaceRequest) Reset() {
 	*x = PrepareSessionWorkspaceRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[139]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[141]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9865,7 +10001,7 @@ func (x *PrepareSessionWorkspaceRequest) String() string {
 func (*PrepareSessionWorkspaceRequest) ProtoMessage() {}
 
 func (x *PrepareSessionWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[139]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[141]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9878,7 +10014,7 @@ func (x *PrepareSessionWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareSessionWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*PrepareSessionWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{139}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{141}
 }
 
 func (x *PrepareSessionWorkspaceRequest) GetMutation() *Mutation {
@@ -9897,7 +10033,7 @@ type PrepareSessionWorkspaceResponse struct {
 
 func (x *PrepareSessionWorkspaceResponse) Reset() {
 	*x = PrepareSessionWorkspaceResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[140]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[142]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9909,7 +10045,7 @@ func (x *PrepareSessionWorkspaceResponse) String() string {
 func (*PrepareSessionWorkspaceResponse) ProtoMessage() {}
 
 func (x *PrepareSessionWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[140]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[142]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9922,7 +10058,7 @@ func (x *PrepareSessionWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareSessionWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*PrepareSessionWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{140}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{142}
 }
 
 func (x *PrepareSessionWorkspaceResponse) GetChange() *SessionChange {
@@ -9943,7 +10079,7 @@ type RecoverSessionWorkspaceRequest struct {
 
 func (x *RecoverSessionWorkspaceRequest) Reset() {
 	*x = RecoverSessionWorkspaceRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[141]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[143]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9955,7 +10091,7 @@ func (x *RecoverSessionWorkspaceRequest) String() string {
 func (*RecoverSessionWorkspaceRequest) ProtoMessage() {}
 
 func (x *RecoverSessionWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[141]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[143]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9968,7 +10104,7 @@ func (x *RecoverSessionWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverSessionWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*RecoverSessionWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{141}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{143}
 }
 
 func (x *RecoverSessionWorkspaceRequest) GetMutation() *Mutation {
@@ -9994,7 +10130,7 @@ type RecoverSessionWorkspaceResponse struct {
 
 func (x *RecoverSessionWorkspaceResponse) Reset() {
 	*x = RecoverSessionWorkspaceResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[142]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[144]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10006,7 +10142,7 @@ func (x *RecoverSessionWorkspaceResponse) String() string {
 func (*RecoverSessionWorkspaceResponse) ProtoMessage() {}
 
 func (x *RecoverSessionWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[142]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[144]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10019,7 +10155,7 @@ func (x *RecoverSessionWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverSessionWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*RecoverSessionWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{142}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{144}
 }
 
 func (x *RecoverSessionWorkspaceResponse) GetChange() *SessionChange {
@@ -10041,7 +10177,7 @@ type InboxView struct {
 
 func (x *InboxView) Reset() {
 	*x = InboxView{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[143]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[145]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10053,7 +10189,7 @@ func (x *InboxView) String() string {
 func (*InboxView) ProtoMessage() {}
 
 func (x *InboxView) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[143]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[145]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10066,7 +10202,7 @@ func (x *InboxView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InboxView.ProtoReflect.Descriptor instead.
 func (*InboxView) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{143}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{145}
 }
 
 func (x *InboxView) GetEntry() *Resource {
@@ -10099,7 +10235,7 @@ type GetInboxEntryRequest struct {
 
 func (x *GetInboxEntryRequest) Reset() {
 	*x = GetInboxEntryRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[144]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[146]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10111,7 +10247,7 @@ func (x *GetInboxEntryRequest) String() string {
 func (*GetInboxEntryRequest) ProtoMessage() {}
 
 func (x *GetInboxEntryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[144]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[146]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10124,7 +10260,7 @@ func (x *GetInboxEntryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInboxEntryRequest.ProtoReflect.Descriptor instead.
 func (*GetInboxEntryRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{144}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{146}
 }
 
 func (x *GetInboxEntryRequest) GetId() string {
@@ -10143,7 +10279,7 @@ type GetInboxEntryResponse struct {
 
 func (x *GetInboxEntryResponse) Reset() {
 	*x = GetInboxEntryResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[145]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[147]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10155,7 +10291,7 @@ func (x *GetInboxEntryResponse) String() string {
 func (*GetInboxEntryResponse) ProtoMessage() {}
 
 func (x *GetInboxEntryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[145]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[147]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10168,7 +10304,7 @@ func (x *GetInboxEntryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInboxEntryResponse.ProtoReflect.Descriptor instead.
 func (*GetInboxEntryResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{145}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{147}
 }
 
 func (x *GetInboxEntryResponse) GetView() *InboxView {
@@ -10193,7 +10329,7 @@ type ListInboxRequest struct {
 
 func (x *ListInboxRequest) Reset() {
 	*x = ListInboxRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[146]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[148]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10205,7 +10341,7 @@ func (x *ListInboxRequest) String() string {
 func (*ListInboxRequest) ProtoMessage() {}
 
 func (x *ListInboxRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[146]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[148]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10218,7 +10354,7 @@ func (x *ListInboxRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInboxRequest.ProtoReflect.Descriptor instead.
 func (*ListInboxRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{146}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{148}
 }
 
 func (x *ListInboxRequest) GetSessionId() string {
@@ -10273,7 +10409,7 @@ type ListInboxResponse struct {
 
 func (x *ListInboxResponse) Reset() {
 	*x = ListInboxResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[147]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[149]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10285,7 +10421,7 @@ func (x *ListInboxResponse) String() string {
 func (*ListInboxResponse) ProtoMessage() {}
 
 func (x *ListInboxResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[147]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[149]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10298,7 +10434,7 @@ func (x *ListInboxResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInboxResponse.ProtoReflect.Descriptor instead.
 func (*ListInboxResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{147}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{149}
 }
 
 func (x *ListInboxResponse) GetEntries() []*InboxView {
@@ -10326,7 +10462,7 @@ type SetInboxReadStateRequest struct {
 
 func (x *SetInboxReadStateRequest) Reset() {
 	*x = SetInboxReadStateRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[148]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[150]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10338,7 +10474,7 @@ func (x *SetInboxReadStateRequest) String() string {
 func (*SetInboxReadStateRequest) ProtoMessage() {}
 
 func (x *SetInboxReadStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[148]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[150]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10351,7 +10487,7 @@ func (x *SetInboxReadStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetInboxReadStateRequest.ProtoReflect.Descriptor instead.
 func (*SetInboxReadStateRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{148}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{150}
 }
 
 func (x *SetInboxReadStateRequest) GetMutation() *Mutation {
@@ -10379,7 +10515,7 @@ type SetInboxReadStateResponse struct {
 
 func (x *SetInboxReadStateResponse) Reset() {
 	*x = SetInboxReadStateResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[149]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[151]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10391,7 +10527,7 @@ func (x *SetInboxReadStateResponse) String() string {
 func (*SetInboxReadStateResponse) ProtoMessage() {}
 
 func (x *SetInboxReadStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[149]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[151]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10404,7 +10540,7 @@ func (x *SetInboxReadStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetInboxReadStateResponse.ProtoReflect.Descriptor instead.
 func (*SetInboxReadStateResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{149}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{151}
 }
 
 func (x *SetInboxReadStateResponse) GetView() *InboxView {
@@ -10439,7 +10575,7 @@ type RecoverSessionExecutionRequest struct {
 
 func (x *RecoverSessionExecutionRequest) Reset() {
 	*x = RecoverSessionExecutionRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[150]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[152]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10451,7 +10587,7 @@ func (x *RecoverSessionExecutionRequest) String() string {
 func (*RecoverSessionExecutionRequest) ProtoMessage() {}
 
 func (x *RecoverSessionExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[150]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[152]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10464,7 +10600,7 @@ func (x *RecoverSessionExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverSessionExecutionRequest.ProtoReflect.Descriptor instead.
 func (*RecoverSessionExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{150}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{152}
 }
 
 func (x *RecoverSessionExecutionRequest) GetMutation() *Mutation {
@@ -10490,7 +10626,7 @@ type RecoverSessionExecutionResponse struct {
 
 func (x *RecoverSessionExecutionResponse) Reset() {
 	*x = RecoverSessionExecutionResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[151]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[153]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10502,7 +10638,7 @@ func (x *RecoverSessionExecutionResponse) String() string {
 func (*RecoverSessionExecutionResponse) ProtoMessage() {}
 
 func (x *RecoverSessionExecutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[151]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[153]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10515,7 +10651,7 @@ func (x *RecoverSessionExecutionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverSessionExecutionResponse.ProtoReflect.Descriptor instead.
 func (*RecoverSessionExecutionResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{151}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{153}
 }
 
 func (x *RecoverSessionExecutionResponse) GetChange() *SessionChange {
@@ -10541,7 +10677,7 @@ type SaveScheduleRequest struct {
 
 func (x *SaveScheduleRequest) Reset() {
 	*x = SaveScheduleRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[152]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[154]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10553,7 +10689,7 @@ func (x *SaveScheduleRequest) String() string {
 func (*SaveScheduleRequest) ProtoMessage() {}
 
 func (x *SaveScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[152]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[154]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10566,7 +10702,7 @@ func (x *SaveScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveScheduleRequest.ProtoReflect.Descriptor instead.
 func (*SaveScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{152}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{154}
 }
 
 func (x *SaveScheduleRequest) GetMutation() *Mutation {
@@ -10608,7 +10744,7 @@ type SaveScheduleResponse struct {
 
 func (x *SaveScheduleResponse) Reset() {
 	*x = SaveScheduleResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[153]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[155]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10620,7 +10756,7 @@ func (x *SaveScheduleResponse) String() string {
 func (*SaveScheduleResponse) ProtoMessage() {}
 
 func (x *SaveScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[153]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[155]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10633,7 +10769,7 @@ func (x *SaveScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveScheduleResponse.ProtoReflect.Descriptor instead.
 func (*SaveScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{153}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{155}
 }
 
 func (x *SaveScheduleResponse) GetSchedule() *Resource {
@@ -10666,7 +10802,7 @@ type GetScheduleRequest struct {
 
 func (x *GetScheduleRequest) Reset() {
 	*x = GetScheduleRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[154]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[156]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10678,7 +10814,7 @@ func (x *GetScheduleRequest) String() string {
 func (*GetScheduleRequest) ProtoMessage() {}
 
 func (x *GetScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[154]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[156]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10691,7 +10827,7 @@ func (x *GetScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetScheduleRequest.ProtoReflect.Descriptor instead.
 func (*GetScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{154}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{156}
 }
 
 func (x *GetScheduleRequest) GetId() string {
@@ -10711,7 +10847,7 @@ type GetScheduleResponse struct {
 
 func (x *GetScheduleResponse) Reset() {
 	*x = GetScheduleResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[155]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[157]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10723,7 +10859,7 @@ func (x *GetScheduleResponse) String() string {
 func (*GetScheduleResponse) ProtoMessage() {}
 
 func (x *GetScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[155]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[157]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10736,7 +10872,7 @@ func (x *GetScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetScheduleResponse.ProtoReflect.Descriptor instead.
 func (*GetScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{155}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{157}
 }
 
 func (x *GetScheduleResponse) GetSchedule() *Resource {
@@ -10758,7 +10894,7 @@ type ListSchedulesRequest struct {
 
 func (x *ListSchedulesRequest) Reset() {
 	*x = ListSchedulesRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[156]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[158]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10770,7 +10906,7 @@ func (x *ListSchedulesRequest) String() string {
 func (*ListSchedulesRequest) ProtoMessage() {}
 
 func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[156]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[158]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10783,7 +10919,7 @@ func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSchedulesRequest.ProtoReflect.Descriptor instead.
 func (*ListSchedulesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{156}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{158}
 }
 
 func (x *ListSchedulesRequest) GetProjectId() string {
@@ -10824,7 +10960,7 @@ type ListSchedulesResponse struct {
 
 func (x *ListSchedulesResponse) Reset() {
 	*x = ListSchedulesResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[157]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[159]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10836,7 +10972,7 @@ func (x *ListSchedulesResponse) String() string {
 func (*ListSchedulesResponse) ProtoMessage() {}
 
 func (x *ListSchedulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[157]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[159]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10849,7 +10985,7 @@ func (x *ListSchedulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSchedulesResponse.ProtoReflect.Descriptor instead.
 func (*ListSchedulesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{157}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{159}
 }
 
 func (x *ListSchedulesResponse) GetSchedules() []*Resource {
@@ -10875,7 +11011,7 @@ type DeleteScheduleRequest struct {
 
 func (x *DeleteScheduleRequest) Reset() {
 	*x = DeleteScheduleRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[158]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[160]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10887,7 +11023,7 @@ func (x *DeleteScheduleRequest) String() string {
 func (*DeleteScheduleRequest) ProtoMessage() {}
 
 func (x *DeleteScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[158]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[160]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10900,7 +11036,7 @@ func (x *DeleteScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteScheduleRequest.ProtoReflect.Descriptor instead.
 func (*DeleteScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{158}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{160}
 }
 
 func (x *DeleteScheduleRequest) GetMutation() *Mutation {
@@ -10921,7 +11057,7 @@ type DeleteScheduleResponse struct {
 
 func (x *DeleteScheduleResponse) Reset() {
 	*x = DeleteScheduleResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[159]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[161]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10933,7 +11069,7 @@ func (x *DeleteScheduleResponse) String() string {
 func (*DeleteScheduleResponse) ProtoMessage() {}
 
 func (x *DeleteScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[159]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[161]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10946,7 +11082,7 @@ func (x *DeleteScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteScheduleResponse.ProtoReflect.Descriptor instead.
 func (*DeleteScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{159}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{161}
 }
 
 func (x *DeleteScheduleResponse) GetId() string {
@@ -10980,7 +11116,7 @@ type ControlScheduleRequest struct {
 
 func (x *ControlScheduleRequest) Reset() {
 	*x = ControlScheduleRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[160]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[162]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10992,7 +11128,7 @@ func (x *ControlScheduleRequest) String() string {
 func (*ControlScheduleRequest) ProtoMessage() {}
 
 func (x *ControlScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[160]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[162]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11005,7 +11141,7 @@ func (x *ControlScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlScheduleRequest.ProtoReflect.Descriptor instead.
 func (*ControlScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{160}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{162}
 }
 
 func (x *ControlScheduleRequest) GetMutation() *Mutation {
@@ -11033,7 +11169,7 @@ type ControlScheduleResponse struct {
 
 func (x *ControlScheduleResponse) Reset() {
 	*x = ControlScheduleResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[161]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[163]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11045,7 +11181,7 @@ func (x *ControlScheduleResponse) String() string {
 func (*ControlScheduleResponse) ProtoMessage() {}
 
 func (x *ControlScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[161]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[163]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11058,7 +11194,7 @@ func (x *ControlScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlScheduleResponse.ProtoReflect.Descriptor instead.
 func (*ControlScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{161}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{163}
 }
 
 func (x *ControlScheduleResponse) GetSchedule() *Resource {
@@ -11091,7 +11227,7 @@ type RunScheduleNowRequest struct {
 
 func (x *RunScheduleNowRequest) Reset() {
 	*x = RunScheduleNowRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[162]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[164]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11103,7 +11239,7 @@ func (x *RunScheduleNowRequest) String() string {
 func (*RunScheduleNowRequest) ProtoMessage() {}
 
 func (x *RunScheduleNowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[162]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[164]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11116,7 +11252,7 @@ func (x *RunScheduleNowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunScheduleNowRequest.ProtoReflect.Descriptor instead.
 func (*RunScheduleNowRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{162}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{164}
 }
 
 func (x *RunScheduleNowRequest) GetMutation() *Mutation {
@@ -11139,7 +11275,7 @@ type RunScheduleNowResponse struct {
 
 func (x *RunScheduleNowResponse) Reset() {
 	*x = RunScheduleNowResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[163]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[165]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11151,7 +11287,7 @@ func (x *RunScheduleNowResponse) String() string {
 func (*RunScheduleNowResponse) ProtoMessage() {}
 
 func (x *RunScheduleNowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[163]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[165]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11164,7 +11300,7 @@ func (x *RunScheduleNowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunScheduleNowResponse.ProtoReflect.Descriptor instead.
 func (*RunScheduleNowResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{163}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{165}
 }
 
 func (x *RunScheduleNowResponse) GetOccurrence() *Resource {
@@ -11207,7 +11343,7 @@ type ListScheduleOccurrencesRequest struct {
 
 func (x *ListScheduleOccurrencesRequest) Reset() {
 	*x = ListScheduleOccurrencesRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[164]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[166]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11219,7 +11355,7 @@ func (x *ListScheduleOccurrencesRequest) String() string {
 func (*ListScheduleOccurrencesRequest) ProtoMessage() {}
 
 func (x *ListScheduleOccurrencesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[164]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[166]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11232,7 +11368,7 @@ func (x *ListScheduleOccurrencesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListScheduleOccurrencesRequest.ProtoReflect.Descriptor instead.
 func (*ListScheduleOccurrencesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{164}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{166}
 }
 
 func (x *ListScheduleOccurrencesRequest) GetScheduleId() string {
@@ -11266,7 +11402,7 @@ type ListScheduleOccurrencesResponse struct {
 
 func (x *ListScheduleOccurrencesResponse) Reset() {
 	*x = ListScheduleOccurrencesResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[165]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[167]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11278,7 +11414,7 @@ func (x *ListScheduleOccurrencesResponse) String() string {
 func (*ListScheduleOccurrencesResponse) ProtoMessage() {}
 
 func (x *ListScheduleOccurrencesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[165]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[167]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11291,7 +11427,7 @@ func (x *ListScheduleOccurrencesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListScheduleOccurrencesResponse.ProtoReflect.Descriptor instead.
 func (*ListScheduleOccurrencesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{165}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{167}
 }
 
 func (x *ListScheduleOccurrencesResponse) GetOccurrences() []*Resource {
@@ -11318,7 +11454,7 @@ type GetScheduleOccurrenceRequest struct {
 
 func (x *GetScheduleOccurrenceRequest) Reset() {
 	*x = GetScheduleOccurrenceRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[166]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[168]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11330,7 +11466,7 @@ func (x *GetScheduleOccurrenceRequest) String() string {
 func (*GetScheduleOccurrenceRequest) ProtoMessage() {}
 
 func (x *GetScheduleOccurrenceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[166]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[168]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11343,7 +11479,7 @@ func (x *GetScheduleOccurrenceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetScheduleOccurrenceRequest.ProtoReflect.Descriptor instead.
 func (*GetScheduleOccurrenceRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{166}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{168}
 }
 
 func (x *GetScheduleOccurrenceRequest) GetScheduleId() string {
@@ -11369,7 +11505,7 @@ type GetScheduleOccurrenceResponse struct {
 
 func (x *GetScheduleOccurrenceResponse) Reset() {
 	*x = GetScheduleOccurrenceResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[167]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[169]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11381,7 +11517,7 @@ func (x *GetScheduleOccurrenceResponse) String() string {
 func (*GetScheduleOccurrenceResponse) ProtoMessage() {}
 
 func (x *GetScheduleOccurrenceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[167]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[169]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11394,7 +11530,7 @@ func (x *GetScheduleOccurrenceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetScheduleOccurrenceResponse.ProtoReflect.Descriptor instead.
 func (*GetScheduleOccurrenceResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{167}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{169}
 }
 
 func (x *GetScheduleOccurrenceResponse) GetOccurrence() *Resource {
@@ -11423,7 +11559,7 @@ type SearchConversationsRequest struct {
 
 func (x *SearchConversationsRequest) Reset() {
 	*x = SearchConversationsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[168]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[170]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11435,7 +11571,7 @@ func (x *SearchConversationsRequest) String() string {
 func (*SearchConversationsRequest) ProtoMessage() {}
 
 func (x *SearchConversationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[168]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[170]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11448,7 +11584,7 @@ func (x *SearchConversationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchConversationsRequest.ProtoReflect.Descriptor instead.
 func (*SearchConversationsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{168}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{170}
 }
 
 func (x *SearchConversationsRequest) GetQuery() string {
@@ -11527,7 +11663,7 @@ type ConversationSearchHit struct {
 
 func (x *ConversationSearchHit) Reset() {
 	*x = ConversationSearchHit{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[169]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[171]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11539,7 +11675,7 @@ func (x *ConversationSearchHit) String() string {
 func (*ConversationSearchHit) ProtoMessage() {}
 
 func (x *ConversationSearchHit) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[169]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[171]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11552,7 +11688,7 @@ func (x *ConversationSearchHit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationSearchHit.ProtoReflect.Descriptor instead.
 func (*ConversationSearchHit) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{169}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{171}
 }
 
 func (x *ConversationSearchHit) GetMessage() *Resource {
@@ -11600,7 +11736,7 @@ type SearchConversationsResponse struct {
 
 func (x *SearchConversationsResponse) Reset() {
 	*x = SearchConversationsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[170]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[172]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11612,7 +11748,7 @@ func (x *SearchConversationsResponse) String() string {
 func (*SearchConversationsResponse) ProtoMessage() {}
 
 func (x *SearchConversationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[170]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[172]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11625,7 +11761,7 @@ func (x *SearchConversationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchConversationsResponse.ProtoReflect.Descriptor instead.
 func (*SearchConversationsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{170}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{172}
 }
 
 func (x *SearchConversationsResponse) GetHits() []*ConversationSearchHit {
@@ -11654,7 +11790,7 @@ type ListActivityRequest struct {
 
 func (x *ListActivityRequest) Reset() {
 	*x = ListActivityRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[171]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[173]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11666,7 +11802,7 @@ func (x *ListActivityRequest) String() string {
 func (*ListActivityRequest) ProtoMessage() {}
 
 func (x *ListActivityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[171]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[173]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11679,7 +11815,7 @@ func (x *ListActivityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivityRequest.ProtoReflect.Descriptor instead.
 func (*ListActivityRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{171}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{173}
 }
 
 func (x *ListActivityRequest) GetSessionId() string {
@@ -11735,7 +11871,7 @@ type ActivityEntry struct {
 
 func (x *ActivityEntry) Reset() {
 	*x = ActivityEntry{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[172]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[174]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11747,7 +11883,7 @@ func (x *ActivityEntry) String() string {
 func (*ActivityEntry) ProtoMessage() {}
 
 func (x *ActivityEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[172]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[174]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11760,7 +11896,7 @@ func (x *ActivityEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivityEntry.ProtoReflect.Descriptor instead.
 func (*ActivityEntry) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{172}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{174}
 }
 
 func (x *ActivityEntry) GetId() string {
@@ -11871,7 +12007,7 @@ type ListActivityResponse struct {
 
 func (x *ListActivityResponse) Reset() {
 	*x = ListActivityResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[173]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[175]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11883,7 +12019,7 @@ func (x *ListActivityResponse) String() string {
 func (*ListActivityResponse) ProtoMessage() {}
 
 func (x *ListActivityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[173]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[175]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11896,7 +12032,7 @@ func (x *ListActivityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivityResponse.ProtoReflect.Descriptor instead.
 func (*ListActivityResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{173}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{175}
 }
 
 func (x *ListActivityResponse) GetEntries() []*ActivityEntry {
@@ -11932,7 +12068,7 @@ type GetUsageSummaryRequest struct {
 
 func (x *GetUsageSummaryRequest) Reset() {
 	*x = GetUsageSummaryRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[174]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[176]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11944,7 +12080,7 @@ func (x *GetUsageSummaryRequest) String() string {
 func (*GetUsageSummaryRequest) ProtoMessage() {}
 
 func (x *GetUsageSummaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[174]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[176]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11957,7 +12093,7 @@ func (x *GetUsageSummaryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUsageSummaryRequest.ProtoReflect.Descriptor instead.
 func (*GetUsageSummaryRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{174}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{176}
 }
 
 func (x *GetUsageSummaryRequest) GetFromUnixMs() int64 {
@@ -12042,7 +12178,7 @@ type UsageMeasure struct {
 
 func (x *UsageMeasure) Reset() {
 	*x = UsageMeasure{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[175]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[177]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12054,7 +12190,7 @@ func (x *UsageMeasure) String() string {
 func (*UsageMeasure) ProtoMessage() {}
 
 func (x *UsageMeasure) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[175]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[177]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12067,7 +12203,7 @@ func (x *UsageMeasure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageMeasure.ProtoReflect.Descriptor instead.
 func (*UsageMeasure) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{175}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{177}
 }
 
 func (x *UsageMeasure) GetKnownTotal() string {
@@ -12106,7 +12242,7 @@ type UsageTotals struct {
 
 func (x *UsageTotals) Reset() {
 	*x = UsageTotals{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[176]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[178]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12118,7 +12254,7 @@ func (x *UsageTotals) String() string {
 func (*UsageTotals) ProtoMessage() {}
 
 func (x *UsageTotals) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[176]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[178]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12131,7 +12267,7 @@ func (x *UsageTotals) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageTotals.ProtoReflect.Descriptor instead.
 func (*UsageTotals) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{176}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{178}
 }
 
 func (x *UsageTotals) GetResponses() uint32 {
@@ -12194,7 +12330,7 @@ type UsageAnalyticsDay struct {
 
 func (x *UsageAnalyticsDay) Reset() {
 	*x = UsageAnalyticsDay{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[177]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[179]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12206,7 +12342,7 @@ func (x *UsageAnalyticsDay) String() string {
 func (*UsageAnalyticsDay) ProtoMessage() {}
 
 func (x *UsageAnalyticsDay) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[177]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[179]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12219,7 +12355,7 @@ func (x *UsageAnalyticsDay) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageAnalyticsDay.ProtoReflect.Descriptor instead.
 func (*UsageAnalyticsDay) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{177}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{179}
 }
 
 func (x *UsageAnalyticsDay) GetFromUnixMs() int64 {
@@ -12256,7 +12392,7 @@ type UsageAnalyticsModel struct {
 
 func (x *UsageAnalyticsModel) Reset() {
 	*x = UsageAnalyticsModel{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[178]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[180]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12268,7 +12404,7 @@ func (x *UsageAnalyticsModel) String() string {
 func (*UsageAnalyticsModel) ProtoMessage() {}
 
 func (x *UsageAnalyticsModel) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[178]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[180]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12281,7 +12417,7 @@ func (x *UsageAnalyticsModel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageAnalyticsModel.ProtoReflect.Descriptor instead.
 func (*UsageAnalyticsModel) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{178}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{180}
 }
 
 func (x *UsageAnalyticsModel) GetProviderId() string {
@@ -12329,7 +12465,7 @@ type UsageOtherModels struct {
 
 func (x *UsageOtherModels) Reset() {
 	*x = UsageOtherModels{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[179]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[181]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12341,7 +12477,7 @@ func (x *UsageOtherModels) String() string {
 func (*UsageOtherModels) ProtoMessage() {}
 
 func (x *UsageOtherModels) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[179]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[181]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12354,7 +12490,7 @@ func (x *UsageOtherModels) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageOtherModels.ProtoReflect.Descriptor instead.
 func (*UsageOtherModels) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{179}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{181}
 }
 
 func (x *UsageOtherModels) GetModelCount() uint32 {
@@ -12384,7 +12520,7 @@ type UsageAnalytics struct {
 
 func (x *UsageAnalytics) Reset() {
 	*x = UsageAnalytics{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[180]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[182]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12396,7 +12532,7 @@ func (x *UsageAnalytics) String() string {
 func (*UsageAnalytics) ProtoMessage() {}
 
 func (x *UsageAnalytics) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[180]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[182]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12409,7 +12545,7 @@ func (x *UsageAnalytics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageAnalytics.ProtoReflect.Descriptor instead.
 func (*UsageAnalytics) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{180}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{182}
 }
 
 func (x *UsageAnalytics) GetGranularity() UsageTimeGranularity {
@@ -12470,7 +12606,7 @@ type UsageGroup struct {
 
 func (x *UsageGroup) Reset() {
 	*x = UsageGroup{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[181]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[183]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12482,7 +12618,7 @@ func (x *UsageGroup) String() string {
 func (*UsageGroup) ProtoMessage() {}
 
 func (x *UsageGroup) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[181]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[183]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12495,7 +12631,7 @@ func (x *UsageGroup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageGroup.ProtoReflect.Descriptor instead.
 func (*UsageGroup) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{181}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{183}
 }
 
 func (x *UsageGroup) GetSessionId() string {
@@ -12603,7 +12739,7 @@ type GetUsageSummaryResponse struct {
 
 func (x *GetUsageSummaryResponse) Reset() {
 	*x = GetUsageSummaryResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[182]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[184]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12615,7 +12751,7 @@ func (x *GetUsageSummaryResponse) String() string {
 func (*GetUsageSummaryResponse) ProtoMessage() {}
 
 func (x *GetUsageSummaryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[182]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[184]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12628,7 +12764,7 @@ func (x *GetUsageSummaryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUsageSummaryResponse.ProtoReflect.Descriptor instead.
 func (*GetUsageSummaryResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{182}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{184}
 }
 
 func (x *GetUsageSummaryResponse) GetFromUnixMs() int64 {
@@ -12726,7 +12862,7 @@ type TokenPricing struct {
 
 func (x *TokenPricing) Reset() {
 	*x = TokenPricing{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[183]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[185]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12738,7 +12874,7 @@ func (x *TokenPricing) String() string {
 func (*TokenPricing) ProtoMessage() {}
 
 func (x *TokenPricing) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[183]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[185]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12751,7 +12887,7 @@ func (x *TokenPricing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenPricing.ProtoReflect.Descriptor instead.
 func (*TokenPricing) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{183}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{185}
 }
 
 func (x *TokenPricing) GetCurrency() string {
@@ -12824,7 +12960,7 @@ type PricingVersion struct {
 
 func (x *PricingVersion) Reset() {
 	*x = PricingVersion{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[184]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[186]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12836,7 +12972,7 @@ func (x *PricingVersion) String() string {
 func (*PricingVersion) ProtoMessage() {}
 
 func (x *PricingVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[184]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[186]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12849,7 +12985,7 @@ func (x *PricingVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PricingVersion.ProtoReflect.Descriptor instead.
 func (*PricingVersion) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{184}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{186}
 }
 
 func (x *PricingVersion) GetId() string {
@@ -12903,7 +13039,7 @@ type GetModelPricingRequest struct {
 
 func (x *GetModelPricingRequest) Reset() {
 	*x = GetModelPricingRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[185]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[187]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12915,7 +13051,7 @@ func (x *GetModelPricingRequest) String() string {
 func (*GetModelPricingRequest) ProtoMessage() {}
 
 func (x *GetModelPricingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[185]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[187]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12928,7 +13064,7 @@ func (x *GetModelPricingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetModelPricingRequest.ProtoReflect.Descriptor instead.
 func (*GetModelPricingRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{185}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{187}
 }
 
 func (x *GetModelPricingRequest) GetModelId() string {
@@ -12949,7 +13085,7 @@ type GetModelPricingResponse struct {
 
 func (x *GetModelPricingResponse) Reset() {
 	*x = GetModelPricingResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[186]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[188]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12961,7 +13097,7 @@ func (x *GetModelPricingResponse) String() string {
 func (*GetModelPricingResponse) ProtoMessage() {}
 
 func (x *GetModelPricingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[186]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[188]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12974,7 +13110,7 @@ func (x *GetModelPricingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetModelPricingResponse.ProtoReflect.Descriptor instead.
 func (*GetModelPricingResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{186}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{188}
 }
 
 func (x *GetModelPricingResponse) GetModelRevision() uint64 {
@@ -13000,7 +13136,7 @@ type GetPricingVersionRequest struct {
 
 func (x *GetPricingVersionRequest) Reset() {
 	*x = GetPricingVersionRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[187]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[189]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13012,7 +13148,7 @@ func (x *GetPricingVersionRequest) String() string {
 func (*GetPricingVersionRequest) ProtoMessage() {}
 
 func (x *GetPricingVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[187]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[189]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13025,7 +13161,7 @@ func (x *GetPricingVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPricingVersionRequest.ProtoReflect.Descriptor instead.
 func (*GetPricingVersionRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{187}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{189}
 }
 
 func (x *GetPricingVersionRequest) GetId() string {
@@ -13044,7 +13180,7 @@ type GetPricingVersionResponse struct {
 
 func (x *GetPricingVersionResponse) Reset() {
 	*x = GetPricingVersionResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[188]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[190]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13056,7 +13192,7 @@ func (x *GetPricingVersionResponse) String() string {
 func (*GetPricingVersionResponse) ProtoMessage() {}
 
 func (x *GetPricingVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[188]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[190]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13069,7 +13205,7 @@ func (x *GetPricingVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPricingVersionResponse.ProtoReflect.Descriptor instead.
 func (*GetPricingVersionResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{188}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{190}
 }
 
 func (x *GetPricingVersionResponse) GetPricing() *PricingVersion {
@@ -13092,7 +13228,7 @@ type SetModelPricingRequest struct {
 
 func (x *SetModelPricingRequest) Reset() {
 	*x = SetModelPricingRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[189]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[191]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13104,7 +13240,7 @@ func (x *SetModelPricingRequest) String() string {
 func (*SetModelPricingRequest) ProtoMessage() {}
 
 func (x *SetModelPricingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[189]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[191]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13117,7 +13253,7 @@ func (x *SetModelPricingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetModelPricingRequest.ProtoReflect.Descriptor instead.
 func (*SetModelPricingRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{189}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{191}
 }
 
 func (x *SetModelPricingRequest) GetMutation() *Mutation {
@@ -13153,7 +13289,7 @@ type SetModelPricingResponse struct {
 
 func (x *SetModelPricingResponse) Reset() {
 	*x = SetModelPricingResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[190]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[192]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13165,7 +13301,7 @@ func (x *SetModelPricingResponse) String() string {
 func (*SetModelPricingResponse) ProtoMessage() {}
 
 func (x *SetModelPricingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[190]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[192]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13178,7 +13314,7 @@ func (x *SetModelPricingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetModelPricingResponse.ProtoReflect.Descriptor instead.
 func (*SetModelPricingResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{190}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{192}
 }
 
 func (x *SetModelPricingResponse) GetPricing() *PricingVersion {
@@ -13216,7 +13352,7 @@ type CurrencyEstimate struct {
 
 func (x *CurrencyEstimate) Reset() {
 	*x = CurrencyEstimate{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[191]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[193]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13228,7 +13364,7 @@ func (x *CurrencyEstimate) String() string {
 func (*CurrencyEstimate) ProtoMessage() {}
 
 func (x *CurrencyEstimate) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[191]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[193]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13241,7 +13377,7 @@ func (x *CurrencyEstimate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CurrencyEstimate.ProtoReflect.Descriptor instead.
 func (*CurrencyEstimate) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{191}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{193}
 }
 
 func (x *CurrencyEstimate) GetCurrency() string {
@@ -13289,7 +13425,7 @@ type EstimateTotals struct {
 
 func (x *EstimateTotals) Reset() {
 	*x = EstimateTotals{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[192]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[194]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13301,7 +13437,7 @@ func (x *EstimateTotals) String() string {
 func (*EstimateTotals) ProtoMessage() {}
 
 func (x *EstimateTotals) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[192]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[194]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13314,7 +13450,7 @@ func (x *EstimateTotals) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EstimateTotals.ProtoReflect.Descriptor instead.
 func (*EstimateTotals) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{192}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{194}
 }
 
 func (x *EstimateTotals) GetCurrencies() []*CurrencyEstimate {
@@ -13346,7 +13482,7 @@ type EstimateMeasure struct {
 
 func (x *EstimateMeasure) Reset() {
 	*x = EstimateMeasure{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[193]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[195]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13358,7 +13494,7 @@ func (x *EstimateMeasure) String() string {
 func (*EstimateMeasure) ProtoMessage() {}
 
 func (x *EstimateMeasure) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[193]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[195]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13371,7 +13507,7 @@ func (x *EstimateMeasure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EstimateMeasure.ProtoReflect.Descriptor instead.
 func (*EstimateMeasure) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{193}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{195}
 }
 
 func (x *EstimateMeasure) GetKnownAmount() string {
@@ -13436,7 +13572,7 @@ type PricingUsage struct {
 
 func (x *PricingUsage) Reset() {
 	*x = PricingUsage{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[194]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[196]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13448,7 +13584,7 @@ func (x *PricingUsage) String() string {
 func (*PricingUsage) ProtoMessage() {}
 
 func (x *PricingUsage) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[194]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[196]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13461,7 +13597,7 @@ func (x *PricingUsage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PricingUsage.ProtoReflect.Descriptor instead.
 func (*PricingUsage) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{194}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{196}
 }
 
 func (x *PricingUsage) GetPricing() *PricingVersion {
@@ -13510,7 +13646,7 @@ type EstimatedCostBudget struct {
 
 func (x *EstimatedCostBudget) Reset() {
 	*x = EstimatedCostBudget{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[195]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[197]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13522,7 +13658,7 @@ func (x *EstimatedCostBudget) String() string {
 func (*EstimatedCostBudget) ProtoMessage() {}
 
 func (x *EstimatedCostBudget) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[195]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[197]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13535,7 +13671,7 @@ func (x *EstimatedCostBudget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EstimatedCostBudget.ProtoReflect.Descriptor instead.
 func (*EstimatedCostBudget) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{195}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{197}
 }
 
 func (x *EstimatedCostBudget) GetCurrency() string {
@@ -13565,7 +13701,7 @@ type BudgetEvidence struct {
 
 func (x *BudgetEvidence) Reset() {
 	*x = BudgetEvidence{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[196]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[198]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13577,7 +13713,7 @@ func (x *BudgetEvidence) String() string {
 func (*BudgetEvidence) ProtoMessage() {}
 
 func (x *BudgetEvidence) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[196]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[198]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13590,7 +13726,7 @@ func (x *BudgetEvidence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BudgetEvidence.ProtoReflect.Descriptor instead.
 func (*BudgetEvidence) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{196}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{198}
 }
 
 func (x *BudgetEvidence) GetCurrency() string {
@@ -13644,7 +13780,7 @@ type SessionBudgetView struct {
 
 func (x *SessionBudgetView) Reset() {
 	*x = SessionBudgetView{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[197]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[199]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13656,7 +13792,7 @@ func (x *SessionBudgetView) String() string {
 func (*SessionBudgetView) ProtoMessage() {}
 
 func (x *SessionBudgetView) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[197]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[199]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13669,7 +13805,7 @@ func (x *SessionBudgetView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionBudgetView.ProtoReflect.Descriptor instead.
 func (*SessionBudgetView) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{197}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{199}
 }
 
 func (x *SessionBudgetView) GetSession() *Resource {
@@ -13730,7 +13866,7 @@ type GetSessionBudgetRequest struct {
 
 func (x *GetSessionBudgetRequest) Reset() {
 	*x = GetSessionBudgetRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[198]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[200]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13742,7 +13878,7 @@ func (x *GetSessionBudgetRequest) String() string {
 func (*GetSessionBudgetRequest) ProtoMessage() {}
 
 func (x *GetSessionBudgetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[198]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[200]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13755,7 +13891,7 @@ func (x *GetSessionBudgetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionBudgetRequest.ProtoReflect.Descriptor instead.
 func (*GetSessionBudgetRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{198}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{200}
 }
 
 func (x *GetSessionBudgetRequest) GetSessionId() string {
@@ -13774,7 +13910,7 @@ type GetSessionBudgetResponse struct {
 
 func (x *GetSessionBudgetResponse) Reset() {
 	*x = GetSessionBudgetResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[199]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[201]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13786,7 +13922,7 @@ func (x *GetSessionBudgetResponse) String() string {
 func (*GetSessionBudgetResponse) ProtoMessage() {}
 
 func (x *GetSessionBudgetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[199]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[201]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13799,7 +13935,7 @@ func (x *GetSessionBudgetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionBudgetResponse.ProtoReflect.Descriptor instead.
 func (*GetSessionBudgetResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{199}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{201}
 }
 
 func (x *GetSessionBudgetResponse) GetView() *SessionBudgetView {
@@ -13823,7 +13959,7 @@ type SetSessionBudgetRequest struct {
 
 func (x *SetSessionBudgetRequest) Reset() {
 	*x = SetSessionBudgetRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[200]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[202]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13835,7 +13971,7 @@ func (x *SetSessionBudgetRequest) String() string {
 func (*SetSessionBudgetRequest) ProtoMessage() {}
 
 func (x *SetSessionBudgetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[200]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[202]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13848,7 +13984,7 @@ func (x *SetSessionBudgetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSessionBudgetRequest.ProtoReflect.Descriptor instead.
 func (*SetSessionBudgetRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{200}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{202}
 }
 
 func (x *SetSessionBudgetRequest) GetMutation() *Mutation {
@@ -13912,7 +14048,7 @@ type SetSessionBudgetResponse struct {
 
 func (x *SetSessionBudgetResponse) Reset() {
 	*x = SetSessionBudgetResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[201]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[203]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13924,7 +14060,7 @@ func (x *SetSessionBudgetResponse) String() string {
 func (*SetSessionBudgetResponse) ProtoMessage() {}
 
 func (x *SetSessionBudgetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[201]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[203]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13937,7 +14073,7 @@ func (x *SetSessionBudgetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSessionBudgetResponse.ProtoReflect.Descriptor instead.
 func (*SetSessionBudgetResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{201}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{203}
 }
 
 func (x *SetSessionBudgetResponse) GetView() *SessionBudgetView {
@@ -13972,7 +14108,7 @@ type NotificationPreferences struct {
 
 func (x *NotificationPreferences) Reset() {
 	*x = NotificationPreferences{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[202]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[204]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13984,7 +14120,7 @@ func (x *NotificationPreferences) String() string {
 func (*NotificationPreferences) ProtoMessage() {}
 
 func (x *NotificationPreferences) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[202]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[204]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13997,7 +14133,7 @@ func (x *NotificationPreferences) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotificationPreferences.ProtoReflect.Descriptor instead.
 func (*NotificationPreferences) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{202}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{204}
 }
 
 func (x *NotificationPreferences) GetRevision() uint64 {
@@ -14032,7 +14168,7 @@ type NotificationCandidate struct {
 
 func (x *NotificationCandidate) Reset() {
 	*x = NotificationCandidate{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[203]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[205]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14044,7 +14180,7 @@ func (x *NotificationCandidate) String() string {
 func (*NotificationCandidate) ProtoMessage() {}
 
 func (x *NotificationCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[203]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[205]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14057,7 +14193,7 @@ func (x *NotificationCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotificationCandidate.ProtoReflect.Descriptor instead.
 func (*NotificationCandidate) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{203}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{205}
 }
 
 func (x *NotificationCandidate) GetInboxId() string {
@@ -14092,7 +14228,7 @@ type NotificationDelivery struct {
 
 func (x *NotificationDelivery) Reset() {
 	*x = NotificationDelivery{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[204]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[206]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14104,7 +14240,7 @@ func (x *NotificationDelivery) String() string {
 func (*NotificationDelivery) ProtoMessage() {}
 
 func (x *NotificationDelivery) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[204]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[206]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14117,7 +14253,7 @@ func (x *NotificationDelivery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotificationDelivery.ProtoReflect.Descriptor instead.
 func (*NotificationDelivery) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{204}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{206}
 }
 
 func (x *NotificationDelivery) GetCandidate() *NotificationCandidate {
@@ -14149,7 +14285,7 @@ type GetNotificationPreferencesRequest struct {
 
 func (x *GetNotificationPreferencesRequest) Reset() {
 	*x = GetNotificationPreferencesRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[205]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[207]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14161,7 +14297,7 @@ func (x *GetNotificationPreferencesRequest) String() string {
 func (*GetNotificationPreferencesRequest) ProtoMessage() {}
 
 func (x *GetNotificationPreferencesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[205]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[207]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14174,7 +14310,7 @@ func (x *GetNotificationPreferencesRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use GetNotificationPreferencesRequest.ProtoReflect.Descriptor instead.
 func (*GetNotificationPreferencesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{205}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{207}
 }
 
 type GetNotificationPreferencesResponse struct {
@@ -14186,7 +14322,7 @@ type GetNotificationPreferencesResponse struct {
 
 func (x *GetNotificationPreferencesResponse) Reset() {
 	*x = GetNotificationPreferencesResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[206]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[208]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14198,7 +14334,7 @@ func (x *GetNotificationPreferencesResponse) String() string {
 func (*GetNotificationPreferencesResponse) ProtoMessage() {}
 
 func (x *GetNotificationPreferencesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[206]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[208]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14211,7 +14347,7 @@ func (x *GetNotificationPreferencesResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use GetNotificationPreferencesResponse.ProtoReflect.Descriptor instead.
 func (*GetNotificationPreferencesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{206}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{208}
 }
 
 func (x *GetNotificationPreferencesResponse) GetPreferences() *NotificationPreferences {
@@ -14232,7 +14368,7 @@ type SetNotificationPreferencesRequest struct {
 
 func (x *SetNotificationPreferencesRequest) Reset() {
 	*x = SetNotificationPreferencesRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[207]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[209]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14244,7 +14380,7 @@ func (x *SetNotificationPreferencesRequest) String() string {
 func (*SetNotificationPreferencesRequest) ProtoMessage() {}
 
 func (x *SetNotificationPreferencesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[207]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[209]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14257,7 +14393,7 @@ func (x *SetNotificationPreferencesRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use SetNotificationPreferencesRequest.ProtoReflect.Descriptor instead.
 func (*SetNotificationPreferencesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{207}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{209}
 }
 
 func (x *SetNotificationPreferencesRequest) GetRequestId() string {
@@ -14285,7 +14421,7 @@ type SetNotificationPreferencesResponse struct {
 
 func (x *SetNotificationPreferencesResponse) Reset() {
 	*x = SetNotificationPreferencesResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[208]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[210]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14297,7 +14433,7 @@ func (x *SetNotificationPreferencesResponse) String() string {
 func (*SetNotificationPreferencesResponse) ProtoMessage() {}
 
 func (x *SetNotificationPreferencesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[208]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[210]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14310,7 +14446,7 @@ func (x *SetNotificationPreferencesResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use SetNotificationPreferencesResponse.ProtoReflect.Descriptor instead.
 func (*SetNotificationPreferencesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{208}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{210}
 }
 
 func (x *SetNotificationPreferencesResponse) GetPreferences() *NotificationPreferences {
@@ -14344,7 +14480,7 @@ type ListNotificationCandidatesRequest struct {
 
 func (x *ListNotificationCandidatesRequest) Reset() {
 	*x = ListNotificationCandidatesRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[209]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[211]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14356,7 +14492,7 @@ func (x *ListNotificationCandidatesRequest) String() string {
 func (*ListNotificationCandidatesRequest) ProtoMessage() {}
 
 func (x *ListNotificationCandidatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[209]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[211]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14369,7 +14505,7 @@ func (x *ListNotificationCandidatesRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ListNotificationCandidatesRequest.ProtoReflect.Descriptor instead.
 func (*ListNotificationCandidatesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{209}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{211}
 }
 
 func (x *ListNotificationCandidatesRequest) GetLimit() uint32 {
@@ -14389,7 +14525,7 @@ type ListNotificationCandidatesResponse struct {
 
 func (x *ListNotificationCandidatesResponse) Reset() {
 	*x = ListNotificationCandidatesResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[210]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[212]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14401,7 +14537,7 @@ func (x *ListNotificationCandidatesResponse) String() string {
 func (*ListNotificationCandidatesResponse) ProtoMessage() {}
 
 func (x *ListNotificationCandidatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[210]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[212]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14414,7 +14550,7 @@ func (x *ListNotificationCandidatesResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ListNotificationCandidatesResponse.ProtoReflect.Descriptor instead.
 func (*ListNotificationCandidatesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{210}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{212}
 }
 
 func (x *ListNotificationCandidatesResponse) GetCandidates() []*NotificationCandidate {
@@ -14441,7 +14577,7 @@ type ClaimNotificationRequest struct {
 
 func (x *ClaimNotificationRequest) Reset() {
 	*x = ClaimNotificationRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[211]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[213]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14453,7 +14589,7 @@ func (x *ClaimNotificationRequest) String() string {
 func (*ClaimNotificationRequest) ProtoMessage() {}
 
 func (x *ClaimNotificationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[211]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[213]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14466,7 +14602,7 @@ func (x *ClaimNotificationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimNotificationRequest.ProtoReflect.Descriptor instead.
 func (*ClaimNotificationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{211}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{213}
 }
 
 func (x *ClaimNotificationRequest) GetInboxId() string {
@@ -14497,7 +14633,7 @@ type ClaimNotificationResponse struct {
 
 func (x *ClaimNotificationResponse) Reset() {
 	*x = ClaimNotificationResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[212]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[214]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14509,7 +14645,7 @@ func (x *ClaimNotificationResponse) String() string {
 func (*ClaimNotificationResponse) ProtoMessage() {}
 
 func (x *ClaimNotificationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[212]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[214]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14522,7 +14658,7 @@ func (x *ClaimNotificationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimNotificationResponse.ProtoReflect.Descriptor instead.
 func (*ClaimNotificationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{212}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{214}
 }
 
 func (x *ClaimNotificationResponse) GetDelivery() *NotificationDelivery {
@@ -14562,7 +14698,7 @@ type GetNotificationDeliveryRequest struct {
 
 func (x *GetNotificationDeliveryRequest) Reset() {
 	*x = GetNotificationDeliveryRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[213]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[215]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14574,7 +14710,7 @@ func (x *GetNotificationDeliveryRequest) String() string {
 func (*GetNotificationDeliveryRequest) ProtoMessage() {}
 
 func (x *GetNotificationDeliveryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[213]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[215]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14587,7 +14723,7 @@ func (x *GetNotificationDeliveryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNotificationDeliveryRequest.ProtoReflect.Descriptor instead.
 func (*GetNotificationDeliveryRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{213}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{215}
 }
 
 func (x *GetNotificationDeliveryRequest) GetInboxId() string {
@@ -14606,7 +14742,7 @@ type GetNotificationDeliveryResponse struct {
 
 func (x *GetNotificationDeliveryResponse) Reset() {
 	*x = GetNotificationDeliveryResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[214]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[216]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14618,7 +14754,7 @@ func (x *GetNotificationDeliveryResponse) String() string {
 func (*GetNotificationDeliveryResponse) ProtoMessage() {}
 
 func (x *GetNotificationDeliveryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[214]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[216]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14631,7 +14767,7 @@ func (x *GetNotificationDeliveryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNotificationDeliveryResponse.ProtoReflect.Descriptor instead.
 func (*GetNotificationDeliveryResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{214}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{216}
 }
 
 func (x *GetNotificationDeliveryResponse) GetDelivery() *NotificationDelivery {
@@ -14653,7 +14789,7 @@ type ReportNotificationRequest struct {
 
 func (x *ReportNotificationRequest) Reset() {
 	*x = ReportNotificationRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[215]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[217]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14665,7 +14801,7 @@ func (x *ReportNotificationRequest) String() string {
 func (*ReportNotificationRequest) ProtoMessage() {}
 
 func (x *ReportNotificationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[215]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[217]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14678,7 +14814,7 @@ func (x *ReportNotificationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportNotificationRequest.ProtoReflect.Descriptor instead.
 func (*ReportNotificationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{215}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{217}
 }
 
 func (x *ReportNotificationRequest) GetInboxId() string {
@@ -14720,7 +14856,7 @@ type ReportNotificationResponse struct {
 
 func (x *ReportNotificationResponse) Reset() {
 	*x = ReportNotificationResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[216]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[218]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14732,7 +14868,7 @@ func (x *ReportNotificationResponse) String() string {
 func (*ReportNotificationResponse) ProtoMessage() {}
 
 func (x *ReportNotificationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[216]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[218]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14745,7 +14881,7 @@ func (x *ReportNotificationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportNotificationResponse.ProtoReflect.Descriptor instead.
 func (*ReportNotificationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{216}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{218}
 }
 
 func (x *ReportNotificationResponse) GetDelivery() *NotificationDelivery {
@@ -14780,7 +14916,7 @@ type ReadSessionWorkspaceRequest struct {
 
 func (x *ReadSessionWorkspaceRequest) Reset() {
 	*x = ReadSessionWorkspaceRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[217]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[219]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14792,7 +14928,7 @@ func (x *ReadSessionWorkspaceRequest) String() string {
 func (*ReadSessionWorkspaceRequest) ProtoMessage() {}
 
 func (x *ReadSessionWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[217]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[219]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14805,7 +14941,7 @@ func (x *ReadSessionWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadSessionWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*ReadSessionWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{217}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{219}
 }
 
 func (x *ReadSessionWorkspaceRequest) GetSessionId() string {
@@ -14831,7 +14967,7 @@ type ReadSessionWorkspaceResponse struct {
 
 func (x *ReadSessionWorkspaceResponse) Reset() {
 	*x = ReadSessionWorkspaceResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[218]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[220]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14843,7 +14979,7 @@ func (x *ReadSessionWorkspaceResponse) String() string {
 func (*ReadSessionWorkspaceResponse) ProtoMessage() {}
 
 func (x *ReadSessionWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[218]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[220]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14856,7 +14992,7 @@ func (x *ReadSessionWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadSessionWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*ReadSessionWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{218}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{220}
 }
 
 func (x *ReadSessionWorkspaceResponse) GetDocumentJson() []byte {
@@ -14876,7 +15012,7 @@ type WatchWorkspaceReadsRequest struct {
 
 func (x *WatchWorkspaceReadsRequest) Reset() {
 	*x = WatchWorkspaceReadsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[219]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[221]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14888,7 +15024,7 @@ func (x *WatchWorkspaceReadsRequest) String() string {
 func (*WatchWorkspaceReadsRequest) ProtoMessage() {}
 
 func (x *WatchWorkspaceReadsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[219]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[221]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14901,7 +15037,7 @@ func (x *WatchWorkspaceReadsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchWorkspaceReadsRequest.ProtoReflect.Descriptor instead.
 func (*WatchWorkspaceReadsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{219}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{221}
 }
 
 func (x *WatchWorkspaceReadsRequest) GetMachineId() string {
@@ -14929,7 +15065,7 @@ type WatchWorkspaceReadsResponse struct {
 
 func (x *WatchWorkspaceReadsResponse) Reset() {
 	*x = WatchWorkspaceReadsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[220]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[222]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14941,7 +15077,7 @@ func (x *WatchWorkspaceReadsResponse) String() string {
 func (*WatchWorkspaceReadsResponse) ProtoMessage() {}
 
 func (x *WatchWorkspaceReadsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[220]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[222]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14954,7 +15090,7 @@ func (x *WatchWorkspaceReadsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchWorkspaceReadsResponse.ProtoReflect.Descriptor instead.
 func (*WatchWorkspaceReadsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{220}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{222}
 }
 
 func (x *WatchWorkspaceReadsResponse) GetHeartbeat() bool {
@@ -14985,7 +15121,7 @@ type ReportWorkspaceReadRequest struct {
 
 func (x *ReportWorkspaceReadRequest) Reset() {
 	*x = ReportWorkspaceReadRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[221]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[223]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14997,7 +15133,7 @@ func (x *ReportWorkspaceReadRequest) String() string {
 func (*ReportWorkspaceReadRequest) ProtoMessage() {}
 
 func (x *ReportWorkspaceReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[221]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[223]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15010,7 +15146,7 @@ func (x *ReportWorkspaceReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportWorkspaceReadRequest.ProtoReflect.Descriptor instead.
 func (*ReportWorkspaceReadRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{221}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{223}
 }
 
 func (x *ReportWorkspaceReadRequest) GetMachineId() string {
@@ -15056,7 +15192,7 @@ type ReportWorkspaceReadResponse struct {
 
 func (x *ReportWorkspaceReadResponse) Reset() {
 	*x = ReportWorkspaceReadResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[222]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[224]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15068,7 +15204,7 @@ func (x *ReportWorkspaceReadResponse) String() string {
 func (*ReportWorkspaceReadResponse) ProtoMessage() {}
 
 func (x *ReportWorkspaceReadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[222]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[224]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15081,7 +15217,7 @@ func (x *ReportWorkspaceReadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportWorkspaceReadResponse.ProtoReflect.Descriptor instead.
 func (*ReportWorkspaceReadResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{222}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{224}
 }
 
 type ExportConfigurationRequest struct {
@@ -15092,7 +15228,7 @@ type ExportConfigurationRequest struct {
 
 func (x *ExportConfigurationRequest) Reset() {
 	*x = ExportConfigurationRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[223]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[225]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15104,7 +15240,7 @@ func (x *ExportConfigurationRequest) String() string {
 func (*ExportConfigurationRequest) ProtoMessage() {}
 
 func (x *ExportConfigurationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[223]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[225]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15117,7 +15253,7 @@ func (x *ExportConfigurationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportConfigurationRequest.ProtoReflect.Descriptor instead.
 func (*ExportConfigurationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{223}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{225}
 }
 
 type ExportConfigurationResponse struct {
@@ -15129,7 +15265,7 @@ type ExportConfigurationResponse struct {
 
 func (x *ExportConfigurationResponse) Reset() {
 	*x = ExportConfigurationResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[224]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[226]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15141,7 +15277,7 @@ func (x *ExportConfigurationResponse) String() string {
 func (*ExportConfigurationResponse) ProtoMessage() {}
 
 func (x *ExportConfigurationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[224]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[226]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15154,7 +15290,7 @@ func (x *ExportConfigurationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportConfigurationResponse.ProtoReflect.Descriptor instead.
 func (*ExportConfigurationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{224}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{226}
 }
 
 func (x *ExportConfigurationResponse) GetDocumentJson() []byte {
@@ -15173,7 +15309,7 @@ type PreviewConfigurationImportRequest struct {
 
 func (x *PreviewConfigurationImportRequest) Reset() {
 	*x = PreviewConfigurationImportRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[225]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[227]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15185,7 +15321,7 @@ func (x *PreviewConfigurationImportRequest) String() string {
 func (*PreviewConfigurationImportRequest) ProtoMessage() {}
 
 func (x *PreviewConfigurationImportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[225]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[227]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15198,7 +15334,7 @@ func (x *PreviewConfigurationImportRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use PreviewConfigurationImportRequest.ProtoReflect.Descriptor instead.
 func (*PreviewConfigurationImportRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{225}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{227}
 }
 
 func (x *PreviewConfigurationImportRequest) GetSelectionJson() []byte {
@@ -15217,7 +15353,7 @@ type PreviewConfigurationImportResponse struct {
 
 func (x *PreviewConfigurationImportResponse) Reset() {
 	*x = PreviewConfigurationImportResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[226]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[228]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15229,7 +15365,7 @@ func (x *PreviewConfigurationImportResponse) String() string {
 func (*PreviewConfigurationImportResponse) ProtoMessage() {}
 
 func (x *PreviewConfigurationImportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[226]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[228]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15242,7 +15378,7 @@ func (x *PreviewConfigurationImportResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use PreviewConfigurationImportResponse.ProtoReflect.Descriptor instead.
 func (*PreviewConfigurationImportResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{226}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{228}
 }
 
 func (x *PreviewConfigurationImportResponse) GetPreviewJson() []byte {
@@ -15262,7 +15398,7 @@ type ApplyConfigurationImportRequest struct {
 
 func (x *ApplyConfigurationImportRequest) Reset() {
 	*x = ApplyConfigurationImportRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[227]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[229]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15274,7 +15410,7 @@ func (x *ApplyConfigurationImportRequest) String() string {
 func (*ApplyConfigurationImportRequest) ProtoMessage() {}
 
 func (x *ApplyConfigurationImportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[227]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[229]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15287,7 +15423,7 @@ func (x *ApplyConfigurationImportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyConfigurationImportRequest.ProtoReflect.Descriptor instead.
 func (*ApplyConfigurationImportRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{227}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{229}
 }
 
 func (x *ApplyConfigurationImportRequest) GetRequestId() string {
@@ -15315,7 +15451,7 @@ type ApplyConfigurationImportResponse struct {
 
 func (x *ApplyConfigurationImportResponse) Reset() {
 	*x = ApplyConfigurationImportResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[228]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[230]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15327,7 +15463,7 @@ func (x *ApplyConfigurationImportResponse) String() string {
 func (*ApplyConfigurationImportResponse) ProtoMessage() {}
 
 func (x *ApplyConfigurationImportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[228]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[230]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15340,7 +15476,7 @@ func (x *ApplyConfigurationImportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyConfigurationImportResponse.ProtoReflect.Descriptor instead.
 func (*ApplyConfigurationImportResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{228}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{230}
 }
 
 func (x *ApplyConfigurationImportResponse) GetRequestId() string {
@@ -15376,7 +15512,7 @@ type CreateLocalReviewCommentRequest struct {
 
 func (x *CreateLocalReviewCommentRequest) Reset() {
 	*x = CreateLocalReviewCommentRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[229]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[231]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15388,7 +15524,7 @@ func (x *CreateLocalReviewCommentRequest) String() string {
 func (*CreateLocalReviewCommentRequest) ProtoMessage() {}
 
 func (x *CreateLocalReviewCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[229]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[231]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15401,7 +15537,7 @@ func (x *CreateLocalReviewCommentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateLocalReviewCommentRequest.ProtoReflect.Descriptor instead.
 func (*CreateLocalReviewCommentRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{229}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{231}
 }
 
 func (x *CreateLocalReviewCommentRequest) GetRequestId() string {
@@ -15436,7 +15572,7 @@ type CreateLocalReviewCommentResponse struct {
 
 func (x *CreateLocalReviewCommentResponse) Reset() {
 	*x = CreateLocalReviewCommentResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[230]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[232]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15448,7 +15584,7 @@ func (x *CreateLocalReviewCommentResponse) String() string {
 func (*CreateLocalReviewCommentResponse) ProtoMessage() {}
 
 func (x *CreateLocalReviewCommentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[230]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[232]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15461,7 +15597,7 @@ func (x *CreateLocalReviewCommentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateLocalReviewCommentResponse.ProtoReflect.Descriptor instead.
 func (*CreateLocalReviewCommentResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{230}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{232}
 }
 
 func (x *CreateLocalReviewCommentResponse) GetComment() *Resource {
@@ -15496,7 +15632,7 @@ type EditLocalReviewCommentRequest struct {
 
 func (x *EditLocalReviewCommentRequest) Reset() {
 	*x = EditLocalReviewCommentRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[231]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[233]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15508,7 +15644,7 @@ func (x *EditLocalReviewCommentRequest) String() string {
 func (*EditLocalReviewCommentRequest) ProtoMessage() {}
 
 func (x *EditLocalReviewCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[231]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[233]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15521,7 +15657,7 @@ func (x *EditLocalReviewCommentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditLocalReviewCommentRequest.ProtoReflect.Descriptor instead.
 func (*EditLocalReviewCommentRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{231}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{233}
 }
 
 func (x *EditLocalReviewCommentRequest) GetMutation() *Mutation {
@@ -15556,7 +15692,7 @@ type EditLocalReviewCommentResponse struct {
 
 func (x *EditLocalReviewCommentResponse) Reset() {
 	*x = EditLocalReviewCommentResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[232]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[234]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15568,7 +15704,7 @@ func (x *EditLocalReviewCommentResponse) String() string {
 func (*EditLocalReviewCommentResponse) ProtoMessage() {}
 
 func (x *EditLocalReviewCommentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[232]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[234]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15581,7 +15717,7 @@ func (x *EditLocalReviewCommentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditLocalReviewCommentResponse.ProtoReflect.Descriptor instead.
 func (*EditLocalReviewCommentResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{232}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{234}
 }
 
 func (x *EditLocalReviewCommentResponse) GetComment() *Resource {
@@ -15615,7 +15751,7 @@ type DeleteLocalReviewCommentRequest struct {
 
 func (x *DeleteLocalReviewCommentRequest) Reset() {
 	*x = DeleteLocalReviewCommentRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[233]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[235]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15627,7 +15763,7 @@ func (x *DeleteLocalReviewCommentRequest) String() string {
 func (*DeleteLocalReviewCommentRequest) ProtoMessage() {}
 
 func (x *DeleteLocalReviewCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[233]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[235]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15640,7 +15776,7 @@ func (x *DeleteLocalReviewCommentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteLocalReviewCommentRequest.ProtoReflect.Descriptor instead.
 func (*DeleteLocalReviewCommentRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{233}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{235}
 }
 
 func (x *DeleteLocalReviewCommentRequest) GetMutation() *Mutation {
@@ -15668,7 +15804,7 @@ type DeleteLocalReviewCommentResponse struct {
 
 func (x *DeleteLocalReviewCommentResponse) Reset() {
 	*x = DeleteLocalReviewCommentResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[234]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[236]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15680,7 +15816,7 @@ func (x *DeleteLocalReviewCommentResponse) String() string {
 func (*DeleteLocalReviewCommentResponse) ProtoMessage() {}
 
 func (x *DeleteLocalReviewCommentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[234]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[236]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15693,7 +15829,7 @@ func (x *DeleteLocalReviewCommentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteLocalReviewCommentResponse.ProtoReflect.Descriptor instead.
 func (*DeleteLocalReviewCommentResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{234}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{236}
 }
 
 func (x *DeleteLocalReviewCommentResponse) GetId() string {
@@ -15729,7 +15865,7 @@ type SubmitLocalReviewRequest struct {
 
 func (x *SubmitLocalReviewRequest) Reset() {
 	*x = SubmitLocalReviewRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[235]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[237]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15741,7 +15877,7 @@ func (x *SubmitLocalReviewRequest) String() string {
 func (*SubmitLocalReviewRequest) ProtoMessage() {}
 
 func (x *SubmitLocalReviewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[235]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[237]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15754,7 +15890,7 @@ func (x *SubmitLocalReviewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitLocalReviewRequest.ProtoReflect.Descriptor instead.
 func (*SubmitLocalReviewRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{235}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{237}
 }
 
 func (x *SubmitLocalReviewRequest) GetRequestId() string {
@@ -15790,7 +15926,7 @@ type SubmitLocalReviewResponse struct {
 
 func (x *SubmitLocalReviewResponse) Reset() {
 	*x = SubmitLocalReviewResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[236]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[238]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15802,7 +15938,7 @@ func (x *SubmitLocalReviewResponse) String() string {
 func (*SubmitLocalReviewResponse) ProtoMessage() {}
 
 func (x *SubmitLocalReviewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[236]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[238]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15815,7 +15951,7 @@ func (x *SubmitLocalReviewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitLocalReviewResponse.ProtoReflect.Descriptor instead.
 func (*SubmitLocalReviewResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{236}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{238}
 }
 
 func (x *SubmitLocalReviewResponse) GetSubmission() *Resource {
@@ -15859,7 +15995,7 @@ type ManagedBackup struct {
 
 func (x *ManagedBackup) Reset() {
 	*x = ManagedBackup{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[237]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[239]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15871,7 +16007,7 @@ func (x *ManagedBackup) String() string {
 func (*ManagedBackup) ProtoMessage() {}
 
 func (x *ManagedBackup) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[237]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[239]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15884,7 +16020,7 @@ func (x *ManagedBackup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManagedBackup.ProtoReflect.Descriptor instead.
 func (*ManagedBackup) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{237}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{239}
 }
 
 func (x *ManagedBackup) GetId() string {
@@ -15925,7 +16061,7 @@ type ListBackupsRequest struct {
 
 func (x *ListBackupsRequest) Reset() {
 	*x = ListBackupsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[238]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[240]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15937,7 +16073,7 @@ func (x *ListBackupsRequest) String() string {
 func (*ListBackupsRequest) ProtoMessage() {}
 
 func (x *ListBackupsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[238]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[240]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15950,7 +16086,7 @@ func (x *ListBackupsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBackupsRequest.ProtoReflect.Descriptor instead.
 func (*ListBackupsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{238}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{240}
 }
 
 func (x *ListBackupsRequest) GetPageSize() uint32 {
@@ -15977,7 +16113,7 @@ type ListBackupsResponse struct {
 
 func (x *ListBackupsResponse) Reset() {
 	*x = ListBackupsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[239]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[241]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15989,7 +16125,7 @@ func (x *ListBackupsResponse) String() string {
 func (*ListBackupsResponse) ProtoMessage() {}
 
 func (x *ListBackupsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[239]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[241]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16002,7 +16138,7 @@ func (x *ListBackupsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBackupsResponse.ProtoReflect.Descriptor instead.
 func (*ListBackupsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{239}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{241}
 }
 
 func (x *ListBackupsResponse) GetBackups() []*ManagedBackup {
@@ -16028,7 +16164,7 @@ type InspectBackupRequest struct {
 
 func (x *InspectBackupRequest) Reset() {
 	*x = InspectBackupRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[240]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[242]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16040,7 +16176,7 @@ func (x *InspectBackupRequest) String() string {
 func (*InspectBackupRequest) ProtoMessage() {}
 
 func (x *InspectBackupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[240]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[242]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16053,7 +16189,7 @@ func (x *InspectBackupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectBackupRequest.ProtoReflect.Descriptor instead.
 func (*InspectBackupRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{240}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{242}
 }
 
 func (x *InspectBackupRequest) GetId() string {
@@ -16075,7 +16211,7 @@ type InspectBackupResponse struct {
 
 func (x *InspectBackupResponse) Reset() {
 	*x = InspectBackupResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[241]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[243]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16087,7 +16223,7 @@ func (x *InspectBackupResponse) String() string {
 func (*InspectBackupResponse) ProtoMessage() {}
 
 func (x *InspectBackupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[241]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[243]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16100,7 +16236,7 @@ func (x *InspectBackupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectBackupResponse.ProtoReflect.Descriptor instead.
 func (*InspectBackupResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{241}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{243}
 }
 
 func (x *InspectBackupResponse) GetBackup() *ManagedBackup {
@@ -16150,7 +16286,7 @@ type BackupDeletionJob struct {
 
 func (x *BackupDeletionJob) Reset() {
 	*x = BackupDeletionJob{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[242]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[244]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16162,7 +16298,7 @@ func (x *BackupDeletionJob) String() string {
 func (*BackupDeletionJob) ProtoMessage() {}
 
 func (x *BackupDeletionJob) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[242]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[244]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16175,7 +16311,7 @@ func (x *BackupDeletionJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupDeletionJob.ProtoReflect.Descriptor instead.
 func (*BackupDeletionJob) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{242}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{244}
 }
 
 func (x *BackupDeletionJob) GetId() string {
@@ -16252,7 +16388,7 @@ type DeleteBackupRequest struct {
 
 func (x *DeleteBackupRequest) Reset() {
 	*x = DeleteBackupRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[243]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[245]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16264,7 +16400,7 @@ func (x *DeleteBackupRequest) String() string {
 func (*DeleteBackupRequest) ProtoMessage() {}
 
 func (x *DeleteBackupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[243]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[245]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16277,7 +16413,7 @@ func (x *DeleteBackupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBackupRequest.ProtoReflect.Descriptor instead.
 func (*DeleteBackupRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{243}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{245}
 }
 
 func (x *DeleteBackupRequest) GetRequestId() string {
@@ -16312,7 +16448,7 @@ type DeleteBackupResponse struct {
 
 func (x *DeleteBackupResponse) Reset() {
 	*x = DeleteBackupResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[244]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[246]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16324,7 +16460,7 @@ func (x *DeleteBackupResponse) String() string {
 func (*DeleteBackupResponse) ProtoMessage() {}
 
 func (x *DeleteBackupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[244]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[246]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16337,7 +16473,7 @@ func (x *DeleteBackupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBackupResponse.ProtoReflect.Descriptor instead.
 func (*DeleteBackupResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{244}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{246}
 }
 
 func (x *DeleteBackupResponse) GetJob() *BackupDeletionJob {
@@ -16371,7 +16507,7 @@ type ListBackupDeletionsRequest struct {
 
 func (x *ListBackupDeletionsRequest) Reset() {
 	*x = ListBackupDeletionsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[245]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[247]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16383,7 +16519,7 @@ func (x *ListBackupDeletionsRequest) String() string {
 func (*ListBackupDeletionsRequest) ProtoMessage() {}
 
 func (x *ListBackupDeletionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[245]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[247]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16396,7 +16532,7 @@ func (x *ListBackupDeletionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBackupDeletionsRequest.ProtoReflect.Descriptor instead.
 func (*ListBackupDeletionsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{245}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{247}
 }
 
 func (x *ListBackupDeletionsRequest) GetPageSize() uint32 {
@@ -16423,7 +16559,7 @@ type ListBackupDeletionsResponse struct {
 
 func (x *ListBackupDeletionsResponse) Reset() {
 	*x = ListBackupDeletionsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[246]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[248]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16435,7 +16571,7 @@ func (x *ListBackupDeletionsResponse) String() string {
 func (*ListBackupDeletionsResponse) ProtoMessage() {}
 
 func (x *ListBackupDeletionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[246]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[248]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16448,7 +16584,7 @@ func (x *ListBackupDeletionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBackupDeletionsResponse.ProtoReflect.Descriptor instead.
 func (*ListBackupDeletionsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{246}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{248}
 }
 
 func (x *ListBackupDeletionsResponse) GetJobs() []*BackupDeletionJob {
@@ -16480,7 +16616,7 @@ type BackupCreationJob struct {
 
 func (x *BackupCreationJob) Reset() {
 	*x = BackupCreationJob{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[247]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[249]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16492,7 +16628,7 @@ func (x *BackupCreationJob) String() string {
 func (*BackupCreationJob) ProtoMessage() {}
 
 func (x *BackupCreationJob) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[247]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[249]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16505,7 +16641,7 @@ func (x *BackupCreationJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupCreationJob.ProtoReflect.Descriptor instead.
 func (*BackupCreationJob) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{247}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{249}
 }
 
 func (x *BackupCreationJob) GetId() string {
@@ -16566,7 +16702,7 @@ type RequestBackupRequest struct {
 
 func (x *RequestBackupRequest) Reset() {
 	*x = RequestBackupRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[248]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[250]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16578,7 +16714,7 @@ func (x *RequestBackupRequest) String() string {
 func (*RequestBackupRequest) ProtoMessage() {}
 
 func (x *RequestBackupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[248]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[250]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16591,7 +16727,7 @@ func (x *RequestBackupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestBackupRequest.ProtoReflect.Descriptor instead.
 func (*RequestBackupRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{248}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{250}
 }
 
 func (x *RequestBackupRequest) GetRequestId() string {
@@ -16612,7 +16748,7 @@ type RequestBackupResponse struct {
 
 func (x *RequestBackupResponse) Reset() {
 	*x = RequestBackupResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[249]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[251]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16624,7 +16760,7 @@ func (x *RequestBackupResponse) String() string {
 func (*RequestBackupResponse) ProtoMessage() {}
 
 func (x *RequestBackupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[249]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[251]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16637,7 +16773,7 @@ func (x *RequestBackupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestBackupResponse.ProtoReflect.Descriptor instead.
 func (*RequestBackupResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{249}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{251}
 }
 
 func (x *RequestBackupResponse) GetJob() *BackupCreationJob {
@@ -16670,7 +16806,7 @@ type GetBackupCreationRequest struct {
 
 func (x *GetBackupCreationRequest) Reset() {
 	*x = GetBackupCreationRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[250]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[252]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16682,7 +16818,7 @@ func (x *GetBackupCreationRequest) String() string {
 func (*GetBackupCreationRequest) ProtoMessage() {}
 
 func (x *GetBackupCreationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[250]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[252]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16695,7 +16831,7 @@ func (x *GetBackupCreationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBackupCreationRequest.ProtoReflect.Descriptor instead.
 func (*GetBackupCreationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{250}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{252}
 }
 
 func (x *GetBackupCreationRequest) GetId() string {
@@ -16714,7 +16850,7 @@ type GetBackupCreationResponse struct {
 
 func (x *GetBackupCreationResponse) Reset() {
 	*x = GetBackupCreationResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[251]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[253]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16726,7 +16862,7 @@ func (x *GetBackupCreationResponse) String() string {
 func (*GetBackupCreationResponse) ProtoMessage() {}
 
 func (x *GetBackupCreationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[251]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[253]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16739,7 +16875,7 @@ func (x *GetBackupCreationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBackupCreationResponse.ProtoReflect.Descriptor instead.
 func (*GetBackupCreationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{251}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{253}
 }
 
 func (x *GetBackupCreationResponse) GetJob() *BackupCreationJob {
@@ -16759,7 +16895,7 @@ type ListBackupCreationsRequest struct {
 
 func (x *ListBackupCreationsRequest) Reset() {
 	*x = ListBackupCreationsRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[252]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[254]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16771,7 +16907,7 @@ func (x *ListBackupCreationsRequest) String() string {
 func (*ListBackupCreationsRequest) ProtoMessage() {}
 
 func (x *ListBackupCreationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[252]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[254]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16784,7 +16920,7 @@ func (x *ListBackupCreationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBackupCreationsRequest.ProtoReflect.Descriptor instead.
 func (*ListBackupCreationsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{252}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{254}
 }
 
 func (x *ListBackupCreationsRequest) GetPageSize() uint32 {
@@ -16811,7 +16947,7 @@ type ListBackupCreationsResponse struct {
 
 func (x *ListBackupCreationsResponse) Reset() {
 	*x = ListBackupCreationsResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[253]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[255]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16823,7 +16959,7 @@ func (x *ListBackupCreationsResponse) String() string {
 func (*ListBackupCreationsResponse) ProtoMessage() {}
 
 func (x *ListBackupCreationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[253]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[255]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16836,7 +16972,7 @@ func (x *ListBackupCreationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBackupCreationsResponse.ProtoReflect.Descriptor instead.
 func (*ListBackupCreationsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{253}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{255}
 }
 
 func (x *ListBackupCreationsResponse) GetJobs() []*BackupCreationJob {
@@ -16862,7 +16998,7 @@ type GetBackupDeletionRequest struct {
 
 func (x *GetBackupDeletionRequest) Reset() {
 	*x = GetBackupDeletionRequest{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[254]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[256]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16874,7 +17010,7 @@ func (x *GetBackupDeletionRequest) String() string {
 func (*GetBackupDeletionRequest) ProtoMessage() {}
 
 func (x *GetBackupDeletionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[254]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[256]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16887,7 +17023,7 @@ func (x *GetBackupDeletionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBackupDeletionRequest.ProtoReflect.Descriptor instead.
 func (*GetBackupDeletionRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{254}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{256}
 }
 
 func (x *GetBackupDeletionRequest) GetId() string {
@@ -16906,7 +17042,7 @@ type GetBackupDeletionResponse struct {
 
 func (x *GetBackupDeletionResponse) Reset() {
 	*x = GetBackupDeletionResponse{}
-	mi := &file_delidev_v1_delidev_proto_msgTypes[255]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[257]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16918,7 +17054,7 @@ func (x *GetBackupDeletionResponse) String() string {
 func (*GetBackupDeletionResponse) ProtoMessage() {}
 
 func (x *GetBackupDeletionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_delidev_proto_msgTypes[255]
+	mi := &file_delidev_v1_delidev_proto_msgTypes[257]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16931,7 +17067,7 @@ func (x *GetBackupDeletionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBackupDeletionResponse.ProtoReflect.Descriptor instead.
 func (*GetBackupDeletionResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{255}
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{257}
 }
 
 func (x *GetBackupDeletionResponse) GetJob() *BackupDeletionJob {
@@ -16961,8 +17097,20 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"machine_id\x18\x02 \x01(\tR\tmachineId\x12\x1d\n" +
 	"\n" +
 	"profile_id\x18\x03 \x01(\tR\tprofileId\x12)\n" +
-	"\x10profile_revision\x18\x04 \x01(\x04R\x0fprofileRevision\"\xa0\x01\n" +
-	"\x17NetworkMutationResponse\x120\n" +
+	"\x10profile_revision\x18\x04 \x01(\x04R\x0fprofileRevision\"\xa3\x01\n" +
+	"\x1aSaveNetworkProfileResponse\x120\n" +
+	"\bresource\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\bresource\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\x12\x18\n" +
+	"\adeleted\x18\x04 \x01(\bR\adeleted\"\xa5\x01\n" +
+	"\x1cDeleteNetworkProfileResponse\x120\n" +
+	"\bresource\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\bresource\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\x12\x18\n" +
+	"\adeleted\x18\x04 \x01(\bR\adeleted\"\xa5\x01\n" +
+	"\x1cSelectNetworkProfileResponse\x120\n" +
 	"\bresource\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\bresource\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
@@ -18371,11 +18519,11 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\vGetResource\x12\x1e.delidev.v1.GetResourceRequest\x1a\x1f.delidev.v1.GetResourceResponse\x12T\n" +
 	"\rListResources\x12 .delidev.v1.ListResourcesRequest\x1a!.delidev.v1.ListResourcesResponse\x12N\n" +
 	"\vGetSnapshot\x12\x1e.delidev.v1.GetSnapshotRequest\x1a\x1f.delidev.v1.GetSnapshotResponse\x12P\n" +
-	"\vWatchEvents\x12\x1e.delidev.v1.WatchEventsRequest\x1a\x1f.delidev.v1.WatchEventsResponse0\x012\x9a\x04\n" +
-	"\x0eNetworkService\x12`\n" +
-	"\x12SaveNetworkProfile\x12%.delidev.v1.SaveNetworkProfileRequest\x1a#.delidev.v1.NetworkMutationResponse\x12d\n" +
-	"\x14DeleteNetworkProfile\x12'.delidev.v1.DeleteNetworkProfileRequest\x1a#.delidev.v1.NetworkMutationResponse\x12d\n" +
-	"\x14SelectNetworkProfile\x12'.delidev.v1.SelectNetworkProfileRequest\x1a#.delidev.v1.NetworkMutationResponse\x12Z\n" +
+	"\vWatchEvents\x12\x1e.delidev.v1.WatchEventsRequest\x1a\x1f.delidev.v1.WatchEventsResponse0\x012\xa7\x04\n" +
+	"\x0eNetworkService\x12c\n" +
+	"\x12SaveNetworkProfile\x12%.delidev.v1.SaveNetworkProfileRequest\x1a&.delidev.v1.SaveNetworkProfileResponse\x12i\n" +
+	"\x14DeleteNetworkProfile\x12'.delidev.v1.DeleteNetworkProfileRequest\x1a(.delidev.v1.DeleteNetworkProfileResponse\x12i\n" +
+	"\x14SelectNetworkProfile\x12'.delidev.v1.SelectNetworkProfileRequest\x1a(.delidev.v1.SelectNetworkProfileResponse\x12Z\n" +
 	"\x0fGetNetworkRoute\x12\".delidev.v1.GetNetworkRouteRequest\x1a#.delidev.v1.GetNetworkRouteResponse\x12~\n" +
 	"\x1bExportWorkerNetworkMetadata\x12..delidev.v1.ExportWorkerNetworkMetadataRequest\x1a/.delidev.v1.ExportWorkerNetworkMetadataResponse2\x95\x05\n" +
 	"\x14ConfigurationService\x12f\n" +
@@ -18497,7 +18645,7 @@ func file_delidev_v1_delidev_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_delidev_proto_enumTypes = make([]protoimpl.EnumInfo, 28)
-var file_delidev_v1_delidev_proto_msgTypes = make([]protoimpl.MessageInfo, 256)
+var file_delidev_v1_delidev_proto_msgTypes = make([]protoimpl.MessageInfo, 258)
 var file_delidev_v1_delidev_proto_goTypes = []any{
 	(EntityKind)(0),                                    // 0: delidev.v1.EntityKind
 	(SystemCapability)(0),                              // 1: delidev.v1.SystemCapability
@@ -18530,719 +18678,723 @@ var file_delidev_v1_delidev_proto_goTypes = []any{
 	(*SaveNetworkProfileRequest)(nil),                  // 28: delidev.v1.SaveNetworkProfileRequest
 	(*DeleteNetworkProfileRequest)(nil),                // 29: delidev.v1.DeleteNetworkProfileRequest
 	(*SelectNetworkProfileRequest)(nil),                // 30: delidev.v1.SelectNetworkProfileRequest
-	(*NetworkMutationResponse)(nil),                    // 31: delidev.v1.NetworkMutationResponse
-	(*GetNetworkRouteRequest)(nil),                     // 32: delidev.v1.GetNetworkRouteRequest
-	(*GetNetworkRouteResponse)(nil),                    // 33: delidev.v1.GetNetworkRouteResponse
-	(*ExportWorkerNetworkMetadataRequest)(nil),         // 34: delidev.v1.ExportWorkerNetworkMetadataRequest
-	(*ExportWorkerNetworkMetadataResponse)(nil),        // 35: delidev.v1.ExportWorkerNetworkMetadataResponse
-	(*RespondQuestionRequest)(nil),                     // 36: delidev.v1.RespondQuestionRequest
-	(*RespondQuestionResponse)(nil),                    // 37: delidev.v1.RespondQuestionResponse
-	(*RespondApprovalRequest)(nil),                     // 38: delidev.v1.RespondApprovalRequest
-	(*RespondApprovalResponse)(nil),                    // 39: delidev.v1.RespondApprovalResponse
-	(*Resource)(nil),                                   // 40: delidev.v1.Resource
-	(*Mutation)(nil),                                   // 41: delidev.v1.Mutation
-	(*Filter)(nil),                                     // 42: delidev.v1.Filter
-	(*ErrorDetail)(nil),                                // 43: delidev.v1.ErrorDetail
-	(*GetStatusRequest)(nil),                           // 44: delidev.v1.GetStatusRequest
-	(*GetOverviewRequest)(nil),                         // 45: delidev.v1.GetOverviewRequest
-	(*GetOverviewResponse)(nil),                        // 46: delidev.v1.GetOverviewResponse
-	(*GetStatusResponse)(nil),                          // 47: delidev.v1.GetStatusResponse
-	(*StopServerRequest)(nil),                          // 48: delidev.v1.StopServerRequest
-	(*StopServerResponse)(nil),                         // 49: delidev.v1.StopServerResponse
-	(*GetDoctorRequest)(nil),                           // 50: delidev.v1.GetDoctorRequest
-	(*GetDoctorResponse)(nil),                          // 51: delidev.v1.GetDoctorResponse
-	(*CreateBackupRequest)(nil),                        // 52: delidev.v1.CreateBackupRequest
-	(*CreateBackupResponse)(nil),                       // 53: delidev.v1.CreateBackupResponse
-	(*GetResourceRequest)(nil),                         // 54: delidev.v1.GetResourceRequest
-	(*GetResourceResponse)(nil),                        // 55: delidev.v1.GetResourceResponse
-	(*ListResourcesRequest)(nil),                       // 56: delidev.v1.ListResourcesRequest
-	(*ListResourcesResponse)(nil),                      // 57: delidev.v1.ListResourcesResponse
-	(*GetSnapshotRequest)(nil),                         // 58: delidev.v1.GetSnapshotRequest
-	(*GetSnapshotResponse)(nil),                        // 59: delidev.v1.GetSnapshotResponse
-	(*WatchEventsRequest)(nil),                         // 60: delidev.v1.WatchEventsRequest
-	(*WatchEventsResponse)(nil),                        // 61: delidev.v1.WatchEventsResponse
-	(*SaveConfigurationRequest)(nil),                   // 62: delidev.v1.SaveConfigurationRequest
-	(*SaveConfigurationResponse)(nil),                  // 63: delidev.v1.SaveConfigurationResponse
-	(*DeleteConfigurationRequest)(nil),                 // 64: delidev.v1.DeleteConfigurationRequest
-	(*DeleteConfigurationResponse)(nil),                // 65: delidev.v1.DeleteConfigurationResponse
-	(*PreviewRoutingRequest)(nil),                      // 66: delidev.v1.PreviewRoutingRequest
-	(*PreviewRoutingResponse)(nil),                     // 67: delidev.v1.PreviewRoutingResponse
-	(*ClaimSteerInputRequest)(nil),                     // 68: delidev.v1.ClaimSteerInputRequest
-	(*ClaimSteerInputResponse)(nil),                    // 69: delidev.v1.ClaimSteerInputResponse
-	(*ClaimQuestionResponseRequest)(nil),               // 70: delidev.v1.ClaimQuestionResponseRequest
-	(*ClaimQuestionResponseResponse)(nil),              // 71: delidev.v1.ClaimQuestionResponseResponse
-	(*ClaimApprovalResponseRequest)(nil),               // 72: delidev.v1.ClaimApprovalResponseRequest
-	(*ClaimApprovalResponseResponse)(nil),              // 73: delidev.v1.ClaimApprovalResponseResponse
-	(*PublishExecutionRequest)(nil),                    // 74: delidev.v1.PublishExecutionRequest
-	(*PublishExecutionResponse)(nil),                   // 75: delidev.v1.PublishExecutionResponse
-	(*RegisterExecutionRequest)(nil),                   // 76: delidev.v1.RegisterExecutionRequest
-	(*RegisterExecutionResponse)(nil),                  // 77: delidev.v1.RegisterExecutionResponse
-	(*CreatePairingRequest)(nil),                       // 78: delidev.v1.CreatePairingRequest
-	(*CreatePairingResponse)(nil),                      // 79: delidev.v1.CreatePairingResponse
-	(*PairDeviceRequest)(nil),                          // 80: delidev.v1.PairDeviceRequest
-	(*PairDeviceResponse)(nil),                         // 81: delidev.v1.PairDeviceResponse
-	(*RevokeDeviceRequest)(nil),                        // 82: delidev.v1.RevokeDeviceRequest
-	(*RevokeDeviceResponse)(nil),                       // 83: delidev.v1.RevokeDeviceResponse
-	(*AttachWorkerRequest)(nil),                        // 84: delidev.v1.AttachWorkerRequest
-	(*AttachWorkerResponse)(nil),                       // 85: delidev.v1.AttachWorkerResponse
-	(*WatchWorkRequest)(nil),                           // 86: delidev.v1.WatchWorkRequest
-	(*WatchAuxiliaryWorkRequest)(nil),                  // 87: delidev.v1.WatchAuxiliaryWorkRequest
-	(*WatchAuxiliaryWorkResponse)(nil),                 // 88: delidev.v1.WatchAuxiliaryWorkResponse
-	(*WatchWorkResponse)(nil),                          // 89: delidev.v1.WatchWorkResponse
-	(*SteerInputControl)(nil),                          // 90: delidev.v1.SteerInputControl
-	(*QuestionResponseControl)(nil),                    // 91: delidev.v1.QuestionResponseControl
-	(*ApprovalResponseControl)(nil),                    // 92: delidev.v1.ApprovalResponseControl
-	(*ReportWorkRequest)(nil),                          // 93: delidev.v1.ReportWorkRequest
-	(*ReportWorkResponse)(nil),                         // 94: delidev.v1.ReportWorkResponse
-	(*InspectRepositoryRequest)(nil),                   // 95: delidev.v1.InspectRepositoryRequest
-	(*InspectRepositoryResponse)(nil),                  // 96: delidev.v1.InspectRepositoryResponse
-	(*DiscoverHarnessesRequest)(nil),                   // 97: delidev.v1.DiscoverHarnessesRequest
-	(*DiscoverHarnessesResponse)(nil),                  // 98: delidev.v1.DiscoverHarnessesResponse
-	(*ConnectAccountRequest)(nil),                      // 99: delidev.v1.ConnectAccountRequest
-	(*ConnectAccountResponse)(nil),                     // 100: delidev.v1.ConnectAccountResponse
-	(*DisconnectAccountRequest)(nil),                   // 101: delidev.v1.DisconnectAccountRequest
-	(*DisconnectAccountResponse)(nil),                  // 102: delidev.v1.DisconnectAccountResponse
-	(*GetAccountStatusRequest)(nil),                    // 103: delidev.v1.GetAccountStatusRequest
-	(*GetAccountStatusResponse)(nil),                   // 104: delidev.v1.GetAccountStatusResponse
-	(*ValidateAccountRequest)(nil),                     // 105: delidev.v1.ValidateAccountRequest
-	(*ValidateAccountResponse)(nil),                    // 106: delidev.v1.ValidateAccountResponse
-	(*RefreshPullRequestProblemsRequest)(nil),          // 107: delidev.v1.RefreshPullRequestProblemsRequest
-	(*RefreshPullRequestProblemsResponse)(nil),         // 108: delidev.v1.RefreshPullRequestProblemsResponse
-	(*ListPullRequestProblemsRequest)(nil),             // 109: delidev.v1.ListPullRequestProblemsRequest
-	(*ListPullRequestProblemsResponse)(nil),            // 110: delidev.v1.ListPullRequestProblemsResponse
-	(*DismissPullRequestProblemRequest)(nil),           // 111: delidev.v1.DismissPullRequestProblemRequest
-	(*DismissPullRequestProblemResponse)(nil),          // 112: delidev.v1.DismissPullRequestProblemResponse
-	(*ListPullRequestRemediationAttemptsRequest)(nil),  // 113: delidev.v1.ListPullRequestRemediationAttemptsRequest
-	(*ListPullRequestRemediationAttemptsResponse)(nil), // 114: delidev.v1.ListPullRequestRemediationAttemptsResponse
-	(*ResumePullRequestRemediationRequest)(nil),        // 115: delidev.v1.ResumePullRequestRemediationRequest
-	(*ResumePullRequestRemediationResponse)(nil),       // 116: delidev.v1.ResumePullRequestRemediationResponse
-	(*GetGitHubTokenFormRequest)(nil),                  // 117: delidev.v1.GetGitHubTokenFormRequest
-	(*GetGitHubTokenFormResponse)(nil),                 // 118: delidev.v1.GetGitHubTokenFormResponse
-	(*SaveIntegrationProfileRequest)(nil),              // 119: delidev.v1.SaveIntegrationProfileRequest
-	(*SaveIntegrationProfileResponse)(nil),             // 120: delidev.v1.SaveIntegrationProfileResponse
-	(*ReplaceIntegrationTokenRequest)(nil),             // 121: delidev.v1.ReplaceIntegrationTokenRequest
-	(*ReplaceIntegrationTokenResponse)(nil),            // 122: delidev.v1.ReplaceIntegrationTokenResponse
-	(*ValidateIntegrationProfileRequest)(nil),          // 123: delidev.v1.ValidateIntegrationProfileRequest
-	(*ValidateIntegrationProfileResponse)(nil),         // 124: delidev.v1.ValidateIntegrationProfileResponse
-	(*DeleteIntegrationProfileRequest)(nil),            // 125: delidev.v1.DeleteIntegrationProfileRequest
-	(*DeleteIntegrationProfileResponse)(nil),           // 126: delidev.v1.DeleteIntegrationProfileResponse
-	(*InspectRepositoryIntegrationRequest)(nil),        // 127: delidev.v1.InspectRepositoryIntegrationRequest
-	(*InspectRepositoryIntegrationResponse)(nil),       // 128: delidev.v1.InspectRepositoryIntegrationResponse
-	(*QueryRepositoryIntegrationRequest)(nil),          // 129: delidev.v1.QueryRepositoryIntegrationRequest
-	(*QueryRepositoryIntegrationResponse)(nil),         // 130: delidev.v1.QueryRepositoryIntegrationResponse
-	(*ListProviderInventoryRequest)(nil),               // 131: delidev.v1.ListProviderInventoryRequest
-	(*ProviderInventoryEntry)(nil),                     // 132: delidev.v1.ProviderInventoryEntry
-	(*ListProviderInventoryResponse)(nil),              // 133: delidev.v1.ListProviderInventoryResponse
-	(*ListProviderPresetsRequest)(nil),                 // 134: delidev.v1.ListProviderPresetsRequest
-	(*ListProviderPresetsResponse)(nil),                // 135: delidev.v1.ListProviderPresetsResponse
-	(*DiscoverModelsRequest)(nil),                      // 136: delidev.v1.DiscoverModelsRequest
-	(*DiscoverModelsResponse)(nil),                     // 137: delidev.v1.DiscoverModelsResponse
-	(*SearchModelsRequest)(nil),                        // 138: delidev.v1.SearchModelsRequest
-	(*SearchModelsResponse)(nil),                       // 139: delidev.v1.SearchModelsResponse
-	(*ResolveModelRequest)(nil),                        // 140: delidev.v1.ResolveModelRequest
-	(*ResolveModelResponse)(nil),                       // 141: delidev.v1.ResolveModelResponse
-	(*LinkSessionPullRequestRequest)(nil),              // 142: delidev.v1.LinkSessionPullRequestRequest
-	(*LinkSessionPullRequestResponse)(nil),             // 143: delidev.v1.LinkSessionPullRequestResponse
-	(*UnlinkSessionPullRequestRequest)(nil),            // 144: delidev.v1.UnlinkSessionPullRequestRequest
-	(*UnlinkSessionPullRequestResponse)(nil),           // 145: delidev.v1.UnlinkSessionPullRequestResponse
-	(*ReadSessionReviewContextRequest)(nil),            // 146: delidev.v1.ReadSessionReviewContextRequest
-	(*ReadSessionReviewContextResponse)(nil),           // 147: delidev.v1.ReadSessionReviewContextResponse
-	(*SteerQueuedInputRequest)(nil),                    // 148: delidev.v1.SteerQueuedInputRequest
-	(*SteerQueuedInputResponse)(nil),                   // 149: delidev.v1.SteerQueuedInputResponse
-	(*SessionChange)(nil),                              // 150: delidev.v1.SessionChange
-	(*CreateSessionRequest)(nil),                       // 151: delidev.v1.CreateSessionRequest
-	(*CreateSessionResponse)(nil),                      // 152: delidev.v1.CreateSessionResponse
-	(*ListSessionsRequest)(nil),                        // 153: delidev.v1.ListSessionsRequest
-	(*ListSessionsResponse)(nil),                       // 154: delidev.v1.ListSessionsResponse
-	(*EnqueueInputRequest)(nil),                        // 155: delidev.v1.EnqueueInputRequest
-	(*EnqueueInputResponse)(nil),                       // 156: delidev.v1.EnqueueInputResponse
-	(*EditQueuedInputRequest)(nil),                     // 157: delidev.v1.EditQueuedInputRequest
-	(*EditQueuedInputResponse)(nil),                    // 158: delidev.v1.EditQueuedInputResponse
-	(*RemoveQueuedInputRequest)(nil),                   // 159: delidev.v1.RemoveQueuedInputRequest
-	(*RemoveQueuedInputResponse)(nil),                  // 160: delidev.v1.RemoveQueuedInputResponse
-	(*ListQueueRequest)(nil),                           // 161: delidev.v1.ListQueueRequest
-	(*ListQueueResponse)(nil),                          // 162: delidev.v1.ListQueueResponse
-	(*ControlSessionRequest)(nil),                      // 163: delidev.v1.ControlSessionRequest
-	(*ControlSessionResponse)(nil),                     // 164: delidev.v1.ControlSessionResponse
-	(*RenameSessionRequest)(nil),                       // 165: delidev.v1.RenameSessionRequest
-	(*RenameSessionResponse)(nil),                      // 166: delidev.v1.RenameSessionResponse
-	(*PrepareSessionWorkspaceRequest)(nil),             // 167: delidev.v1.PrepareSessionWorkspaceRequest
-	(*PrepareSessionWorkspaceResponse)(nil),            // 168: delidev.v1.PrepareSessionWorkspaceResponse
-	(*RecoverSessionWorkspaceRequest)(nil),             // 169: delidev.v1.RecoverSessionWorkspaceRequest
-	(*RecoverSessionWorkspaceResponse)(nil),            // 170: delidev.v1.RecoverSessionWorkspaceResponse
-	(*InboxView)(nil),                                  // 171: delidev.v1.InboxView
-	(*GetInboxEntryRequest)(nil),                       // 172: delidev.v1.GetInboxEntryRequest
-	(*GetInboxEntryResponse)(nil),                      // 173: delidev.v1.GetInboxEntryResponse
-	(*ListInboxRequest)(nil),                           // 174: delidev.v1.ListInboxRequest
-	(*ListInboxResponse)(nil),                          // 175: delidev.v1.ListInboxResponse
-	(*SetInboxReadStateRequest)(nil),                   // 176: delidev.v1.SetInboxReadStateRequest
-	(*SetInboxReadStateResponse)(nil),                  // 177: delidev.v1.SetInboxReadStateResponse
-	(*RecoverSessionExecutionRequest)(nil),             // 178: delidev.v1.RecoverSessionExecutionRequest
-	(*RecoverSessionExecutionResponse)(nil),            // 179: delidev.v1.RecoverSessionExecutionResponse
-	(*SaveScheduleRequest)(nil),                        // 180: delidev.v1.SaveScheduleRequest
-	(*SaveScheduleResponse)(nil),                       // 181: delidev.v1.SaveScheduleResponse
-	(*GetScheduleRequest)(nil),                         // 182: delidev.v1.GetScheduleRequest
-	(*GetScheduleResponse)(nil),                        // 183: delidev.v1.GetScheduleResponse
-	(*ListSchedulesRequest)(nil),                       // 184: delidev.v1.ListSchedulesRequest
-	(*ListSchedulesResponse)(nil),                      // 185: delidev.v1.ListSchedulesResponse
-	(*DeleteScheduleRequest)(nil),                      // 186: delidev.v1.DeleteScheduleRequest
-	(*DeleteScheduleResponse)(nil),                     // 187: delidev.v1.DeleteScheduleResponse
-	(*ControlScheduleRequest)(nil),                     // 188: delidev.v1.ControlScheduleRequest
-	(*ControlScheduleResponse)(nil),                    // 189: delidev.v1.ControlScheduleResponse
-	(*RunScheduleNowRequest)(nil),                      // 190: delidev.v1.RunScheduleNowRequest
-	(*RunScheduleNowResponse)(nil),                     // 191: delidev.v1.RunScheduleNowResponse
-	(*ListScheduleOccurrencesRequest)(nil),             // 192: delidev.v1.ListScheduleOccurrencesRequest
-	(*ListScheduleOccurrencesResponse)(nil),            // 193: delidev.v1.ListScheduleOccurrencesResponse
-	(*GetScheduleOccurrenceRequest)(nil),               // 194: delidev.v1.GetScheduleOccurrenceRequest
-	(*GetScheduleOccurrenceResponse)(nil),              // 195: delidev.v1.GetScheduleOccurrenceResponse
-	(*SearchConversationsRequest)(nil),                 // 196: delidev.v1.SearchConversationsRequest
-	(*ConversationSearchHit)(nil),                      // 197: delidev.v1.ConversationSearchHit
-	(*SearchConversationsResponse)(nil),                // 198: delidev.v1.SearchConversationsResponse
-	(*ListActivityRequest)(nil),                        // 199: delidev.v1.ListActivityRequest
-	(*ActivityEntry)(nil),                              // 200: delidev.v1.ActivityEntry
-	(*ListActivityResponse)(nil),                       // 201: delidev.v1.ListActivityResponse
-	(*GetUsageSummaryRequest)(nil),                     // 202: delidev.v1.GetUsageSummaryRequest
-	(*UsageMeasure)(nil),                               // 203: delidev.v1.UsageMeasure
-	(*UsageTotals)(nil),                                // 204: delidev.v1.UsageTotals
-	(*UsageAnalyticsDay)(nil),                          // 205: delidev.v1.UsageAnalyticsDay
-	(*UsageAnalyticsModel)(nil),                        // 206: delidev.v1.UsageAnalyticsModel
-	(*UsageOtherModels)(nil),                           // 207: delidev.v1.UsageOtherModels
-	(*UsageAnalytics)(nil),                             // 208: delidev.v1.UsageAnalytics
-	(*UsageGroup)(nil),                                 // 209: delidev.v1.UsageGroup
-	(*GetUsageSummaryResponse)(nil),                    // 210: delidev.v1.GetUsageSummaryResponse
-	(*TokenPricing)(nil),                               // 211: delidev.v1.TokenPricing
-	(*PricingVersion)(nil),                             // 212: delidev.v1.PricingVersion
-	(*GetModelPricingRequest)(nil),                     // 213: delidev.v1.GetModelPricingRequest
-	(*GetModelPricingResponse)(nil),                    // 214: delidev.v1.GetModelPricingResponse
-	(*GetPricingVersionRequest)(nil),                   // 215: delidev.v1.GetPricingVersionRequest
-	(*GetPricingVersionResponse)(nil),                  // 216: delidev.v1.GetPricingVersionResponse
-	(*SetModelPricingRequest)(nil),                     // 217: delidev.v1.SetModelPricingRequest
-	(*SetModelPricingResponse)(nil),                    // 218: delidev.v1.SetModelPricingResponse
-	(*CurrencyEstimate)(nil),                           // 219: delidev.v1.CurrencyEstimate
-	(*EstimateTotals)(nil),                             // 220: delidev.v1.EstimateTotals
-	(*EstimateMeasure)(nil),                            // 221: delidev.v1.EstimateMeasure
-	(*PricingUsage)(nil),                               // 222: delidev.v1.PricingUsage
-	(*EstimatedCostBudget)(nil),                        // 223: delidev.v1.EstimatedCostBudget
-	(*BudgetEvidence)(nil),                             // 224: delidev.v1.BudgetEvidence
-	(*SessionBudgetView)(nil),                          // 225: delidev.v1.SessionBudgetView
-	(*GetSessionBudgetRequest)(nil),                    // 226: delidev.v1.GetSessionBudgetRequest
-	(*GetSessionBudgetResponse)(nil),                   // 227: delidev.v1.GetSessionBudgetResponse
-	(*SetSessionBudgetRequest)(nil),                    // 228: delidev.v1.SetSessionBudgetRequest
-	(*SetSessionBudgetResponse)(nil),                   // 229: delidev.v1.SetSessionBudgetResponse
-	(*NotificationPreferences)(nil),                    // 230: delidev.v1.NotificationPreferences
-	(*NotificationCandidate)(nil),                      // 231: delidev.v1.NotificationCandidate
-	(*NotificationDelivery)(nil),                       // 232: delidev.v1.NotificationDelivery
-	(*GetNotificationPreferencesRequest)(nil),          // 233: delidev.v1.GetNotificationPreferencesRequest
-	(*GetNotificationPreferencesResponse)(nil),         // 234: delidev.v1.GetNotificationPreferencesResponse
-	(*SetNotificationPreferencesRequest)(nil),          // 235: delidev.v1.SetNotificationPreferencesRequest
-	(*SetNotificationPreferencesResponse)(nil),         // 236: delidev.v1.SetNotificationPreferencesResponse
-	(*ListNotificationCandidatesRequest)(nil),          // 237: delidev.v1.ListNotificationCandidatesRequest
-	(*ListNotificationCandidatesResponse)(nil),         // 238: delidev.v1.ListNotificationCandidatesResponse
-	(*ClaimNotificationRequest)(nil),                   // 239: delidev.v1.ClaimNotificationRequest
-	(*ClaimNotificationResponse)(nil),                  // 240: delidev.v1.ClaimNotificationResponse
-	(*GetNotificationDeliveryRequest)(nil),             // 241: delidev.v1.GetNotificationDeliveryRequest
-	(*GetNotificationDeliveryResponse)(nil),            // 242: delidev.v1.GetNotificationDeliveryResponse
-	(*ReportNotificationRequest)(nil),                  // 243: delidev.v1.ReportNotificationRequest
-	(*ReportNotificationResponse)(nil),                 // 244: delidev.v1.ReportNotificationResponse
-	(*ReadSessionWorkspaceRequest)(nil),                // 245: delidev.v1.ReadSessionWorkspaceRequest
-	(*ReadSessionWorkspaceResponse)(nil),               // 246: delidev.v1.ReadSessionWorkspaceResponse
-	(*WatchWorkspaceReadsRequest)(nil),                 // 247: delidev.v1.WatchWorkspaceReadsRequest
-	(*WatchWorkspaceReadsResponse)(nil),                // 248: delidev.v1.WatchWorkspaceReadsResponse
-	(*ReportWorkspaceReadRequest)(nil),                 // 249: delidev.v1.ReportWorkspaceReadRequest
-	(*ReportWorkspaceReadResponse)(nil),                // 250: delidev.v1.ReportWorkspaceReadResponse
-	(*ExportConfigurationRequest)(nil),                 // 251: delidev.v1.ExportConfigurationRequest
-	(*ExportConfigurationResponse)(nil),                // 252: delidev.v1.ExportConfigurationResponse
-	(*PreviewConfigurationImportRequest)(nil),          // 253: delidev.v1.PreviewConfigurationImportRequest
-	(*PreviewConfigurationImportResponse)(nil),         // 254: delidev.v1.PreviewConfigurationImportResponse
-	(*ApplyConfigurationImportRequest)(nil),            // 255: delidev.v1.ApplyConfigurationImportRequest
-	(*ApplyConfigurationImportResponse)(nil),           // 256: delidev.v1.ApplyConfigurationImportResponse
-	(*CreateLocalReviewCommentRequest)(nil),            // 257: delidev.v1.CreateLocalReviewCommentRequest
-	(*CreateLocalReviewCommentResponse)(nil),           // 258: delidev.v1.CreateLocalReviewCommentResponse
-	(*EditLocalReviewCommentRequest)(nil),              // 259: delidev.v1.EditLocalReviewCommentRequest
-	(*EditLocalReviewCommentResponse)(nil),             // 260: delidev.v1.EditLocalReviewCommentResponse
-	(*DeleteLocalReviewCommentRequest)(nil),            // 261: delidev.v1.DeleteLocalReviewCommentRequest
-	(*DeleteLocalReviewCommentResponse)(nil),           // 262: delidev.v1.DeleteLocalReviewCommentResponse
-	(*SubmitLocalReviewRequest)(nil),                   // 263: delidev.v1.SubmitLocalReviewRequest
-	(*SubmitLocalReviewResponse)(nil),                  // 264: delidev.v1.SubmitLocalReviewResponse
-	(*ManagedBackup)(nil),                              // 265: delidev.v1.ManagedBackup
-	(*ListBackupsRequest)(nil),                         // 266: delidev.v1.ListBackupsRequest
-	(*ListBackupsResponse)(nil),                        // 267: delidev.v1.ListBackupsResponse
-	(*InspectBackupRequest)(nil),                       // 268: delidev.v1.InspectBackupRequest
-	(*InspectBackupResponse)(nil),                      // 269: delidev.v1.InspectBackupResponse
-	(*BackupDeletionJob)(nil),                          // 270: delidev.v1.BackupDeletionJob
-	(*DeleteBackupRequest)(nil),                        // 271: delidev.v1.DeleteBackupRequest
-	(*DeleteBackupResponse)(nil),                       // 272: delidev.v1.DeleteBackupResponse
-	(*ListBackupDeletionsRequest)(nil),                 // 273: delidev.v1.ListBackupDeletionsRequest
-	(*ListBackupDeletionsResponse)(nil),                // 274: delidev.v1.ListBackupDeletionsResponse
-	(*BackupCreationJob)(nil),                          // 275: delidev.v1.BackupCreationJob
-	(*RequestBackupRequest)(nil),                       // 276: delidev.v1.RequestBackupRequest
-	(*RequestBackupResponse)(nil),                      // 277: delidev.v1.RequestBackupResponse
-	(*GetBackupCreationRequest)(nil),                   // 278: delidev.v1.GetBackupCreationRequest
-	(*GetBackupCreationResponse)(nil),                  // 279: delidev.v1.GetBackupCreationResponse
-	(*ListBackupCreationsRequest)(nil),                 // 280: delidev.v1.ListBackupCreationsRequest
-	(*ListBackupCreationsResponse)(nil),                // 281: delidev.v1.ListBackupCreationsResponse
-	(*GetBackupDeletionRequest)(nil),                   // 282: delidev.v1.GetBackupDeletionRequest
-	(*GetBackupDeletionResponse)(nil),                  // 283: delidev.v1.GetBackupDeletionResponse
+	(*SaveNetworkProfileResponse)(nil),                 // 31: delidev.v1.SaveNetworkProfileResponse
+	(*DeleteNetworkProfileResponse)(nil),               // 32: delidev.v1.DeleteNetworkProfileResponse
+	(*SelectNetworkProfileResponse)(nil),               // 33: delidev.v1.SelectNetworkProfileResponse
+	(*GetNetworkRouteRequest)(nil),                     // 34: delidev.v1.GetNetworkRouteRequest
+	(*GetNetworkRouteResponse)(nil),                    // 35: delidev.v1.GetNetworkRouteResponse
+	(*ExportWorkerNetworkMetadataRequest)(nil),         // 36: delidev.v1.ExportWorkerNetworkMetadataRequest
+	(*ExportWorkerNetworkMetadataResponse)(nil),        // 37: delidev.v1.ExportWorkerNetworkMetadataResponse
+	(*RespondQuestionRequest)(nil),                     // 38: delidev.v1.RespondQuestionRequest
+	(*RespondQuestionResponse)(nil),                    // 39: delidev.v1.RespondQuestionResponse
+	(*RespondApprovalRequest)(nil),                     // 40: delidev.v1.RespondApprovalRequest
+	(*RespondApprovalResponse)(nil),                    // 41: delidev.v1.RespondApprovalResponse
+	(*Resource)(nil),                                   // 42: delidev.v1.Resource
+	(*Mutation)(nil),                                   // 43: delidev.v1.Mutation
+	(*Filter)(nil),                                     // 44: delidev.v1.Filter
+	(*ErrorDetail)(nil),                                // 45: delidev.v1.ErrorDetail
+	(*GetStatusRequest)(nil),                           // 46: delidev.v1.GetStatusRequest
+	(*GetOverviewRequest)(nil),                         // 47: delidev.v1.GetOverviewRequest
+	(*GetOverviewResponse)(nil),                        // 48: delidev.v1.GetOverviewResponse
+	(*GetStatusResponse)(nil),                          // 49: delidev.v1.GetStatusResponse
+	(*StopServerRequest)(nil),                          // 50: delidev.v1.StopServerRequest
+	(*StopServerResponse)(nil),                         // 51: delidev.v1.StopServerResponse
+	(*GetDoctorRequest)(nil),                           // 52: delidev.v1.GetDoctorRequest
+	(*GetDoctorResponse)(nil),                          // 53: delidev.v1.GetDoctorResponse
+	(*CreateBackupRequest)(nil),                        // 54: delidev.v1.CreateBackupRequest
+	(*CreateBackupResponse)(nil),                       // 55: delidev.v1.CreateBackupResponse
+	(*GetResourceRequest)(nil),                         // 56: delidev.v1.GetResourceRequest
+	(*GetResourceResponse)(nil),                        // 57: delidev.v1.GetResourceResponse
+	(*ListResourcesRequest)(nil),                       // 58: delidev.v1.ListResourcesRequest
+	(*ListResourcesResponse)(nil),                      // 59: delidev.v1.ListResourcesResponse
+	(*GetSnapshotRequest)(nil),                         // 60: delidev.v1.GetSnapshotRequest
+	(*GetSnapshotResponse)(nil),                        // 61: delidev.v1.GetSnapshotResponse
+	(*WatchEventsRequest)(nil),                         // 62: delidev.v1.WatchEventsRequest
+	(*WatchEventsResponse)(nil),                        // 63: delidev.v1.WatchEventsResponse
+	(*SaveConfigurationRequest)(nil),                   // 64: delidev.v1.SaveConfigurationRequest
+	(*SaveConfigurationResponse)(nil),                  // 65: delidev.v1.SaveConfigurationResponse
+	(*DeleteConfigurationRequest)(nil),                 // 66: delidev.v1.DeleteConfigurationRequest
+	(*DeleteConfigurationResponse)(nil),                // 67: delidev.v1.DeleteConfigurationResponse
+	(*PreviewRoutingRequest)(nil),                      // 68: delidev.v1.PreviewRoutingRequest
+	(*PreviewRoutingResponse)(nil),                     // 69: delidev.v1.PreviewRoutingResponse
+	(*ClaimSteerInputRequest)(nil),                     // 70: delidev.v1.ClaimSteerInputRequest
+	(*ClaimSteerInputResponse)(nil),                    // 71: delidev.v1.ClaimSteerInputResponse
+	(*ClaimQuestionResponseRequest)(nil),               // 72: delidev.v1.ClaimQuestionResponseRequest
+	(*ClaimQuestionResponseResponse)(nil),              // 73: delidev.v1.ClaimQuestionResponseResponse
+	(*ClaimApprovalResponseRequest)(nil),               // 74: delidev.v1.ClaimApprovalResponseRequest
+	(*ClaimApprovalResponseResponse)(nil),              // 75: delidev.v1.ClaimApprovalResponseResponse
+	(*PublishExecutionRequest)(nil),                    // 76: delidev.v1.PublishExecutionRequest
+	(*PublishExecutionResponse)(nil),                   // 77: delidev.v1.PublishExecutionResponse
+	(*RegisterExecutionRequest)(nil),                   // 78: delidev.v1.RegisterExecutionRequest
+	(*RegisterExecutionResponse)(nil),                  // 79: delidev.v1.RegisterExecutionResponse
+	(*CreatePairingRequest)(nil),                       // 80: delidev.v1.CreatePairingRequest
+	(*CreatePairingResponse)(nil),                      // 81: delidev.v1.CreatePairingResponse
+	(*PairDeviceRequest)(nil),                          // 82: delidev.v1.PairDeviceRequest
+	(*PairDeviceResponse)(nil),                         // 83: delidev.v1.PairDeviceResponse
+	(*RevokeDeviceRequest)(nil),                        // 84: delidev.v1.RevokeDeviceRequest
+	(*RevokeDeviceResponse)(nil),                       // 85: delidev.v1.RevokeDeviceResponse
+	(*AttachWorkerRequest)(nil),                        // 86: delidev.v1.AttachWorkerRequest
+	(*AttachWorkerResponse)(nil),                       // 87: delidev.v1.AttachWorkerResponse
+	(*WatchWorkRequest)(nil),                           // 88: delidev.v1.WatchWorkRequest
+	(*WatchAuxiliaryWorkRequest)(nil),                  // 89: delidev.v1.WatchAuxiliaryWorkRequest
+	(*WatchAuxiliaryWorkResponse)(nil),                 // 90: delidev.v1.WatchAuxiliaryWorkResponse
+	(*WatchWorkResponse)(nil),                          // 91: delidev.v1.WatchWorkResponse
+	(*SteerInputControl)(nil),                          // 92: delidev.v1.SteerInputControl
+	(*QuestionResponseControl)(nil),                    // 93: delidev.v1.QuestionResponseControl
+	(*ApprovalResponseControl)(nil),                    // 94: delidev.v1.ApprovalResponseControl
+	(*ReportWorkRequest)(nil),                          // 95: delidev.v1.ReportWorkRequest
+	(*ReportWorkResponse)(nil),                         // 96: delidev.v1.ReportWorkResponse
+	(*InspectRepositoryRequest)(nil),                   // 97: delidev.v1.InspectRepositoryRequest
+	(*InspectRepositoryResponse)(nil),                  // 98: delidev.v1.InspectRepositoryResponse
+	(*DiscoverHarnessesRequest)(nil),                   // 99: delidev.v1.DiscoverHarnessesRequest
+	(*DiscoverHarnessesResponse)(nil),                  // 100: delidev.v1.DiscoverHarnessesResponse
+	(*ConnectAccountRequest)(nil),                      // 101: delidev.v1.ConnectAccountRequest
+	(*ConnectAccountResponse)(nil),                     // 102: delidev.v1.ConnectAccountResponse
+	(*DisconnectAccountRequest)(nil),                   // 103: delidev.v1.DisconnectAccountRequest
+	(*DisconnectAccountResponse)(nil),                  // 104: delidev.v1.DisconnectAccountResponse
+	(*GetAccountStatusRequest)(nil),                    // 105: delidev.v1.GetAccountStatusRequest
+	(*GetAccountStatusResponse)(nil),                   // 106: delidev.v1.GetAccountStatusResponse
+	(*ValidateAccountRequest)(nil),                     // 107: delidev.v1.ValidateAccountRequest
+	(*ValidateAccountResponse)(nil),                    // 108: delidev.v1.ValidateAccountResponse
+	(*RefreshPullRequestProblemsRequest)(nil),          // 109: delidev.v1.RefreshPullRequestProblemsRequest
+	(*RefreshPullRequestProblemsResponse)(nil),         // 110: delidev.v1.RefreshPullRequestProblemsResponse
+	(*ListPullRequestProblemsRequest)(nil),             // 111: delidev.v1.ListPullRequestProblemsRequest
+	(*ListPullRequestProblemsResponse)(nil),            // 112: delidev.v1.ListPullRequestProblemsResponse
+	(*DismissPullRequestProblemRequest)(nil),           // 113: delidev.v1.DismissPullRequestProblemRequest
+	(*DismissPullRequestProblemResponse)(nil),          // 114: delidev.v1.DismissPullRequestProblemResponse
+	(*ListPullRequestRemediationAttemptsRequest)(nil),  // 115: delidev.v1.ListPullRequestRemediationAttemptsRequest
+	(*ListPullRequestRemediationAttemptsResponse)(nil), // 116: delidev.v1.ListPullRequestRemediationAttemptsResponse
+	(*ResumePullRequestRemediationRequest)(nil),        // 117: delidev.v1.ResumePullRequestRemediationRequest
+	(*ResumePullRequestRemediationResponse)(nil),       // 118: delidev.v1.ResumePullRequestRemediationResponse
+	(*GetGitHubTokenFormRequest)(nil),                  // 119: delidev.v1.GetGitHubTokenFormRequest
+	(*GetGitHubTokenFormResponse)(nil),                 // 120: delidev.v1.GetGitHubTokenFormResponse
+	(*SaveIntegrationProfileRequest)(nil),              // 121: delidev.v1.SaveIntegrationProfileRequest
+	(*SaveIntegrationProfileResponse)(nil),             // 122: delidev.v1.SaveIntegrationProfileResponse
+	(*ReplaceIntegrationTokenRequest)(nil),             // 123: delidev.v1.ReplaceIntegrationTokenRequest
+	(*ReplaceIntegrationTokenResponse)(nil),            // 124: delidev.v1.ReplaceIntegrationTokenResponse
+	(*ValidateIntegrationProfileRequest)(nil),          // 125: delidev.v1.ValidateIntegrationProfileRequest
+	(*ValidateIntegrationProfileResponse)(nil),         // 126: delidev.v1.ValidateIntegrationProfileResponse
+	(*DeleteIntegrationProfileRequest)(nil),            // 127: delidev.v1.DeleteIntegrationProfileRequest
+	(*DeleteIntegrationProfileResponse)(nil),           // 128: delidev.v1.DeleteIntegrationProfileResponse
+	(*InspectRepositoryIntegrationRequest)(nil),        // 129: delidev.v1.InspectRepositoryIntegrationRequest
+	(*InspectRepositoryIntegrationResponse)(nil),       // 130: delidev.v1.InspectRepositoryIntegrationResponse
+	(*QueryRepositoryIntegrationRequest)(nil),          // 131: delidev.v1.QueryRepositoryIntegrationRequest
+	(*QueryRepositoryIntegrationResponse)(nil),         // 132: delidev.v1.QueryRepositoryIntegrationResponse
+	(*ListProviderInventoryRequest)(nil),               // 133: delidev.v1.ListProviderInventoryRequest
+	(*ProviderInventoryEntry)(nil),                     // 134: delidev.v1.ProviderInventoryEntry
+	(*ListProviderInventoryResponse)(nil),              // 135: delidev.v1.ListProviderInventoryResponse
+	(*ListProviderPresetsRequest)(nil),                 // 136: delidev.v1.ListProviderPresetsRequest
+	(*ListProviderPresetsResponse)(nil),                // 137: delidev.v1.ListProviderPresetsResponse
+	(*DiscoverModelsRequest)(nil),                      // 138: delidev.v1.DiscoverModelsRequest
+	(*DiscoverModelsResponse)(nil),                     // 139: delidev.v1.DiscoverModelsResponse
+	(*SearchModelsRequest)(nil),                        // 140: delidev.v1.SearchModelsRequest
+	(*SearchModelsResponse)(nil),                       // 141: delidev.v1.SearchModelsResponse
+	(*ResolveModelRequest)(nil),                        // 142: delidev.v1.ResolveModelRequest
+	(*ResolveModelResponse)(nil),                       // 143: delidev.v1.ResolveModelResponse
+	(*LinkSessionPullRequestRequest)(nil),              // 144: delidev.v1.LinkSessionPullRequestRequest
+	(*LinkSessionPullRequestResponse)(nil),             // 145: delidev.v1.LinkSessionPullRequestResponse
+	(*UnlinkSessionPullRequestRequest)(nil),            // 146: delidev.v1.UnlinkSessionPullRequestRequest
+	(*UnlinkSessionPullRequestResponse)(nil),           // 147: delidev.v1.UnlinkSessionPullRequestResponse
+	(*ReadSessionReviewContextRequest)(nil),            // 148: delidev.v1.ReadSessionReviewContextRequest
+	(*ReadSessionReviewContextResponse)(nil),           // 149: delidev.v1.ReadSessionReviewContextResponse
+	(*SteerQueuedInputRequest)(nil),                    // 150: delidev.v1.SteerQueuedInputRequest
+	(*SteerQueuedInputResponse)(nil),                   // 151: delidev.v1.SteerQueuedInputResponse
+	(*SessionChange)(nil),                              // 152: delidev.v1.SessionChange
+	(*CreateSessionRequest)(nil),                       // 153: delidev.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),                      // 154: delidev.v1.CreateSessionResponse
+	(*ListSessionsRequest)(nil),                        // 155: delidev.v1.ListSessionsRequest
+	(*ListSessionsResponse)(nil),                       // 156: delidev.v1.ListSessionsResponse
+	(*EnqueueInputRequest)(nil),                        // 157: delidev.v1.EnqueueInputRequest
+	(*EnqueueInputResponse)(nil),                       // 158: delidev.v1.EnqueueInputResponse
+	(*EditQueuedInputRequest)(nil),                     // 159: delidev.v1.EditQueuedInputRequest
+	(*EditQueuedInputResponse)(nil),                    // 160: delidev.v1.EditQueuedInputResponse
+	(*RemoveQueuedInputRequest)(nil),                   // 161: delidev.v1.RemoveQueuedInputRequest
+	(*RemoveQueuedInputResponse)(nil),                  // 162: delidev.v1.RemoveQueuedInputResponse
+	(*ListQueueRequest)(nil),                           // 163: delidev.v1.ListQueueRequest
+	(*ListQueueResponse)(nil),                          // 164: delidev.v1.ListQueueResponse
+	(*ControlSessionRequest)(nil),                      // 165: delidev.v1.ControlSessionRequest
+	(*ControlSessionResponse)(nil),                     // 166: delidev.v1.ControlSessionResponse
+	(*RenameSessionRequest)(nil),                       // 167: delidev.v1.RenameSessionRequest
+	(*RenameSessionResponse)(nil),                      // 168: delidev.v1.RenameSessionResponse
+	(*PrepareSessionWorkspaceRequest)(nil),             // 169: delidev.v1.PrepareSessionWorkspaceRequest
+	(*PrepareSessionWorkspaceResponse)(nil),            // 170: delidev.v1.PrepareSessionWorkspaceResponse
+	(*RecoverSessionWorkspaceRequest)(nil),             // 171: delidev.v1.RecoverSessionWorkspaceRequest
+	(*RecoverSessionWorkspaceResponse)(nil),            // 172: delidev.v1.RecoverSessionWorkspaceResponse
+	(*InboxView)(nil),                                  // 173: delidev.v1.InboxView
+	(*GetInboxEntryRequest)(nil),                       // 174: delidev.v1.GetInboxEntryRequest
+	(*GetInboxEntryResponse)(nil),                      // 175: delidev.v1.GetInboxEntryResponse
+	(*ListInboxRequest)(nil),                           // 176: delidev.v1.ListInboxRequest
+	(*ListInboxResponse)(nil),                          // 177: delidev.v1.ListInboxResponse
+	(*SetInboxReadStateRequest)(nil),                   // 178: delidev.v1.SetInboxReadStateRequest
+	(*SetInboxReadStateResponse)(nil),                  // 179: delidev.v1.SetInboxReadStateResponse
+	(*RecoverSessionExecutionRequest)(nil),             // 180: delidev.v1.RecoverSessionExecutionRequest
+	(*RecoverSessionExecutionResponse)(nil),            // 181: delidev.v1.RecoverSessionExecutionResponse
+	(*SaveScheduleRequest)(nil),                        // 182: delidev.v1.SaveScheduleRequest
+	(*SaveScheduleResponse)(nil),                       // 183: delidev.v1.SaveScheduleResponse
+	(*GetScheduleRequest)(nil),                         // 184: delidev.v1.GetScheduleRequest
+	(*GetScheduleResponse)(nil),                        // 185: delidev.v1.GetScheduleResponse
+	(*ListSchedulesRequest)(nil),                       // 186: delidev.v1.ListSchedulesRequest
+	(*ListSchedulesResponse)(nil),                      // 187: delidev.v1.ListSchedulesResponse
+	(*DeleteScheduleRequest)(nil),                      // 188: delidev.v1.DeleteScheduleRequest
+	(*DeleteScheduleResponse)(nil),                     // 189: delidev.v1.DeleteScheduleResponse
+	(*ControlScheduleRequest)(nil),                     // 190: delidev.v1.ControlScheduleRequest
+	(*ControlScheduleResponse)(nil),                    // 191: delidev.v1.ControlScheduleResponse
+	(*RunScheduleNowRequest)(nil),                      // 192: delidev.v1.RunScheduleNowRequest
+	(*RunScheduleNowResponse)(nil),                     // 193: delidev.v1.RunScheduleNowResponse
+	(*ListScheduleOccurrencesRequest)(nil),             // 194: delidev.v1.ListScheduleOccurrencesRequest
+	(*ListScheduleOccurrencesResponse)(nil),            // 195: delidev.v1.ListScheduleOccurrencesResponse
+	(*GetScheduleOccurrenceRequest)(nil),               // 196: delidev.v1.GetScheduleOccurrenceRequest
+	(*GetScheduleOccurrenceResponse)(nil),              // 197: delidev.v1.GetScheduleOccurrenceResponse
+	(*SearchConversationsRequest)(nil),                 // 198: delidev.v1.SearchConversationsRequest
+	(*ConversationSearchHit)(nil),                      // 199: delidev.v1.ConversationSearchHit
+	(*SearchConversationsResponse)(nil),                // 200: delidev.v1.SearchConversationsResponse
+	(*ListActivityRequest)(nil),                        // 201: delidev.v1.ListActivityRequest
+	(*ActivityEntry)(nil),                              // 202: delidev.v1.ActivityEntry
+	(*ListActivityResponse)(nil),                       // 203: delidev.v1.ListActivityResponse
+	(*GetUsageSummaryRequest)(nil),                     // 204: delidev.v1.GetUsageSummaryRequest
+	(*UsageMeasure)(nil),                               // 205: delidev.v1.UsageMeasure
+	(*UsageTotals)(nil),                                // 206: delidev.v1.UsageTotals
+	(*UsageAnalyticsDay)(nil),                          // 207: delidev.v1.UsageAnalyticsDay
+	(*UsageAnalyticsModel)(nil),                        // 208: delidev.v1.UsageAnalyticsModel
+	(*UsageOtherModels)(nil),                           // 209: delidev.v1.UsageOtherModels
+	(*UsageAnalytics)(nil),                             // 210: delidev.v1.UsageAnalytics
+	(*UsageGroup)(nil),                                 // 211: delidev.v1.UsageGroup
+	(*GetUsageSummaryResponse)(nil),                    // 212: delidev.v1.GetUsageSummaryResponse
+	(*TokenPricing)(nil),                               // 213: delidev.v1.TokenPricing
+	(*PricingVersion)(nil),                             // 214: delidev.v1.PricingVersion
+	(*GetModelPricingRequest)(nil),                     // 215: delidev.v1.GetModelPricingRequest
+	(*GetModelPricingResponse)(nil),                    // 216: delidev.v1.GetModelPricingResponse
+	(*GetPricingVersionRequest)(nil),                   // 217: delidev.v1.GetPricingVersionRequest
+	(*GetPricingVersionResponse)(nil),                  // 218: delidev.v1.GetPricingVersionResponse
+	(*SetModelPricingRequest)(nil),                     // 219: delidev.v1.SetModelPricingRequest
+	(*SetModelPricingResponse)(nil),                    // 220: delidev.v1.SetModelPricingResponse
+	(*CurrencyEstimate)(nil),                           // 221: delidev.v1.CurrencyEstimate
+	(*EstimateTotals)(nil),                             // 222: delidev.v1.EstimateTotals
+	(*EstimateMeasure)(nil),                            // 223: delidev.v1.EstimateMeasure
+	(*PricingUsage)(nil),                               // 224: delidev.v1.PricingUsage
+	(*EstimatedCostBudget)(nil),                        // 225: delidev.v1.EstimatedCostBudget
+	(*BudgetEvidence)(nil),                             // 226: delidev.v1.BudgetEvidence
+	(*SessionBudgetView)(nil),                          // 227: delidev.v1.SessionBudgetView
+	(*GetSessionBudgetRequest)(nil),                    // 228: delidev.v1.GetSessionBudgetRequest
+	(*GetSessionBudgetResponse)(nil),                   // 229: delidev.v1.GetSessionBudgetResponse
+	(*SetSessionBudgetRequest)(nil),                    // 230: delidev.v1.SetSessionBudgetRequest
+	(*SetSessionBudgetResponse)(nil),                   // 231: delidev.v1.SetSessionBudgetResponse
+	(*NotificationPreferences)(nil),                    // 232: delidev.v1.NotificationPreferences
+	(*NotificationCandidate)(nil),                      // 233: delidev.v1.NotificationCandidate
+	(*NotificationDelivery)(nil),                       // 234: delidev.v1.NotificationDelivery
+	(*GetNotificationPreferencesRequest)(nil),          // 235: delidev.v1.GetNotificationPreferencesRequest
+	(*GetNotificationPreferencesResponse)(nil),         // 236: delidev.v1.GetNotificationPreferencesResponse
+	(*SetNotificationPreferencesRequest)(nil),          // 237: delidev.v1.SetNotificationPreferencesRequest
+	(*SetNotificationPreferencesResponse)(nil),         // 238: delidev.v1.SetNotificationPreferencesResponse
+	(*ListNotificationCandidatesRequest)(nil),          // 239: delidev.v1.ListNotificationCandidatesRequest
+	(*ListNotificationCandidatesResponse)(nil),         // 240: delidev.v1.ListNotificationCandidatesResponse
+	(*ClaimNotificationRequest)(nil),                   // 241: delidev.v1.ClaimNotificationRequest
+	(*ClaimNotificationResponse)(nil),                  // 242: delidev.v1.ClaimNotificationResponse
+	(*GetNotificationDeliveryRequest)(nil),             // 243: delidev.v1.GetNotificationDeliveryRequest
+	(*GetNotificationDeliveryResponse)(nil),            // 244: delidev.v1.GetNotificationDeliveryResponse
+	(*ReportNotificationRequest)(nil),                  // 245: delidev.v1.ReportNotificationRequest
+	(*ReportNotificationResponse)(nil),                 // 246: delidev.v1.ReportNotificationResponse
+	(*ReadSessionWorkspaceRequest)(nil),                // 247: delidev.v1.ReadSessionWorkspaceRequest
+	(*ReadSessionWorkspaceResponse)(nil),               // 248: delidev.v1.ReadSessionWorkspaceResponse
+	(*WatchWorkspaceReadsRequest)(nil),                 // 249: delidev.v1.WatchWorkspaceReadsRequest
+	(*WatchWorkspaceReadsResponse)(nil),                // 250: delidev.v1.WatchWorkspaceReadsResponse
+	(*ReportWorkspaceReadRequest)(nil),                 // 251: delidev.v1.ReportWorkspaceReadRequest
+	(*ReportWorkspaceReadResponse)(nil),                // 252: delidev.v1.ReportWorkspaceReadResponse
+	(*ExportConfigurationRequest)(nil),                 // 253: delidev.v1.ExportConfigurationRequest
+	(*ExportConfigurationResponse)(nil),                // 254: delidev.v1.ExportConfigurationResponse
+	(*PreviewConfigurationImportRequest)(nil),          // 255: delidev.v1.PreviewConfigurationImportRequest
+	(*PreviewConfigurationImportResponse)(nil),         // 256: delidev.v1.PreviewConfigurationImportResponse
+	(*ApplyConfigurationImportRequest)(nil),            // 257: delidev.v1.ApplyConfigurationImportRequest
+	(*ApplyConfigurationImportResponse)(nil),           // 258: delidev.v1.ApplyConfigurationImportResponse
+	(*CreateLocalReviewCommentRequest)(nil),            // 259: delidev.v1.CreateLocalReviewCommentRequest
+	(*CreateLocalReviewCommentResponse)(nil),           // 260: delidev.v1.CreateLocalReviewCommentResponse
+	(*EditLocalReviewCommentRequest)(nil),              // 261: delidev.v1.EditLocalReviewCommentRequest
+	(*EditLocalReviewCommentResponse)(nil),             // 262: delidev.v1.EditLocalReviewCommentResponse
+	(*DeleteLocalReviewCommentRequest)(nil),            // 263: delidev.v1.DeleteLocalReviewCommentRequest
+	(*DeleteLocalReviewCommentResponse)(nil),           // 264: delidev.v1.DeleteLocalReviewCommentResponse
+	(*SubmitLocalReviewRequest)(nil),                   // 265: delidev.v1.SubmitLocalReviewRequest
+	(*SubmitLocalReviewResponse)(nil),                  // 266: delidev.v1.SubmitLocalReviewResponse
+	(*ManagedBackup)(nil),                              // 267: delidev.v1.ManagedBackup
+	(*ListBackupsRequest)(nil),                         // 268: delidev.v1.ListBackupsRequest
+	(*ListBackupsResponse)(nil),                        // 269: delidev.v1.ListBackupsResponse
+	(*InspectBackupRequest)(nil),                       // 270: delidev.v1.InspectBackupRequest
+	(*InspectBackupResponse)(nil),                      // 271: delidev.v1.InspectBackupResponse
+	(*BackupDeletionJob)(nil),                          // 272: delidev.v1.BackupDeletionJob
+	(*DeleteBackupRequest)(nil),                        // 273: delidev.v1.DeleteBackupRequest
+	(*DeleteBackupResponse)(nil),                       // 274: delidev.v1.DeleteBackupResponse
+	(*ListBackupDeletionsRequest)(nil),                 // 275: delidev.v1.ListBackupDeletionsRequest
+	(*ListBackupDeletionsResponse)(nil),                // 276: delidev.v1.ListBackupDeletionsResponse
+	(*BackupCreationJob)(nil),                          // 277: delidev.v1.BackupCreationJob
+	(*RequestBackupRequest)(nil),                       // 278: delidev.v1.RequestBackupRequest
+	(*RequestBackupResponse)(nil),                      // 279: delidev.v1.RequestBackupResponse
+	(*GetBackupCreationRequest)(nil),                   // 280: delidev.v1.GetBackupCreationRequest
+	(*GetBackupCreationResponse)(nil),                  // 281: delidev.v1.GetBackupCreationResponse
+	(*ListBackupCreationsRequest)(nil),                 // 282: delidev.v1.ListBackupCreationsRequest
+	(*ListBackupCreationsResponse)(nil),                // 283: delidev.v1.ListBackupCreationsResponse
+	(*GetBackupDeletionRequest)(nil),                   // 284: delidev.v1.GetBackupDeletionRequest
+	(*GetBackupDeletionResponse)(nil),                  // 285: delidev.v1.GetBackupDeletionResponse
 }
 var file_delidev_v1_delidev_proto_depIdxs = []int32{
-	41,  // 0: delidev.v1.SaveNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	41,  // 1: delidev.v1.DeleteNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	41,  // 2: delidev.v1.SelectNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 3: delidev.v1.NetworkMutationResponse.resource:type_name -> delidev.v1.Resource
-	40,  // 4: delidev.v1.GetNetworkRouteResponse.route:type_name -> delidev.v1.Resource
-	41,  // 5: delidev.v1.RespondQuestionRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 6: delidev.v1.RespondQuestionResponse.interaction:type_name -> delidev.v1.Resource
-	41,  // 7: delidev.v1.RespondApprovalRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 8: delidev.v1.RespondApprovalResponse.interaction:type_name -> delidev.v1.Resource
-	0,   // 9: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
-	0,   // 10: delidev.v1.Filter.kind:type_name -> delidev.v1.EntityKind
-	1,   // 11: delidev.v1.GetStatusResponse.capabilities:type_name -> delidev.v1.SystemCapability
-	0,   // 12: delidev.v1.GetResourceRequest.kind:type_name -> delidev.v1.EntityKind
-	40,  // 13: delidev.v1.GetResourceResponse.resource:type_name -> delidev.v1.Resource
-	42,  // 14: delidev.v1.ListResourcesRequest.filter:type_name -> delidev.v1.Filter
-	2,   // 15: delidev.v1.ListResourcesRequest.account_type:type_name -> delidev.v1.AccountTypeFilter
-	40,  // 16: delidev.v1.ListResourcesResponse.resources:type_name -> delidev.v1.Resource
-	42,  // 17: delidev.v1.GetSnapshotRequest.filter:type_name -> delidev.v1.Filter
-	40,  // 18: delidev.v1.GetSnapshotResponse.resources:type_name -> delidev.v1.Resource
-	0,   // 19: delidev.v1.WatchEventsResponse.kind:type_name -> delidev.v1.EntityKind
-	3,   // 20: delidev.v1.WatchEventsResponse.action:type_name -> delidev.v1.EventAction
-	41,  // 21: delidev.v1.SaveConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
-	0,   // 22: delidev.v1.SaveConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
-	40,  // 23: delidev.v1.SaveConfigurationResponse.resource:type_name -> delidev.v1.Resource
-	40,  // 24: delidev.v1.SaveConfigurationResponse.job:type_name -> delidev.v1.Resource
-	41,  // 25: delidev.v1.DeleteConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
-	0,   // 26: delidev.v1.DeleteConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
-	41,  // 27: delidev.v1.ClaimSteerInputRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 28: delidev.v1.ClaimSteerInputResponse.steer:type_name -> delidev.v1.Resource
-	40,  // 29: delidev.v1.ClaimSteerInputResponse.input:type_name -> delidev.v1.Resource
-	41,  // 30: delidev.v1.ClaimQuestionResponseRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 31: delidev.v1.ClaimQuestionResponseResponse.interaction:type_name -> delidev.v1.Resource
-	41,  // 32: delidev.v1.ClaimApprovalResponseRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 33: delidev.v1.ClaimApprovalResponseResponse.interaction:type_name -> delidev.v1.Resource
-	41,  // 34: delidev.v1.PublishExecutionRequest.mutation:type_name -> delidev.v1.Mutation
-	41,  // 35: delidev.v1.RegisterExecutionRequest.mutation:type_name -> delidev.v1.Mutation
-	4,   // 36: delidev.v1.CreatePairingRequest.type:type_name -> delidev.v1.DeviceType
-	40,  // 37: delidev.v1.CreatePairingResponse.pairing:type_name -> delidev.v1.Resource
-	40,  // 38: delidev.v1.PairDeviceResponse.device:type_name -> delidev.v1.Resource
-	40,  // 39: delidev.v1.PairDeviceResponse.machine:type_name -> delidev.v1.Resource
-	41,  // 40: delidev.v1.RevokeDeviceRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 41: delidev.v1.RevokeDeviceResponse.device:type_name -> delidev.v1.Resource
-	5,   // 42: delidev.v1.AttachWorkerRequest.capabilities:type_name -> delidev.v1.WorkerCapability
-	40,  // 43: delidev.v1.AttachWorkerResponse.machine:type_name -> delidev.v1.Resource
-	40,  // 44: delidev.v1.WatchAuxiliaryWorkResponse.job:type_name -> delidev.v1.Resource
-	40,  // 45: delidev.v1.WatchWorkResponse.job:type_name -> delidev.v1.Resource
-	91,  // 46: delidev.v1.WatchWorkResponse.question_response:type_name -> delidev.v1.QuestionResponseControl
-	90,  // 47: delidev.v1.WatchWorkResponse.steer_input:type_name -> delidev.v1.SteerInputControl
-	92,  // 48: delidev.v1.WatchWorkResponse.approval_response:type_name -> delidev.v1.ApprovalResponseControl
-	41,  // 49: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
-	43,  // 50: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
-	40,  // 51: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
-	40,  // 52: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
-	41,  // 53: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 54: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
-	40,  // 55: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
-	41,  // 56: delidev.v1.ConnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 57: delidev.v1.ConnectAccountResponse.account:type_name -> delidev.v1.Resource
-	41,  // 58: delidev.v1.DisconnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 59: delidev.v1.DisconnectAccountResponse.account:type_name -> delidev.v1.Resource
-	40,  // 60: delidev.v1.GetAccountStatusResponse.account:type_name -> delidev.v1.Resource
-	41,  // 61: delidev.v1.ValidateAccountRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 62: delidev.v1.ValidateAccountResponse.account:type_name -> delidev.v1.Resource
-	6,   // 63: delidev.v1.RefreshPullRequestProblemsRequest.kind:type_name -> delidev.v1.PullRequestProblemCollectionKind
-	40,  // 64: delidev.v1.RefreshPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
-	40,  // 65: delidev.v1.ListPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
-	40,  // 66: delidev.v1.ListPullRequestProblemsResponse.problems:type_name -> delidev.v1.Resource
-	41,  // 67: delidev.v1.DismissPullRequestProblemRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 68: delidev.v1.DismissPullRequestProblemResponse.problem:type_name -> delidev.v1.Resource
-	40,  // 69: delidev.v1.ListPullRequestRemediationAttemptsResponse.problem_set:type_name -> delidev.v1.Resource
-	40,  // 70: delidev.v1.ListPullRequestRemediationAttemptsResponse.attempts:type_name -> delidev.v1.Resource
-	41,  // 71: delidev.v1.ResumePullRequestRemediationRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 72: delidev.v1.ResumePullRequestRemediationResponse.problem_set:type_name -> delidev.v1.Resource
-	7,   // 73: delidev.v1.GetGitHubTokenFormRequest.access:type_name -> delidev.v1.GitHubTokenAccess
-	41,  // 74: delidev.v1.SaveIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 75: delidev.v1.SaveIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
-	41,  // 76: delidev.v1.ReplaceIntegrationTokenRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 77: delidev.v1.ReplaceIntegrationTokenResponse.profile:type_name -> delidev.v1.Resource
-	41,  // 78: delidev.v1.ValidateIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 79: delidev.v1.ValidateIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
-	41,  // 80: delidev.v1.DeleteIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 81: delidev.v1.DeleteIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
-	8,   // 82: delidev.v1.ProviderInventoryEntry.preset_id:type_name -> delidev.v1.ProviderPresetId
-	40,  // 83: delidev.v1.ProviderInventoryEntry.provider:type_name -> delidev.v1.Resource
-	132, // 84: delidev.v1.ListProviderInventoryResponse.entries:type_name -> delidev.v1.ProviderInventoryEntry
-	9,   // 85: delidev.v1.ListProviderInventoryResponse.capabilities:type_name -> delidev.v1.ProviderInventoryCapability
-	41,  // 86: delidev.v1.DiscoverModelsRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 87: delidev.v1.DiscoverModelsResponse.account:type_name -> delidev.v1.Resource
-	40,  // 88: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
-	40,  // 89: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
-	40,  // 90: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
-	40,  // 91: delidev.v1.LinkSessionPullRequestResponse.association:type_name -> delidev.v1.Resource
-	41,  // 92: delidev.v1.UnlinkSessionPullRequestRequest.mutation:type_name -> delidev.v1.Mutation
-	41,  // 93: delidev.v1.SteerQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 94: delidev.v1.SteerQueuedInputResponse.steer:type_name -> delidev.v1.Resource
-	150, // 95: delidev.v1.SteerQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
-	40,  // 96: delidev.v1.SessionChange.session:type_name -> delidev.v1.Resource
-	40,  // 97: delidev.v1.SessionChange.input:type_name -> delidev.v1.Resource
-	40,  // 98: delidev.v1.SessionChange.workspace_job:type_name -> delidev.v1.Resource
-	40,  // 99: delidev.v1.SessionChange.recovery_job:type_name -> delidev.v1.Resource
-	40,  // 100: delidev.v1.SessionChange.execution_job:type_name -> delidev.v1.Resource
-	40,  // 101: delidev.v1.SessionChange.execution_recovery_job:type_name -> delidev.v1.Resource
-	150, // 102: delidev.v1.CreateSessionResponse.change:type_name -> delidev.v1.SessionChange
-	40,  // 103: delidev.v1.ListSessionsResponse.sessions:type_name -> delidev.v1.Resource
-	150, // 104: delidev.v1.EnqueueInputResponse.change:type_name -> delidev.v1.SessionChange
-	41,  // 105: delidev.v1.EditQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
-	150, // 106: delidev.v1.EditQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
-	41,  // 107: delidev.v1.RemoveQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
-	150, // 108: delidev.v1.RemoveQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
-	40,  // 109: delidev.v1.ListQueueResponse.inputs:type_name -> delidev.v1.Resource
-	41,  // 110: delidev.v1.ControlSessionRequest.mutation:type_name -> delidev.v1.Mutation
-	10,  // 111: delidev.v1.ControlSessionRequest.action:type_name -> delidev.v1.SessionAction
-	150, // 112: delidev.v1.ControlSessionResponse.change:type_name -> delidev.v1.SessionChange
-	41,  // 113: delidev.v1.RenameSessionRequest.mutation:type_name -> delidev.v1.Mutation
-	150, // 114: delidev.v1.RenameSessionResponse.change:type_name -> delidev.v1.SessionChange
-	41,  // 115: delidev.v1.PrepareSessionWorkspaceRequest.mutation:type_name -> delidev.v1.Mutation
-	150, // 116: delidev.v1.PrepareSessionWorkspaceResponse.change:type_name -> delidev.v1.SessionChange
-	41,  // 117: delidev.v1.RecoverSessionWorkspaceRequest.mutation:type_name -> delidev.v1.Mutation
-	150, // 118: delidev.v1.RecoverSessionWorkspaceResponse.change:type_name -> delidev.v1.SessionChange
-	40,  // 119: delidev.v1.InboxView.entry:type_name -> delidev.v1.Resource
-	40,  // 120: delidev.v1.InboxView.session:type_name -> delidev.v1.Resource
-	40,  // 121: delidev.v1.InboxView.interaction:type_name -> delidev.v1.Resource
-	171, // 122: delidev.v1.GetInboxEntryResponse.view:type_name -> delidev.v1.InboxView
-	11,  // 123: delidev.v1.ListInboxRequest.read_state:type_name -> delidev.v1.InboxReadState
-	12,  // 124: delidev.v1.ListInboxRequest.source:type_name -> delidev.v1.InboxSource
-	171, // 125: delidev.v1.ListInboxResponse.entries:type_name -> delidev.v1.InboxView
-	41,  // 126: delidev.v1.SetInboxReadStateRequest.mutation:type_name -> delidev.v1.Mutation
-	11,  // 127: delidev.v1.SetInboxReadStateRequest.read_state:type_name -> delidev.v1.InboxReadState
-	171, // 128: delidev.v1.SetInboxReadStateResponse.view:type_name -> delidev.v1.InboxView
-	41,  // 129: delidev.v1.RecoverSessionExecutionRequest.mutation:type_name -> delidev.v1.Mutation
-	150, // 130: delidev.v1.RecoverSessionExecutionResponse.change:type_name -> delidev.v1.SessionChange
-	41,  // 131: delidev.v1.SaveScheduleRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 132: delidev.v1.SaveScheduleResponse.schedule:type_name -> delidev.v1.Resource
-	40,  // 133: delidev.v1.GetScheduleResponse.schedule:type_name -> delidev.v1.Resource
-	40,  // 134: delidev.v1.ListSchedulesResponse.schedules:type_name -> delidev.v1.Resource
-	41,  // 135: delidev.v1.DeleteScheduleRequest.mutation:type_name -> delidev.v1.Mutation
-	41,  // 136: delidev.v1.ControlScheduleRequest.mutation:type_name -> delidev.v1.Mutation
-	13,  // 137: delidev.v1.ControlScheduleRequest.action:type_name -> delidev.v1.ScheduleAction
-	40,  // 138: delidev.v1.ControlScheduleResponse.schedule:type_name -> delidev.v1.Resource
-	41,  // 139: delidev.v1.RunScheduleNowRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 140: delidev.v1.RunScheduleNowResponse.occurrence:type_name -> delidev.v1.Resource
-	40,  // 141: delidev.v1.RunScheduleNowResponse.session:type_name -> delidev.v1.Resource
-	40,  // 142: delidev.v1.ListScheduleOccurrencesResponse.occurrences:type_name -> delidev.v1.Resource
-	40,  // 143: delidev.v1.GetScheduleOccurrenceResponse.occurrence:type_name -> delidev.v1.Resource
-	14,  // 144: delidev.v1.SearchConversationsRequest.outcome:type_name -> delidev.v1.SearchExecutionOutcome
-	15,  // 145: delidev.v1.SearchConversationsRequest.archive:type_name -> delidev.v1.SearchArchiveState
-	40,  // 146: delidev.v1.ConversationSearchHit.message:type_name -> delidev.v1.Resource
-	14,  // 147: delidev.v1.ConversationSearchHit.outcome:type_name -> delidev.v1.SearchExecutionOutcome
-	15,  // 148: delidev.v1.ConversationSearchHit.archive:type_name -> delidev.v1.SearchArchiveState
-	197, // 149: delidev.v1.SearchConversationsResponse.hits:type_name -> delidev.v1.ConversationSearchHit
-	0,   // 150: delidev.v1.ActivityEntry.source_kind:type_name -> delidev.v1.EntityKind
-	16,  // 151: delidev.v1.ActivityEntry.kind:type_name -> delidev.v1.ActivityKind
-	17,  // 152: delidev.v1.ActivityEntry.occurrence_state:type_name -> delidev.v1.ActivityOccurrenceState
-	18,  // 153: delidev.v1.ActivityEntry.job_state:type_name -> delidev.v1.ActivityJobState
-	200, // 154: delidev.v1.ListActivityResponse.entries:type_name -> delidev.v1.ActivityEntry
-	19,  // 155: delidev.v1.GetUsageSummaryRequest.granularity:type_name -> delidev.v1.UsageTimeGranularity
-	203, // 156: delidev.v1.UsageTotals.input:type_name -> delidev.v1.UsageMeasure
-	203, // 157: delidev.v1.UsageTotals.cached_input:type_name -> delidev.v1.UsageMeasure
-	203, // 158: delidev.v1.UsageTotals.cache_write_input:type_name -> delidev.v1.UsageMeasure
-	203, // 159: delidev.v1.UsageTotals.output:type_name -> delidev.v1.UsageMeasure
-	203, // 160: delidev.v1.UsageTotals.reasoning_output:type_name -> delidev.v1.UsageMeasure
-	203, // 161: delidev.v1.UsageTotals.total:type_name -> delidev.v1.UsageMeasure
-	204, // 162: delidev.v1.UsageAnalyticsDay.totals:type_name -> delidev.v1.UsageTotals
-	204, // 163: delidev.v1.UsageAnalyticsModel.totals:type_name -> delidev.v1.UsageTotals
-	204, // 164: delidev.v1.UsageOtherModels.totals:type_name -> delidev.v1.UsageTotals
-	19,  // 165: delidev.v1.UsageAnalytics.granularity:type_name -> delidev.v1.UsageTimeGranularity
-	205, // 166: delidev.v1.UsageAnalytics.days:type_name -> delidev.v1.UsageAnalyticsDay
-	206, // 167: delidev.v1.UsageAnalytics.models:type_name -> delidev.v1.UsageAnalyticsModel
-	207, // 168: delidev.v1.UsageAnalytics.other_models:type_name -> delidev.v1.UsageOtherModels
-	204, // 169: delidev.v1.UsageGroup.totals:type_name -> delidev.v1.UsageTotals
-	220, // 170: delidev.v1.UsageGroup.estimates:type_name -> delidev.v1.EstimateTotals
-	204, // 171: delidev.v1.GetUsageSummaryResponse.totals:type_name -> delidev.v1.UsageTotals
-	209, // 172: delidev.v1.GetUsageSummaryResponse.groups:type_name -> delidev.v1.UsageGroup
-	20,  // 173: delidev.v1.GetUsageSummaryResponse.coverage:type_name -> delidev.v1.UsageCoverage
-	21,  // 174: delidev.v1.GetUsageSummaryResponse.actual_cost:type_name -> delidev.v1.UsageCostState
-	21,  // 175: delidev.v1.GetUsageSummaryResponse.estimated_cost:type_name -> delidev.v1.UsageCostState
-	220, // 176: delidev.v1.GetUsageSummaryResponse.estimates:type_name -> delidev.v1.EstimateTotals
-	222, // 177: delidev.v1.GetUsageSummaryResponse.pricing:type_name -> delidev.v1.PricingUsage
-	208, // 178: delidev.v1.GetUsageSummaryResponse.analytics:type_name -> delidev.v1.UsageAnalytics
-	22,  // 179: delidev.v1.TokenPricing.input_mode:type_name -> delidev.v1.InputPricingMode
-	211, // 180: delidev.v1.PricingVersion.basis:type_name -> delidev.v1.TokenPricing
-	212, // 181: delidev.v1.GetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
-	212, // 182: delidev.v1.GetPricingVersionResponse.pricing:type_name -> delidev.v1.PricingVersion
-	41,  // 183: delidev.v1.SetModelPricingRequest.mutation:type_name -> delidev.v1.Mutation
-	211, // 184: delidev.v1.SetModelPricingRequest.basis:type_name -> delidev.v1.TokenPricing
-	212, // 185: delidev.v1.SetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
-	219, // 186: delidev.v1.EstimateTotals.currencies:type_name -> delidev.v1.CurrencyEstimate
-	212, // 187: delidev.v1.PricingUsage.pricing:type_name -> delidev.v1.PricingVersion
-	219, // 188: delidev.v1.PricingUsage.totals:type_name -> delidev.v1.CurrencyEstimate
-	221, // 189: delidev.v1.PricingUsage.input:type_name -> delidev.v1.EstimateMeasure
-	221, // 190: delidev.v1.PricingUsage.cached_input:type_name -> delidev.v1.EstimateMeasure
-	221, // 191: delidev.v1.PricingUsage.output:type_name -> delidev.v1.EstimateMeasure
-	40,  // 192: delidev.v1.SessionBudgetView.session:type_name -> delidev.v1.Resource
-	223, // 193: delidev.v1.SessionBudgetView.budget:type_name -> delidev.v1.EstimatedCostBudget
-	23,  // 194: delidev.v1.SessionBudgetView.state:type_name -> delidev.v1.BudgetState
-	224, // 195: delidev.v1.SessionBudgetView.selected_currency:type_name -> delidev.v1.BudgetEvidence
-	20,  // 196: delidev.v1.SessionBudgetView.coverage:type_name -> delidev.v1.UsageCoverage
-	225, // 197: delidev.v1.GetSessionBudgetResponse.view:type_name -> delidev.v1.SessionBudgetView
-	41,  // 198: delidev.v1.SetSessionBudgetRequest.mutation:type_name -> delidev.v1.Mutation
-	223, // 199: delidev.v1.SetSessionBudgetRequest.budget:type_name -> delidev.v1.EstimatedCostBudget
-	225, // 200: delidev.v1.SetSessionBudgetResponse.view:type_name -> delidev.v1.SessionBudgetView
-	24,  // 201: delidev.v1.NotificationCandidate.kind:type_name -> delidev.v1.NotificationKind
-	231, // 202: delidev.v1.NotificationDelivery.candidate:type_name -> delidev.v1.NotificationCandidate
-	25,  // 203: delidev.v1.NotificationDelivery.state:type_name -> delidev.v1.NotificationState
-	230, // 204: delidev.v1.GetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
-	230, // 205: delidev.v1.SetNotificationPreferencesRequest.preferences:type_name -> delidev.v1.NotificationPreferences
-	230, // 206: delidev.v1.SetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
-	231, // 207: delidev.v1.ListNotificationCandidatesResponse.candidates:type_name -> delidev.v1.NotificationCandidate
-	232, // 208: delidev.v1.ClaimNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
-	232, // 209: delidev.v1.GetNotificationDeliveryResponse.delivery:type_name -> delidev.v1.NotificationDelivery
-	25,  // 210: delidev.v1.ReportNotificationRequest.state:type_name -> delidev.v1.NotificationState
-	232, // 211: delidev.v1.ReportNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
-	40,  // 212: delidev.v1.CreateLocalReviewCommentResponse.comment:type_name -> delidev.v1.Resource
-	41,  // 213: delidev.v1.EditLocalReviewCommentRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 214: delidev.v1.EditLocalReviewCommentResponse.comment:type_name -> delidev.v1.Resource
-	41,  // 215: delidev.v1.DeleteLocalReviewCommentRequest.mutation:type_name -> delidev.v1.Mutation
-	40,  // 216: delidev.v1.SubmitLocalReviewResponse.submission:type_name -> delidev.v1.Resource
-	150, // 217: delidev.v1.SubmitLocalReviewResponse.change:type_name -> delidev.v1.SessionChange
-	265, // 218: delidev.v1.ListBackupsResponse.backups:type_name -> delidev.v1.ManagedBackup
-	265, // 219: delidev.v1.InspectBackupResponse.backup:type_name -> delidev.v1.ManagedBackup
-	26,  // 220: delidev.v1.BackupDeletionJob.state:type_name -> delidev.v1.BackupDeletionState
-	265, // 221: delidev.v1.DeleteBackupRequest.backup:type_name -> delidev.v1.ManagedBackup
-	270, // 222: delidev.v1.DeleteBackupResponse.job:type_name -> delidev.v1.BackupDeletionJob
-	270, // 223: delidev.v1.ListBackupDeletionsResponse.jobs:type_name -> delidev.v1.BackupDeletionJob
-	27,  // 224: delidev.v1.BackupCreationJob.state:type_name -> delidev.v1.BackupCreationState
-	275, // 225: delidev.v1.RequestBackupResponse.job:type_name -> delidev.v1.BackupCreationJob
-	275, // 226: delidev.v1.GetBackupCreationResponse.job:type_name -> delidev.v1.BackupCreationJob
-	275, // 227: delidev.v1.ListBackupCreationsResponse.jobs:type_name -> delidev.v1.BackupCreationJob
-	270, // 228: delidev.v1.GetBackupDeletionResponse.job:type_name -> delidev.v1.BackupDeletionJob
-	44,  // 229: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
-	45,  // 230: delidev.v1.SystemService.GetOverview:input_type -> delidev.v1.GetOverviewRequest
-	48,  // 231: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
-	50,  // 232: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
-	52,  // 233: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
-	266, // 234: delidev.v1.SystemService.ListBackups:input_type -> delidev.v1.ListBackupsRequest
-	268, // 235: delidev.v1.SystemService.InspectBackup:input_type -> delidev.v1.InspectBackupRequest
-	271, // 236: delidev.v1.SystemService.DeleteBackup:input_type -> delidev.v1.DeleteBackupRequest
-	282, // 237: delidev.v1.SystemService.GetBackupDeletion:input_type -> delidev.v1.GetBackupDeletionRequest
-	273, // 238: delidev.v1.SystemService.ListBackupDeletions:input_type -> delidev.v1.ListBackupDeletionsRequest
-	276, // 239: delidev.v1.SystemService.RequestBackup:input_type -> delidev.v1.RequestBackupRequest
-	278, // 240: delidev.v1.SystemService.GetBackupCreation:input_type -> delidev.v1.GetBackupCreationRequest
-	280, // 241: delidev.v1.SystemService.ListBackupCreations:input_type -> delidev.v1.ListBackupCreationsRequest
-	54,  // 242: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
-	56,  // 243: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
-	58,  // 244: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
-	60,  // 245: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
-	28,  // 246: delidev.v1.NetworkService.SaveNetworkProfile:input_type -> delidev.v1.SaveNetworkProfileRequest
-	29,  // 247: delidev.v1.NetworkService.DeleteNetworkProfile:input_type -> delidev.v1.DeleteNetworkProfileRequest
-	30,  // 248: delidev.v1.NetworkService.SelectNetworkProfile:input_type -> delidev.v1.SelectNetworkProfileRequest
-	32,  // 249: delidev.v1.NetworkService.GetNetworkRoute:input_type -> delidev.v1.GetNetworkRouteRequest
-	34,  // 250: delidev.v1.NetworkService.ExportWorkerNetworkMetadata:input_type -> delidev.v1.ExportWorkerNetworkMetadataRequest
-	251, // 251: delidev.v1.ConfigurationService.ExportConfiguration:input_type -> delidev.v1.ExportConfigurationRequest
-	253, // 252: delidev.v1.ConfigurationService.PreviewConfigurationImport:input_type -> delidev.v1.PreviewConfigurationImportRequest
-	255, // 253: delidev.v1.ConfigurationService.ApplyConfigurationImport:input_type -> delidev.v1.ApplyConfigurationImportRequest
-	62,  // 254: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
-	64,  // 255: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
-	66,  // 256: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
-	36,  // 257: delidev.v1.InteractionService.RespondQuestion:input_type -> delidev.v1.RespondQuestionRequest
-	38,  // 258: delidev.v1.InteractionService.RespondApproval:input_type -> delidev.v1.RespondApprovalRequest
-	78,  // 259: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
-	80,  // 260: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
-	82,  // 261: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
-	247, // 262: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
-	249, // 263: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
-	84,  // 264: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	86,  // 265: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	87,  // 266: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
-	93,  // 267: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	95,  // 268: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	97,  // 269: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
-	76,  // 270: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
-	74,  // 271: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
-	70,  // 272: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
-	72,  // 273: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
-	68,  // 274: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
-	99,  // 275: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
-	101, // 276: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
-	103, // 277: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
-	105, // 278: delidev.v1.AccountService.ValidateAccount:input_type -> delidev.v1.ValidateAccountRequest
-	119, // 279: delidev.v1.IntegrationService.SaveIntegrationProfile:input_type -> delidev.v1.SaveIntegrationProfileRequest
-	121, // 280: delidev.v1.IntegrationService.ReplaceIntegrationToken:input_type -> delidev.v1.ReplaceIntegrationTokenRequest
-	123, // 281: delidev.v1.IntegrationService.ValidateIntegrationProfile:input_type -> delidev.v1.ValidateIntegrationProfileRequest
-	125, // 282: delidev.v1.IntegrationService.DeleteIntegrationProfile:input_type -> delidev.v1.DeleteIntegrationProfileRequest
-	127, // 283: delidev.v1.IntegrationService.InspectRepositoryIntegration:input_type -> delidev.v1.InspectRepositoryIntegrationRequest
-	129, // 284: delidev.v1.IntegrationService.QueryRepositoryIntegration:input_type -> delidev.v1.QueryRepositoryIntegrationRequest
-	117, // 285: delidev.v1.IntegrationService.GetGitHubTokenForm:input_type -> delidev.v1.GetGitHubTokenFormRequest
-	107, // 286: delidev.v1.IntegrationService.RefreshPullRequestProblems:input_type -> delidev.v1.RefreshPullRequestProblemsRequest
-	109, // 287: delidev.v1.IntegrationService.ListPullRequestProblems:input_type -> delidev.v1.ListPullRequestProblemsRequest
-	111, // 288: delidev.v1.IntegrationService.DismissPullRequestProblem:input_type -> delidev.v1.DismissPullRequestProblemRequest
-	113, // 289: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:input_type -> delidev.v1.ListPullRequestRemediationAttemptsRequest
-	115, // 290: delidev.v1.IntegrationService.ResumePullRequestRemediation:input_type -> delidev.v1.ResumePullRequestRemediationRequest
-	134, // 291: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
-	131, // 292: delidev.v1.ProviderService.ListProviderInventory:input_type -> delidev.v1.ListProviderInventoryRequest
-	136, // 293: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
-	138, // 294: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
-	140, // 295: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
-	142, // 296: delidev.v1.SessionService.LinkSessionPullRequest:input_type -> delidev.v1.LinkSessionPullRequestRequest
-	144, // 297: delidev.v1.SessionService.UnlinkSessionPullRequest:input_type -> delidev.v1.UnlinkSessionPullRequestRequest
-	146, // 298: delidev.v1.SessionService.ReadSessionReviewContext:input_type -> delidev.v1.ReadSessionReviewContextRequest
-	245, // 299: delidev.v1.SessionService.ReadSessionWorkspace:input_type -> delidev.v1.ReadSessionWorkspaceRequest
-	226, // 300: delidev.v1.SessionService.GetSessionBudget:input_type -> delidev.v1.GetSessionBudgetRequest
-	228, // 301: delidev.v1.SessionService.SetSessionBudget:input_type -> delidev.v1.SetSessionBudgetRequest
-	148, // 302: delidev.v1.SessionService.SteerQueuedInput:input_type -> delidev.v1.SteerQueuedInputRequest
-	151, // 303: delidev.v1.SessionService.CreateSession:input_type -> delidev.v1.CreateSessionRequest
-	153, // 304: delidev.v1.SessionService.ListSessions:input_type -> delidev.v1.ListSessionsRequest
-	155, // 305: delidev.v1.SessionService.EnqueueInput:input_type -> delidev.v1.EnqueueInputRequest
-	157, // 306: delidev.v1.SessionService.EditQueuedInput:input_type -> delidev.v1.EditQueuedInputRequest
-	159, // 307: delidev.v1.SessionService.RemoveQueuedInput:input_type -> delidev.v1.RemoveQueuedInputRequest
-	161, // 308: delidev.v1.SessionService.ListQueue:input_type -> delidev.v1.ListQueueRequest
-	163, // 309: delidev.v1.SessionService.ControlSession:input_type -> delidev.v1.ControlSessionRequest
-	165, // 310: delidev.v1.SessionService.RenameSession:input_type -> delidev.v1.RenameSessionRequest
-	167, // 311: delidev.v1.SessionService.PrepareSessionWorkspace:input_type -> delidev.v1.PrepareSessionWorkspaceRequest
-	178, // 312: delidev.v1.SessionService.RecoverSessionExecution:input_type -> delidev.v1.RecoverSessionExecutionRequest
-	169, // 313: delidev.v1.SessionService.RecoverSessionWorkspace:input_type -> delidev.v1.RecoverSessionWorkspaceRequest
-	257, // 314: delidev.v1.SessionService.CreateLocalReviewComment:input_type -> delidev.v1.CreateLocalReviewCommentRequest
-	259, // 315: delidev.v1.SessionService.EditLocalReviewComment:input_type -> delidev.v1.EditLocalReviewCommentRequest
-	261, // 316: delidev.v1.SessionService.DeleteLocalReviewComment:input_type -> delidev.v1.DeleteLocalReviewCommentRequest
-	263, // 317: delidev.v1.SessionService.SubmitLocalReview:input_type -> delidev.v1.SubmitLocalReviewRequest
-	172, // 318: delidev.v1.InboxService.GetInboxEntry:input_type -> delidev.v1.GetInboxEntryRequest
-	174, // 319: delidev.v1.InboxService.ListInbox:input_type -> delidev.v1.ListInboxRequest
-	176, // 320: delidev.v1.InboxService.SetInboxReadState:input_type -> delidev.v1.SetInboxReadStateRequest
-	233, // 321: delidev.v1.InboxService.GetNotificationPreferences:input_type -> delidev.v1.GetNotificationPreferencesRequest
-	235, // 322: delidev.v1.InboxService.SetNotificationPreferences:input_type -> delidev.v1.SetNotificationPreferencesRequest
-	237, // 323: delidev.v1.InboxService.ListNotificationCandidates:input_type -> delidev.v1.ListNotificationCandidatesRequest
-	239, // 324: delidev.v1.InboxService.ClaimNotification:input_type -> delidev.v1.ClaimNotificationRequest
-	241, // 325: delidev.v1.InboxService.GetNotificationDelivery:input_type -> delidev.v1.GetNotificationDeliveryRequest
-	243, // 326: delidev.v1.InboxService.ReportNotification:input_type -> delidev.v1.ReportNotificationRequest
-	180, // 327: delidev.v1.ScheduleService.SaveSchedule:input_type -> delidev.v1.SaveScheduleRequest
-	182, // 328: delidev.v1.ScheduleService.GetSchedule:input_type -> delidev.v1.GetScheduleRequest
-	184, // 329: delidev.v1.ScheduleService.ListSchedules:input_type -> delidev.v1.ListSchedulesRequest
-	186, // 330: delidev.v1.ScheduleService.DeleteSchedule:input_type -> delidev.v1.DeleteScheduleRequest
-	188, // 331: delidev.v1.ScheduleService.ControlSchedule:input_type -> delidev.v1.ControlScheduleRequest
-	190, // 332: delidev.v1.ScheduleService.RunScheduleNow:input_type -> delidev.v1.RunScheduleNowRequest
-	192, // 333: delidev.v1.ScheduleService.ListScheduleOccurrences:input_type -> delidev.v1.ListScheduleOccurrencesRequest
-	194, // 334: delidev.v1.ScheduleService.GetScheduleOccurrence:input_type -> delidev.v1.GetScheduleOccurrenceRequest
-	196, // 335: delidev.v1.SearchService.SearchConversations:input_type -> delidev.v1.SearchConversationsRequest
-	199, // 336: delidev.v1.ActivityService.ListActivity:input_type -> delidev.v1.ListActivityRequest
-	202, // 337: delidev.v1.UsageService.GetUsageSummary:input_type -> delidev.v1.GetUsageSummaryRequest
-	213, // 338: delidev.v1.UsageService.GetModelPricing:input_type -> delidev.v1.GetModelPricingRequest
-	215, // 339: delidev.v1.UsageService.GetPricingVersion:input_type -> delidev.v1.GetPricingVersionRequest
-	217, // 340: delidev.v1.UsageService.SetModelPricing:input_type -> delidev.v1.SetModelPricingRequest
-	47,  // 341: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
-	46,  // 342: delidev.v1.SystemService.GetOverview:output_type -> delidev.v1.GetOverviewResponse
-	49,  // 343: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
-	51,  // 344: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
-	53,  // 345: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
-	267, // 346: delidev.v1.SystemService.ListBackups:output_type -> delidev.v1.ListBackupsResponse
-	269, // 347: delidev.v1.SystemService.InspectBackup:output_type -> delidev.v1.InspectBackupResponse
-	272, // 348: delidev.v1.SystemService.DeleteBackup:output_type -> delidev.v1.DeleteBackupResponse
-	283, // 349: delidev.v1.SystemService.GetBackupDeletion:output_type -> delidev.v1.GetBackupDeletionResponse
-	274, // 350: delidev.v1.SystemService.ListBackupDeletions:output_type -> delidev.v1.ListBackupDeletionsResponse
-	277, // 351: delidev.v1.SystemService.RequestBackup:output_type -> delidev.v1.RequestBackupResponse
-	279, // 352: delidev.v1.SystemService.GetBackupCreation:output_type -> delidev.v1.GetBackupCreationResponse
-	281, // 353: delidev.v1.SystemService.ListBackupCreations:output_type -> delidev.v1.ListBackupCreationsResponse
-	55,  // 354: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
-	57,  // 355: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
-	59,  // 356: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
-	61,  // 357: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
-	31,  // 358: delidev.v1.NetworkService.SaveNetworkProfile:output_type -> delidev.v1.NetworkMutationResponse
-	31,  // 359: delidev.v1.NetworkService.DeleteNetworkProfile:output_type -> delidev.v1.NetworkMutationResponse
-	31,  // 360: delidev.v1.NetworkService.SelectNetworkProfile:output_type -> delidev.v1.NetworkMutationResponse
-	33,  // 361: delidev.v1.NetworkService.GetNetworkRoute:output_type -> delidev.v1.GetNetworkRouteResponse
-	35,  // 362: delidev.v1.NetworkService.ExportWorkerNetworkMetadata:output_type -> delidev.v1.ExportWorkerNetworkMetadataResponse
-	252, // 363: delidev.v1.ConfigurationService.ExportConfiguration:output_type -> delidev.v1.ExportConfigurationResponse
-	254, // 364: delidev.v1.ConfigurationService.PreviewConfigurationImport:output_type -> delidev.v1.PreviewConfigurationImportResponse
-	256, // 365: delidev.v1.ConfigurationService.ApplyConfigurationImport:output_type -> delidev.v1.ApplyConfigurationImportResponse
-	63,  // 366: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
-	65,  // 367: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
-	67,  // 368: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
-	37,  // 369: delidev.v1.InteractionService.RespondQuestion:output_type -> delidev.v1.RespondQuestionResponse
-	39,  // 370: delidev.v1.InteractionService.RespondApproval:output_type -> delidev.v1.RespondApprovalResponse
-	79,  // 371: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
-	81,  // 372: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
-	83,  // 373: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
-	248, // 374: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
-	250, // 375: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
-	85,  // 376: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	89,  // 377: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	88,  // 378: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
-	94,  // 379: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	96,  // 380: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	98,  // 381: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
-	77,  // 382: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
-	75,  // 383: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
-	71,  // 384: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
-	73,  // 385: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
-	69,  // 386: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
-	100, // 387: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
-	102, // 388: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
-	104, // 389: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
-	106, // 390: delidev.v1.AccountService.ValidateAccount:output_type -> delidev.v1.ValidateAccountResponse
-	120, // 391: delidev.v1.IntegrationService.SaveIntegrationProfile:output_type -> delidev.v1.SaveIntegrationProfileResponse
-	122, // 392: delidev.v1.IntegrationService.ReplaceIntegrationToken:output_type -> delidev.v1.ReplaceIntegrationTokenResponse
-	124, // 393: delidev.v1.IntegrationService.ValidateIntegrationProfile:output_type -> delidev.v1.ValidateIntegrationProfileResponse
-	126, // 394: delidev.v1.IntegrationService.DeleteIntegrationProfile:output_type -> delidev.v1.DeleteIntegrationProfileResponse
-	128, // 395: delidev.v1.IntegrationService.InspectRepositoryIntegration:output_type -> delidev.v1.InspectRepositoryIntegrationResponse
-	130, // 396: delidev.v1.IntegrationService.QueryRepositoryIntegration:output_type -> delidev.v1.QueryRepositoryIntegrationResponse
-	118, // 397: delidev.v1.IntegrationService.GetGitHubTokenForm:output_type -> delidev.v1.GetGitHubTokenFormResponse
-	108, // 398: delidev.v1.IntegrationService.RefreshPullRequestProblems:output_type -> delidev.v1.RefreshPullRequestProblemsResponse
-	110, // 399: delidev.v1.IntegrationService.ListPullRequestProblems:output_type -> delidev.v1.ListPullRequestProblemsResponse
-	112, // 400: delidev.v1.IntegrationService.DismissPullRequestProblem:output_type -> delidev.v1.DismissPullRequestProblemResponse
-	114, // 401: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:output_type -> delidev.v1.ListPullRequestRemediationAttemptsResponse
-	116, // 402: delidev.v1.IntegrationService.ResumePullRequestRemediation:output_type -> delidev.v1.ResumePullRequestRemediationResponse
-	135, // 403: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
-	133, // 404: delidev.v1.ProviderService.ListProviderInventory:output_type -> delidev.v1.ListProviderInventoryResponse
-	137, // 405: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
-	139, // 406: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
-	141, // 407: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
-	143, // 408: delidev.v1.SessionService.LinkSessionPullRequest:output_type -> delidev.v1.LinkSessionPullRequestResponse
-	145, // 409: delidev.v1.SessionService.UnlinkSessionPullRequest:output_type -> delidev.v1.UnlinkSessionPullRequestResponse
-	147, // 410: delidev.v1.SessionService.ReadSessionReviewContext:output_type -> delidev.v1.ReadSessionReviewContextResponse
-	246, // 411: delidev.v1.SessionService.ReadSessionWorkspace:output_type -> delidev.v1.ReadSessionWorkspaceResponse
-	227, // 412: delidev.v1.SessionService.GetSessionBudget:output_type -> delidev.v1.GetSessionBudgetResponse
-	229, // 413: delidev.v1.SessionService.SetSessionBudget:output_type -> delidev.v1.SetSessionBudgetResponse
-	149, // 414: delidev.v1.SessionService.SteerQueuedInput:output_type -> delidev.v1.SteerQueuedInputResponse
-	152, // 415: delidev.v1.SessionService.CreateSession:output_type -> delidev.v1.CreateSessionResponse
-	154, // 416: delidev.v1.SessionService.ListSessions:output_type -> delidev.v1.ListSessionsResponse
-	156, // 417: delidev.v1.SessionService.EnqueueInput:output_type -> delidev.v1.EnqueueInputResponse
-	158, // 418: delidev.v1.SessionService.EditQueuedInput:output_type -> delidev.v1.EditQueuedInputResponse
-	160, // 419: delidev.v1.SessionService.RemoveQueuedInput:output_type -> delidev.v1.RemoveQueuedInputResponse
-	162, // 420: delidev.v1.SessionService.ListQueue:output_type -> delidev.v1.ListQueueResponse
-	164, // 421: delidev.v1.SessionService.ControlSession:output_type -> delidev.v1.ControlSessionResponse
-	166, // 422: delidev.v1.SessionService.RenameSession:output_type -> delidev.v1.RenameSessionResponse
-	168, // 423: delidev.v1.SessionService.PrepareSessionWorkspace:output_type -> delidev.v1.PrepareSessionWorkspaceResponse
-	179, // 424: delidev.v1.SessionService.RecoverSessionExecution:output_type -> delidev.v1.RecoverSessionExecutionResponse
-	170, // 425: delidev.v1.SessionService.RecoverSessionWorkspace:output_type -> delidev.v1.RecoverSessionWorkspaceResponse
-	258, // 426: delidev.v1.SessionService.CreateLocalReviewComment:output_type -> delidev.v1.CreateLocalReviewCommentResponse
-	260, // 427: delidev.v1.SessionService.EditLocalReviewComment:output_type -> delidev.v1.EditLocalReviewCommentResponse
-	262, // 428: delidev.v1.SessionService.DeleteLocalReviewComment:output_type -> delidev.v1.DeleteLocalReviewCommentResponse
-	264, // 429: delidev.v1.SessionService.SubmitLocalReview:output_type -> delidev.v1.SubmitLocalReviewResponse
-	173, // 430: delidev.v1.InboxService.GetInboxEntry:output_type -> delidev.v1.GetInboxEntryResponse
-	175, // 431: delidev.v1.InboxService.ListInbox:output_type -> delidev.v1.ListInboxResponse
-	177, // 432: delidev.v1.InboxService.SetInboxReadState:output_type -> delidev.v1.SetInboxReadStateResponse
-	234, // 433: delidev.v1.InboxService.GetNotificationPreferences:output_type -> delidev.v1.GetNotificationPreferencesResponse
-	236, // 434: delidev.v1.InboxService.SetNotificationPreferences:output_type -> delidev.v1.SetNotificationPreferencesResponse
-	238, // 435: delidev.v1.InboxService.ListNotificationCandidates:output_type -> delidev.v1.ListNotificationCandidatesResponse
-	240, // 436: delidev.v1.InboxService.ClaimNotification:output_type -> delidev.v1.ClaimNotificationResponse
-	242, // 437: delidev.v1.InboxService.GetNotificationDelivery:output_type -> delidev.v1.GetNotificationDeliveryResponse
-	244, // 438: delidev.v1.InboxService.ReportNotification:output_type -> delidev.v1.ReportNotificationResponse
-	181, // 439: delidev.v1.ScheduleService.SaveSchedule:output_type -> delidev.v1.SaveScheduleResponse
-	183, // 440: delidev.v1.ScheduleService.GetSchedule:output_type -> delidev.v1.GetScheduleResponse
-	185, // 441: delidev.v1.ScheduleService.ListSchedules:output_type -> delidev.v1.ListSchedulesResponse
-	187, // 442: delidev.v1.ScheduleService.DeleteSchedule:output_type -> delidev.v1.DeleteScheduleResponse
-	189, // 443: delidev.v1.ScheduleService.ControlSchedule:output_type -> delidev.v1.ControlScheduleResponse
-	191, // 444: delidev.v1.ScheduleService.RunScheduleNow:output_type -> delidev.v1.RunScheduleNowResponse
-	193, // 445: delidev.v1.ScheduleService.ListScheduleOccurrences:output_type -> delidev.v1.ListScheduleOccurrencesResponse
-	195, // 446: delidev.v1.ScheduleService.GetScheduleOccurrence:output_type -> delidev.v1.GetScheduleOccurrenceResponse
-	198, // 447: delidev.v1.SearchService.SearchConversations:output_type -> delidev.v1.SearchConversationsResponse
-	201, // 448: delidev.v1.ActivityService.ListActivity:output_type -> delidev.v1.ListActivityResponse
-	210, // 449: delidev.v1.UsageService.GetUsageSummary:output_type -> delidev.v1.GetUsageSummaryResponse
-	214, // 450: delidev.v1.UsageService.GetModelPricing:output_type -> delidev.v1.GetModelPricingResponse
-	216, // 451: delidev.v1.UsageService.GetPricingVersion:output_type -> delidev.v1.GetPricingVersionResponse
-	218, // 452: delidev.v1.UsageService.SetModelPricing:output_type -> delidev.v1.SetModelPricingResponse
-	341, // [341:453] is the sub-list for method output_type
-	229, // [229:341] is the sub-list for method input_type
-	229, // [229:229] is the sub-list for extension type_name
-	229, // [229:229] is the sub-list for extension extendee
-	0,   // [0:229] is the sub-list for field type_name
+	43,  // 0: delidev.v1.SaveNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	43,  // 1: delidev.v1.DeleteNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	43,  // 2: delidev.v1.SelectNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 3: delidev.v1.SaveNetworkProfileResponse.resource:type_name -> delidev.v1.Resource
+	42,  // 4: delidev.v1.DeleteNetworkProfileResponse.resource:type_name -> delidev.v1.Resource
+	42,  // 5: delidev.v1.SelectNetworkProfileResponse.resource:type_name -> delidev.v1.Resource
+	42,  // 6: delidev.v1.GetNetworkRouteResponse.route:type_name -> delidev.v1.Resource
+	43,  // 7: delidev.v1.RespondQuestionRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 8: delidev.v1.RespondQuestionResponse.interaction:type_name -> delidev.v1.Resource
+	43,  // 9: delidev.v1.RespondApprovalRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 10: delidev.v1.RespondApprovalResponse.interaction:type_name -> delidev.v1.Resource
+	0,   // 11: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
+	0,   // 12: delidev.v1.Filter.kind:type_name -> delidev.v1.EntityKind
+	1,   // 13: delidev.v1.GetStatusResponse.capabilities:type_name -> delidev.v1.SystemCapability
+	0,   // 14: delidev.v1.GetResourceRequest.kind:type_name -> delidev.v1.EntityKind
+	42,  // 15: delidev.v1.GetResourceResponse.resource:type_name -> delidev.v1.Resource
+	44,  // 16: delidev.v1.ListResourcesRequest.filter:type_name -> delidev.v1.Filter
+	2,   // 17: delidev.v1.ListResourcesRequest.account_type:type_name -> delidev.v1.AccountTypeFilter
+	42,  // 18: delidev.v1.ListResourcesResponse.resources:type_name -> delidev.v1.Resource
+	44,  // 19: delidev.v1.GetSnapshotRequest.filter:type_name -> delidev.v1.Filter
+	42,  // 20: delidev.v1.GetSnapshotResponse.resources:type_name -> delidev.v1.Resource
+	0,   // 21: delidev.v1.WatchEventsResponse.kind:type_name -> delidev.v1.EntityKind
+	3,   // 22: delidev.v1.WatchEventsResponse.action:type_name -> delidev.v1.EventAction
+	43,  // 23: delidev.v1.SaveConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
+	0,   // 24: delidev.v1.SaveConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
+	42,  // 25: delidev.v1.SaveConfigurationResponse.resource:type_name -> delidev.v1.Resource
+	42,  // 26: delidev.v1.SaveConfigurationResponse.job:type_name -> delidev.v1.Resource
+	43,  // 27: delidev.v1.DeleteConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
+	0,   // 28: delidev.v1.DeleteConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
+	43,  // 29: delidev.v1.ClaimSteerInputRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 30: delidev.v1.ClaimSteerInputResponse.steer:type_name -> delidev.v1.Resource
+	42,  // 31: delidev.v1.ClaimSteerInputResponse.input:type_name -> delidev.v1.Resource
+	43,  // 32: delidev.v1.ClaimQuestionResponseRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 33: delidev.v1.ClaimQuestionResponseResponse.interaction:type_name -> delidev.v1.Resource
+	43,  // 34: delidev.v1.ClaimApprovalResponseRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 35: delidev.v1.ClaimApprovalResponseResponse.interaction:type_name -> delidev.v1.Resource
+	43,  // 36: delidev.v1.PublishExecutionRequest.mutation:type_name -> delidev.v1.Mutation
+	43,  // 37: delidev.v1.RegisterExecutionRequest.mutation:type_name -> delidev.v1.Mutation
+	4,   // 38: delidev.v1.CreatePairingRequest.type:type_name -> delidev.v1.DeviceType
+	42,  // 39: delidev.v1.CreatePairingResponse.pairing:type_name -> delidev.v1.Resource
+	42,  // 40: delidev.v1.PairDeviceResponse.device:type_name -> delidev.v1.Resource
+	42,  // 41: delidev.v1.PairDeviceResponse.machine:type_name -> delidev.v1.Resource
+	43,  // 42: delidev.v1.RevokeDeviceRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 43: delidev.v1.RevokeDeviceResponse.device:type_name -> delidev.v1.Resource
+	5,   // 44: delidev.v1.AttachWorkerRequest.capabilities:type_name -> delidev.v1.WorkerCapability
+	42,  // 45: delidev.v1.AttachWorkerResponse.machine:type_name -> delidev.v1.Resource
+	42,  // 46: delidev.v1.WatchAuxiliaryWorkResponse.job:type_name -> delidev.v1.Resource
+	42,  // 47: delidev.v1.WatchWorkResponse.job:type_name -> delidev.v1.Resource
+	93,  // 48: delidev.v1.WatchWorkResponse.question_response:type_name -> delidev.v1.QuestionResponseControl
+	92,  // 49: delidev.v1.WatchWorkResponse.steer_input:type_name -> delidev.v1.SteerInputControl
+	94,  // 50: delidev.v1.WatchWorkResponse.approval_response:type_name -> delidev.v1.ApprovalResponseControl
+	43,  // 51: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
+	45,  // 52: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
+	42,  // 53: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
+	42,  // 54: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
+	43,  // 55: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 56: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
+	42,  // 57: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
+	43,  // 58: delidev.v1.ConnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 59: delidev.v1.ConnectAccountResponse.account:type_name -> delidev.v1.Resource
+	43,  // 60: delidev.v1.DisconnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 61: delidev.v1.DisconnectAccountResponse.account:type_name -> delidev.v1.Resource
+	42,  // 62: delidev.v1.GetAccountStatusResponse.account:type_name -> delidev.v1.Resource
+	43,  // 63: delidev.v1.ValidateAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 64: delidev.v1.ValidateAccountResponse.account:type_name -> delidev.v1.Resource
+	6,   // 65: delidev.v1.RefreshPullRequestProblemsRequest.kind:type_name -> delidev.v1.PullRequestProblemCollectionKind
+	42,  // 66: delidev.v1.RefreshPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
+	42,  // 67: delidev.v1.ListPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
+	42,  // 68: delidev.v1.ListPullRequestProblemsResponse.problems:type_name -> delidev.v1.Resource
+	43,  // 69: delidev.v1.DismissPullRequestProblemRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 70: delidev.v1.DismissPullRequestProblemResponse.problem:type_name -> delidev.v1.Resource
+	42,  // 71: delidev.v1.ListPullRequestRemediationAttemptsResponse.problem_set:type_name -> delidev.v1.Resource
+	42,  // 72: delidev.v1.ListPullRequestRemediationAttemptsResponse.attempts:type_name -> delidev.v1.Resource
+	43,  // 73: delidev.v1.ResumePullRequestRemediationRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 74: delidev.v1.ResumePullRequestRemediationResponse.problem_set:type_name -> delidev.v1.Resource
+	7,   // 75: delidev.v1.GetGitHubTokenFormRequest.access:type_name -> delidev.v1.GitHubTokenAccess
+	43,  // 76: delidev.v1.SaveIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 77: delidev.v1.SaveIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
+	43,  // 78: delidev.v1.ReplaceIntegrationTokenRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 79: delidev.v1.ReplaceIntegrationTokenResponse.profile:type_name -> delidev.v1.Resource
+	43,  // 80: delidev.v1.ValidateIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 81: delidev.v1.ValidateIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
+	43,  // 82: delidev.v1.DeleteIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 83: delidev.v1.DeleteIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
+	8,   // 84: delidev.v1.ProviderInventoryEntry.preset_id:type_name -> delidev.v1.ProviderPresetId
+	42,  // 85: delidev.v1.ProviderInventoryEntry.provider:type_name -> delidev.v1.Resource
+	134, // 86: delidev.v1.ListProviderInventoryResponse.entries:type_name -> delidev.v1.ProviderInventoryEntry
+	9,   // 87: delidev.v1.ListProviderInventoryResponse.capabilities:type_name -> delidev.v1.ProviderInventoryCapability
+	43,  // 88: delidev.v1.DiscoverModelsRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 89: delidev.v1.DiscoverModelsResponse.account:type_name -> delidev.v1.Resource
+	42,  // 90: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
+	42,  // 91: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
+	42,  // 92: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
+	42,  // 93: delidev.v1.LinkSessionPullRequestResponse.association:type_name -> delidev.v1.Resource
+	43,  // 94: delidev.v1.UnlinkSessionPullRequestRequest.mutation:type_name -> delidev.v1.Mutation
+	43,  // 95: delidev.v1.SteerQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 96: delidev.v1.SteerQueuedInputResponse.steer:type_name -> delidev.v1.Resource
+	152, // 97: delidev.v1.SteerQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
+	42,  // 98: delidev.v1.SessionChange.session:type_name -> delidev.v1.Resource
+	42,  // 99: delidev.v1.SessionChange.input:type_name -> delidev.v1.Resource
+	42,  // 100: delidev.v1.SessionChange.workspace_job:type_name -> delidev.v1.Resource
+	42,  // 101: delidev.v1.SessionChange.recovery_job:type_name -> delidev.v1.Resource
+	42,  // 102: delidev.v1.SessionChange.execution_job:type_name -> delidev.v1.Resource
+	42,  // 103: delidev.v1.SessionChange.execution_recovery_job:type_name -> delidev.v1.Resource
+	152, // 104: delidev.v1.CreateSessionResponse.change:type_name -> delidev.v1.SessionChange
+	42,  // 105: delidev.v1.ListSessionsResponse.sessions:type_name -> delidev.v1.Resource
+	152, // 106: delidev.v1.EnqueueInputResponse.change:type_name -> delidev.v1.SessionChange
+	43,  // 107: delidev.v1.EditQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
+	152, // 108: delidev.v1.EditQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
+	43,  // 109: delidev.v1.RemoveQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
+	152, // 110: delidev.v1.RemoveQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
+	42,  // 111: delidev.v1.ListQueueResponse.inputs:type_name -> delidev.v1.Resource
+	43,  // 112: delidev.v1.ControlSessionRequest.mutation:type_name -> delidev.v1.Mutation
+	10,  // 113: delidev.v1.ControlSessionRequest.action:type_name -> delidev.v1.SessionAction
+	152, // 114: delidev.v1.ControlSessionResponse.change:type_name -> delidev.v1.SessionChange
+	43,  // 115: delidev.v1.RenameSessionRequest.mutation:type_name -> delidev.v1.Mutation
+	152, // 116: delidev.v1.RenameSessionResponse.change:type_name -> delidev.v1.SessionChange
+	43,  // 117: delidev.v1.PrepareSessionWorkspaceRequest.mutation:type_name -> delidev.v1.Mutation
+	152, // 118: delidev.v1.PrepareSessionWorkspaceResponse.change:type_name -> delidev.v1.SessionChange
+	43,  // 119: delidev.v1.RecoverSessionWorkspaceRequest.mutation:type_name -> delidev.v1.Mutation
+	152, // 120: delidev.v1.RecoverSessionWorkspaceResponse.change:type_name -> delidev.v1.SessionChange
+	42,  // 121: delidev.v1.InboxView.entry:type_name -> delidev.v1.Resource
+	42,  // 122: delidev.v1.InboxView.session:type_name -> delidev.v1.Resource
+	42,  // 123: delidev.v1.InboxView.interaction:type_name -> delidev.v1.Resource
+	173, // 124: delidev.v1.GetInboxEntryResponse.view:type_name -> delidev.v1.InboxView
+	11,  // 125: delidev.v1.ListInboxRequest.read_state:type_name -> delidev.v1.InboxReadState
+	12,  // 126: delidev.v1.ListInboxRequest.source:type_name -> delidev.v1.InboxSource
+	173, // 127: delidev.v1.ListInboxResponse.entries:type_name -> delidev.v1.InboxView
+	43,  // 128: delidev.v1.SetInboxReadStateRequest.mutation:type_name -> delidev.v1.Mutation
+	11,  // 129: delidev.v1.SetInboxReadStateRequest.read_state:type_name -> delidev.v1.InboxReadState
+	173, // 130: delidev.v1.SetInboxReadStateResponse.view:type_name -> delidev.v1.InboxView
+	43,  // 131: delidev.v1.RecoverSessionExecutionRequest.mutation:type_name -> delidev.v1.Mutation
+	152, // 132: delidev.v1.RecoverSessionExecutionResponse.change:type_name -> delidev.v1.SessionChange
+	43,  // 133: delidev.v1.SaveScheduleRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 134: delidev.v1.SaveScheduleResponse.schedule:type_name -> delidev.v1.Resource
+	42,  // 135: delidev.v1.GetScheduleResponse.schedule:type_name -> delidev.v1.Resource
+	42,  // 136: delidev.v1.ListSchedulesResponse.schedules:type_name -> delidev.v1.Resource
+	43,  // 137: delidev.v1.DeleteScheduleRequest.mutation:type_name -> delidev.v1.Mutation
+	43,  // 138: delidev.v1.ControlScheduleRequest.mutation:type_name -> delidev.v1.Mutation
+	13,  // 139: delidev.v1.ControlScheduleRequest.action:type_name -> delidev.v1.ScheduleAction
+	42,  // 140: delidev.v1.ControlScheduleResponse.schedule:type_name -> delidev.v1.Resource
+	43,  // 141: delidev.v1.RunScheduleNowRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 142: delidev.v1.RunScheduleNowResponse.occurrence:type_name -> delidev.v1.Resource
+	42,  // 143: delidev.v1.RunScheduleNowResponse.session:type_name -> delidev.v1.Resource
+	42,  // 144: delidev.v1.ListScheduleOccurrencesResponse.occurrences:type_name -> delidev.v1.Resource
+	42,  // 145: delidev.v1.GetScheduleOccurrenceResponse.occurrence:type_name -> delidev.v1.Resource
+	14,  // 146: delidev.v1.SearchConversationsRequest.outcome:type_name -> delidev.v1.SearchExecutionOutcome
+	15,  // 147: delidev.v1.SearchConversationsRequest.archive:type_name -> delidev.v1.SearchArchiveState
+	42,  // 148: delidev.v1.ConversationSearchHit.message:type_name -> delidev.v1.Resource
+	14,  // 149: delidev.v1.ConversationSearchHit.outcome:type_name -> delidev.v1.SearchExecutionOutcome
+	15,  // 150: delidev.v1.ConversationSearchHit.archive:type_name -> delidev.v1.SearchArchiveState
+	199, // 151: delidev.v1.SearchConversationsResponse.hits:type_name -> delidev.v1.ConversationSearchHit
+	0,   // 152: delidev.v1.ActivityEntry.source_kind:type_name -> delidev.v1.EntityKind
+	16,  // 153: delidev.v1.ActivityEntry.kind:type_name -> delidev.v1.ActivityKind
+	17,  // 154: delidev.v1.ActivityEntry.occurrence_state:type_name -> delidev.v1.ActivityOccurrenceState
+	18,  // 155: delidev.v1.ActivityEntry.job_state:type_name -> delidev.v1.ActivityJobState
+	202, // 156: delidev.v1.ListActivityResponse.entries:type_name -> delidev.v1.ActivityEntry
+	19,  // 157: delidev.v1.GetUsageSummaryRequest.granularity:type_name -> delidev.v1.UsageTimeGranularity
+	205, // 158: delidev.v1.UsageTotals.input:type_name -> delidev.v1.UsageMeasure
+	205, // 159: delidev.v1.UsageTotals.cached_input:type_name -> delidev.v1.UsageMeasure
+	205, // 160: delidev.v1.UsageTotals.cache_write_input:type_name -> delidev.v1.UsageMeasure
+	205, // 161: delidev.v1.UsageTotals.output:type_name -> delidev.v1.UsageMeasure
+	205, // 162: delidev.v1.UsageTotals.reasoning_output:type_name -> delidev.v1.UsageMeasure
+	205, // 163: delidev.v1.UsageTotals.total:type_name -> delidev.v1.UsageMeasure
+	206, // 164: delidev.v1.UsageAnalyticsDay.totals:type_name -> delidev.v1.UsageTotals
+	206, // 165: delidev.v1.UsageAnalyticsModel.totals:type_name -> delidev.v1.UsageTotals
+	206, // 166: delidev.v1.UsageOtherModels.totals:type_name -> delidev.v1.UsageTotals
+	19,  // 167: delidev.v1.UsageAnalytics.granularity:type_name -> delidev.v1.UsageTimeGranularity
+	207, // 168: delidev.v1.UsageAnalytics.days:type_name -> delidev.v1.UsageAnalyticsDay
+	208, // 169: delidev.v1.UsageAnalytics.models:type_name -> delidev.v1.UsageAnalyticsModel
+	209, // 170: delidev.v1.UsageAnalytics.other_models:type_name -> delidev.v1.UsageOtherModels
+	206, // 171: delidev.v1.UsageGroup.totals:type_name -> delidev.v1.UsageTotals
+	222, // 172: delidev.v1.UsageGroup.estimates:type_name -> delidev.v1.EstimateTotals
+	206, // 173: delidev.v1.GetUsageSummaryResponse.totals:type_name -> delidev.v1.UsageTotals
+	211, // 174: delidev.v1.GetUsageSummaryResponse.groups:type_name -> delidev.v1.UsageGroup
+	20,  // 175: delidev.v1.GetUsageSummaryResponse.coverage:type_name -> delidev.v1.UsageCoverage
+	21,  // 176: delidev.v1.GetUsageSummaryResponse.actual_cost:type_name -> delidev.v1.UsageCostState
+	21,  // 177: delidev.v1.GetUsageSummaryResponse.estimated_cost:type_name -> delidev.v1.UsageCostState
+	222, // 178: delidev.v1.GetUsageSummaryResponse.estimates:type_name -> delidev.v1.EstimateTotals
+	224, // 179: delidev.v1.GetUsageSummaryResponse.pricing:type_name -> delidev.v1.PricingUsage
+	210, // 180: delidev.v1.GetUsageSummaryResponse.analytics:type_name -> delidev.v1.UsageAnalytics
+	22,  // 181: delidev.v1.TokenPricing.input_mode:type_name -> delidev.v1.InputPricingMode
+	213, // 182: delidev.v1.PricingVersion.basis:type_name -> delidev.v1.TokenPricing
+	214, // 183: delidev.v1.GetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
+	214, // 184: delidev.v1.GetPricingVersionResponse.pricing:type_name -> delidev.v1.PricingVersion
+	43,  // 185: delidev.v1.SetModelPricingRequest.mutation:type_name -> delidev.v1.Mutation
+	213, // 186: delidev.v1.SetModelPricingRequest.basis:type_name -> delidev.v1.TokenPricing
+	214, // 187: delidev.v1.SetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
+	221, // 188: delidev.v1.EstimateTotals.currencies:type_name -> delidev.v1.CurrencyEstimate
+	214, // 189: delidev.v1.PricingUsage.pricing:type_name -> delidev.v1.PricingVersion
+	221, // 190: delidev.v1.PricingUsage.totals:type_name -> delidev.v1.CurrencyEstimate
+	223, // 191: delidev.v1.PricingUsage.input:type_name -> delidev.v1.EstimateMeasure
+	223, // 192: delidev.v1.PricingUsage.cached_input:type_name -> delidev.v1.EstimateMeasure
+	223, // 193: delidev.v1.PricingUsage.output:type_name -> delidev.v1.EstimateMeasure
+	42,  // 194: delidev.v1.SessionBudgetView.session:type_name -> delidev.v1.Resource
+	225, // 195: delidev.v1.SessionBudgetView.budget:type_name -> delidev.v1.EstimatedCostBudget
+	23,  // 196: delidev.v1.SessionBudgetView.state:type_name -> delidev.v1.BudgetState
+	226, // 197: delidev.v1.SessionBudgetView.selected_currency:type_name -> delidev.v1.BudgetEvidence
+	20,  // 198: delidev.v1.SessionBudgetView.coverage:type_name -> delidev.v1.UsageCoverage
+	227, // 199: delidev.v1.GetSessionBudgetResponse.view:type_name -> delidev.v1.SessionBudgetView
+	43,  // 200: delidev.v1.SetSessionBudgetRequest.mutation:type_name -> delidev.v1.Mutation
+	225, // 201: delidev.v1.SetSessionBudgetRequest.budget:type_name -> delidev.v1.EstimatedCostBudget
+	227, // 202: delidev.v1.SetSessionBudgetResponse.view:type_name -> delidev.v1.SessionBudgetView
+	24,  // 203: delidev.v1.NotificationCandidate.kind:type_name -> delidev.v1.NotificationKind
+	233, // 204: delidev.v1.NotificationDelivery.candidate:type_name -> delidev.v1.NotificationCandidate
+	25,  // 205: delidev.v1.NotificationDelivery.state:type_name -> delidev.v1.NotificationState
+	232, // 206: delidev.v1.GetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
+	232, // 207: delidev.v1.SetNotificationPreferencesRequest.preferences:type_name -> delidev.v1.NotificationPreferences
+	232, // 208: delidev.v1.SetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
+	233, // 209: delidev.v1.ListNotificationCandidatesResponse.candidates:type_name -> delidev.v1.NotificationCandidate
+	234, // 210: delidev.v1.ClaimNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
+	234, // 211: delidev.v1.GetNotificationDeliveryResponse.delivery:type_name -> delidev.v1.NotificationDelivery
+	25,  // 212: delidev.v1.ReportNotificationRequest.state:type_name -> delidev.v1.NotificationState
+	234, // 213: delidev.v1.ReportNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
+	42,  // 214: delidev.v1.CreateLocalReviewCommentResponse.comment:type_name -> delidev.v1.Resource
+	43,  // 215: delidev.v1.EditLocalReviewCommentRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 216: delidev.v1.EditLocalReviewCommentResponse.comment:type_name -> delidev.v1.Resource
+	43,  // 217: delidev.v1.DeleteLocalReviewCommentRequest.mutation:type_name -> delidev.v1.Mutation
+	42,  // 218: delidev.v1.SubmitLocalReviewResponse.submission:type_name -> delidev.v1.Resource
+	152, // 219: delidev.v1.SubmitLocalReviewResponse.change:type_name -> delidev.v1.SessionChange
+	267, // 220: delidev.v1.ListBackupsResponse.backups:type_name -> delidev.v1.ManagedBackup
+	267, // 221: delidev.v1.InspectBackupResponse.backup:type_name -> delidev.v1.ManagedBackup
+	26,  // 222: delidev.v1.BackupDeletionJob.state:type_name -> delidev.v1.BackupDeletionState
+	267, // 223: delidev.v1.DeleteBackupRequest.backup:type_name -> delidev.v1.ManagedBackup
+	272, // 224: delidev.v1.DeleteBackupResponse.job:type_name -> delidev.v1.BackupDeletionJob
+	272, // 225: delidev.v1.ListBackupDeletionsResponse.jobs:type_name -> delidev.v1.BackupDeletionJob
+	27,  // 226: delidev.v1.BackupCreationJob.state:type_name -> delidev.v1.BackupCreationState
+	277, // 227: delidev.v1.RequestBackupResponse.job:type_name -> delidev.v1.BackupCreationJob
+	277, // 228: delidev.v1.GetBackupCreationResponse.job:type_name -> delidev.v1.BackupCreationJob
+	277, // 229: delidev.v1.ListBackupCreationsResponse.jobs:type_name -> delidev.v1.BackupCreationJob
+	272, // 230: delidev.v1.GetBackupDeletionResponse.job:type_name -> delidev.v1.BackupDeletionJob
+	46,  // 231: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
+	47,  // 232: delidev.v1.SystemService.GetOverview:input_type -> delidev.v1.GetOverviewRequest
+	50,  // 233: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
+	52,  // 234: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
+	54,  // 235: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
+	268, // 236: delidev.v1.SystemService.ListBackups:input_type -> delidev.v1.ListBackupsRequest
+	270, // 237: delidev.v1.SystemService.InspectBackup:input_type -> delidev.v1.InspectBackupRequest
+	273, // 238: delidev.v1.SystemService.DeleteBackup:input_type -> delidev.v1.DeleteBackupRequest
+	284, // 239: delidev.v1.SystemService.GetBackupDeletion:input_type -> delidev.v1.GetBackupDeletionRequest
+	275, // 240: delidev.v1.SystemService.ListBackupDeletions:input_type -> delidev.v1.ListBackupDeletionsRequest
+	278, // 241: delidev.v1.SystemService.RequestBackup:input_type -> delidev.v1.RequestBackupRequest
+	280, // 242: delidev.v1.SystemService.GetBackupCreation:input_type -> delidev.v1.GetBackupCreationRequest
+	282, // 243: delidev.v1.SystemService.ListBackupCreations:input_type -> delidev.v1.ListBackupCreationsRequest
+	56,  // 244: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
+	58,  // 245: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
+	60,  // 246: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
+	62,  // 247: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
+	28,  // 248: delidev.v1.NetworkService.SaveNetworkProfile:input_type -> delidev.v1.SaveNetworkProfileRequest
+	29,  // 249: delidev.v1.NetworkService.DeleteNetworkProfile:input_type -> delidev.v1.DeleteNetworkProfileRequest
+	30,  // 250: delidev.v1.NetworkService.SelectNetworkProfile:input_type -> delidev.v1.SelectNetworkProfileRequest
+	34,  // 251: delidev.v1.NetworkService.GetNetworkRoute:input_type -> delidev.v1.GetNetworkRouteRequest
+	36,  // 252: delidev.v1.NetworkService.ExportWorkerNetworkMetadata:input_type -> delidev.v1.ExportWorkerNetworkMetadataRequest
+	253, // 253: delidev.v1.ConfigurationService.ExportConfiguration:input_type -> delidev.v1.ExportConfigurationRequest
+	255, // 254: delidev.v1.ConfigurationService.PreviewConfigurationImport:input_type -> delidev.v1.PreviewConfigurationImportRequest
+	257, // 255: delidev.v1.ConfigurationService.ApplyConfigurationImport:input_type -> delidev.v1.ApplyConfigurationImportRequest
+	64,  // 256: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
+	66,  // 257: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
+	68,  // 258: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
+	38,  // 259: delidev.v1.InteractionService.RespondQuestion:input_type -> delidev.v1.RespondQuestionRequest
+	40,  // 260: delidev.v1.InteractionService.RespondApproval:input_type -> delidev.v1.RespondApprovalRequest
+	80,  // 261: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
+	82,  // 262: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
+	84,  // 263: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
+	249, // 264: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
+	251, // 265: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
+	86,  // 266: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	88,  // 267: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	89,  // 268: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
+	95,  // 269: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	97,  // 270: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	99,  // 271: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
+	78,  // 272: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
+	76,  // 273: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
+	72,  // 274: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
+	74,  // 275: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
+	70,  // 276: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
+	101, // 277: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
+	103, // 278: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
+	105, // 279: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
+	107, // 280: delidev.v1.AccountService.ValidateAccount:input_type -> delidev.v1.ValidateAccountRequest
+	121, // 281: delidev.v1.IntegrationService.SaveIntegrationProfile:input_type -> delidev.v1.SaveIntegrationProfileRequest
+	123, // 282: delidev.v1.IntegrationService.ReplaceIntegrationToken:input_type -> delidev.v1.ReplaceIntegrationTokenRequest
+	125, // 283: delidev.v1.IntegrationService.ValidateIntegrationProfile:input_type -> delidev.v1.ValidateIntegrationProfileRequest
+	127, // 284: delidev.v1.IntegrationService.DeleteIntegrationProfile:input_type -> delidev.v1.DeleteIntegrationProfileRequest
+	129, // 285: delidev.v1.IntegrationService.InspectRepositoryIntegration:input_type -> delidev.v1.InspectRepositoryIntegrationRequest
+	131, // 286: delidev.v1.IntegrationService.QueryRepositoryIntegration:input_type -> delidev.v1.QueryRepositoryIntegrationRequest
+	119, // 287: delidev.v1.IntegrationService.GetGitHubTokenForm:input_type -> delidev.v1.GetGitHubTokenFormRequest
+	109, // 288: delidev.v1.IntegrationService.RefreshPullRequestProblems:input_type -> delidev.v1.RefreshPullRequestProblemsRequest
+	111, // 289: delidev.v1.IntegrationService.ListPullRequestProblems:input_type -> delidev.v1.ListPullRequestProblemsRequest
+	113, // 290: delidev.v1.IntegrationService.DismissPullRequestProblem:input_type -> delidev.v1.DismissPullRequestProblemRequest
+	115, // 291: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:input_type -> delidev.v1.ListPullRequestRemediationAttemptsRequest
+	117, // 292: delidev.v1.IntegrationService.ResumePullRequestRemediation:input_type -> delidev.v1.ResumePullRequestRemediationRequest
+	136, // 293: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
+	133, // 294: delidev.v1.ProviderService.ListProviderInventory:input_type -> delidev.v1.ListProviderInventoryRequest
+	138, // 295: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
+	140, // 296: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
+	142, // 297: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
+	144, // 298: delidev.v1.SessionService.LinkSessionPullRequest:input_type -> delidev.v1.LinkSessionPullRequestRequest
+	146, // 299: delidev.v1.SessionService.UnlinkSessionPullRequest:input_type -> delidev.v1.UnlinkSessionPullRequestRequest
+	148, // 300: delidev.v1.SessionService.ReadSessionReviewContext:input_type -> delidev.v1.ReadSessionReviewContextRequest
+	247, // 301: delidev.v1.SessionService.ReadSessionWorkspace:input_type -> delidev.v1.ReadSessionWorkspaceRequest
+	228, // 302: delidev.v1.SessionService.GetSessionBudget:input_type -> delidev.v1.GetSessionBudgetRequest
+	230, // 303: delidev.v1.SessionService.SetSessionBudget:input_type -> delidev.v1.SetSessionBudgetRequest
+	150, // 304: delidev.v1.SessionService.SteerQueuedInput:input_type -> delidev.v1.SteerQueuedInputRequest
+	153, // 305: delidev.v1.SessionService.CreateSession:input_type -> delidev.v1.CreateSessionRequest
+	155, // 306: delidev.v1.SessionService.ListSessions:input_type -> delidev.v1.ListSessionsRequest
+	157, // 307: delidev.v1.SessionService.EnqueueInput:input_type -> delidev.v1.EnqueueInputRequest
+	159, // 308: delidev.v1.SessionService.EditQueuedInput:input_type -> delidev.v1.EditQueuedInputRequest
+	161, // 309: delidev.v1.SessionService.RemoveQueuedInput:input_type -> delidev.v1.RemoveQueuedInputRequest
+	163, // 310: delidev.v1.SessionService.ListQueue:input_type -> delidev.v1.ListQueueRequest
+	165, // 311: delidev.v1.SessionService.ControlSession:input_type -> delidev.v1.ControlSessionRequest
+	167, // 312: delidev.v1.SessionService.RenameSession:input_type -> delidev.v1.RenameSessionRequest
+	169, // 313: delidev.v1.SessionService.PrepareSessionWorkspace:input_type -> delidev.v1.PrepareSessionWorkspaceRequest
+	180, // 314: delidev.v1.SessionService.RecoverSessionExecution:input_type -> delidev.v1.RecoverSessionExecutionRequest
+	171, // 315: delidev.v1.SessionService.RecoverSessionWorkspace:input_type -> delidev.v1.RecoverSessionWorkspaceRequest
+	259, // 316: delidev.v1.SessionService.CreateLocalReviewComment:input_type -> delidev.v1.CreateLocalReviewCommentRequest
+	261, // 317: delidev.v1.SessionService.EditLocalReviewComment:input_type -> delidev.v1.EditLocalReviewCommentRequest
+	263, // 318: delidev.v1.SessionService.DeleteLocalReviewComment:input_type -> delidev.v1.DeleteLocalReviewCommentRequest
+	265, // 319: delidev.v1.SessionService.SubmitLocalReview:input_type -> delidev.v1.SubmitLocalReviewRequest
+	174, // 320: delidev.v1.InboxService.GetInboxEntry:input_type -> delidev.v1.GetInboxEntryRequest
+	176, // 321: delidev.v1.InboxService.ListInbox:input_type -> delidev.v1.ListInboxRequest
+	178, // 322: delidev.v1.InboxService.SetInboxReadState:input_type -> delidev.v1.SetInboxReadStateRequest
+	235, // 323: delidev.v1.InboxService.GetNotificationPreferences:input_type -> delidev.v1.GetNotificationPreferencesRequest
+	237, // 324: delidev.v1.InboxService.SetNotificationPreferences:input_type -> delidev.v1.SetNotificationPreferencesRequest
+	239, // 325: delidev.v1.InboxService.ListNotificationCandidates:input_type -> delidev.v1.ListNotificationCandidatesRequest
+	241, // 326: delidev.v1.InboxService.ClaimNotification:input_type -> delidev.v1.ClaimNotificationRequest
+	243, // 327: delidev.v1.InboxService.GetNotificationDelivery:input_type -> delidev.v1.GetNotificationDeliveryRequest
+	245, // 328: delidev.v1.InboxService.ReportNotification:input_type -> delidev.v1.ReportNotificationRequest
+	182, // 329: delidev.v1.ScheduleService.SaveSchedule:input_type -> delidev.v1.SaveScheduleRequest
+	184, // 330: delidev.v1.ScheduleService.GetSchedule:input_type -> delidev.v1.GetScheduleRequest
+	186, // 331: delidev.v1.ScheduleService.ListSchedules:input_type -> delidev.v1.ListSchedulesRequest
+	188, // 332: delidev.v1.ScheduleService.DeleteSchedule:input_type -> delidev.v1.DeleteScheduleRequest
+	190, // 333: delidev.v1.ScheduleService.ControlSchedule:input_type -> delidev.v1.ControlScheduleRequest
+	192, // 334: delidev.v1.ScheduleService.RunScheduleNow:input_type -> delidev.v1.RunScheduleNowRequest
+	194, // 335: delidev.v1.ScheduleService.ListScheduleOccurrences:input_type -> delidev.v1.ListScheduleOccurrencesRequest
+	196, // 336: delidev.v1.ScheduleService.GetScheduleOccurrence:input_type -> delidev.v1.GetScheduleOccurrenceRequest
+	198, // 337: delidev.v1.SearchService.SearchConversations:input_type -> delidev.v1.SearchConversationsRequest
+	201, // 338: delidev.v1.ActivityService.ListActivity:input_type -> delidev.v1.ListActivityRequest
+	204, // 339: delidev.v1.UsageService.GetUsageSummary:input_type -> delidev.v1.GetUsageSummaryRequest
+	215, // 340: delidev.v1.UsageService.GetModelPricing:input_type -> delidev.v1.GetModelPricingRequest
+	217, // 341: delidev.v1.UsageService.GetPricingVersion:input_type -> delidev.v1.GetPricingVersionRequest
+	219, // 342: delidev.v1.UsageService.SetModelPricing:input_type -> delidev.v1.SetModelPricingRequest
+	49,  // 343: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
+	48,  // 344: delidev.v1.SystemService.GetOverview:output_type -> delidev.v1.GetOverviewResponse
+	51,  // 345: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
+	53,  // 346: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
+	55,  // 347: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
+	269, // 348: delidev.v1.SystemService.ListBackups:output_type -> delidev.v1.ListBackupsResponse
+	271, // 349: delidev.v1.SystemService.InspectBackup:output_type -> delidev.v1.InspectBackupResponse
+	274, // 350: delidev.v1.SystemService.DeleteBackup:output_type -> delidev.v1.DeleteBackupResponse
+	285, // 351: delidev.v1.SystemService.GetBackupDeletion:output_type -> delidev.v1.GetBackupDeletionResponse
+	276, // 352: delidev.v1.SystemService.ListBackupDeletions:output_type -> delidev.v1.ListBackupDeletionsResponse
+	279, // 353: delidev.v1.SystemService.RequestBackup:output_type -> delidev.v1.RequestBackupResponse
+	281, // 354: delidev.v1.SystemService.GetBackupCreation:output_type -> delidev.v1.GetBackupCreationResponse
+	283, // 355: delidev.v1.SystemService.ListBackupCreations:output_type -> delidev.v1.ListBackupCreationsResponse
+	57,  // 356: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
+	59,  // 357: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
+	61,  // 358: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
+	63,  // 359: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
+	31,  // 360: delidev.v1.NetworkService.SaveNetworkProfile:output_type -> delidev.v1.SaveNetworkProfileResponse
+	32,  // 361: delidev.v1.NetworkService.DeleteNetworkProfile:output_type -> delidev.v1.DeleteNetworkProfileResponse
+	33,  // 362: delidev.v1.NetworkService.SelectNetworkProfile:output_type -> delidev.v1.SelectNetworkProfileResponse
+	35,  // 363: delidev.v1.NetworkService.GetNetworkRoute:output_type -> delidev.v1.GetNetworkRouteResponse
+	37,  // 364: delidev.v1.NetworkService.ExportWorkerNetworkMetadata:output_type -> delidev.v1.ExportWorkerNetworkMetadataResponse
+	254, // 365: delidev.v1.ConfigurationService.ExportConfiguration:output_type -> delidev.v1.ExportConfigurationResponse
+	256, // 366: delidev.v1.ConfigurationService.PreviewConfigurationImport:output_type -> delidev.v1.PreviewConfigurationImportResponse
+	258, // 367: delidev.v1.ConfigurationService.ApplyConfigurationImport:output_type -> delidev.v1.ApplyConfigurationImportResponse
+	65,  // 368: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
+	67,  // 369: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
+	69,  // 370: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
+	39,  // 371: delidev.v1.InteractionService.RespondQuestion:output_type -> delidev.v1.RespondQuestionResponse
+	41,  // 372: delidev.v1.InteractionService.RespondApproval:output_type -> delidev.v1.RespondApprovalResponse
+	81,  // 373: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
+	83,  // 374: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
+	85,  // 375: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
+	250, // 376: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
+	252, // 377: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
+	87,  // 378: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	91,  // 379: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	90,  // 380: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
+	96,  // 381: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	98,  // 382: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	100, // 383: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
+	79,  // 384: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
+	77,  // 385: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
+	73,  // 386: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
+	75,  // 387: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
+	71,  // 388: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
+	102, // 389: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
+	104, // 390: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
+	106, // 391: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
+	108, // 392: delidev.v1.AccountService.ValidateAccount:output_type -> delidev.v1.ValidateAccountResponse
+	122, // 393: delidev.v1.IntegrationService.SaveIntegrationProfile:output_type -> delidev.v1.SaveIntegrationProfileResponse
+	124, // 394: delidev.v1.IntegrationService.ReplaceIntegrationToken:output_type -> delidev.v1.ReplaceIntegrationTokenResponse
+	126, // 395: delidev.v1.IntegrationService.ValidateIntegrationProfile:output_type -> delidev.v1.ValidateIntegrationProfileResponse
+	128, // 396: delidev.v1.IntegrationService.DeleteIntegrationProfile:output_type -> delidev.v1.DeleteIntegrationProfileResponse
+	130, // 397: delidev.v1.IntegrationService.InspectRepositoryIntegration:output_type -> delidev.v1.InspectRepositoryIntegrationResponse
+	132, // 398: delidev.v1.IntegrationService.QueryRepositoryIntegration:output_type -> delidev.v1.QueryRepositoryIntegrationResponse
+	120, // 399: delidev.v1.IntegrationService.GetGitHubTokenForm:output_type -> delidev.v1.GetGitHubTokenFormResponse
+	110, // 400: delidev.v1.IntegrationService.RefreshPullRequestProblems:output_type -> delidev.v1.RefreshPullRequestProblemsResponse
+	112, // 401: delidev.v1.IntegrationService.ListPullRequestProblems:output_type -> delidev.v1.ListPullRequestProblemsResponse
+	114, // 402: delidev.v1.IntegrationService.DismissPullRequestProblem:output_type -> delidev.v1.DismissPullRequestProblemResponse
+	116, // 403: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:output_type -> delidev.v1.ListPullRequestRemediationAttemptsResponse
+	118, // 404: delidev.v1.IntegrationService.ResumePullRequestRemediation:output_type -> delidev.v1.ResumePullRequestRemediationResponse
+	137, // 405: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
+	135, // 406: delidev.v1.ProviderService.ListProviderInventory:output_type -> delidev.v1.ListProviderInventoryResponse
+	139, // 407: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
+	141, // 408: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
+	143, // 409: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
+	145, // 410: delidev.v1.SessionService.LinkSessionPullRequest:output_type -> delidev.v1.LinkSessionPullRequestResponse
+	147, // 411: delidev.v1.SessionService.UnlinkSessionPullRequest:output_type -> delidev.v1.UnlinkSessionPullRequestResponse
+	149, // 412: delidev.v1.SessionService.ReadSessionReviewContext:output_type -> delidev.v1.ReadSessionReviewContextResponse
+	248, // 413: delidev.v1.SessionService.ReadSessionWorkspace:output_type -> delidev.v1.ReadSessionWorkspaceResponse
+	229, // 414: delidev.v1.SessionService.GetSessionBudget:output_type -> delidev.v1.GetSessionBudgetResponse
+	231, // 415: delidev.v1.SessionService.SetSessionBudget:output_type -> delidev.v1.SetSessionBudgetResponse
+	151, // 416: delidev.v1.SessionService.SteerQueuedInput:output_type -> delidev.v1.SteerQueuedInputResponse
+	154, // 417: delidev.v1.SessionService.CreateSession:output_type -> delidev.v1.CreateSessionResponse
+	156, // 418: delidev.v1.SessionService.ListSessions:output_type -> delidev.v1.ListSessionsResponse
+	158, // 419: delidev.v1.SessionService.EnqueueInput:output_type -> delidev.v1.EnqueueInputResponse
+	160, // 420: delidev.v1.SessionService.EditQueuedInput:output_type -> delidev.v1.EditQueuedInputResponse
+	162, // 421: delidev.v1.SessionService.RemoveQueuedInput:output_type -> delidev.v1.RemoveQueuedInputResponse
+	164, // 422: delidev.v1.SessionService.ListQueue:output_type -> delidev.v1.ListQueueResponse
+	166, // 423: delidev.v1.SessionService.ControlSession:output_type -> delidev.v1.ControlSessionResponse
+	168, // 424: delidev.v1.SessionService.RenameSession:output_type -> delidev.v1.RenameSessionResponse
+	170, // 425: delidev.v1.SessionService.PrepareSessionWorkspace:output_type -> delidev.v1.PrepareSessionWorkspaceResponse
+	181, // 426: delidev.v1.SessionService.RecoverSessionExecution:output_type -> delidev.v1.RecoverSessionExecutionResponse
+	172, // 427: delidev.v1.SessionService.RecoverSessionWorkspace:output_type -> delidev.v1.RecoverSessionWorkspaceResponse
+	260, // 428: delidev.v1.SessionService.CreateLocalReviewComment:output_type -> delidev.v1.CreateLocalReviewCommentResponse
+	262, // 429: delidev.v1.SessionService.EditLocalReviewComment:output_type -> delidev.v1.EditLocalReviewCommentResponse
+	264, // 430: delidev.v1.SessionService.DeleteLocalReviewComment:output_type -> delidev.v1.DeleteLocalReviewCommentResponse
+	266, // 431: delidev.v1.SessionService.SubmitLocalReview:output_type -> delidev.v1.SubmitLocalReviewResponse
+	175, // 432: delidev.v1.InboxService.GetInboxEntry:output_type -> delidev.v1.GetInboxEntryResponse
+	177, // 433: delidev.v1.InboxService.ListInbox:output_type -> delidev.v1.ListInboxResponse
+	179, // 434: delidev.v1.InboxService.SetInboxReadState:output_type -> delidev.v1.SetInboxReadStateResponse
+	236, // 435: delidev.v1.InboxService.GetNotificationPreferences:output_type -> delidev.v1.GetNotificationPreferencesResponse
+	238, // 436: delidev.v1.InboxService.SetNotificationPreferences:output_type -> delidev.v1.SetNotificationPreferencesResponse
+	240, // 437: delidev.v1.InboxService.ListNotificationCandidates:output_type -> delidev.v1.ListNotificationCandidatesResponse
+	242, // 438: delidev.v1.InboxService.ClaimNotification:output_type -> delidev.v1.ClaimNotificationResponse
+	244, // 439: delidev.v1.InboxService.GetNotificationDelivery:output_type -> delidev.v1.GetNotificationDeliveryResponse
+	246, // 440: delidev.v1.InboxService.ReportNotification:output_type -> delidev.v1.ReportNotificationResponse
+	183, // 441: delidev.v1.ScheduleService.SaveSchedule:output_type -> delidev.v1.SaveScheduleResponse
+	185, // 442: delidev.v1.ScheduleService.GetSchedule:output_type -> delidev.v1.GetScheduleResponse
+	187, // 443: delidev.v1.ScheduleService.ListSchedules:output_type -> delidev.v1.ListSchedulesResponse
+	189, // 444: delidev.v1.ScheduleService.DeleteSchedule:output_type -> delidev.v1.DeleteScheduleResponse
+	191, // 445: delidev.v1.ScheduleService.ControlSchedule:output_type -> delidev.v1.ControlScheduleResponse
+	193, // 446: delidev.v1.ScheduleService.RunScheduleNow:output_type -> delidev.v1.RunScheduleNowResponse
+	195, // 447: delidev.v1.ScheduleService.ListScheduleOccurrences:output_type -> delidev.v1.ListScheduleOccurrencesResponse
+	197, // 448: delidev.v1.ScheduleService.GetScheduleOccurrence:output_type -> delidev.v1.GetScheduleOccurrenceResponse
+	200, // 449: delidev.v1.SearchService.SearchConversations:output_type -> delidev.v1.SearchConversationsResponse
+	203, // 450: delidev.v1.ActivityService.ListActivity:output_type -> delidev.v1.ListActivityResponse
+	212, // 451: delidev.v1.UsageService.GetUsageSummary:output_type -> delidev.v1.GetUsageSummaryResponse
+	216, // 452: delidev.v1.UsageService.GetModelPricing:output_type -> delidev.v1.GetModelPricingResponse
+	218, // 453: delidev.v1.UsageService.GetPricingVersion:output_type -> delidev.v1.GetPricingVersionResponse
+	220, // 454: delidev.v1.UsageService.SetModelPricing:output_type -> delidev.v1.SetModelPricingResponse
+	343, // [343:455] is the sub-list for method output_type
+	231, // [231:343] is the sub-list for method input_type
+	231, // [231:231] is the sub-list for extension type_name
+	231, // [231:231] is the sub-list for extension extendee
+	0,   // [0:231] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_delidev_proto_init() }
@@ -19250,9 +19402,9 @@ func file_delidev_v1_delidev_proto_init() {
 	if File_delidev_v1_delidev_proto != nil {
 		return
 	}
-	file_delidev_v1_delidev_proto_msgTypes[156].OneofWrappers = []any{}
-	file_delidev_v1_delidev_proto_msgTypes[183].OneofWrappers = []any{}
-	file_delidev_v1_delidev_proto_msgTypes[200].OneofWrappers = []any{
+	file_delidev_v1_delidev_proto_msgTypes[158].OneofWrappers = []any{}
+	file_delidev_v1_delidev_proto_msgTypes[185].OneofWrappers = []any{}
+	file_delidev_v1_delidev_proto_msgTypes[202].OneofWrappers = []any{
 		(*SetSessionBudgetRequest_Budget)(nil),
 		(*SetSessionBudgetRequest_Remove)(nil),
 	}
@@ -19262,7 +19414,7 @@ func file_delidev_v1_delidev_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_delidev_proto_rawDesc), len(file_delidev_v1_delidev_proto_rawDesc)),
 			NumEnums:      28,
-			NumMessages:   256,
+			NumMessages:   258,
 			NumExtensions: 0,
 			NumServices:   16,
 		},

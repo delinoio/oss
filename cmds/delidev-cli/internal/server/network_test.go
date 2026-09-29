@@ -30,7 +30,7 @@ func TestNetworkProfilesReceiptsPinnedGenerationsAndDeletionRecovery(t *testing.
 	definition := domain.ProxyDefinition{Name: "Corporate", Mode: domain.ProxyHTTP, Host: "127.0.0.1", Port: 3128}
 	raw, _ := json.Marshal(definition)
 	requestID := domain.NewID()
-	save := func(m *pb.Mutation, secret string) (*connect.Response[pb.NetworkMutationResponse], error) {
+	save := func(m *pb.Mutation, secret string) (*connect.Response[pb.SaveNetworkProfileResponse], error) {
 		return c.SaveNetworkProfile(ctx, ownerRequest(f.service.Identity, &pb.SaveNetworkProfileRequest{Mutation: m, SchemaVersion: 1, DocumentJson: raw, CredentialJson: []byte(secret)}))
 	}
 	m := &pb.Mutation{RequestId: string(requestID)}
@@ -162,6 +162,19 @@ func TestNetworkMutationUncertainVaultAndWorkerAuthorization(t *testing.T) {
 	vault.putError = nil
 	if _, err := c.SaveNetworkProfile(ctx, ownerRequest(f.service.Identity, req)); err != nil || len(vault.values) != 1 {
 		t.Fatal("exact recovery", err)
+	}
+	// Retained/staged generations are bounded, but an exact staged retry remains
+	// recoverable at capacity without allocating another protected reference.
+	owner := domain.ID(req.Mutation.RequestId)
+	vault.mu.Lock()
+	for n := 1; n < 256; n++ {
+		vault.values[proxyRef(owner, domain.NewID())] = []byte(outboundtest.Credential)
+	}
+	puts := vault.puts
+	vault.mu.Unlock()
+	update := &pb.SaveNetworkProfileRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(owner), ExpectedRevision: 1}, SchemaVersion: 1, DocumentJson: req.DocumentJson, CredentialJson: []byte(outboundtest.Credential)}
+	if _, err := c.SaveNetworkProfile(ctx, ownerRequest(f.service.Identity, update)); connect.CodeOf(err) != connect.CodeResourceExhausted || vault.puts != puts {
+		t.Fatal("unbounded credential generations", err)
 	}
 	worker := domain.WithPrincipal(ctx, domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
 	if _, err := f.service.GetNetworkRoute(worker, connect.NewRequest(&pb.GetNetworkRouteRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {

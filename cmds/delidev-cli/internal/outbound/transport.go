@@ -72,7 +72,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		guard := newCredentialBody(response.Body, credential)
 		for _, values := range response.Header {
 			for _, value := range values {
-				if guard.contains([]byte(value)) {
+				if value == credential.Username || value == credential.Password || guard.contains([]byte(value)) {
 					guard.Close()
 					return nil, unavailable()
 				}

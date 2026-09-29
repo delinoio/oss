@@ -34,3 +34,12 @@ func TestNetworkProxyCredentialReflectionAcrossReads(t *testing.T) {
 		t.Fatal("changed response", err)
 	}
 }
+
+func TestNetworkShortCredentialsDoNotRejectUnrelatedJSON(t *testing.T) {
+	g := newCredentialBody(io.NopCloser(strings.NewReader(`{"data":[],"value":"unrelated"}`)), domain.ProxyCredential{Username: "u", Password: "p"})
+	raw, err := io.ReadAll(g)
+	g.Close()
+	if err != nil || len(raw) == 0 {
+		t.Fatal("short credential collision", err)
+	}
+}

@@ -25,11 +25,19 @@ type credentialBody struct {
 func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential) *credentialBody {
 	g := &credentialBody{body: body}
 	for _, value := range []string{c.Username, c.Password, c.Username + ":" + c.Password} {
-		encoded, _ := json.Marshal(value)
-		for _, pattern := range [][]byte{[]byte(value), encoded[1 : len(encoded)-1], []byte(base64.StdEncoding.EncodeToString([]byte(value))), []byte(base64.RawStdEncoding.EncodeToString([]byte(value)))} {
-			g.patterns = append(g.patterns, bytes.Clone(pattern))
+		candidates := []string{value, base64.StdEncoding.EncodeToString([]byte(value)), base64.RawStdEncoding.EncodeToString([]byte(value))}
+		for _, candidate := range candidates {
+			encoded, _ := json.Marshal(candidate)
+			// Short credentials still match exact JSON values. Arbitrary one-byte
+			// substring rejection would make valid usernames unusable in any JSON.
+			g.patterns = append(g.patterns, bytes.Clone(encoded))
+			if len(candidate) >= 8 {
+				g.patterns = append(g.patterns, []byte(candidate), bytes.Clone(encoded[1:len(encoded)-1]))
+			}
 		}
 	}
+	g.patterns = append(g.patterns, []byte("Basic "+base64.StdEncoding.EncodeToString([]byte(c.Username+":"+c.Password))))
+
 	return g
 }
 func (g *credentialBody) contains(raw []byte) bool {

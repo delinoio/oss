@@ -33,12 +33,19 @@ func networkConflict() error {
 	return domain.Fail(domain.Conflict, "The selected network configuration changed.", "Read the current profile/route revision before a new mutation; retry the original request unchanged after an uncertain result.")
 }
 
-func (s *Service) networkReply(ctx context.Context, result store.Result, kind domain.Kind) (*connect.Response[pb.NetworkMutationResponse], error) {
+type networkOutcome struct {
+	Resource  *pb.Resource
+	RequestId string
+	Replayed  bool
+	Deleted   bool
+}
+
+func (s *Service) networkReply(ctx context.Context, result store.Result, kind domain.Kind) (*networkOutcome, error) {
 	var receipt networkReceipt
 	if err := domain.Decode(result.Data, &receipt); err != nil {
 		return nil, err
 	}
-	response := &pb.NetworkMutationResponse{RequestId: string(result.RequestID), Replayed: result.Replayed, Deleted: receipt.Deleted}
+	response := &networkOutcome{RequestId: string(result.RequestID), Replayed: result.Replayed, Deleted: receipt.Deleted}
 	if !receipt.Deleted {
 		record, err := s.Store.Get(ctx, kind, receipt.ID)
 		if err != nil {
@@ -46,10 +53,12 @@ func (s *Service) networkReply(ctx context.Context, result store.Result, kind do
 		}
 		response.Resource = rpc.Resource(record)
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[pb.SaveNetworkProfileRequest]) (*connect.Response[pb.NetworkMutationResponse], error) {
+func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[pb.SaveNetworkProfileRequest]) (*connect.Response[pb.SaveNetworkProfileResponse], error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	input, err := integrationMutation(ctx, req.Msg.Mutation, true)
 	if err != nil {
@@ -103,6 +112,11 @@ func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[p
 				return err
 			}
 			if input.Revision == 0 {
+				if _, err := tx.Get(domain.NetworkProfileKind, id); err == nil {
+					return networkConflict()
+				} else if domain.SafeError(err).Code != domain.NotFound {
+					return err
+				}
 				return tx.NetworkProfileCapacity()
 			}
 			r, e := tx.Get(domain.NetworkProfileKind, id)
@@ -132,7 +146,24 @@ func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[p
 			var vault accountSecrets
 			vault, err = s.secrets()
 			if err == nil {
-				_, err = vault.Put(ctx, proxyRef(id, requestID), raw)
+				refs, e := vault.UnremovedReferences(ctx, id)
+				err = e
+				if err == nil {
+					count := 0
+					exact := false
+					for _, ref := range refs {
+						if ref.Purpose == credentials.NetworkProxy {
+							count++
+							exact = exact || ref.ID == requestID
+						}
+					}
+					if count >= 256 && !exact {
+						err = domain.Fail(domain.ResourceExhausted, "The profile credential-generation limit was reached.", "Select another profile and delete this profile to clean retained generations; at most 256 are retained.")
+					}
+				}
+				if err == nil {
+					_, err = vault.Put(ctx, proxyRef(id, requestID), raw)
+				}
 			}
 		}
 		if err == nil {
@@ -155,7 +186,10 @@ func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[p
 	}
 	s.logger.Info("network_profile_saved", "profile_id", id, "mode", definition.Mode, "replayed", result.Replayed)
 	reply, err := s.networkReply(ctx, result, domain.NetworkProfileKind)
-	return reply, rpc.Error(err, correlation)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	return connect.NewResponse(&pb.SaveNetworkProfileResponse{Resource: reply.Resource, RequestId: reply.RequestId, Replayed: reply.Replayed, Deleted: reply.Deleted}), nil
 }
 
 func (s *Service) networkCommitment(request domain.ID, raw []byte) string {
@@ -165,7 +199,7 @@ func (s *Service) networkCommitment(request domain.ID, raw []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (s *Service) SelectNetworkProfile(ctx context.Context, req *connect.Request[pb.SelectNetworkProfileRequest]) (*connect.Response[pb.NetworkMutationResponse], error) {
+func (s *Service) SelectNetworkProfile(ctx context.Context, req *connect.Request[pb.SelectNetworkProfileRequest]) (*connect.Response[pb.SelectNetworkProfileResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	input, err := integrationMutation(ctx, req.Msg.Mutation, true)
 	if err != nil {
@@ -235,10 +269,15 @@ func (s *Service) SelectNetworkProfile(ctx context.Context, req *connect.Request
 	}
 	s.logger.Info("network_route_selected", "machine_id", machine, "profile_id", profile, "profile_revision", req.Msg.ProfileRevision, "replayed", result.Replayed)
 	reply, err := s.networkReply(ctx, result, domain.NetworkRouteKind)
-	return reply, rpc.Error(err, correlation)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	return connect.NewResponse(&pb.SelectNetworkProfileResponse{Resource: reply.Resource, RequestId: reply.RequestId, Replayed: reply.Replayed, Deleted: reply.Deleted}), nil
 }
 
-func (s *Service) DeleteNetworkProfile(ctx context.Context, req *connect.Request[pb.DeleteNetworkProfileRequest]) (*connect.Response[pb.NetworkMutationResponse], error) {
+func (s *Service) DeleteNetworkProfile(ctx context.Context, req *connect.Request[pb.DeleteNetworkProfileRequest]) (*connect.Response[pb.DeleteNetworkProfileResponse], error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	input, err := integrationMutation(ctx, req.Msg.Mutation, false)
 	if err != nil {
@@ -284,7 +323,10 @@ func (s *Service) DeleteNetworkProfile(ctx context.Context, req *connect.Request
 	}
 	s.logger.Info("network_profile_deleted", "profile_id", input.ID, "replayed", result.Replayed)
 	reply, err := s.networkReply(ctx, result, domain.NetworkProfileKind)
-	return reply, rpc.Error(err, correlation)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	return connect.NewResponse(&pb.DeleteNetworkProfileResponse{Resource: reply.Resource, RequestId: reply.RequestId, Replayed: reply.Replayed, Deleted: reply.Deleted}), nil
 }
 
 func (s *Service) readNetworkRoute(ctx context.Context, machine domain.ID) (store.Record, domain.NetworkRoute, error) {

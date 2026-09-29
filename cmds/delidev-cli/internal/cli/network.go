@@ -10,6 +10,13 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+type networkCLIOutcome struct {
+	Resource  *pb.Resource
+	RequestId string
+	Replayed  bool
+	Deleted   bool
+}
+
 func networkCommand(ctx context.Context, c client, o options, args []string, streams IO) (any, error) {
 	if len(args) == 0 {
 		return nil, usage()
@@ -37,7 +44,7 @@ func networkCommand(ctx context.Context, c client, o options, args []string, str
 		return nil, err
 	}
 	mutation := &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}
-	var response *pb.NetworkMutationResponse
+	var response networkCLIOutcome
 	if profile {
 		switch operation {
 		case "list":
@@ -79,13 +86,13 @@ func networkCommand(ctx context.Context, c client, o options, args []string, str
 			if err != nil {
 				return nil, rpc.ClientError(err)
 			}
-			response = reply.Msg
+			response = networkCLIOutcome{Resource: reply.Msg.Resource, RequestId: reply.Msg.RequestId, Replayed: reply.Msg.Replayed, Deleted: reply.Msg.Deleted}
 		case "delete":
 			reply, err := c.network.DeleteNetworkProfile(ctx, request(c, &pb.DeleteNetworkProfileRequest{Mutation: mutation}))
 			if err != nil {
 				return nil, rpc.ClientError(err)
 			}
-			response = reply.Msg
+			response = networkCLIOutcome{Resource: reply.Msg.Resource, RequestId: reply.Msg.RequestId, Replayed: reply.Msg.Replayed, Deleted: reply.Msg.Deleted}
 		default:
 			return nil, usage()
 		}
@@ -105,7 +112,7 @@ func networkCommand(ctx context.Context, c client, o options, args []string, str
 			if err != nil {
 				return nil, rpc.ClientError(err)
 			}
-			response = reply.Msg
+			response = networkCLIOutcome{Resource: reply.Msg.Resource, RequestId: reply.Msg.RequestId, Replayed: reply.Msg.Replayed, Deleted: reply.Msg.Deleted}
 		case "export-metadata":
 			reply, err := c.network.ExportWorkerNetworkMetadata(ctx, request(c, &pb.ExportWorkerNetworkMetadataRequest{MachineId: *machine, DesiredGeneration: *revision}))
 			if err != nil {

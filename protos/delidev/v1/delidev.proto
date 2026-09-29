@@ -28,9 +28,9 @@ service ResourceService {
 
 // Owner/paired-client configuration only; credentials are write-only.
 service NetworkService {
-  rpc SaveNetworkProfile(SaveNetworkProfileRequest) returns (NetworkMutationResponse);
-  rpc DeleteNetworkProfile(DeleteNetworkProfileRequest) returns (NetworkMutationResponse);
-  rpc SelectNetworkProfile(SelectNetworkProfileRequest) returns (NetworkMutationResponse);
+  rpc SaveNetworkProfile(SaveNetworkProfileRequest) returns (SaveNetworkProfileResponse);
+  rpc DeleteNetworkProfile(DeleteNetworkProfileRequest) returns (DeleteNetworkProfileResponse);
+  rpc SelectNetworkProfile(SelectNetworkProfileRequest) returns (SelectNetworkProfileResponse);
   rpc GetNetworkRoute(GetNetworkRouteRequest) returns (GetNetworkRouteResponse);
   rpc ExportWorkerNetworkMetadata(ExportWorkerNetworkMetadataRequest) returns (ExportWorkerNetworkMetadataResponse);
 }
@@ -53,7 +53,19 @@ message SelectNetworkProfileRequest {
   string profile_id = 3;
   uint64 profile_revision = 4;
 }
-message NetworkMutationResponse {
+message SaveNetworkProfileResponse {
+  Resource resource = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bool deleted = 4;
+}
+message DeleteNetworkProfileResponse {
+  Resource resource = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bool deleted = 4;
+}
+message SelectNetworkProfileResponse {
   Resource resource = 1;
   string request_id = 2;
   bool replayed = 3;

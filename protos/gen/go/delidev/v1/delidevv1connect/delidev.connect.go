@@ -929,9 +929,9 @@ func (UnimplementedResourceServiceHandler) WatchEvents(context.Context, *connect
 
 // NetworkServiceClient is a client for the delidev.v1.NetworkService service.
 type NetworkServiceClient interface {
-	SaveNetworkProfile(context.Context, *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error)
-	DeleteNetworkProfile(context.Context, *connect.Request[v1.DeleteNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error)
-	SelectNetworkProfile(context.Context, *connect.Request[v1.SelectNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error)
+	SaveNetworkProfile(context.Context, *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.SaveNetworkProfileResponse], error)
+	DeleteNetworkProfile(context.Context, *connect.Request[v1.DeleteNetworkProfileRequest]) (*connect.Response[v1.DeleteNetworkProfileResponse], error)
+	SelectNetworkProfile(context.Context, *connect.Request[v1.SelectNetworkProfileRequest]) (*connect.Response[v1.SelectNetworkProfileResponse], error)
 	GetNetworkRoute(context.Context, *connect.Request[v1.GetNetworkRouteRequest]) (*connect.Response[v1.GetNetworkRouteResponse], error)
 	ExportWorkerNetworkMetadata(context.Context, *connect.Request[v1.ExportWorkerNetworkMetadataRequest]) (*connect.Response[v1.ExportWorkerNetworkMetadataResponse], error)
 }
@@ -947,19 +947,19 @@ func NewNetworkServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	networkServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("NetworkService").Methods()
 	return &networkServiceClient{
-		saveNetworkProfile: connect.NewClient[v1.SaveNetworkProfileRequest, v1.NetworkMutationResponse](
+		saveNetworkProfile: connect.NewClient[v1.SaveNetworkProfileRequest, v1.SaveNetworkProfileResponse](
 			httpClient,
 			baseURL+NetworkServiceSaveNetworkProfileProcedure,
 			connect.WithSchema(networkServiceMethods.ByName("SaveNetworkProfile")),
 			connect.WithClientOptions(opts...),
 		),
-		deleteNetworkProfile: connect.NewClient[v1.DeleteNetworkProfileRequest, v1.NetworkMutationResponse](
+		deleteNetworkProfile: connect.NewClient[v1.DeleteNetworkProfileRequest, v1.DeleteNetworkProfileResponse](
 			httpClient,
 			baseURL+NetworkServiceDeleteNetworkProfileProcedure,
 			connect.WithSchema(networkServiceMethods.ByName("DeleteNetworkProfile")),
 			connect.WithClientOptions(opts...),
 		),
-		selectNetworkProfile: connect.NewClient[v1.SelectNetworkProfileRequest, v1.NetworkMutationResponse](
+		selectNetworkProfile: connect.NewClient[v1.SelectNetworkProfileRequest, v1.SelectNetworkProfileResponse](
 			httpClient,
 			baseURL+NetworkServiceSelectNetworkProfileProcedure,
 			connect.WithSchema(networkServiceMethods.ByName("SelectNetworkProfile")),
@@ -982,25 +982,25 @@ func NewNetworkServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // networkServiceClient implements NetworkServiceClient.
 type networkServiceClient struct {
-	saveNetworkProfile          *connect.Client[v1.SaveNetworkProfileRequest, v1.NetworkMutationResponse]
-	deleteNetworkProfile        *connect.Client[v1.DeleteNetworkProfileRequest, v1.NetworkMutationResponse]
-	selectNetworkProfile        *connect.Client[v1.SelectNetworkProfileRequest, v1.NetworkMutationResponse]
+	saveNetworkProfile          *connect.Client[v1.SaveNetworkProfileRequest, v1.SaveNetworkProfileResponse]
+	deleteNetworkProfile        *connect.Client[v1.DeleteNetworkProfileRequest, v1.DeleteNetworkProfileResponse]
+	selectNetworkProfile        *connect.Client[v1.SelectNetworkProfileRequest, v1.SelectNetworkProfileResponse]
 	getNetworkRoute             *connect.Client[v1.GetNetworkRouteRequest, v1.GetNetworkRouteResponse]
 	exportWorkerNetworkMetadata *connect.Client[v1.ExportWorkerNetworkMetadataRequest, v1.ExportWorkerNetworkMetadataResponse]
 }
 
 // SaveNetworkProfile calls delidev.v1.NetworkService.SaveNetworkProfile.
-func (c *networkServiceClient) SaveNetworkProfile(ctx context.Context, req *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error) {
+func (c *networkServiceClient) SaveNetworkProfile(ctx context.Context, req *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.SaveNetworkProfileResponse], error) {
 	return c.saveNetworkProfile.CallUnary(ctx, req)
 }
 
 // DeleteNetworkProfile calls delidev.v1.NetworkService.DeleteNetworkProfile.
-func (c *networkServiceClient) DeleteNetworkProfile(ctx context.Context, req *connect.Request[v1.DeleteNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error) {
+func (c *networkServiceClient) DeleteNetworkProfile(ctx context.Context, req *connect.Request[v1.DeleteNetworkProfileRequest]) (*connect.Response[v1.DeleteNetworkProfileResponse], error) {
 	return c.deleteNetworkProfile.CallUnary(ctx, req)
 }
 
 // SelectNetworkProfile calls delidev.v1.NetworkService.SelectNetworkProfile.
-func (c *networkServiceClient) SelectNetworkProfile(ctx context.Context, req *connect.Request[v1.SelectNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error) {
+func (c *networkServiceClient) SelectNetworkProfile(ctx context.Context, req *connect.Request[v1.SelectNetworkProfileRequest]) (*connect.Response[v1.SelectNetworkProfileResponse], error) {
 	return c.selectNetworkProfile.CallUnary(ctx, req)
 }
 
@@ -1016,9 +1016,9 @@ func (c *networkServiceClient) ExportWorkerNetworkMetadata(ctx context.Context, 
 
 // NetworkServiceHandler is an implementation of the delidev.v1.NetworkService service.
 type NetworkServiceHandler interface {
-	SaveNetworkProfile(context.Context, *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error)
-	DeleteNetworkProfile(context.Context, *connect.Request[v1.DeleteNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error)
-	SelectNetworkProfile(context.Context, *connect.Request[v1.SelectNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error)
+	SaveNetworkProfile(context.Context, *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.SaveNetworkProfileResponse], error)
+	DeleteNetworkProfile(context.Context, *connect.Request[v1.DeleteNetworkProfileRequest]) (*connect.Response[v1.DeleteNetworkProfileResponse], error)
+	SelectNetworkProfile(context.Context, *connect.Request[v1.SelectNetworkProfileRequest]) (*connect.Response[v1.SelectNetworkProfileResponse], error)
 	GetNetworkRoute(context.Context, *connect.Request[v1.GetNetworkRouteRequest]) (*connect.Response[v1.GetNetworkRouteResponse], error)
 	ExportWorkerNetworkMetadata(context.Context, *connect.Request[v1.ExportWorkerNetworkMetadataRequest]) (*connect.Response[v1.ExportWorkerNetworkMetadataResponse], error)
 }
@@ -1081,15 +1081,15 @@ func NewNetworkServiceHandler(svc NetworkServiceHandler, opts ...connect.Handler
 // UnimplementedNetworkServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedNetworkServiceHandler struct{}
 
-func (UnimplementedNetworkServiceHandler) SaveNetworkProfile(context.Context, *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error) {
+func (UnimplementedNetworkServiceHandler) SaveNetworkProfile(context.Context, *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.SaveNetworkProfileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.NetworkService.SaveNetworkProfile is not implemented"))
 }
 
-func (UnimplementedNetworkServiceHandler) DeleteNetworkProfile(context.Context, *connect.Request[v1.DeleteNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error) {
+func (UnimplementedNetworkServiceHandler) DeleteNetworkProfile(context.Context, *connect.Request[v1.DeleteNetworkProfileRequest]) (*connect.Response[v1.DeleteNetworkProfileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.NetworkService.DeleteNetworkProfile is not implemented"))
 }
 
-func (UnimplementedNetworkServiceHandler) SelectNetworkProfile(context.Context, *connect.Request[v1.SelectNetworkProfileRequest]) (*connect.Response[v1.NetworkMutationResponse], error) {
+func (UnimplementedNetworkServiceHandler) SelectNetworkProfile(context.Context, *connect.Request[v1.SelectNetworkProfileRequest]) (*connect.Response[v1.SelectNetworkProfileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.NetworkService.SelectNetworkProfile is not implemented"))
 }
 
