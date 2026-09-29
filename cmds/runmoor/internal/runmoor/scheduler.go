@@ -32,7 +32,7 @@ func usage(s Snapshot) (Resources, int, int) {
 		if a := s.Artifacts[im.ID]; a != nil && a.Reserved {
 			continue
 		}
-		if im.Phase == ImageOpen {
+		if im.Phase == ImageOpen || im.Phase == ImageRemoving && s.ImageTartPIDs[im.ID] > 0 {
 			r = r.Add(im.Resources)
 			count++
 			vms++

@@ -359,7 +359,7 @@ func TestImageCreatePassesLatestSupportedIPSWToTart(t *testing.T) {
 	}
 	found := false
 	for _, args := range fixture.commands {
-		if len(args) == 4 && args[0] == "create" && args[1] == "--from-ipsw" && args[2] == "latest" && args[3] == image.VM {
+		if len(args) == 4 && args[0] == "create" && args[1] == "--from-ipsw" && args[2] == "latest" && args[3] == creationVMName(image.ID) {
 			found = true
 		}
 	}

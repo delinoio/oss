@@ -100,7 +100,7 @@ func TestGuestValidationRejectsInvalidImagesWithoutReadinessRetry(t *testing.T) 
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			driver := &TartDriver{Exec: f}
-			err := driver.guestReady(ctx, Config{}, "setup", path, "2.337.0")
+			err := driver.guestReadyUnowned(ctx, Config{}, "setup", path, "2.337.0")
 			switch scenario {
 			case "ready", "transport recovery":
 				if err != nil {

@@ -74,7 +74,7 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = db.Exec("PRAGMA user_version=3"); e != nil {
+	if _, e = db.Exec("PRAGMA user_version=4"); e != nil {
 		t.Fatal(e)
 	}
 	db.Close()
@@ -84,7 +84,7 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 	defer db.Close()
 	var version int
 	db.QueryRow("PRAGMA user_version").Scan(&version)
-	if version != 3 {
+	if version != 4 {
 		t.Fatal("future database modified")
 	}
 }
@@ -264,7 +264,7 @@ func TestAmbiguousLegacyQuestionMarkStateIsPreserved(t *testing.T) {
 			installation := newID()
 			pendingID := newID()
 			snapshot, err := json.Marshal(Snapshot{
-				SchemaVersion: 2,
+				SchemaVersion: 3,
 				Installation:  installation,
 				Pools:         map[string]*PoolState{},
 				Runners:       map[string]*Runner{pendingID: {ID: pendingID, Phase: Cleaning}},
@@ -283,7 +283,7 @@ func TestAmbiguousLegacyQuestionMarkStateIsPreserved(t *testing.T) {
 			if _, err = legacy.Exec("CREATE TABLE snapshot (id INTEGER PRIMARY KEY CHECK(id=1), body BLOB NOT NULL)"); err != nil {
 				t.Fatal(err)
 			}
-			if _, err = legacy.Exec("PRAGMA user_version=2"); err != nil {
+			if _, err = legacy.Exec("PRAGMA user_version=3"); err != nil {
 				t.Fatal(err)
 			}
 			if _, err = legacy.Exec("INSERT INTO snapshot(id,body) VALUES(1,?)", snapshot); err != nil {
@@ -409,11 +409,47 @@ func TestStateMigratesV1AtomicallyAndReadOnlyInspectionDoesNotMigrate(t *testing
 	}
 	defer migrated.Close()
 	after := migrated.View()
-	if after.SchemaVersion != 2 || after.Installation != snapshot.Installation || fingerprint(after.Runners[id]) != fingerprint(snapshot.Runners[id]) || fingerprint(after.Requested) != fingerprint(snapshot.Config) {
+	if after.SchemaVersion != 3 || after.Installation != snapshot.Installation || fingerprint(after.Runners[id]) != fingerprint(snapshot.Runners[id]) || fingerprint(after.Requested) != fingerprint(snapshot.Config) {
 		t.Fatal("migration lost original state")
 	}
 	var version int
-	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 2 {
+	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
 		t.Fatal("snapshot and database schema differ")
+	}
+}
+
+func TestStateMigratesV2ToV3WithPrivateTartProcessIdentityState(t *testing.T) {
+	c, s := fixtureStore(t)
+	snapshot := s.View()
+	snapshot.SchemaVersion = 2
+	id := newID()
+	snapshot.Images[id] = &Image{ID: id, Phase: ImageOpen}
+	snapshot.ImageTartPIDs = map[string]int{id: 4242}
+	snapshot.RunnerTartStarts = map[string]string{}
+	snapshot.ImageTartStarts = nil
+	body, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec("UPDATE snapshot SET body=? WHERE id=1", body); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec("PRAGMA user_version=2"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	migrated, err := OpenStore(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer migrated.Close()
+	after := migrated.View()
+	if after.SchemaVersion != 3 || after.ImageTartPIDs[id] != 4242 || after.ImageTartStarts[id] != "" {
+		t.Fatal("v2 migration did not preserve the legacy PID conservatively", after.SchemaVersion, after.ImageTartPIDs, after.ImageTartStarts)
+	}
+	var version int
+	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
+		t.Fatal("snapshot and database schema differ after v2 migration")
 	}
 }

@@ -3,6 +3,7 @@ package runmoor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -29,6 +30,25 @@ func (f localGuestCommand) Run(ctx context.Context, name string, args, env []str
 		}
 	}
 	return f.CommandExecutor.Run(ctx, name, args, env, in)
+}
+func (f localGuestCommand) RunPinned(ctx context.Context, name string, args, env []string, in io.Reader, dir *os.File) ([]byte, error) {
+	for _, arg := range args {
+		if arg == "__guest-bootstrap" || arg == "__guest-status" {
+			return f.Run(ctx, name, args, env, in)
+		}
+	}
+	executor, ok := f.CommandExecutor.(PinnedCommandExecutor)
+	if !ok {
+		return nil, errors.New("fixture does not support pinned Tart commands")
+	}
+	return executor.RunPinned(ctx, name, args, env, in, dir)
+}
+func (f localGuestCommand) StartPinned(name string, args, env []string, dir *os.File) (int, error) {
+	executor, ok := f.CommandExecutor.(PinnedCommandExecutor)
+	if !ok {
+		return 0, errors.New("fixture does not support pinned Tart commands")
+	}
+	return executor.StartPinned(name, args, env, dir)
 }
 
 func TestGuestBootstrapConfirmsRunnerBeforeResettingPreparationFailures(t *testing.T) {

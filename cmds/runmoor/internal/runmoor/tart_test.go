@@ -13,15 +13,25 @@ import (
 )
 
 type tartFixture struct {
-	mu          sync.Mutex
-	c           Config
-	running     map[string]bool
-	commands    [][]string
-	jit         string
-	version     string
-	guestOS     tartGuestOS
-	rejectGuest bool
+	mu                sync.Mutex
+	c                 Config
+	running           map[string]bool
+	commands          [][]string
+	jit               string
+	version           string
+	guestOS           tartGuestOS
+	rejectGuest       bool
+	afterGet          func(string)
+	beforeDelete      func(string)
+	beforePinned      func([]string, *os.File)
+	beforeStartPinned func([]string, *os.File)
+	pinnedSetIdentity string
+	pinnedSetInfo     os.FileInfo
 }
+
+// Keep fake Tart processes outside the host PID range so macOS CI cannot
+// mistake a real system process for one of these detached test processes.
+const fixtureTartPID = 1 << 30
 
 func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
 	f.mu.Lock()
@@ -30,8 +40,19 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 	if name == "/usr/bin/sw_vers" {
 		return []byte("14.7"), nil
 	}
-	joined := strings.Join(env, "\n")
-	if !strings.Contains(joined, "TART_NO_AUTO_PRUNE=1") || !strings.Contains(joined, "TART_HOME="+filepath.Join(f.c.Storage.Data, "tart")) {
+	home := ""
+	noAutoPrune := false
+	for _, value := range env {
+		if strings.HasPrefix(value, "TART_HOME=") {
+			home = strings.TrimPrefix(value, "TART_HOME=")
+		}
+		if value == "TART_NO_AUTO_PRUNE=1" {
+			noAutoPrune = true
+		}
+	}
+	creationRoot := filepath.Join(f.c.Storage.Data, "tart-creation")
+	validHome := home == tartHome(f.c) || filepath.Dir(home) == creationRoot && validID(filepath.Base(home))
+	if !noAutoPrune || !validHome {
 		return nil, problem(ErrConfig, "Unsafe Tart environment.", "Fix the test boundary.")
 	}
 	for _, v := range env {
@@ -44,7 +65,7 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 		return []byte(f.version), nil
 	case "create", "clone", "import":
 		vm := args[len(args)-1]
-		dir := vmPath(f.c, vm)
+		dir := tartVMPathAtHome(home, vm)
 		if e := os.MkdirAll(dir, 0700); e != nil {
 			return nil, e
 		}
@@ -55,13 +76,24 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 		}
 		f.running[vm] = false
 	case "get":
-		return json.Marshal(vmInfo{Running: f.running[args[1]], State: "stopped", OS: f.guestOS, CPU: 1, Memory: 512})
+		b, err := json.Marshal(vmInfo{Running: f.running[args[1]], State: "stopped", OS: f.guestOS, CPU: 1, Memory: 512})
+		if f.afterGet != nil {
+			hook := f.afterGet
+			f.afterGet = nil
+			hook(args[1])
+		}
+		return b, err
 	case "set":
 	case "stop":
 		f.running[args[1]] = false
 	case "delete":
+		if f.beforeDelete != nil {
+			hook := f.beforeDelete
+			f.beforeDelete = nil
+			hook(args[1])
+		}
 		delete(f.running, args[1])
-		return nil, os.RemoveAll(vmPath(f.c, args[1]))
+		return nil, os.RemoveAll(tartVMPathAtHome(home, args[1]))
 	case "exec":
 		if strings.Contains(strings.Join(args, " "), "__guest-bootstrap") {
 			b, _ := io.ReadAll(in)
@@ -70,6 +102,8 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 				return nil, e
 			}
 			f.jit = v.JIT
+		} else if strings.Contains(strings.Join(args, " "), "__guest-status") {
+			return json.Marshal(GuestStatus{ID: args[len(args)-1], Ready: true})
 		} else if in != nil {
 			io.Copy(io.Discard, in)
 		} else {
@@ -88,11 +122,68 @@ func (f *tartFixture) Start(_ string, args, env []string) (int, error) {
 	defer f.mu.Unlock()
 	f.commands = append(f.commands, append([]string{}, args...))
 	f.running[args[len(args)-1]] = true
-	return 123, nil
+	return fixtureTartPID, nil
+}
+func (f *tartFixture) canonicalPinnedArgs(args, env []string, dir *os.File) ([]string, error) {
+	b, err := readTartVMOwnerMarker(dir, 4096)
+	if err != nil {
+		return nil, err
+	}
+	var owner vmOwner
+	if err = json.Unmarshal(b, &owner); err != nil {
+		return nil, err
+	}
+	home := filepath.Join(f.c.Storage.Data, "tart")
+	for _, value := range env {
+		if strings.HasPrefix(value, "TART_HOME=") {
+			home = strings.TrimPrefix(value, "TART_HOME=")
+		}
+	}
+	result := append([]string(nil), args...)
+	for i, arg := range result {
+		if target, linkErr := os.Readlink(filepath.Join(home, "vms", arg)); linkErr == nil && target == "/dev/fd/3" {
+			result[i] = owner.VM
+		}
+	}
+	return result, nil
+}
+func (f *tartFixture) RunPinned(ctx context.Context, name string, args, env []string, in io.Reader, dir *os.File) ([]byte, error) {
+	if f.beforePinned != nil {
+		hook := f.beforePinned
+		f.beforePinned = nil
+		hook(args, dir)
+	}
+	canonical, err := f.canonicalPinnedArgs(args, env, dir)
+	if err != nil {
+		return nil, err
+	}
+	if len(canonical) > 0 && canonical[0] == "set" {
+		f.pinnedSetIdentity = canonical[1]
+		f.pinnedSetInfo, err = dir.Stat()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return f.Run(ctx, name, canonical, env, in)
+}
+func (f *tartFixture) StartPinned(name string, args, env []string, dir *os.File) (int, error) {
+	if f.beforeStartPinned != nil {
+		hook := f.beforeStartPinned
+		f.beforeStartPinned = nil
+		hook(args, dir)
+	}
+	canonical, err := f.canonicalPinnedArgs(args, env, dir)
+	if err != nil {
+		return 0, err
+	}
+	return f.Start(name, canonical, env)
 }
 func fakeTart(c Config) (*TartDriver, *tartFixture) {
 	f := &tartFixture{c: c, running: map[string]bool{}, version: "2.37.0", guestOS: tartGuestOSDarwin}
-	return &TartDriver{Exec: f, HostCheck: func(context.Context) error { return nil }}, f
+	return &TartDriver{
+		Exec: f, HostCheck: func(context.Context) error { return nil },
+		processIdentity: func(int) (string, error) { return "fixture-process-start", nil },
+	}, f
 }
 
 type tartVMInfoResponse struct {
@@ -153,7 +244,14 @@ type startingTartCommand struct {
 
 func (f *startingTartCommand) Start(string, []string, []string) (int, error) {
 	f.started = true
-	return 123, nil
+	return fixtureTartPID, nil
+}
+func (f *startingTartCommand) StartPinned(name string, args, env []string, dir *os.File) (int, error) {
+	f.started = true
+	if _, err := f.tartFixture.canonicalPinnedArgs(args, env, dir); err != nil {
+		return 0, err
+	}
+	return fixtureTartPID, nil
 }
 func (f *startingTartCommand) Run(ctx context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
 	if f.started && args[0] == "get" {
@@ -165,6 +263,18 @@ func (f *startingTartCommand) Run(ctx context.Context, name string, args, env []
 		}
 	}
 	return f.tartFixture.Run(ctx, name, args, env, in)
+}
+func (f *startingTartCommand) RunPinned(ctx context.Context, name string, args, env []string, in io.Reader, dir *os.File) ([]byte, error) {
+	if f.beforePinned != nil {
+		hook := f.beforePinned
+		f.beforePinned = nil
+		hook(args, dir)
+	}
+	canonical, err := f.tartFixture.canonicalPinnedArgs(args, env, dir)
+	if err != nil {
+		return nil, err
+	}
+	return f.Run(ctx, name, canonical, env, in)
 }
 
 func TestImageOpenWaitsForConfirmedVMStartup(t *testing.T) {
@@ -189,6 +299,16 @@ func TestImageOpenWaitsForConfirmedVMStartup(t *testing.T) {
 			if readyAfter > 0 {
 				if err != nil || command.polls < readyAfter {
 					t.Fatal("image open acknowledged an unconfirmed VM", err)
+				}
+				if got := s.View().ImageTartPIDs[im.ID]; got != fixtureTartPID {
+					t.Fatalf("persisted setup Tart PID = %d, want %d", got, fixtureTartPID)
+				}
+				if got := s.View().ImageTartStarts[im.ID]; got != "fixture-process-start" {
+					t.Fatalf("persisted setup Tart process start = %q, want fixture identity", got)
+				}
+				status, marshalErr := json.Marshal(statusOf(s.View(), false))
+				if marshalErr != nil || strings.Contains(string(status), "image_tart_pids") || strings.Contains(string(status), "fixture-process-start") {
+					t.Fatal("private image Tart process state leaked through status JSON", marshalErr)
 				}
 				return
 			}
@@ -392,6 +512,10 @@ func TestTartImageLifecycleAndCredentialBoundary(t *testing.T) {
 	if im.Phase != ImageSealed || im.Digest == "" {
 		t.Fatal("image not sealed")
 	}
+	baseMarker, e := os.ReadFile(vmOwnerMarkerPath(c, im.VM))
+	if e != nil {
+		t.Fatal("sealed base owner marker is missing", e)
+	}
 	_, e = images.Operate(ctx, c, ImageRequest{Action: "open", ID: im.ID})
 	requireCode(t, e, ErrImage)
 	p := c.Pools[0]
@@ -402,8 +526,33 @@ func TestTartImageLifecycleAndCredentialBoundary(t *testing.T) {
 	r := Runner{ID: newID(), Backend: Tart, Image: im.ID}
 	r.Name = "runmoor-" + r.ID
 	snap := s.View()
-	if e = driver.Prepare(ctx, c, p, r, snap, "fixture-jit", func(h Handle) error { r.Handle = h; return nil }); e != nil {
+	if e = driver.Prepare(ctx, c, p, r, snap, "fixture-jit", func(h Handle) error {
+		r.Handle = h
+		if h.PID > 0 {
+			if h.tartProcessStart != "fixture-process-start" {
+				t.Fatalf("published Tart process start = %q, want fixture identity", h.tartProcessStart)
+			}
+			snap.RunnerTartStarts = map[string]string{r.ID: h.tartProcessStart}
+		}
+		return nil
+	}); e != nil {
 		t.Fatal(e)
+	}
+	obs, e := driver.Inspect(ctx, c, r, snap)
+	if e != nil || !obs.Exists || !obs.Running {
+		t.Fatal("owned Tart clone did not survive inspection after manager restart", obs, e)
+	}
+	cloneMarker, e := os.ReadFile(vmOwnerMarkerPath(c, r.Handle.VM))
+	if e != nil {
+		t.Fatal("job clone owner marker is missing", e)
+	}
+	var clonedOwner vmOwner
+	if json.Unmarshal(cloneMarker, &clonedOwner) != nil || clonedOwner.Installation != snap.Installation || clonedOwner.Entity != r.ID || clonedOwner.VM != r.Handle.VM {
+		t.Fatal("job clone did not receive its fresh ownership identity", clonedOwner)
+	}
+	baseMarkerAfter, e := os.ReadFile(vmOwnerMarkerPath(c, im.VM))
+	if e != nil || string(baseMarkerAfter) != string(baseMarker) {
+		t.Fatal("cloning changed the sealed base owner marker", e)
 	}
 	if fixture.jit != "fixture-jit" {
 		t.Fatal("JIT not delivered by stdin")
@@ -419,7 +568,7 @@ func TestTartImageLifecycleAndCredentialBoundary(t *testing.T) {
 	if e = driver.Cleanup(ctx, c, r, snap); e != nil {
 		t.Fatal(e)
 	}
-	digest, e := imageDigest(ctx, c, im.VM)
+	digest, e := imageDigestOwned(ctx, c, im.VM, snap.Installation, im.ID)
 	if e != nil || digest != im.Digest {
 		t.Fatal("base mutated during job lifecycle")
 	}
@@ -444,6 +593,12 @@ func TestTartRefusesUnownedVMAndImageDeletionInUse(t *testing.T) {
 	imID := newID()
 	vm := "rm-image-" + imID
 	if e := claimVM(c, vm, s.View().Installation, imID); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.MkdirAll(vmPath(c, vm), 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e := publishVMOwnerMarker(c, vm, s.View().Installation, imID); e != nil {
 		t.Fatal(e)
 	}
 	s.Update(func(v *Snapshot) error {
