@@ -4,7 +4,8 @@ import { TransportProvider, useQuery } from "@connectrpc/connect-query";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { SessionQuery, SystemQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { SessionView } from "./session";
-import { Activity, CreateSession, Inbox, Search, Settings, Surface } from "./views";
+import { Activity, CreateSession, Search, Settings, Surface } from "./views";
+import { Inbox } from "./inbox";
 import { Usage } from "./usage";
 import { Schedules } from "./schedules";
 import type { ControlLocalWorker } from "./local-worker-controls";
@@ -15,7 +16,6 @@ import { connectionQueryClient } from "./cache";
 import type { PairingAuthority } from "./pairing-grant";
 import { TrayPresentation } from "./tray-presentation";
 import { TrayDestination } from "./tray";
-import { InboxSelection } from "./inbox-selection";
 import { NotificationPresentation } from "./notification-presentation";
 import { Sidebar } from "./sidebar";
 import { SettingsEntryDestination } from "./settings";
@@ -49,18 +49,21 @@ function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDevice
   };
   const openSettings = (destination?: SettingsEntryDestination) => { if (destination) setSettingsEntry(destination); setSettings(true); };
   const consumeSettingsEntry = useCallback(() => setSettingsEntry(undefined), []);
-  return <div className="app"><a className="skip" href="#main">Skip to content</a><Sidebar surface={surface} selectedSessionId={selected} localServer={localServer} navigate={setSurface} openSession={open} newSession={() => setCreating(true)} openSettings={openSettings} /><main id="main" tabIndex={-1}><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
+  return <div className="app"><a className="skip" href="#main">Skip to content</a><Sidebar surface={surface} selectedSessionId={selected} localServer={localServer} navigate={(destination) => { setSurface(destination); if (destination === Surface.Inbox) setSelectedInbox(""); }} openSession={open} newSession={() => setCreating(true)} openSettings={openSettings} /><main id="main" tabIndex={-1}><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>Your sessions, in one place</h2><p>Select a retained session or start a new conversation.</p><h3>Before your first session</h3><ol><li>Connect to your DeliDev server.</li><li>Pair an execution Worker and verify its installed harness.</li><li>Connect an AI account and configure an Agent Worker.</li><li>Configure a project, or choose General Chat.</li></ol><button onClick={(event) => { event.currentTarget.focus(); setSettings(true); }}>View prerequisites in Settings</button><Problem error={status.error} /></section>}</div>
-    {surface === Surface.Search ? <Search open={open} /> : surface === Surface.Activity ? <Activity open={open} /> : surface === Surface.Inbox ? selectedInbox ? <InboxSelection key={selectedInbox} id={selectedInbox} activation={inboxActivation} open={open} close={() => setSelectedInbox("")} /> : <Inbox open={open} /> : null}
+    {surface === Surface.Search ? <Search open={open} /> : surface === Surface.Activity ? <Activity open={open} /> : null}
+    <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} /></div>
     <Usage active={surface === Surface.Usage} open={open} />
     <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} />
   </main><Settings pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} close={() => setSettings(false)} visible={settings} entryDestination={settingsEntry} destinationConsumed={consumeSettingsEntry} /><CreateSession readLocalWorker={readLocalWorker} visible={creating} close={() => { setCreating(false); void sessions.refetch(); }} open={open} /></div>;
 }
 
-// The native caller mounts a new App per selected server/device. Query caches
-// and in-memory drafts never cross that identity boundary.
+// Reconnects for one server/device retain this memory and its mutation receipts
+// even when authentication creates a replacement transport. Selecting another
+// identity creates a fresh query, draft and mutation scope.
 export function App({ transport, localServer, connectionReady = true, connectionEpoch = 0, readLocalWorker, controlLocalWorker, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; readLocalWorker?: ReadLocalWorkerProof; transport: Transport; localServer?: ReactNode; connectionReady?: boolean; connectionEpoch?: number }) {
-  const connection = useMemo(() => ({ id: newRequestId(), ...connectionQueryClient() }), [transport]);
+  const connectionIdentity = pairingAuthority && currentDeviceId ? JSON.stringify([pairingAuthority.endpoint, pairingAuthority.serverId, currentDeviceId]) : transport;
+  const connection = useMemo(() => ({ id: newRequestId(), ...connectionQueryClient() }), [connectionIdentity]);
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
