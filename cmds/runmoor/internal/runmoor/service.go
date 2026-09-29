@@ -95,6 +95,7 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 	unit := servicePath()
 	uid := strconv.Itoa(os.Getuid())
 	domain := "gui/" + uid
+	var definitionSnapshot *serviceDefinitionSnapshot
 	run := func(name string, args ...string) error {
 		_, e := exec.Run(ctx, name, args, minimalEnv(), nil)
 		if e != nil {
@@ -139,9 +140,11 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 		return nil
 	case "start":
 		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-			if e := requireServiceConfigMatch(runtime.GOOS, unit, path); e != nil {
+			snapshot, e := validateServiceConfigMatch(runtime.GOOS, unit, path)
+			if e != nil {
 				return e
 			}
+			definitionSnapshot = &snapshot
 		} else if _, e := readPrivate(unit, 64<<10); e != nil {
 			return e
 		}
@@ -154,9 +157,11 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 		return run("systemctl", "--user", "enable", "--now", "runmoor.service")
 	case "stop", "uninstall":
 		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-			if e := requireServiceConfigMatch(runtime.GOOS, unit, path); e != nil {
+			snapshot, e := validateServiceConfigMatch(runtime.GOOS, unit, path)
+			if e != nil {
 				return e
 			}
+			definitionSnapshot = &snapshot
 		}
 		if _, e := SendControl(ctx, c, ControlRequest{Action: "stop"}); e == nil {
 			if e = waitStopped(ctx, c, ""); e != nil {
@@ -173,6 +178,11 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 				return problem(ErrControl, "Service is unreachable while owned executions may still be active.", "Restart the manager to reconcile and drain before removing the service.")
 			}
 		}
+		if definitionSnapshot != nil {
+			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
+				return e
+			}
+		}
 		if runtime.GOOS == "darwin" {
 			if e := unloadLaunchd(ctx, domain, unit, exec); e != nil {
 				return e
@@ -183,7 +193,11 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			}
 		}
 		if action == "uninstall" {
-			if _, e := readPrivate(unit, 64<<10); e != nil {
+			if definitionSnapshot != nil {
+				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
+					return e
+				}
+			} else if _, e := readPrivate(unit, 64<<10); e != nil {
 				return e
 			}
 			if e := os.Remove(unit); e != nil {

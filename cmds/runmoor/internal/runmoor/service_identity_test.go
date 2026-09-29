@@ -129,10 +129,16 @@ func TestServiceDefinitionParsersRejectAmbiguousArguments(t *testing.T) {
 	}
 }
 
-type serviceCommandRecorder struct{ calls []string }
+type serviceCommandRecorder struct {
+	calls []string
+	onRun func(name string, args []string)
+}
 
 func (r *serviceCommandRecorder) Run(_ context.Context, name string, args, _ []string, _ io.Reader) ([]byte, error) {
 	r.calls = append(r.calls, name+" "+strings.Join(args, " "))
+	if r.onRun != nil {
+		r.onRun(name, args)
+	}
 	return nil, nil
 }
 
@@ -358,6 +364,140 @@ func TestMatchingServiceUninstallWaitsForJobsAndImages(t *testing.T) {
 	}
 	if len(commands.calls) == 0 {
 		t.Fatal("matching service was not unloaded after work drained")
+	}
+}
+
+func TestServiceUninstallRevalidatesDefinitionAfterDrain(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("service definitions are supported on macOS and Linux")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if runtime.GOOS == "linux" {
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+		t.Setenv("XDG_CONFIG_DIRS", filepath.Join(home, "xdg-config"))
+		t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "runtime"))
+		t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+		t.Setenv("XDG_DATA_DIRS", filepath.Join(home, "xdg-data"))
+	}
+	unit := servicePath()
+	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(home, "installed.toml")
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := serviceDefinition(runtime.GOOS, binary, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
+		t.Fatal(err)
+	}
+	manager, config, _, _, pool := testManager(t)
+	runner := seedRunner(t, manager, pool, Busy)
+	server, err := manager.ServeControl()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	commands := &serviceCommandRecorder{}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- Service(ctx, "uninstall", configPath, config, commands) }()
+
+	deadline := time.Now().Add(time.Second)
+	for !manager.Store.View().Stopping && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if !manager.Store.View().Stopping {
+		t.Fatal("uninstall did not request the manager to drain")
+	}
+	replacement, err := serviceDefinition(runtime.GOOS, filepath.Join(home, "newer-runmoor"), configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte(replacement), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Store.Update(func(snapshot *Snapshot) error {
+		snapshot.Runners[runner].Phase = Completed
+		snapshot.Runners[runner].Terminated = true
+		snapshot.Runners[runner].LocalCleaned = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		requireCode(t, err, ErrConfig)
+	case <-ctx.Done():
+		t.Fatal("uninstall did not finish after the manager drain")
+	}
+	if len(commands.calls) != 0 {
+		t.Fatalf("service manager was contacted after the definition changed: %v", commands.calls)
+	}
+	got, err := os.ReadFile(unit)
+	if err != nil || string(got) != replacement {
+		t.Fatalf("new service definition was not preserved: read error %v", err)
+	}
+}
+
+func TestServiceUninstallPreservesDefinitionReplacedDuringUnload(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("service definitions are supported on macOS and Linux")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if runtime.GOOS == "linux" {
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+		t.Setenv("XDG_CONFIG_DIRS", filepath.Join(home, "xdg-config"))
+		t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "runtime"))
+		t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+		t.Setenv("XDG_DATA_DIRS", filepath.Join(home, "xdg-data"))
+	}
+	unit := servicePath()
+	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(home, "installed.toml")
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := serviceDefinition(runtime.GOOS, binary, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := serviceDefinition(runtime.GOOS, filepath.Join(home, "newer-runmoor"), configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, config, _, _, _ := testManager(t)
+	server, err := manager.ServeControl()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	commands := &serviceCommandRecorder{onRun: func(_ string, _ []string) {
+		if err := os.WriteFile(unit, []byte(replacement), 0600); err != nil {
+			t.Errorf("replace service definition during unload: %v", err)
+		}
+	}}
+	err = Service(context.Background(), "uninstall", configPath, config, commands)
+	requireCode(t, err, ErrConfig)
+	if len(commands.calls) == 0 {
+		t.Fatal("service unload was not reached")
+	}
+	got, err := os.ReadFile(unit)
+	if err != nil || string(got) != replacement {
+		t.Fatalf("new service definition was not preserved: read error %v", err)
 	}
 }
 

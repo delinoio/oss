@@ -13,32 +13,70 @@ import (
 
 const serviceDefinitionLimit = 64 << 10
 
+type serviceDefinitionSnapshot struct {
+	data []byte
+	info os.FileInfo
+}
+
 func requireServiceConfigMatch(goos, unit, requested string) error {
+	_, err := validateServiceConfigMatch(goos, unit, requested)
+	return err
+}
+
+func validateServiceConfigMatch(goos, unit, requested string) (serviceDefinitionSnapshot, error) {
 	if goos == "linux" {
 		if err := requireNoSystemdDropIns(unit); err != nil {
-			return problem(ErrConfig, "The installed systemd service has an ambiguous effective definition.", "Remove systemd user drop-ins for Runmoor or service units, then restore the generated Runmoor service definition.")
+			return serviceDefinitionSnapshot{}, problem(ErrConfig, "The installed systemd service has an ambiguous effective definition.", "Remove systemd user drop-ins for Runmoor or service units, then restore the generated Runmoor service definition.")
 		}
 	}
-	data, err := readPrivate(unit, serviceDefinitionLimit)
+	data, info, err := readPrivateServiceDefinition(unit)
 	if err != nil {
-		return problem(ErrConfig, "The installed service definition is missing or cannot be read securely.", "Restore an owner-only regular Runmoor service definition without symlinks before retrying.")
+		return serviceDefinitionSnapshot{}, problem(ErrConfig, "The installed service definition is missing or cannot be read securely.", "Restore an owner-only regular Runmoor service definition without symlinks before retrying.")
 	}
 	installed, err := serviceConfigFromDefinition(goos, data)
 	if err != nil {
-		return problem(ErrConfig, "The installed service definition is invalid or ambiguous.", "Preserve it and restore a valid Runmoor service definition before retrying.")
+		return serviceDefinitionSnapshot{}, problem(ErrConfig, "The installed service definition is invalid or ambiguous.", "Preserve it and restore a valid Runmoor service definition before retrying.")
 	}
 	installed, err = cleanAbsoluteServicePath(installed)
 	if err != nil {
-		return problem(ErrConfig, "The installed service definition has no safe configuration path.", "Preserve it and restore a valid Runmoor service definition before retrying.")
+		return serviceDefinitionSnapshot{}, problem(ErrConfig, "The installed service definition has no safe configuration path.", "Preserve it and restore a valid Runmoor service definition before retrying.")
 	}
 	wanted, err := filepath.Abs(requested)
 	if err != nil || requested == "" || strings.ContainsAny(requested, "\x00\r\n") {
-		return problem(ErrConfig, "The requested configuration path is invalid.", "Use the same valid --config path used when installing the service.")
+		return serviceDefinitionSnapshot{}, problem(ErrConfig, "The requested configuration path is invalid.", "Use the same valid --config path used when installing the service.")
 	}
 	if filepath.Clean(wanted) != installed {
-		return problem(ErrConfig, "The requested configuration does not match the installed service.", "Use the same --config path used when installing the service; drain and uninstall that service before replacing its configuration.")
+		return serviceDefinitionSnapshot{}, problem(ErrConfig, "The requested configuration does not match the installed service.", "Use the same --config path used when installing the service; drain and uninstall that service before replacing its configuration.")
+	}
+	return serviceDefinitionSnapshot{data: data, info: info}, nil
+}
+
+func requireServiceDefinitionUnchanged(goos, unit, requested string, original serviceDefinitionSnapshot) error {
+	current, err := validateServiceConfigMatch(goos, unit, requested)
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(original.info, current.info) || !bytes.Equal(original.data, current.data) {
+		return problem(ErrConfig, "The installed service definition changed during the operation.", "Preserve the current definition and retry service stop or uninstall.")
 	}
 	return nil
+}
+
+func readPrivateServiceDefinition(path string) ([]byte, os.FileInfo, error) {
+	f, err := openPrivate(path, os.O_RDONLY)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := io.ReadAll(io.LimitReader(f, serviceDefinitionLimit+1))
+	if err != nil || len(data) > serviceDefinitionLimit {
+		return nil, nil, problem(ErrConfig, "Private input exceeds its size limit or cannot be read.", "Use a bounded service definition.")
+	}
+	return data, info, nil
 }
 
 func requireNoSystemdDropIns(unit string) error {
