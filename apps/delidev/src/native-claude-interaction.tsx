@@ -2,6 +2,7 @@ import { object, text, type Document } from "./documents";
 import type { Resource } from "@delinoio/delidev-api-client";
 import { NativeClaudeResponse, type ClaudeQuestion } from "./native-claude-response";
 import { claudeToolReference } from "./native-claude-tool";
+import type { InteractionDraftState } from "./inbox-drafts";
 
 enum Kind { Tool = "tool-permission", Question = "user-question", Plan = "plan-approval" }
 const uuid = (v: unknown) => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
@@ -70,7 +71,7 @@ function validResponse(data: Document, original: Document, input: Document) {
   return true;
 }
 
-export function NativeClaudeInteraction({ data, resource, accepted }: { data: Document; resource?: Resource; accepted?: (value?: Resource) => void }) {
+export function NativeClaudeInteraction({ data, resource, accepted, draft, saveDraft, submissionAllowed = true, receiptRetryAllowed = true }: { data: Document; resource?: Resource; accepted?: (value?: Resource) => void; draft?: InteractionDraftState; saveDraft?: (value: InteractionDraftState) => void; submissionAllowed?: boolean; receiptRetryAllowed?: boolean }) {
   const r = request(data);
   if (!r) return <section aria-label="Claude request unavailable"><p>The retained Claude request is unavailable or inconsistent.</p></section>;
   return <section aria-label="Original Claude request">
@@ -84,7 +85,7 @@ export function NativeClaudeInteraction({ data, resource, accepted }: { data: Do
     <p>{data.claude_settlement != null ? "Claude processed the original callback. Tool outcome and execution outcome remain separate." : data.closure === "native-closed" ? "The original native request was canceled. Cancellation does not prove that a response was accepted." : data.response != null || data.approval_response != null ? "The response is retained. Transmission and native acceptance are separate observations." : "The original request is waiting for a response."}</p>
     {data.claude_settlement == null && object(data.response ?? data.approval_response).claude_echo != null ? <p>Claude echoed the original response. This does not prove that the tool or plan ran, or that the answer was accepted.</p> : null}
     {data.response != null || data.approval_response != null ? <details><summary>Retained response</summary><pre>{JSON.stringify(object(data.response ?? data.approval_response).input, null, 2)}</pre></details> : null}
-    {resource && accepted ? <NativeClaudeResponse key={resource.id} resource={resource} accepted={accepted} questions={r.original.kind === Kind.Question ? r.input.questions as ClaudeQuestion[] : undefined} closed={data.closure !== "open" || data.response != null || data.approval_response != null} /> : null}
+    {resource && accepted ? <NativeClaudeResponse key={resource.id} resource={resource} accepted={accepted} questions={r.original.kind === Kind.Question ? r.input.questions as ClaudeQuestion[] : undefined} closed={data.closure !== "open" || data.response != null || data.approval_response != null} draft={draft} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : null}
     <p>Native suggestions do not grant access or change saved permissions.</p>
   </section>;
 }

@@ -7,18 +7,31 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, InteractionService, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { NativeClaudeResponse } from "./native-claude-response";
 import { MutationIntents } from "./mutation";
-import type { ReactNode } from "react";
+import { InteractionDraftKind, type InteractionDraftState } from "./inbox-drafts";
+import { useState, type ReactNode } from "react";
 
 type Input = { mutation?: { requestId?: string; id?: string; expectedRevision?: bigint }; responseJson: Uint8Array };
 const question = { question: "Original?", header: "Choice", options: [{ label: "One", description: "First" }, { label: "Two", description: "Second" }], multiSelect: true };
+function RetainedClaudeResponse({ resource, questions, closed, accepted, initialDraft }: { resource: ReturnType<typeof resourceFixture>; questions?: typeof question[]; closed: boolean; accepted: () => void; initialDraft: InteractionDraftState }) {
+  const [draft, setDraft] = useState(initialDraft);
+  return <NativeClaudeResponse resource={resource} questions={questions} closed={closed} accepted={accepted} draft={draft} saveDraft={setDraft} />;
+}
+function resourceFixture() {
+  return create(ResourceSchema, { id: newRequestId(), sessionId: newRequestId(), kind: EntityKind.INTERACTION, schemaVersion: 1, revision: 9n });
+}
 function fixture() {
-  const resource = create(ResourceSchema, { id: newRequestId(), sessionId: newRequestId(), kind: EntityKind.INTERACTION, schemaVersion: 1, revision: 9n });
+  const resource = resourceFixture();
   const send = vi.fn(async (_: Input) => ({ interaction: create(ResourceSchema, { ...resource, revision: 10n }) }));
   const accepted = vi.fn();
   const transport = createRouterTransport((r) => r.service(InteractionService, { respondQuestion: send, respondApproval: send }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (child: ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{child}</MutationIntents></QueryClientProvider></TransportProvider>;
-  const form = (questions = true, closed = false, multiple = true) => view(<NativeClaudeResponse resource={resource} questions={questions ? [{ ...question, multiSelect: multiple }] : undefined} closed={closed} accepted={accepted} />);
+  const form = (questions = true, closed = false, multiple = true, draft?: InteractionDraftState) => {
+    const values = questions ? [{ ...question, multiSelect: multiple }] : undefined;
+    return view(draft
+      ? <RetainedClaudeResponse resource={resource} questions={values} closed={closed} accepted={accepted} initialDraft={draft} />
+      : <NativeClaudeResponse resource={resource} questions={values} closed={closed} accepted={accepted} />);
+  };
   return { resource, send, form };
 }
 function decoded(v: Input) { return JSON.parse(new TextDecoder().decode(v.responseJson)); }
@@ -31,6 +44,14 @@ it("keeps original question text keys and native comma-separated selection order
   await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
   expect(decoded(f.send.mock.calls[0][0])).toEqual({ claude: { behavior: "allow", answers: { "Original?": "Two, One" } } });
   expect(f.send.mock.calls[0][0].mutation).toMatchObject({ id: f.resource.id, expectedRevision: 9n });
+});
+it("adds question rows when the retained Inbox draft starts with no option rows", async () => {
+  const f = fixture();
+  render(f.form(true, false, true, { kind: InteractionDraftKind.Claude, selected: [], custom: {}, customEnabled: {}, skipped: {}, denial: false, reason: "", interrupt: false }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "One First" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send answers to Claude" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ claude: { behavior: "allow", answers: { "Original?": "One" } } });
 });
 it("replaces a single choice with exact custom text", async () => {
   const f = fixture(); render(f.form(true, false, false));
