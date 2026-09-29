@@ -77,6 +77,9 @@ func providerCatalog(ctx context.Context, c client, o options, args []string) (a
 			if *name != "" {
 				provider.Name = *name
 				provider.PresetID = nil
+			} else {
+				presetID := item.ID
+				provider.PresetID = &presetID
 			}
 			provider.SetEnabled(true)
 			raw, _ := json.Marshal(provider)
