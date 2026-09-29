@@ -134,7 +134,7 @@ export function NewSession({ active, ownsActivation, activation, readLocalWorker
         <button type="button" className="new-session-back" onClick={back}>Back to sessions</button>
         <h2 id="new-session-heading">What would you like to work on?</h2>
       </header>
-      <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={project} active={active} showStatus change={projectChanged} />
+      <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={project} active={active} showStatus disabled={blocked} change={projectChanged} />
       {!project ? <p className="new-session-project-note">General Chat · isolated projectless directory on the selected Worker</p> : null}
       <form onSubmit={submitForm}>
         <fieldset className="new-session-fieldset" disabled={blocked}>
