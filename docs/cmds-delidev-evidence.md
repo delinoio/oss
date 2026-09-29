@@ -3219,7 +3219,10 @@ DeliDev-wide Go vet, Buf formatting/lint and breaking compatibility, API-client
 tests (41 tests) and typecheck, and root Go formatting with explicitly generated
 embedded assets. The first complete race run exceeded the default ten-minute
 package deadline under concurrent machine load and also reported existing
-workspace-reader timeouts; a reduced-concurrency full run is in progress.
+workspace-reader timeouts. The reduced-concurrency run reproduced the existing
+CLI workspace-diff deadline failure; its remaining packages are still running.
+Focused subscription checks and complete compilation pass; the full race suite
+is not reported as passed.
 
 No real subscription login, hosted inference, installed-Codex subscription
 acceptance, native Windows/Linux subscription runtime, release, desktop login
