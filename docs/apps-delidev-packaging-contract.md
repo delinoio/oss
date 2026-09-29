@@ -23,7 +23,8 @@ The workflow has no automatic push, tag, release or pull-request trigger.
 ## Interfaces and Contracts
 
 `pnpm --dir apps/delidev bundle:dry-run --target <triple>` requires a clean committed
-checkout, matching native Node architecture and matching `rustc` host. The command
+checkout, matching native Node architecture and matching `rustc` host. Recheck the
+unchanged commit and clean working tree before publishing verified output. The command
 rejects cross compilation as native evidence. `--plan` prints the same six-entry
 matrix consumed by CI; it requires neither dependencies nor credentials.
 

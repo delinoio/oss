@@ -108,6 +108,7 @@ async function main() {
       }
     }
     const digest = await sha256(artifact);
+    if (run("git", ["rev-parse", "HEAD"]).trim() !== revision || run("git", ["status", "--porcelain", "--untracked-files=normal"]).trim()) throw new Error("Source changed during packaging; no revision-bound result was published.");
     const report = { version: 1, sourceRevision: revision, target: selected.target, artifact: basename(artifact), bytes: statSync(artifact).size, sha256: digest, signature, cefVersion: "150.0.10", chromiumCreditsSHA256: await sha256(Object.keys(resources).find(path => resources[path] === "notices/Chromium-CREDITS.html")), runtimeAcceptance: "unverified", publication: "not-requested" };
     writeFileSync(join(staging, "verification.json"), JSON.stringify(report, null, 2) + "\n", { flag: "wx" });
     writeFileSync(join(staging, "SHA256SUMS"), `${digest}  ${basename(artifact)}\n`, { flag: "wx" });
