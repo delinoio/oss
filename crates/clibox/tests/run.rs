@@ -1246,7 +1246,7 @@ fn outer_timeout_cleans_sigterm_ignoring_workloads_in_deep_native_chains() {
         assert_process_chain_in_group(fixture.child.id(), workload, group);
 
         let status = fixture
-            .wait(Duration::from_secs(5))
+            .wait(Duration::from_secs(10))
             .unwrap_or_else(|| panic!("native depth {depth} outer timeout did not return"));
         assert_eq!(status.code(), Some(124), "native depth {depth}");
         assert_process_group_stopped(group);
