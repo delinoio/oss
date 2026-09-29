@@ -114,7 +114,15 @@ The controller processes bounded pages and retries pending cleanup every two
 seconds, with a thirty-second cancellable attempt. It independently verifies the
 original regular private file, metadata, complete SHA-256 and opened identity;
 symlinks, changed bytes and adjacent SQLite/pending sidecars keep cleanup pending.
-The original read handle closes before unlink for Windows compatibility. Successful
+The original read handle closes before claiming or unlinking for Windows compatibility.
+Deletion uses platform atomic no-replace rename into private `backup-removals/`,
+synchronizes both directories, then revalidates the entire claimed image and
+sidecar absence at both names. Only the claimed name is unlinked. Reopened original
+names, changed claims and late sidecars retain pending recovery rather than
+discarding data. Restart resumes a retained claim against its immutable external
+intent; absent-image recovery synchronizes both directories. This protects
+ordinary concurrent access to the published name, not hostile same-user writes
+to the private recovery namespace. Successful
 unlink and parent-directory synchronization precede completion publication. After
 a crash between unlink and publication, confirmed absence can complete the job,
 but the original removal byte count remains explicitly unknown. Completed jobs

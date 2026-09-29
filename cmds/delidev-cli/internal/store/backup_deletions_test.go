@@ -357,7 +357,7 @@ func TestBackupDeletionCompletedScansAvoidSyncAndStillRemoveReappearingImages(t 
 	syncs := 0
 	syncParent := func(path string) error { syncs++; return security.SyncParent(path) }
 	row, err = s.runBackupDeletion(ctx, row.ID, in.ServerID, syncParent)
-	if err != nil || syncs != 2 {
+	if err != nil || syncs != 4 {
 		t.Fatal(row, err, syncs)
 	}
 	for range 3 {
@@ -375,7 +375,7 @@ func TestBackupDeletionCompletedScansAvoidSyncAndStillRemoveReappearingImages(t 
 	}
 	syncs = 0
 	next, err := s.runBackupDeletion(ctx, row.ID, in.ServerID, syncParent)
-	if err != nil || next.Revision != row.Revision || syncs != 1 {
+	if err != nil || next.Revision != row.Revision || syncs != 3 {
 		t.Fatal(next, err, syncs)
 	}
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
@@ -409,7 +409,7 @@ func TestBackupDeletionMissingUnlinkAcknowledgmentStillRequiresSync(t *testing.T
 	syncs = 0
 	row, err = s.runBackupDeletion(ctx, row.ID, in.ServerID, func(name string) error { syncs++; return security.SyncParent(name) })
 	job, decodeErr = Decode[domain.Job](row)
-	if err != nil || decodeErr != nil || job.State != domain.JobSucceeded || syncs != 2 {
+	if err != nil || decodeErr != nil || job.State != domain.JobSucceeded || syncs != 3 {
 		t.Fatal(job, err, decodeErr, syncs)
 	}
 }
@@ -456,5 +456,114 @@ func TestBackupDeletionMigrationFromBothVersion21Layouts(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestBackupDeletionClaimPreservesReplacementAndNeverOverwritesRecovery(t *testing.T) {
+	s, root, ctx, in := deletionFixture(t)
+	path := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
+	claimed := filepath.Join(root, "backup-removals", string(in.Backup.ID)+".sqlite")
+	foreign := []byte("foreign replacement must survive")
+	_, err := s.removeBackupImageClaim(ctx, in, domain.JobQueued, security.SyncParent, func(from, to string) error {
+		if err := os.WriteFile(from, foreign, 0600); err != nil {
+			return err
+		}
+		return claimBackupImage(from, to)
+	})
+	if err == nil {
+		t.Fatal("replacement was accepted")
+	}
+	retained, err := os.ReadFile(claimed)
+	if err != nil || string(retained) != string(foreign) {
+		t.Fatal("replacement lost", err)
+	}
+	if err := os.WriteFile(path, []byte("second image"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := claimBackupImage(path, claimed); err == nil {
+		t.Fatal("existing claim overwritten")
+	}
+	retained, err = os.ReadFile(claimed)
+	if err != nil || string(retained) != string(foreign) {
+		t.Fatal("claim changed", err)
+	}
+	retained, err = os.ReadFile(path)
+	if err != nil || string(retained) != "second image" {
+		t.Fatal("original name removed", err)
+	}
+}
+
+func TestBackupDeletionClaimResumesAfterSyncFailureAndRejectsLateSidecars(t *testing.T) {
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal", ".pending"} {
+		t.Run(suffix, func(t *testing.T) {
+			s, root, ctx, in := deletionFixture(t)
+			path := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
+			claimed := filepath.Join(root, "backup-removals", string(in.Backup.ID)+".sqlite")
+			row, _, err := s.DeleteBackup(ctx, domain.NewID(), in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			row, err = s.runBackupDeletion(ctx, row.ID, in.ServerID, func(name string) error {
+				if name == claimed {
+					if suffix == "" {
+						return errors.New("interrupted claim sync")
+					}
+					if err := os.WriteFile(path+suffix, []byte("retained sidecar"), 0600); err != nil {
+						return err
+					}
+				}
+				return security.SyncParent(name)
+			})
+			job, _ := Decode[domain.Job](row)
+			if err == nil || job.State != domain.JobUncertain {
+				t.Fatal("unsafe completion", err, job)
+			}
+			if _, err := os.Stat(claimed); err != nil {
+				t.Fatal("claim discarded", err)
+			}
+			if suffix != "" {
+				if err := os.Remove(path + suffix); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := Open(ctx, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			row, err = reopened.RunBackupDeletion(ctx, row.ID, in.ServerID)
+			job, _ = Decode[domain.Job](row)
+			if err != nil || job.State != domain.JobSucceeded {
+				t.Fatal("claim not recovered", err, job)
+			}
+			if _, err := os.Stat(claimed); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("claim survived completion", err)
+			}
+		})
+	}
+}
+
+func TestBackupDeletionClaimPreservesReopenedOriginal(t *testing.T) {
+	s, root, ctx, in := deletionFixture(t)
+	path := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
+	claimed := filepath.Join(root, "backup-removals", string(in.Backup.ID)+".sqlite")
+	_, err := s.removeBackupImageClaim(ctx, in, domain.JobQueued, security.SyncParent, func(from, to string) error {
+		if err := claimBackupImage(from, to); err != nil {
+			return err
+		}
+		return os.WriteFile(from, []byte("reopened image"), 0600)
+	})
+	if err == nil {
+		t.Fatal("reopened original was reported deleted")
+	}
+	retained, err := os.ReadFile(path)
+	if err != nil || string(retained) != "reopened image" {
+		t.Fatal("reopened original removed", err)
+	}
+	if err := verifyDeletionImage(ctx, claimed, in); err != nil {
+		t.Fatal("claimed original lost", err)
 	}
 }

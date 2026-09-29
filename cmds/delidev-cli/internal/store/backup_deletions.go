@@ -429,86 +429,146 @@ func (s *Store) runBackupDeletion(ctx context.Context, id, server domain.ID, syn
 	return row, err
 }
 
+func backupSidecarsAbsent(paths ...string) error {
+	for _, path := range paths {
+		for _, suffix := range []string{"-wal", "-shm", "-journal", ".pending"} {
+			if _, err := os.Lstat(path + suffix); !errors.Is(err, os.ErrNotExist) {
+				return backupUnavailable()
+			}
+		}
+	}
+	return nil
+}
+
+func backupPathAbsent(path string) error {
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		return backupUnavailable()
+	}
+	return nil
+}
+
 func (s *Store) removeBackupImage(ctx context.Context, in BackupDeletionInput, state domain.JobState, syncParent func(string) error) (BackupDeletionOutput, error) {
+	return s.removeBackupImageClaim(ctx, in, state, syncParent, claimBackupImage)
+}
+
+func (s *Store) removeBackupImageClaim(ctx context.Context, in BackupDeletionInput, state domain.JobState, syncParent func(string) error, claim func(string, string) error) (BackupDeletionOutput, error) {
 	result := BackupDeletionOutput{}
 	root := filepath.Join(s.root, "backups")
-	if err := security.CheckPrivateDir(root); err != nil {
-		return result, storageError(err)
+	claims := filepath.Join(s.root, "backup-removals")
+	for _, dir := range []string{root, claims} {
+		if err := security.CheckPrivateDir(dir); err != nil {
+			return result, storageError(err)
+		}
 	}
 	path := filepath.Join(root, string(in.Backup.ID)+".sqlite")
-	// No sidecar or incomplete publisher may silently survive deletion.
-	for _, suffix := range []string{"-wal", "-shm", "-journal", ".pending"} {
-		if _, err := os.Lstat(path + suffix); !errors.Is(err, os.ErrNotExist) {
-			return result, backupUnavailable()
-		}
+	claimed := filepath.Join(claims, string(in.Backup.ID)+".sqlite")
+	if err := backupSidecarsAbsent(path, claimed); err != nil {
+		return result, err
 	}
-	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
-		// Only unfinished jobs may have lost an unlink durability acknowledgment.
-		// Reappearing images still take the verified unlink-and-sync path below.
-		if state == domain.JobSucceeded {
+	if _, err := os.Lstat(claimed); errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			if state == domain.JobSucceeded {
+				return result, nil
+			}
+			// Either directory may have lost an unlink/rename acknowledgment.
+			for _, name := range []string{path, claimed} {
+				if err := syncParent(name); err != nil {
+					return result, storageError(err)
+				}
+			}
 			return result, nil
+		} else if err != nil {
+			return result, storageError(err)
 		}
-		return result, storageError(syncParent(path))
+		if err := verifyDeletionImage(ctx, path, in); err != nil {
+			return result, err
+		}
+		// Atomically move, without replacing an existing recovery claim. A raced
+		// source replacement is retained here and must pass full verification;
+		// no subsequent unlink ever targets the externally known original name.
+		if err := claim(path, claimed); err != nil {
+			return result, storageError(err)
+		}
 	} else if err != nil {
 		return result, storageError(err)
 	}
-	before, err := backupInfo(path)
-	if err != nil {
+	for _, name := range []string{path, claimed} {
+		if err := syncParent(name); err != nil {
+			return result, storageError(err)
+		}
+	}
+	if err := verifyDeletionImage(ctx, claimed, in); err != nil {
 		return result, err
 	}
+	if err := backupPathAbsent(path); err != nil {
+		return result, err
+	}
+	if err := backupSidecarsAbsent(path, claimed); err != nil {
+		return result, err
+	}
+	if err := ctx.Err(); err != nil {
+		return result, domain.SafeError(err)
+	}
+	if err := os.Remove(claimed); err != nil {
+		return result, storageError(err)
+	}
+	if err := syncParent(claimed); err != nil {
+		return result, storageError(err)
+	}
+	// A concurrently reopened original name cannot be reported as deleted.
+	if err := backupPathAbsent(path); err != nil {
+		return result, err
+	}
+	if err := backupSidecarsAbsent(path, claimed); err != nil {
+		return result, err
+	}
+	return BackupDeletionOutput{ImageBytes: in.Backup.Bytes, RemovalObserved: true}, nil
+}
+
+func verifyDeletionImage(ctx context.Context, path string, in BackupDeletionInput) error {
+	before, err := backupInfo(path)
+	if err != nil {
+		return err
+	}
 	if !reflect.DeepEqual(backupMetadata(in.Backup.ID, before), in.Backup) {
-		return result, deletionConflict()
+		return deletionConflict()
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return result, storageError(err)
+		return storageError(err)
 	}
 	defer f.Close()
 	opened, err := f.Stat()
 	if err != nil || !sameBackup(before, opened) {
-		return result, backupUnavailable()
+		return backupUnavailable()
 	}
 	hash := sha256.New()
 	buffer := make([]byte, 128<<10)
 	var total int64
 	for {
 		if err := ctx.Err(); err != nil {
-			return result, domain.SafeError(err)
+			return domain.SafeError(err)
 		}
 		n, readErr := f.Read(buffer)
 		total += int64(n)
 		if total > int64(in.Backup.Bytes) {
-			return result, deletionConflict()
+			return deletionConflict()
 		}
 		_, _ = hash.Write(buffer[:n])
 		if errors.Is(readErr, io.EOF) {
 			break
 		}
 		if readErr != nil {
-			return result, storageError(readErr)
+			return storageError(readErr)
 		}
 	}
 	after, err := f.Stat()
 	if err != nil || !sameBackup(before, after) || total != int64(in.Backup.Bytes) || hex.EncodeToString(hash.Sum(nil)) != in.SHA256 {
-		return result, deletionConflict()
+		return deletionConflict()
 	}
 	current, err := backupInfo(path)
 	if err != nil || !sameBackup(before, current) {
-		return result, backupUnavailable()
+		return backupUnavailable()
 	}
-	// Close the original read handle before unlink for Windows. The private
-	// directory and backupGate exclude all DeliDev writers through unlink/sync.
-	if err := f.Close(); err != nil {
-		return result, storageError(err)
-	}
-	if err := ctx.Err(); err != nil {
-		return result, domain.SafeError(err)
-	}
-	if err := os.Remove(path); err != nil {
-		return result, storageError(err)
-	}
-	if err := syncParent(path); err != nil {
-		return result, storageError(err)
-	}
-	return BackupDeletionOutput{ImageBytes: in.Backup.Bytes, RemovalObserved: true}, nil
+	return storageError(f.Close())
 }

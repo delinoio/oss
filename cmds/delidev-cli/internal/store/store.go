@@ -102,7 +102,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			lock.Close()
 		}
 	}()
-	for _, name := range []string{"backups", "secrets", "backup-deletions"} {
+	for _, name := range []string{"backups", "secrets", "backup-deletions", "backup-removals"} {
 		if err := security.PrivateDir(filepath.Join(root, name)); err != nil {
 			return nil, storageError(err)
 		}

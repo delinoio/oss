@@ -2745,3 +2745,18 @@ neither a published nor pending image. Backup store/server race suites passed
 - Merged main's guided API account setup and provider activation while preserving all desktop recovery rules and both branches' evidence records. The combined Settings surface retains current-device revocation guards; the CLI retains explicit local registration inspection/recovery alongside the new provider operations.
 - Merged frontend `pnpm test` passes 71 files / 847 tests, typechecking and production build. Focused CLI desktop recovery, local pairing and account race tests pass, and `go vet ./cmds/delidev-cli/...` passes. This merge changes no Rust source and does not replace the previously recorded native/full-suite evidence limits.
 - Git LFS objects were hydrated and verified. Required generated embeds were built for Go checks and hooks; repository-owned generated `dist` directories are removed after validation.
+
+### PR #1063 atomic deletion claim repair (2026-09-29)
+
+Managed backup deletion moves the published image using a native atomic
+no-replace rename into private `backup-removals/`, synchronizes both directories,
+and verifies the claimed bytes, metadata and sidecars again before unlink.
+Mismatched claims, reopened original paths and late SQLite sidecars are retained
+as pending recovery evidence. Restart resumes a retained claim; no unlink targets
+the original published name after validation. This is not an isolation boundary
+against hostile same-user mutation of the private recovery namespace.
+
+The real-filesystem deletion race suite passes (7.852s), including replacement
+between initial validation and claim, preservation of an existing destination,
+late WAL/SHM/journal/pending files, interrupted directory synchronization,
+restart recovery, reopened original preservation and existing durable-job cases.
