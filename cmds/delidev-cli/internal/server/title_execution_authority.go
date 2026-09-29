@@ -10,6 +10,11 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
+func matchesInitialTitleExecution(session domain.Session, original domain.ExecutionJobInput) bool {
+	initial := session.InitialExecution
+	return initial != nil && original.Continuation == nil && session.MachineID == original.MachineID && session.AgentID == original.Configuration.AgentID && initial.ID == original.ExecutionID && initial.InputID == original.InputID && initial.InitialAccountID == original.AccountID && initial.ConnectionID == original.ConnectionID && initial.ConfigurationDigest == original.ConfigurationDigest
+}
+
 func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant, record store.Record, job domain.Job) (apiproxy.Scope, error) {
 	var empty apiproxy.Scope
 	denied := func() (apiproxy.Scope, error) { return empty, executionDenied() }
@@ -59,7 +64,7 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 		return denied()
 	}
 	sessionRecord, session, err := sessionRecord(tx, input.SessionID)
-	if err != nil || session.NameMode != domain.AutomaticSessionName || session.NameOwner != domain.AutomaticNameOwner || session.NameGeneration != input.NameGeneration || session.TitleOperationID != input.OperationID || session.TitleJobID != record.ID || session.TitleState != domain.TitleRunning || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.InitialExecution == nil || session.InitialExecution.ConfigurationDigest != original.ConfigurationDigest || !session.OwnsExecution(original) {
+	if err != nil || session.NameMode != domain.AutomaticSessionName || session.NameOwner != domain.AutomaticNameOwner || session.NameGeneration != input.NameGeneration || session.TitleOperationID != input.OperationID || session.TitleJobID != record.ID || session.TitleState != domain.TitleRunning || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || !matchesInitialTitleExecution(session, original) {
 		return denied()
 	}
 	firstRecord, err := tx.Get(domain.QueueKind, session.InitialExecution.InputID)

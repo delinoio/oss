@@ -4,12 +4,43 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
+
+func TestTitleAuthorityRemainsBoundToFrozenInitialExecutionAfterFollowUp(t *testing.T) {
+	machineID, agentID := domain.NewID(), domain.NewID()
+	executionID, inputID := domain.NewID(), domain.NewID()
+	accountID, connectionID := domain.NewID(), domain.NewID()
+	followUpID, followUpInputID := domain.NewID(), domain.NewID()
+	digest := strings.Repeat("a", 64)
+	original := domain.ExecutionJobInput{
+		MachineID: machineID, ExecutionID: executionID, InputID: inputID,
+		Configuration: domain.ExecutionConfiguration{AgentID: agentID}, ConfigurationDigest: digest,
+		AccountID: accountID, ConnectionID: connectionID,
+	}
+	initial := &domain.InitialExecution{
+		ID: executionID, InputID: inputID, InitialAccountID: accountID, ConnectionID: connectionID,
+		Configuration: domain.ExecutionConfiguration{AgentID: agentID}, ConfigurationDigest: digest,
+	}
+	session := domain.Session{
+		MachineID: machineID, AgentID: agentID, InitialExecution: initial,
+		ActiveExecutionID: followUpID,
+		CurrentExecution:  &domain.ExecutionSelection{ID: followUpID, InputID: followUpInputID, AccountID: domain.NewID(), ConnectionID: domain.NewID()},
+	}
+	if !matchesInitialTitleExecution(session, original) {
+		t.Fatal("follow-up execution replaced the immutable initial title authority")
+	}
+
+	original.AccountID = domain.NewID()
+	if matchesInitialTitleExecution(session, original) {
+		t.Fatal("title authority accepted an original account that differs from the frozen snapshot")
+	}
+}
 
 func TestSuccessfulTitleReportsRequireBothDurableRelayClaims(t *testing.T) {
 	ctx := context.Background()
