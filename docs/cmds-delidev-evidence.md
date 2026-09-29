@@ -2174,3 +2174,9 @@ accessibility/screenshot request for the running DeliDev window timed out, so
 this records native startup but does not claim a captured native viewport or
 visual screenshot acceptance. No Rust, protocol or generated source changed;
 the app's generated `dist` output is removed from the worktree.
+
+### Account type and provider list filters (2026-09-29)
+
+`ListResourcesRequest` now carries additive list-only provider and closed account-type selectors. Go maps the closed enum to existing API/subscription account values and applies both selectors in indexed resource SQL before the page limit; signed cursors bind both selectors. The shared snapshot filter and event stream are unchanged. `account list` exposes the same optional selectors.
+
+Focused real-server Connect tests cover 102 interleaved API/subscription accounts across providers, old unfiltered callers, combined type/provider pages, mismatched-cursor rejection, incompatible resource kinds, unknown enum rejection and unchanged full snapshots. The dedicated CLI fixture verifies API/provider selection, subscription-only results and invalid enum text. Both focused package tests pass. Full CLI race/vet, root protocol breaking/freshness, frontend split-menu/wizard and actual desktop geometry/keyboard acceptance remain pending; no provider inference or credentialed endpoint was used.

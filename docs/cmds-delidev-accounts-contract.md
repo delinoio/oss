@@ -8,6 +8,8 @@ Account aliases/provider associations and display/routing preferences remain con
 
 ## CLI and RPC
 
+`account list` uses the ordinary paginated `ResourceService.ListResources` path and may select `--account-type api|subscription` and `--provider-id UUID`. Both selectors are optional for compatibility. The server composes them before pagination and binds them to the cursor; clients must not filter a fetched page locally. Snapshots and event streams remain unfiltered and unchanged.
+
 | CLI | Connect RPC | Meaning |
 | --- | --- | --- |
 | `account connect --id ID --revision N --key-stdin` | `AccountService.ConnectAccount` | Store a bounded API key through the protected server vault and record an unverified connection. |

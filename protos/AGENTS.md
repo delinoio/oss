@@ -1,5 +1,7 @@
 ### Instructions for `protos/`
 
+- DeliDev account `provider_id` and `account_type` are additive selectors on `ListResourcesRequest` only. Keep them out of shared `Filter`, snapshots and event streams; bind both into the signed resource-page cursor and retain unspecified account type as the historical all-types behavior.
+
 - DeliDev ConfigurationService export/preview/apply follows `docs/cmds-delidev-configuration-transfer-contract.md`. Versioned bounded JSON excludes credentials and runtime evidence. Signed previews bind actor/server/exact before/after plan; import mutation receipts are reference-only and never replay side effects. Worker credentials cannot invoke these owner/client operations.
 
 - DeliDev `ReadSessionWorkspace` is owner/client-only. `WatchWorkspaceReads`/`ReportWorkspaceRead` are current owning-Worker-only observation APIs bound to the primary stream; they never claim durable jobs, refresh execution leases, create receipts or persist file bodies. Preserve the closed query/result schemas, exact relative-root selection, per-machine bound, deadline and late/duplicate/foreign result rejection in `docs/cmds-delidev-files-contract.md`.

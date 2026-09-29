@@ -168,6 +168,16 @@ message GetResourceResponse {
 }
 message ListResourcesRequest {
   Filter filter = 1;
+  // Provider and account-type filters apply only to paginated resource lists.
+  // Snapshots and event streams intentionally retain their existing scope.
+  string provider_id = 2;
+  AccountTypeFilter account_type = 3;
+}
+
+enum AccountTypeFilter {
+  ACCOUNT_TYPE_FILTER_UNSPECIFIED = 0;
+  ACCOUNT_TYPE_FILTER_API = 1;
+  ACCOUNT_TYPE_FILTER_SUBSCRIPTION = 2;
 }
 message ListResourcesResponse {
   repeated Resource resources = 1;
