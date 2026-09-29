@@ -3191,3 +3191,17 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+### Pinned required workflows, issue #1106 (2026-09-30)
+
+The authenticated required-CI observation now retains explicit source repository/path/SHA rules and independently proves original source file/blob identity, current ordered-parent test-merge suites, native run/PR/current-attempt identity and complete attempt jobs. Renamed sources are resolved by numeric repository ID. Display names, reusable workflows, mutable refs, unsupported events, inaccessible sources, competing runs and stale-attempt failures cannot replace that proof. Existing status-check behavior and original result versions remain unchanged. Source bodies are discarded and diagnostics retain closed codes/counts only.
+
+Executed on macOS arm64 with Go 1.26.8:
+
+- Focused domain/GitHub adapter race tests passed, including terminal failure, complete success/pending outcomes, a successful current rerun alongside an old failure, a newer running attempt, missing/wrong source pins, native requiredness, numeric rename resolution, original-file parent mismatch, source access failures, suite/job limits, complete suite pagination, run/source/blob/job collection drift and joined cancellation.
+- `go vet ./cmds/delidev-cli/...` passed. The full `go test -race ./cmds/delidev-cli/...` ran but failed in unchanged CLI/workspace fixtures and native/service/store packages reaching the default ten-minute test timeout. The CLI session fixture also failed in an isolated retry at the creation-diff workspace-reader boundary; a serialized full-suite retry with `GOMAXPROCS=2`, `-p 1` and `-timeout 30m` is in progress. No full-suite pass is claimed.
+- `pnpm test` in `apps/delidev` passed 75 files / 945 tests, generated API-client build, TypeScript checking, eight native-package verifier tests, six desktop-launch tests and the production build. The pnpm child runtime reported Node 26.7.0; this is not Node 24 release qualification.
+- `pnpm ci:contracts` passed all 95 repository CI contract tests.
+- Read-only authenticated `gh api` schema checks accepted the complete new fixed suite document on a current PR and returned its test-merge commit with zero suites. Separately inspected an existing original workflow file relationship and REST current-attempt job shape; the native job `node_id` is an original CheckRun identity. These schema reads did not create a required-workflow rule or execute a workflow, and fixtures never consume ambient credentials.
+
+The new JSON evidence uses existing generated authenticated Connect operations and typed query capabilities; no protocol schema or database migration changed. This verification does not establish real-account required-workflow end-to-end acceptance, native platform/release acceptance or completion of issue #964.

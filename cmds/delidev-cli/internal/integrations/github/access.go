@@ -45,7 +45,10 @@ func (c *Client) readRepositoryJSON(ctx context.Context, token []byte, path stri
 }
 func (c *Client) readRepository(ctx context.Context, token []byte, path string, representation repositoryRepresentation) readResult {
 	userIdentity := representation == repositoryJSON && strings.HasPrefix(path, "/user/") && domain.PositiveDecimal(strings.TrimPrefix(path, "/user/"))
-	if credentials.ValidatePAT(token) != nil || (!strings.HasPrefix(path, "/repos/") && !strings.HasPrefix(path, "/search/issues?") && !userIdentity) {
+	// Numeric lookup is restricted to the repository itself. Renames must not
+	// turn a provider-returned URL into a new transport capability.
+	repositoryIdentity := representation == repositoryJSON && strings.HasPrefix(path, "/repositories/") && domain.PositiveDecimal(strings.TrimPrefix(path, "/repositories/"))
+	if credentials.ValidatePAT(token) != nil || (!strings.HasPrefix(path, "/repos/") && !strings.HasPrefix(path, "/search/issues?") && !userIdentity && !repositoryIdentity) {
 		return inaccessible()
 	}
 	bounded, cancel := context.WithTimeout(ctx, 15*time.Second)

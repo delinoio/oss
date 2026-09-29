@@ -195,8 +195,14 @@ func (c *Client) queryPRObservation(ctx context.Context, token []byte, repositor
 		if err != nil {
 			return result, err
 		}
+		if err := c.readRequiredWorkflows(ctx, token, repository, item, &observed, *rules); err != nil {
+			return result, err
+		}
 		repeated, err := c.readCIInventory(ctx, token, repository, item)
 		if err != nil {
+			return result, err
+		}
+		if err := c.readRequiredWorkflows(ctx, token, repository, item, &repeated, *rules); err != nil {
 			return result, err
 		}
 		if !reflect.DeepEqual(observed, repeated) {
