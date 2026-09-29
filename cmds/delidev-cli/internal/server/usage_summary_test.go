@@ -32,8 +32,13 @@ func TestUsageRPCDeduplicatedSnapshotDefaultsFiltersAndPrivacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := response.Msg
-	if result.Totals.Responses != 1 || result.Totals.Total.KnownTotal != "20" || len(result.Groups) != 1 || result.ActualCost != pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE || result.Coverage != pb.UsageCoverage_USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES || result.UntilUnixMs-result.FromUnixMs != (30*24*time.Hour).Milliseconds() || result.AcceptedExecutionsWithoutResponse != 0 || response.Header().Get(rpc.CorrelationHeader) == "" {
+	if result.Totals.Responses != 1 || result.Totals.Total.KnownTotal != "20" || len(result.Groups) != 1 || result.Analytics != nil || result.ActualCost != pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE || result.Coverage != pb.UsageCoverage_USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES || result.UntilUnixMs-result.FromUnixMs != (30*24*time.Hour).Milliseconds() || result.AcceptedExecutionsWithoutResponse != 0 || response.Header().Get(rpc.CorrelationHeader) == "" {
 		t.Fatalf("wrong usage summary: %+v", result)
+	}
+	dailyRequest := &pb.GetUsageSummaryRequest{Granularity: pb.UsageTimeGranularity_USAGE_TIME_GRANULARITY_DAY, TimeZone: "Asia/Seoul"}
+	daily, err := c.GetUsageSummary(context.Background(), ownerRequest(f.service.Identity, dailyRequest))
+	if err != nil || daily.Msg.Analytics == nil || daily.Msg.Analytics.Granularity != dailyRequest.Granularity || daily.Msg.Analytics.TimeZone != dailyRequest.TimeZone || len(daily.Msg.Analytics.Days) == 0 {
+		t.Fatalf("valid daily analytics request lost explicit zone or empty-day support: %+v %v", daily, err)
 	}
 	raw, _ := protojson.Marshal(result)
 	for _, private := range []string{f.input.Input.Prompt, f.workerToken, string(f.thread), string(f.turn), e.ResponseUsage.ResponseDigest} {
@@ -46,7 +51,7 @@ func TestUsageRPCDeduplicatedSnapshotDefaultsFiltersAndPrivacy(t *testing.T) {
 	if err != nil || empty.Msg.Totals.Responses != 0 || empty.Msg.Totals.Total.KnownTotal != "" {
 		t.Fatal("filter not enforced", err)
 	}
-	for _, bad := range []*pb.GetUsageSummaryRequest{{FromUnixMs: -1}, {UntilUnixMs: -1}, {FromUnixMs: 100, UntilUnixMs: 99}, {ProjectId: string(domain.NewID()), GeneralChat: true}, {AccountId: "invalid"}} {
+	for _, bad := range []*pb.GetUsageSummaryRequest{{FromUnixMs: -1}, {UntilUnixMs: -1}, {FromUnixMs: 100, UntilUnixMs: 99}, {ProjectId: string(domain.NewID()), GeneralChat: true}, {AccountId: "invalid"}, {Granularity: pb.UsageTimeGranularity_USAGE_TIME_GRANULARITY_DAY}, {Granularity: pb.UsageTimeGranularity(99), TimeZone: "UTC"}, {TimeZone: "UTC"}, {Granularity: pb.UsageTimeGranularity_USAGE_TIME_GRANULARITY_DAY, TimeZone: "Local"}, {Granularity: pb.UsageTimeGranularity_USAGE_TIME_GRANULARITY_DAY, TimeZone: " Asia/Seoul"}} {
 		if _, err := c.GetUsageSummary(context.Background(), ownerRequest(f.service.Identity, bad)); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatal("invalid filter accepted", err)
 		}
