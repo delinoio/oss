@@ -1,8 +1,13 @@
 package store
 
-import "crypto/sha256"
-import "encoding/hex"
-import "github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+import (
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"errors"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+)
 
 func (t *Tx) GrokExecutionItem(session, execution domain.ID, thread, turn, item string) (domain.ExecutionMessage, error) {
 	if session.Validate() != nil || execution.Validate() != nil || domain.NativeIdentity(thread).Validate(domain.GrokBuild, domain.NativeThreadIdentity) != nil || domain.NativeIdentity(turn).Validate(domain.GrokBuild, domain.NativeTurnIdentity) != nil || domain.Text(item, "native item", 1024, true) != nil {
@@ -43,4 +48,22 @@ func (t *Tx) GrokTextProof(execution domain.ID) (string, uint32, error) {
 		chunks += uint32(len(message.GrokText.Chunks))
 	}
 	return hex.EncodeToString(output.Sum(nil)), chunks, storageError(rows.Err())
+}
+
+// The newest completed original Write owns the current Plan revision. Older
+// artifacts remain inspectable, but cannot authorize a newly offered approval.
+func (t *Tx) LatestGrokPlanWrite(session, execution domain.ID, thread, turn, entry string) (*domain.ExecutionMessage, error) {
+	var raw []byte
+	err := t.tx.QueryRowContext(t.ctx, `SELECT e.body FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.session_id=? AND m.execution_id=? AND m.native_thread_id=? AND m.native_turn_id=? AND json_extract(e.body,'$.tool.completed.grok.name')='write' AND json_extract(e.body,'$.tool.completed.grok.phase')='completed' AND json_extract(e.body,'$.tool.completed.grok.plan_file.entry_event_id')=? ORDER BY json_extract(e.body,'$.last_sequence') DESC LIMIT 1`, session, execution, thread, turn, entry).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, storageError(err)
+	}
+	var message domain.ExecutionMessage
+	if domain.Decode(raw, &message) != nil || message.State != domain.MessageComplete || message.Tool == nil || message.Tool.Completed == nil || message.Tool.Completed.Grok == nil || message.Tool.Completed.Grok.PlanFile == nil {
+		return nil, domain.Fail(domain.Conflict, "Original Grok Plan lineage is incomplete.", "Retain its original Write and artifact evidence.")
+	}
+	return &message, nil
 }

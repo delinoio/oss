@@ -45,6 +45,13 @@ func validateGrokPlan(tx *store.Tx, input domain.ExecutionJobInput, event domain
 	if err != nil || message.State != domain.MessageComplete || write.Name != domain.GrokWrite || write.Phase != domain.GrokCompleted || write.Content != plan.Content || write.PlanFile == nil || write.PlanFile.EntryToolID != plan.EntryToolID || write.PlanFile.EntryEventID != plan.EntryEventID || write.PlanFile.Revision+1 != plan.Revision {
 		return executionEventConflict()
 	}
+	latest, err := tx.LatestGrokPlanWrite(input.SessionID, input.ExecutionID, event.NativeThreadID, event.NativeTurnID, plan.EntryEventID)
+	if err != nil {
+		return err
+	}
+	if latest == nil || latest.LastSequence != message.LastSequence {
+		return executionEventConflict()
+	}
 	return nil
 }
 
@@ -148,6 +155,17 @@ func validateGrokToolAuthority(tx *store.Tx, input domain.ExecutionJobInput, eve
 		}
 		e, err := grokToolSnapshot(entry)
 		if err != nil || entry.State != domain.MessageComplete || e.Name != domain.GrokEnterPlan || e.Metadata.EventID != p.EntryEventID {
+			return executionEventConflict()
+		}
+		latest, err := tx.LatestGrokPlanWrite(input.SessionID, input.ExecutionID, event.NativeThreadID, event.NativeTurnID, p.EntryEventID)
+		if err != nil {
+			return err
+		}
+		var prior uint64
+		if latest != nil {
+			prior = latest.Tool.Completed.Grok.PlanFile.Revision + 1
+		}
+		if p.Revision != prior {
 			return executionEventConflict()
 		}
 	}

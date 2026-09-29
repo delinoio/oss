@@ -30,6 +30,9 @@ func (r *ApprovalResponseInput) UnmarshalJSON(raw []byte) error {
 	if _, exists := fields["claude"]; exists && (len(fields) != 1 || value.Claude == nil) {
 		return invalidApprovalResponse()
 	}
+	if _, exists := fields["grok"]; exists && (len(fields) != 1 || value.Grok == nil) {
+		return invalidApprovalResponse()
+	}
 	*r = ApprovalResponseInput(value)
 	return nil
 }

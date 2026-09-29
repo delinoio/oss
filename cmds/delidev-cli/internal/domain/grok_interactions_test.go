@@ -7,6 +7,12 @@ import (
 )
 
 func TestGrokOriginalResponseFamiliesRemainExclusive(t *testing.T) {
+	for _, raw := range []string{`{"grok":null}`, `{"grok":{"decision":"allow-once"},"decision":null}`, `{"grok":{"decision":"allow-once"},"opencode":null}`} {
+		var reply ApprovalResponseInput
+		if Decode([]byte(raw), &reply) == nil {
+			t.Fatal("mixed or absent Grok response acquired a native family", raw)
+		}
+	}
 	original := ExecutionInteraction{Type: NativeApprovalInteraction, NativeItemID: "original-write", NativeRequestID: InteractionRequestID{Kind: InteractionTextID, Text: string(NewID())}}
 	original.Grok = &GrokInteractionRequest{Version: GrokProtocolVersion, Kind: GrokFilePermission, ArrivalID: ID(original.NativeRequestID.Text), RequestDigest: strings.Repeat("ab", 32), ProposalDigest: strings.Repeat("cd", 32), Mode: GrokDefaultMode, ToolName: GrokWrite, Path: "/fixture/file", Content: "Original contents"}
 	for _, decision := range []GrokDecision{GrokAllowOnce, GrokAllowEditsSession, GrokRejectOnce} {

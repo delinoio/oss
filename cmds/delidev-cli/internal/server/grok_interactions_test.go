@@ -158,6 +158,7 @@ func TestGrokPublicPlanRevisionsFollowNativeMode(t *testing.T) {
 	completed := g.tool(t, entry, "original-entry", domain.GrokEnterPlan, domain.GrokCompleted, "", nil, "", nil)
 	entryEvent := completed.Tool.Snapshot.Grok.Metadata.EventID
 	g.publish(t, completed)
+	var previous *domain.GrokPlanRevision
 	for revision := uint64(1); revision <= 2; revision++ {
 		content := "Original Plan revision " + strconv.FormatUint(revision, 10)
 		writeNative := "plan-write-" + strconv.FormatUint(revision, 10)
@@ -169,6 +170,13 @@ func TestGrokPublicPlanRevisionsFollowNativeMode(t *testing.T) {
 		snapshot := &domain.ArtifactSnapshot{Kind: domain.PlanArtifact, Text: content, Grok: plan}
 		for _, kind := range []domain.ExecutionEventKind{domain.ExecutionArtifactStarted, domain.ExecutionArtifactCompleted} {
 			g.publish(t, domain.ExecutionEvent{Kind: kind, Artifact: &domain.ExecutionArtifactUpdate{ID: artifact, NativeID: entryEvent + "/revision/" + strconv.FormatUint(revision, 10), Snapshot: snapshot}})
+		}
+		if previous != nil {
+			stale := g.f.event(domain.ExecutionArtifactStarted, g.sequence+1)
+			stale.Artifact = &domain.ExecutionArtifactUpdate{ID: domain.NewID(), NativeID: "stale-plan", Snapshot: &domain.ArtifactSnapshot{Kind: domain.PlanArtifact, Text: previous.Content, Grok: previous}}
+			if _, err := g.f.call(g.f.requestEvent(t, stale)); err == nil {
+				t.Fatal("an older Plan Write regained artifact approval authority")
+			}
 		}
 		exitNative := "exit-" + strconv.FormatUint(revision, 10)
 		exit := g.described(t, exitNative, domain.GrokExitPlan, "", nil, "", nil)
@@ -185,6 +193,7 @@ func TestGrokPublicPlanRevisionsFollowNativeMode(t *testing.T) {
 				mode(domain.GrokDefaultMode, exitNative)
 			}
 		})
+		previous = plan
 	}
 	sr, _ := g.f.service.Store.Get(context.Background(), domain.SessionKind, g.f.input.SessionID)
 	session, _ := store.Decode[domain.Session](sr)

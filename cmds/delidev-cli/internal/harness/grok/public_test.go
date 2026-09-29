@@ -10,7 +10,7 @@ import (
 )
 
 func TestPublicGrokOriginalRepliesAndProjection(t *testing.T) {
-	for _, profile := range []string{"write-valid", "write-reject", "question-valid", "planning-valid", "input-valid"} {
+	for _, profile := range []string{"read-valid", "write-valid", "write-reject", "question-valid", "planning-valid", "input-valid"} {
 		t.Run(profile, func(t *testing.T) {
 			config, logs := fixtureAPIConfig(t, profile)
 			config.Model = turnFixtureModel
