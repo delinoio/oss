@@ -244,6 +244,9 @@ const (
 	// ProviderServiceResolveModelProcedure is the fully-qualified name of the ProviderService's
 	// ResolveModel RPC.
 	ProviderServiceResolveModelProcedure = "/delidev.v1.ProviderService/ResolveModel"
+	// SessionServiceSwitchSessionAccountProcedure is the fully-qualified name of the SessionService's
+	// SwitchSessionAccount RPC.
+	SessionServiceSwitchSessionAccountProcedure = "/delidev.v1.SessionService/SwitchSessionAccount"
 	// SessionServiceLinkSessionPullRequestProcedure is the fully-qualified name of the SessionService's
 	// LinkSessionPullRequest RPC.
 	SessionServiceLinkSessionPullRequestProcedure = "/delidev.v1.SessionService/LinkSessionPullRequest"
@@ -2393,6 +2396,7 @@ func (UnimplementedProviderServiceHandler) ResolveModel(context.Context, *connec
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error)
 	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
 	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -2428,6 +2432,12 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		switchSessionAccount: connect.NewClient[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse](
+			httpClient,
+			baseURL+SessionServiceSwitchSessionAccountProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("SwitchSessionAccount")),
+			connect.WithClientOptions(opts...),
+		),
 		linkSessionPullRequest: connect.NewClient[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse](
 			httpClient,
 			baseURL+SessionServiceLinkSessionPullRequestProcedure,
@@ -2565,6 +2575,7 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	switchSessionAccount     *connect.Client[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse]
 	linkSessionPullRequest   *connect.Client[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse]
 	unlinkSessionPullRequest *connect.Client[v1.UnlinkSessionPullRequestRequest, v1.UnlinkSessionPullRequestResponse]
 	readSessionReviewContext *connect.Client[v1.ReadSessionReviewContextRequest, v1.ReadSessionReviewContextResponse]
@@ -2587,6 +2598,11 @@ type sessionServiceClient struct {
 	editLocalReviewComment   *connect.Client[v1.EditLocalReviewCommentRequest, v1.EditLocalReviewCommentResponse]
 	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
 	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
+}
+
+// SwitchSessionAccount calls delidev.v1.SessionService.SwitchSessionAccount.
+func (c *sessionServiceClient) SwitchSessionAccount(ctx context.Context, req *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error) {
+	return c.switchSessionAccount.CallUnary(ctx, req)
 }
 
 // LinkSessionPullRequest calls delidev.v1.SessionService.LinkSessionPullRequest.
@@ -2701,6 +2717,7 @@ func (c *sessionServiceClient) SubmitLocalReview(ctx context.Context, req *conne
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error)
 	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
 	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -2732,6 +2749,12 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
+	sessionServiceSwitchSessionAccountHandler := connect.NewUnaryHandler(
+		SessionServiceSwitchSessionAccountProcedure,
+		svc.SwitchSessionAccount,
+		connect.WithSchema(sessionServiceMethods.ByName("SwitchSessionAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceLinkSessionPullRequestHandler := connect.NewUnaryHandler(
 		SessionServiceLinkSessionPullRequestProcedure,
 		svc.LinkSessionPullRequest,
@@ -2866,6 +2889,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceSwitchSessionAccountProcedure:
+			sessionServiceSwitchSessionAccountHandler.ServeHTTP(w, r)
 		case SessionServiceLinkSessionPullRequestProcedure:
 			sessionServiceLinkSessionPullRequestHandler.ServeHTTP(w, r)
 		case SessionServiceUnlinkSessionPullRequestProcedure:
@@ -2918,6 +2943,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SwitchSessionAccount is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.LinkSessionPullRequest is not implemented"))

@@ -154,6 +154,7 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
   // Session creation can opt into server-owned, Worker-executed automatic titles.
   SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 = 1;
+  SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 2;
 }
 message StopServerRequest {
   string request_id = 1;
@@ -764,6 +765,7 @@ message ResolveModelResponse {
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc SwitchSessionAccount(SwitchSessionAccountRequest) returns (SwitchSessionAccountResponse);
   rpc LinkSessionPullRequest(LinkSessionPullRequestRequest) returns (LinkSessionPullRequestResponse);
   rpc UnlinkSessionPullRequest(UnlinkSessionPullRequestRequest) returns (UnlinkSessionPullRequestResponse);
   rpc ReadSessionReviewContext(ReadSessionReviewContextRequest) returns (ReadSessionReviewContextResponse);
@@ -907,6 +909,13 @@ message ControlSessionRequest {
   SessionAction action = 2;
 }
 message ControlSessionResponse {
+  SessionChange change = 1;
+}
+message SwitchSessionAccountRequest {
+  Mutation mutation = 1;
+  string account_id = 2;
+}
+message SwitchSessionAccountResponse {
   SessionChange change = 1;
 }
 message RenameSessionRequest {

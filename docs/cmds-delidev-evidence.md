@@ -3191,3 +3191,48 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+### Explicit stopped Codex API account selection (2026-09-30)
+
+Issue #1097 is implemented through authenticated owner/client
+`SwitchSessionAccount` and equivalent `session switch-account`, with a typed
+System capability and regenerated Go/TypeScript/Connect Query bindings. The
+session/proxy contracts define exact paused/terminal/cleanup admission, original
+candidate/current eligibility, bounded revisioned selection history and explicit
+Resume. Selection never rewrites the initial snapshot, prior assignment or usage,
+performs inference, or supplies automatic fallback. Historical unknown and
+account-bound provider state cannot switch. Relay history observations are
+metadata only, may precede thread publication, are carried into terminal progress,
+and are reset for each fresh grant.
+
+Executed on macOS arm64 with the installed pinned Codex `0.151.0`:
+
+```sh
+DELIDEV_NATIVE_THREAD_EXECUTABLE=/opt/homebrew/bin/codex go test ./cmds/delidev-cli/internal/cli -run '^TestManualNativeCLIAccountSwitch$' -count=1
+```
+
+The controlled native/CLI fixture passed. It uses temporary server/Worker scopes
+and a loopback keyless provider, never real account credentials. It selects A
+before B is validated, stops after original confirmed completion/cleanup, validates
+B explicitly, switches with exact acknowledgement-loss replay and resumes the
+original history in fresh native processes. Seven provider requests preserve
+complete ordered input history without A's remote response ID, previous-response
+or conversation references. The original snapshot/thread and A's measured usage
+remain intact; subsequent executions and their missing resumed-response telemetry
+belong to B. The pinned resumed native listener does not report exact response
+usage, so this result does not manufacture new measured usage/cost.
+
+Real loopback RPC fixtures cover active execution, absent/sticky account-bound
+history, uncertain cleanup, stale revision, disabled B, original candidate
+exclusion, current provider/project restrictions, Archive, outstanding answer
+acceptance, uncertain title work and Worker denial. Rejection leaves the session
+revision/document unchanged. The accepted retry retains one change; a new
+assignment carries B's scope and A's checkpoint scope independently. The HTTP
+relay fixtures reject previous-response, conversation and item-reference input
+before credential access/upstream work on creation and compaction, and preserve
+ordinary full-history bytes.
+
+Generated client unit tests passed (41 tests) and client typecheck passed.
+This is controlled implementation/native evidence, not real hosted-account,
+subscription, Windows/Linux, desktop UI or release acceptance. No schema
+migration, user credential mutation or production publication is claimed.

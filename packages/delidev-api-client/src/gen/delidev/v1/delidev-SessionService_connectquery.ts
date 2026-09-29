@@ -5,6 +5,11 @@
 import { SessionService } from "./delidev_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.SwitchSessionAccount
+ */
+export const switchSessionAccount = SessionService.method.switchSessionAccount;
+
+/**
  * @generated from rpc delidev.v1.SessionService.LinkSessionPullRequest
  */
 export const linkSessionPullRequest = SessionService.method.linkSessionPullRequest;

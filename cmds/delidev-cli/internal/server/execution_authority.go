@@ -285,6 +285,13 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			if _, err := a.scope(tx, grant); err != nil {
 				return err
 			}
+			_, session, err := sessionRecord(tx, scope.SessionID)
+			if err != nil {
+				return err
+			}
+			if len(session.AccountChanges) != 0 {
+				return domain.Fail(domain.PermissionDenied, "Account-switched execution requires full native history.", "Provider conversation and previous-response references cannot cross account selections.")
+			}
 			exists, err := tx.HasExecutionReference(reference(kind, nativeID))
 			if err != nil {
 				return err
@@ -294,6 +301,42 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			}
 			return nil
 		})
+	}
+	if scope.Purpose != domain.SessionTitleUsage && scope.Provider.Protocol == domain.OpenAIResponses {
+		lease.ObserveHistory = func(ctx context.Context, accountBound bool) error {
+			_, err := a.service.Store.Mutate(ctx, domain.NewID(), "execution.observe-history-mode", struct {
+				Execution    domain.ID
+				AccountBound bool
+			}{scope.ExecutionID, accountBound}, func(tx *store.Tx) (any, error) {
+				if _, err := a.scope(tx, grant); err != nil {
+					return nil, err
+				}
+				sr, session, err := sessionRecord(tx, scope.SessionID)
+				if err != nil {
+					return nil, err
+				}
+				if session.Execution != nil && session.Execution.ExecutionID != scope.ExecutionID {
+					return nil, executionDenied()
+				}
+				mode := domain.FullNativeHistory
+				if accountBound {
+					if len(session.AccountChanges) != 0 {
+						return nil, executionDenied()
+					}
+					mode = domain.AccountBoundHistory
+				}
+				if session.CurrentNativeHistory == domain.AccountBoundHistory || session.CurrentNativeHistory == mode {
+					return struct{}{}, nil
+				}
+				session.CurrentNativeHistory = mode
+				if session.Execution != nil {
+					session.Execution.NativeHistory = mode
+				}
+				_, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
+				return struct{}{}, err
+			})
+			return err
+		}
 	}
 	lease.ObserveReference = func(ctx context.Context, kind apiproxy.ReferenceKind, nativeID string) error {
 		if leaseContext.Err() != nil {

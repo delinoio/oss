@@ -123,3 +123,5 @@ counts without replaying acceptance or filesystem work. Regenerate Go, TypeScrip
 and Connect Query bindings together.
 
 Generated `ProviderQuery` exposes bounded provider inventory and the client maps typed `provider_disabled` failures. Desktop provider/model consumers require provider activation, active-provider model filtering and account-provider filtering capabilities; split account views and their wizard additionally require `ACCOUNT_TYPE_FILTER`. Use generated inventory/model queries; do not infer availability from generic resource pages or query unfiltered providers as fallback. Preserve exact mutation requests across uncertain outcomes. See [provider activation](cmds-delidev-provider-activation-contract.md).
+
+Generated `SessionQuery.switchSessionAccount` and the typed System stopped-Codex-account-switch capability expose explicit future selection. Preserve exact request/account/session revision after acknowledgement loss; replay is explicit and current-state-only. The server validates stopped ownership, portable history and compatibility. No client-side eligibility/routing, implicit Resume or credential access is introduced.
