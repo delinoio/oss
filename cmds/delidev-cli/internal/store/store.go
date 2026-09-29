@@ -510,6 +510,13 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	if expected >= 1<<63-1 {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid expected revision.", "Reload the current entity revision.")
 	}
+	if kind == domain.SessionKind {
+		var err error
+		value, err = t.terminalArchiveBarrier(id, value)
+		if err != nil {
+			return Record{}, err
+		}
+	}
 	body, err := json.Marshal(value)
 	if err != nil || len(body) > 1<<20 {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid entity document.", "Use a validated entity no larger than 1 MiB.")
@@ -584,6 +591,20 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	}
 	if expected != r.Revision {
 		return domain.Fail(domain.Conflict, "The entity revision changed.", "Reload its current revision before deletion.")
+	}
+	if kind == domain.SessionKind {
+		if err := t.requireTerminalCleanup(id); err != nil {
+			return err
+		}
+	}
+	if kind == domain.TerminalKind {
+		terminal, err := Decode[domain.Terminal](r)
+		if err != nil {
+			return err
+		}
+		if terminal.Live() {
+			return domain.Fail(domain.RecoveryRequired, "The terminal still owns native resources.", "Close and join the original terminal before deleting its record.")
+		}
 	}
 	if kind == domain.ModelKind {
 		model, err := Decode[domain.Model](r)

@@ -54,6 +54,7 @@ type client struct {
 	integrations  delidevv1connect.IntegrationServiceClient
 	providers     delidevv1connect.ProviderServiceClient
 	sessions      delidevv1connect.SessionServiceClient
+	terminals     delidevv1connect.TerminalServiceClient
 	interactions  delidevv1connect.InteractionServiceClient
 	inbox         delidevv1connect.InboxServiceClient
 	schedules     delidevv1connect.ScheduleServiceClient
@@ -685,6 +686,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		schedules:     delidevv1connect.NewScheduleServiceClient(httpClient, endpoint, opts...),
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),
 		sessions:      delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...),
+		terminals:     delidevv1connect.NewTerminalServiceClient(httpClient, endpoint, opts...),
 		accounts:      delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...),
 		integrations:  delidevv1connect.NewIntegrationServiceClient(httpClient, endpoint, opts...),
 		providers:     delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...),
@@ -853,6 +855,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session review create|edit|delete|submit|list|get --id SESSION [--review-id ID] [--revision N] [--input PATH]
   session pr link --id SESSION --repository-id ID --number N
   session pr list|get|unlink --id SESSION [--association-id ID] [--revision N]
+  session terminal create|list|inspect|input|resize|output|reattach|close --id ID
   session create --input FILE|- [--wait]
   session prepare --id ID --revision N [--wait]
   session recover-workspace --id ID --revision N [--cleanup] [--wait]

@@ -5,6 +5,21 @@
 import { WorkerService } from "./delidev_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.ClaimTerminal
+ */
+export const claimTerminal = WorkerService.method.claimTerminal;
+
+/**
+ * @generated from rpc delidev.v1.WorkerService.ReportTerminal
+ */
+export const reportTerminal = WorkerService.method.reportTerminal;
+
+/**
+ * @generated from rpc delidev.v1.WorkerService.PublishTerminalOutput
+ */
+export const publishTerminalOutput = WorkerService.method.publishTerminalOutput;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.ReportWorkspaceRead
  */
 export const reportWorkspaceRead = WorkerService.method.reportWorkspaceRead;

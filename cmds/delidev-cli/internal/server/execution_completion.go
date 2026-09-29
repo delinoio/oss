@@ -69,9 +69,8 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 		}
 		if session.Recovery == domain.NoRecovery {
 			session.ActiveExecutionID = ""
-			// This first-execution profile currently owns only the agent process
-			// graph. Future terminals/forwards must join this completion gate
-			// before they can become session-owned public resources.
+			// Agent completion proves only its own process graph. The shared
+			// session publication barrier separately waits for terminal cleanup.
 			if session.Archive == domain.ArchivePending {
 				session.Archive = domain.Archived
 			}

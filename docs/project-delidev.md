@@ -9,6 +9,8 @@ The macOS `dev:desktop` entry point prepares the embedded frontend and Go sideca
 
 The current pull-request work additionally addresses issues #1056 and #1057: opt-in automatic titles use a separate, capability-negotiated title Worker lane, and the desktop starts sessions from a chat-first page while retaining the existing conversation surface. This increment does not claim completion of issue #964; native desktop visual and real-provider/account acceptance limits remain explicit in the evidence ledger.
 
+Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows ConPTY processes, authenticated create/control/output operations and equivalent CLI commands. The desktop provides a bounded text terminal view. Agent Stop preserves terminals; Archive and storage deletion join their independent exact cleanup gate. The [terminal contract](cmds-delidev-terminals-contract.md) and evidence ledger distinguish fixture/cross-build validation from native platform, remote Worker and release acceptance; this increment does not complete the remaining issue #964 scope.
+
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its standalone/sidecar executable is `delidev`.
 
@@ -36,6 +38,7 @@ The desktop shell combines the issue #1044 project-grouped session sidebar and b
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)
 - [Portable configuration](cmds-delidev-configuration-transfer-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
+- [Worker-owned session terminals](cmds-delidev-terminals-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)

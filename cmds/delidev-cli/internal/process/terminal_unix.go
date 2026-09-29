@@ -165,12 +165,11 @@ func superviseTerminal(dir string, scope processScope, command processCommand, d
 	// All slaves are now independently proven closed. Join both pumps before
 	// persisting completion; closing the master also releases a blocked writer.
 	close(stopInput)
-	select {
-	case <-copied:
-	case <-time.After(time.Second):
-		_ = master.Close()
-		<-copied
-	}
+	// Keep the final kernel-buffered output reachable while the bounded socket
+	// consumer applies backpressure. Closing after an arbitrary grace period
+	// would silently truncate a normal exit. Socket writes remain deadline-bound
+	// and owner cancellation closes the control connection to release the pump.
+	<-copied
 	_ = master.Close()
 	<-inputDone
 	exit := 0

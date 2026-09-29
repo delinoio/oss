@@ -51,6 +51,8 @@ const (
 	ActivityServiceName = "delidev.v1.ActivityService"
 	// UsageServiceName is the fully-qualified name of the UsageService service.
 	UsageServiceName = "delidev.v1.UsageService"
+	// TerminalServiceName is the fully-qualified name of the TerminalService service.
+	TerminalServiceName = "delidev.v1.TerminalService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -143,6 +145,18 @@ const (
 	// DeviceServiceRevokeDeviceProcedure is the fully-qualified name of the DeviceService's
 	// RevokeDevice RPC.
 	DeviceServiceRevokeDeviceProcedure = "/delidev.v1.DeviceService/RevokeDevice"
+	// WorkerServiceWatchTerminalsProcedure is the fully-qualified name of the WorkerService's
+	// WatchTerminals RPC.
+	WorkerServiceWatchTerminalsProcedure = "/delidev.v1.WorkerService/WatchTerminals"
+	// WorkerServiceClaimTerminalProcedure is the fully-qualified name of the WorkerService's
+	// ClaimTerminal RPC.
+	WorkerServiceClaimTerminalProcedure = "/delidev.v1.WorkerService/ClaimTerminal"
+	// WorkerServiceReportTerminalProcedure is the fully-qualified name of the WorkerService's
+	// ReportTerminal RPC.
+	WorkerServiceReportTerminalProcedure = "/delidev.v1.WorkerService/ReportTerminal"
+	// WorkerServicePublishTerminalOutputProcedure is the fully-qualified name of the WorkerService's
+	// PublishTerminalOutput RPC.
+	WorkerServicePublishTerminalOutputProcedure = "/delidev.v1.WorkerService/PublishTerminalOutput"
 	// WorkerServiceWatchWorkspaceReadsProcedure is the fully-qualified name of the WorkerService's
 	// WatchWorkspaceReads RPC.
 	WorkerServiceWatchWorkspaceReadsProcedure = "/delidev.v1.WorkerService/WatchWorkspaceReads"
@@ -378,6 +392,15 @@ const (
 	// UsageServiceSetModelPricingProcedure is the fully-qualified name of the UsageService's
 	// SetModelPricing RPC.
 	UsageServiceSetModelPricingProcedure = "/delidev.v1.UsageService/SetModelPricing"
+	// TerminalServiceCreateTerminalProcedure is the fully-qualified name of the TerminalService's
+	// CreateTerminal RPC.
+	TerminalServiceCreateTerminalProcedure = "/delidev.v1.TerminalService/CreateTerminal"
+	// TerminalServiceControlTerminalProcedure is the fully-qualified name of the TerminalService's
+	// ControlTerminal RPC.
+	TerminalServiceControlTerminalProcedure = "/delidev.v1.TerminalService/ControlTerminal"
+	// TerminalServiceWatchTerminalOutputProcedure is the fully-qualified name of the TerminalService's
+	// WatchTerminalOutput RPC.
+	TerminalServiceWatchTerminalOutputProcedure = "/delidev.v1.TerminalService/WatchTerminalOutput"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -1330,6 +1353,10 @@ func (UnimplementedDeviceServiceHandler) RevokeDevice(context.Context, *connect.
 
 // WorkerServiceClient is a client for the delidev.v1.WorkerService service.
 type WorkerServiceClient interface {
+	WatchTerminals(context.Context, *connect.Request[v1.WatchTerminalsRequest]) (*connect.ServerStreamForClient[v1.WatchTerminalsResponse], error)
+	ClaimTerminal(context.Context, *connect.Request[v1.ClaimTerminalRequest]) (*connect.Response[v1.ClaimTerminalResponse], error)
+	ReportTerminal(context.Context, *connect.Request[v1.ReportTerminalRequest]) (*connect.Response[v1.ReportTerminalResponse], error)
+	PublishTerminalOutput(context.Context, *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error)
 	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest]) (*connect.ServerStreamForClient[v1.WatchWorkspaceReadsResponse], error)
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
@@ -1357,6 +1384,30 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkerService").Methods()
 	return &workerServiceClient{
+		watchTerminals: connect.NewClient[v1.WatchTerminalsRequest, v1.WatchTerminalsResponse](
+			httpClient,
+			baseURL+WorkerServiceWatchTerminalsProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("WatchTerminals")),
+			connect.WithClientOptions(opts...),
+		),
+		claimTerminal: connect.NewClient[v1.ClaimTerminalRequest, v1.ClaimTerminalResponse](
+			httpClient,
+			baseURL+WorkerServiceClaimTerminalProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ClaimTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		reportTerminal: connect.NewClient[v1.ReportTerminalRequest, v1.ReportTerminalResponse](
+			httpClient,
+			baseURL+WorkerServiceReportTerminalProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ReportTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		publishTerminalOutput: connect.NewClient[v1.PublishTerminalOutputRequest, v1.PublishTerminalOutputResponse](
+			httpClient,
+			baseURL+WorkerServicePublishTerminalOutputProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("PublishTerminalOutput")),
+			connect.WithClientOptions(opts...),
+		),
 		watchWorkspaceReads: connect.NewClient[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse](
 			httpClient,
 			baseURL+WorkerServiceWatchWorkspaceReadsProcedure,
@@ -1440,6 +1491,10 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
+	watchTerminals        *connect.Client[v1.WatchTerminalsRequest, v1.WatchTerminalsResponse]
+	claimTerminal         *connect.Client[v1.ClaimTerminalRequest, v1.ClaimTerminalResponse]
+	reportTerminal        *connect.Client[v1.ReportTerminalRequest, v1.ReportTerminalResponse]
+	publishTerminalOutput *connect.Client[v1.PublishTerminalOutputRequest, v1.PublishTerminalOutputResponse]
 	watchWorkspaceReads   *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
 	reportWorkspaceRead   *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
 	attachWorker          *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
@@ -1453,6 +1508,26 @@ type workerServiceClient struct {
 	claimQuestionResponse *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
 	claimApprovalResponse *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
 	claimSteerInput       *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+}
+
+// WatchTerminals calls delidev.v1.WorkerService.WatchTerminals.
+func (c *workerServiceClient) WatchTerminals(ctx context.Context, req *connect.Request[v1.WatchTerminalsRequest]) (*connect.ServerStreamForClient[v1.WatchTerminalsResponse], error) {
+	return c.watchTerminals.CallServerStream(ctx, req)
+}
+
+// ClaimTerminal calls delidev.v1.WorkerService.ClaimTerminal.
+func (c *workerServiceClient) ClaimTerminal(ctx context.Context, req *connect.Request[v1.ClaimTerminalRequest]) (*connect.Response[v1.ClaimTerminalResponse], error) {
+	return c.claimTerminal.CallUnary(ctx, req)
+}
+
+// ReportTerminal calls delidev.v1.WorkerService.ReportTerminal.
+func (c *workerServiceClient) ReportTerminal(ctx context.Context, req *connect.Request[v1.ReportTerminalRequest]) (*connect.Response[v1.ReportTerminalResponse], error) {
+	return c.reportTerminal.CallUnary(ctx, req)
+}
+
+// PublishTerminalOutput calls delidev.v1.WorkerService.PublishTerminalOutput.
+func (c *workerServiceClient) PublishTerminalOutput(ctx context.Context, req *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error) {
+	return c.publishTerminalOutput.CallUnary(ctx, req)
 }
 
 // WatchWorkspaceReads calls delidev.v1.WorkerService.WatchWorkspaceReads.
@@ -1522,6 +1597,10 @@ func (c *workerServiceClient) ClaimSteerInput(ctx context.Context, req *connect.
 
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
+	WatchTerminals(context.Context, *connect.Request[v1.WatchTerminalsRequest], *connect.ServerStream[v1.WatchTerminalsResponse]) error
+	ClaimTerminal(context.Context, *connect.Request[v1.ClaimTerminalRequest]) (*connect.Response[v1.ClaimTerminalResponse], error)
+	ReportTerminal(context.Context, *connect.Request[v1.ReportTerminalRequest]) (*connect.Response[v1.ReportTerminalResponse], error)
+	PublishTerminalOutput(context.Context, *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error)
 	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
@@ -1545,6 +1624,30 @@ type WorkerServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkerService").Methods()
+	workerServiceWatchTerminalsHandler := connect.NewServerStreamHandler(
+		WorkerServiceWatchTerminalsProcedure,
+		svc.WatchTerminals,
+		connect.WithSchema(workerServiceMethods.ByName("WatchTerminals")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceClaimTerminalHandler := connect.NewUnaryHandler(
+		WorkerServiceClaimTerminalProcedure,
+		svc.ClaimTerminal,
+		connect.WithSchema(workerServiceMethods.ByName("ClaimTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceReportTerminalHandler := connect.NewUnaryHandler(
+		WorkerServiceReportTerminalProcedure,
+		svc.ReportTerminal,
+		connect.WithSchema(workerServiceMethods.ByName("ReportTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServicePublishTerminalOutputHandler := connect.NewUnaryHandler(
+		WorkerServicePublishTerminalOutputProcedure,
+		svc.PublishTerminalOutput,
+		connect.WithSchema(workerServiceMethods.ByName("PublishTerminalOutput")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceWatchWorkspaceReadsHandler := connect.NewServerStreamHandler(
 		WorkerServiceWatchWorkspaceReadsProcedure,
 		svc.WatchWorkspaceReads,
@@ -1625,6 +1728,14 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case WorkerServiceWatchTerminalsProcedure:
+			workerServiceWatchTerminalsHandler.ServeHTTP(w, r)
+		case WorkerServiceClaimTerminalProcedure:
+			workerServiceClaimTerminalHandler.ServeHTTP(w, r)
+		case WorkerServiceReportTerminalProcedure:
+			workerServiceReportTerminalHandler.ServeHTTP(w, r)
+		case WorkerServicePublishTerminalOutputProcedure:
+			workerServicePublishTerminalOutputHandler.ServeHTTP(w, r)
 		case WorkerServiceWatchWorkspaceReadsProcedure:
 			workerServiceWatchWorkspaceReadsHandler.ServeHTTP(w, r)
 		case WorkerServiceReportWorkspaceReadProcedure:
@@ -1659,6 +1770,22 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedWorkerServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkerServiceHandler struct{}
+
+func (UnimplementedWorkerServiceHandler) WatchTerminals(context.Context, *connect.Request[v1.WatchTerminalsRequest], *connect.ServerStream[v1.WatchTerminalsResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchTerminals is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ClaimTerminal(context.Context, *connect.Request[v1.ClaimTerminalRequest]) (*connect.Response[v1.ClaimTerminalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ClaimTerminal is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ReportTerminal(context.Context, *connect.Request[v1.ReportTerminalRequest]) (*connect.Response[v1.ReportTerminalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ReportTerminal is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) PublishTerminalOutput(context.Context, *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.PublishTerminalOutput is not implemented"))
+}
 
 func (UnimplementedWorkerServiceHandler) WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchWorkspaceReads is not implemented"))
@@ -3823,4 +3950,126 @@ func (UnimplementedUsageServiceHandler) GetPricingVersion(context.Context, *conn
 
 func (UnimplementedUsageServiceHandler) SetModelPricing(context.Context, *connect.Request[v1.SetModelPricingRequest]) (*connect.Response[v1.SetModelPricingResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.SetModelPricing is not implemented"))
+}
+
+// TerminalServiceClient is a client for the delidev.v1.TerminalService service.
+type TerminalServiceClient interface {
+	CreateTerminal(context.Context, *connect.Request[v1.CreateTerminalRequest]) (*connect.Response[v1.CreateTerminalResponse], error)
+	ControlTerminal(context.Context, *connect.Request[v1.ControlTerminalRequest]) (*connect.Response[v1.ControlTerminalResponse], error)
+	WatchTerminalOutput(context.Context, *connect.Request[v1.WatchTerminalOutputRequest]) (*connect.ServerStreamForClient[v1.WatchTerminalOutputResponse], error)
+}
+
+// NewTerminalServiceClient constructs a client for the delidev.v1.TerminalService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewTerminalServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) TerminalServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	terminalServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("TerminalService").Methods()
+	return &terminalServiceClient{
+		createTerminal: connect.NewClient[v1.CreateTerminalRequest, v1.CreateTerminalResponse](
+			httpClient,
+			baseURL+TerminalServiceCreateTerminalProcedure,
+			connect.WithSchema(terminalServiceMethods.ByName("CreateTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		controlTerminal: connect.NewClient[v1.ControlTerminalRequest, v1.ControlTerminalResponse](
+			httpClient,
+			baseURL+TerminalServiceControlTerminalProcedure,
+			connect.WithSchema(terminalServiceMethods.ByName("ControlTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		watchTerminalOutput: connect.NewClient[v1.WatchTerminalOutputRequest, v1.WatchTerminalOutputResponse](
+			httpClient,
+			baseURL+TerminalServiceWatchTerminalOutputProcedure,
+			connect.WithSchema(terminalServiceMethods.ByName("WatchTerminalOutput")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// terminalServiceClient implements TerminalServiceClient.
+type terminalServiceClient struct {
+	createTerminal      *connect.Client[v1.CreateTerminalRequest, v1.CreateTerminalResponse]
+	controlTerminal     *connect.Client[v1.ControlTerminalRequest, v1.ControlTerminalResponse]
+	watchTerminalOutput *connect.Client[v1.WatchTerminalOutputRequest, v1.WatchTerminalOutputResponse]
+}
+
+// CreateTerminal calls delidev.v1.TerminalService.CreateTerminal.
+func (c *terminalServiceClient) CreateTerminal(ctx context.Context, req *connect.Request[v1.CreateTerminalRequest]) (*connect.Response[v1.CreateTerminalResponse], error) {
+	return c.createTerminal.CallUnary(ctx, req)
+}
+
+// ControlTerminal calls delidev.v1.TerminalService.ControlTerminal.
+func (c *terminalServiceClient) ControlTerminal(ctx context.Context, req *connect.Request[v1.ControlTerminalRequest]) (*connect.Response[v1.ControlTerminalResponse], error) {
+	return c.controlTerminal.CallUnary(ctx, req)
+}
+
+// WatchTerminalOutput calls delidev.v1.TerminalService.WatchTerminalOutput.
+func (c *terminalServiceClient) WatchTerminalOutput(ctx context.Context, req *connect.Request[v1.WatchTerminalOutputRequest]) (*connect.ServerStreamForClient[v1.WatchTerminalOutputResponse], error) {
+	return c.watchTerminalOutput.CallServerStream(ctx, req)
+}
+
+// TerminalServiceHandler is an implementation of the delidev.v1.TerminalService service.
+type TerminalServiceHandler interface {
+	CreateTerminal(context.Context, *connect.Request[v1.CreateTerminalRequest]) (*connect.Response[v1.CreateTerminalResponse], error)
+	ControlTerminal(context.Context, *connect.Request[v1.ControlTerminalRequest]) (*connect.Response[v1.ControlTerminalResponse], error)
+	WatchTerminalOutput(context.Context, *connect.Request[v1.WatchTerminalOutputRequest], *connect.ServerStream[v1.WatchTerminalOutputResponse]) error
+}
+
+// NewTerminalServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewTerminalServiceHandler(svc TerminalServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	terminalServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("TerminalService").Methods()
+	terminalServiceCreateTerminalHandler := connect.NewUnaryHandler(
+		TerminalServiceCreateTerminalProcedure,
+		svc.CreateTerminal,
+		connect.WithSchema(terminalServiceMethods.ByName("CreateTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	terminalServiceControlTerminalHandler := connect.NewUnaryHandler(
+		TerminalServiceControlTerminalProcedure,
+		svc.ControlTerminal,
+		connect.WithSchema(terminalServiceMethods.ByName("ControlTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	terminalServiceWatchTerminalOutputHandler := connect.NewServerStreamHandler(
+		TerminalServiceWatchTerminalOutputProcedure,
+		svc.WatchTerminalOutput,
+		connect.WithSchema(terminalServiceMethods.ByName("WatchTerminalOutput")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.TerminalService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case TerminalServiceCreateTerminalProcedure:
+			terminalServiceCreateTerminalHandler.ServeHTTP(w, r)
+		case TerminalServiceControlTerminalProcedure:
+			terminalServiceControlTerminalHandler.ServeHTTP(w, r)
+		case TerminalServiceWatchTerminalOutputProcedure:
+			terminalServiceWatchTerminalOutputHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedTerminalServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedTerminalServiceHandler struct{}
+
+func (UnimplementedTerminalServiceHandler) CreateTerminal(context.Context, *connect.Request[v1.CreateTerminalRequest]) (*connect.Response[v1.CreateTerminalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TerminalService.CreateTerminal is not implemented"))
+}
+
+func (UnimplementedTerminalServiceHandler) ControlTerminal(context.Context, *connect.Request[v1.ControlTerminalRequest]) (*connect.Response[v1.ControlTerminalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TerminalService.ControlTerminal is not implemented"))
+}
+
+func (UnimplementedTerminalServiceHandler) WatchTerminalOutput(context.Context, *connect.Request[v1.WatchTerminalOutputRequest], *connect.ServerStream[v1.WatchTerminalOutputResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TerminalService.WatchTerminalOutput is not implemented"))
 }

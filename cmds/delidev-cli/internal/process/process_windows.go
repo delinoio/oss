@@ -194,7 +194,13 @@ func startProcess(command *exec.Cmd, dir string, owner domain.ID, terminal *Term
 		}
 		defer func() {
 			if !success {
+				// Failure before the regular output observer still needs an active
+				// consumer while ConPTY closes its synchronous output channel.
+				_ = outputWrite.Close()
+				drained := make(chan struct{})
+				go func() { _, _ = io.Copy(io.Discard, outputRead); close(drained) }()
 				windows.ClosePseudoConsole(pseudo)
+				<-drained
 			}
 		}()
 	}

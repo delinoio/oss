@@ -3,6 +3,7 @@
 package process
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"strings"
@@ -12,6 +13,56 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
+
+const terminalOutputFixtureBytes = 512 << 10
+
+func TestTerminalOutputHelper(t *testing.T) {
+	if os.Getenv("DELIDEV_TERMINAL_OUTPUT_FIXTURE") != "1" {
+		return
+	}
+	if _, err := os.Stdout.Write(bytes.Repeat([]byte{'x'}, terminalOutputFixtureBytes)); err != nil {
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
+
+type slowTerminalOutput struct{ size int }
+
+func (b *slowTerminalOutput) Write(raw []byte) (int, error) {
+	// Throttle bytes rather than native read count: PTY chunk sizes differ by
+	// OS and load, while this fixture keeps a bounded four-second drain budget.
+	time.Sleep(time.Duration(len(raw)) * time.Second / (128 << 10))
+	b.size += len(raw)
+	return len(raw), nil
+}
+
+func TestTerminalOutputDrainPreservesFinalBytes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	output := &slowTerminalOutput{}
+	h, err := Start(ctx, Config{Directory: root, OwnerID: domain.NewID(), Executable: executable, Args: []string{"-test.run=^TestTerminalOutputHelper$"}, Env: []string{"DELIDEV_TERMINAL_OUTPUT_FIXTURE=1"}, Cwd: t.TempDir(), Terminal: &TerminalSize{Rows: 24, Columns: 80}, Stdout: output})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	if err := h.Resume(); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(); err != nil {
+		t.Fatalf("terminal exit after %d of %d bytes: %v", output.size, terminalOutputFixtureBytes, err)
+	}
+	if output.size != terminalOutputFixtureBytes {
+		t.Fatalf("normal terminal exit truncated output: %d of %d", output.size, terminalOutputFixtureBytes)
+	}
+}
 
 type terminalBuffer struct {
 	sync.Mutex

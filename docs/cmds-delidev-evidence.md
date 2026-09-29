@@ -3191,3 +3191,65 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+### Issue #1088 Worker-owned session terminals (2026-09-30)
+
+The implementation adds a capability-negotiated outbound terminal lane, native
+Unix PTY/Windows ConPTY ownership, authenticated public create/control/output
+operations, equivalent CLI byte commands and a desktop text terminal pane.
+Shell selection uses the native account default or a validated absolute
+Worker-local override, without fallback. Workspace verification selects the
+original primary or General Chat directory and leaves agent leases intact.
+The central Archive publication/deletion barrier preserves exact ownership
+until joined cleanup; Agent Stop and viewing disconnection preserve terminals.
+The [terminal contract](cmds-delidev-terminals-contract.md) records limits,
+operation journals, explicit byte gaps and presentation/acceptance boundaries.
+
+Executed on macOS arm64 with private temporary state and controlled fixtures:
+
+- Focused Go race checks pass for actual Unix TTY/resize/descendant cleanup and
+  final-output draining, Local/multi-repository Worktree/General Chat primary
+  selection alongside an agent lease, replaced-primary refusal, shell-override
+  refusal, CLI raw bytes/exact uint64 cursors, selected-session Archive/deletion
+  gates, server receipts/reattachment/gaps, close-before-create-report and exit
+  racing queued input. Server terminal tests also pass three consecutive runs.
+  Worker native fixtures verify lost create/input/close acknowledgement retries,
+  interrupted-input refusal, stable close identity across resize progress,
+  original pre-native journal proof and unknown-ownership refusal.
+- `go vet ./cmds/delidev-cli/...` passes. Windows amd64 process-test compilation
+  and CLI-package cross-build pass; the native ConPTY fixture is retained for
+  Windows CI and was not executed on this macOS host.
+- Protocol format/lint and the baseline breaking check pass. Generated Go,
+  TypeScript and Connect Query bindings include distinct response types for
+  each new RPC. Generation freshness is checked against the committed change.
+- The API client passes all three files / 41 tests. Desktop typechecking and the
+  two terminal tests pass, including split UTF-8 across interrupted and clean
+  unconfirmed observation EOF, exact creation retry and same-terminal reattach.
+  Bundle verification, native-launch script tests and the production frontend
+  build pass. Required desktop icon assets were hydrated from Git LFS.
+- The first complete `pnpm test` in `apps/delidev` passes 75 files / 943 tests,
+  typechecking, eight packaging tests, six launch tests and the production build.
+  Subsequent full reruns after the decoder EOF refinement hit existing timing
+  failures: default parallelism passes 932/943; two workers pass 939/943; one
+  worker passes 938/943. Failures affect existing App/settings/backups/sidebar/
+  tray tests rather than terminal assertions. The latest one-worker failures
+  pass on separate App (37 tests) and settings (31 tests) reruns. These varying
+  failures remain full-suite limitations, not a claimed clean latest full run.
+- The required root `go test -race ./cmds/delidev-cli/...` completes unsuccessfully:
+  the existing CLI acceptance fixture reaches its bounded workspace-diff read
+  failure, and Grok/server/store/Worker/workspace packages exceed Go's default
+  10-minute package budget on this shared host. A serialized 45-minute-budget
+  follow-up reproduces the CLI deadline failure and is interrupted after that
+  confirmed failure; it is not a completed successful full-suite run. Concurrent
+  native suites from other checkouts were present. Terminal verification retains
+  the production read deadline; its launch scope now verifies all original
+  repository identities before native startup and checks the anchored primary
+  directory afterward, without repeating full Git verification after Resume.
+
+No real provider inference, user credentials, actual remote Worker deployment,
+Windows/Linux native terminal execution, native desktop visual session or
+release/distribution acceptance was performed. The text view does not emulate
+full-screen VT applications. The broader permanent-session deletion feature
+remains separate; its storage boundary cannot delete live terminal ownership.
+No Rust source changed. Generated repository `dist` directories are removed
+from the final worktree after validation.

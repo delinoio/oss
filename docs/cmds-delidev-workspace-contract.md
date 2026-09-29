@@ -46,6 +46,13 @@ Before replacing the current claim, synchronize a metadata-only immutable copy o
 
 Version-1 claims remain readable for their original cleanup/recovery checks but lack the captured continuation identity digest. They cannot be automatically upgraded into continuation authority after files may have changed; explicit native/workspace recovery is required, without replaying the first input. History belongs to the session's managed metadata and must participate in coordinated permanent deletion and backup/restore; it is never removed by Stop/Archive. These lease fixtures alone do not establish native acceptance; public continuation integration and installed Codex evidence are recorded separately in the session contract and evidence ledger.
 
+Session terminals use `WithTerminalDirectory` under the
+[terminal contract](cmds-delidev-terminals-contract.md): a bounded anchored
+observation verifies the complete original ready manifest and primary/General
+Chat directory without taking the agent lease. Independent read-only process
+ownership is reconciled after verification; a terminal receives its own native
+owner and never changes workspace deletion ownership or secondary roots.
+
 ## Storage
 The Worker owns private `workspaces`, `locks`, `execution-claims`, `execution-history`, and empty hook directories under its explicit data scope. UUID-v7 session/repository IDs derive managed paths. Manifests record original checkouts separately from deletion-owned paths. Cleanup recomputes owned paths from identities, reconciles Git registration even when a directory is absent, and never removes original Local checkouts. These local resources intentionally override the repository R2 default.
 

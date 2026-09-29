@@ -94,6 +94,7 @@ enum EntityKind {
   ENTITY_KIND_JOB = 24;
   ENTITY_KIND_PAIRING = 25;
   ENTITY_KIND_STEER = 26;
+  ENTITY_KIND_TERMINAL = 27;
 }
 
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
@@ -154,6 +155,7 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
   // Session creation can opt into server-owned, Worker-executed automatic titles.
   SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 = 1;
+  SYSTEM_CAPABILITY_SESSION_TERMINALS_V1 = 2;
 }
 message StopServerRequest {
   string request_id = 1;
@@ -260,6 +262,10 @@ service DeviceService {
   rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
 }
 service WorkerService {
+  rpc WatchTerminals(WatchTerminalsRequest) returns (stream WatchTerminalsResponse);
+  rpc ClaimTerminal(ClaimTerminalRequest) returns (ClaimTerminalResponse);
+  rpc ReportTerminal(ReportTerminalRequest) returns (ReportTerminalResponse);
+  rpc PublishTerminalOutput(PublishTerminalOutputRequest) returns (PublishTerminalOutputResponse);
   rpc WatchWorkspaceReads(WatchWorkspaceReadsRequest) returns (stream WatchWorkspaceReadsResponse);
   rpc ReportWorkspaceRead(ReportWorkspaceReadRequest) returns (ReportWorkspaceReadResponse);
   rpc AttachWorker(AttachWorkerRequest) returns (AttachWorkerResponse);
@@ -387,6 +393,7 @@ message AttachWorkerRequest {
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
   WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 = 1;
+  WORKER_CAPABILITY_SESSION_TERMINALS_V1 = 2;
 }
 message AttachWorkerResponse {
   Resource machine = 1;
@@ -1718,3 +1725,90 @@ message GetBackupDeletionRequest {
 message GetBackupDeletionResponse {
   BackupDeletionJob job = 1;
 }
+
+// Owner/client operations. Generic ResourceService provides terminal list/get.
+service TerminalService {
+  rpc CreateTerminal(CreateTerminalRequest) returns (CreateTerminalResponse);
+  rpc ControlTerminal(ControlTerminalRequest) returns (ControlTerminalResponse);
+  rpc WatchTerminalOutput(WatchTerminalOutputRequest) returns (stream WatchTerminalOutputResponse);
+}
+enum TerminalAction {
+  TERMINAL_ACTION_UNSPECIFIED = 0;
+  TERMINAL_ACTION_INPUT = 1;
+  TERMINAL_ACTION_RESIZE = 2;
+  TERMINAL_ACTION_CLOSE = 3;
+}
+message CreateTerminalRequest {
+  // Mutation targets the session and its current revision.
+  Mutation mutation = 1;
+  string shell_override = 2;
+  uint32 rows = 3;
+  uint32 columns = 4;
+}
+message ControlTerminalRequest {
+  // Mutation targets the original terminal and its current revision.
+  Mutation mutation = 1;
+  TerminalAction action = 2;
+  bytes input = 3;
+  uint32 rows = 4;
+  uint32 columns = 5;
+}
+message CreateTerminalResponse {
+  Resource terminal = 1;
+  bool replayed = 2;
+}
+message ControlTerminalResponse {
+  Resource terminal = 1;
+  bool replayed = 2;
+}
+message WatchTerminalOutputRequest {
+  string terminal_id = 1;
+  string epoch = 2;
+  uint64 after_sequence = 3;
+}
+message WatchTerminalOutputResponse {
+  string epoch = 1;
+  uint64 sequence = 2;
+  bytes data = 3;
+  bool gap = 4;
+  bool heartbeat = 5;
+  Resource terminal = 6;
+}
+message WatchTerminalsRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+message WatchTerminalsResponse {
+  bytes assignment_json = 1;
+  bool heartbeat = 2;
+}
+message ClaimTerminalRequest {
+  string request_id = 5;
+  string machine_id = 1;
+  string instance_id = 2;
+  string terminal_id = 3;
+  string operation_id = 4;
+}
+message ClaimTerminalResponse {
+  bytes assignment_json = 1;
+}
+message ReportTerminalRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string terminal_id = 4;
+  string operation_id = 5;
+  bytes result_json = 6;
+}
+message ReportTerminalResponse {
+  Resource terminal = 1;
+}
+message PublishTerminalOutputRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+  string terminal_id = 3;
+  string epoch = 4;
+  uint64 sequence = 5;
+  bytes data = 6;
+}
+message PublishTerminalOutputResponse {}
