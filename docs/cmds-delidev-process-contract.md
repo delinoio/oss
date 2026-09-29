@@ -49,4 +49,11 @@ Preparation recovery uses `ReconcileOwnerContext` to stop between bounded native
 
 Resize is serialized with input and acknowledged after native application. Native bytes remain undecoded until the consuming client. PTY EOF and ConPTY closure are joined with output consumption and original descendant reconciliation before completed ownership is published. ConPTY drains output concurrently with closure to avoid its synchronous output deadlock. Unix slave allocation or shell launch failure before native execution publishes clean prelaunch completion; unsupported native APIs retain typed failures.
 
+ConPTY startup explicitly sets `STARTF_USESTDHANDLES` with null standard handles
+and disables handle inheritance. This prevents Windows from copying redirected
+parent stdio into the shell instead of binding its pseudoconsole; see the
+[Microsoft terminal discussion](https://github.com/microsoft/terminal/discussions/15814).
+Ordinary pipe launches retain their explicit inherited handle list, and both
+launch modes retain suspended creation with atomic Job Object assignment.
+
 Focused macOS arm64 process fixtures exercise an actual interactive `/bin/sh`, TTY detection, resize, multibyte bytes, natural exit and owned descendant cleanup. Windows cross-compilation does not establish native ConPTY acceptance.

@@ -3277,3 +3277,18 @@ six native-launch script tests and the production build. This repair changes no
 Go, Rust or protocol sources and uses no PAT, user credential or model inference.
 Generated desktop/client `dist` directories are removed after verification.
 New hosted CI and review results remain separate from this local evidence.
+
+### PR #1127 Windows ConPTY stdio repair (2026-09-30)
+
+Hosted Windows Go validation failed the actual ConPTY fixture: the shell prompt
+appeared in the CI process output while its pseudoconsole capture stayed empty.
+The launch now explicitly selects null standard handles with
+`STARTF_USESTDHANDLES`, preserving disabled handle inheritance, suspended creation
+and atomic Job Object assignment. This addresses the redirected-parent stdio
+duplication described in the linked Microsoft discussion in the process contract.
+The existing native fixture still requires input, resize, captured shell output,
+natural exit and joined cleanup; it is not replaced by a structural test.
+
+Windows amd64 and arm64 process test binaries cross-compile, and the macOS arm64
+process race suite passes. These local checks do not establish native Windows
+acceptance of the repair; the next hosted run must execute the ConPTY fixture.

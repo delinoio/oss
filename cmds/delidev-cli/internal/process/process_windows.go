@@ -237,9 +237,11 @@ func startProcess(command *exec.Cmd, dir string, owner domain.ID, terminal *Term
 	}
 	startup := windows.StartupInfoEx{}
 	startup.Cb = uint32(unsafe.Sizeof(startup))
-	if terminal == nil {
-		startup.Flags = windows.STARTF_USESTDHANDLES
-	}
+	// ConPTY needs explicit null standard handles as well: Windows otherwise
+	// duplicates redirected parent stdio, bypassing the pseudoconsole. Keep this
+	// until every supported Windows version stops that implicit duplication.
+	// https://github.com/microsoft/terminal/discussions/15814
+	startup.Flags = windows.STARTF_USESTDHANDLES
 	startup.StdInput = inherited[0]
 	startup.StdOutput = inherited[1]
 	startup.StdErr = inherited[2]
