@@ -3231,6 +3231,10 @@ Executed checks:
   passed for Execute and Plan. The test owns a bounded Worker stream for its
   complete turn/Resume scenario instead of reusing the setup stream's shorter
   deadline; the initial race attempt expired that setup stream.
+- `go test -race ./cmds/delidev-cli/internal/server -run
+  'TestClaude(LostFailed|FailedResume|ContinuationRequiresOriginalSettled|RecoveryRechecksOriginalSettled)'
+  -count=1 -timeout=20m` passed the complete focused suite, including original failed-report
+  recovery and the successful/failed acceptance/commit rejection matrices.
 - `go vet ./cmds/delidev-cli/...` and `go fmt ./...` passed.
 - Required `go test -race ./cmds/delidev-cli/...` did **not** pass: the run
   reported CLI integration failures and package timeouts in Grok, server,
@@ -3241,6 +3245,13 @@ Executed checks:
   Git diff with `workspace file reader is unavailable`. Several independent
   Go suites were running concurrently on this machine; that observation does
   not establish a passing broad suite or prove the cause of every failure.
+- An isolated `git archive` of base revision
+  `b741cec88d68ba84eaf918bbee22ca28bff57ec6` reproduced the same
+  `TestCLISessionAcceptanceQueueAndArchive` creation-comparison Git diff
+  failure with `go test -race ./cmds/delidev-cli/internal/cli -run
+  '^TestCLISessionAcceptanceQueueAndArchive$' -count=1 -timeout=3m`.
+  This establishes that this particular observed failure also occurs without
+  the issue #1102 change; it does not classify the other broad-suite failures.
 
 These are isolated temporary protocol/history/process and authenticated RPC
 fixtures. The public fixture's checkpoint digest represents independently
