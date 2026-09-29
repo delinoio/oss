@@ -120,7 +120,6 @@ summary { cursor: pointer; padding: 3px; }
 .new-session-composer { display: flex; min-height: 210px; flex-direction: column; border: 1px solid #d7dce5; border-radius: 18px; background: #fff; box-shadow: 0 3px 12px #2026320a, 0 1px 3px #2026320a; }
 .new-session-message-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .new-session-composer textarea { flex: 1; min-height: 95px; max-height: 280px; padding: 19px 20px 12px; border: 0; border-radius: 18px 18px 0 0; background: transparent; font-size: 16px; line-height: 1.5; resize: vertical; }
-.new-session-composer textarea:focus-visible { outline: 0; }
 .new-session-composer textarea::placeholder { color: #737d8d; opacity: 1; }
 .new-session-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 0 12px 12px; }
 .new-session-selectors { display: flex; min-width: 0; flex: 1; align-items: flex-end; gap: 8px; }
