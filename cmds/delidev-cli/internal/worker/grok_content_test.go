@@ -14,7 +14,25 @@ import (
 
 func acceptedGrokContentFixture(t *testing.T) (*GrokBindingPublisher, *openCodeBindingRPC) {
 	t.Helper()
+	return acceptedGrokContentFixtureWithNativeSession(t, "")
+}
+
+func acceptedGrokContentFixtureWithNativeSession(t *testing.T, session domain.ID) (*GrokBindingPublisher, *openCodeBindingRPC) {
+	t.Helper()
 	c, claims, binding, client := newGrokBindingFixture(t, domain.ExecuteMode)
+	if session != "" {
+		if err := session.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		digest, err := grok.TextInputClaimDigest(session, c.publisher.input.Input.Prompt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		binding.NativeSessionID, claims[1].Creation.NativeSessionID = session, session
+		for _, claim := range claims[2:] {
+			claim.Input.NativeSessionID, claim.Input.BodyDigest = session, digest
+		}
+	}
 	ctx := context.Background()
 	for _, claim := range claims[:2] {
 		if err := recordBindingClaim(ctx, c, claim); err != nil {

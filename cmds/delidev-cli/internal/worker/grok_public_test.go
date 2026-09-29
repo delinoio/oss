@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -94,14 +95,14 @@ func (f *grokPublicResponseFixture) ReplyPlan(context.Context, domain.ID, domain
 func (f *grokPublicResponseFixture) InspectPlan(domain.ID) (grok.PlanDelivery, error) {
 	return grok.PlanDelivery{}, errors.New("no Plan")
 }
-func grokPublicFileObservation(t *testing.T, c *GrokBindingPublisher, id string, phase string, index uint64) grok.InputObservation {
+func grokPublicFileObservation(t *testing.T, c *GrokBindingPublisher, id string, phase string, index, eventIndex uint64) grok.InputObservation {
 	t.Helper()
 	v := grok.InputObservation{Kind: grok.InputFileTool, InputID: c.reference.InputRequestID, NativePromptID: c.turn}
 	var fact any
 	if phase == "arguments" {
 		fact = map[string]any{"Delta": map[string]any{"sessionId": c.thread, "update": map[string]any{"sessionUpdate": "tool_call_delta_chunk", "tool_call_id": id, "tool_index": index, "name": "write", "arguments_delta": "original arguments"}}}
 	} else {
-		fact = map[string]any{"Observation": map[string]any{"ID": id, "Phase": phase, "Input": map[string]any{"Name": "write", "Path": "/fixture/original", "Content": "Original private content"}, "Meta": map[string]any{"eventId": string(c.thread) + "-10", "totalTokens": 1, "agentTimestampMs": 1, "streamStartMs": 1, "turnStartMs": 1}}}
+		fact = map[string]any{"Observation": map[string]any{"ID": id, "Phase": phase, "Input": map[string]any{"Name": "write", "Path": "/fixture/original", "Content": "Original private content"}, "Meta": map[string]any{"eventId": string(c.thread) + "-" + strconv.FormatUint(eventIndex, 10), "totalTokens": 1, "agentTimestampMs": 1, "streamStartMs": 1, "turnStartMs": 1}}}
 	}
 	raw, _ := json.Marshal(map[string]any{"FileTool": fact})
 	if json.Unmarshal(raw, &v) != nil {
@@ -110,16 +111,13 @@ func grokPublicFileObservation(t *testing.T, c *GrokBindingPublisher, id string,
 	return v
 }
 func newGrokPublicResponseFixture(t *testing.T, mode string) (*grokPublicResponseFixture, responseControlIdentity) {
-	c, client := acceptedGrokContentFixture(t)
+	// Keep the event-index fragment inside the original UUID as well, so changing
+	// a native event's suffix cannot silently rewrite its owner identity.
+	c, client := acceptedGrokContentFixtureWithNativeSession(t, "01900000-1010-7000-8000-101010101010")
 	f := &grokPublicResponseFixture{openCodeBindingRPC: client, c: c, mode: mode}
 	c.publisher.config.Client = f
-	for _, phase := range []string{"arguments", "declared", "described"} {
-		v := grokPublicFileObservation(t, c, "original-write", phase, 0)
-		if phase == "described" {
-			raw, _ := json.Marshal(v)
-			v = grok.InputObservation{}
-			json.Unmarshal(bytes.ReplaceAll(raw, []byte("-10"), []byte("-11")), &v)
-		}
+	for eventIndex, phase := range []string{"arguments", "declared", "described"} {
+		v := grokPublicFileObservation(t, c, "original-write", phase, 0, uint64(9+eventIndex))
 		if err := c.ObservePublic(context.Background(), v, f); err != nil {
 			t.Fatal(err)
 		}
@@ -156,9 +154,7 @@ func TestGrokPublicReplyLostAcknowledgementNeverResends(t *testing.T) {
 	original, _ := security.ReadPrivate(f.c.journal.path, maxGrokClaimBytes)
 	f.delivery.Resolved = true
 	json.Unmarshal([]byte(`{"ToolPhase":"completed"}`), &f.delivery)
-	v := grokPublicFileObservation(t, f.c, "original-write", "completed", 0)
-	raw, _ := json.Marshal(v)
-	json.Unmarshal(bytes.ReplaceAll(raw, []byte("-10"), []byte("-12")), &v)
+	v := grokPublicFileObservation(t, f.c, "original-write", "completed", 0, 12)
 	if err := f.c.ObservePublic(context.Background(), v, f); err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +200,7 @@ func TestGrokPublicReplyRevalidatesBeforeNativeSideEffects(t *testing.T) {
 }
 func TestGrokPublicArgumentIndicesAreReusableAfterDeclaration(t *testing.T) {
 	f, _ := newGrokPublicResponseFixture(t, "ready")
-	v := grokPublicFileObservation(t, f.c, "second-original-write", "arguments", 0)
+	v := grokPublicFileObservation(t, f.c, "second-original-write", "arguments", 0, 0)
 	if err := f.c.ObservePublic(context.Background(), v, f); err != nil {
 		t.Fatal("native response index was mistaken for global tool identity", err)
 	}
