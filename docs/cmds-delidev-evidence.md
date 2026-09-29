@@ -3191,3 +3191,57 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+### Metadata-only request diagnostics, issue #1103 (2026-09-30)
+
+Controlled loopback provider requests, authenticated Connect reads and original
+Worker-publication fixtures verify distinct concurrent same-model correlations,
+requested versus independently observed settings, unavailable native observations,
+provider failure, actual fresh retry attempts and joined cancellation settlement.
+Original publication receipt replay preserves one record and revision. Native
+success/failure/Stop projections preserve unavailable HTTP latency and do not
+confirm owned-process cleanup. Account alias/email substitution cannot relabel
+original attribution. Secret, body, native model name and path sentinels are
+absent from the read projection. Existing usage remains empty for proxy traffic.
+
+Temporary SQLite fixtures verify the synchronized v24 migration backup,
+preserved historical state without request backfill, immutable attribution,
+revision checks, 4 KiB/10,000-row admission bounds, session deletion and old
+receipt non-resurrection. Proxy diagnostic state, session invalidation and
+receipt roll back together; receipt replay does not duplicate an event or change
+the session-state revision. Stream fixtures verify that conflicting response
+identities/settings cannot become available again through later frames.
+The real temporary-server CLI test checks exact execution filtering,
+signed bounded pagination, original canonical identifiers and omitted unavailable
+fields. No user credentials or installed native model software are accessed.
+
+Focused race verification passes for proxy/CLI/store/server diagnostics and the
+existing Doctor tests. The final native/request server race group passes
+(22.889s); the final store diagnostics/rollback race group passes (18.128s).
+`go vet ./cmds/delidev-cli/...` passes.
+`pnpm proto:check` passes formatting/lint, baseline breaking compatibility and
+generated-source freshness. The API client build/type check passes and its
+three test files / 41 tests pass. Node 24 `pnpm test` in `apps/delidev`,
+with `VITEST_MAX_WORKERS=2`, passes 75 files / 953 tests, eight packaging
+verifier tests, six launcher tests, type checking and the production build.
+Component coverage includes complete-page rejection, exact bigint values,
+unavailable/zero observations, capability gating, filters, pagination, refresh
+failure, query disposal and draft-preserving closure. An initial Node 26 run had
+three timeouts and a profile-render assertion failure; the supported Node 24
+full run also passed before the final two validation cases were added.
+
+The root `go test -race -timeout=45m ./cmds/delidev-cli/...` run is still in
+progress at this evidence checkpoint and has already reported the existing
+`TestCLISessionAcceptanceQueueAndArchive` workspace-diff failure at
+`sessions_test.go:239`. The same isolated race test fails on this branch
+and on a temporary source archive of the freshly fetched base
+`b741cec88d68ba84eaf918bbee22ca28bff57ec6` (base result 65.474s), reporting
+the unavailable workspace reader. This is a reproduced base failure, not a
+passing full-suite result. The earlier broad non-race server run exhausted its
+ten-minute cumulative timeout in an existing Claude callback test. Final
+whole-suite results must remain visible separately from focused verification.
+
+This evidence proves implementation behavior through isolated controlled
+fixtures. It does not establish real-provider/native-account, native desktop
+visual, additional platform, production-signing or release acceptance, and
+does not imply completion of the broader issue #964. No Rust source changed.

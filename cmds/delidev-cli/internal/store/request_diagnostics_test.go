@@ -157,3 +157,51 @@ func TestRequestDiagnosticBoundsAndClosedProjection(t *testing.T) {
 		t.Fatal("content accepted as native ID")
 	}
 }
+
+func TestRequestDiagnosticPublicationRollsBackStateEventAndReceipt(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := context.Background()
+	session, request := domain.NewID(), domain.NewID()
+	value := diagnosticFixture(session)
+	_, err := s.Mutate(ctx, domain.NewID(), "fixture.session", nil, func(tx *Tx) (any, error) {
+		return tx.Put(domain.SessionKind, session, 0, session, "", struct{}{})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply := func(fail bool) (Result, error) {
+		return s.Mutate(ctx, request, "fixture.atomic-diagnostic", value, func(tx *Tx) (any, error) {
+			if err := tx.PutRequestDiagnostic(value, 0); err != nil {
+				return nil, err
+			}
+			if fail {
+				return nil, domain.Fail(domain.Conflict, "Controlled rollback.", "")
+			}
+			return struct{ ID domain.ID }{value.ID}, nil
+		})
+	}
+	if _, err := apply(true); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("fixture did not roll back")
+	}
+	if err := s.Read(ctx, func(tx *Tx) error {
+		_, err := tx.RequestDiagnostic(value.ID)
+		if domain.SafeError(err).Code != domain.NotFound {
+			t.Fatal("rollback retained diagnostic state")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.Events(ctx, 0, session, 100)
+	if err != nil || len(events) != 1 {
+		t.Fatal("rollback retained diagnostic event")
+	}
+	result, err := apply(false)
+	if err != nil || result.Replayed {
+		t.Fatal("rollback retained receipt", err)
+	}
+	events, err = s.Events(ctx, 0, session, 100)
+	if err != nil || len(events) != 2 {
+		t.Fatal("retry did not publish exactly one atomic invalidation")
+	}
+}

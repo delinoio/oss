@@ -235,3 +235,42 @@ func TestNativeRequestDiagnosticReceiptReplayAndMissingSettings(t *testing.T) {
 		t.Fatal("diagnostics read mutable private labels")
 	}
 }
+
+func TestNativeRequestDiagnosticTerminalPreservesUnavailableLatency(t *testing.T) {
+	for _, test := range []struct {
+		outcome domain.ExecutionOutcome
+		code    domain.Code
+		state   pb.RequestDiagnosticState
+	}{
+		{domain.ExecutionSucceeded, "", pb.RequestDiagnosticState_REQUEST_DIAGNOSTIC_STATE_SUCCEEDED},
+		{domain.ExecutionFailed, domain.Unavailable, pb.RequestDiagnosticState_REQUEST_DIAGNOSTIC_STATE_FAILED},
+		{domain.ExecutionStopped, domain.Canceled, pb.RequestDiagnosticState_REQUEST_DIAGNOSTIC_STATE_CANCELED},
+	} {
+		t.Run(string(test.outcome), func(t *testing.T) {
+			f := newPublicationFixture(t)
+			f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+			f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+			event := f.event(domain.ExecutionTurnFinished, 3)
+			event.Outcome, event.ProblemCode = test.outcome, test.code
+			publication := f.publish(t, event)
+			if result, err := f.call(publication); err != nil || !result.Msg.Replayed {
+				t.Fatal("terminal receipt replay failed", err)
+			}
+			rows := diagnosticRead(t, f.authorityFixture, &pb.ListRequestDiagnosticsRequest{SessionId: string(f.input.SessionID)}).Records
+			if len(rows) != 1 || rows[0].Revision != 3 || rows[0].State != test.state || rows[0].FinishedAt == nil || rows[0].ErrorCode != string(test.code) || rows[0].DurationMs != nil || rows[0].HttpAttempted != nil || rows[0].NativeTurnId != string(f.turn) {
+				t.Fatal("native terminal inferred HTTP latency or lost original provenance", rows)
+			}
+			retained, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := store.Decode[domain.Session](retained)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if session.ActiveExecutionID != f.input.ExecutionID {
+				t.Fatal("native terminal diagnostic falsely confirmed owned process cleanup")
+			}
+		})
+	}
+}
