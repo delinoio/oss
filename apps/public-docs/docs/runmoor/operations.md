@@ -141,6 +141,8 @@ A recorded job completion continues through cleanup even if GitHub has already r
 
 Back up only after `drain` and `stop`. Preserve the complete state and managed-data directories; protect referenced credential files separately. Install the new binary manually and start again. Roll back using a compatible binary and its matching drained state/data backup. Version 0.2.0 upgrades existing state automatically; back up before upgrading and use the matching backup to return to 0.1.3. Unsupported database versions fail without destructive migration; never reuse an older backup while resources created after that backup are still active.
 
+If startup reports `Possible legacy SQLite state exists at an ambiguous location`, stop every Runmoor manager that may use either location. Preserve complete backups of both locations before recovery. Do not move or delete either database; the original state location may be ambiguous and requires explicit review.
+
 Jobs retain timeout accounting across restart/sleep. Active work requests OS sleep inhibition; warm idle capacity does not keep the machine awake indefinitely. Failure is a warning and does not change system power settings. Forced sleep, lid closure, shutdown and power loss can still interrupt work.
 
 ## Managed runner updates

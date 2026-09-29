@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,7 +29,45 @@ type Store struct {
 	state Snapshot
 }
 
+// rejectAmbiguousLegacySQLitePath protects databases opened by earlier
+// Runmoor versions that passed a filesystem path to the SQLite driver as a raw
+// DSN. In that form, the driver treats the first '?' as the start of DSN
+// options. If the correctly addressed database is missing or empty while the
+// old prefix is still present, preserve both locations and require explicit
+// operator recovery. Remove this guard only with a separately specified
+// recovery path that can establish ownership of the legacy database without data loss.
+func rejectAmbiguousLegacySQLitePath(path string) error {
+	question := strings.IndexByte(path, '?')
+	if question < 0 {
+		return nil
+	}
+
+	info, err := os.Stat(path)
+	if err == nil && info.Size() > 0 {
+		return nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return problem(ErrState, "Cannot inspect SQLite state.", "Check access to the private state directory and retry.")
+	}
+
+	legacyInfo, err := os.Stat(path[:question])
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return problem(ErrState, "Cannot inspect possible legacy SQLite state.", "Stop Runmoor managers and check access to the private state directory before retrying.")
+	}
+	if legacyInfo.Mode().IsRegular() {
+		return problem(ErrState, "Possible legacy SQLite state exists at an ambiguous location.", "Stop all Runmoor managers configured for either location. Preserve complete backups of both locations before explicit recovery; do not move or delete either database.")
+	}
+	return nil
+}
+
 func OpenStore(c Config) (*Store, error) {
+	path := filepath.Join(c.Storage.State, "state.sqlite")
+	if err := rejectAmbiguousLegacySQLitePath(path); err != nil {
+		return nil, err
+	}
 	if err := privateDir(c.Storage.State); err != nil {
 		return nil, err
 	}
@@ -40,13 +79,13 @@ func OpenStore(c Config) (*Store, error) {
 		return nil, err
 	}
 	fail := func(err error) (*Store, error) { unlockState(lock); return nil, err }
-	path := filepath.Join(c.Storage.State, "state.sqlite")
 	f, err := openPrivate(path, os.O_RDWR|os.O_CREATE)
 	if err != nil {
 		return fail(err)
 	}
 	f.Close()
-	db, err := sql.Open("sqlite", path)
+	uri := url.URL{Scheme: "file", Path: path}
+	db, err := sql.Open("sqlite", uri.String())
 	if err != nil {
 		return fail(problem(ErrState, "Cannot open SQLite state.", "Check state directory permissions and free space."))
 	}
