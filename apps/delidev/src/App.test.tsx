@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
@@ -19,7 +19,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Agent One" }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Worker One" }) });
   const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
-  const githubQuery = vi.fn(async () => ({ schemaVersion: 1, documentJson: encode({}) }));
+  const githubQuery = vi.fn(async (_request: { repositoryId: string; schemaVersion: number; queryJson: Uint8Array }) => ({ schemaVersion: 1, documentJson: encode({}) }));
   const saveConfiguration = vi.fn(async (request: { kind: EntityKind; documentJson: Uint8Array }) => ({ resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson }) }));
   const projectRequests: string[] = [];
   const sessionRequests: { projectId: string; includeArchived: boolean; pageToken: string }[] = [];
@@ -59,10 +59,11 @@ it("creates an automatically named session from the first message and explicit W
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "New session" }));
   const firstMessage = await screen.findByRole("textbox", { name: "First message" });
+  const composer = within(firstMessage.closest("form")!);
   expect(window.document.activeElement).toBe(firstMessage);
   fireEvent.change(firstMessage, { target: { value: "Fix the startup crash" } });
-  fireEvent.change(screen.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
-  fireEvent.change(screen.getByLabelText("Execution Worker"), { target: { value: value.machine.id } });
+  fireEvent.change(composer.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(composer.getByLabelText("Execution Worker"), { target: { value: value.machine.id } });
   expect(screen.getByRole("heading", { name: "What would you like to work on?" })).toBeTruthy();
   expect(screen.getByText("General Chat · isolated projectless directory on the selected Worker")).toBeTruthy();
   fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter" });
@@ -479,19 +480,21 @@ it.each(["valid", "mixed", "null"])("renders closed Grok user history through se
  expect(value.enqueues).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled();
 });
 
-it("opens the PR shortcut in Repositories without reading GitHub until the repository browser is activated", async () => {
+it("opens a dedicated PR workspace and reads GitHub only after Load", async () => {
   const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository", integration_id: newRequestId(), github_owner: "owner", github_name: "repo" }) });
   const value = fixture([], [repository]);
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
-  await screen.findByRole("button", { name: "Browse GitHub items" });
-  expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(await screen.findByRole("button", { name: `Fixture repository. Repository ID: ${repository.id}` }));
+  expect(screen.getByRole("button", { name: "Load pull requests" })).toBeTruthy();
   expect(value.githubQuery).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   await waitFor(() => expect(value.githubQuery).toHaveBeenCalledTimes(1));
+  const request = JSON.parse(new TextDecoder().decode(value.githubQuery.mock.calls[0][0].queryJson));
+  expect(request).toMatchObject({ kind: "pull-request", operation: "list", state: "open", page: 1, page_size: 20 });
 });
 
-it("defers the PR entry while a parent configuration editor draft is open", async () => {
+it("navigates to standalone PRs while retaining an Instructions draft", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -501,7 +504,10 @@ it("defers the PR entry while a parent configuration editor draft is open", asyn
   fireEvent.change(name, { target: { value: "Retained instructions draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained instructions draft");
+  expect(await within(screen.getByRole("main")).findByRole("heading", { name: "Pull requests" })).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
+  expect((await screen.findByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained instructions draft");
   expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("false");
   fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
@@ -519,6 +525,7 @@ it("defers the PR entry until a nested integration profile draft is canceled", a
   fireEvent.change(name, { target: { value: "Retained GitHub profile draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
   expect((screen.getByRole("textbox", { name: "Profile name" }) as HTMLInputElement).value).toBe("Retained GitHub profile draft");
   expect(screen.getByRole("button", { name: "Integrations" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
@@ -535,6 +542,7 @@ it("retains and defers around notification and import drafts until their explici
   fireEvent.click(screen.getByRole("checkbox", { name: "Questions and approval requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
   expect((screen.getByRole("checkbox", { name: "Questions and approval requests" }) as HTMLInputElement).checked).toBe(false);
   expect(screen.getByRole("button", { name: "Notifications" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
@@ -547,6 +555,7 @@ it("retains and defers around notification and import drafts until their explici
   fireEvent.change(importDraft, { target: { value: "{\"version\":1" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
   expect((screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement).value).toBe("{\"version\":1");
   expect(screen.getByRole("button", { name: "Import / Export" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.change(importDraft, { target: { value: "" } });

@@ -15,6 +15,7 @@ import { BudgetState, ProviderInventoryCapability, ProviderPresetId, ProviderSer
 import { SessionBudget } from "./session-budget";
 import { Usage } from "./usage";
 import { Schedules } from "./schedules";
+import { NewSession } from "./new-session";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { document, encode } from "./documents";
@@ -72,19 +73,19 @@ function runCLI(args: string[], input?: string): Promise<string> {
   });
 }
 
-it("activates fixed presets without creating accounts or models and retains identity across off/on", async () => {
+it("starts with hosted presets on without accounts or models and retains identity across off/on", async () => {
   const providers = createClient(ProviderService, transport);
   const initial = await providers.listProviderInventory({ pageSize: 50 });
   expect(initial.capabilities).toEqual(expect.arrayContaining([ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER]));
   expect(initial.entries.filter((entry) => entry.presetId !== ProviderPresetId.UNSPECIFIED)).toHaveLength(9);
-  expect(initial.entries.every((entry) => !entry.enabled && !entry.providerId && entry.accountCountsAvailable)).toBe(true);
+  expect(initial.entries.filter((entry) => [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId)).every((entry) => !entry.enabled && !entry.providerId && entry.accountCountsAvailable)).toBe(true);
+  expect(initial.entries.filter((entry) => ![ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId)).every((entry) => entry.enabled && !!entry.providerId && entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.connectedAccounts === 0n)).toBe(true);
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
-  const turnOn = await screen.findByRole("switch", { name: "Turn on OpenAI" });
-  await waitFor(() => expect((turnOn as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(turnOn);
-  await screen.findByRole("switch", { name: "Turn off OpenAI" });
+  const turnOff = await screen.findByRole("switch", { name: "Turn off OpenAI" });
+  await waitFor(() => expect((turnOff as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByText("Account required")).toBeNull();
   let inventory = await providers.listProviderInventory({ pageSize: 50 });
   let saved = inventory.entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
   expect(saved.enabled).toBe(true);
@@ -93,8 +94,6 @@ it("activates fixed presets without creating accounts or models and retains iden
   expect((await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.ACCOUNT } })).resources).toHaveLength(0);
   expect((await providers.searchModels({ pageSize: 50 })).models).toHaveLength(0);
 
-  const turnOff = screen.getByRole("switch", { name: "Turn off OpenAI" });
-  await waitFor(() => expect((turnOff as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(turnOff);
   const turnOnAgain = await screen.findByRole("switch", { name: "Turn on OpenAI" });
   await waitFor(() => expect((turnOnAgain as HTMLButtonElement).disabled).toBe(false));
@@ -239,21 +238,28 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
     const credential = JSON.parse(await readFile(join(workerRoot, "device.json"), "utf8"));
     return { machineId: credential.machine_id as string, token: credential.token as string };
   };
-  const localProof = await readLocalWorker();
-  const project = (await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.PROJECT } })).resources.find((row) => document(row).name === "Owned project")!;
-  const localCreation = await createClient(SessionService, transport).createSession({
-    requestId: newRequestId(),
-    documentJson: encode({ name: "Owned Local session", workspace: "local", project_id: project.id, agent_id: accountlessAgent.id, machine_id: localProof.machineId, prompt: "Local proof fixture without inference", mode: "execute", source: "MANUAL", estimated_cost_budget: { currency: "USD", threshold: "0.000000000000001" } }),
-    localWorkerToken: localProof.token,
-  });
-  expect(localCreation.change?.session?.id).toBeTruthy();
+  let createdSessionId = "";
+  render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={(id) => { createdSessionId = id; }} created={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  const newSession = within(window.document.querySelector(".new-session-page")!);
+  const changeNewSession = (name: string, value: string) => fireEvent.change(newSession.getByLabelText(name), { target: { value } });
+  changeNewSession("Project", (await within(newSession.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
+  fireEvent.click(newSession.getByRole("button", { name: "Options" }));
+  fireEvent.click(newSession.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  await waitFor(() => expect((newSession.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true));
+  changeNewSession("Agent Worker", (await newSession.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
+  changeNewSession("First message", "Local proof fixture without inference");
+  fireEvent.click(newSession.getByText("Optional estimated-cost budget"));
+  fireEvent.click(newSession.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  changeNewSession("Budget currency", "USD"); changeNewSession("Estimated-cost threshold", "0.000000000000001");
+  fireEvent.click(newSession.getByRole("button", { name: "Create session" }));
   await waitFor(async () => {
+    expect(createdSessionId).not.toBe("");
     const sessions = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.SESSION } });
-    expect(sessions.resources.some((row) => document(row).workspace === "local" && document(row).name === "Owned Local session")).toBe(true);
+    const created = sessions.resources.find((row) => row.id === createdSessionId);
+    expect(created && document(created)).toMatchObject({ workspace: "local", name: "New session", estimated_cost_budget: { currency: "USD", threshold: "0.000000000000001" } });
   });
   cleanup();
-  const sessions = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.SESSION } });
-  const budgetSession = sessions.resources.find((row) => document(row).name === "Owned Local session")!;
+  const budgetSession = (await createClient(ResourceService, transport).getResource({ kind: EntityKind.SESSION, id: createdSessionId })).resource!;
   expect(document(budgetSession).estimated_cost_budget).toEqual({ currency: "USD", threshold: "0.000000000000001" });
   const budgetClient = createClient(SessionService, transport);
   expect((await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view).toMatchObject({ state: BudgetState.ALLOW_INCOMPLETE, selectedCurrency: { knownAmount: "" } });
@@ -273,7 +279,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><Schedules active open={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
   change("Schedule name", "Owned schedule");
-  change("Project", (await screen.findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
+  change("Project", (await within(screen.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
   change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
   change("Execution Worker", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
@@ -391,7 +397,6 @@ it("reads unavailable usage through the actual Go service without inventing cost
  await screen.findByText("Incomplete coverage");
  expect(screen.getByText(/No exact response usage is recorded/)).toBeTruthy();
  expect(screen.getByText("Actual API cost:").parentElement!.textContent).toContain("Unavailable");
- fireEvent.click(screen.getByRole("button", { name: "Filters" }));
  fireEvent.click(screen.getByRole("checkbox",{name:"General Chat only"}));
  fireEvent.click(screen.getByRole("button",{name:"Apply filters"}));
  await waitFor(()=>expect(screen.queryByText("Loading usage…")).toBeNull());

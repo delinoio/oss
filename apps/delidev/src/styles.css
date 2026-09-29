@@ -394,6 +394,53 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .inbox-skeleton span { display: block; height: 56px; border-radius: 8px; background: #e9edf3; }
 .inbox-read-progress { color: #5b6577; font-size: 14px; }
 
+/* The contextual sidebar keeps one controller outlet so responsive placement never duplicates query observers or drafts. */
+.sidebar-pane-dialog { position: static; display: flex; width: auto; height: auto; max-width: none; max-height: none; margin: 0; padding: 0; overflow: hidden; border: 0; border-radius: 0; color: inherit; background: transparent; }
+.sidebar-pane-dialog[open] { display: flex; }
+.sidebar-pane-dialog::backdrop { background: transparent; }
+.sidebar-drawer-close, .sidebar-context-trigger { display: none; }
+.sidebar-pane { width: 100%; }
+.sidebar-header-button[aria-current="page"] { color: #17499f; background: #e7efff; border-radius: 7px; }
+.sidebar-rail-button[aria-current="page"] { color: #17499f; background: #e7efff; }
+.sidebar-surface-content { min-width: 0; padding: 2px 1px 10px; }
+.sidebar-surface-content > h2 { margin: 3px 4px 12px; color: #202632; font-size: 16px; font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
+.sidebar-surface-content label { gap: 5px; margin-block: 10px; color: #374151; font-size: 12px; font-weight: 550; }
+.sidebar-surface-content input, .sidebar-surface-content select { min-height: 40px; padding: 8px 9px; border-radius: 7px; font-size: 13px; }
+.sidebar-surface-content button { min-height: 40px; padding: 7px 9px; border-radius: 7px; font-size: 12px; white-space: normal; }
+.sidebar-surface-content .actions { gap: 6px; }
+.sidebar-form { display: grid; gap: 2px; }
+.sidebar-form > button, .sidebar-action { width: 100%; margin-block: 5px 9px; }
+.sidebar-filter-options { display: grid; gap: 4px; margin-block: 8px 12px; }
+.sidebar-filter-options > button { width: 100%; border-color: transparent; background: transparent; text-align: left; }
+.sidebar-filter-options > button[aria-pressed="true"] { color: #17499f; background: #e7efff; font-weight: 600; }
+.sidebar-help { margin: 7px 3px 10px; color: #5b6577; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.sidebar-list-heading { min-height: 36px; margin-top: 8px; }
+.sidebar-list-heading h3 { margin: 0; color: #5b6577; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.sidebar-list-heading button { min-height: 32px; padding: 4px 7px; font-size: 11px; }
+.sidebar-repository-row { display: grid; width: 100%; gap: 2px; margin-block: 3px; padding: 7px 8px !important; border-color: transparent; background: transparent; text-align: left; overflow-wrap: anywhere; }
+.sidebar-repository-row[aria-pressed="true"] { color: #202632; background: #e2e5e9; border-color: transparent; font-weight: 600; }
+.sidebar-repository-row small { font-size: 10px; }
+.sidebar-schedule-row { padding: 5px 3px 8px; border-bottom: 1px solid #d8dee8; }
+.sidebar-schedule-row > button { width: 100%; min-height: 36px; padding: 5px 7px; border-color: transparent; background: transparent; text-align: left; }
+.sidebar-schedule-row > button[aria-current="true"] { background: #e2e5e9; }
+.sidebar-schedule-row > p { margin: 2px 5px 0; color: #5b6577; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.schedule-page { min-height: 100%; }
+
+@media (max-width: 759px) {
+  .app { grid-template-columns: 52px minmax(0, 1fr); min-height: 0; }
+  .sidebar { display: contents; }
+  .sidebar-rail { grid-column: 1; grid-row: 1; z-index: 2; }
+  .sidebar-pane-dialog { display: none; position: fixed; z-index: 30; inset: 0 auto 0 52px; width: min(288px, calc(100vw - 52px)); height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0; overflow: hidden; background: transparent; }
+  .sidebar-pane-dialog:modal { display: block; box-shadow: 0 0 0 100vmax #16243b66; }
+  .sidebar-pane-dialog:modal::backdrop { background: transparent; }
+  .sidebar-pane { width: 100%; height: 100%; padding: 12px 12px 9px; background: #f5f6f8; }
+  .sidebar-drawer-close { display: block; align-self: flex-start; min-height: 40px; }
+  .sidebar-context-trigger { display: block; min-height: 40px; margin: 12px 16px; }
+  main { grid-column: 2; grid-row: 1; }
+  .inbox { min-height: calc(100dvh - 64px); }
+  .page { padding: 22px 16px; }
+}
+
 @media (max-width: 1119px) {
   .inbox-workspace { display: block; }
   .inbox-detail-pane { display: none; height: 100%; }

@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { createQueryOptions, useQuery, useTransport } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { FailureCode, InboxQuery, InboxReadState, InboxSource, clientFailure, isEntityId, newRequestId, type InboxView, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, FailureCode, InboxQuery, InboxReadState, InboxSource, clientFailure, isEntityId, newRequestId, type InboxView, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import { Interaction } from "./interactions";
 import { currentInboxSource, inboxResponseCurrent } from "./inbox-source";
 import { draftByteLength, initialInteractionDraft, interactionRequestIdentity, isEmptyInteractionDraft, type InboxInteractionDraft, type InteractionDraftState } from "./inbox-drafts";
+import { ResourceChoice } from "./configuration-fields";
+import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 
 enum DetailReadState { Loading = "loading", Ready = "ready", Stale = "stale", Unavailable = "unavailable" }
 interface DetailRead { id: string; state: DetailReadState; view?: InboxView; error?: unknown }
@@ -74,8 +76,9 @@ function closureText(value: unknown): string {
 }
 
 export function Inbox({ active, open, notificationId = "", notificationActivation = 0 }: { active: boolean; open: (sessionId: string) => void; notificationId?: string; notificationActivation?: number }) {
-  const [source, setSource] = useState(InboxSource.UNSPECIFIED);
-  const [readState, setReadState] = useState(InboxReadState.UNSPECIFIED);
+  const emptyFilters = { source: InboxSource.UNSPECIFIED, readState: InboxReadState.UNSPECIFIED, projectId: "", sessionId: "" };
+  const [draftFilters, setDraftFilters] = useState(emptyFilters);
+  const [filters, setFilters] = useState(emptyFilters);
   const [page, setPage] = useState("");
   const listHeading = useRef<HTMLHeadingElement>(null);
   const listScroller = useRef<HTMLDivElement>(null);
@@ -92,7 +95,8 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
   const [draftCollection, setDraftCollection] = useState<DraftCollection>({ values: new Map(), errors: new Map() });
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const list = useQuery(InboxQuery.listInbox, { source, readState, pageSize: 20, pageToken: page }, { enabled: active, refetchInterval: active ? 5000 : false, refetchIntervalInBackground: false, retry: false });
+  const closeDrawer = useCloseSidebarDrawer();
+  const list = useQuery(InboxQuery.listInbox, { ...filters, pageSize: 20, pageToken: page }, { enabled: active, refetchInterval: active ? 5000 : false, refetchIntervalInBackground: false, retry: false });
   const selected = useQuery(InboxQuery.getInboxEntry, { id: selectedId }, { enabled: false, retry: false, gcTime: 5 * 60 * 1000 });
 
   const reloadList = () => {
@@ -227,19 +231,21 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
     setDetailRead(undefined);
   };
 
-  const filterChanged = (nextSource: InboxSource, nextReadState: InboxReadState) => {
-    setSource(nextSource); setReadState(nextReadState); setPage("");
-  };
+  const applyFilters = (next = draftFilters) => { setFilters(next); setPage(""); closeDrawer(); };
 
-  const sourceLabel = (value: InboxSource) => value === InboxSource.INTERACTION ? "Requests" : value === InboxSource.EXECUTION_TERMINAL ? "Results" : "All";
-  const readLabel = (value: InboxReadState) => value === InboxReadState.UNREAD ? "Unread" : value === InboxReadState.READ ? "Read" : "All";
-
-  return <section className={`inbox ${selectedId ? "has-selection" : ""}`} aria-label="Inbox workspace">
+  return <>
+    <SidebarSurface active={active} title="Inbox">
+      <div className="sidebar-filter-options" aria-label="Inbox read state">
+        {([[InboxReadState.UNSPECIFIED, "All items"], [InboxReadState.UNREAD, "Unread"], [InboxReadState.READ, "Read"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={draftFilters.readState === value} onClick={() => setDraftFilters((current) => ({ ...current, readState: value }))}>{label}</button>)}
+      </div>
+      <label>Source<select value={draftFilters.source} onChange={(event) => setDraftFilters((current) => ({ ...current, source: Number(event.target.value) as InboxSource }))}><option value={InboxSource.UNSPECIFIED}>All sources</option><option value={InboxSource.INTERACTION}>Requests</option><option value={InboxSource.EXECUTION_TERMINAL}>Execution results</option></select></label>
+      <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={draftFilters.projectId} change={(projectId) => setDraftFilters((current) => ({ ...current, projectId }))} active={active} />
+      <ResourceChoice label="Session" kind={EntityKind.SESSION} value={draftFilters.sessionId} change={(sessionId) => setDraftFilters((current) => ({ ...current, sessionId }))} active={active} />
+      <div className="actions"><button className="primary" onClick={() => applyFilters()}>Apply filters</button><button onClick={() => { const defaults = { ...emptyFilters }; setDraftFilters(defaults); applyFilters(defaults); }}>Reset</button></div>
+      <p className="sidebar-help">Opening an item does not mark it read.</p>
+    </SidebarSurface>
+  <section className={`inbox ${selectedId ? "has-selection" : ""}`} aria-label="Inbox workspace" hidden={!active}>
     <header className="inbox-header"><div><h2>Inbox</h2><p>Requests and execution results</p></div><button onClick={refresh} disabled={!active || list.isFetching}>Refresh</button></header>
-    <div className="inbox-filters" aria-label="Inbox filters">
-      <label>Source<select value={source} onChange={(event) => filterChanged(Number(event.target.value) as InboxSource, readState)}><option value={InboxSource.UNSPECIFIED}>All</option><option value={InboxSource.INTERACTION}>Requests</option><option value={InboxSource.EXECUTION_TERMINAL}>Results</option></select></label>
-      <label>Read state<select value={readState} onChange={(event) => filterChanged(source, Number(event.target.value) as InboxReadState)}><option value={InboxReadState.UNSPECIFIED}>All</option><option value={InboxReadState.UNREAD}>Unread</option><option value={InboxReadState.READ}>Read</option></select></label>
-    </div>
     <div className="inbox-workspace">
       <section className="inbox-list-pane" aria-label="Inbox items">
         <h3 ref={listHeading} tabIndex={-1} className="inbox-list-heading">Items</h3>
@@ -259,9 +265,9 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
               <span className={`inbox-read-label ${state === "unread" ? "is-unread" : ""}`}>{state === "unread" ? <><span className="inbox-unread-dot" aria-hidden="true" />Unread</> : state === "read" ? "Read" : "Unavailable"}</span>
             </button></li>;
           })}</ul> : null}
-          {!list.isPending && !list.error && entries.length === 0 ? source === InboxSource.UNSPECIFIED && readState === InboxReadState.UNSPECIFIED
+          {!list.isPending && !list.error && entries.length === 0 ? filters.source === InboxSource.UNSPECIFIED && filters.readState === InboxReadState.UNSPECIFIED && !filters.projectId && !filters.sessionId
             ? <p className="inbox-empty">No retained requests or execution results.</p>
-            : <div className="inbox-empty"><p>No items match these filters.</p><button onClick={() => filterChanged(InboxSource.UNSPECIFIED, InboxReadState.UNSPECIFIED)}>Reset filters</button></div> : null}
+            : <div className="inbox-empty"><p>No items match these filters.</p><button onClick={() => { setDraftFilters({ ...emptyFilters }); applyFilters({ ...emptyFilters }); }}>Reset filters</button></div> : null}
         </div>
         <nav className="inbox-pager" aria-label="Inbox pages"><button disabled={!page || list.isFetching} onClick={() => setPage("")}>First page</button><button disabled={!list.data?.nextPageToken || list.isFetching} onClick={() => setPage(list.data!.nextPageToken)}>Next page</button></nav>
       </section>
@@ -276,7 +282,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
         </>}
       </section>
     </div>
-  </section>;
+  </section></>;
 }
 
 function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft, open, refresh, pageContains }: { view: InboxView; readOnly: boolean; draft?: InboxInteractionDraft; draftError?: string; saveDraft: (resource: Resource, editable: InteractionDraftState) => void; clearDraft: (resourceId: string) => void; open: (sessionId: string) => void; refresh: () => void; pageContains: boolean }) {

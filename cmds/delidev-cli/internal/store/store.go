@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 21
+const SchemaVersion = 23
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -167,11 +167,17 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema); err == nil {
+		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema+providerActivationSchema); err == nil {
+			err = seedHostedProviders(ctx, tx)
+		}
+		if err == nil {
+			_, err = tx.ExecContext(ctx, "PRAGMA user_version=22")
+		}
+		if err == nil {
 			err = applySessionTitleSchema(ctx, tx)
-			if err == nil {
-				err = tx.Commit()
-			}
+		}
+		if err == nil {
+			err = tx.Commit()
 		} else {
 			tx.Rollback()
 		}

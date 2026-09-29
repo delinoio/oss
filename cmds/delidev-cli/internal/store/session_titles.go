@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS session_title_http_claims (
  job_id TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
  claimed_at INTEGER NOT NULL
 );
-PRAGMA user_version=21;
+PRAGMA user_version=23;
 `
 
 func applySessionTitleSchema(ctx context.Context, tx *sql.Tx) error {

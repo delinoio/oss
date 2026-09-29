@@ -20,9 +20,14 @@ import { TrayDestination } from "./tray";
 import { NotificationPresentation } from "./notification-presentation";
 import { Sidebar } from "./sidebar";
 import { SettingsEntryDestination } from "./settings";
+import { SidebarOutletProvider } from "./sidebar-context";
+import { PullRequests } from "./pull-requests";
+import { PRWorkflowProvider } from "./pr-workflow";
 
 function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; localServer?: ReactNode; readLocalWorker?: ReadLocalWorkerProof }) {
   const [surface, setSurface] = useState(Surface.Sessions);
+  const [sidebarTarget, setSidebarTarget] = useState<HTMLElement | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [selected, setSelected] = useState("");
   const [selectedInbox, setSelectedInbox] = useState("");
   const [inboxActivation, setInboxActivation] = useState(0);
@@ -41,23 +46,29 @@ function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDevice
   });
   const sessions = useQuery(SessionQuery.listSessions, { projectId: "", includeArchived: false, pageSize: 50, pageToken: "" });
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
-  const open = (id: string) => { setSelected(id); setSurface(Surface.Sessions); };
+  const open = (id: string) => { setSelected(id); setSurface(Surface.Sessions); setDrawerOpen(false); };
   const navigateTray = (destination: TrayDestination, inboxId?: string) => {
     if (destination === TrayDestination.Inbox) { setSelectedInbox(inboxId ?? ""); setInboxActivation((value) => value + 1); }
+    setDrawerOpen(false);
     if (destination === TrayDestination.Settings) { setSettings(true); return; }
     setSettings(false);
+    setDrawerOpen(false);
     setSurface(destination === TrayDestination.Inbox ? Surface.Inbox : destination === TrayDestination.Usage ? Surface.Usage : Surface.Sessions);
   };
   const openSettings = (destination?: SettingsEntryDestination) => { if (destination) setSettingsEntry(destination); setSettings(true); };
   const consumeSettingsEntry = useCallback(() => setSettingsEntry(undefined), []);
-  return <div className="app"><a className="skip" href="#main">Skip to content</a><Sidebar surface={surface} selectedSessionId={selected} localServer={localServer} navigate={(destination) => { setSurface(destination); if (destination === Surface.Inbox) setSelectedInbox(""); }} openSession={open} newSession={() => { setSettings(false); setNewSessionActivation((value) => value + 1); setSurface(Surface.NewSession); }} openSettings={openSettings} /><main id="main" tabIndex={-1}><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
+  const surfaceName = surface === Surface.Sessions || surface === Surface.NewSession ? "session navigation" : surface === Surface.PullRequests ? "pull request filters" : surface === Surface.Usage ? "usage filters" : surface === Surface.Schedules ? "schedule navigation" : surface === Surface.Activity ? "activity filters" : surface === Surface.Inbox ? "inbox filters" : "search filters";
+  const startNewSession = () => { setSettings(false); setDrawerOpen(false); setNewSessionActivation((value) => value + 1); setSurface(Surface.NewSession); };
+  return <SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen}><div className="app"><a className="skip" href="#main">Skip to content</a><Sidebar surface={surface} selectedSessionId={selected} localServer={localServer} navigate={(destination) => { setDrawerOpen(false); setSurface(destination); if (destination === Surface.Inbox) setSelectedInbox(""); }} openSession={open} newSession={startNewSession} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main id="main" tabIndex={-1}><button type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>Open {surfaceName}</button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>Your sessions, in one place</h2><p>Select a retained session or start a new conversation.</p><h3>Before your first session</h3><ol><li>Connect to your DeliDev server.</li><li>Pair an execution Worker and verify its installed harness.</li><li>Connect an AI account and configure an Agent Worker.</li><li>Configure a project, or choose General Chat.</li></ol><button onClick={(event) => { event.currentTarget.focus(); setSettings(true); }}>View prerequisites in Settings</button><Problem error={status.error} /></section>}</div>
-    <NewSession active={surface === Surface.NewSession} ownsActivation={surface === Surface.NewSession && !settings} activation={newSessionActivation} readLocalWorker={readLocalWorker} back={() => { setSurface(Surface.Sessions); void sessions.refetch(); }} openSettings={() => openSettings()} open={open} created={() => { void sessions.refetch(); }} />
-    {surface === Surface.Search ? <Search open={open} /> : surface === Surface.Activity ? <Activity open={open} /> : null}
+    <NewSession active={surface === Surface.NewSession && !settings} ownsActivation={surface === Surface.NewSession && !settings} activation={newSessionActivation} readLocalWorker={readLocalWorker} back={() => { setSurface(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
+    <Search active={surface === Surface.Search} open={open} />
+    <Activity active={surface === Surface.Activity} open={open} />
     <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} /></div>
     <Usage active={surface === Surface.Usage} open={open} />
     <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} />
-  </main><Settings pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} close={() => setSettings(false)} visible={settings} entryDestination={settingsEntry} destinationConsumed={consumeSettingsEntry} /></div>;
+    <PullRequests active={surface === Surface.PullRequests} openSettings={openSettings} />
+  </main><Settings pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} close={() => setSettings(false)} visible={settings} entryDestination={settingsEntry} destinationConsumed={consumeSettingsEntry} /></div></SidebarOutletProvider>;
 }
 
 // Reconnects for one server/device retain this memory and its mutation receipts
@@ -69,5 +80,5 @@ export function App({ transport, localServer, connectionReady = true, connection
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><Shell pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} localServer={localServer} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><PRWorkflowProvider><Shell pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} localServer={localServer} readLocalWorker={readLocalWorker} /></PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
 }

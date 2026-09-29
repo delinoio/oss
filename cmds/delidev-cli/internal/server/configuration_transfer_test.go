@@ -250,7 +250,7 @@ func TestPortableProviderActivationFieldsRejectExplicitMalformedValues(t *testin
 }
 
 func TestConfigurationImportRejectsManagedPresetCollisionsAtPreviewAndApply(t *testing.T) {
-	managed := providers.Presets()[0].Provider
+	managed := providers.Presets()[6].Provider // Ollama remains virtual until explicitly saved.
 	single := func() domain.ConfigurationImportSelection {
 		provider := transferEntry(domain.ProviderKind, managed)
 		return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 1, Entries: []domain.ConfigurationEntry{provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
@@ -276,7 +276,7 @@ func TestConfigurationImportRejectsManagedPresetCollisionsAtPreviewAndApply(t *t
 			t.Fatal("deferred apply did not recheck the managed preset collision")
 		}
 		rows, listErr := s.Store.List(context.Background(), store.Filter{Kind: domain.ProviderKind, Limit: 10})
-		if listErr != nil || len(rows) != 1 {
+		if listErr != nil || len(rows) != 7 {
 			t.Fatal("failed deferred apply changed provider state", listErr, len(rows))
 		}
 	})
@@ -456,7 +456,7 @@ func TestConfigurationTransferRealConnectRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	var bundle domain.ConfigurationBundle
-	if err = domain.Decode(exported.Msg.DocumentJson, &bundle); err != nil || len(bundle.Entries) != 5 {
+	if err = domain.Decode(exported.Msg.DocumentJson, &bundle); err != nil || len(bundle.Entries) != 11 {
 		t.Fatal("wire export", err)
 	}
 }
