@@ -3221,15 +3221,31 @@ The API client passes 3 files / 41 tests, type checking and build. Root
 freshness (`/tmp/delidev-1079-proto.log`). Linux arm64 and Windows amd64 workspace
 test binaries cross-compile; cross-compilation does not prove native runtime.
 
-The complete race run is still in progress. Its existing
+The complete `go test -race -timeout=30m ./cmds/delidev-cli/...` run finished
+with failures. Its existing
 `TestCLISessionAcceptanceQueueAndArchive` hits the bounded Worker file-reader
 comparison deadline (`/tmp/delidev-1079-race.log`). An isolated repeat and the
 serialized final run hit the same existing boundary. A separately archived source
 checkout of fetched main `b741cec88d68ba84eaf918bbee22ca28bff57ec6` reproduces
 that fixture failure on its review-create file comparison (56.75s;
 `/tmp/delidev-1079-baseline-cli.log`), without these changes. The production
-read deadline is retained. Final full-suite and typed-capacity regression outcomes
-will be recorded before publication.
+read deadline is retained. The complete store and Worker race suites pass
+(1201.411s and 1252.380s). Existing Grok and workspace native ownership/read
+fixtures also hit bounded deadlines; server and workspace suites exhaust the
+extended 30-minute package budget while running their existing OpenCode shell
+publication and workspace-read cases. These are failed checks, not whole-tree
+acceptance. A second serialized attempt reproduced the CLI boundary and was
+stopped after the complete first result; it does not supply a passing full result.
+See `/tmp/delidev-1079-race.log` and `/tmp/delidev-1079-race-final.log`.
+
+The typed second-repository disk/quota exhaustion regression passes (54.856s;
+`/tmp/delidev-1079-capacity.log`), preserving both sources. Cancellation after
+verified snapshot publication and before source removal now retains
+recovery-required ownership instead of orphaning its server metadata. Explicit
+recovery registers that same snapshot, preserves the present source, settles the
+incomplete cleanup as failed and stays paused. Its focused race regression and
+original recovery checks pass (3.623s;
+`/tmp/delidev-1079-publication-cancellation.log`).
 
 These fixtures use actual local Git and private temporary state with controlled
 storage faults, no user credentials or native AI inference. They do not establish

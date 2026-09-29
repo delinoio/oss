@@ -278,7 +278,9 @@ binds its complete inventory outside that root. Claimed contents are compared
 again before bounded anchored deletion and directory synchronization. A second
 repository copy failure or cancellation cannot remove either original repository.
 Failures after a namespace transition retain recovery uncertainty and private
-copies. Terminal metadata and session state/events commit together after the
+copies. Cancellation/failure after verified snapshot publication but before source
+removal also retains uncertainty: explicit recovery registers that same retained
+snapshot while settling the incomplete cleanup and preserving present sources. Terminal metadata and session state/events commit together after the
 owning Worker report; malformed reports retain uncertainty instead of authorizing
 Resume. Snapshots use the existing generic metadata schema; no database migration,
 history reset or new pre-migration backup is needed.

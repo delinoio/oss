@@ -380,3 +380,34 @@ func TestSnapshotCancellationDuringSecondCopyPreservesSources(t *testing.T) {
 		t.Fatal("canceled snapshot published")
 	}
 }
+
+func TestSnapshotCancellationAfterPublicationRetainsRecoveryOwnership(t *testing.T) {
+	m := manager(t)
+	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := m.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600)
+	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StoragePreview, Preparation: prepare, Manifest: manifest}
+	preview := storageDo(t, m, input)
+	input.Action = StorageCleanup
+	input.OperationID = domain.NewID()
+	input.SnapshotID = domain.NewID()
+	input.PreviewDigest = preview.PreviewDigest
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.storageAfterSnapshot = cancel
+	result, err := m.Storage(ctx, input)
+	if domain.SafeError(err).Code != domain.RecoveryRequired || result.Snapshot == nil {
+		t.Fatal("published snapshot lost its recovery ownership", err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(manifest.PrimaryPath, "keep")); err != nil || string(raw) != "original" {
+		t.Fatal("canceled cleanup removed source", err)
+	}
+	m.storageAfterSnapshot = nil
+	recovered := storageDo(t, m, recoveryRequest(input))
+	if recovered.WorkspaceState != domain.WorkspacePresent || recovered.RecoveredJobState != domain.JobFailed || recovered.Snapshot == nil || recovered.Snapshot.SHA256 != result.Snapshot.SHA256 {
+		t.Fatal("recovery omitted retained published snapshot", recovered)
+	}
+}

@@ -205,6 +205,12 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 	defer lock.Close()
 	defer func() {
 		if returned != nil {
+			// Publication is already a native side effect, even before source
+			// removal. Preserve recovery ownership so cancellation/failure cannot
+			// orphan the verified snapshot outside server metadata.
+			if r.Action == StorageCleanup && result.Snapshot != nil {
+				returned = ResultUncertain()
+			}
 			if storageFull(returned) {
 				returned = domain.Fail(domain.ResourceExhausted, "Worker storage capacity or quota is exhausted.", "Preserve the original operation and copies; free unrelated space before requesting new work.")
 			}
@@ -274,6 +280,9 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			return result, err
 		}
 		result.Snapshot = &snapshot
+		if m.storageAfterSnapshot != nil {
+			m.storageAfterSnapshot()
+		}
 		result.RetainedSnapshotBytes += snapshot.SizeBytes
 		if r.Action == StorageCleanup {
 			// All repositories and independent object stores are synchronized and fully
