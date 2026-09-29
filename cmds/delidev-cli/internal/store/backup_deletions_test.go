@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func deletionFixture(t *testing.T) (*Store, string, context.Context, BackupDeletionInput) {
@@ -295,5 +296,76 @@ func TestBackupDeletionDoesNotAcknowledgeMissingExternalIntent(t *testing.T) {
 	}
 	if _, err := s.readDeletionIntent(in.Backup.ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBackupDeletionCompletedScansAvoidSyncAndStillRemoveReappearingImages(t *testing.T) {
+	s, root, ctx, in := deletionFixture(t)
+	path := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
+	image, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, _, err := s.DeleteBackup(ctx, domain.NewID(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	syncs := 0
+	syncParent := func(path string) error { syncs++; return security.SyncParent(path) }
+	row, err = s.runBackupDeletion(ctx, row.ID, in.ServerID, syncParent)
+	if err != nil || syncs != 2 {
+		t.Fatal(row, err, syncs)
+	}
+	for range 3 {
+		syncs = 0
+		next, err := s.runBackupDeletion(ctx, row.ID, in.ServerID, syncParent)
+		if err != nil || next.Revision != row.Revision || syncs != 0 {
+			t.Fatal(next, err, syncs)
+		}
+	}
+	if err := os.WriteFile(path, image, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, in.Backup.ModifiedAt, in.Backup.ModifiedAt); err != nil {
+		t.Fatal(err)
+	}
+	syncs = 0
+	next, err := s.runBackupDeletion(ctx, row.ID, in.ServerID, syncParent)
+	if err != nil || next.Revision != row.Revision || syncs != 1 {
+		t.Fatal(next, err, syncs)
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+}
+
+func TestBackupDeletionMissingUnlinkAcknowledgmentStillRequiresSync(t *testing.T) {
+	s, root, ctx, in := deletionFixture(t)
+	row, _, err := s.DeleteBackup(ctx, domain.NewID(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	syncs := 0
+	failSync := func(name string) error {
+		syncs++
+		if name == path {
+			return errors.New("directory sync failed")
+		}
+		return security.SyncParent(name)
+	}
+	row, err = s.runBackupDeletion(ctx, row.ID, in.ServerID, failSync)
+	job, decodeErr := Decode[domain.Job](row)
+	if err != nil || decodeErr != nil || job.State != domain.JobUncertain || syncs != 2 {
+		t.Fatal(job, err, decodeErr, syncs)
+	}
+	syncs = 0
+	row, err = s.runBackupDeletion(ctx, row.ID, in.ServerID, func(name string) error { syncs++; return security.SyncParent(name) })
+	job, decodeErr = Decode[domain.Job](row)
+	if err != nil || decodeErr != nil || job.State != domain.JobSucceeded || syncs != 2 {
+		t.Fatal(job, err, decodeErr, syncs)
 	}
 }

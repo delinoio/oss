@@ -2494,3 +2494,12 @@ inferred from these tests.
 The complete post-merge root `TMPDIR=/private/tmp cargo test --
 --test-threads=1` also passed. Generated repository-owned app/client `dist`
 directories were removed after validation.
+
+### PR #1063 review repair: completed deletion maintenance (2026-09-29)
+
+Completed deletion scans validate original journal contents, image absence and
+sidecars without repeatedly synchronizing unchanged directories. Pending or
+uncertain recovery still synchronizes before completion, and a matching restored
+image is revalidated, removed and synchronized. Focused real SQLite/filesystem
+race tests passed (3.909s), including zero-sync repeated completed scans, actual
+reappearing-image removal and a failed then recovered absence-sync boundary.

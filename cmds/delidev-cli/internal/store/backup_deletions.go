@@ -89,6 +89,10 @@ func (s *Store) readDeletionIntent(id domain.ID) (backupDeletionIntent, error) {
 	return v, nil
 }
 func (s *Store) persistDeletionIntent(v backupDeletionIntent) error {
+	return s.persistDeletionIntentState(v, domain.JobQueued, security.SyncParent)
+}
+
+func (s *Store) persistDeletionIntentState(v backupDeletionIntent, state domain.JobState, syncParent func(string) error) error {
 	if err := security.CheckPrivateDir(filepath.Join(s.root, "backup-deletions")); err != nil {
 		return storageError(err)
 	}
@@ -97,7 +101,12 @@ func (s *Store) persistDeletionIntent(v backupDeletionIntent) error {
 		if !reflect.DeepEqual(previous, v) {
 			return deletionConflict()
 		}
-		return storageError(security.SyncParent(s.deletionPath(v.Input.Backup.ID)))
+		// A completed job already proves this exact intent was synchronized.
+		// Continue validating it on every scan without repeating durable writes.
+		if state == domain.JobSucceeded {
+			return nil
+		}
+		return storageError(syncParent(s.deletionPath(v.Input.Backup.ID)))
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return storageError(err)
@@ -335,6 +344,10 @@ func (s *Store) BackupDeletionJobs(ctx context.Context, after domain.ID, limit i
 }
 
 func (s *Store) RunBackupDeletion(ctx context.Context, id, server domain.ID) (Record, error) {
+	return s.runBackupDeletion(ctx, id, server, security.SyncParent)
+}
+
+func (s *Store) runBackupDeletion(ctx context.Context, id, server domain.ID, syncParent func(string) error) (Record, error) {
 	if err := lockBackupContext(ctx, &s.backupGate); err != nil {
 		return Record{}, err
 	}
@@ -351,10 +364,10 @@ func (s *Store) RunBackupDeletion(ctx context.Context, id, server domain.ID) (Re
 	if job.Type != domain.DeleteBackupJob || domain.Decode(job.Input, &v) != nil || v.JobID != id || v.Input.ServerID != server || v.Input.validate() != nil || !v.AcceptedAt.Equal(job.AcceptedAt) {
 		return Record{}, backupUnavailable()
 	}
-	err = s.persistDeletionIntent(v)
+	err = s.persistDeletionIntentState(v, job.State, syncParent)
 	var output BackupDeletionOutput
 	if err == nil {
-		output, err = s.removeBackupImage(ctx, v.Input)
+		output, err = s.removeBackupImage(ctx, v.Input, job.State, syncParent)
 	}
 	if ctx.Err() != nil {
 		return row, domain.SafeError(ctx.Err())
@@ -391,7 +404,7 @@ func (s *Store) RunBackupDeletion(ctx context.Context, id, server domain.ID) (Re
 	return row, writeErr
 }
 
-func (s *Store) removeBackupImage(ctx context.Context, in BackupDeletionInput) (BackupDeletionOutput, error) {
+func (s *Store) removeBackupImage(ctx context.Context, in BackupDeletionInput, state domain.JobState, syncParent func(string) error) (BackupDeletionOutput, error) {
 	result := BackupDeletionOutput{}
 	root := filepath.Join(s.root, "backups")
 	if err := security.CheckPrivateDir(root); err != nil {
@@ -405,7 +418,12 @@ func (s *Store) removeBackupImage(ctx context.Context, in BackupDeletionInput) (
 		}
 	}
 	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
-		return result, storageError(security.SyncParent(path))
+		// Only unfinished jobs may have lost an unlink durability acknowledgment.
+		// Reappearing images still take the verified unlink-and-sync path below.
+		if state == domain.JobSucceeded {
+			return result, nil
+		}
+		return result, storageError(syncParent(path))
 	} else if err != nil {
 		return result, storageError(err)
 	}
@@ -464,7 +482,7 @@ func (s *Store) removeBackupImage(ctx context.Context, in BackupDeletionInput) (
 	if err := os.Remove(path); err != nil {
 		return result, storageError(err)
 	}
-	if err := security.SyncParent(path); err != nil {
+	if err := syncParent(path); err != nil {
 		return result, storageError(err)
 	}
 	return BackupDeletionOutput{ImageBytes: in.Backup.Bytes, RemovalObserved: true}, nil

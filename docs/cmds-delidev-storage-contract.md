@@ -111,6 +111,9 @@ unlink and parent-directory synchronization precede completion publication. Afte
 a crash between unlink and publication, confirmed absence can complete the job,
 but the original removal byte count remains explicitly unknown. Completed jobs
 continue to enforce their external obligation if the managed image reappears.
+Completed scans validate the unchanged external intent and image absence without
+repeating directory synchronization. Unfinished/uncertain cleanup and every
+actual unlink still require synchronization before completion.
 At most 4,096 deletion obligations may be accepted; capacity failure preserves all
 existing obligations rather than evicting them.
 
