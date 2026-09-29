@@ -2262,10 +2262,44 @@ also untested. Component coverage is not counted as native visual evidence. No
 Rust, RPC, schema, or generated source changed; generated `dist` output is
 removed from the worktree.
 
-After merging the current PR branch with `origin/main`, `apps/delidev` `pnpm
-test` passes 69 files / 826 tests, type checking and production build. This
-validates the combined Token Usage and sidebar changes; generated app/client
-`dist` output is removed afterward.
+### Issue #1059 contextual desktop navigation and standalone Pull requests (2026-09-29)
+
+The desktop now has one shared menu rail with Sessions, Pull requests, Usage,
+Schedules, Activity, Inbox and Search context panes. Draft/applied filters and
+per-menu scroll positions stay in connection memory. Pull requests uses the
+existing exact-repository authority and explicit Load flow; disposable reads
+are removed on exit while detail navigation, collection selection, allowance
+confirmations and exact mutation retries remain reachable.
+
+The original `apps/delidev` `pnpm test` run passed on macOS arm64: 69 test
+files / 822 tests, generated API-client build, TypeScript type-checking and the
+Rsbuild production build. After integrating the daily/model Usage analytics,
+the complete command passes with 70 test files / 827 tests, including the
+updated sidebar filter flow, actual Go service integration, generated API-client
+build, TypeScript type-checking and Rsbuild production build. These runs do not
+establish native drawer focus, background inertness, visual layout, or behavior
+at the 960×640, 1,100/1,101px, 759/760px and 200% zoom boundaries. No native
+DeliDev window was captured for this change; Windows and Linux native acceptance
+remains untested. The #1059 navigation and Pull requests work adds no separate
+GitHub backend path, RPC, Rust, or relational database schema. The merged
+branch also includes #1052 analytics, #1047 provider-inventory/account-filter
+RPC, schema, client and Go server changes, and #1060 desktop recovery work from
+`main`. An earlier combined analytics/sidebar run passed 69 test files / 826
+tests. After integrating `main` through #1060, `apps/delidev` `pnpm test`
+passes 72 test files / 848 tests, generated API-client build, TypeScript
+type-checking and Rsbuild production build. `pnpm proto:check` passes
+formatting/lint, breaking-change and generated-source freshness checks.
+`go test ./cmds/delidev-cli/internal/cli -count=1` and
+`go vet ./cmds/delidev-cli/...` pass. One full CLI-module test run had a single
+`TestCLISessionAcceptanceQueueAndArchive` failure because the workspace file
+reader was unavailable during concurrent Go runs; the isolated CLI-package
+rerun passed.
+`cargo test -p delidev-desktop` passes 12 tests; four tests that require a
+built Go sidecar remain ignored. The repository-wide `cargo test` command
+compiled DeliDev but could not finish because five unrelated `binpm` CLI tests
+fail on macOS temporary-path canonicalization and relative `BINPM_HOME`
+validation. App and API-client `dist` directories produced by validation are
+removed from the worktree.
 
 ## 2026-09-29: PR #1060 credential provenance repair
 

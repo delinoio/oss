@@ -529,14 +529,22 @@ func TestGuestStateUsesCanonicalPrivateTemporaryDirectory(t *testing.T) {
 	}
 }
 
-type serviceFixture struct{ commands [][]string }
+type serviceFixture struct {
+	commands      [][]string
+	envs          [][]string
+	failSystemctl bool
+}
 
 func (f *serviceFixture) Run(_ context.Context, name string, args, env []string, _ io.Reader) ([]byte, error) {
 	f.commands = append(f.commands, append([]string{name}, args...))
+	f.envs = append(f.envs, append([]string(nil), env...))
 	for _, value := range env {
 		if strings.Contains(value, "fixture-service-secret") {
 			return nil, errors.New("credential copied into service command")
 		}
+	}
+	if name == "systemctl" && f.failSystemctl {
+		return nil, errors.New("private systemctl session failure")
 	}
 	if name == "launchctl" && len(args) > 0 && args[0] == "print" {
 		return nil, errors.New("not loaded")
@@ -546,6 +554,49 @@ func (f *serviceFixture) Run(_ context.Context, name string, args, env []string,
 func (f *serviceFixture) Start(string, []string, []string) (int, error) {
 	return 0, errors.New("unexpected service spawn")
 }
+
+func TestFailedSystemctlStartKeepsDefinitionAndRedactsSessionFailure(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("systemd user service")
+	}
+	c, s := fixtureStore(t)
+	s.Close()
+	home := filepath.Dir(c.Storage.State)
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "missing runtime"))
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+filepath.Join(home, "missing runtime", "bus"))
+	t.Setenv("RUNMOOR_PAT", "fixture-service-secret")
+	unit := servicePath()
+	if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+		t.Fatal(err)
+	}
+	definition := []byte("fixture service definition")
+	if err := os.WriteFile(unit, definition, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture := &serviceFixture{failSystemctl: true}
+	err := Service(context.Background(), "start", "", c, fixture)
+	requireCode(t, err, ErrDependency)
+	if strings.Contains(err.Error(), "private systemctl session failure") || strings.Contains(err.Error(), "missing runtime") {
+		t.Fatalf("session failure details leaked: %v", err)
+	}
+	if data, err := os.ReadFile(unit); err != nil || string(data) != string(definition) {
+		t.Fatal("failed service start changed its definition")
+	}
+	if len(fixture.envs) != 1 {
+		t.Fatalf("systemctl invocation count = %d, want 1", len(fixture.envs))
+	}
+	env := commandEnvironmentMap(t, fixture.envs[0])
+	if env["XDG_RUNTIME_DIR"] != filepath.Join(home, "missing runtime") || env["DBUS_SESSION_BUS_ADDRESS"] != "unix:path="+filepath.Join(home, "missing runtime", "bus") {
+		t.Fatalf("caller session selectors were not preserved: %v", env)
+	}
+	if _, exists := env["RUNMOOR_PAT"]; exists {
+		t.Fatal("fixture credential entered systemctl environment")
+	}
+}
+
 func TestUserServiceLifecycleUsesIsolatedUserDirectory(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("supported user services")
@@ -555,6 +606,8 @@ func TestUserServiceLifecycleUsesIsolatedUserDirectory(t *testing.T) {
 	home := filepath.Dir(c.Storage.State)
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "runtime session"))
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+filepath.Join(home, "runtime session", "bus"))
 	t.Setenv("RUNMOOR_PAT", "fixture-service-secret")
 	fixture := &serviceFixture{}
 	for _, action := range []string{"install", "start", "stop", "uninstall"} {
@@ -572,6 +625,27 @@ func TestUserServiceLifecycleUsesIsolatedUserDirectory(t *testing.T) {
 	}
 	if len(fixture.commands) < 3 {
 		t.Fatal("service manager lifecycle not exercised")
+	}
+	if len(fixture.commands) != len(fixture.envs) {
+		t.Fatal("service invocation environment was not captured")
+	}
+	var systemctlCalls int
+	for i, command := range fixture.commands {
+		env := commandEnvironmentMap(t, fixture.envs[i])
+		if command[0] == "systemctl" {
+			systemctlCalls++
+			if runtime.GOOS != "linux" {
+				t.Fatal("systemctl unexpectedly used on a non-Linux host")
+			}
+			if env["XDG_RUNTIME_DIR"] != filepath.Join(home, "runtime session") || env["DBUS_SESSION_BUS_ADDRESS"] != "unix:path="+filepath.Join(home, "runtime session", "bus") {
+				t.Fatalf("systemctl action %v did not receive the caller's session selectors: %v", command, env)
+			}
+		} else if _, exists := env["XDG_RUNTIME_DIR"]; exists {
+			t.Fatalf("non-systemctl action %v received Linux session context", command)
+		}
+	}
+	if runtime.GOOS == "linux" && systemctlCalls != 5 {
+		t.Fatalf("systemctl calls = %d, want five across install/start/stop/uninstall", systemctlCalls)
 	}
 }
 func TestCapacityWaitIsVisibleWithoutPreemptingWork(t *testing.T) {

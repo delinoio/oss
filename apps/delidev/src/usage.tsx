@@ -4,6 +4,7 @@ import { EntityKind, UsageCoverage, UsageQuery, UsageTimeGranularity, type Usage
 import { EstimateAmounts, EstimateCosts } from "./estimate-costs";
 import { ResourceChoice } from "./configuration-fields";
 import { Problem } from "./ui";
+import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 import { detectDeviceTimeZone, localDateTimeToUnixMs } from "./usage-time";
 import { UsageCharts } from "./usage-chart";
 
@@ -62,9 +63,9 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
   const [draft, setDraft] = useState<Filters>(emptyFilters);
   const [appliedDraft, setAppliedDraft] = useState<Filters>(emptyFilters);
   const [selection, setSelection] = useState(() => request(emptyFilters, detectDeviceTimeZone()));
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [invalid, setInvalid] = useState("");
   const result = useQuery(UsageQuery.getUsageSummary, selection, { enabled: active });
+  const closeDrawer = useCloseSidebarDrawer();
   const detectedTimeZone = detectDeviceTimeZone();
   const change = <K extends keyof Filters>(key: K, value: Filters[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const apply = () => {
@@ -77,6 +78,7 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
       setInvalid("");
       setSelection(next);
       setAppliedDraft({ ...draft });
+      closeDrawer();
     } catch {
       setInvalid("Choose valid local date and time values in the detected IANA timezone, with From before the exclusive Until and no more than 366 days apart.");
     }
@@ -87,27 +89,33 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
     setAppliedDraft(emptyFilters);
     setSelection(request(emptyFilters, zone));
     setInvalid("");
+    closeDrawer();
   };
   const data = result.data;
   const appliedZone = data?.analytics?.timeZone || selection.timeZone;
   const conditions = appliedFilters(selection);
   const draftChanged = !sameFilters(draft, appliedDraft);
 
-  return <section hidden={!active} className="page usage-page" aria-busy={result.isFetching}>
-    <header className="usage-header"><div><h1>Token Usage</h1><p>DeliDev activity only · Archived sessions included</p></div><div className="usage-header-actions"><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>Refresh</button><button type="button" className="primary" aria-expanded={filtersOpen} aria-controls="usage-filters" onClick={() => setFiltersOpen((value) => !value)}>{filtersOpen ? "Hide filters" : "Filters"}</button></div></header>
+  return <>
+    <SidebarSurface active={active} title="Usage">
+      <p>Last 30 days by default · Times use {detectedTimeZone}.</p>
+      <form className="sidebar-form" onSubmit={(event) => { event.preventDefault(); apply(); }}>
+        <label>From ({detectedTimeZone} time)<input type="datetime-local" value={draft.from} onChange={(event) => change("from", event.target.value)} /></label>
+        <label>Until ({detectedTimeZone} time, exclusive)<input type="datetime-local" value={draft.until} onChange={(event) => change("until", event.target.value)} /></label>
+        <ResourceChoice label="Session" kind={EntityKind.SESSION} value={draft.sessionId} change={(id) => change("sessionId", id)} active={active} />
+        <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={draft.projectId} change={(id) => change("projectId", id)} active={active} disabled={draft.generalChat} />
+        <ResourceChoice label="Account" kind={EntityKind.ACCOUNT} value={draft.accountId} change={(id) => change("accountId", id)} active={active} />
+        <ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={draft.providerId} change={(id) => change("providerId", id)} active={active} />
+        <ResourceChoice label="Model" kind={EntityKind.MODEL} value={draft.modelId} change={(id) => change("modelId", id)} active={active} />
+        <label className="checkbox"><input type="checkbox" checked={draft.generalChat} onChange={(event) => setDraft((current) => ({ ...current, generalChat: event.target.checked, projectId: event.target.checked ? "" : current.projectId }))} />General Chat only</label>
+        {invalid ? <p role="alert">{invalid}</p> : null}
+        <div className="actions"><button type="submit" className="primary">Apply filters</button><button type="button" onClick={reset}>Reset to last 30 days</button></div>
+      </form>
+    </SidebarSurface>
+    <section hidden={!active} className="page usage-page" aria-busy={result.isFetching}>
+    <header className="usage-header"><div><h1>Token Usage</h1><p>DeliDev activity only · Archived sessions included</p></div><div className="usage-header-actions"><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>Refresh</button></div></header>
     <div className="usage-applied" role="group" aria-label="Applied conditions"><strong>Applied conditions</strong><span>{data ? `${formatAppliedTime(data.fromUnixMs, appliedZone)} – ${formatAppliedTime(data.untilUnixMs, appliedZone)} (exclusive)` : pendingRange(selection)}</span><span>Timezone: {appliedZone}</span><span>Times show when the server first retained each response, not provider execution time.</span>{conditions.length ? <span>{conditions.join(" · ")}</span> : <span>All sessions, accounts, APIs and models</span>}{draftChanged ? <span className="usage-draft-state">Unapplied filter edits</span> : null}</div>
-    <form id="usage-filters" className="usage-filters" hidden={!filtersOpen} onSubmit={(event) => { event.preventDefault(); apply(); }}>
-      <label>From ({detectedTimeZone} time)<input type="datetime-local" value={draft.from} onChange={(event) => change("from", event.target.value)} /></label>
-      <label>Until ({detectedTimeZone} time, exclusive)<input type="datetime-local" value={draft.until} onChange={(event) => change("until", event.target.value)} /></label>
-      <ResourceChoice label="Usage session" kind={EntityKind.SESSION} value={draft.sessionId} change={(id) => change("sessionId", id)} active={active} />
-      <ResourceChoice label="Usage project" kind={EntityKind.PROJECT} value={draft.projectId} change={(id) => change("projectId", id)} active={active} disabled={draft.generalChat} />
-      <ResourceChoice label="Usage account" kind={EntityKind.ACCOUNT} value={draft.accountId} change={(id) => change("accountId", id)} active={active} />
-      <ResourceChoice label="Usage provider" kind={EntityKind.PROVIDER} value={draft.providerId} change={(id) => change("providerId", id)} active={active} />
-      <ResourceChoice label="Usage model" kind={EntityKind.MODEL} value={draft.modelId} change={(id) => change("modelId", id)} active={active} />
-      <label className="checkbox"><input type="checkbox" checked={draft.generalChat} onChange={(event) => setDraft((current) => ({ ...current, generalChat: event.target.checked, projectId: event.target.checked ? "" : current.projectId }))} />General Chat only</label>
-      <div className="actions"><button type="submit" className="primary">Apply filters</button><button type="button" onClick={reset}>Reset to last 30 days</button></div>
-    </form>
-    {invalid ? <p role="alert" className="usage-inline-error">{invalid}</p> : null}<Problem error={result.error} />
+    {draftChanged ? <p className="usage-draft-state" role="status">Unapplied filter edits are in the Usage sidebar.</p> : null}<Problem error={result.error} />
     {result.isFetching ? <p className="usage-loading" role="status">{data ? "Refreshing this applied range…" : "Loading token usage…"}</p> : null}
     {data && result.error ? <p className="notice">The refresh failed. These are the last successfully retrieved values for this applied range; the displayed data is stale.</p> : null}
     {!data && result.isPending ? <div className="usage-skeletons" aria-hidden="true"><div /><div /><div /><div /></div> : null}
@@ -130,5 +138,5 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
       </section>
       <section className="usage-costs" aria-labelledby="usage-cost-title"><h2 id="usage-cost-title">Cost evidence</h2><p><strong>Actual API cost:</strong> Unavailable — no verified attributable charge is supplied by the current telemetry.</p><EstimateCosts totals={data.estimates} pricing={data.pricing} /><p>Complete token-price categories do not establish complete telemetry, billed spend, a billing ceiling or budget compliance. Historical estimates remain separated by currency and original price basis.</p></section>
     </> : null}
-  </section>;
+  </section></>;
 }

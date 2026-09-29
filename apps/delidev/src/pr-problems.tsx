@@ -6,6 +6,7 @@ import { bounded, date, positive, sha, uuid } from "./github-query-model";
 import { useRetainedMutation } from "./mutation";
 import { CIOriginalEvidence, PRCI, validCIContext, validPRCI } from "./github-ci";
 import { Problem } from "./ui";
+import { prSelectionKey, usePRWorkflow } from "./pr-workflow";
 import { OpenPRRemediationHistory } from "./pr-remediation-history";
 
 enum LocalState { Unhandled = "unhandled", Dismissed = "locally-dismissed" }
@@ -114,7 +115,9 @@ function ProblemRow({ row, value, selection, disabled, refreshed }: { row: Resou
 }
 export function PRProblemHistory({ selection }: { selection: PRProblemSelection }) {
   const [page, setPage] = useState("");
-  const [kind, setKind] = useState(PullRequestProblemCollectionKind.FEEDBACK);
+  const workflow = usePRWorkflow();
+  const collectionKey = prSelectionKey(selection);
+  const kind = workflow.collectionKinds.get(collectionKey) ?? PullRequestProblemCollectionKind.FEEDBACK;
   const history = useQuery(IntegrationQuery.listPullRequestProblems, { remoteRepositoryId: selection.remoteRepositoryId, pullRequestId: selection.pullRequestId, pageSize: 20, pageToken: page }, options);
   const refreshed = () => { if (page) setPage(""); else void history.refetch(); };
   const collect = useRetainedMutation(`pr-problem-refresh:${selection.repositoryId}:${selection.number}`, IntegrationQuery.refreshPullRequestProblems, refreshed);
@@ -124,7 +127,7 @@ export function PRProblemHistory({ selection }: { selection: PRProblemSelection 
   const valid = rows.length <= 20 && new Set(rows.map(row => row.id)).size === rows.length && (set ? Boolean(readPRProblemSet(set, selection)) && values.every(Boolean) : !rows.length && !history.data?.nextPageToken) && (!history.data?.nextPageToken || rows.length > 0);
   const busy = collect.busy || collect.uncertain || history.isFetching;
   return <section aria-label="Retained PR problems"><h4>Retained PR problems</h4><p>Original feedback, required CI failures and verified merge conflicts are retained on the server. Local dismissal affects only the selected version. Provider changes do not handle retained evidence, and collection or dismissal does not run an agent.</p>
-    <label>Problem collection kind<select disabled={busy} value={kind} onChange={event => setKind(Number(event.target.value) as PullRequestProblemCollectionKind)}><option value={PullRequestProblemCollectionKind.FEEDBACK}>Published feedback</option><option value={PullRequestProblemCollectionKind.CI}>Required CI</option><option value={PullRequestProblemCollectionKind.CONFLICT}>Merge conflict</option></select></label><button disabled={busy} onClick={() => void collect.send({ repositoryId: selection.repositoryId, number: selection.number, requestId: newRequestId(), kind })}>Collect selected PR problems</button><button disabled={history.isFetching} onClick={refreshed}>Refresh retained history</button>
+    <label>Problem collection kind<select disabled={busy} value={kind} onChange={event => workflow.setCollectionKind(collectionKey, Number(event.target.value) as PullRequestProblemCollectionKind)}><option value={PullRequestProblemCollectionKind.FEEDBACK}>Published feedback</option><option value={PullRequestProblemCollectionKind.CI}>Required CI</option><option value={PullRequestProblemCollectionKind.CONFLICT}>Merge conflict</option></select></label><button disabled={busy} onClick={() => void collect.send({ repositoryId: selection.repositoryId, number: selection.number, requestId: newRequestId(), kind })}>Collect selected PR problems</button><button disabled={history.isFetching} onClick={refreshed}>Refresh retained history</button>
     <Problem error={collect.error || history.error} />{collect.uncertain ? <button disabled={collect.busy} onClick={collect.retry}>Retry original problem collection</button> : null}
     {history.isPending ? <p role="status">Reading retained PR problems…</p> : !valid ? <p role="alert">The retained problem page is inconsistent. Refresh its original PR selection.</p> : <>{history.error ? <p>Previous retained history is shown; refresh failed.</p> : null}{set ? <div><p>Inventory revision {set.revision.toString()}</p>{summary.feedback != null ? <p>Latest feedback collection: {text(object(summary.feedback).observed_at)}</p> : null}{summary.ci != null ? <p>Latest CI evaluation: {text(latestCI.state)} · {text(latestCI.reason)} · {text(object(latestCI.observation).observed_at)}</p> : null}{summary.conflict != null ? <p>Latest mergeability: {text(latestConflict.state)} · {text(object(latestConflict.observation).observed_at)}</p> : null}</div> : <p>No problems have been collected for this PR.</p>}{rows.map((row, index) => <ProblemRow key={row.id} row={row} value={values[index]!} selection={selection} disabled={busy || Boolean(history.error)} refreshed={refreshed} />)}{set && !rows.length ? <p>No retained problems on this page.</p> : null}</>}
     <nav aria-label="Retained problem pages"><button disabled={!page || busy} onClick={() => setPage("")}>First problem page</button><button disabled={!valid || !history.data?.nextPageToken || busy || Boolean(history.error)} onClick={() => setPage(history.data!.nextPageToken)}>Next problem page</button></nav>
