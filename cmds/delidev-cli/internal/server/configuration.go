@@ -1,12 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"slices"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
@@ -66,11 +68,248 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 		if id == "" {
 			id = domain.NewID()
 		}
+		if provider, ok := value.(*domain.Provider); ok {
+			if err := preserveProviderActivation(tx, input, id, provider); err != nil {
+				return nil, err
+			}
+		}
+		if err := validateNewProviderSelections(tx, input, id, value); err != nil {
+			return nil, err
+		}
 		if err := validateRelationships(tx, input.Kind, id, input.ExpectedRevision, value); err != nil {
 			return nil, err
 		}
 		return tx.Put(input.Kind, id, input.ExpectedRevision, "", "", value)
 	})
+}
+
+func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id domain.ID, value validatable) error {
+	previousIDs := func(kind domain.Kind) (map[domain.ID]bool, error) {
+		ids := map[domain.ID]bool{}
+		if input.ExpectedRevision == 0 {
+			return ids, nil
+		}
+		record, err := tx.Get(input.Kind, id)
+		if err != nil {
+			return nil, err
+		}
+		switch value.(type) {
+		case *domain.Agent:
+			prior, err := store.Decode[domain.Agent](record)
+			if err != nil {
+				return nil, err
+			}
+			for _, ref := range prior.Accounts {
+				ids[ref.ID] = true
+			}
+		case *domain.Project:
+			prior, err := store.Decode[domain.Project](record)
+			if err != nil {
+				return nil, err
+			}
+			if kind == domain.AgentKind {
+				for _, ref := range prior.Agents.IDs {
+					ids[ref] = true
+				}
+			}
+			if kind == domain.AccountKind {
+				for _, ref := range prior.Accounts.IDs {
+					ids[ref] = true
+				}
+			}
+		case *domain.Account:
+			prior, err := store.Decode[domain.Account](record)
+			if err != nil {
+				return nil, err
+			}
+			ids[prior.ProviderID] = true
+		}
+		return ids, nil
+	}
+	checkProvider := func(providerID domain.ID) error {
+		record, err := tx.Get(domain.ProviderKind, providerID)
+		if err != nil {
+			return err
+		}
+		provider, err := store.Decode[domain.Provider](record)
+		if err != nil {
+			return err
+		}
+		if provider.Protocol != domain.NativeSubscription && !provider.EnabledValue() {
+			return providerDisabled()
+		}
+		return nil
+	}
+	checkAccount := func(accountID domain.ID) error {
+		record, err := tx.Get(domain.AccountKind, accountID)
+		if err != nil {
+			return err
+		}
+		account, err := store.Decode[domain.Account](record)
+		if err != nil {
+			return err
+		}
+		return checkProvider(account.ProviderID)
+	}
+	switch selected := value.(type) {
+	case *domain.Model:
+		if input.ExpectedRevision == 0 {
+			return checkProvider(selected.ProviderID)
+		}
+	case *domain.Account:
+		if input.ExpectedRevision == 0 {
+			return checkProvider(selected.ProviderID)
+		}
+		old, err := previousIDs(domain.ProviderKind)
+		if err != nil {
+			return err
+		}
+		if !old[selected.ProviderID] {
+			return checkProvider(selected.ProviderID)
+		}
+	case *domain.Agent:
+		modelChanged := input.ExpectedRevision == 0
+		if !modelChanged {
+			record, err := tx.Get(input.Kind, id)
+			if err != nil {
+				return err
+			}
+			prior, err := store.Decode[domain.Agent](record)
+			if err != nil {
+				return err
+			}
+			modelChanged = prior.ModelID != selected.ModelID
+		}
+		if modelChanged {
+			record, err := tx.Get(domain.ModelKind, selected.ModelID)
+			if err != nil {
+				return err
+			}
+			model, err := store.Decode[domain.Model](record)
+			if err != nil {
+				return err
+			}
+			if err := checkProvider(model.ProviderID); err != nil {
+				return err
+			}
+		}
+		old, err := previousIDs(domain.AccountKind)
+		if err != nil {
+			return err
+		}
+		for _, ref := range selected.Accounts {
+			if !old[ref.ID] {
+				if err := checkAccount(ref.ID); err != nil {
+					return err
+				}
+			}
+		}
+	case *domain.Project:
+		oldAgents, err := previousIDs(domain.AgentKind)
+		if err != nil {
+			return err
+		}
+		for _, agentID := range selected.Agents.IDs {
+			if oldAgents[agentID] {
+				continue
+			}
+			record, err := tx.Get(domain.AgentKind, agentID)
+			if err != nil {
+				return err
+			}
+			agent, err := store.Decode[domain.Agent](record)
+			if err != nil {
+				return err
+			}
+			modelRecord, err := tx.Get(domain.ModelKind, agent.ModelID)
+			if err != nil {
+				return err
+			}
+			model, err := store.Decode[domain.Model](modelRecord)
+			if err != nil {
+				return err
+			}
+			if err := checkProvider(model.ProviderID); err != nil {
+				return err
+			}
+		}
+		oldAccounts, err := previousIDs(domain.AccountKind)
+		if err != nil {
+			return err
+		}
+		for _, accountID := range selected.Accounts.IDs {
+			if !oldAccounts[accountID] {
+				if err := checkAccount(accountID); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func preserveProviderActivation(tx *store.Tx, input ConfigurationMutation, id domain.ID, provider *domain.Provider) error {
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(input.Document, &fields); err != nil {
+		return domain.Fail(domain.InvalidArgument, "Invalid provider configuration.", "Use one complete provider document.")
+	}
+	var previous *domain.Provider
+	if input.ExpectedRevision > 0 {
+		record, err := tx.Get(domain.ProviderKind, id)
+		if err != nil {
+			return err
+		}
+		value, err := store.Decode[domain.Provider](record)
+		if err != nil {
+			return err
+		}
+		previous = &value
+	}
+	if raw, present := fields["enabled"]; present {
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return domain.Fail(domain.InvalidArgument, "Provider availability must be a boolean.", "Set enabled to true or false.")
+		}
+		var enabled bool
+		if err := json.Unmarshal(raw, &enabled); err != nil {
+			return domain.Fail(domain.InvalidArgument, "Provider availability must be a boolean.", "Set enabled to true or false.")
+		}
+		provider.SetEnabled(enabled)
+	} else if previous != nil {
+		provider.Enabled = previous.Enabled
+	} else {
+		provider.SetEnabled(true)
+	}
+	if raw, present := fields["preset_id"]; present {
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return domain.Fail(domain.InvalidArgument, "Managed preset identity cannot be cleared.", "Create a custom copy as a new provider instead.")
+		}
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return domain.Fail(domain.InvalidArgument, "Invalid managed preset identity.", "Use a supported preset identifier.")
+		}
+		preset := domain.ProviderPresetID(value)
+		provider.PresetID = &preset
+	} else if previous != nil {
+		provider.PresetID = previous.PresetID
+	}
+	return nil
+}
+
+func providerPresetDefaults(id domain.ProviderPresetID) (domain.Provider, bool) {
+	for _, preset := range providers.Presets() {
+		if preset.ID == id {
+			return preset.Provider, true
+		}
+	}
+	return domain.Provider{}, false
+}
+
+func sameProviderPresetDefaults(provider, canonical domain.Provider) bool {
+	return provider.Name == canonical.Name && provider.Endpoint == canonical.Endpoint && provider.Protocol == canonical.Protocol && provider.Authentication == canonical.Authentication && provider.Discovery == canonical.Discovery
+}
+
+func providerDisabled() *domain.Error {
+	return domain.Fail(domain.ProviderDisabled, "The selected API provider is off.", "Enable this provider or select an active API provider before starting another turn.")
 }
 func mustExist(tx configurationView, kind domain.Kind, ids ...domain.ID) error {
 	for _, id := range ids {
@@ -85,6 +324,7 @@ type configurationView interface {
 	Get(domain.Kind, domain.ID) (store.Record, error)
 	List(store.Filter) ([]store.Record, error)
 	ValidateModelIdentity(domain.ID, domain.Model) error
+	ProviderPresetExists(domain.ProviderPresetID, domain.ID) (bool, error)
 }
 
 func all(tx configurationView, kind domain.Kind) ([]store.Record, error) {
@@ -157,6 +397,12 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 		return mustExist(tx, domain.TemplateKind, v.Templates...)
 	case *domain.Provider:
+		if v.PresetID != nil {
+			canonical, ok := providerPresetDefaults(*v.PresetID)
+			if !ok || !sameProviderPresetDefaults(*v, canonical) {
+				return domain.Fail(domain.InvalidArgument, "Managed preset settings are server-owned.", "Use the preset's fixed provider defaults or create a custom copy.")
+			}
+		}
 		if expected > 0 {
 			old, err := tx.Get(kind, id)
 			if err != nil {
@@ -165,6 +411,9 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			previous, err := store.Decode[domain.Provider](old)
 			if err != nil {
 				return err
+			}
+			if previous.PresetID != nil && (v.PresetID == nil || *v.PresetID != *previous.PresetID) || previous.PresetID == nil && v.PresetID != nil {
+				return domain.Fail(domain.Conflict, "Provider preset identity is immutable.", "Keep the managed provider identity or create a new custom copy.")
 			}
 			if previous.Endpoint != v.Endpoint || previous.Protocol != v.Protocol || previous.Authentication != v.Authentication {
 				accounts, err := all(tx, domain.AccountKind)
@@ -180,6 +429,15 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 						return domain.Fail(domain.Conflict, "A connected provider's authority cannot be replaced through configuration.", "Disconnect and remove its account references before changing authority.")
 					}
 				}
+			}
+		}
+		if v.PresetID != nil {
+			found, err := tx.ProviderPresetExists(*v.PresetID, id)
+			if err != nil {
+				return err
+			}
+			if found {
+				return domain.Fail(domain.Conflict, "This API provider preset is already saved.", "Refresh the provider inventory and change the existing preset.")
 			}
 		}
 	case *domain.Model:

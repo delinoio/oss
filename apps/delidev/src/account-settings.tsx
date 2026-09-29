@@ -45,6 +45,9 @@ export interface AccountSettingsProps {
   providerSearchError?: unknown;
   providerSearchHasMore: boolean;
   loadMoreProviders: () => void;
+  providerFilterHasMore?: boolean;
+  loadMoreProviderFilters?: () => void;
+  setProviderFilter: (providerId: string, provider?: AccountProviderSummary) => void;
   subscriptionProviderResources: readonly Resource[];
   subscriptionProviderManagement: ReactNode;
   openApiProviders: (providerId?: string) => void;
@@ -52,7 +55,8 @@ export interface AccountSettingsProps {
   editAccount: (resource: Resource) => void;
   deleteAccount: (resource: Resource) => void;
   onWorkflowReadyChange?: (active: boolean) => void;
-  startApiWizard?: { key: string; providerId: string };
+  startApiWizard?: { key: string; providerId: string; provider?: AccountProviderSummary };
+  providerHint?: AccountProviderSummary;
 }
 
 enum WizardStep {
@@ -154,7 +158,9 @@ function AccountCreationWizard({
   const [autoConnect, setAutoConnect] = useState<number>();
   const options = useMemo(() => eligibleProviders.filter((provider) =>
     provider.providerId && provider.enabled && document(provider.provider).protocol !== "native-subscription"), [eligibleProviders]);
-  const selectedProvider = providers.find((provider) => provider.providerId === providerId);
+  const providerChoices = useMemo(() => startApiWizard?.provider && !providers.some((provider) => provider.providerId === startApiWizard.providerId)
+    ? [...providers, startApiWizard.provider] : providers, [providers, startApiWizard]);
+  const selectedProvider = providerChoices.find((provider) => provider.providerId === providerId);
   const selectedProviderDocument = document(selectedProvider?.provider);
   const selectedAuthentication = text(selectedProviderDocument.authentication);
   const selectedProviderContract = selectedProvider ? providerContract(selectedProvider) : undefined;
@@ -438,7 +444,7 @@ function AccountCreationWizard({
       <fieldset className="account-provider-choices"><legend>Enabled API providers</legend>{options.map((provider) => <label className="radio" key={provider.providerId}><input type="radio" name="api-account-provider" checked={providerId === provider.providerId} onChange={() => pickProvider(provider.providerId)} />{provider.displayName}</label>)}{searchLoading ? <p role="status">Loading providers…</p> : null}<Problem error={searchError} />
         <div className="actions"><button type="button" disabled={!searchHasMore || searchLoading} onClick={loadMore}>More providers</button></div>
       </fieldset>
-      <button className="primary" type="button" disabled={!eligibleProviders.some((provider) => provider.providerId === providerId && provider.enabled) || !selectedProvider?.enabled} onClick={() => setStep(WizardStep.Account)}>Continue to account</button>
+      <button className="primary" type="button" disabled={(!eligibleProviders.some((provider) => provider.providerId === providerId && provider.enabled) && startApiWizard?.providerId !== providerId) || !selectedProvider?.enabled} onClick={() => setStep(WizardStep.Account)}>Continue to account</button>
     </> : <p role="status">Provider choices are unavailable because this server does not report the required provider inventory and account-type filtering capabilities. Update the server before continuing.</p> : <>
       <p>Provider: <strong>{selectedProvider?.displayName ?? "Unavailable"}</strong> <button type="button" disabled={providerChecking || create.busy || create.uncertain} onClick={() => { clearHandoff(); setApiKey(""); setStep(WizardStep.Provider); }}>Change</button></p>
       {!accountTypeFilteringReady ? <p role="status">This server no longer reports the provider inventory and account-type filtering capabilities required here. Update the server before submitting or retrying.</p> : null}
@@ -487,6 +493,9 @@ export function AccountSettings({
   providerSearchError,
   providerSearchHasMore,
   loadMoreProviders,
+  providerFilterHasMore = false,
+  loadMoreProviderFilters,
+  setProviderFilter,
   subscriptionProviderResources,
   subscriptionProviderManagement,
   openApiProviders,
@@ -495,6 +504,7 @@ export function AccountSettings({
   deleteAccount,
   onWorkflowReadyChange,
   startApiWizard,
+  providerHint,
 }: AccountSettingsProps) {
   const [page, setPage] = useState<{ section: AccountSettingsSection; providerId: string; token: string }>({ section, providerId: "", token: "" });
   const [wizard, setWizard] = useState(false);
@@ -506,6 +516,13 @@ export function AccountSettings({
   const [createdSubscription, setCreatedSubscription] = useState<Resource>();
   const [subscriptionCreateProblem, setSubscriptionCreateProblem] = useState(false);
   const lastWizardRequest = useRef("");
+  const providerSummaries = useMemo(() => {
+    const result = [...providers];
+    for (const provider of [providerHint, startApiWizard?.provider]) {
+      if (provider && !result.some((item) => item.providerId === provider.providerId)) result.push(provider);
+    }
+    return result;
+  }, [providerHint, providers, startApiWizard]);
   const pageToken = page.section === section && page.providerId === providerIdFilter ? page.token : "";
   const accountType = section === AccountSettingsSection.Api ? AccountTypeFilter.API : AccountTypeFilter.SUBSCRIPTION;
   const rows = useQuery(ResourceQuery.listResources, {
@@ -515,13 +532,13 @@ export function AccountSettings({
   }, { enabled: active && accountTypeFilteringReady && !wizard && !selectedAccount && !createdSubscription });
   const providersById = useMemo(() => {
     const values = new Map<string, { displayName: string; enabled: boolean }>();
-    for (const provider of providers) values.set(provider.providerId, { displayName: provider.displayName, enabled: provider.enabled });
+    for (const provider of providerSummaries) values.set(provider.providerId, { displayName: provider.displayName, enabled: provider.enabled });
     for (const resource of subscriptionProviderResources) {
       const data = document(resource);
       values.set(resource.id, { displayName: resourceName(resource), enabled: data.enabled !== false });
     }
     return values;
-  }, [providers, subscriptionProviderResources]);
+  }, [providerSummaries, subscriptionProviderResources]);
   const subscriptionProviders = useMemo(() => subscriptionProviderResources.filter((provider) =>
     document(provider).protocol === "native-subscription" && document(provider).authentication === Authentication.Subscription &&
     text(document(provider).endpoint) === ""), [subscriptionProviderResources]);
@@ -602,15 +619,19 @@ export function AccountSettings({
 
   if (selectedAccount) return <AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} />;
   if (createdSubscription) return <section><p role="status">Subscription configuration saved. Subscription login is not available yet; this account remains disconnected.</p><AccountConnection initial={createdSubscription} active={active} close={() => { setCreatedSubscription(undefined); void rows.refetch(); }} /></section>;
-  if (wizard) return <AccountCreationWizard active={active} accountTypeFilteringReady={accountTypeFilteringReady} initialProviderId={wizardProviderId || providerIdFilter} providers={providers} eligibleProviders={eligibleProviders} search={providerSearch} setSearch={setProviderSearch} searchLoading={providerSearchLoading} searchError={providerSearchError} searchHasMore={providerSearchHasMore} loadMore={loadMoreProviders} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProviderId(""); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
+  if (wizard) return <AccountCreationWizard active={active} accountTypeFilteringReady={accountTypeFilteringReady} initialProviderId={wizardProviderId || providerIdFilter} providers={providerSummaries} eligibleProviders={eligibleProviders} search={providerSearch} setSearch={setProviderSearch} searchLoading={providerSearchLoading} searchError={providerSearchError} searchHasMore={providerSearchHasMore} loadMore={loadMoreProviders} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProviderId(""); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
 
-  return <section className="account-settings" aria-labelledby="account-settings-title">
-    <header><div><h2 id="account-settings-title">{section === AccountSettingsSection.Api ? "API Accounts" : "AI Subscription Accounts"}</h2><p>Accounts are stored on the selected server. Connection, validation, and provider availability are separate states.</p></div>
+  return <section className="account-settings" aria-label={section === AccountSettingsSection.Api ? "API account settings" : "AI subscription account settings"}>
+    <header><div><p>Accounts are stored on the selected server. Connection, validation, and provider availability are separate states.</p></div>
       {providerIdFilter ? <button type="button" onClick={clearProviderFilter}>Clear provider filter</button> : null}
       {section === AccountSettingsSection.Api ? <button className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProviderId(providerIdFilter); onWorkflowReadyChange?.(true); setWizard(true); }}>Add API account</button> : null}
     </header>
     {section === AccountSettingsSection.Subscription ? <p>Subscription login is not available yet. Existing subscription configuration can still be managed here.</p> : null}
     {!accountTypeFilteringReady ? <div role="status"><p>Account lists require a server that supports account-type filtering. Update the selected server before opening this list or adding an account.</p><Problem error={accountTypeFilteringProblem} /></div> : <>
+      <div className="account-provider-filter"><label>Search providers<input type="search" value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} /></label><label>Filter accounts by provider<select value={providerIdFilter} onChange={(event) => {
+        const provider = providerSummaries.find((candidate) => candidate.providerId === event.target.value);
+        setProviderFilter(event.target.value, provider);
+      }}><option value="">All providers</option>{providerSummaries.map((provider) => <option key={provider.providerId} value={provider.providerId}>{provider.displayName}{provider.enabled ? " · On" : " · Off"}</option>)}{providerIdFilter && !providerSummaries.some((provider) => provider.providerId === providerIdFilter) ? <option value={providerIdFilter}>Selected provider · {providerIdFilter}</option> : null}</select></label><button type="button" disabled={!providerFilterHasMore || providerSearchLoading} onClick={loadMoreProviderFilters}>More provider filters</button></div>
       <Problem error={rows.error} />
       {rows.error && rows.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded accounts.</p> : null}
       {rows.isFetching && !rows.data ? <p role="status">Loading accounts…</p> : null}

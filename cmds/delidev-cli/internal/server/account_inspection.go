@@ -88,6 +88,9 @@ func inspectionPreflight(tx *store.Tx, input disconnectAccountInput, operation i
 	if err == nil && operation == catalogInspection && !provider.Discovery {
 		err = domain.Fail(domain.Conflict, "Model discovery is disabled for this provider.", "Enable provider discovery or register models manually.")
 	}
+	if err == nil && operation == catalogInspection && !provider.EnabledValue() {
+		err = providerDisabled()
+	}
 	return account, provider, err
 }
 

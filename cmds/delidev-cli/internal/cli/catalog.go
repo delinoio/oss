@@ -12,6 +12,23 @@ import (
 func providerCatalog(ctx context.Context, c client, o options, args []string) (any, error) {
 	operation := args[0]
 	f := flags("provider " + operation)
+	if operation == "inventory" {
+		query := f.String("query", "", "search provider names")
+		enabled := f.Bool("enabled-only", false, "include only enabled API providers")
+		limit := f.Uint64("limit", 50, "page size")
+		page := f.String("page-token", "", "page token")
+		if err := parse(f, args[1:]); err != nil {
+			return nil, err
+		}
+		if *limit < 1 || *limit > 200 {
+			return nil, domain.Fail(domain.InvalidArgument, "Invalid provider page size.", "Use --limit between 1 and 200.")
+		}
+		response, err := c.providers.ListProviderInventory(ctx, request(c, &pb.ListProviderInventoryRequest{Query: *query, EnabledOnly: *enabled, PageSize: uint32(*limit), PageToken: *page}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		return map[string]any{"entries": response.Msg.Entries, "capabilities": response.Msg.Capabilities, "next_page_token": response.Msg.NextPageToken}, nil
+	}
 	if operation == "discover" {
 		account := f.String("account-id", "", "")
 		revision := f.Uint64("revision", 0, "")
@@ -59,7 +76,9 @@ func providerCatalog(ctx context.Context, c client, o options, args []string) (a
 			provider := item.Provider
 			if *name != "" {
 				provider.Name = *name
+				provider.PresetID = nil
 			}
+			provider.SetEnabled(true)
 			raw, _ := json.Marshal(provider)
 			created, err := c.configuration.SaveConfiguration(ctx, request(c, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID)}, Kind: pb.EntityKind_ENTITY_KIND_PROVIDER, SchemaVersion: 1, DocumentJson: raw}))
 			if err != nil {
@@ -90,6 +109,7 @@ func modelCatalog(ctx context.Context, c client, args []string) (any, error) {
 	}
 	query := f.String("query", "", "")
 	hidden := f.Bool("include-hidden", false, "")
+	enabledProviders := f.Bool("enabled-providers-only", false, "filter to active API providers")
 	limit := f.Uint64("limit", 50, "")
 	page := f.String("page-token", "", "")
 	if err := parse(f, args[1:]); err != nil {
@@ -98,7 +118,7 @@ func modelCatalog(ctx context.Context, c client, args []string) (any, error) {
 	if *limit < 1 || *limit > 200 {
 		return nil, domain.Fail(domain.InvalidArgument, "Invalid model page size.", "Use --limit between 1 and 200.")
 	}
-	response, err := c.providers.SearchModels(ctx, request(c, &pb.SearchModelsRequest{Query: *query, ProviderId: *provider, IncludeHidden: *hidden, PageSize: uint32(*limit), PageToken: *page}))
+	response, err := c.providers.SearchModels(ctx, request(c, &pb.SearchModelsRequest{Query: *query, ProviderId: *provider, IncludeHidden: *hidden, PageSize: uint32(*limit), PageToken: *page, EnabledProvidersOnly: *enabledProviders}))
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}

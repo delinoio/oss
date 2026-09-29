@@ -648,9 +648,51 @@ message QueryRepositoryIntegrationResponse {
 
 service ProviderService {
   rpc ListProviderPresets(ListProviderPresetsRequest) returns (ListProviderPresetsResponse);
+  rpc ListProviderInventory(ListProviderInventoryRequest) returns (ListProviderInventoryResponse);
   rpc DiscoverModels(DiscoverModelsRequest) returns (DiscoverModelsResponse);
   rpc SearchModels(SearchModelsRequest) returns (SearchModelsResponse);
   rpc ResolveModel(ResolveModelRequest) returns (ResolveModelResponse);
+}
+enum ProviderPresetId {
+  PROVIDER_PRESET_ID_UNSPECIFIED = 0;
+  PROVIDER_PRESET_ID_VERCEL_AI_GATEWAY = 1;
+  PROVIDER_PRESET_ID_OPENROUTER = 2;
+  PROVIDER_PRESET_ID_OPENAI = 3;
+  PROVIDER_PRESET_ID_ANTHROPIC = 4;
+  PROVIDER_PRESET_ID_XAI = 5;
+  PROVIDER_PRESET_ID_DEEPSEEK = 6;
+  PROVIDER_PRESET_ID_OLLAMA = 7;
+  PROVIDER_PRESET_ID_LM_STUDIO = 8;
+  PROVIDER_PRESET_ID_VLLM = 9;
+}
+enum ProviderInventoryCapability {
+  PROVIDER_INVENTORY_CAPABILITY_UNSPECIFIED = 0;
+  PROVIDER_INVENTORY_CAPABILITY_PROVIDER_ACTIVATION = 1;
+  PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER = 2;
+  PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER = 3;
+  PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER = 4;
+}
+message ListProviderInventoryRequest {
+  string query = 1;
+  bool enabled_only = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+message ProviderInventoryEntry {
+  ProviderPresetId preset_id = 1;
+  // Present only for an already-saved provider.
+  string provider_id = 2;
+  string display_name = 3;
+  bool enabled = 4;
+  uint64 total_accounts = 5;
+  uint64 connected_accounts = 6;
+  Resource provider = 7;
+  bool account_counts_available = 8;
+}
+message ListProviderInventoryResponse {
+  repeated ProviderInventoryEntry entries = 1;
+  string next_page_token = 2;
+  repeated ProviderInventoryCapability capabilities = 3;
 }
 message ListProviderPresetsRequest {}
 message ListProviderPresetsResponse {
@@ -672,6 +714,8 @@ message SearchModelsRequest {
   bool include_hidden = 3;
   uint32 page_size = 4;
   string page_token = 5;
+  // Filters before SQL pagination; false preserves the historical broad search.
+  bool enabled_providers_only = 6;
 }
 message SearchModelsResponse {
   repeated Resource models = 1;

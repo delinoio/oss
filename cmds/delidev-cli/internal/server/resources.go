@@ -76,6 +76,9 @@ func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, erro
 			return f, domain.Fail(domain.InvalidArgument, "Provider filtering is supported only for account lists.", "Select account as the resource kind.")
 		}
 		f.ProviderID = domain.ID(input.ProviderId)
+		if err := f.ProviderID.Validate(); err != nil {
+			return f, err
+		}
 	}
 	switch input.AccountType {
 	case pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_UNSPECIFIED:
@@ -86,7 +89,7 @@ func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, erro
 	default:
 		return f, domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription.")
 	}
-	if f.AccountType != "" && f.Kind != domain.AccountKind {
+	if (f.AccountType != "" || f.ProviderID != "") && f.Kind != domain.AccountKind {
 		return f, domain.Fail(domain.InvalidArgument, "Account type filtering is supported only for account lists.", "Select account as the resource kind.")
 	}
 	if input.Filter.PageToken != "" {
@@ -117,7 +120,13 @@ func (s *Service) ListResources(ctx context.Context, req *connect.Request[pb.Lis
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
-	records, err := s.Store.List(ctx, f)
+	var records []store.Record
+	var more bool
+	if f.ProviderID == "" {
+		records, more, err = s.Store.ListPage(ctx, f)
+	} else {
+		records, more, err = s.Store.ListAccountsByProviderPage(ctx, f, f.ProviderID)
+	}
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
@@ -138,7 +147,7 @@ func (s *Service) ListResources(ctx context.Context, req *connect.Request[pb.Lis
 		result.Resources = append(result.Resources, resource)
 		used += size
 	}
-	if len(result.Resources) < len(records) || len(records) == f.Limit {
+	if len(result.Resources) < len(records) || more {
 		last := result.Resources[len(result.Resources)-1]
 		result.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope(f), After: domain.ID(last.Id)})
 		if err != nil {

@@ -205,6 +205,9 @@ const (
 	// ProviderServiceListProviderPresetsProcedure is the fully-qualified name of the ProviderService's
 	// ListProviderPresets RPC.
 	ProviderServiceListProviderPresetsProcedure = "/delidev.v1.ProviderService/ListProviderPresets"
+	// ProviderServiceListProviderInventoryProcedure is the fully-qualified name of the
+	// ProviderService's ListProviderInventory RPC.
+	ProviderServiceListProviderInventoryProcedure = "/delidev.v1.ProviderService/ListProviderInventory"
 	// ProviderServiceDiscoverModelsProcedure is the fully-qualified name of the ProviderService's
 	// DiscoverModels RPC.
 	ProviderServiceDiscoverModelsProcedure = "/delidev.v1.ProviderService/DiscoverModels"
@@ -1954,6 +1957,7 @@ func (UnimplementedIntegrationServiceHandler) ResumePullRequestRemediation(conte
 // ProviderServiceClient is a client for the delidev.v1.ProviderService service.
 type ProviderServiceClient interface {
 	ListProviderPresets(context.Context, *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error)
+	ListProviderInventory(context.Context, *connect.Request[v1.ListProviderInventoryRequest]) (*connect.Response[v1.ListProviderInventoryResponse], error)
 	DiscoverModels(context.Context, *connect.Request[v1.DiscoverModelsRequest]) (*connect.Response[v1.DiscoverModelsResponse], error)
 	SearchModels(context.Context, *connect.Request[v1.SearchModelsRequest]) (*connect.Response[v1.SearchModelsResponse], error)
 	ResolveModel(context.Context, *connect.Request[v1.ResolveModelRequest]) (*connect.Response[v1.ResolveModelResponse], error)
@@ -1974,6 +1978,12 @@ func NewProviderServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+ProviderServiceListProviderPresetsProcedure,
 			connect.WithSchema(providerServiceMethods.ByName("ListProviderPresets")),
+			connect.WithClientOptions(opts...),
+		),
+		listProviderInventory: connect.NewClient[v1.ListProviderInventoryRequest, v1.ListProviderInventoryResponse](
+			httpClient,
+			baseURL+ProviderServiceListProviderInventoryProcedure,
+			connect.WithSchema(providerServiceMethods.ByName("ListProviderInventory")),
 			connect.WithClientOptions(opts...),
 		),
 		discoverModels: connect.NewClient[v1.DiscoverModelsRequest, v1.DiscoverModelsResponse](
@@ -1999,15 +2009,21 @@ func NewProviderServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // providerServiceClient implements ProviderServiceClient.
 type providerServiceClient struct {
-	listProviderPresets *connect.Client[v1.ListProviderPresetsRequest, v1.ListProviderPresetsResponse]
-	discoverModels      *connect.Client[v1.DiscoverModelsRequest, v1.DiscoverModelsResponse]
-	searchModels        *connect.Client[v1.SearchModelsRequest, v1.SearchModelsResponse]
-	resolveModel        *connect.Client[v1.ResolveModelRequest, v1.ResolveModelResponse]
+	listProviderPresets   *connect.Client[v1.ListProviderPresetsRequest, v1.ListProviderPresetsResponse]
+	listProviderInventory *connect.Client[v1.ListProviderInventoryRequest, v1.ListProviderInventoryResponse]
+	discoverModels        *connect.Client[v1.DiscoverModelsRequest, v1.DiscoverModelsResponse]
+	searchModels          *connect.Client[v1.SearchModelsRequest, v1.SearchModelsResponse]
+	resolveModel          *connect.Client[v1.ResolveModelRequest, v1.ResolveModelResponse]
 }
 
 // ListProviderPresets calls delidev.v1.ProviderService.ListProviderPresets.
 func (c *providerServiceClient) ListProviderPresets(ctx context.Context, req *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error) {
 	return c.listProviderPresets.CallUnary(ctx, req)
+}
+
+// ListProviderInventory calls delidev.v1.ProviderService.ListProviderInventory.
+func (c *providerServiceClient) ListProviderInventory(ctx context.Context, req *connect.Request[v1.ListProviderInventoryRequest]) (*connect.Response[v1.ListProviderInventoryResponse], error) {
+	return c.listProviderInventory.CallUnary(ctx, req)
 }
 
 // DiscoverModels calls delidev.v1.ProviderService.DiscoverModels.
@@ -2028,6 +2044,7 @@ func (c *providerServiceClient) ResolveModel(ctx context.Context, req *connect.R
 // ProviderServiceHandler is an implementation of the delidev.v1.ProviderService service.
 type ProviderServiceHandler interface {
 	ListProviderPresets(context.Context, *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error)
+	ListProviderInventory(context.Context, *connect.Request[v1.ListProviderInventoryRequest]) (*connect.Response[v1.ListProviderInventoryResponse], error)
 	DiscoverModels(context.Context, *connect.Request[v1.DiscoverModelsRequest]) (*connect.Response[v1.DiscoverModelsResponse], error)
 	SearchModels(context.Context, *connect.Request[v1.SearchModelsRequest]) (*connect.Response[v1.SearchModelsResponse], error)
 	ResolveModel(context.Context, *connect.Request[v1.ResolveModelRequest]) (*connect.Response[v1.ResolveModelResponse], error)
@@ -2044,6 +2061,12 @@ func NewProviderServiceHandler(svc ProviderServiceHandler, opts ...connect.Handl
 		ProviderServiceListProviderPresetsProcedure,
 		svc.ListProviderPresets,
 		connect.WithSchema(providerServiceMethods.ByName("ListProviderPresets")),
+		connect.WithHandlerOptions(opts...),
+	)
+	providerServiceListProviderInventoryHandler := connect.NewUnaryHandler(
+		ProviderServiceListProviderInventoryProcedure,
+		svc.ListProviderInventory,
+		connect.WithSchema(providerServiceMethods.ByName("ListProviderInventory")),
 		connect.WithHandlerOptions(opts...),
 	)
 	providerServiceDiscoverModelsHandler := connect.NewUnaryHandler(
@@ -2068,6 +2091,8 @@ func NewProviderServiceHandler(svc ProviderServiceHandler, opts ...connect.Handl
 		switch r.URL.Path {
 		case ProviderServiceListProviderPresetsProcedure:
 			providerServiceListProviderPresetsHandler.ServeHTTP(w, r)
+		case ProviderServiceListProviderInventoryProcedure:
+			providerServiceListProviderInventoryHandler.ServeHTTP(w, r)
 		case ProviderServiceDiscoverModelsProcedure:
 			providerServiceDiscoverModelsHandler.ServeHTTP(w, r)
 		case ProviderServiceSearchModelsProcedure:
@@ -2085,6 +2110,10 @@ type UnimplementedProviderServiceHandler struct{}
 
 func (UnimplementedProviderServiceHandler) ListProviderPresets(context.Context, *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ProviderService.ListProviderPresets is not implemented"))
+}
+
+func (UnimplementedProviderServiceHandler) ListProviderInventory(context.Context, *connect.Request[v1.ListProviderInventoryRequest]) (*connect.Response[v1.ListProviderInventoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ProviderService.ListProviderInventory is not implemented"))
 }
 
 func (UnimplementedProviderServiceHandler) DiscoverModels(context.Context, *connect.Request[v1.DiscoverModelsRequest]) (*connect.Response[v1.DiscoverModelsResponse], error) {

@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 20
+const SchemaVersion = 21
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -638,6 +638,10 @@ func list(ctx context.Context, q queryer, f Filter) ([]Record, error) {
 	if err := f.validate(); err != nil {
 		return nil, err
 	}
+	return listRows(ctx, q, f, f.Limit)
+}
+
+func listRows(ctx context.Context, q queryer, f Filter, limit int) ([]Record, error) {
 	query := "SELECT id,kind,revision,session_id,project_id,body,created_at,updated_at FROM entities WHERE kind=? AND id>?"
 	args := []any{f.Kind, f.After}
 	if f.ProviderID != "" {
@@ -657,7 +661,7 @@ func list(ctx context.Context, q queryer, f Filter) ([]Record, error) {
 		args = append(args, f.ProjectID)
 	}
 	query += " ORDER BY id LIMIT ?"
-	args = append(args, f.Limit)
+	args = append(args, limit)
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, storageError(err)
@@ -678,6 +682,26 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
 	return list(ctx, s.db, f)
+}
+
+// ListPage returns one bounded page and whether an additional record exists.
+// Fetching the extra row avoids a phantom empty page when the total is exactly
+// divisible by the requested page size.
+func (s *Store) ListPage(ctx context.Context, f Filter) ([]Record, bool, error) {
+	if err := f.validate(); err != nil {
+		return nil, false, err
+	}
+	s.gate.RLock()
+	defer s.gate.RUnlock()
+	rows, err := listRows(ctx, s.db, f, f.Limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	more := len(rows) > f.Limit
+	if more {
+		rows = rows[:f.Limit]
+	}
+	return rows, more, nil
 }
 
 // Snapshot establishes the cursor and state in the same read transaction. It is

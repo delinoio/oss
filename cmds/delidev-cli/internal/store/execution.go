@@ -153,6 +153,9 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err := provider.Validate(); err != nil {
 		return empty, err
 	}
+	if !provider.EnabledValue() {
+		return empty, domain.Fail(domain.ProviderDisabled, "The selected API provider is off.", "Enable this provider or select an active API provider before starting another turn.")
+	}
 	_, machine, err := decodeEntity[domain.Machine](t, domain.MachineKind, session.MachineID)
 	if err != nil {
 		return empty, err

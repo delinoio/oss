@@ -16,6 +16,43 @@ func firstDispatchConflict() error {
 	return domain.Fail(domain.Conflict, "The session is not eligible for its first execution.", "Wait for ready workspace ownership, retain queue order and explicitly resume a paused session.")
 }
 
+func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain.ID, error) {
+	var providerID domain.ID
+	if session.InitialExecution != nil {
+		providerID = session.InitialExecution.Configuration.ProviderID
+	} else {
+		agentRecord, err := tx.Get(domain.AgentKind, session.AgentID)
+		if err != nil {
+			return "", err
+		}
+		agent, err := store.Decode[domain.Agent](agentRecord)
+		if err != nil {
+			return "", err
+		}
+		modelRecord, err := tx.Get(domain.ModelKind, agent.ModelID)
+		if err != nil {
+			return "", err
+		}
+		model, err := store.Decode[domain.Model](modelRecord)
+		if err != nil {
+			return "", err
+		}
+		providerID = model.ProviderID
+	}
+	providerRecord, err := tx.Get(domain.ProviderKind, providerID)
+	if err != nil {
+		return providerID, err
+	}
+	provider, err := store.Decode[domain.Provider](providerRecord)
+	if err != nil {
+		return providerID, err
+	}
+	if provider.Protocol != domain.NativeSubscription && !provider.EnabledValue() {
+		return providerID, providerDisabled()
+	}
+	return providerID, nil
+}
+
 // All callers must propagate failure out of their Store.Mutate callback. The
 // transient ready state, snapshot/routing claim and job are one transaction;
 // validating the selected configuration after the claim cannot partially commit.
@@ -131,6 +168,9 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 	if err != nil {
 		return empty, err
 	}
+	if !provider.EnabledValue() {
+		return empty, providerDisabled()
+	}
 	if provider.Protocol != protocol || (provider.Authentication == domain.KeylessAuth) != (account.Validation.Authentication == domain.KeylessEndpoint) || provider.Authentication != account.Connection.Authentication || account.ProviderID != c.ProviderID {
 		return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select OpenAI Responses for Codex, Anthropic Messages for Claude or Chat Completions for OpenCode/Grok; no protocol translation is performed.")
 	}
@@ -237,6 +277,9 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 		return nil
 	}
 	problem := domain.SafeError(err)
+	if problem.Code == domain.ProviderDisabled {
+		s.logger.InfoContext(ctx, "session_dispatch_denied", "operation", "new_execution", "session_id", record.ID, "reason", problem.Code, "enabled", false)
+	}
 	if ctx.Err() != nil || problem.Code == domain.Conflict || problem.Code == domain.Internal || problem.Cause != "" {
 		return err
 	}
