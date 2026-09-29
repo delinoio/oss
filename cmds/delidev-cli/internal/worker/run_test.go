@@ -76,3 +76,43 @@ func TestAuxiliaryTitleCapabilityRequiresServerEcho(t *testing.T) {
 		t.Fatal("malformed machine response enabled the auxiliary stream")
 	}
 }
+
+func TestCodexTitleExecutableUsesVerifiedConfiguredInstallation(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "custom-codex")
+	resource := func(installation domain.Installation) *pb.Resource {
+		t.Helper()
+		body, err := json.Marshal(domain.Machine{
+			Name: "Worker", OS: "darwin", Architecture: "arm64",
+			Installations: []domain.Installation{installation},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &pb.Resource{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, SchemaVersion: 1, DocumentJson: body}
+	}
+	verified := domain.Installation{
+		Harness: domain.Codex, State: domain.InstallationDetected, ResolvedPath: executable,
+		Version: domain.CodexProtocolVersion, ProtocolVerified: true,
+		Protocol: &domain.ProtocolObservation{Protocol: domain.CodexAppServer, State: domain.ProtocolVerified},
+	}
+	if got := codexTitleExecutable(resource(verified)); got != executable {
+		t.Fatalf("configured Codex executable = %q, want %q", got, executable)
+	}
+	for name, mutate := range map[string]func(*domain.Installation){
+		"missing executable":   func(i *domain.Installation) { i.ResolvedPath = "" },
+		"relative executable":  func(i *domain.Installation) { i.ResolvedPath = "codex" },
+		"wrong version":        func(i *domain.Installation) { i.Version = "0.0.0" },
+		"unverified protocol":  func(i *domain.Installation) { i.ProtocolVerified = false },
+		"wrong protocol":       func(i *domain.Installation) { i.Protocol.Protocol = domain.OpenCodeHTTP },
+		"unsupported protocol": func(i *domain.Installation) { i.Protocol.State = domain.ProtocolUnsupported },
+	} {
+		t.Run(name, func(t *testing.T) {
+			installation := verified
+			installation.Protocol = &domain.ProtocolObservation{Protocol: verified.Protocol.Protocol, State: verified.Protocol.State}
+			mutate(&installation)
+			if got := codexTitleExecutable(resource(installation)); got != "" {
+				t.Fatalf("unsupported configured installation selected executable %q", got)
+			}
+		})
+	}
+}
