@@ -57,3 +57,22 @@ it("shows both localized endpoints of a clipped daily interval with an exclusive
   expect(endpoints[1].textContent).toMatch(/(?:0?6|18):10:11/);
   expect(within(daily).getByText("(exclusive)")).toBeTruthy();
 });
+
+it("retains original project IDs beside duplicate and renamed project labels", () => {
+  const totals = { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] };
+  const projects = ["original-project-one", "original-project-two"];
+  const data = create(GetUsageSummaryResponseSchema, {
+    accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1,
+    totals: { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 2, knownTotal: "32", measuredUnits: 2 }] },
+    groups: projects.map((projectId, index) => ({ sessionId: `original-session-${index}`, projectId, projectName: "Shared project label", totals })),
+  });
+  const view = render(<GrokAccounting data={data} open={() => {}} />);
+  const table = screen.getByRole("table", { name: "Grok inputs by original session, account and model" });
+  expect(within(table).getAllByText("Shared project label")).toHaveLength(2);
+  for (const project of projects) expect(within(table).getByText(project)).toBeTruthy();
+  data.groups[0].projectName = "Renamed project";
+  view.rerender(<GrokAccounting data={data} open={() => {}} />);
+  expect(within(table).getByText("Renamed project")).toBeTruthy();
+  expect(within(table).getByText("Shared project label")).toBeTruthy();
+  for (const project of projects) expect(within(table).getByText(project)).toBeTruthy();
+});
