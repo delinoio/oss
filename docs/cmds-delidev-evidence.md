@@ -2859,3 +2859,15 @@ fixture initially used a TEXT write for a BLOB-owned document; it now exercises
 the real typed mutation path. Focused backup/default/migration race tests pass
 (19.485s). Full desktop `pnpm test` passes 74 files / 886 tests, type checking,
 eight packaging tests and production build. No Rust or wire schema changed.
+
+### PR #1063 macOS icon packaging repair (2026-09-29)
+
+The merged full-resolution icon exposed a native dry-run failure: the pinned
+bundler downsamples 1254px to 1024px but rejects that size at density one with
+`No matching IconType`. Renaming the unchanged source to `icon-source@2x.png`
+provides the required retina density. The exact LFS attribute and Tauri icon
+list follow the rename; the supplied artwork, window/tray PNG and Windows ICO
+remain byte-for-byte unchanged. The real macOS arm64 dry run now passes bundle
+creation, macOS 13 metadata, native sidecar/CEF/helper architecture, resources,
+notices and strict nested ad-hoc signature checks. Git LFS integrity passes.
+This packaging result does not establish native Quit or release-signing success.
