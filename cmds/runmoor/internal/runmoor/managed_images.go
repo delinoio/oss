@@ -430,7 +430,7 @@ func (b *ManagedImageBuilder) Cleanup(ctx context.Context, c Config, a RunnerArt
 		im := s.Images[a.ID]
 		if im != nil {
 			if err := verifyVMOwner(c, im.VM, s.Installation, im.ID); err == nil {
-				if err = b.Images.stopTart(ctx, c, im, s); err != nil {
+				if err = b.Images.stopTart(ctx, c, im); err != nil {
 					return err
 				}
 			} else {

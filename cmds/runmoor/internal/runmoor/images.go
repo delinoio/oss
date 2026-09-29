@@ -28,14 +28,13 @@ type ImageManager struct {
 	Client *http.Client
 }
 
-func (m *ImageManager) imageRunner(im *Image) Runner {
-	s := m.Store.View()
+func (m *ImageManager) imageRunner(im *Image, s Snapshot) Runner {
 	return Runner{ID: im.ID, Handle: Handle{VM: im.VM, PID: s.ImageTartPIDs[im.ID]}}
 }
 
 func (m *ImageManager) confirmImageTartExited(c Config, im *Image) error {
 	s := m.Store.View()
-	if err := m.Tart.confirmTartVMAbsent(c, m.imageRunner(im), s); err != nil {
+	if err := m.Tart.confirmTartVMAbsent(c, m.imageRunner(im, s), s); err != nil {
 		return err
 	}
 	return removeTartRunAlias(c, tartRunAlias(im.ID))
@@ -64,8 +63,9 @@ func (m *ImageManager) startTart(ctx context.Context, c Config, im *Image, insta
 	return pid, err
 }
 
-func (m *ImageManager) stopTart(ctx context.Context, c Config, im *Image, s Snapshot) error {
-	if err := m.Tart.Stop(ctx, c, m.imageRunner(im), s); err != nil {
+func (m *ImageManager) stopTart(ctx context.Context, c Config, im *Image) error {
+	s := m.Store.View()
+	if err := m.Tart.Stop(ctx, c, m.imageRunner(im, s), s); err != nil {
 		return err
 	}
 	return m.Store.Update(func(snapshot *Snapshot) error {
@@ -115,7 +115,7 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		}
 		ctx, cancel := context.WithTimeout(ctx, c.Preparation(Tart))
 		defer cancel()
-		if err := m.stopTart(ctx, c, im, s); err != nil {
+		if err := m.stopTart(ctx, c, im); err != nil {
 			return nil, m.imageFailure(im.ID, err)
 		}
 		if err := m.Store.Update(func(v *Snapshot) error {
@@ -140,7 +140,7 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		}
 		ctx, cancel := context.WithTimeout(ctx, c.Preparation(Tart))
 		defer cancel()
-		if err := m.stopTart(ctx, c, im, s); err != nil {
+		if err := m.stopTart(ctx, c, im); err != nil {
 			return nil, m.imageFailure(im.ID, err)
 		}
 		if _, err := m.startTart(ctx, c, im, s.Installation, []string{"run", "--no-graphics", "--no-audio", im.VM}); err != nil {
@@ -287,7 +287,7 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		if e = m.Tart.guestReadyOwned(ctx, c, im.VM, req.RunnerPath, req.RunnerVersion, s.Installation, im.ID); e != nil {
 			return nil, m.imageFailure(im.ID, e)
 		}
-		if e = m.stopTart(ctx, c, im, s); e != nil {
+		if e = m.stopTart(ctx, c, im); e != nil {
 			return nil, m.imageFailure(im.ID, e)
 		}
 		digest, e := imageDigestOwned(ctx, c, im.VM, s.Installation, im.ID)
@@ -339,7 +339,7 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		if e := cleanupImportArchive(c, im.ID); e != nil {
 			return nil, m.imageFailure(im.ID, e)
 		}
-		if e := m.Tart.Cleanup(ctx, c, m.imageRunner(im), s); e != nil {
+		if e := m.Tart.Cleanup(ctx, c, m.imageRunner(im, s), s); e != nil {
 			return nil, m.imageFailure(im.ID, e)
 		}
 		if e := m.Store.Update(func(v *Snapshot) error {
