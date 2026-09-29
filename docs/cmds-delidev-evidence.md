@@ -3191,3 +3191,46 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+### Claude main-loop input accounting — issue #1098
+
+Controlled Go fixtures verify original correlated main-loop input accounting,
+independently of cumulative model/native-cost snapshots. Focused domain tests
+cover input 13 + cache-write 5 + cache-read 7 = 25, measured zero output/thinking,
+unavailable total, uniform $1/M amount $0.000025 and split cache-read $0.5/M
+subtotal $0.0000165 with cache-write unpriced. Nullable categories,
+9007199254740993 and sums beyond signed-64-bit range preserve exact decimal
+precision.
+
+Executed focused race checks passed:
+
+- `go test -race ./cmds/delidev-cli/internal/store -run 'TestNativeAccounting|TestNativeBudget' -count=1`
+- `go test -race ./cmds/delidev-cli/internal/server -run 'TestClaudeNativeAccounting|TestClaudeUncorrelatedDenialDoesNotCreate' -count=1`
+- `go test -race ./cmds/delidev-cli/internal/cli -run TestCLISearch -count=1`
+
+These verify atomic rollback, original receipt/restart/source deduplication,
+retained historical pricing, same-currency mixed response/native budget
+thresholds without response-count contamination, no retrospective source
+accounting, authenticated RPC profile/filter/privacy behavior, correlated failure
+usage, uncorrelated denial exclusion and capability-negotiated CLI reads.
+`go test ./cmds/delidev-cli/internal/store -run 'TestNativeAccounting|Test.*Migration' -count=1`
+passed current and historical migration/backup fixtures.
+`go vet ./cmds/delidev-cli/...` and `pnpm proto:check` passed; repeated
+Go/TypeScript generation reproduced without drift. The generated-client package
+passed all 41 tests and type checking.
+
+The full `go test -race -timeout 20m -json ./cmds/delidev-cli/...` run is still
+in progress and has reported failures in workspace diff/preparation fixtures and
+`TestCLISessionAcceptanceQueueAndArchive`. Its final result is not yet established.
+An isolated rerun of `TestWorkspaceDiffKeepsOriginalCreationCommitAndLiveExecution`
+also failed with a working-tree timeout. The same test run against unchanged
+`origin/main` revision `b741cec88d68ba84eaf918bbee22ca28bff57ec6`, using a temporary
+source export, failed with `recovery_required` because the Worker workspace result
+did not prove the accepted preparation. This demonstrates a baseline failure of
+that fixture; it does not establish a passing full suite or explain every failure.
+
+All new fixtures use isolated temporary SQLite/server state and controlled native
+observations without installed inference, user credentials or real provider
+accounts. This establishes implementation behavior only, not hosted billing,
+actual cost, child/auxiliary completeness, native platform acceptance, release or
+deployment evidence.
