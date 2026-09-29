@@ -860,6 +860,51 @@ func TestImageRemovalRetainsReservationWhileDetachedTartRunLives(t *testing.T) {
 	}
 }
 
+func TestImageOpenDoesNotRelaunchWhileRecordedTartProcessLives(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-image-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(vmPath(c, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishVMOwnerMarker(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := createTartCommandAlias(c, tartRunAlias(id)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(func(snapshot *Snapshot) error {
+		snapshot.Images[id] = &Image{ID: id, VM: name, Phase: ImageOpen, Resources: Resources{CPU: 1, MemoryMiB: 512}}
+		snapshot.ImageTartPIDs = map[string]int{}
+		snapshot.ImageTartPIDs[id] = 123
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	driver, fixture := fakeTart(c)
+	driver.processAlive = func(pid int) (bool, error) {
+		if pid != 123 {
+			t.Fatalf("checked Tart PID = %d, want 123", pid)
+		}
+		return true, nil
+	}
+	images := &ImageManager{Store: s, Tart: driver}
+	_, err := images.Operate(context.Background(), c, ImageRequest{Action: "open", ID: id})
+	requireCode(t, err, ErrOwnership)
+	for _, command := range fixture.commands {
+		if len(command) > 0 && command[0] == "run" {
+			t.Fatal("image open relaunched Tart while its recorded process was still alive")
+		}
+	}
+	current := s.View()
+	if current.Images[id].Phase != ImageOpen || current.ImageTartPIDs[id] != 123 {
+		t.Fatal("retry changed the image phase or discarded its live Tart PID", current.Images[id], current.ImageTartPIDs[id])
+	}
+}
+
 func TestImageReconcileOwnershipFailureReplacesPreparationProblem(t *testing.T) {
 	c, s := fixtureStore(t)
 	id := newID()

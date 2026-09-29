@@ -181,6 +181,9 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 			if v.Running {
 				return im, nil
 			}
+			if e := m.confirmImageTartExited(c, im); e != nil {
+				return nil, m.imageFailure(im.ID, problem(ErrOwnership, "The previous setup Tart process has not been confirmed stopped.", "Preserve its VM reservation and retry image open after the recorded Tart process exits."))
+			}
 		}
 		if e := m.reserve(c, im.ID); e != nil {
 			return nil, e
