@@ -294,10 +294,14 @@ func (b *ManagedImageBuilder) prepareTart(ctx context.Context, c Config, p Pool,
 	if err = b.Images.reserve(c, im.ID); err != nil {
 		return p, err
 	}
-	if _, err = b.Images.Tart.Exec.Start(c.TartExecutable, []string{"run", "--no-graphics", "--no-audio", im.VM}, tartEnv(c)); err != nil {
+	installation := b.Store.View().Installation
+	if _, err = b.Images.Tart.startOwned(c, im.VM, installation, im.ID, []string{"run", "--no-graphics", "--no-audio", im.VM}); err != nil {
+		if problemErr, ok := err.(*Problem); ok && problemErr.Code == ErrOwnership {
+			return p, err
+		}
 		return p, problem(ErrPreparation, "Cannot boot the runner preparation VM.", "Restore Tart availability; Runmoor will retry.")
 	}
-	if err = b.installTartArchive(ctx, c, im.VM, p.RunnerPath, archive); err != nil {
+	if err = b.installTartArchive(ctx, c, im.VM, p.RunnerPath, archive, installation, im.ID); err != nil {
 		return p, err
 	}
 	sealed, err := b.Images.Operate(ctx, c, ImageRequest{Action: "seal", ID: im.ID, RunnerPath: p.RunnerPath, RunnerVersion: r.Version()})
@@ -335,14 +339,15 @@ func (b *ManagedImageBuilder) importTartSource(ctx context.Context, c Config, p 
 	if err != nil {
 		return "", err
 	}
-	vm, err := b.Images.Tart.vm(ctx, c, im.VM)
+	installation := b.Store.View().Installation
+	vm, err := b.Images.Tart.vmOwned(ctx, c, im.VM, installation, im.ID)
 	if err != nil {
 		return "", err
 	}
 	if vm.Running || vm.State == "suspended" {
 		return "", problem(ErrImage, "Imported source must be stopped before it is frozen.", "Use a stopped prepared macOS source.")
 	}
-	digest, err := imageDigest(ctx, c, im.VM)
+	digest, err := imageDigestOwned(ctx, c, im.VM, installation, im.ID)
 	if err != nil {
 		return "", err
 	}
@@ -364,11 +369,11 @@ func (b *ManagedImageBuilder) importTartSource(ctx context.Context, c Config, p 
 	b.log("runner_source_frozen", base)
 	return base.ID, nil
 }
-func (b *ManagedImageBuilder) installTartArchive(ctx context.Context, c Config, vm, path, archive string) error {
+func (b *ManagedImageBuilder) installTartArchive(ctx context.Context, c Config, vm, path, archive, installation, entity string) error {
 	// A separate readiness probe accepts a prepared guest without a runner. It
 	// rejects dirty registration/workspace state before installing any files.
 	for {
-		e := b.Images.Tart.preparedGuest(ctx, c, vm, path)
+		e := b.Images.Tart.preparedGuestOwned(ctx, c, vm, path, installation, entity)
 		if e == nil {
 			break
 		}
@@ -384,7 +389,7 @@ func (b *ManagedImageBuilder) installTartArchive(ctx context.Context, c Config, 
 		return err
 	}
 	defer f.Close()
-	_, err = b.Images.Tart.run(ctx, c, []string{"exec", "-i", vm, "/bin/sh", "-c", `set -eu; umask 077; rm -rf "$1"; mkdir -p "$1"; cd "$1"; tar -xf -`, "runmoor", path}, f)
+	_, err = b.Images.Tart.runOwned(ctx, c, installation, entity, vm, []string{"exec", "-i", vm, "/bin/sh", "-c", `set -eu; umask 077; rm -rf "$1"; mkdir -p "$1"; cd "$1"; tar -xf -`, "runmoor", path}, f)
 	return err
 }
 func (b *ManagedImageBuilder) Cleanup(ctx context.Context, c Config, a RunnerArtifact) error {
@@ -426,9 +431,11 @@ func (b *ManagedImageBuilder) Cleanup(ctx context.Context, c Config, a RunnerArt
 					return err
 				}
 			} else {
-				_, vmErr := os.Lstat(vmPath(c, im.VM))
-				_, ownerErr := os.Lstat(vmOwnerPath(c, im.VM))
-				if !os.IsNotExist(vmErr) || !os.IsNotExist(ownerErr) {
+				absent, absenceErr := vmCanBeRemovedAsAbsent(c, im.VM, s.Installation, im.ID)
+				if absenceErr != nil {
+					return absenceErr
+				}
+				if !absent {
 					return err
 				}
 			}

@@ -62,6 +62,28 @@ func readPrivate(path string, limit int64) ([]byte, error) {
 	}
 	return b, nil
 }
+func privateVMDirectory(path string) (os.FileInfo, error) {
+	st, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if st.Mode()&os.ModeSymlink != 0 || !st.IsDir() || st.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
+		return nil, problem(ErrOwnership, "Tart VM directory is not an owned directory.", "Preserve the VM and its Runmoor record; do not adopt or delete it by name.")
+	}
+	return st, nil
+}
+func syncPrivateDir(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	syncErr := dir.Sync()
+	closeErr := dir.Close()
+	if syncErr != nil {
+		return syncErr
+	}
+	return closeErr
+}
 func lockState(path string) (*os.File, error) {
 	f, e := openPrivate(path, os.O_RDWR|os.O_CREATE)
 	if e != nil {

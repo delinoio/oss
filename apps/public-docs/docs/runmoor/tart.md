@@ -101,3 +101,25 @@ A Tart pool uses `backend = "tart"`, `mode = "plain"`, `arch = "arm64"`, the sea
 `image seal --runner-path` and TOML `runner_path` must use the same absolute guest directory, beginning with `/` and containing no `..`, NUL or line breaks. Paths are preserved exactly; resolve parent-directory traversal before sealing. The default Tart location is the `actions-runner` directory inside the runner account's home.
 
 Runmoor uses private Tart storage with Tart automatic pruning disabled. Runmoor separately collects unreferenced revisions that it generated for runner updates; user-created revisions require explicit removal. It does not distribute macOS/Xcode images or retain failed job clones.
+
+## Tart ownership recovery
+
+Runmoor verifies that a Tart VM still belongs to the same Runmoor image or
+execution before inspecting or changing it. If that identity is missing or no
+longer matches, Runmoor reports `OWNERSHIP_AMBIGUOUS` and preserves the VM,
+Runmoor records and capacity reservation. `runmoor stop --force` does not
+override this check.
+
+Stop the manager and preserve its complete state and data together. If you have
+a paired backup containing the matching VM and Runmoor identity, restore both
+from that backup, then start Runmoor and inspect `runmoor status` and
+`runmoor doctor`. Never edit ownership files or delete a VM just because its
+name matches an old record.
+
+Older installations and interrupted VM creation may lack matching identity
+proof. Runmoor will not adopt those VMs by name. Keep that installation intact.
+If you can identify the original operator-owned image source, create a separate
+Runmoor configuration with new absolute `[storage].state` and `[storage].data`
+locations, then import that source as a new image revision. The new installation
+uses a fresh identity; the uncertain VM and its records remain preserved in
+the old storage.

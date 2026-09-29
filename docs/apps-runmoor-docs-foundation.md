@@ -23,6 +23,7 @@
 - Validate top-navigation, sidebar, social-link, and document-footer regions separately on every stable page. Removing a link from one region must fail even when article content or another region still links to that destination.
 - Development uses the consolidated `public-docs` server at `127.0.0.1:46302`; it owns the Runmoor section alongside the other project sections.
 - Public content is curated from the Runmoor project and command contracts. User-owned configuration and guest runner paths are public interfaces; repository-internal architecture and operational details remain in `docs/`.
+- Tart recovery guidance explains that ambiguous ownership keeps the VM, Runmoor state/data and capacity reservation intact even during force-stop. It directs users to restore a paired backup that contains the VM identity proof or to reimport the source under a new Runmoor identity while preserving uncertain resources; it never suggests repairing markers manually or deleting a same-named VM.
 - The CLI release README remains in `cmds/runmoor/README.md` with a link to the consolidated Runmoor subpath.
 
 ## Storage

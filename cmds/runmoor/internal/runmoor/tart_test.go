@@ -20,6 +20,7 @@ type tartFixture struct {
 	jit         string
 	version     string
 	rejectGuest bool
+	afterGet    func(string)
 }
 
 func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
@@ -54,7 +55,13 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 		}
 		f.running[vm] = false
 	case "get":
-		return json.Marshal(vmInfo{Running: f.running[args[1]], State: "stopped", OS: "darwin", CPU: 1, Memory: 512})
+		b, err := json.Marshal(vmInfo{Running: f.running[args[1]], State: "stopped", OS: "darwin", CPU: 1, Memory: 512})
+		if f.afterGet != nil {
+			hook := f.afterGet
+			f.afterGet = nil
+			hook(args[1])
+		}
+		return b, err
 	case "set":
 	case "stop":
 		f.running[args[1]] = false
@@ -69,6 +76,8 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 				return nil, e
 			}
 			f.jit = v.JIT
+		} else if strings.Contains(strings.Join(args, " "), "__guest-status") {
+			return json.Marshal(GuestStatus{ID: args[len(args)-1], Ready: true})
 		} else if in != nil {
 			io.Copy(io.Discard, in)
 		} else {
@@ -261,6 +270,10 @@ func TestTartImageLifecycleAndCredentialBoundary(t *testing.T) {
 	if im.Phase != ImageSealed || im.Digest == "" {
 		t.Fatal("image not sealed")
 	}
+	baseMarker, e := os.ReadFile(vmOwnerMarkerPath(c, im.VM))
+	if e != nil {
+		t.Fatal("sealed base owner marker is missing", e)
+	}
 	_, e = images.Operate(ctx, c, ImageRequest{Action: "open", ID: im.ID})
 	requireCode(t, e, ErrImage)
 	p := c.Pools[0]
@@ -273,6 +286,22 @@ func TestTartImageLifecycleAndCredentialBoundary(t *testing.T) {
 	snap := s.View()
 	if e = driver.Prepare(ctx, c, p, r, snap, "fixture-jit", func(h Handle) error { r.Handle = h; return nil }); e != nil {
 		t.Fatal(e)
+	}
+	obs, e := driver.Inspect(ctx, c, r, snap)
+	if e != nil || !obs.Exists || !obs.Running {
+		t.Fatal("owned Tart clone did not survive inspection after manager restart", obs, e)
+	}
+	cloneMarker, e := os.ReadFile(vmOwnerMarkerPath(c, r.Handle.VM))
+	if e != nil {
+		t.Fatal("job clone owner marker is missing", e)
+	}
+	var clonedOwner vmOwner
+	if json.Unmarshal(cloneMarker, &clonedOwner) != nil || clonedOwner.Installation != snap.Installation || clonedOwner.Entity != r.ID || clonedOwner.VM != r.Handle.VM {
+		t.Fatal("job clone did not receive its fresh ownership identity", clonedOwner)
+	}
+	baseMarkerAfter, e := os.ReadFile(vmOwnerMarkerPath(c, im.VM))
+	if e != nil || string(baseMarkerAfter) != string(baseMarker) {
+		t.Fatal("cloning changed the sealed base owner marker", e)
 	}
 	if fixture.jit != "fixture-jit" {
 		t.Fatal("JIT not delivered by stdin")
@@ -313,6 +342,12 @@ func TestTartRefusesUnownedVMAndImageDeletionInUse(t *testing.T) {
 	imID := newID()
 	vm := "rm-image-" + imID
 	if e := claimVM(c, vm, s.View().Installation, imID); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.MkdirAll(vmPath(c, vm), 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e := publishVMOwnerMarker(c, vm, s.View().Installation, imID); e != nil {
 		t.Fatal(e)
 	}
 	s.Update(func(v *Snapshot) error {

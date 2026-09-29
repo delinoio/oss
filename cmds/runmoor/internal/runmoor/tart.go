@@ -121,17 +121,14 @@ func (t *TartDriver) Validate(ctx context.Context, c Config, p Pool, s Snapshot)
 }
 
 func (t *TartDriver) validateSealed(ctx context.Context, c Config, im *Image, installation string) error {
-	if e := verifyVMOwner(c, im.VM, installation, im.ID); e != nil {
-		return e
-	}
-	v, e := t.vm(ctx, c, im.VM)
+	v, e := t.vmOwned(ctx, c, im.VM, installation, im.ID)
 	if e != nil {
 		return e
 	}
 	if v.Running || v.State == "suspended" {
 		return problem(ErrImage, "A sealed base image must remain stopped.", "Stop external access to the base and prepare a new clean revision.")
 	}
-	digest, e := imageDigest(ctx, c, im.VM)
+	digest, e := imageDigestOwned(ctx, c, im.VM, installation, im.ID)
 	if e != nil {
 		return e
 	}
@@ -149,28 +146,26 @@ type vmInfo struct {
 	OS      string
 }
 
-func (t *TartDriver) vm(ctx context.Context, c Config, name string) (vmInfo, error) {
-	b, e := t.run(ctx, c, []string{"get", name, "--format", "json"}, nil)
-	var v vmInfo
-	if e != nil {
-		return v, e
-	}
-	if json.Unmarshal(b, &v) != nil {
-		return v, problem(ErrDependency, "Tart returned an incompatible VM description.", "Check the installed Tart 2.x.x release.")
-	}
-	return v, nil
-}
-
 type vmOwner struct {
 	Installation string `json:"installation"`
 	Entity       string `json:"entity"`
 	VM           string `json:"vm"`
 }
 
+const vmOwnerMarkerName = ".runmoor-owner.json"
+
 func vmPath(c Config, name string) string { return filepath.Join(c.Storage.Data, "tart", "vms", name) }
 func vmOwnerPath(c Config, name string) string {
 	return filepath.Join(c.Storage.Data, "tart-ownership", name+".json")
 }
+func vmOwnerMarkerPath(c Config, name string) string {
+	return filepath.Join(vmPath(c, name), vmOwnerMarkerName)
+}
+
+func ambiguousVMOwnership() error {
+	return problem(ErrOwnership, "Tart VM ownership is ambiguous.", "Preserve the VM, Runmoor record and reservation. Restore a paired backup with its embedded identity or reimport the VM as a new revision; do not adopt or delete it by name.")
+}
+
 func claimVM(c Config, name, installation, entity string) error {
 	if !safeName.MatchString(name) || !validID(installation) || !validID(entity) {
 		return problem(ErrOwnership, "Invalid VM ownership identity.", "Preserve local state and inspect the installation.")
@@ -186,24 +181,167 @@ func claimVM(c Config, name, installation, entity string) error {
 	if e := privateDir(filepath.Join(c.Storage.Data, "tart")); e != nil {
 		return e
 	}
+	if e := privateDir(filepath.Join(c.Storage.Data, "tart", "vms")); e != nil {
+		return e
+	}
 	f, e := openPrivate(vmOwnerPath(c, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY)
 	if e != nil {
 		return e
 	}
-	defer f.Close()
 	b, _ := json.Marshal(vmOwner{installation, entity, name})
 	if _, e = f.Write(b); e != nil {
+		_ = f.Close()
 		return e
 	}
-	return f.Sync()
+	if e = f.Sync(); e != nil {
+		_ = f.Close()
+		return e
+	}
+	if e = f.Close(); e != nil {
+		return e
+	}
+	return syncPrivateDir(filepath.Join(c.Storage.Data, "tart-ownership"))
 }
-func verifyVMOwner(c Config, name, installation, entity string) error {
+func verifyVMOwnerRecord(c Config, name, installation, entity string) error {
+	if !safeName.MatchString(name) || !validID(installation) || !validID(entity) {
+		return ambiguousVMOwnership()
+	}
 	b, e := readPrivate(vmOwnerPath(c, name), 4096)
 	var o vmOwner
 	if e != nil || json.Unmarshal(b, &o) != nil || o != (vmOwner{installation, entity, name}) {
-		return problem(ErrOwnership, "Tart VM ownership cannot be verified.", "Preserve the VM and restore its matching ownership record before cleanup.")
+		return ambiguousVMOwnership()
 	}
 	return nil
+}
+
+func vmDirectoryInfo(c Config, name string) (os.FileInfo, error) {
+	if !safeName.MatchString(name) {
+		return nil, ambiguousVMOwnership()
+	}
+	info, err := privateVMDirectory(vmPath(c, name))
+	if err != nil {
+		return nil, ambiguousVMOwnership()
+	}
+	return info, nil
+}
+
+func verifyVMOwner(c Config, name, installation, entity string) error {
+	if err := verifyVMOwnerRecord(c, name, installation, entity); err != nil {
+		return err
+	}
+	before, err := vmDirectoryInfo(c, name)
+	if err != nil {
+		return err
+	}
+	b, err := readPrivate(vmOwnerMarkerPath(c, name), 4096)
+	var marker vmOwner
+	if err != nil || json.Unmarshal(b, &marker) != nil || marker != (vmOwner{installation, entity, name}) {
+		return ambiguousVMOwnership()
+	}
+	after, err := vmDirectoryInfo(c, name)
+	if err != nil || !os.SameFile(before, after) {
+		return ambiguousVMOwnership()
+	}
+	return verifyVMOwnerRecord(c, name, installation, entity)
+}
+
+// publishVMOwnerMarker writes a complete marker into a newly created VM
+// without replacing any existing file. A crash before the link leaves the VM
+// ambiguous and therefore preserved for explicit recovery. Keep same-directory
+// hard-link publication until a supported atomic no-replace rename is available:
+// plain rename would overwrite a preexisting marker.
+func publishVMOwnerMarker(c Config, name, installation, entity string) error {
+	if err := verifyVMOwnerRecord(c, name, installation, entity); err != nil {
+		return err
+	}
+	dir := vmPath(c, name)
+	before, err := vmDirectoryInfo(c, name)
+	if err != nil {
+		return err
+	}
+	markerPath := vmOwnerMarkerPath(c, name)
+	if _, err = os.Lstat(markerPath); err == nil || !os.IsNotExist(err) {
+		return ambiguousVMOwnership()
+	}
+	encoded, _ := json.Marshal(vmOwner{installation, entity, name})
+	tmp, err := os.CreateTemp(dir, ".runmoor-owner-*.tmp")
+	if err != nil {
+		return problem(ErrPermission, "Cannot prepare the Tart VM ownership marker.", "Check the VM directory permissions; preserve the VM and retry only after inspection.")
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err = tmp.Chmod(0600); err == nil {
+		_, err = tmp.Write(encoded)
+	}
+	if err == nil {
+		err = tmp.Sync()
+	}
+	closeErr := tmp.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return problem(ErrPermission, "Cannot write the Tart VM ownership marker.", "Check the VM directory permissions; preserve the VM and retry only after inspection.")
+	}
+	after, err := vmDirectoryInfo(c, name)
+	if err != nil || !os.SameFile(before, after) {
+		return ambiguousVMOwnership()
+	}
+	if err = os.Link(tmpPath, markerPath); err != nil {
+		if os.IsExist(err) {
+			return ambiguousVMOwnership()
+		}
+		return problem(ErrPermission, "Cannot publish the Tart VM ownership marker.", "Preserve the VM and check filesystem support and directory permissions.")
+	}
+	if err = syncPrivateDir(dir); err != nil {
+		return problem(ErrPermission, "Cannot sync the Tart VM ownership marker.", "Preserve the VM and check directory permissions.")
+	}
+	return verifyVMOwner(c, name, installation, entity)
+}
+
+func (t *TartDriver) runOwned(ctx context.Context, c Config, installation, entity, name string, args []string, in io.Reader) ([]byte, error) {
+	if err := verifyVMOwner(c, name, installation, entity); err != nil {
+		return nil, err
+	}
+	b, runErr := t.run(ctx, c, args, in)
+	if err := verifyVMOwner(c, name, installation, entity); err != nil {
+		return nil, err
+	}
+	return b, runErr
+}
+
+func (t *TartDriver) vmOwned(ctx context.Context, c Config, name, installation, entity string) (vmInfo, error) {
+	b, err := t.runOwned(ctx, c, installation, entity, name, []string{"get", name, "--format", "json"}, nil)
+	var v vmInfo
+	if err != nil {
+		return v, err
+	}
+	if json.Unmarshal(b, &v) != nil {
+		return v, problem(ErrDependency, "Tart returned an incompatible VM description.", "Check the installed Tart 2.x.x release.")
+	}
+	return v, nil
+}
+
+func (t *TartDriver) startOwned(c Config, name, installation, entity string, args []string) (int, error) {
+	if err := verifyVMOwner(c, name, installation, entity); err != nil {
+		return 0, err
+	}
+	pid, runErr := t.Exec.Start(c.TartExecutable, args, tartEnv(c))
+	if err := verifyVMOwner(c, name, installation, entity); err != nil {
+		return 0, err
+	}
+	return pid, runErr
+}
+
+func imageDigestOwned(ctx context.Context, c Config, name, installation, entity string) (string, error) {
+	if err := verifyVMOwner(c, name, installation, entity); err != nil {
+		return "", err
+	}
+	digest, digestErr := imageDigest(ctx, c, name)
+	if err := verifyVMOwner(c, name, installation, entity); err != nil {
+		return "", err
+	}
+	return digest, digestErr
 }
 func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s Snapshot, jit string, publish func(Handle) error) error {
 	if e := t.Validate(ctx, c, p, s); e != nil {
@@ -218,21 +356,27 @@ func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 	if e := publish(h); e != nil {
 		return e
 	}
-	if _, e := t.run(ctx, c, []string{"clone", im.VM, name}, nil); e != nil {
+	if _, e := t.runOwned(ctx, c, s.Installation, im.ID, im.VM, []string{"clone", im.VM, name}, nil); e != nil {
 		return e
 	}
-	if _, e := t.run(ctx, c, []string{"set", name, "--cpu", strconv.Itoa(p.Resources.CPU), "--memory", strconv.FormatInt(p.Resources.MemoryMiB, 10)}, nil); e != nil {
+	if e := publishVMOwnerMarker(c, name, s.Installation, r.ID); e != nil {
 		return e
 	}
-	pid, e := t.Exec.Start(c.TartExecutable, []string{"run", "--no-graphics", "--no-audio", name}, tartEnv(c))
+	if _, e := t.runOwned(ctx, c, s.Installation, r.ID, name, []string{"set", name, "--cpu", strconv.Itoa(p.Resources.CPU), "--memory", strconv.FormatInt(p.Resources.MemoryMiB, 10)}, nil); e != nil {
+		return e
+	}
+	pid, e := t.startOwned(c, name, s.Installation, r.ID, []string{"run", "--no-graphics", "--no-audio", name})
 	if e != nil {
+		if p, ok := e.(*Problem); ok && p.Code == ErrOwnership {
+			return e
+		}
 		return problem(ErrPreparation, "Cannot start the owned Tart clone.", "Check virtualization support and the two-VM limit.")
 	}
 	h.PID = pid
 	if e = publish(h); e != nil {
 		return e
 	}
-	if e = t.guestReady(ctx, c, name, p.RunnerPath, p.RunnerVersion); e != nil {
+	if e = t.guestReadyOwned(ctx, c, name, p.RunnerPath, p.RunnerVersion, s.Installation, r.ID); e != nil {
 		return e
 	}
 	exe := t.GuestExecutable
@@ -250,17 +394,23 @@ func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 	// The helper is Runmoor's own native arm64 binary. Its upload carries no
 	// management credentials, and all dynamic data is argv or stdin, never shell
 	// interpolation. The detached guest supervisor survives an exec disconnect.
-	if _, e = t.run(ctx, c, []string{"exec", "-i", name, "/bin/sh", "-c", `umask 077; mkdir -p /tmp/runmoor; cat > /tmp/runmoor/helper; chmod 700 /tmp/runmoor/helper`}, binary); e != nil {
+	if _, e = t.runOwned(ctx, c, s.Installation, r.ID, name, []string{"exec", "-i", name, "/bin/sh", "-c", `umask 077; mkdir -p /tmp/runmoor; cat > /tmp/runmoor/helper; chmod 700 /tmp/runmoor/helper`}, binary); e != nil {
 		return e
 	}
 	b, _ := json.Marshal(GuestInput{ID: r.ID, RunnerPath: p.RunnerPath, RunnerVersion: p.RunnerVersion, JIT: jit})
-	_, e = t.run(ctx, c, []string{"exec", "-i", name, "/tmp/runmoor/helper", "__guest-bootstrap"}, strings.NewReader(string(b)))
+	_, e = t.runOwned(ctx, c, s.Installation, r.ID, name, []string{"exec", "-i", name, "/tmp/runmoor/helper", "__guest-bootstrap"}, strings.NewReader(string(b)))
 	if e != nil {
+		if p, ok := e.(*Problem); ok && p.Code == ErrOwnership {
+			return e
+		}
 		return problem(ErrPreparation, "Guest runner bootstrap did not confirm a live runner.", "Check that run.sh is executable and starts the pinned runner successfully, then resume the pool.")
 	}
 	return nil
 }
-func (t *TartDriver) guestReady(ctx context.Context, c Config, vm, path, version string) error {
+
+// guestReadyUnowned tests guest validation response handling without a VM
+// fixture. Runtime flows must use guestReadyOwned for Runmoor-owned VMs.
+func (t *TartDriver) guestReadyUnowned(ctx context.Context, c Config, vm, path, version string) error {
 	for {
 		b, e := t.run(ctx, c, []string{"exec", vm, "/bin/sh", "-c", guestValidateScript, "runmoor", path, version, GuestAgentVersion}, nil)
 		if e == nil && strings.TrimSpace(string(b)) == "RUNMOOR_READY" {
@@ -275,12 +425,30 @@ func (t *TartDriver) guestReady(ctx context.Context, c Config, vm, path, version
 	}
 }
 
-// preparedGuest checks the part of a fresh macOS installation that Runmoor can
-// establish before it downloads a runner. Optional tool installation remains
-// an operator decision, so the init wizard also requires explicit confirmation.
-func (t *TartDriver) preparedGuest(ctx context.Context, c Config, vm, path string) error {
-	b, err := t.run(ctx, c, []string{"exec", vm, "/bin/sh", "-c", preparedGuestScript, "runmoor", path, GuestAgentVersion}, nil)
+func (t *TartDriver) guestReadyOwned(ctx context.Context, c Config, vm, path, version, installation, entity string) error {
+	for {
+		b, e := t.runOwned(ctx, c, installation, entity, vm, []string{"exec", vm, "/bin/sh", "-c", guestValidateScript, "runmoor", path, version, GuestAgentVersion}, nil)
+		if e == nil && strings.TrimSpace(string(b)) == "RUNMOOR_READY" {
+			return nil
+		}
+		if e == nil {
+			return problem(ErrImage, "Guest validation rejected the runner, guest agent or clean workspace.", "Use the image preparation guide to install exact versions and remove runner credentials and workspaces.")
+		}
+		if p, ok := e.(*Problem); ok && p.Code == ErrOwnership {
+			return e
+		}
+		if !waitContext(ctx, time.Second) {
+			return problem(ErrPreparation, "Tart Guest Agent did not become ready before the deadline.", "Enable Guest Agent RPC in the logged-in runner account and check the prepared image.")
+		}
+	}
+}
+
+func (t *TartDriver) preparedGuestOwned(ctx context.Context, c Config, vm, path, installation, entity string) error {
+	b, err := t.runOwned(ctx, c, installation, entity, vm, []string{"exec", vm, "/bin/sh", "-c", preparedGuestScript, "runmoor", path, GuestAgentVersion}, nil)
 	if err != nil {
+		if p, ok := err.(*Problem); ok && p.Code == ErrOwnership {
+			return err
+		}
 		return problem(ErrPreparation, "Tart Guest Agent RPC is not ready.", "Log into the non-root runner account and enable Guest Agent 0.14.2 RPC at login.")
 	}
 	if strings.TrimSpace(string(b)) != "RUNMOOR_READY" {
@@ -325,13 +493,15 @@ func (t *TartDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapshot
 	}
 	h := r.Handle
 	h.VM = name
+	if !safeName.MatchString(name) {
+		return Observation{}, ambiguousVMOwnership()
+	}
 	if _, e := os.Lstat(vmPath(c, name)); os.IsNotExist(e) {
 		return Observation{Handle: h}, nil
+	} else if e != nil {
+		return Observation{}, problem(ErrPermission, "Cannot inspect the Tart VM directory.", "Check private data directory permissions; the execution reservation remains held.")
 	}
-	if e := verifyVMOwner(c, name, s.Installation, r.ID); e != nil {
-		return Observation{}, e
-	}
-	v, e := t.vm(ctx, c, name)
+	v, e := t.vmOwned(ctx, c, name, s.Installation, r.ID)
 	if e != nil {
 		return Observation{}, e
 	}
@@ -339,8 +509,11 @@ func (t *TartDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapshot
 	if !v.Running {
 		return out, nil
 	}
-	b, e := t.run(ctx, c, []string{"exec", name, "/tmp/runmoor/helper", "__guest-status", r.ID}, nil)
+	b, e := t.runOwned(ctx, c, s.Installation, r.ID, name, []string{"exec", name, "/tmp/runmoor/helper", "__guest-status", r.ID}, nil)
 	if e != nil {
+		if p, ok := e.(*Problem); ok && p.Code == ErrOwnership {
+			return Observation{}, e
+		}
 		if r.Phase == Preparing {
 			return out, nil
 		}
@@ -363,23 +536,27 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 	if name == "" {
 		name = "rm-" + r.ID
 	}
+	if !safeName.MatchString(name) {
+		return ambiguousVMOwnership()
+	}
 	if _, e := os.Lstat(vmPath(c, name)); os.IsNotExist(e) {
 		return nil
+	} else if e != nil {
+		return problem(ErrPermission, "Cannot inspect the Tart VM directory.", "Check private data directory permissions; the execution reservation remains held.")
 	}
-	if e := verifyVMOwner(c, name, s.Installation, r.ID); e != nil {
-		return e
-	}
-	v, e := t.vm(ctx, c, name)
+	v, e := t.vmOwned(ctx, c, name, s.Installation, r.ID)
 	if e != nil {
 		return e
 	}
 	if v.Running {
-		if _, e = t.run(ctx, c, []string{"stop", name}, nil); e != nil {
+		// Tart addresses VMs by name. Recheck after get and immediately before
+		// stopping so a name replacement during inspection is left untouched.
+		if _, e = t.runOwned(ctx, c, s.Installation, r.ID, name, []string{"stop", name}, nil); e != nil {
 			return e
 		}
 	}
 	for {
-		v, e = t.vm(ctx, c, name)
+		v, e = t.vmOwned(ctx, c, name, s.Installation, r.ID)
 		if e != nil {
 			return e
 		}
@@ -391,34 +568,64 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 		}
 	}
 }
+
+func removeVMOwnerRecord(c Config, name, installation, entity string) error {
+	if !safeName.MatchString(name) {
+		return ambiguousVMOwnership()
+	}
+	if _, err := os.Lstat(vmOwnerPath(c, name)); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return problem(ErrCleanup, "Cannot inspect the Tart VM ownership record.", "Preserve local state and check private data directory permissions.")
+	}
+	if err := verifyVMOwnerRecord(c, name, installation, entity); err != nil {
+		return err
+	}
+	if err := os.Remove(vmOwnerPath(c, name)); err != nil && !os.IsNotExist(err) {
+		return problem(ErrCleanup, "Cannot remove the completed VM ownership record.", "Check private data directory permissions; cleanup remains pending.")
+	}
+	return nil
+}
+
 func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot) error {
 	name := r.Handle.VM
 	if name == "" {
 		name = "rm-" + r.ID
 	}
+	if !safeName.MatchString(name) {
+		return ambiguousVMOwnership()
+	}
 	if _, e := os.Lstat(vmPath(c, name)); e == nil {
 		if e = verifyVMOwner(c, name, s.Installation, r.ID); e != nil {
 			return e
 		}
-		v, e := t.vm(ctx, c, name)
+		v, e := t.vmOwned(ctx, c, name, s.Installation, r.ID)
 		if e != nil {
 			return e
 		}
 		if v.Running {
 			return problem(ErrCleanup, "Cannot delete a running VM.", "Confirm termination first.")
 		}
+		// The VM may have been replaced while Tart returned its status. Verify
+		// both identities once more at the name-based deletion boundary.
+		if e = verifyVMOwner(c, name, s.Installation, r.ID); e != nil {
+			return e
+		}
 		if _, e = t.run(ctx, c, []string{"delete", name}, nil); e != nil {
 			return e
+		}
+		if _, e = os.Lstat(vmPath(c, name)); e == nil {
+			if ownerErr := verifyVMOwner(c, name, s.Installation, r.ID); ownerErr != nil {
+				return ownerErr
+			}
+			return problem(ErrCleanup, "Tart did not remove the stopped VM.", "Inspect the VM and retry cleanup; its reservation remains held.")
+		} else if !os.IsNotExist(e) {
+			return problem(ErrCleanup, "Cannot confirm Tart VM removal.", "Inspect the VM and retry cleanup; its reservation remains held.")
 		}
 	} else if !os.IsNotExist(e) {
 		return problem(ErrCleanup, "Cannot inspect the VM for cleanup.", "Check private data directory permissions.")
 	}
-	if e := verifyVMOwner(c, name, s.Installation, r.ID); e == nil {
-		if e = os.Remove(vmOwnerPath(c, name)); e != nil && !os.IsNotExist(e) {
-			return problem(ErrCleanup, "Cannot remove the completed VM ownership marker.", "Check private data directory permissions.")
-		}
-	}
-	return nil
+	return removeVMOwnerRecord(c, name, s.Installation, r.ID)
 }
 
 // Keep file reads bounded and hide os.File.WriteTo so io.CopyBuffer cannot
