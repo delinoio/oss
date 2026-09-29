@@ -9,6 +9,12 @@ use crate::{
     wait::{self, Code, Kind, Report},
 };
 
+fn write_diagnostic(args: std::fmt::Arguments<'_>) {
+    // Stderr is best-effort; a closed diagnostic pipe must not replace the wait
+    // result.
+    let _ = writeln!(io::stderr().lock(), "{args}");
+}
+
 pub fn execute(command: Wait) -> u8 {
     // The native-root loader currently has no API to ignore CA environment
     // overrides. Clear only those overrides before any worker threads exist;
@@ -77,7 +83,7 @@ pub fn execute(command: Wait) -> u8 {
         Err(_) => Report::failure(kind, Code::RuntimeInitialization),
     };
     if let Some(error) = &report.error {
-        eprintln!("error: {}: {}", error.code, error.message);
+        write_diagnostic(format_args!("error: {}: {}", error.code, error.message));
         tracing::warn!(%kind, code = %error.code, attempts = report.attempts, elapsed_ms = report.elapsed_ms, "wait_finished");
     }
     let output = if options.json {
@@ -96,9 +102,9 @@ pub fn execute(command: Wait) -> u8 {
         Ok(())
     };
     if output.is_err() {
-        eprintln!(
+        write_diagnostic(format_args!(
             "error: output_failed: Cannot write the final result; check stdout availability."
-        );
+        ));
         return 1;
     }
     report.exit_code
