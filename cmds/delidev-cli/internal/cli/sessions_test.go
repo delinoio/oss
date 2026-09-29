@@ -22,10 +22,13 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "server")
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan struct{})
-	var serverLogs bytes.Buffer
+	var fixtureLogs bytes.Buffer
+	// One handler serializes both services; inspect the buffer only after the
+	// owned Worker and server have joined, including on an assertion failure.
+	logger := slog.New(slog.NewJSONHandler(&fixtureLogs, nil))
 	done := make(chan error, 1)
 	go func() {
-		done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(&serverLogs, nil))}, func(server.Endpoint) { close(ready) })
+		done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: logger}, func(server.Endpoint) { close(ready) })
 	}()
 	defer func() {
 		cancel()
@@ -33,7 +36,7 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 			t.Error(err)
 		}
 		if t.Failed() {
-			t.Logf("Private fixture server log:\n%s", serverLogs.String())
+			t.Logf("Private fixture server and Worker log:\n%s", fixtureLogs.String())
 		}
 	}()
 	select {
@@ -116,7 +119,7 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	workerCtx, stopWorker := context.WithCancel(ctx)
 	workerReady, workerDone := make(chan struct{}), make(chan error, 1)
 	go func() {
-		workerDone <- worker.Run(workerCtx, worker.Config{Root: workerRoot, Ready: func(domain.ID) { close(workerReady) }})
+		workerDone <- worker.Run(workerCtx, worker.Config{Root: workerRoot, Logger: logger, Ready: func(domain.ID) { close(workerReady) }})
 	}()
 	defer func() {
 		stopWorker()

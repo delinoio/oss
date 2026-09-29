@@ -2600,3 +2600,15 @@ then delay its delivery beyond one second and retain the single-use consumption
 and cache-secret checks. Production issuance and reveal rules are unchanged.
 The focused 16 tests passed; final desktop `pnpm test` passed 72 files / 873 tests,
 TypeScript checking, eight packaging tests and the production build.
+
+### PR #1063 local CLI acceptance diagnostic (2026-09-29)
+
+The final macOS Go race run and its first focused CLI retry failed in
+`TestCLISessionAcceptanceQueueAndArchive` at the first creation-comparison read
+with `unavailable`; preceding Worker file reads succeeded. The test now retains
+both server and Worker structured logs through one synchronized handler and
+prints them only on failure after both services have joined. With these
+diagnostics, the same focused case passed under race in 143.047s and without race
+in 118.505s. This is an intermittent unresolved observation failure, not evidence
+of a product fix or a passing complete race suite. Production read deadlines and
+read-authority validation were not weakened.
