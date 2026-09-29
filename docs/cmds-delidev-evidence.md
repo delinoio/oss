@@ -2174,3 +2174,40 @@ accessibility/screenshot request for the running DeliDev window timed out, so
 this records native startup but does not claim a captured native viewport or
 visual screenshot acceptance. No Rust, protocol or generated source changed;
 the app's generated `dist` output is removed from the worktree.
+
+### Issue #1052 daily and model token analytics (2026-09-29)
+
+The Token Usage page now presents the six exact measures, persistent coverage,
+applied-scope timestamps, daily token trends and ranked model/API comparisons
+while retaining the existing Usage navigation, session details and separate
+historical cost evidence. The additive `GetUsageSummary` DAY query aggregates
+from the same authorized response snapshot, buckets by first-retention time in
+the requested IANA zone, and returns complete exact model groups plus a
+server-summed Other group. The CLI exposes the same optional analytics. The
+desktop uses the existing generated Connect client and renders a compatible
+summary when an older server omits analytics.
+
+The store fixture verifies zero, missing-counter, no-response and clipped-day
+distinctions, price timestamp independence, deduplication, model/overall
+reconciliation and measured/unavailable counts. Domain fixtures cover clipped
+calendar boundaries, 23/25-hour DST days and a skipped civil date. Keyboard
+chart traversal, all six measures in full data tables, filter drafts and
+loading/error scope labeling are covered by component tests. Focused Go race
+tests pass for domain, store, server and CLI, and `go vet ./cmds/delidev-cli/...`
+passes. The required default `go test -race ./cmds/delidev-cli/...` invocation
+hits Go's 10-minute package timeout in the existing Grok
+`TestQuestionControllerOriginalClaimsAndUncertainty/question-foreign-proposal`
+fixture while its helper waits for profile inspection; the other packages,
+including the changed usage packages, report pass. The complete command is
+being rerun with a 30-minute package timeout; its result will replace this
+pending note before PR handoff. The app suite passes 69 files /
+809 tests, TypeScript type-checking and production build. Generated API client
+lint, 3 files / 41 tests and build pass; protocol lint and breaking checks pass.
+Repeated `pnpm proto:generate` leaves generated files byte-for-byte unchanged.
+
+No native viewport screenshot was captured for this increment; the running
+DeliDev desktop windows were not built from this worktree, and the attempted
+screen capture did not return a reviewable viewport. Responsive CSS, browser
+component/keyboard tests and production build are evidence for this change, not
+native-window or hosted billing acceptance. Generated app/client `dist`
+directories are removed after validation.
