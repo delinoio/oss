@@ -3206,8 +3206,37 @@ runtime, Windows/Linux runtime or production signing is claimed.
   child-selection tests pass. Installed macOS arm64 Codex 0.151.0 adapter smoke
   passes native Fork, inherited context, separate cwd/runtime and unchanged source
   rollout bytes using only private temporary state and a scripted loopback provider.
-- Complete required validation and integrated public CLI/Worker evidence are being
-  recorded separately after the final implementation. No user credentials,
-  hosted-account inference, native Windows/Linux or release acceptance is claimed.
-  Settled text/reasoning is the initial profile; tool/rich/unknown child/goal
-  inheritance, cross-account forks and Sidechat remain excluded.
+- Installed-native public CLI/Connect/Worker validation passes for General Chat
+  and two dirty repositories (176.413s). The fixtures pair and discover a real
+  Worker without seeding readiness, execute the source, accept/replay one Fork,
+  verify its inherited native boundary and unchanged source queue/files, then
+  independently continue the child through two replacement native processes.
+  The provider is keyless scripted loopback Responses traffic; Fork itself
+  receives no inference grant. This is installed macOS arm64 Codex 0.151.0
+  evidence, not hosted-account acceptance.
+- Fork-focused race suites pass for native source/refusal/default checks,
+  authenticated idempotent RPC publication/current authority, dirty multi-repo
+  copying, second-copy failure, unpushed source HEAD commits, restrictive modes,
+  cancellation/changed snapshots and linked-destination refusal. The complete
+  Codex package also passes in the serial whole-tree run (183.876s). Go vet and
+  `pnpm proto:check` (lint, breaking and fresh generation) pass.
+- Desktop `pnpm test` passed all 75 files / 942 tests, type checking, eight
+  packaging verifier tests, six launcher tests and the production build during
+  implementation. Later default five-second unit-test reruns timed out on the
+  shared host. Final unit verification passes all 942 tests using
+  `pnpm exec vitest run --maxWorkers=1 --testTimeout=30000`; final type checking,
+  packaging/launcher checks and production build pass separately. Application
+  and committed test timeouts were not relaxed for those reruns.
+- Required whole-tree Go race validation is not green. The serial command
+  `go test -race -p 1 -parallel 1 -timeout=30m ./cmds/delidev-cli/...` reports
+  timeouts in existing CLI pairing/session acceptance and Claude initialization
+  probe fixtures. The exact CLI session-acceptance timeout also reproduces in
+  an isolated source-only checkout of original main
+  `b741cec88d68ba84eaf918bbee22ca28bff57ec6` (51.899s). The unchanged Claude
+  initialization fixture passes when isolated on that base (14.362s); no
+  passing complete Go race result is claimed.
+- No user credentials, hosted-account inference, native Windows/Linux or release
+  acceptance is claimed. Settled text/reasoning is the initial profile;
+  tool/rich/unknown child/goal inheritance, cross-account forks and Sidechat
+  remain excluded. Generated desktop/client `dist` output is removed after
+  verification.
