@@ -1,13 +1,13 @@
 import { create } from "@bufbuild/protobuf";
 import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode } from "./documents";
 
-function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false) {
+function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false, automaticTitles = false, selectorFailure?: Code, emptyAgents = false, agentGate?: Promise<void>) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
   const message = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ role: "assistant", text: '<script>window.invalid = true</script>', state: "completed" }) });
@@ -15,8 +15,11 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   other.sessionId = other.id;
   const enqueues = vi.fn(async () => ({ change: { session } }));
   const controls = vi.fn(async () => ({ change: { session } }));
-  const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1 }));
-  const githubQuery = vi.fn(async () => ({ schemaVersion: 1, documentJson: encode({}) }));
+  const creates = vi.fn(async () => ({ change: { session } }));
+  const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Agent One" }) });
+  const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Worker One" }) });
+  const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
+  const githubQuery = vi.fn(async (_request: { repositoryId: string; schemaVersion: number; queryJson: Uint8Array }) => ({ schemaVersion: 1, documentJson: encode({}) }));
   const saveConfiguration = vi.fn(async (request: { kind: EntityKind; documentJson: Uint8Array }) => ({ resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson }) }));
   const projectRequests: string[] = [];
   const sessionRequests: { projectId: string; includeArchived: boolean; pageToken: string }[] = [];
@@ -28,15 +31,17 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
       sessionRequests.push({ projectId: request.projectId, includeArchived: request.includeArchived, pageToken: request.pageToken });
       if (request.projectId) return { sessions: [], ...(request.pageToken ? {} : { nextPageToken: "project-session-next" }) };
       return request.pageToken ? { sessions: [] } : { sessions: [session, other], nextPageToken: "global-next" };
-    }, listQueue: () => ({ inputs: [] }), enqueueInput: enqueues, controlSession: controls });
+    }, listQueue: () => ({ inputs: [] }), enqueueInput: enqueues, controlSession: controls, createSession: creates });
     router.service(ResourceService, {
       getSnapshot: (request) => ({ resources: [request.filter?.sessionId === other.id ? other : session], cursor: "snapshot" }),
-      listResources: (request) => {
+      listResources: async (request) => {
+        if (request.filter?.kind === EntityKind.AGENT && selectorFailure) throw new ConnectError("Selector request failed", selectorFailure);
+        if (request.filter?.kind === EntityKind.AGENT && agentGate) await agentGate;
         if (request.filter?.kind === EntityKind.PROJECT && paginated) {
           projectRequests.push(request.filter.pageToken);
           return { resources: projects, ...(request.filter.pageToken ? {} : { nextPageToken: "project-next" }) };
         }
-        return { resources: request.filter?.kind === EntityKind.MESSAGE ? [message] : request.filter?.kind === EntityKind.INTERACTION ? interactions : request.filter?.kind === EntityKind.REPOSITORY ? repositories : request.filter?.kind === EntityKind.PROJECT ? projects : [] };
+        return { resources: request.filter?.kind === EntityKind.MESSAGE ? [message] : request.filter?.kind === EntityKind.INTERACTION ? interactions : request.filter?.kind === EntityKind.REPOSITORY ? repositories : request.filter?.kind === EntityKind.PROJECT ? projects : request.filter?.kind === EntityKind.AGENT ? emptyAgents ? [] : [agent] : request.filter?.kind === EntityKind.MACHINE ? [machine] : [] };
       },
       async *watchEvents(_request, context) {
         await new Promise<void>((resolve) => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); });
@@ -46,8 +51,74 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
     router.service(IntegrationService, { queryRepositoryIntegration: githubQuery });
     router.service(ConfigurationService, { saveConfiguration });
   });
-  return { transport, session, message, enqueues, controls, status, githubQuery, saveConfiguration, projectRequests, sessionRequests };
+  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, projectRequests, sessionRequests, agent, machine };
 }
+
+it("creates an automatically named session from the first message and explicit Workers", async () => {
+  const value = fixture([], [], [], false, true);
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+  const firstMessage = await screen.findByRole("textbox", { name: "First message" });
+  const composer = within(firstMessage.closest("form")!);
+  expect(window.document.activeElement).toBe(firstMessage);
+  fireEvent.change(firstMessage, { target: { value: "Fix the startup crash" } });
+  fireEvent.change(composer.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(composer.getByLabelText("Execution Worker"), { target: { value: value.machine.id } });
+  expect(screen.getByRole("heading", { name: "What would you like to work on?" })).toBeTruthy();
+  expect(screen.getByText("General Chat · isolated projectless directory on the selected Worker")).toBeTruthy();
+  fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter" });
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  const request = (value.creates.mock.calls as unknown as [{ documentJson: Uint8Array }][])[0][0];
+  const document = JSON.parse(new TextDecoder().decode(request.documentJson));
+  expect(document).toMatchObject({ name_mode: "automatic", prompt: "Fix the startup crash", agent_id: value.agent.id, machine_id: value.machine.id, workspace: "general-chat", mode: "execute", source: "MANUAL" });
+  expect(document).not.toHaveProperty("name");
+});
+
+it("keeps first-message drafts when title support is absent and preserves valid UTF-8 at the limit", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+  const firstMessage = await screen.findByRole("textbox", { name: "First message" });
+  fireEvent.change(firstMessage, { target: { value: "Previous valid draft" } });
+  expect(screen.getByText(/Automatic session titles are unavailable/)).toBeTruthy();
+  fireEvent.change(firstMessage, { target: { value: "x".repeat(256 << 10) } });
+  expect((firstMessage as HTMLTextAreaElement).value).toBe("x".repeat(256 << 10));
+  fireEvent.change(firstMessage, { target: { value: "x".repeat((256 << 10) + 1) } });
+  expect((firstMessage as HTMLTextAreaElement).value).toBe("x".repeat(256 << 10));
+  expect(screen.getByText(/exceeds 256 KiB/)).toBeTruthy();
+  fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter", isComposing: true, keyCode: 229 });
+  fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter", shiftKey: true });
+  expect(value.creates).not.toHaveBeenCalled();
+});
+
+it.each([
+  [Code.PermissionDenied, /The server denied access to these choices/],
+  [Code.Unavailable, /The server connection failed while loading these choices/],
+])("explains Agent Worker selector failure %s without implying an empty inventory", async (code, message) => {
+  const value = fixture([], [], [], false, true, code);
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+  expect(await screen.findByText(message)).toBeTruthy();
+  expect(screen.queryByText("No selectable Agent Worker choices are on this page.")).toBeNull();
+});
+
+it("distinguishes an empty current Agent Worker page from a loading selector", async () => {
+  const value = fixture([], [], [], false, true, undefined, true);
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+  expect(await screen.findByText("No selectable Agent Worker choices are on this page.")).toBeTruthy();
+});
+
+it("shows selector loading while the current page has not returned", async () => {
+  let finish!: () => void;
+  const gate = new Promise<void>((resolve) => { finish = resolve; });
+  const value = fixture([], [], [], false, true, undefined, false, gate);
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+  expect(await screen.findByText("Loading Agent Worker choices…")).toBeTruthy();
+  finish();
+  expect(await screen.findByRole("option", { name: "Agent One" })).toBeTruthy();
+});
 
 it("opens the existing New Project form from the plus button, retains its draft, and restores opener focus", async () => {
   const value = fixture();
@@ -409,19 +480,21 @@ it.each(["valid", "mixed", "null"])("renders closed Grok user history through se
  expect(value.enqueues).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled();
 });
 
-it("opens the PR shortcut in Repositories without reading GitHub until the repository browser is activated", async () => {
+it("opens a dedicated PR workspace and reads GitHub only after Load", async () => {
   const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository", integration_id: newRequestId(), github_owner: "owner", github_name: "repo" }) });
   const value = fixture([], [repository]);
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
-  await screen.findByRole("button", { name: "Browse GitHub items" });
-  expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(await screen.findByRole("button", { name: `Fixture repository. Repository ID: ${repository.id}` }));
+  expect(screen.getByRole("button", { name: "Load pull requests" })).toBeTruthy();
   expect(value.githubQuery).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   await waitFor(() => expect(value.githubQuery).toHaveBeenCalledTimes(1));
+  const request = JSON.parse(new TextDecoder().decode(value.githubQuery.mock.calls[0][0].queryJson));
+  expect(request).toMatchObject({ kind: "pull-request", operation: "list", state: "open", page: 1, page_size: 20 });
 });
 
-it("defers the PR entry while a parent configuration editor draft is open", async () => {
+it("navigates to standalone PRs while retaining an Instructions draft", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -431,7 +504,10 @@ it("defers the PR entry while a parent configuration editor draft is open", asyn
   fireEvent.change(name, { target: { value: "Retained instructions draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained instructions draft");
+  expect(await within(screen.getByRole("main")).findByRole("heading", { name: "Pull requests" })).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
+  expect((await screen.findByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained instructions draft");
   expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("false");
   fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
@@ -449,6 +525,7 @@ it("defers the PR entry until a nested integration profile draft is canceled", a
   fireEvent.change(name, { target: { value: "Retained GitHub profile draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
   expect((screen.getByRole("textbox", { name: "Profile name" }) as HTMLInputElement).value).toBe("Retained GitHub profile draft");
   expect(screen.getByRole("button", { name: "Integrations" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
@@ -465,6 +542,7 @@ it("retains and defers around notification and import drafts until their explici
   fireEvent.click(screen.getByRole("checkbox", { name: "Questions and approval requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
   expect((screen.getByRole("checkbox", { name: "Questions and approval requests" }) as HTMLInputElement).checked).toBe(false);
   expect(screen.getByRole("button", { name: "Notifications" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
@@ -477,6 +555,7 @@ it("retains and defers around notification and import drafts until their explici
   fireEvent.change(importDraft, { target: { value: "{\"version\":1" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
   expect((screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement).value).toBe("{\"version\":1");
   expect(screen.getByRole("button", { name: "Import / Export" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.change(importDraft, { target: { value: "" } });

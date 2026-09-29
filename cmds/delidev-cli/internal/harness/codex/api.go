@@ -22,12 +22,14 @@ const executionTokenEnv = "DELIDEV_EXECUTION_TOKEN"
 type APIConfig struct {
 	ServerOrigin string `json:"-"`
 	Token        string `json:"-"`
+	TitleProfile bool   `json:"-"`
 }
 
 // Retain only non-secret configuration after launch. The process owner receives
 // the token through its private environment, never argv or a config file.
 type apiBinding struct {
 	endpoint string
+	title    bool
 }
 
 func configureAPI(config *Config) (*apiBinding, error) {
@@ -45,7 +47,7 @@ func configureAPI(config *Config) (*apiBinding, error) {
 		return nil, incompatible()
 	}
 	origin.Path = apiproxy.Prefix
-	binding := &apiBinding{endpoint: origin.String()}
+	binding := &apiBinding{endpoint: origin.String(), title: config.API.TitleProfile}
 	for _, entry := range config.Process.Env {
 		key, _, _ := strings.Cut(entry, "=")
 		if strings.EqualFold(key, executionTokenEnv) {
@@ -57,6 +59,9 @@ func configureAPI(config *Config) (*apiBinding, error) {
 	// policy can outrank them, so verifyAPI also checks the effective merged
 	// authority before thread creation/resume, without changing that policy.
 	provider := `{name="DeliDev",base_url=` + strconv.Quote(binding.endpoint) + `,env_key="` + executionTokenEnv + `",wire_api="responses",requires_openai_auth=false,supports_websockets=false,supports_standalone_web_search=false}`
+	if binding.title {
+		provider = strings.TrimSuffix(provider, "}") + ",request_max_retries=0,stream_max_retries=0}"
+	}
 	config.Process.Args = append(config.Process.Args,
 		"-c", `model_provider="`+APIProvider+`"`, "-c", "model_providers."+APIProvider+"="+provider,
 		"-c", `shell_environment_policy.exclude=["`+executionTokenEnv+`"]`)
@@ -132,6 +137,9 @@ func (a *apiBinding) validateConfig(config map[string]json.RawMessage) error {
 	}
 	if domain.Decode(providers[APIProvider], &provider) != nil {
 		return apiConfigMismatch("provider-shape")
+	}
+	if a.title && (provider.RequestRetries == nil || *provider.RequestRetries != 0 || provider.StreamRetries == nil || *provider.StreamRetries != 0) {
+		return apiConfigMismatch("native-retries")
 	}
 	for _, field := range []struct{ name, got, expected string }{
 		{"provider-name", provider.Name, "DeliDev"}, {"provider-endpoint", provider.BaseURL, a.endpoint}, {"provider-environment", provider.EnvKey, executionTokenEnv}, {"provider-protocol", provider.WireAPI, "responses"},

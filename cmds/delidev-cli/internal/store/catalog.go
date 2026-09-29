@@ -18,7 +18,7 @@ PRAGMA user_version=3;
 `
 
 const providerActivationSchema = `
-CREATE UNIQUE INDEX provider_preset_unique ON entities(json_extract(body,'$.preset_id'))
+CREATE UNIQUE INDEX IF NOT EXISTS provider_preset_unique ON entities(json_extract(body,'$.preset_id'))
  WHERE kind='provider' AND json_type(body,'$.preset_id')='text' AND json_extract(body,'$.preset_id')<>'';
 PRAGMA user_version=21;
 `

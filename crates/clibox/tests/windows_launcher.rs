@@ -40,6 +40,40 @@ fn npm_launcher_console_events_preserve_native_cleanup_and_status() {
 }
 
 #[test]
+fn npm_launcher_wait_console_events_preserve_cancelled_json() {
+    let launcher =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/clibox/src/launcher.cjs");
+    if !launcher.is_file() {
+        // Standalone Cargo packages do not include the npm workspace. Repository
+        // Windows CI and release runners provide Node and run this integration.
+        return;
+    }
+    for via_npm in [false, true] {
+        for event_name in ["ctrl_c", "ctrl_break"] {
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "windows_launcher_wait_console_helper",
+                    "--nocapture",
+                ])
+                .env("CLIBOX_TEST_LAUNCHER", &launcher)
+                .env("CLIBOX_TEST_LAUNCHER_WAIT", "1")
+                .env("CLIBOX_TEST_LAUNCHER_VIA_NPM", via_npm.to_string())
+                .env("CLIBOX_TEST_LAUNCHER_EVENT", event_name)
+                .creation_flags(CREATE_NEW_CONSOLE)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "via_npm={via_npm} {event_name}\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+}
+
+#[test]
 fn windows_launcher_console_helper() {
     let Some(launcher) = std::env::var_os("CLIBOX_TEST_LAUNCHER") else {
         return;
@@ -152,4 +186,125 @@ process.stderr.write('launcher_ready\n');"#,
             }
         }
     }
+}
+
+#[test]
+fn windows_launcher_wait_console_helper() {
+    let Some(launcher) = std::env::var_os("CLIBOX_TEST_LAUNCHER") else {
+        return;
+    };
+    if std::env::var_os("CLIBOX_TEST_LAUNCHER_WAIT").is_none() {
+        return;
+    }
+    use std::{
+        io::{BufRead, BufReader},
+        sync::mpsc,
+    };
+
+    unsafe extern "system" fn ignore(_: u32) -> i32 {
+        1
+    }
+    // Normalize and handle console events only in this disposable console;
+    // the Node and native children remain eligible to receive each event.
+    assert_ne!(unsafe { SetConsoleCtrlHandler(None, 0) }, 0);
+    assert_ne!(unsafe { SetConsoleCtrlHandler(Some(ignore), 1) }, 0);
+
+    let via_npm = std::env::var("CLIBOX_TEST_LAUNCHER_VIA_NPM").unwrap() == "true";
+    let event = match std::env::var("CLIBOX_TEST_LAUNCHER_EVENT")
+        .unwrap()
+        .as_str()
+    {
+        "ctrl_c" => CTRL_C_EVENT,
+        "ctrl_break" => CTRL_BREAK_EVENT,
+        _ => panic!("unexpected test console event"),
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("PRIVATE-MARKER-1005");
+    let mut command = if via_npm {
+        let mut node = Command::new("node");
+        node.args([
+            "-e",
+            r#"const {launch} = require(process.env.CLIBOX_TEST_LAUNCHER);
+launch(process.env.CLIBOX_TEST_BINARY, process.argv.slice(1)).then(({code, signal}) => {
+  process.exitCode = signal ? 1 : (code ?? 1);
+}).catch(() => { process.exitCode = 99; });
+process.stderr.write('launcher_ready\n');"#,
+            "--",
+        ]);
+        node
+    } else {
+        Command::new(env!("CARGO_BIN_EXE_clibox"))
+    };
+    let mut child = command
+        .args([
+            "wait",
+            "file",
+            target.to_str().unwrap(),
+            "--json",
+            "--interval",
+            "10s",
+            "--timeout",
+            "5s",
+        ])
+        .env("CLIBOX_TEST_LAUNCHER", launcher)
+        .env("CLIBOX_TEST_BINARY", env!("CARGO_BIN_EXE_clibox"))
+        .env("RUST_LOG", "clibox=debug")
+        .env("NO_COLOR", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (tx, rx) = mpsc::channel();
+    let stderr = child.stderr.take().unwrap();
+    let reader = thread::spawn(move || {
+        let mut messages = String::new();
+        for line in BufReader::new(stderr).lines() {
+            let line = line.unwrap();
+            messages.push_str(&line);
+            messages.push('\n');
+            let _ = tx.send(line);
+        }
+        messages
+    });
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let (mut launcher_ready, mut wait_started) = (!via_npm, false);
+    loop {
+        if let Ok(line) = rx.recv_timeout(Duration::from_millis(20)) {
+            launcher_ready |= line.contains("launcher_ready");
+            wait_started |= line.contains("wait_observation");
+        }
+        if launcher_ready && wait_started {
+            break;
+        }
+        if child.try_wait().unwrap().is_some() || Instant::now() >= deadline {
+            panic!(
+                "wait command did not become ready: {}",
+                reader.join().unwrap()
+            );
+        }
+    }
+
+    // The event reaches only this fixture console and its test-owned children.
+    assert_ne!(unsafe { GenerateConsoleCtrlEvent(event, 0) }, 0);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("wait cancellation blocked: {}", reader.join().unwrap());
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let output = child.wait_with_output().unwrap();
+    let diagnostics = reader.join().unwrap();
+    assert_eq!(output.status.code(), Some(130), "{diagnostics}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.lines().count(), 1, "{stdout:?}");
+    let result: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(result["kind"], "file");
+    assert_eq!(result["status"], "cancelled");
+    assert_eq!(result["error"]["code"], "interrupted");
+    assert_eq!(result["attempts"], 1);
+    assert!(diagnostics.contains("Wait cancelled"));
+    assert!(!stdout.contains("PRIVATE-MARKER-1005"));
+    assert!(!diagnostics.contains("PRIVATE-MARKER-1005"));
 }

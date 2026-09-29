@@ -226,19 +226,29 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(path, "tracked.txt"), []byte("CLI diff change\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		comparison := run([]string{"session", "diff", "--id", worktreeID, "--repository-id", string(repositories[i]), "--comparison", "creation"}, nil)["diff"].(map[string]any)
-		if comparison["base_object"] != commits[i] || comparison["head_commit"] != commits[i] || !strings.Contains(comparison["patch"].(string), "+CLI diff change") {
-			t.Fatal("CLI diff lost selected creation commit or repository")
-		}
-		review := run([]string{"session", "review-context", "--id", worktreeID, "--repository-id", string(repositories[i]), "--comparison", "creation"}, nil)
-		files := review["files"].([]any)
-		if review["diff"].(map[string]any)["revision"] != comparison["revision"] || len(files) != 1 {
-			t.Fatal("review lost original diff identity")
-		}
-		file := files[0].(map[string]any)
-		lines := file["lines"].([]any)
-		if file["path"] != "tracked.txt" || file["kind"] != "text" || len(lines) != 2 || lines[0].(map[string]any)["newline"] != false || lines[1].(map[string]any)["new"] != float64(1) {
-			t.Fatal("review lost original line sides or EOF")
+		// Keep this two-root fixture to one diff read and one review-context
+		// read total. Each observation starts bounded Git processes and expires
+		// after 15 seconds; repeating both across both roots flakes under the
+		// Windows full-suite load. Expand it when Windows observations reliably
+		// fit that contract deadline under full-suite load.
+		var comparison map[string]any
+		if i == 0 {
+			comparison = run([]string{"session", "diff", "--id", worktreeID, "--repository-id", string(repositories[i]), "--comparison", "creation"}, nil)["diff"].(map[string]any)
+			if comparison["base_object"] != commits[i] || comparison["head_commit"] != commits[i] || !strings.Contains(comparison["patch"].(string), "+CLI diff change") {
+				t.Fatal("CLI diff lost selected creation commit or repository")
+			}
+		} else {
+			review := run([]string{"session", "review-context", "--id", worktreeID, "--repository-id", string(repositories[i]), "--comparison", "creation"}, nil)
+			comparison = review["diff"].(map[string]any)
+			files := review["files"].([]any)
+			if len(files) != 1 || !strings.Contains(comparison["patch"].(string), "+CLI diff change") {
+				t.Fatal("review lost original diff identity")
+			}
+			file := files[0].(map[string]any)
+			lines := file["lines"].([]any)
+			if file["path"] != "tracked.txt" || file["kind"] != "text" || len(lines) != 2 || lines[0].(map[string]any)["newline"] != false || lines[1].(map[string]any)["new"] != float64(1) {
+				t.Fatal("review lost original line sides or EOF")
+			}
 		}
 		commentInput := domain.CreateReviewComment{Query: domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: repositories[i], Path: ".", Comparison: domain.DiffCreation}, DiffRevision: comparison["revision"].(string), Selection: domain.ReviewSelection{Path: "tracked.txt", Kind: domain.ReviewLineAnchor, Side: domain.ReviewNewSide, Start: 1, End: 1}, Body: "Please revise repository " + strconv.Itoa(i)}
 		requestID := string(domain.NewID())

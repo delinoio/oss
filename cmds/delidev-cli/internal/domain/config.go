@@ -609,14 +609,15 @@ type Installation struct {
 	Protocol         *ProtocolObservation `json:"protocol,omitempty"`
 }
 type Machine struct {
-	Name              string         `json:"name"`
-	OS                string         `json:"os"`
-	Architecture      string         `json:"architecture"`
-	Version           string         `json:"version"`
-	Installations     []Installation `json:"installations"`
-	DiscoveryRevision uint64         `json:"discovery_revision,omitempty"`
-	LastSeen          time.Time      `json:"last_seen"`
-	Disabled          bool           `json:"disabled"`
+	Name               string             `json:"name"`
+	OS                 string             `json:"os"`
+	Architecture       string             `json:"architecture"`
+	Version            string             `json:"version"`
+	Installations      []Installation     `json:"installations"`
+	WorkerCapabilities []WorkerCapability `json:"worker_capabilities,omitempty"`
+	DiscoveryRevision  uint64             `json:"discovery_revision,omitempty"`
+	LastSeen           time.Time          `json:"last_seen"`
+	Disabled           bool               `json:"disabled"`
 }
 
 func (m Machine) Validate() error {
@@ -638,6 +639,13 @@ func (m Machine) Validate() error {
 		if err := Text(i.ExplicitPath, "executable path", 4096, false); err != nil {
 			return err
 		}
+	}
+	seenCapabilities := map[WorkerCapability]bool{}
+	for _, capability := range m.WorkerCapabilities {
+		if capability != AutomaticTitlesCodexV1 || seenCapabilities[capability] {
+			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
+		}
+		seenCapabilities[capability] = true
 	}
 	return nil
 }
