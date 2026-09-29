@@ -3061,3 +3061,13 @@ inspection/deletion before publishing them. Size rejection preserves the live
 database, removes unpublished scratch output and settles durable creation as
 failed/resource-exhausted. A real sparse file tests the exact limit without
 allocating 8 GiB; the backup/inspection/migration race group passes (15.103s).
+
+### PR #1063 CLI waited backup failure repair (2026-09-29)
+
+`backup create --wait` now returns a typed nonzero exit when the accepted job
+fails, retaining the original job, backup, request, revision, problem and replay
+fields. Interrupted waiting and failed reads retain the last accepted result.
+Real Connect fixtures cover pending-to-failed and already-failed retries for
+revocation, recovery and size limits without repeating acceptance; the existing
+real-server successful create/inspect/delete path still passes. The CLI backup
+race group passes (6.907s).

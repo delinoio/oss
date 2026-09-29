@@ -33,19 +33,39 @@ func backupCommand(ctx context.Context, c client, o options, args []string) (any
 			return nil, rpc.ClientError(err)
 		}
 		if *wait {
+			retain := func(err error) (any, error) {
+				value, marshalErr := backupOutput(result.Msg)
+				if marshalErr != nil {
+					return nil, marshalErr
+				}
+				return value, err
+			}
 			for result.Msg.Job != nil && result.Msg.Job.State == pb.BackupCreationState_BACKUP_CREATION_STATE_PENDING {
 				timer := time.NewTimer(250 * time.Millisecond)
 				select {
 				case <-ctx.Done():
 					timer.Stop()
-					return nil, domain.SafeError(ctx.Err())
+					return retain(domain.SafeError(ctx.Err()))
 				case <-timer.C:
 				}
 				current, err := c.system.GetBackupCreation(ctx, request(c, &pb.GetBackupCreationRequest{Id: result.Msg.Job.Id}))
 				if err != nil {
-					return nil, rpc.ClientError(err)
+					return retain(rpc.ClientError(err))
+				}
+				if current.Msg.Job == nil || current.Msg.Job.Id != result.Msg.Job.Id || current.Msg.Job.BackupId != result.Msg.Job.BackupId {
+					return retain(domain.Fail(domain.RecoveryRequired, "The original backup job could not be confirmed.", "Inspect the retained job before retrying with the same request ID."))
 				}
 				result.Msg.Job = current.Msg.Job
+			}
+			if result.Msg.Job == nil || result.Msg.Job.State != pb.BackupCreationState_BACKUP_CREATION_STATE_SUCCEEDED {
+				code := domain.RecoveryRequired
+				if job := result.Msg.Job; job != nil && job.State == pb.BackupCreationState_BACKUP_CREATION_STATE_FAILED {
+					switch original := domain.Code(job.ProblemCode); original {
+					case domain.Unauthenticated, domain.PermissionDenied, domain.RecoveryRequired, domain.ResourceExhausted:
+						code = original
+					}
+				}
+				return retain(domain.Fail(code, "The accepted backup job did not publish a usable image.", "Inspect the retained original job before requesting another backup."))
 			}
 		}
 		return backupOutput(result.Msg)

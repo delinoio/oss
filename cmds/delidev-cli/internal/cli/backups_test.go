@@ -1,11 +1,21 @@
 package cli
 
 import (
+	"bytes"
+	"connectrpc.com/connect"
 	"context"
+	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -104,5 +114,60 @@ func TestBackupCLIUsesServerInventoryAndChecksOriginalImage(t *testing.T) {
 			t.Fatal("deletion did not complete", value)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestBackupCLIWaitReturnsTerminalFailureWithAcceptedJob(t *testing.T) {
+	for _, problem := range []domain.Code{domain.PermissionDenied, domain.Unauthenticated, domain.RecoveryRequired, domain.ResourceExhausted} {
+		for _, replay := range []bool{false, true} {
+			t.Run(string(problem)+strconv.FormatBool(replay), func(t *testing.T) {
+				requestID, jobID, backupID := string(domain.NewID()), string(domain.NewID()), string(domain.NewID())
+				var accepts, reads atomic.Int32
+				mux := http.NewServeMux()
+				failed := func() *pb.BackupCreationJob {
+					return &pb.BackupCreationJob{Id: jobID, BackupId: backupID, Revision: 2, State: pb.BackupCreationState_BACKUP_CREATION_STATE_FAILED, ProblemCode: string(problem)}
+				}
+				mux.Handle(delidevv1connect.SystemServiceRequestBackupProcedure, connect.NewUnaryHandler(delidevv1connect.SystemServiceRequestBackupProcedure, func(_ context.Context, req *connect.Request[pb.RequestBackupRequest]) (*connect.Response[pb.RequestBackupResponse], error) {
+					accepts.Add(1)
+					if req.Msg.RequestId != requestID {
+						t.Error("lost original request")
+					}
+					job := failed()
+					if !replay {
+						job.State, job.Revision, job.ProblemCode = pb.BackupCreationState_BACKUP_CREATION_STATE_PENDING, 1, ""
+					}
+					return connect.NewResponse(&pb.RequestBackupResponse{Job: job, RequestId: requestID, Replayed: replay}), nil
+				}))
+				mux.Handle(delidevv1connect.SystemServiceGetBackupCreationProcedure, connect.NewUnaryHandler(delidevv1connect.SystemServiceGetBackupCreationProcedure, func(_ context.Context, req *connect.Request[pb.GetBackupCreationRequest]) (*connect.Response[pb.GetBackupCreationResponse], error) {
+					reads.Add(1)
+					if req.Msg.Id != jobID {
+						t.Error("polled a different job")
+					}
+					return connect.NewResponse(&pb.GetBackupCreationResponse{Job: failed()}), nil
+				}))
+				peer := httptest.NewServer(mux)
+				defer peer.Close()
+				var out bytes.Buffer
+				code := Run(context.Background(), []string{"--data-dir", filepath.Join(t.TempDir(), "client"), "--server", peer.URL, "--token-stdin", "--request-id", requestID, "backup", "create", "--wait"}, IO{In: strings.NewReader("private-fixture-token"), Out: &out, Err: io.Discard})
+				var response struct {
+					Result struct {
+						Raw       json.RawMessage `json:"job"`
+						RequestID string          `json:"request_id"`
+						Replayed  bool            `json:"replayed"`
+					} `json:"result"`
+					Error *domain.Error `json:"error"`
+				}
+				if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				var job map[string]any
+				if err := json.Unmarshal(response.Result.Raw, &job); err != nil {
+					t.Fatal(err)
+				}
+				if code != (&domain.Error{Code: problem}).ExitCode() || response.Error == nil || response.Error.Code != problem || job["id"] != jobID || job["backup_id"] != backupID || job["revision"] != "2" || job["state"] != "BACKUP_CREATION_STATE_FAILED" || job["problem_code"] != string(problem) || response.Result.RequestID != requestID || response.Result.Replayed != replay || accepts.Load() != 1 || (reads.Load() == 0) != replay {
+					t.Fatal(code, out.String(), accepts.Load(), reads.Load())
+				}
+			})
+		}
 	}
 }

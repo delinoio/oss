@@ -89,6 +89,9 @@ at a later time, credential recovery or database restoration.
 
 CLI `backup create` now returns the accepted job. `--wait` observes its existing
 job until terminal state or caller cancellation without canceling creation.
+Failed completion returns a typed nonzero exit with the original problem code
+and accepted job/request details; interrupted waiting and failed reads retain
+the last accepted result too. A pending acceptance alone is not waited success.
 `backup creation --id JOB-ID` and `backup creations` work after restart. Settings
 keeps exact uncertain acceptance retries, polls visible creation jobs, refreshes
 the image inventory on completed publication and labels stale/unknown results.
