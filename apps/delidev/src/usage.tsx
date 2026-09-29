@@ -1,19 +1,20 @@
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
+import { EntityKind, UsageAccountingProfile, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
 import { EstimateAmounts, EstimateCosts } from "./estimate-costs";
 import { ResourceChoice } from "./configuration-fields";
 import { Problem } from "./ui";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 import { detectDeviceTimeZone, localDateTimeToUnixMs } from "./usage-time";
 import { UsageCharts } from "./usage-chart";
+import { GrokAccounting } from "./grok-accounting";
 
 interface Filters { from: string; until: string; sessionId: string; projectId: string; accountId: string; providerId: string; modelId: string; generalChat: boolean }
 const emptyFilters: Filters = { from: "", until: "", sessionId: "", projectId: "", accountId: "", providerId: "", modelId: "", generalChat: false };
 
 function request(filters: Filters, timeZone: string) {
   const { from, until, ...selection } = filters;
-  return { ...selection, fromUnixMs: localDateTimeToUnixMs(from, timeZone), untilUnixMs: localDateTimeToUnixMs(until, timeZone), granularity: UsageTimeGranularity.DAY, timeZone };
+  return { ...selection, fromUnixMs: localDateTimeToUnixMs(from, timeZone), untilUnixMs: localDateTimeToUnixMs(until, timeZone), granularity: UsageTimeGranularity.DAY, timeZone, accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 };
 }
 
 function sameFilters(left: Filters, right: Filters): boolean {
@@ -136,6 +137,7 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
           <td><strong>{measure(group.totals?.total)}</strong><p>{group.totals?.responses.toLocaleString()} responses{group.totals?.total?.unavailableResponses ? ` · ${group.totals.total.unavailableResponses} unavailable` : ""}</p><details><summary>Token breakdown</summary><Measures value={group.totals} /></details></td><td><EstimateAmounts value={group.estimates} /></td>
         </tr>)}</tbody></table></div> : <p>No exact response usage is recorded for these filters. This does not mean zero usage or zero cost.</p>}
       </section>
+      <GrokAccounting data={data} open={open} />
       <section className="usage-costs" aria-labelledby="usage-cost-title"><h2 id="usage-cost-title">Cost evidence</h2><p><strong>Actual API cost:</strong> Unavailable — no verified attributable charge is supplied by the current telemetry.</p><EstimateCosts totals={data.estimates} pricing={data.pricing} /><p>Complete token-price categories do not establish complete telemetry, billed spend, a billing ceiling or budget compliance. Historical estimates remain separated by currency and original price basis.</p></section>
     </> : null}
   </section></>;

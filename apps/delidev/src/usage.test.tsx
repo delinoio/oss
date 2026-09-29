@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, UsageTimeGranularity, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
+import { EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, UsageTimeGranularity, UsageAccountingProfile, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
 import { encode } from "./documents";
 
@@ -40,6 +40,7 @@ it("shows exact known subtotals, missing fields and separate unavailable costs",
   fireEvent.click(within(table).getByRole("button", { name: "Retained session" }));
   expect(f.open).toHaveBeenCalledWith(f.ids.session);
   expect(f.read.mock.calls[0][0].fromUnixMs).toBe(0n);
+  expect(f.read.mock.calls[0][0].accountingProfile).toBe(UsageAccountingProfile.NATIVE_UNITS_V1);
 });
 
 it("applies filters explicitly and preserves a draft across navigation", async () => {
