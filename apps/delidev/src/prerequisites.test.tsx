@@ -10,7 +10,7 @@ import { Prerequisites } from "./prerequisites";
 
 function fixture() {
   const serverId = newRequestId();
-  const report = { schema_version: 2, server_id: serverId, version: "0.1.0", inference_probes: false, observed_at: new Date().toISOString(), database: "ready", storage: { result: { state: "observed" } }, more_machines: false, machines: [{ machine_id: newRequestId(), active_stream: true, disabled: false, installations: [{ harness: "codex", state: "detected", version: "0.151.0", protocol_verified: true, protocol_state: "verified" }] }] };
+  const report = { schema_version: 2, server_id: serverId, version: "0.1.0", inference_probes: false, observed_at: new Date().toISOString(), database: "ready", storage: { result: { state: "observed" } }, more_machines: false, machines: [{ machine_id: newRequestId(), active_stream: true, disabled: false, installations: [{ harness: "codex", state: "detected", version: "0.151.0", protocol_verified: true, protocol_state: "verified", capabilities: [] as string[], observed_at: new Date().toISOString() }] }] };
   const account = create(ResourceSchema, { id: newRequestId(), revision: 1n, kind: EntityKind.ACCOUNT, schemaVersion: 1, documentJson: encode({ provider_id: newRequestId(), enabled: true, health: "ready", connection: { id: newRequestId() } }) });
   const agent = create(ResourceSchema, { id: newRequestId(), revision: 1n, kind: EntityKind.AGENT, schemaVersion: 1, documentJson: encode({ harness: "codex", model_id: newRequestId(), accounts: [] }) });
   const doctor = vi.fn(async () => ({ reportJson: encode(report) }));
@@ -92,4 +92,38 @@ it("does not mistake a verified but offline or disabled Worker for a connected h
   fireEvent.click(screen.getByRole("button", { name: "Refresh prerequisites" }));
   await waitFor(() => expect(f.doctor).toHaveBeenCalledTimes(2));
   await screen.findByText("Execution Worker and harness: Needs setup");
+});
+
+it.each([
+  { state: "future" }, { protocol_state: "future" }, { protocol_verified: false },
+  { protocol_state: "failed", problem_code: "unavailable" }, { state: "missing" },
+  { version: "bad-version" }, { version: 151 }, { capabilities: undefined },
+  { capabilities: "execute" }, { capabilities: ["future"] }, { capabilities: ["usage", "usage"] },
+  { observed_at: undefined }, { observed_at: 1 }, { observed_at: "not-a-time" },
+  { problem_code: "not_found" }, { guidance: false }, { guidance: "bad\0guidance" },
+  { native_output: "unrecognized shape" },
+])("keeps malformed installation observations unknown: %j", async changes => {
+  const f = fixture();
+  Object.assign(f.report.machines[0]!.installations[0]!, changes);
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("Server diagnostics: Unknown")).toBeTruthy();
+  expect(screen.getByText("Execution Worker and harness: Unknown")).toBeTruthy();
+  expect(screen.queryByText(/retained harness handshake/)).toBeNull();
+});
+
+it.each([
+  { harness: "codex", state: "unchecked", protocol_verified: false, capabilities: [] },
+  { harness: "codex", state: "missing", protocol_verified: false, capabilities: [], observed_at: new Date().toISOString(), problem_code: "not_found" },
+  { harness: "codex", state: "detected", version: "0.151.0", protocol_verified: false, capabilities: [], observed_at: new Date().toISOString() },
+  { harness: "codex", state: "detected", version: "0.151.0", protocol_verified: false, protocol_state: "unsupported", capabilities: [], observed_at: new Date().toISOString(), problem_code: "unsupported" },
+  { harness: "codex", state: "detected", version: "0.151.0", protocol_verified: false, protocol_state: "failed", capabilities: [], observed_at: new Date().toISOString(), problem_code: "unavailable" },
+])("keeps a valid non-ready installation distinct from malformed data: %j", async installation => {
+  const f = fixture();
+  f.doctor.mockImplementation(async () => ({ reportJson: encode({ ...f.report, machines: [{ ...f.report.machines[0], installations: [installation] }] }) }));
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText("Execution Worker and harness: Needs setup");
+  expect(screen.getByText("Server diagnostics: Observed")).toBeTruthy();
 });

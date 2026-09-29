@@ -2503,3 +2503,13 @@ uncertain recovery still synchronizes before completion, and a matching restored
 image is revalidated, removed and synchronized. Focused real SQLite/filesystem
 race tests passed (3.909s), including zero-sync repeated completed scans, actual
 reappearing-image removal and a failed then recovered absence-sync boundary.
+
+### PR #1063 review repair: prerequisite installation observations (2026-09-29)
+
+The checklist now validates the complete known installation shape, bounded
+version/time/capability observations and installation/protocol/problem state
+relationships. Malformed or contradictory data stays Unknown rather than being
+accepted as an observation or missing setup. Focused frontend tests passed
+(27 cases, including valid unchecked, missing, version-only and failed/unsupported
+handshakes), and desktop type checking passed. These checks perform no native
+probe, account authentication or inference.

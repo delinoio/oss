@@ -1,12 +1,38 @@
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ResourceQuery, SystemQuery, isEntityId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, FailureCode, ResourceQuery, SystemQuery, isEntityId, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, text, type Document } from "./documents";
 import { Problem } from "./ui";
 
 enum CheckState { NotChecked = "Not checked", Observed = "Observed", Setup = "Needs setup", Unknown = "Unknown", Failed = "Check failed" }
 const harnesses = new Set(["codex", "claude-code", "opencode", "grok-build"]);
 const healthStates = new Set(["disconnected", "unverified", "ready", "expired", "revoked", "failed"]);
+enum InstallationState { Unchecked = "unchecked", Detected = "detected", Missing = "missing", Denied = "permission-denied", Incompatible = "incompatible", Failed = "failed" }
+enum ProtocolState { Verified = "verified", Unsupported = "unsupported", Failed = "failed" }
+const installationFields = new Set(["harness", "state", "version", "capabilities", "observed_at", "protocol_verified", "protocol_state", "problem_code", "guidance"]);
+const capabilities = new Set(["execute", "steer", "fork", "plan", "compact", "questions", "approvals", "usage", "subagents", "read-only", "models"]);
+const installationProblems: Partial<Record<InstallationState, FailureCode>> = {
+  [InstallationState.Missing]: FailureCode.NotFound, [InstallationState.Denied]: FailureCode.PermissionDenied,
+  [InstallationState.Incompatible]: FailureCode.Unsupported, [InstallationState.Failed]: FailureCode.Unavailable,
+};
+function validInstallation(value: Document): boolean {
+  const state = value.state as InstallationState, protocol = value.protocol_state as ProtocolState | undefined;
+  if (Object.keys(value).some(key => !installationFields.has(key)) || !harnesses.has(text(value.harness)) || !Object.values(InstallationState).includes(state) || typeof value.protocol_verified !== "boolean") return false;
+  if (!Array.isArray(value.capabilities) || value.capabilities.length > capabilities.size || value.capabilities.some(item => typeof item !== "string" || !capabilities.has(item)) || new Set(value.capabilities).size !== value.capabilities.length) return false;
+  if (protocol !== undefined && !Object.values(ProtocolState).includes(protocol)) return false;
+  if (value.protocol_verified !== (protocol === ProtocolState.Verified) || (state !== InstallationState.Detected && protocol !== undefined) || (value.capabilities.length > 0 && !value.protocol_verified)) return false;
+  if (state === InstallationState.Detected) {
+    if (typeof value.version !== "string" || !/^[0-9]{1,8}\.[0-9]{1,8}\.[0-9]{1,8}([+-][a-zA-Z0-9.-]{1,64})?$/.test(value.version)) return false;
+  } else if (value.version !== undefined) return false;
+  if (state === InstallationState.Unchecked) {
+    if (value.observed_at !== undefined) return false;
+  } else if (typeof value.observed_at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value.observed_at) || !Number.isFinite(Date.parse(value.observed_at))) return false;
+  const problem = protocol === ProtocolState.Unsupported ? FailureCode.Unsupported : protocol === ProtocolState.Failed ? FailureCode.Unavailable : installationProblems[state];
+  if (value.problem_code !== problem) return false;
+  if (value.guidance !== undefined && (typeof value.guidance !== "string" || value.guidance.length > 4096 || value.guidance.includes("\0"))) return false;
+  return true;
+}
+
 function reportFrom(bytes: Uint8Array | undefined, server: string): Document | undefined {
   if (!bytes || bytes.byteLength > 1 << 20 || !isEntityId(server)) return;
   try {
@@ -20,7 +46,7 @@ function reportFrom(bytes: Uint8Array | undefined, server: string): Document | u
       const installed = new Set();
       for (const item of machine.installations) {
         const installation = object(item);
-        if (!harnesses.has(text(installation.harness)) || installed.has(installation.harness) || typeof installation.protocol_verified !== "boolean") return;
+        if (!validInstallation(installation) || installed.has(installation.harness)) return;
         installed.add(installation.harness);
       }
     }
