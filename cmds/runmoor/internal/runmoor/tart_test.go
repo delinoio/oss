@@ -29,6 +29,10 @@ type tartFixture struct {
 	pinnedSetInfo     os.FileInfo
 }
 
+// Keep fake Tart processes outside the host PID range so macOS CI cannot
+// mistake a real system process for one of these detached test processes.
+const fixtureTartPID = 1 << 30
+
 func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -118,7 +122,7 @@ func (f *tartFixture) Start(_ string, args, env []string) (int, error) {
 	defer f.mu.Unlock()
 	f.commands = append(f.commands, append([]string{}, args...))
 	f.running[args[len(args)-1]] = true
-	return 123, nil
+	return fixtureTartPID, nil
 }
 func (f *tartFixture) canonicalPinnedArgs(args, env []string, dir *os.File) ([]string, error) {
 	b, err := readTartVMOwnerMarker(dir, 4096)
@@ -240,14 +244,14 @@ type startingTartCommand struct {
 
 func (f *startingTartCommand) Start(string, []string, []string) (int, error) {
 	f.started = true
-	return 123, nil
+	return fixtureTartPID, nil
 }
 func (f *startingTartCommand) StartPinned(name string, args, env []string, dir *os.File) (int, error) {
 	f.started = true
 	if _, err := f.tartFixture.canonicalPinnedArgs(args, env, dir); err != nil {
 		return 0, err
 	}
-	return 123, nil
+	return fixtureTartPID, nil
 }
 func (f *startingTartCommand) Run(ctx context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
 	if f.started && args[0] == "get" {
@@ -296,8 +300,8 @@ func TestImageOpenWaitsForConfirmedVMStartup(t *testing.T) {
 				if err != nil || command.polls < readyAfter {
 					t.Fatal("image open acknowledged an unconfirmed VM", err)
 				}
-				if got := s.View().ImageTartPIDs[im.ID]; got != 123 {
-					t.Fatalf("persisted setup Tart PID = %d, want 123", got)
+				if got := s.View().ImageTartPIDs[im.ID]; got != fixtureTartPID {
+					t.Fatalf("persisted setup Tart PID = %d, want %d", got, fixtureTartPID)
 				}
 				if got := s.View().ImageTartStarts[im.ID]; got != "fixture-process-start" {
 					t.Fatalf("persisted setup Tart process start = %q, want fixture identity", got)

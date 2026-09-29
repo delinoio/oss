@@ -364,8 +364,8 @@ func TestTartStartUsesTheVerifiedDirectoryAfterNameReplacement(t *testing.T) {
 	}
 	pid, _, err := driver.startOwned(context.Background(), c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
 	requireCode(t, err, ErrOwnership)
-	if pid != 123 {
-		t.Fatalf("started Tart PID was lost after ownership recheck failed: %d", pid)
+	if pid != fixtureTartPID {
+		t.Fatalf("started Tart PID was lost after ownership recheck failed: got %d, want %d", pid, fixtureTartPID)
 	}
 	if aliasedName != tartRunAlias(id) {
 		t.Fatalf("Tart start alias = %q, want %q", aliasedName, tartRunAlias(id))
@@ -595,13 +595,13 @@ func TestTartStopWaitsForDetachedProcessAfterVMStops(t *testing.T) {
 		fixture.running[name] = true
 		checks := 0
 		driver.processAlive = func(pid int) (bool, error) {
-			if pid != 123 {
-				t.Fatalf("checked Tart PID = %d, want 123", pid)
+			if pid != fixtureTartPID {
+				t.Fatalf("checked Tart PID = %d, want %d", pid, fixtureTartPID)
 			}
 			checks++
 			return checks < 3, nil
 		}
-		r := Runner{ID: id, Handle: Handle{VM: name, PID: 123}, Phase: Busy}
+		r := Runner{ID: id, Handle: Handle{VM: name, PID: fixtureTartPID}, Phase: Busy}
 		if err := driver.Stop(context.Background(), c, r, s.View()); err != nil {
 			t.Fatalf("stop failed while the detached process was exiting: %v", err)
 		}
@@ -640,7 +640,7 @@ func TestTartStopWaitsForDetachedProcessAfterVMStops(t *testing.T) {
 		driver.processAlive = func(pid int) (bool, error) { return true, nil }
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 		defer cancel()
-		r := Runner{ID: id, Handle: Handle{VM: name, PID: 123}, Phase: Busy}
+		r := Runner{ID: id, Handle: Handle{VM: name, PID: fixtureTartPID}, Phase: Busy}
 		err := driver.Stop(ctx, c, r, s.View())
 		requireCode(t, err, ErrCleanup)
 		if present, aliasErr := tartRunAliasPresent(c, tartRunAlias(id)); aliasErr != nil || !present {
@@ -957,8 +957,8 @@ func TestImageRemovalRetainsReservationWhileDetachedTartRunLives(t *testing.T) {
 	if _, err = images.Operate(context.Background(), c, ImageRequest{Action: "open", ID: im.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.View().ImageTartPIDs[im.ID]; got != 123 {
-		t.Fatalf("persisted setup Tart PID = %d, want 123", got)
+	if got := s.View().ImageTartPIDs[im.ID]; got != fixtureTartPID {
+		t.Fatalf("persisted setup Tart PID = %d, want %d", got, fixtureTartPID)
 	}
 	if err = os.RemoveAll(vmPath(c, im.VM)); err != nil {
 		t.Fatal(err)
@@ -973,14 +973,14 @@ func TestImageRemovalRetainsReservationWhileDetachedTartRunLives(t *testing.T) {
 	}
 	_, err = images.Operate(context.Background(), c, ImageRequest{Action: "remove", ID: im.ID})
 	requireCode(t, err, ErrOwnership)
-	if checkedPID != 123 {
-		t.Fatalf("checked detached Tart PID = %d, want 123", checkedPID)
+	if checkedPID != fixtureTartPID {
+		t.Fatalf("checked detached Tart PID = %d, want %d", checkedPID, fixtureTartPID)
 	}
 	current := s.View()
 	if current.Images[im.ID] == nil || current.Images[im.ID].Phase != ImageOpen {
 		t.Fatal("ambiguous removal discarded its image record")
 	}
-	if current.ImageTartPIDs[im.ID] != 123 {
+	if current.ImageTartPIDs[im.ID] != fixtureTartPID {
 		t.Fatal("ambiguous removal discarded its detached Tart PID")
 	}
 	resources, count, vms := usage(current)
@@ -1096,15 +1096,30 @@ func TestImageSealStopsWithCurrentTartProcessIdentity(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	driver.processAlive = func(pid int) (bool, error) { return pid == 123, nil }
-	_, err = images.Operate(context.Background(), c, ImageRequest{Action: "seal", ID: im.ID, RunnerVersion: "2.337.0"})
-	requireCode(t, err, ErrOwnership)
-	current := s.View()
-	if current.ImageTartPIDs[im.ID] != 123 || current.ImageTartStarts[im.ID] != "fixture-process-start" {
-		t.Fatal("image seal discarded the currently running Tart process identity", current.ImageTartPIDs[im.ID], current.ImageTartStarts[im.ID])
+	checks := 0
+	driver.processAlive = func(pid int) (bool, error) {
+		if pid == 122 {
+			return false, nil
+		}
+		if pid != fixtureTartPID {
+			t.Fatalf("checked Tart PID = %d, want %d", pid, fixtureTartPID)
+		}
+		checks++
+		return checks == 1, nil
 	}
-	if present, aliasErr := tartRunAliasPresent(c, tartRunAlias(im.ID)); aliasErr != nil || !present {
-		t.Fatal("image seal removed the alias for the currently running Tart process", present, aliasErr)
+	_, err = images.Operate(context.Background(), c, ImageRequest{Action: "seal", ID: im.ID, RunnerVersion: "2.337.0"})
+	if err != nil {
+		t.Fatalf("image seal failed while the current Tart process exited: %v", err)
+	}
+	current := s.View()
+	if checks != 2 {
+		t.Fatalf("Tart process liveness checks = %d, want 2 to confirm its exit", checks)
+	}
+	if current.Images[im.ID].Phase != ImageSealed || current.ImageTartPIDs[im.ID] != 0 || current.ImageTartStarts[im.ID] != "" {
+		t.Fatal("image seal did not clear the confirmed-exited Tart process state", current.Images[im.ID], current.ImageTartPIDs[im.ID], current.ImageTartStarts[im.ID])
+	}
+	if present, aliasErr := tartRunAliasPresent(c, tartRunAlias(im.ID)); aliasErr != nil || present {
+		t.Fatal("image seal retained the alias after the Tart process exited", present, aliasErr)
 	}
 }
 
