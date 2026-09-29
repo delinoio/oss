@@ -10,6 +10,7 @@
 
 
 - DeliDev managed backup operations follow `docs/cmds-delidev-storage-contract.md`. Keep owner/client-only authorization, bounded metadata pagination, exact creation retries and source-preserving integrity inspection. Inspection must read an identity-checked private copy, reject sidecars/foreign server identity, recheck authorization after I/O and never imply restoration or credential/Worker recovery. Preserve exact byte counts and clear stale success after failed reinspection.
+- Recheck WAL/SHM/journal absence before publishing an inspection, including when opened main-file identity and bytes remain unchanged throughout the private copy.
 
 
 - `account list` accepts optional closed `--account-type api|subscription` and `--provider-id UUID` selectors through the list-only Connect request. Preserve the unfiltered default for existing callers; filters are applied before SQL pagination and bound to cursors. Snapshots and event streams must not inherit them.

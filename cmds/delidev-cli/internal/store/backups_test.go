@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,41 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
+
+func TestManagedBackupInspectionRejectsSidecarsAppearingAfterCopy(t *testing.T) {
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		t.Run(suffix, func(t *testing.T) {
+			s, root, ctx, original := deletionFixture(t)
+			path := filepath.Join(root, "backups", string(original.Backup.ID)+".sqlite")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			observed := false
+			result, err := s.inspectBackup(ctx, original.Backup.ID, original.ServerID, func() {
+				observed = true
+				// Reproduce adjacent state independently of the immutable main file,
+				// so file-identity/hash checks alone cannot reject the observation.
+				if err := os.WriteFile(path+suffix, []byte("raced SQLite state"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			})
+			if !observed || err == nil || domain.SafeError(err).Code != domain.RecoveryRequired || result.SHA256 != "" {
+				t.Fatal("raced sidecar was published as a valid inspection", result, err)
+			}
+			after, readErr := os.ReadFile(path)
+			if readErr != nil || !bytes.Equal(before, after) {
+				t.Fatal("inspection modified the original image", readErr)
+			}
+			if err := os.Remove(path + suffix); err != nil {
+				t.Fatal(err)
+			}
+			if result, err := s.InspectBackup(ctx, original.Backup.ID, original.ServerID); err != nil || result.SHA256 != original.SHA256 {
+				t.Fatal("preserved source did not recover after sidecar removal", result, err)
+			}
+		})
+	}
+}
 
 func TestManagedBackupInspectionUsesCommittedImageWithoutChangingSource(t *testing.T) {
 	s, root := openTest(t)

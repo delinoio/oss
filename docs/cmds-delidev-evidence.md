@@ -2724,6 +2724,13 @@ atomic-write remnants, retaining the 4,096-obligation cap and a separate
 plus remnants, both independent overflow cases and preservation of pending
 evidence. The deletion store race suite passed in 5.402s.
 
+### PR #1063 inspection sidecar publication race (2026-09-29)
+
+Inspection now rechecks WAL/SHM/journal absence immediately before publishing
+validated metadata. Deterministic copy-boundary tests create each sidecar while
+retaining identical original image bytes, verify refusal without source changes,
+and verify successful recovery after removal. Managed-backup race tests passed.
+
 ## 2026-09-29: PR #1060 account-setup merge validation
 
 - Merged main's guided API account setup and provider activation while preserving all desktop recovery rules and both branches' evidence records. The combined Settings surface retains current-device revocation guards; the CLI retains explicit local registration inspection/recovery alongside the new provider operations.

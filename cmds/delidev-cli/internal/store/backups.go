@@ -122,6 +122,12 @@ func backupUnavailable() error {
 // path and cannot ingest an adjacent WAL or change the source. The hash covers the
 // exact inspected bytes, not a later read of a potentially replaced file.
 func (s *Store) InspectBackup(ctx context.Context, id, expectedServer domain.ID) (BackupInspection, error) {
+	return s.inspectBackup(ctx, id, expectedServer, nil)
+}
+
+// afterCopy permits deterministic tests of an external SQLite open while the
+// private copy is being validated. Product callers never supply this checkpoint.
+func (s *Store) inspectBackup(ctx context.Context, id, expectedServer domain.ID, afterCopy func()) (BackupInspection, error) {
 	var result BackupInspection
 	if err := lockBackupContext(ctx, &s.backupGate); err != nil {
 		return result, err
@@ -202,6 +208,9 @@ func (s *Store) InspectBackup(ctx context.Context, id, expectedServer domain.ID)
 	if err := scratch.Close(); err != nil {
 		return result, storageError(err)
 	}
+	if afterCopy != nil {
+		afterCopy()
+	}
 	// The private scratch file has no journal sidecars. Immutable also prevents
 	// SQLite from creating them while validating a WAL-mode database image.
 	db, err := sql.Open("sqlite", databaseURI(scratch.Name(), true)+"&immutable=1")
@@ -227,6 +236,13 @@ func (s *Store) InspectBackup(ctx context.Context, id, expectedServer domain.ID)
 	current, err = backupInfo(path)
 	if err != nil || !sameBackup(before, current) {
 		return result, backupUnavailable()
+	}
+	// A same-user SQLite connection can create adjacent state without changing
+	// the original main-file bytes. Refuse that raced image at publication too.
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		if _, err := os.Lstat(path + suffix); !errors.Is(err, os.ErrNotExist) {
+			return result, backupUnavailable()
+		}
 	}
 	result = BackupInspection{Backup: backupMetadata(id, before), SHA256: hex.EncodeToString(hash.Sum(nil)), SchemaVersion: version, ServerID: owner}
 	return result, nil

@@ -36,6 +36,9 @@ chunks into an exclusive private scratch file while computing SHA-256. SQLite
 opens only that scratch image in immutable read-only mode. Application/schema,
 quick integrity, foreign keys and original server identity must validate; source
 identity, mode, size and modification time are checked again before publication.
+WAL, SHM and rollback-journal absence is also rechecked at that boundary; adjacent
+state created during copying invalidates the observation even if the main image
+bytes and identity are unchanged.
 Scratch cleanup occurs on success and failure. A killed process can leave an
 unpublished inspection scratch file; listing never treats it as a backup.
 
