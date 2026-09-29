@@ -90,3 +90,30 @@ it("shows durable creation outcomes without treating pending or stale observatio
   fireEvent.click(screen.getByRole("button", { name: "Refresh creation jobs" }));
   await screen.findByText("Previous creation observations are shown; current state is unavailable.");
 });
+
+it.each(["hide", "reinspect"])("requires fresh deletion confirmation after %s replaces inspection", async action => {
+  const f = fixture();
+  const view = render(f.view());
+  fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  const checkboxName = `I confirm permanent deletion of backup ${f.id}`;
+  fireEvent.click(await screen.findByRole("checkbox", { name: checkboxName }));
+  expect((screen.getByRole("button", { name: "Permanently delete selected backup" }) as HTMLButtonElement).disabled).toBe(false);
+  f.inspect.mockResolvedValueOnce({ backup: { id: f.id, revision: 1n, sizeBytes: 123n, modifiedAt: "2026-09-29T01:00:00Z" }, sha256: "b".repeat(64), schemaVersion: 21, serverId: newRequestId() });
+  if (action === "hide") {
+    view.rerender(f.view(false));
+    view.rerender(f.view());
+  } else {
+    fireEvent.click(screen.getByRole("button", { name: `Inspect backup ${f.id}` }));
+  }
+  await screen.findByText("b".repeat(64));
+  const checkbox = screen.getByRole("checkbox", { name: checkboxName }) as HTMLInputElement;
+  const remove = screen.getByRole("button", { name: "Permanently delete selected backup" }) as HTMLButtonElement;
+  expect(checkbox.checked).toBe(false);
+  expect(remove.disabled).toBe(true);
+  fireEvent.click(remove);
+  expect(f.remove).not.toHaveBeenCalled();
+  fireEvent.click(checkbox);
+  fireEvent.click(remove);
+  await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(1));
+  expect(f.remove.mock.calls[0]![0]).toMatchObject({ backup: { id: f.id, sizeBytes: 123n }, sha256: "b".repeat(64) });
+});

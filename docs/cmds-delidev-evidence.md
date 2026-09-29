@@ -2513,3 +2513,12 @@ accepted as an observation or missing setup. Focused frontend tests passed
 (27 cases, including valid unchecked, missing, version-only and failed/unsupported
 handshakes), and desktop type checking passed. These checks perform no native
 probe, account authentication or inference.
+
+### PR #1063 review repair: exact deletion confirmation (2026-09-29)
+
+Fresh permanent-deletion confirmation is bound to its inspected response and is
+cleared when Backups becomes inactive or inspection refreshes/replaces the
+observation. Reopening with changed bytes/hash cannot reuse a previously checked
+box. Submitted uncertain retries remain bound to their original request. All six
+backup component tests and type checking passed, including changed-image cases
+across hiding and explicit reinspection plus exact uncertain retry preservation.

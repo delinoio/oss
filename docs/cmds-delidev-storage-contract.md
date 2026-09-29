@@ -121,7 +121,10 @@ existing obligations rather than evicting them.
 --modified-at TIME --sha256 SHA256 --confirm` uses the original inspection values.
 The global `--request-id` permits exact retry after an uncertain response.
 `delidev backup deletions` lists retained status after restart. Settings requires
-an explicit inspection and permanent-deletion checkbox, retains uncertain requests
+an explicit inspection and permanent-deletion checkbox bound to that exact
+observation. Hiding the view or refreshing/replacing its inspection clears fresh
+confirmation; already submitted uncertain requests retain their original bytes.
+Settings retains uncertain requests
 across navigation, and presents pending/completed jobs with separate cleanup
 failures. Accepted deletion cannot be canceled. Logical validated image bytes
 removed are not a claim of reclaimed filesystem space; hard links, filesystem
