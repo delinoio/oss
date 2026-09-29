@@ -3247,6 +3247,18 @@ incomplete cleanup as failed and stays paused. Its focused race regression and
 original recovery checks pass (3.623s;
 `/tmp/delidev-1079-publication-cancellation.log`).
 
+PR #1121's protocol/client CI exposed the existing real-server GitHub-profile
+Settings fixture's one-second DOM wait. The unchanged full Settings suite
+reproduced its missing freshly saved profile, while the isolated case passed.
+Giving both durable-save/list observations the existing 15-second fixture I/O
+budget passes all 11 Settings cases without changing production RPC deadlines or
+assertions. Required desktop `pnpm test` passes type checking, 74 files / 941
+React tests, eight packaging checks, six launcher checks and frontend build
+(`/tmp/delidev-1121-desktop-test.log`). Go vet passes again after the cancellation
+repair (`/tmp/delidev-1079-vet-repair.log`). Generated output is removed after
+validation. Codex review on the original PR head is unavailable because its
+review usage limit was reached; that comment is not review approval.
+
 These fixtures use actual local Git and private temporary state with controlled
 storage faults, no user credentials or native AI inference. They do not establish
 native Windows/Linux runtime acceptance, real provider/private-GitHub access,
