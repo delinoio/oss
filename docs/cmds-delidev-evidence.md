@@ -2157,3 +2157,13 @@ and parent directory with internal links, and separately verify nested preview
 and listing behavior. Focused workspace race tests and vet pass on macOS arm64;
 the workspace test package cross-compiles for Windows amd64. This fixture does
 not establish live Windows link-race behavior or make user-owned files atomic.
+
+### API provider activation (#1046)
+
+Issue #1046 adds presence-aware activation, canonical preset identity, bounded inventory/account filtering, active-provider model filtering, and admission checks at dispatch/Resume and durable execution registration. The dedicated server fixtures cover legacy provider omission, provider-scoped account cursors, exact concurrent activation, disabled discovery, dispatch/Resume, grant ordering and observational replay. Portable tests also reject explicit malformed activation fields and duplicate managed presets at preview, target collision and deferred-apply recheck.
+
+`pnpm test` in `apps/delidev` passes type checking, all 67 test files / 794 tests, and the production build. `go vet ./cmds/delidev-cli/...` passes. The added portable-field and import-collision tests pass under `go test -race` in the server package. Root `pnpm proto:lint`, `pnpm proto:breaking` and staged `pnpm proto:fresh` pass.
+
+The required complete `go test -race ./cmds/delidev-cli/...` run passed the affected `internal/cli`, `internal/server`, and `internal/store` packages, along with the other packages, but `internal/harness/grok` reached its existing ten-minute package timeout in `TestQuestionControllerOriginalClaimsAndUncertainty/question-claim-failure` while `inspectProfile` waited for its process wire. That unchanged focused Grok case passes alone under the race detector in 7.794 seconds. This is a full-suite resource-contention limitation, not a passing result for the complete command.
+
+Native desktop layout and keyboard checks were not performed for this change; the frontend fixtures do not establish native-window behavior. No real provider account or inference readiness was tested. Preserve that evidence gap during review and follow `docs/cmds-delidev-provider-activation-contract.md`.

@@ -61,6 +61,17 @@ summary { cursor: pointer; padding: 3px; }
 .result { padding: 20px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .result > p { white-space: pre-wrap; margin-top: 10px; }
 .result > small { display: block; margin-top: 10px; }
+.provider-row { padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: white; margin-block: 10px; }
+.provider-row-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.provider-row-heading h4 { margin: 0 0 4px; }
+.provider-row-heading p, .provider-row > p { color: var(--muted); font-size: .88rem; margin-bottom: 8px; }
+.provider-toggle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.provider-toggle > span { min-width: 2rem; font-weight: 600; }
+.provider-toggle button[role=switch] { width: 52px; min-width: 52px; min-height: 40px; position: relative; border-radius: 999px; background: #e6eaf0; padding: 4px; }
+.provider-toggle button[role=switch]::after { content: ""; display: block; width: 26px; height: 26px; border-radius: 50%; background: white; border: 1px solid #9aa4b3; transition: transform 120ms ease; }
+.provider-toggle button[role=switch][aria-checked=true] { background: var(--accent); border-color: var(--accent); }
+.provider-toggle button[role=switch][aria-checked=true]::after { transform: translateX(12px); }
+.provider-toggle .problem { flex-basis: 100%; }
 .search-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
 .search-form label:first-child { flex: 1; }
 .search-form button { margin-bottom: 12px; }
@@ -74,7 +85,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .skip { position: fixed; top: -100px; left: 16px; z-index: 10; background: white; padding: 12px; }
 .skip:focus { top: 10px; }
 @media (max-width: 850px) { .app { grid-template-columns: 210px minmax(0, 1fr); } .session { padding: 18px; } .session-header { align-items: start; flex-direction: column; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
 .requests { max-height: 40vh; overflow: auto; flex-shrink: 0; }
 .interaction { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-block: 12px; }
 .interaction h3 { margin: 0; }

@@ -421,6 +421,13 @@ func scope(f store.Filter) string {
 	return fmt.Sprintf("page:%s:%s:%s", f.Kind, f.SessionID, f.ProjectID)
 }
 
+func listScope(f store.Filter, providerID string) string {
+	if providerID == "" {
+		return scope(f)
+	}
+	return scope(f) + ":provider:" + providerID
+}
+
 func ValidateConfig(config Config) error {
 	if config.Listen == "" {
 		config.Listen = DefaultListen

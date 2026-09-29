@@ -11,7 +11,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
-import { BudgetState, SessionService, UsageService, ConfigurationService, EntityKind, ResourceService, ScheduleService, SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
+import { BudgetState, ProviderInventoryCapability, ProviderPresetId, ProviderService, SessionService, UsageService, ConfigurationService, EntityKind, ResourceService, ScheduleService, SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
 import { CreateSession } from "./views";
 import { SessionBudget } from "./session-budget";
 import { Usage } from "./usage";
@@ -72,6 +72,39 @@ function runCLI(args: string[], input?: string): Promise<string> {
     child.stdin!.end(input);
   });
 }
+
+it("activates fixed presets without creating accounts or models and retains identity across off/on", async () => {
+  const providers = createClient(ProviderService, transport);
+  const initial = await providers.listProviderInventory({ pageSize: 50 });
+  expect(initial.capabilities).toEqual(expect.arrayContaining([ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER]));
+  expect(initial.entries.filter((entry) => entry.presetId !== ProviderPresetId.UNSPECIFIED)).toHaveLength(9);
+  expect(initial.entries.every((entry) => !entry.enabled && !entry.providerId && entry.accountCountsAvailable)).toBe(true);
+
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(await screen.findByRole("switch", { name: "Turn on OpenAI" }));
+  await screen.findByRole("switch", { name: "Turn off OpenAI" });
+  let inventory = await providers.listProviderInventory({ pageSize: 50 });
+  let saved = inventory.entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
+  expect(saved.enabled).toBe(true);
+  expect(saved.providerId).not.toBe("");
+  expect(saved.totalAccounts).toBe(0n);
+  expect((await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.ACCOUNT } })).resources).toHaveLength(0);
+  expect((await providers.searchModels({ pageSize: 50 })).models).toHaveLength(0);
+
+  fireEvent.click(screen.getByRole("switch", { name: "Turn off OpenAI" }));
+  await screen.findByRole("switch", { name: "Turn on OpenAI" });
+  inventory = await providers.listProviderInventory({ pageSize: 50 });
+  saved = inventory.entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
+  expect(saved.enabled).toBe(false);
+  const retainedID = saved.providerId;
+  fireEvent.click(screen.getByRole("switch", { name: "Turn on OpenAI" }));
+  await screen.findByRole("switch", { name: "Turn off OpenAI" });
+  saved = (await providers.listProviderInventory({ pageSize: 50 })).entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
+  expect(saved.providerId).toBe(retainedID);
+  expect(saved.enabled).toBe(true);
+}, 30000);
+
 afterAll(async () => {
   await stopChild(worker);
   if (process && process.exitCode === null) {
@@ -91,7 +124,9 @@ it("configures a real Go server through the settings forms and explicitly valida
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
-  fireEvent.click(await screen.findByRole("button", { name: "New Provider" }));
+  const create = await screen.findByRole("button", { name: "Custom provider" });
+  await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(create);
   change("Name", "Owned local API"); change("API base URL", providerOrigin); change("API protocol", "openai-chat"); change("Authentication", "keyless");
   fireEvent.click(screen.getByRole("checkbox", { name: "Discover models automatically for connected accounts" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));

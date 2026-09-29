@@ -54,3 +54,7 @@ Official interface sources checked for this implementation:
 - [Ollama OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility), [LM Studio model listing](https://lmstudio.ai/docs/developer/openai-compat/models), and [vLLM online serving](https://docs.vllm.ai/en/latest/serving/online_serving/)
 
 Successful model discovery with unobservable authentication records `state=unsupported` and an unsupported problem while leaving the account unverified; HTTP success alone never records successful credential validation.
+
+## Provider-wide activation
+
+Provider enabled state and preset provenance are governed by the [provider activation contract](cmds-delidev-provider-activation-contract.md). Discovery requires both provider and discovery enabled; turning a provider Off cancels only its in-flight catalog work, prevents stale publication, and preserves previous model observations. Explicit account validation remains separate. Legacy providers without an activation field remain effectively enabled, while generic writes preserve a stored false value.

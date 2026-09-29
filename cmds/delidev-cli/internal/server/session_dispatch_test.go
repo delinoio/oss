@@ -286,6 +286,68 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	}
 }
 
+func TestInitialDispatchOffProviderPreservesQueuedInputAndRouting(t *testing.T) {
+	f := newFirstDispatchFixture(t)
+	ctx := context.Background()
+	if err := disableFirstDispatchProvider(f); err != nil {
+		t.Fatal(err)
+	}
+	before := f.refresh(t)
+	err := f.service.dispatchExecution(ctx, before)
+	if domain.SafeError(err).Code != domain.ProviderDisabled {
+		t.Fatalf("initial dispatch did not report provider disabled: %v", err)
+	}
+	state, err := store.Decode[domain.Session](f.refresh(t))
+	if err != nil || state.InitialExecution != nil || state.ActiveExecutionID != "" || state.PendingInputs != 1 {
+		t.Fatalf("blocked provider consumed or replaced session ownership: %+v %v", state, err)
+	}
+	queued, err := f.service.Store.Get(ctx, domain.QueueKind, domain.ID(f.change.Input.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := store.Decode[domain.QueuedInput](queued)
+	if err != nil || input.Delivery != domain.InputQueued || input.ExecutionID != "" || input.Prompt != f.selection.Prompt {
+		t.Fatalf("blocked provider consumed or rewrote the queued input: %+v %v", input, err)
+	}
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+		routing, _, err := tx.Routing(f.selection.AgentID)
+		if err == nil && routing.ID != "" {
+			t.Error("blocked provider advanced account routing")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func disableFirstDispatchProvider(f *firstDispatchFixture) error {
+	var agent domain.Agent
+	if err := domain.Decode(f.agent.DocumentJson, &agent); err != nil {
+		return err
+	}
+	modelRecord, err := f.service.Store.Get(context.Background(), domain.ModelKind, agent.ModelID)
+	if err != nil {
+		return err
+	}
+	model, err := store.Decode[domain.Model](modelRecord)
+	if err != nil {
+		return err
+	}
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.disable-provider", model.ProviderID, func(tx *store.Tx) (any, error) {
+		record, err := tx.Get(domain.ProviderKind, model.ProviderID)
+		if err != nil {
+			return nil, err
+		}
+		provider, err := store.Decode[domain.Provider](record)
+		if err != nil {
+			return nil, err
+		}
+		provider.SetEnabled(false)
+		return tx.Put(domain.ProviderKind, model.ProviderID, record.Revision, "", "", provider)
+	})
+	return err
+}
+
 func TestInitialDispatchStopAndResumeAreSerialized(t *testing.T) {
 	for _, action := range []pb.SessionAction{pb.SessionAction_SESSION_ACTION_STOP, pb.SessionAction_SESSION_ACTION_ARCHIVE} {
 		t.Run(action.String(), func(t *testing.T) {

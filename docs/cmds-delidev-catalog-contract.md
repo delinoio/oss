@@ -97,3 +97,7 @@ Update this contract, provider/account and protocol contracts, the project index
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Connect protocol](protos-delidev-v1-contract.md)
+
+### Provider activation and filtering
+
+Follow [API provider activation](cmds-delidev-provider-activation-contract.md) for stable preset identity, effective legacy defaults, bounded ProviderService inventory, exact account counts, provider-scoped account pages and the additive `SearchModels.enabled_providers_only` filter. The active-provider condition is applied before SQL pagination and included in signed cursor scope. Disabled providers retain canonical model records and remain resolvable for historical references; catalog visibility never grants execution.

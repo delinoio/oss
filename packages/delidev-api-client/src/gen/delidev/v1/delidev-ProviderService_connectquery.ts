@@ -10,6 +10,11 @@ import { ProviderService } from "./delidev_pb.js";
 export const listProviderPresets = ProviderService.method.listProviderPresets;
 
 /**
+ * @generated from rpc delidev.v1.ProviderService.ListProviderInventory
+ */
+export const listProviderInventory = ProviderService.method.listProviderInventory;
+
+/**
  * @generated from rpc delidev.v1.ProviderService.DiscoverModels
  */
 export const discoverModels = ProviderService.method.discoverModels;

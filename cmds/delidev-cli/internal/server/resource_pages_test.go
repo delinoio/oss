@@ -115,3 +115,37 @@ func TestResourcePagesBoundBothEncodingsWithoutSkippingLargeTemplates(t *testing
 		}
 	}
 }
+
+func TestProviderScopedAccountListsBindCursorAndLeaveSnapshotsUnchanged(t *testing.T) {
+	f := newAccountFixture(t)
+	first := f.newAccount(domain.BearerAuth)
+	second := f.newAccount(domain.BearerAuth)
+	firstBody := accountBody(t, first)
+	f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "same provider", ProviderID: firstBody.ProviderID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected})
+	client := delidevv1connect.NewResourceServiceClient(http.DefaultClient, f.endpoint.URL)
+	filter := &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_ACCOUNT, PageSize: 1}
+	page, err := client.ListResources(context.Background(), ownerRequest(f.identity, &pb.ListResourcesRequest{Filter: filter, ProviderId: string(firstBody.ProviderID)}))
+	if err != nil || len(page.Msg.Resources) != 1 || page.Msg.NextPageToken == "" {
+		t.Fatalf("first provider-scoped page: %v", err)
+	}
+	next, err := client.ListResources(context.Background(), ownerRequest(f.identity, &pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_ACCOUNT, PageSize: 1, PageToken: page.Msg.NextPageToken}, ProviderId: string(firstBody.ProviderID)}))
+	if err != nil || len(next.Msg.Resources) != 1 || next.Msg.NextPageToken != "" {
+		t.Fatalf("provider-scoped continuation: %v", err)
+	}
+	_, err = client.ListResources(context.Background(), ownerRequest(f.identity, &pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_ACCOUNT, PageSize: 1, PageToken: page.Msg.NextPageToken}, ProviderId: string(accountBody(t, second).ProviderID)}))
+	if err == nil {
+		t.Fatal("account cursor was reused for a different provider")
+	}
+	_, err = client.ListResources(context.Background(), ownerRequest(f.identity, &pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_MODEL}, ProviderId: string(firstBody.ProviderID)}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("provider filter accepted a non-account resource kind: %v", err)
+	}
+	snapshot, err := client.GetSnapshot(context.Background(), ownerRequest(f.identity, &pb.GetSnapshotRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_ACCOUNT, PageSize: 50}}))
+	if err != nil || len(snapshot.Msg.Resources) != 3 {
+		count := 0
+		if snapshot != nil {
+			count = len(snapshot.Msg.Resources)
+		}
+		t.Fatalf("snapshot semantics changed with provider list support: resources=%d err=%v", count, err)
+	}
+}

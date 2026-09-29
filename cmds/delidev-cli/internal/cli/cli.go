@@ -281,9 +281,11 @@ func Run(ctx context.Context, args []string, streams IO) int {
 				}
 			}
 		}
-		if len(rest) > 0 && (rest[0] == "presets" || rest[0] == "discover" || presetCreate) {
+		if len(rest) > 0 && (rest[0] == "presets" || rest[0] == "inventory" || rest[0] == "discover" || presetCreate) {
 			if rest[0] != "presets" {
-				ensureRequest(&o)
+				if rest[0] != "inventory" {
+					ensureRequest(&o)
+				}
 			}
 			value, err := providerCatalog(ctx, c, o, rest)
 			return emit(value, err)
@@ -442,6 +444,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	page := fs.String("page-token", "", "page token")
 	project := fs.String("project-id", "", "project scope")
 	session := fs.String("session-id", "", "session scope")
+	providerID := fs.String("provider-id", "", "provider scope for account lists")
 	if err := parse(fs, rest); err != nil {
 		return emit(nil, err)
 	}
@@ -452,13 +455,19 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 		f := &pb.Filter{Kind: rpc.WireKind(kind), PageSize: uint32(*limit), PageToken: *page, ProjectId: *project, SessionId: *session}
 		if action == "snapshot" {
+			if *providerID != "" {
+				return emit(nil, domain.Fail(domain.InvalidArgument, "Provider filtering is available only for account lists.", "Use list --provider-id with the account command."))
+			}
 			response, err := c.resources.GetSnapshot(ctx, request(c, &pb.GetSnapshotRequest{Filter: f}))
 			if err != nil {
 				return emit(nil, rpc.ClientError(err))
 			}
 			return emit(map[string]any{"resources": resourcesJSON(response.Msg.Resources), "cursor": response.Msg.Cursor}, nil)
 		}
-		response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: f}))
+		if *providerID != "" && kind != domain.AccountKind {
+			return emit(nil, domain.Fail(domain.InvalidArgument, "Provider filtering is available only for account lists.", "Use --provider-id with account list."))
+		}
+		response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: f, ProviderId: *providerID}))
 		if err != nil {
 			return emit(nil, rpc.ClientError(err))
 		}
@@ -805,6 +814,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account disconnect --id ID --revision N
   account validate --id ID --revision N
   account status --id ID
+  account list [--provider-id ID] [--limit N] [--page-token TOKEN]
   integration create --input FILE|-
   integration edit --id ID --revision N --input FILE|-
   integration replace-token --id ID --revision N --pat-stdin
@@ -823,9 +833,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   github pr remediation list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]
   github pr remediation resume --id SET_ID --revision N
   provider presets
+  provider inventory [--query TEXT] [--enabled-only] [--limit N] [--page-token TOKEN]
   provider create --preset PRESET [--name NAME]
+    --name creates an independent custom copy; --preset alone creates the managed preset
   provider discover --account-id ID --revision N
-  model search [--query TEXT] [--provider-id ID] [--include-hidden] [--limit N] [--page-token TOKEN]
+  model search [--query TEXT] [--provider-id ID] [--include-hidden] [--enabled-providers-only] [--limit N] [--page-token TOKEN]
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
   session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]

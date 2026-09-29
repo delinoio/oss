@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -229,6 +230,58 @@ func TestConfigurationImportRejectsCredentialsMissingLinksAndConflictingModels(t
 		})
 	}
 }
+
+func TestPortableProviderActivationFieldsRejectExplicitMalformedValues(t *testing.T) {
+	for _, raw := range []string{
+		`{"name":"Portable","endpoint":"https://api.example.test/v1","protocol":"openai-chat","authentication":"bearer","discovery":true,"enabled":null}`,
+		`{"name":"Portable","endpoint":"https://api.example.test/v1","protocol":"openai-chat","authentication":"bearer","discovery":true,"enabled":"yes"}`,
+		`{"name":"Portable","endpoint":"https://api.example.test/v1","protocol":"openai-chat","authentication":"bearer","discovery":true,"preset_id":null}`,
+		`{"name":"Portable","endpoint":"https://api.example.test/v1","protocol":"openai-chat","authentication":"bearer","discovery":true,"preset_id":"unknown"}`,
+	} {
+		if _, err := portableValue(domain.ProviderKind, []byte(raw), true); err == nil {
+			t.Fatalf("accepted malformed provider fields: %s", raw)
+		}
+	}
+	legacy := []byte(`{"name":"Legacy","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":true}`)
+	value, err := portableValue(domain.ProviderKind, legacy, true)
+	if err != nil || !value.(*domain.Provider).EnabledValue() || value.(*domain.Provider).PresetID != nil {
+		t.Fatal("legacy provider semantics changed", err)
+	}
+}
+
+func TestConfigurationImportRejectsManagedPresetCollisionsAtPreviewAndApply(t *testing.T) {
+	managed := providers.Presets()[0].Provider
+	single := func() domain.ConfigurationImportSelection {
+		provider := transferEntry(domain.ProviderKind, managed)
+		return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 1, Entries: []domain.ConfigurationEntry{provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
+	}
+	t.Run("duplicate bundle", func(t *testing.T) {
+		s, _ := newDoctorFixture(t)
+		selection := single()
+		duplicate := selection.Bundle.Entries[0]
+		duplicate.ID = domain.NewID()
+		selection.Bundle.Entries = append(selection.Bundle.Entries, duplicate)
+		raw, _ := json.Marshal(selection)
+		if _, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw})); err == nil {
+			t.Fatal("duplicate managed presets in one bundle were accepted")
+		}
+	})
+	t.Run("target and deferred apply recheck", func(t *testing.T) {
+		s, _ := newDoctorFixture(t)
+		selection := single()
+		preview := transferPreview(t, s, selection)
+		doctorPut(t, s, domain.ProviderKind, domain.NewID(), 0, managed)
+		_, err := s.ApplyConfigurationImport(transferOwner(), connect.NewRequest(&pb.ApplyConfigurationImportRequest{RequestId: string(domain.NewID()), PreviewJson: preview}))
+		if err == nil {
+			t.Fatal("deferred apply did not recheck the managed preset collision")
+		}
+		rows, listErr := s.Store.List(context.Background(), store.Filter{Kind: domain.ProviderKind, Limit: 10})
+		if listErr != nil || len(rows) != 1 {
+			t.Fatal("failed deferred apply changed provider state", listErr, len(rows))
+		}
+	})
+}
+
 func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T) {
 	for _, outcome := range []string{"success", "failure", "canonical-path", "stale-settings", "revoked-client", "retired-identity"} {
 		t.Run(outcome, func(t *testing.T) {

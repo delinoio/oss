@@ -68,3 +68,5 @@ rm -rf "$delidev_cli_fixture_dir"
 ```
 
 Choose `amd64` instead when appropriate. This opt-in test must never target a host user's shared credential session. Native Windows/macOS account-command composition, subscription/provider authentication and execution/proxy lifecycle evidence remain separate from this Linux credential-lifecycle result. Consult the [evidence ledger](cmds-delidev-evidence.md) before making a support/completion claim.
+
+API provider activation is independent of account enablement, connection, validation, and credential cleanup. Provider inventory derives exact total/connected counts server-side; connected excludes accounts with pending credential removal and does not imply verified health. `ListResourcesRequest.provider_id` is an account-list-only filter with provider-bound pagination; snapshots and event streams retain their prior scope. See [provider activation](cmds-delidev-provider-activation-contract.md).

@@ -33,6 +33,7 @@ The owner requested a pull-request checkpoint on 2026-09-28 after the private na
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
+- [API provider activation](cmds-delidev-provider-activation-contract.md)
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
@@ -52,6 +53,8 @@ Prepared multi-repository Worktree execution now supplies all original repositor
 The private Codex continuation boundary blocks every resumed binding until the latest native terminal turn, ordered input digests and original effective defaults/permissions match retained execution evidence. Process-replacement continuation after Execute, Plan, Steer and interruption is verified with a private scripted provider on macOS; failed/interrupted outcomes require explicit intent. The actual Worker now preserves an immutable native checkpoint after cleanup and binds its exact digest in the server-accepted version-2 completion, without retaining prompt/answer/token contents in that file. Public later-turn FIFO/Resume now composes current per-turn ownership, exact predecessor evidence, fresh scoped credentials and the original private native history. Native history alone does not resolve missing semantic interaction acceptance or prove cleanup. Public Steer now joins a revision-checked selected-input claim, metadata-only outbound control, current-Worker claim, journaled native attempt, automatic uncertainty inspection and typed acceptance publication. Confirmed same-turn inputs become part of that ordered continuation proof; late resolution preserves original uncertainty and cannot clear recovery.
 
 Portable configuration now uses the [version-1 transfer contract](cmds-delidev-configuration-transfer-contract.md) across Connect, CLI and desktop settings: explicit machine/checkout remapping, read-only signed previews, fresh disconnected accounts and atomic all-repository validation preserve existing settings on failure. The supported eight editable configuration kinds do not imply portability of other product surfaces or runtime authority.
+
+API provider availability is server-owned and presence-aware under [issue #1046](cmds-delidev-provider-activation-contract.md). Nine virtual presets begin Off; activation persists one canonical provider without creating accounts/models/keys. Inventory capabilities gate desktop provider/model flows; active-only model filtering is server-side. Off blocks fresh discovery and execution grants while preserving retained references and an already authorized turn.
 
 Only observed real-environment results qualify as harness/platform/account integration evidence. Unit fixtures and cross-compilation must remain separately labeled. Unsupported native features must fail explicitly, without emulation.
 

@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
 import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
@@ -24,7 +24,11 @@ function fixture(resources: Resource[]) {
     router.service(WorkerService, { inspectRepository: inspect });
     router.service(ResourceService, { listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }), getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
     router.service(AccountService, { getAccountStatus: (request) => ({ account: resources.find((row) => row.id === request.id) }), connectAccount: connect, disconnectAccount: disconnect });
-    router.service(ProviderService, { listProviderPresets: () => ({ presetsJson: encode([{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }) });
+    router.service(ProviderService, {
+      listProviderPresets: () => ({ presetsJson: encode([{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }),
+      listProviderInventory: () => ({ entries: [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] }),
+      searchModels: () => ({ models: [], providers: [] }),
+    });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const view = (children: React.ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider>;
@@ -36,10 +40,11 @@ it("keeps a settings draft across closing the modal and retries the original pro
   const value = fixture([]);
   value.save.mockRejectedValueOnce(new ConnectError("acknowledgement lost", Code.Unavailable));
   const view = render(value.view(<Settings visible close={() => {}} />));
-  fireEvent.click(screen.getByRole("button", { name: "New Provider" }));
-  await screen.findByRole("option", { name: "Local provider" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Provider preset" }), { target: { value: "ollama" } });
+  const create = await screen.findByRole("button", { name: "Custom provider" });
+  await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(create);
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "My local provider" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "API base URL" }), { target: { value: "http://127.0.0.1:11434/v1" } });
   view.rerender(value.view(<Settings visible={false} close={() => {}} />));
   view.rerender(value.view(<Settings visible close={() => {}} />));
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("My local provider");
@@ -49,7 +54,7 @@ it("keeps a settings draft across closing the modal and retries the original pro
   expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]);
   const request = input(value.save.mock.calls[0][0]);
   expect(request.mutation.expectedRevision).toBe(0n);
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ name: "My local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true });
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ name: "My local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true });
 });
 
 it("preserves server-owned account observations during a preference edit", async () => {

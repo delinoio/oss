@@ -374,8 +374,12 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 			return nil, executionDenied()
 		}
 		grant.ExecutionID = input.ExecutionID
-		if _, err := s.executionAuthority.scope(tx, grant); err != nil {
+		scope, err := s.executionAuthority.scope(tx, grant)
+		if err != nil {
 			return nil, err
+		}
+		if !scope.Provider.EnabledValue() {
+			return nil, providerDisabled()
 		}
 		return struct{ JobID domain.ID }{identity.Job}, tx.PutExecutionGrant(grant)
 	})
@@ -391,6 +395,9 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		})
 	}
 	if err != nil {
+		if domain.SafeError(err).Code == domain.ProviderDisabled {
+			s.logger.InfoContext(ctx, "execution_grant_denied", "operation", "register_execution", "job_id", identity.Job, "reason", domain.ProviderDisabled, "enabled", false)
+		}
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.Info("execution_credential_registered", "job_id", identity.Job, "machine_id", identity.Machine, "instance_id", identity.Instance, "request_id", meta.RequestId, "api_protocol", registeredScope.Provider.Protocol, "replayed", result.Replayed)

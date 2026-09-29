@@ -493,3 +493,5 @@
 - Before native progress exists, the existing explicit execution-recovery control may submit the original initial Worktree execution ID. Preserve revision-bound confirmation and exact uncertain request replay. This is metadata-only inspection subject to server proof checks; never invoke Resume, preparation or new session creation as recovery.
 
 - Remediation history uses the generated retained-read and explicit allowance-resumption operations. Validate the complete original PR/set/chain and attempt state/time graph before display/action, keep revisions exact and reads disposable, and preserve original uncertain mutations across navigation. A changed page requires new confirmation. Do not infer pushes/handled evidence or call session Resume/preparation/creation from this surface.
+
+- DeliDev API Providers and Models follow `docs/cmds-delidev-provider-activation-contract.md`: gate on all required inventory capabilities, render server-derived exact counts and bounded pages, use server-side active-provider filtering for model reads/new choices, and preserve explicit disabled references. Never use generic unfiltered resource reads as eligibility fallback.

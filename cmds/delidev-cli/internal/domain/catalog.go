@@ -36,6 +36,15 @@ const (
 	PresetVLLM       ProviderPresetID = "vllm"
 )
 
+func (id ProviderPresetID) Valid() bool {
+	switch id {
+	case PresetVercel, PresetOpenRouter, PresetOpenAI, PresetAnthropic, PresetXAI, PresetDeepSeek, PresetOllama, PresetLMStudio, PresetVLLM:
+		return true
+	default:
+		return false
+	}
+}
+
 type ProviderPreset struct {
 	ID            ProviderPresetID `json:"id"`
 	Provider      Provider         `json:"provider"`

@@ -357,6 +357,45 @@ func TestContinuationExplicitResumeWithQueuedAndFutureInput(t *testing.T) {
 	}
 }
 
+func TestContinuationResumeOffProviderPreservesPauseAndQueuedInput(t *testing.T) {
+	for _, empty := range []bool{false, true} {
+		t.Run(map[bool]string{false: "queued", true: "empty"}[empty], func(t *testing.T) {
+			f := newContinuationFixture(t, domain.ExecutionSucceeded)
+			f.control(t, pb.SessionAction_SESSION_ACTION_STOP)
+			var queued *pb.Resource
+			if !empty {
+				queued = f.enqueue(t, "retained while provider is off", domain.ExecuteMode)
+			}
+			beforeRecord := f.refresh(t)
+			before, err := store.Decode[domain.Session](beforeRecord)
+			if err != nil || before.Dispatch != domain.DispatchPaused {
+				t.Fatalf("session did not begin paused: %+v %v", before, err)
+			}
+			if err := disableFirstDispatchProvider(f.firstDispatchFixture); err != nil {
+				t.Fatal(err)
+			}
+			resume := &pb.ControlSessionRequest{Mutation: acctMutation(&pb.Resource{Id: string(beforeRecord.ID), Revision: beforeRecord.Revision}, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_RESUME}
+			_, err = sessionClient(f.accountFixture).ControlSession(context.Background(), ownerRequest(f.identity, resume))
+			wantAccountCode(t, err, domain.ProviderDisabled)
+			afterRecord := f.refresh(t)
+			after, err := store.Decode[domain.Session](afterRecord)
+			if err != nil || afterRecord.Revision != beforeRecord.Revision || after.Dispatch != domain.DispatchPaused || after.NextExecutionIntent != before.NextExecutionIntent || after.PendingInputs != before.PendingInputs {
+				t.Fatalf("disabled provider changed paused Resume intent: before=%+v after=%+v err=%v", before, after, err)
+			}
+			if queued != nil {
+				current, err := f.service.Store.Get(context.Background(), domain.QueueKind, domain.ID(queued.Id))
+				if err != nil {
+					t.Fatal(err)
+				}
+				input, err := store.Decode[domain.QueuedInput](current)
+				if err != nil || input.Delivery != domain.InputQueued || input.Prompt != "retained while provider is off" {
+					t.Fatalf("disabled provider consumed queued continuation: %+v %v", input, err)
+				}
+			}
+		})
+	}
+}
+
 func TestContinuationArchiveTargetsCurrentJobAndRestoreKeepsPause(t *testing.T) {
 	f := newContinuationFixture(t, domain.ExecutionSucceeded)
 	firstJob := domain.ID(f.job.Id)
