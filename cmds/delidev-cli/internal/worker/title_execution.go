@@ -47,13 +47,6 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.MachineID != connection.Credential.MachineID || input.OriginalJobID != job.ParentID {
 		return nil, publicationUncertain()
 	}
-	verified, err := harness.VerifyCodexTitleProfile(ctx, config.Root, jobID, input.Executable, config.Logger)
-	if err != nil {
-		return nil, err
-	}
-	if !verified {
-		return nil, domain.Fail(domain.Unsupported, "The frozen Codex title profile is no longer installed and verified.", "Keep the placeholder; no other harness, executable or provider profile may replace it.")
-	}
 	runtimeRoot := filepath.Join(config.Root, "title-runtimes")
 	if err := security.PrivateDir(runtimeRoot); err != nil {
 		return nil, err
@@ -74,6 +67,7 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		return nil, err
 	}
 	removed := false
+	verificationStarted := false
 	processRoot := filepath.Join(config.Root, "processes")
 	var client *codex.Client
 	defer func() {
@@ -82,8 +76,10 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 				output, returned = nil, domain.Fail(domain.RecoveryRequired, "The private Codex title runtime could not be closed cleanly.", "Retain its journal and reconcile owned native processes before retrying.")
 			}
 		}
-		if err := process.ReconcileOwner(processRoot, jobID); err != nil {
-			output, returned = nil, err
+		if verificationStarted {
+			if err := process.ReconcileOwner(processRoot, jobID); err != nil {
+				output, returned = nil, err
+			}
 		}
 		if !removed {
 			if err := os.RemoveAll(home); err != nil && returned == nil {
@@ -127,6 +123,16 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	}
 	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != apiproxy.Prefix {
 		return nil, publicationUncertain()
+	}
+	// Registration durably claims this single title attempt before verification
+	// launches even the native version or app-server probe.
+	verificationStarted = true
+	verified, err := harness.VerifyCodexTitleProfile(ctx, config.Root, jobID, input.Executable, config.Logger)
+	if err != nil {
+		return nil, err
+	}
+	if !verified {
+		return nil, domain.Fail(domain.Unsupported, "The frozen Codex title profile is no longer installed and verified.", "Keep the placeholder; no other harness, executable or provider profile may replace it.")
 	}
 	client, err = codex.Open(ctx, codex.Config{
 		Mode: codex.ThreadProtocol, Version: input.NativeVersion, Home: filepath.Join(home, "codex"),

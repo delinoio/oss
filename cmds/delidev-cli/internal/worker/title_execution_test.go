@@ -64,12 +64,13 @@ func (a *installedTitleAuthority) Acquire(ctx context.Context, token string) (*a
 
 type installedTitleWorkerClient struct {
 	delidevv1connect.WorkerServiceClient
-	t          *testing.T
-	credential Credential
-	jobID      domain.ID
-	instanceID domain.ID
-	calls      atomic.Int32
-	digest     []byte
+	t           *testing.T
+	credential  Credential
+	jobID       domain.ID
+	instanceID  domain.ID
+	registerErr error
+	calls       atomic.Int32
+	digest      []byte
 }
 
 func (c *installedTitleWorkerClient) RegisterExecution(_ context.Context, request *connect.Request[pb.RegisterExecutionRequest]) (*connect.Response[pb.RegisterExecutionResponse], error) {
@@ -84,7 +85,52 @@ func (c *installedTitleWorkerClient) RegisterExecution(_ context.Context, reques
 		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
 	}
 	c.digest = append([]byte(nil), request.Msg.CredentialDigest...)
+	if c.registerErr != nil {
+		return nil, c.registerErr
+	}
 	return connect.NewResponse(&pb.RegisterExecutionResponse{ProxyPath: apiproxy.Prefix}), nil
+}
+
+func TestTitleSendClaimPrecedesNativeProfileVerification(t *testing.T) {
+	jobID, machineID, instanceID := domain.NewID(), domain.NewID(), domain.NewID()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential := Credential{Token: "worker-token", DeviceID: domain.NewID(), MachineID: machineID}
+	input := domain.AuxiliaryTitleInput{
+		Version: 1, SessionID: domain.NewID(), OperationID: domain.NewID(), NameGeneration: 1,
+		OriginalJobID: domain.NewID(), OriginalExecutionID: domain.NewID(), MachineID: machineID,
+		OriginalDeviceID: credential.DeviceID, OriginalInstanceID: instanceID, AgentID: domain.NewID(),
+		Harness: domain.Codex, NativeVersion: domain.CodexProtocolVersion,
+		Executable: executable, AccountID: domain.NewID(),
+		ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ProviderProtocol: domain.OpenAIResponses,
+		ModelID: domain.NewID(), NativeModel: "fixture-model", Prompt: "private first message",
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := domain.Job{Type: domain.GenerateSessionTitleJob, State: domain.JobClaimed, MachineID: machineID, InstanceID: instanceID, AssignedDeviceID: credential.DeviceID, ParentID: input.OriginalJobID, Input: inputJSON}
+	jobJSON, err := json.Marshal(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registrationErr := connect.NewError(connect.CodeUnavailable, nil)
+	workerClient := &installedTitleWorkerClient{t: t, credential: credential, jobID: jobID, instanceID: instanceID, registerErr: registrationErr}
+	config := Config{Root: t.TempDir(), execution: &PublicationConfig{
+		Credential: credential, Instance: instanceID,
+		Assignment: &pb.Resource{Id: string(jobID), Revision: 9, Kind: pb.EntityKind_ENTITY_KIND_JOB, DocumentJson: jobJSON},
+		Client:     workerClient,
+	}}
+	_, err = executeSessionTitle(context.Background(), config, jobID, job)
+	if workerClient.calls.Load() != 1 || domain.SafeError(err).Code != domain.ServerUnavailable {
+		t.Fatalf("title registration did not fail before native profile verification: calls=%d error=%v", workerClient.calls.Load(), err)
+	}
 }
 
 // TestOptInInstalledCodexTitleInference exercises one real pinned Codex title
