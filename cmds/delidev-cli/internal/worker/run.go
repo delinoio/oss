@@ -62,6 +62,45 @@ func authenticated[T any](credential Credential, message *T) *connect.Request[T]
 	r.Header().Set("Authorization", "Bearer "+credential.Token)
 	return r
 }
+
+func auxiliaryTitleCapability(resource *pb.Resource) bool {
+	if resource == nil || resource.Kind != pb.EntityKind_ENTITY_KIND_MACHINE || resource.SchemaVersion != 1 {
+		return false
+	}
+	var machine domain.Machine
+	if domain.Decode(resource.DocumentJson, &machine) != nil || machine.Validate() != nil {
+		return false
+	}
+	return slices.Contains(machine.WorkerCapabilities, domain.AutomaticTitlesCodexV1)
+}
+
+func codexTitleExecutable(resource *pb.Resource) string {
+	if resource == nil || resource.Kind != pb.EntityKind_ENTITY_KIND_MACHINE || resource.SchemaVersion != 1 {
+		return ""
+	}
+	var machine domain.Machine
+	if domain.Decode(resource.DocumentJson, &machine) != nil || machine.Validate() != nil {
+		return ""
+	}
+	for _, installation := range machine.Installations {
+		if installation.Harness != domain.Codex {
+			continue
+		}
+		if installation.State != domain.InstallationDetected || installation.Version != domain.CodexProtocolVersion || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.CodexAppServer || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || !filepath.IsAbs(installation.ResolvedPath) {
+			return ""
+		}
+		return installation.ResolvedPath
+	}
+	return ""
+}
+
+func fatalTitleProfileProbeError(err error) error {
+	if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
+		return err
+	}
+	return nil
+}
+
 func Run(ctx context.Context, config Config) (resultErr error) {
 	credential, err := LoadCredential(config.Root)
 	if err != nil {
@@ -132,14 +171,57 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	defer transport.CloseIdleConnections()
 	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
 	instance, attachID := domain.NewID(), domain.NewID()
+	var capabilityAttachID domain.ID
+	var capabilityProfile string
 	backoff := time.Second
 	ready := false
 	for ctx.Err() == nil {
 		attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
 		attached, err := client.AttachWorker(attempt, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version}))
 		cancel()
+		titleCapabilityExpected := false
 		if err == nil && attached.Msg.ServerId != string(credential.ServerID) {
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
+		}
+		if err == nil {
+			executable := codexTitleExecutable(attached.Msg.Machine)
+			verifiedTitleProfile := false
+			if executable != "" {
+				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
+				var probeErr error
+				verifiedTitleProfile, probeErr = harness.VerifyCodexTitleProfile(probeCtx, config.Root, domain.NewID(), executable, config.Logger)
+				stopProbe()
+				if probeErr != nil {
+					if fatal := fatalTitleProfileProbeError(probeErr); fatal != nil {
+						return fatal
+					}
+					config.Logger.WarnContext(ctx, "automatic title capability probe failed", "machine_id", credential.MachineID, "code", domain.SafeError(probeErr).Code)
+				}
+			}
+			titleCapabilityExpected = verifiedTitleProfile
+			profile := executable
+			if verifiedTitleProfile {
+				profile += "\x00verified"
+			} else {
+				profile += "\x00unsupported"
+			}
+			if capabilityAttachID == "" || capabilityProfile != profile {
+				capabilityAttachID, capabilityProfile = domain.NewID(), profile
+			}
+			var capabilities []pb.WorkerCapability
+			if verifiedTitleProfile {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
+			}
+			negotiate, stopNegotiation := context.WithTimeout(ctx, 30*time.Second)
+			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}))
+			stopNegotiation()
+			err = negotiateErr
+			if err == nil && negotiated.Msg.ServerId != string(credential.ServerID) {
+				return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
+			}
+			if err == nil {
+				attached = negotiated
+			}
 		}
 		if err == nil {
 			if !ready {
@@ -150,7 +232,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			config.Logger.InfoContext(ctx, "worker connected", "machine_id", credential.MachineID, "instance_id", instance)
 			started := time.Now()
-			err = watch(ctx, config, client, credential, instance)
+			auxiliary := titleCapabilityExpected && auxiliaryTitleCapability(attached.Msg.Machine)
+			if titleCapabilityExpected && !auxiliary {
+				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
+			}
+			err = watchAttached(ctx, config, client, credential, instance, auxiliary)
 			if time.Since(started) > 30*time.Second {
 				backoff = time.Second
 			}
@@ -177,6 +263,24 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		backoff = min(15*time.Second, backoff*2)
 	}
 	return nil
+}
+
+func watchAttached(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, auxiliary bool) error {
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan error, 2)
+	go func() { results <- watch(watchCtx, config, client, credential, instance) }()
+	count := 1
+	if auxiliary {
+		count++
+		go func() { results <- watchAuxiliary(watchCtx, config, client, credential, instance) }()
+	}
+	err := <-results
+	cancel()
+	for range count - 1 {
+		<-results
+	}
+	return err
 }
 func watch(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID) error {
 	return watchWithTimeout(ctx, config, client, credential, instance, domain.WorkerConnectionTimeout)
@@ -529,6 +633,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, workspace.ResultUncertain()
 		}
 	}
+	if job.Type == domain.GenerateSessionTitleJob {
+		var input domain.AuxiliaryTitleInput
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != domain.ID(resource.SessionId) || input.MachineID != job.MachineID || input.OriginalJobID != job.ParentID {
+			return journal{}, publicationUncertain()
+		}
+	}
 	root := config.Root
 	hash := sha256.Sum256(resource.DocumentJson)
 	digest := hex.EncodeToString(hash[:])
@@ -580,6 +690,8 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 	switch job.Type {
 	case domain.ExecuteSessionJob:
 		return executeSession(ctx, config, owner, job)
+	case domain.GenerateSessionTitleJob:
+		return executeSessionTitle(ctx, config, owner, job)
 	case domain.RecoverExecutionJob:
 		return recoverExecution(ctx, config, job)
 	case domain.RecoverWorkspaceJob:

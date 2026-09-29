@@ -1213,3 +1213,301 @@ fn macos_extended_acl_survives_replacement() {
         assert_eq!(fs::read(&path).unwrap(), b"after");
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_inherited_acls_cannot_read_or_strand_transformation_staging() {
+    use std::{
+        ffi::{CStr, CString},
+        os::unix::{ffi::OsStrExt, fs::PermissionsExt},
+        path::PathBuf,
+        time::{Duration, Instant},
+    };
+
+    unsafe extern "C" {
+        fn acl_get_link_np(path: *const libc::c_char, kind: libc::c_int) -> *mut libc::c_void;
+        fn acl_to_text(acl: *mut libc::c_void, length: *mut libc::ssize_t) -> *mut libc::c_char;
+        fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
+    }
+    struct Fixture(tempfile::TempDir);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = Command::new("/bin/chmod")
+                .args(["-RN"])
+                .arg(self.0.path())
+                .status();
+        }
+    }
+    fn acl_text(path: &Path) -> String {
+        let path = CString::new(path.as_os_str().as_bytes()).unwrap();
+        unsafe {
+            let acl = acl_get_link_np(path.as_ptr(), 0x100);
+            if acl.is_null() {
+                let error = std::io::Error::last_os_error();
+                assert_eq!(error.raw_os_error(), Some(libc::ENOENT), "{error}");
+                return String::new();
+            }
+            let text = acl_to_text(acl, std::ptr::null_mut());
+            assert!(!text.is_null());
+            let value = CStr::from_ptr(text).to_string_lossy().into_owned();
+            acl_free(text.cast());
+            acl_free(acl);
+            value
+        }
+    }
+    fn add_acl(path: &Path, acl: &str) {
+        assert!(Command::new("/bin/chmod")
+            .args(["+a", acl])
+            .arg(path)
+            .status()
+            .unwrap()
+            .success());
+    }
+    fn wait_for_content_stage(parent: &Path) -> PathBuf {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            for entry in fs::read_dir(parent).unwrap() {
+                let entry = entry.unwrap();
+                if !entry.file_type().unwrap().is_dir()
+                    || !entry.file_name().to_string_lossy().starts_with(".clibox-")
+                {
+                    continue;
+                }
+                for child in fs::read_dir(entry.path()).unwrap() {
+                    let child = child.unwrap();
+                    if child.metadata().unwrap().len() > 0 {
+                        return child.path();
+                    }
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "content-bearing stage was not created"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    fn assert_private_stage(path: &Path) {
+        let directory = path.parent().unwrap();
+        assert_eq!(
+            fs::metadata(directory).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert!(!acl_text(directory).contains("everyone"));
+        assert!(!acl_text(path).contains("everyone"));
+    }
+    fn run_failure_case(parent_acl: &str, outcome: Option<(i32, i32)>) {
+        let fixture = Fixture(tempdir().unwrap());
+        let parent = fixture.0.path();
+        let output = parent.join("output");
+        fs::write(&output, b"original").unwrap();
+        assert!(Command::new("/bin/chmod")
+            .args(["-N"])
+            .arg(&output)
+            .status()
+            .unwrap()
+            .success());
+        fs::set_permissions(&output, fs::Permissions::from_mode(0o600)).unwrap();
+        let original_acl = acl_text(&output);
+        add_acl(parent, parent_acl);
+        let parent_acl_before = acl_text(parent);
+
+        let mut command = Command::new(env!("CARGO_BIN_EXE_clibox"));
+        if outcome.is_none() {
+            command.args([
+                "base64",
+                "decode",
+                "--output",
+                output.to_str().unwrap(),
+                "--force",
+            ]);
+        } else {
+            command.args([
+                "base64",
+                "encode",
+                "--output",
+                output.to_str().unwrap(),
+                "--force",
+            ]);
+        }
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = Some(child.stdin.take().unwrap());
+        if outcome.is_none() {
+            stdin
+                .as_mut()
+                .unwrap()
+                .write_all(&b"Zm9v"[..].repeat(4096))
+                .unwrap();
+        } else {
+            stdin
+                .as_mut()
+                .unwrap()
+                .write_all(&b"fixture-data"[..].repeat(4096))
+                .unwrap();
+        }
+        stdin.as_mut().unwrap().flush().unwrap();
+        let staged = wait_for_content_stage(parent);
+        assert_private_stage(&staged);
+
+        let expected_status = if let Some((signal, status)) = outcome {
+            assert_eq!(unsafe { libc::kill(child.id() as i32, signal) }, 0);
+            status
+        } else {
+            stdin.as_mut().unwrap().write_all(b"!").unwrap();
+            drop(stdin.take());
+            1
+        };
+        // Signal cases keep stdin open through cancellation; malformed decode
+        // closes it after the invalid byte so the command can finish.
+        let result = child.wait_with_output().unwrap();
+        drop(stdin);
+        assert_eq!(result.status.code(), Some(expected_status));
+        assert_eq!(fs::read(&output).unwrap(), b"original");
+        assert_eq!(acl_text(&output), original_acl);
+        assert_eq!(acl_text(parent), parent_acl_before);
+        assert_eq!(fs::read_dir(parent).unwrap().count(), 1);
+        assert!(!staged.exists());
+    }
+
+    let readable = "everyone allow read,readattr,readextattr,readsecurity,file_inherit";
+    run_failure_case(readable, Some((libc::SIGTERM, 143)));
+    let denies_delete = "everyone deny delete,file_inherit";
+    run_failure_case(denies_delete, Some((libc::SIGINT, 130)));
+    run_failure_case(denies_delete, Some((libc::SIGTERM, 143)));
+    run_failure_case(denies_delete, None);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_new_transformation_output_keeps_parent_inherited_acl() {
+    use std::{
+        ffi::{CStr, CString},
+        os::unix::{ffi::OsStrExt, fs::PermissionsExt},
+    };
+
+    unsafe extern "C" {
+        fn acl_get_link_np(path: *const libc::c_char, kind: libc::c_int) -> *mut libc::c_void;
+        fn acl_to_text(acl: *mut libc::c_void, length: *mut libc::ssize_t) -> *mut libc::c_char;
+        fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
+    }
+    struct Fixture(tempfile::TempDir);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = Command::new("/bin/chmod")
+                .args(["-RN"])
+                .arg(self.0.path())
+                .status();
+        }
+    }
+    fn acl_text(path: &Path) -> String {
+        let path = CString::new(path.as_os_str().as_bytes()).unwrap();
+        unsafe {
+            let acl = acl_get_link_np(path.as_ptr(), 0x100);
+            if acl.is_null() {
+                let error = std::io::Error::last_os_error();
+                assert_eq!(error.raw_os_error(), Some(libc::ENOENT), "{error}");
+                return String::new();
+            }
+            let text = acl_to_text(acl, std::ptr::null_mut());
+            assert!(!text.is_null());
+            let value = CStr::from_ptr(text).to_string_lossy().into_owned();
+            acl_free(text.cast());
+            acl_free(acl);
+            value
+        }
+    }
+
+    let fixture = Fixture(tempdir().unwrap());
+    let parent = fixture.0.path();
+    assert!(Command::new("/bin/chmod")
+        .args([
+            "+a",
+            "everyone allow read,readattr,readextattr,readsecurity,file_inherit"
+        ])
+        .arg(parent)
+        .status()
+        .unwrap()
+        .success());
+    let inherited = tempfile::Builder::new()
+        .prefix(".clibox-expected-")
+        .tempfile_in(parent)
+        .unwrap();
+    let expected_acl = acl_text(inherited.path());
+    let expected_mode = fs::metadata(inherited.path()).unwrap().permissions().mode() & 0o777;
+    drop(inherited);
+    assert!(
+        expected_acl.contains("everyone:")
+            && expected_acl.contains(":allow")
+            && expected_acl.contains(":read"),
+        "expected inherited read ACL, got {expected_acl:?}"
+    );
+
+    let output = parent.join("new-output");
+    let result = run(
+        &[
+            "base64",
+            "encode",
+            "--text",
+            "secret",
+            "--output",
+            output.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert_eq!(result.status.code(), Some(0), "{:?}", result.stderr);
+    assert!(result.stdout.is_empty());
+    assert_eq!(fs::read(&output).unwrap(), b"c2VjcmV0");
+    assert_eq!(acl_text(&output), expected_acl);
+    assert_eq!(
+        fs::metadata(&output).unwrap().permissions().mode() & 0o777,
+        expected_mode
+    );
+    assert_eq!(fs::read_dir(parent).unwrap().count(), 1);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_new_transformation_output_preserves_restrictive_umask() {
+    use std::os::unix::{fs::PermissionsExt, process::CommandExt};
+
+    let fixture = tempdir().unwrap();
+    let output = fixture.path().join("new-output");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_clibox"));
+    command.args([
+        "base64",
+        "encode",
+        "--text",
+        "secret",
+        "--output",
+        output.to_str().unwrap(),
+    ]);
+    unsafe {
+        command.pre_exec(|| {
+            libc::umask(0o777);
+            Ok(())
+        });
+    }
+    let result = command.output().unwrap();
+    assert_eq!(result.status.code(), Some(0), "{:?}", result.stderr);
+    assert_eq!(
+        fs::metadata(&output).unwrap().permissions().mode() & 0o777,
+        0
+    );
+    assert!(Command::new("/bin/chmod")
+        .args(["0600"])
+        .arg(&output)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(fs::read(&output).unwrap(), b"c2VjcmV0");
+    assert_eq!(fs::read_dir(fixture.path()).unwrap().count(), 1);
+}

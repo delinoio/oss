@@ -28,6 +28,84 @@ func recoveryFixture(t *testing.T, outcome domain.ExecutionOutcome) *publication
 	return replaceRecoveryFixtureWorker(t, f)
 }
 
+func recoveredAutomaticTitleFixture(t *testing.T) *publicationFixture {
+	t.Helper()
+	f := publicationFixtureFromAuthority(t, newConfiguredAuthorityFixture(t, "http://127.0.0.1:1", func(input *domain.ExecutionJobInput) {
+		input.Installation.ResolvedPath = "/private/codex"
+	}, false))
+	f.registerGrant(t)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+	terminal := f.event(domain.ExecutionTurnFinished, 3)
+	terminal.Outcome = domain.ExecutionSucceeded
+	f.publish(t, terminal)
+	if _, err := f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{
+		RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version,
+		Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.automatic-title-recovery", nil, func(tx *store.Tx) (any, error) {
+		sr, session, err := sessionRecord(tx, f.input.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		session.NameMode, session.NameOwner, session.NameGeneration = domain.AutomaticSessionName, domain.AutomaticNameOwner, 1
+		session.TitleState, session.TitleOperationID = domain.TitleWaiting, ""
+		prep := domain.NewID()
+		if _, err := tx.PutJob(prep, 0, sr.ID, "", domain.Job{Type: domain.PrepareWorkspaceJob, MachineID: session.MachineID, State: domain.JobSucceeded, Input: json.RawMessage(`{}`), Output: json.RawMessage(`{}`), AcceptedAt: time.Now().UTC()}); err != nil {
+			return nil, err
+		}
+		session.Preparation = &domain.SessionPreparation{JobID: prep, State: domain.PreparationReady}
+		if _, err := tx.Put(sr.Kind, sr.ID, sr.Revision, sr.ID, "", session); err != nil {
+			return nil, err
+		}
+		original, err := tx.Get(domain.JobKind, f.job)
+		if err != nil {
+			return nil, err
+		}
+		job, err := store.Decode[domain.Job](original)
+		if err != nil {
+			return nil, err
+		}
+		job.State, job.Problem = domain.JobUncertain, nativeCompletionUncertain()
+		if err := finishLostNativeExecution(tx, original, job); err != nil {
+			return nil, err
+		}
+		return tx.PutJob(original.ID, original.Revision, original.SessionID, original.ProjectID, job)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func setAutomaticTitleWaiting(t *testing.T, f *publicationFixture) {
+	t.Helper()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.title-waiting", nil, func(tx *store.Tx) (any, error) {
+		r, session, err := sessionRecord(tx, f.input.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		session.NameMode, session.NameOwner, session.NameGeneration = domain.AutomaticSessionName, domain.AutomaticNameOwner, 1
+		session.TitleState, session.TitleReason, session.TitleOperationID = domain.TitleWaiting, domain.TitleReasonNone, ""
+		return tx.Put(r.Kind, r.ID, r.Revision, r.ID, r.ProjectID, session)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func completeRecovery(t *testing.T, f *publicationFixture, resource *pb.Resource) {
+	t.Helper()
+	claimed, evidence := claimRecovery(t, f, resource)
+	raw, _ := json.Marshal(evidence)
+	report := &pb.ReportWorkRequest{Mutation: &pb.Mutation{Id: string(claimed.ID), ExpectedRevision: claimed.Revision, RequestId: string(domain.NewID())}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), OutputJson: raw}
+	if _, err := f.client.ReportWork(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, report)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func replaceRecoveryFixtureWorker(t *testing.T, f *publicationFixture) *publicationFixture {
 	t.Helper()
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.recovery-ready", nil, func(tx *store.Tx) (any, error) {
@@ -160,6 +238,44 @@ func TestExecutionRecoveryRetainsOutcomePauseAndReferenceRetries(t *testing.T) {
 				t.Fatal("old execution regained publication authority")
 			}
 		})
+	}
+}
+
+func TestExecutionRecoverySettlesAutomaticTitleWithoutOriginalWorkerAuthority(t *testing.T) {
+	f := recoveryFixture(t, domain.ExecutionSucceeded)
+	setAutomaticTitleWaiting(t, f)
+	_, change := acceptRecovery(t, f)
+	completeRecovery(t, f, change.ExecutionRecoveryJob)
+	r, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session domain.Session
+	if domain.Decode(r.Data, &session) != nil || session.TitleState != domain.TitleSkipped || session.TitleReason != domain.TitleReasonAuthorityLost || session.TitleJobID != "" || session.TitleOperationID == "" {
+		t.Fatalf("replacement Worker inherited or stranded the title operation: %+v", session)
+	}
+}
+
+func TestExecutionRecoveryQueuesAutomaticTitleForOriginalWorker(t *testing.T) {
+	f := recoveredAutomaticTitleFixture(t)
+	_, change := acceptRecovery(t, f)
+	completeRecovery(t, f, change.ExecutionRecoveryJob)
+	r, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session domain.Session
+	if domain.Decode(r.Data, &session) != nil || session.TitleState != domain.TitleQueued || session.TitleJobID == "" {
+		t.Fatalf("successful original-Worker recovery left automatic title unsettled: %+v", session)
+	}
+	titleRecord, err := f.service.Store.Get(context.Background(), domain.JobKind, session.TitleJobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var titleJob domain.Job
+	var titleInput domain.AuxiliaryTitleInput
+	if domain.Decode(titleRecord.Data, &titleJob) != nil || titleJob.State != domain.JobQueued || domain.Decode(titleJob.Input, &titleInput) != nil || titleInput.OriginalJobID != f.job || titleInput.OriginalDeviceID != f.device || titleInput.OriginalInstanceID != f.instance {
+		t.Fatalf("title was not frozen to its recovered original Worker: %+v %+v", titleJob, titleInput)
 	}
 }
 

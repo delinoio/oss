@@ -98,6 +98,11 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 			return store.Record{}, err
 		}
 	}
+	if verified && completion.Outcome == domain.ExecutionSucceeded {
+		if err := queueAutomaticSessionTitle(tx, sr, &session, record, input, false); err != nil {
+			return store.Record{}, err
+		}
+	}
 	if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
 		return store.Record{}, err
 	}

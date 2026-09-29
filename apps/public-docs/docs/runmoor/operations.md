@@ -11,6 +11,31 @@ runmoor service uninstall
 
 These commands manage a launchd or systemd **user** service with the same drain semantics. Install the binary at a persistent location first. Installation does not overwrite an existing service definition. Uninstall preserves data/configuration and refuses to abandon known live executions when the manager cannot be contacted. Run the service in a functioning user session; availability after logout/reboot depends on that OS session, and Runmoor does not change system login policy.
 
+Service start, stop, and uninstall must use the same `--config` path that was
+recorded when the service was installed. If Runmoor reports
+`CONFIG_INVALID` because the requested configuration does not match the
+installed service, retry with the installed configuration path. To replace a
+service configuration, drain and uninstall the service with its current path,
+then install and start it with the new path. On systemd, inspect `ExecStart`
+and `ExecStop` with `systemctl --user cat runmoor.service`; on macOS, inspect
+the Runmoor launch agent's `ProgramArguments`. Preserve an invalid service
+definition and resolve its problem before retrying service commands.
+Paths containing `..` that resolve through a symlink to a different file are
+also rejected; use the installed absolute configuration path directly.
+
+If a Linux service action or a macOS service stop/uninstall reports that the
+active manager does not match the installed service, gracefully stop it with
+`runmoor stop --config ORIGINAL_CONFIG_PATH`, then retry the service action
+with the installed configuration. This lets the active manager drain using
+the configuration it was started with before systemd operates on the
+replacement definition.
+
+On macOS, stop and uninstall preserve the plist when launchd reports a loaded
+job without a running process, because Runmoor cannot verify the arguments
+cached by launchd in that state. Inspect and reconcile the loaded job in the
+logged-in GUI session before retrying. If the manager is running, stop it with
+its original configuration path first.
+
 ## Recover an Ubuntu user service
 
 Run these checks as the Runmoor user in a working login session, without
@@ -141,6 +166,8 @@ A recorded job completion continues through cleanup even if GitHub has already r
 
 Back up only after `drain` and `stop`. Preserve the complete state and managed-data directories; protect referenced credential files separately. Install the new binary manually and start again. Roll back using a compatible binary and its matching drained state/data backup. Version 0.2.0 upgrades existing state automatically; back up before upgrading and use the matching backup to return to 0.1.3. Unsupported database versions fail without destructive migration; never reuse an older backup while resources created after that backup are still active.
 
+If startup reports `Possible legacy SQLite state exists at an ambiguous location`, stop every Runmoor manager that may use either location. Preserve complete backups of both locations before recovery. Do not move or delete either database; the original state location may be ambiguous and requires explicit review.
+
 Jobs retain timeout accounting across restart/sleep. Active work requests OS sleep inhibition; warm idle capacity does not keep the machine awake indefinitely. Failure is a warning and does not change system power settings. Forced sleep, lid closure, shutdown and power loss can still interrupt work.
 
 ## Managed runner updates
@@ -178,7 +205,7 @@ macOS and Xcode still use their existing manual/package-manager update workflows
 ## Troubleshooting and privacy
 
 - `AUTHENTICATION_FAILED`: correct the referenced credential/permissions. Reload can resume the pool when a changed credential reference or runner group passes validation; if the secret changed at the same reference, use `resume`.
-- `IMAGE_INVALID` or `RUNNER_VERSION_UNSUPPORTED`: pre-pull a correct digest or seal a compatible image. Managed pools retry runner preparation automatically; inspect status or request `runner update`. Exact pins require explicit replacement. GitHub generally requires replacement within 30 days and may require security updates sooner.
+- `IMAGE_INVALID` or `RUNNER_VERSION_UNSUPPORTED`: for Docker, pre-pull a correct digest; for Tart, prepare a macOS guest whose metadata reports `darwin`, then seal it and update the pool. Linux, missing, or unrecognized Tart guest OS metadata is rejected. An older unsupported sealed image remains listed for diagnosis and can be removed after references are cleared. Managed pools retry runner preparation automatically; inspect status or request `runner update`. Exact pins require explicit replacement. GitHub generally requires replacement within 30 days and may require security updates sooner.
 - `CAPACITY_EXHAUSTED` or `DISK_LOW`: adjust explicit budgets/free disk, or remove an unused sealed image yourself. Do not delete active execution storage.
 - `OWNERSHIP_AMBIGUOUS`: preserve local state and investigate the exact resource. Use a different scale-set name when another installation owns it; restoring ownership requires the original matching backup.
 - `CLEANUP_PENDING`: restore Docker/Tart/GitHub connectivity and let reconciliation retry. A stopped manager reports pending cleanup until the next run.

@@ -1,5 +1,6 @@
 import { defaultRemediationPolicy, RemediationPolicyFields } from "./remediation-policy";
 import { useEffect, useState } from "react";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text, type Document } from "./documents";
@@ -61,7 +62,7 @@ function Check({ label, value, change }: { label: string; value: unknown; change
 
 // Selectors retain only one bounded page. An already selected identity outside
 // that page remains explicit rather than falling back to its first result.
-export function ResourceChoice({ label, kind, value, change, active, disabled = false, required = false, allowed, activeApiOnly = false }: { label: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean }) {
+export function ResourceChoice({ label, kind, value, change, active, disabled = false, required = false, allowed, activeApiOnly = false, showStatus = false }: { label: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean }) {
   const [page, setPage] = useState("");
   const [subscriptionPage, setSubscriptionPage] = useState("");
   const needsProviderCapability = activeApiOnly && (kind === EntityKind.PROVIDER || kind === EntityKind.MODEL);
@@ -77,10 +78,40 @@ export function ResourceChoice({ label, kind, value, change, active, disabled = 
   const subscriptionProviders = kind === EntityKind.PROVIDER && needsProviderCapability ? (result.data?.resources ?? []).filter((row) => document(row).protocol === Protocol.Subscription) : [];
   let rows = kind === EntityKind.MODEL && needsProviderCapability ? (modelSearch.data?.models ?? []) : kind === EntityKind.PROVIDER && needsProviderCapability ? [...activeProviders, ...subscriptionProviders] : (result.data?.resources ?? []);
   rows = rows.filter((row) => !allowed || allowed.includes(row.id));
+  const pageRows = rows;
+  const selectedOffPage = Boolean(selected.data?.resource && !pageRows.some((row) => row.id === selected.data!.resource!.id));
   if (selected.data?.resource && !rows.some((row) => row.id === selected.data!.resource!.id)) rows = [...rows, selected.data.resource];
   const nextPage = kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.data?.nextPageToken : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.data?.nextPageToken : result.data?.nextPageToken;
   const fetching = kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.isFetching : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.isFetching : result.isFetching;
+  const pageData = kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.data : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.data : result.data;
+  const pageError = kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.error : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.error : result.error;
+  const pageFailure = pageError ?? (kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.failureReason : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.failureReason : result.failureReason);
+  const errorCode = pageFailure instanceof ConnectError ? pageFailure.code : undefined;
+  let statusMessage = "";
+  if (active && showStatus) {
+    if (pageFailure) {
+      const reason = errorCode === Code.PermissionDenied || errorCode === Code.Unauthenticated
+        ? `The server denied access to these choices${fetching ? "; retrying." : "."}`
+        : errorCode === Code.Unavailable || errorCode === Code.DeadlineExceeded
+          ? `The server connection failed while loading these choices${fetching ? "; retrying." : "."}`
+          : `The latest request for these choices failed${fetching ? "; retrying." : "."}`;
+      statusMessage = pageData
+        ? `Showing cached ${label} choices. ${reason} Your current selection is retained.`
+        : `${reason} Your current selection is retained.`;
+    } else if (fetching && !pageData) {
+      statusMessage = `Loading ${label} choices…`;
+    } else if (pageData && rows.length === 0) {
+      statusMessage = nextPage
+        ? `No selectable ${label} choices are on this page. More choices are available.`
+        : `No selectable ${label} choices are on this page.`;
+    } else if (value && selectedOffPage) {
+      statusMessage = `The selected ${label} is outside this page. Its exact identity remains selected.`;
+    } else if (value && !rows.some((row) => row.id === value)) {
+      statusMessage = `The selected ${label} is outside this page or unavailable. Its identity is retained; no other choice was selected.`;
+    }
+  }
   return <div className="resource-choice"><label>{label}<select disabled={disabled} required={required} value={value} onChange={(event) => change(event.target.value, document(rows.find((row) => row.id === event.target.value)), rows.find((row) => row.id === event.target.value))}><option value="">Select {label.toLowerCase()}</option>{value && !rows.some((row) => row.id === value) ? <option value={value} disabled>Selected {kindNames[kind]} · {value}</option> : null}{rows.map((row) => { const off = row.id === value && selectedProviderOff; const name = resourceName(row); return <option key={row.id} value={row.id} disabled={off}>{off ? `Off provider · ${name}` : name}{kind === EntityKind.ACCOUNT ? ` · ${text(document(row).health)}` : ""}</option>; })}</select></label>
+    {statusMessage ? <p role="status">{statusMessage}</p> : null}
     {needsProviderCapability && active && !ready ? <p role="status">Provider and model choices require a server that reports the provider inventory capabilities.</p> : null}
     {kind === EntityKind.PROVIDER && needsProviderCapability ? <>
       {page || nextPage ? <nav className="actions" aria-label="Active API provider choices"><button type="button" disabled={!page || fetching || disabled} onClick={() => setPage("")}>First API providers</button><button type="button" disabled={!nextPage || fetching || disabled || !ready} onClick={() => setPage(nextPage ?? "")}>More API providers</button></nav> : null}
