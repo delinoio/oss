@@ -115,7 +115,11 @@ export function ApiProviderSettings({
       {entry.enabled && entry.accountCountsAvailable && entry.connectedAccounts === 0n ? <p className="notice">Account required</p> : null}
       {!entry.enabled && entry.totalAccounts > 0n ? <p>Turning this provider off preserves its accounts, credentials, models and history.</p> : null}
       <div className="actions">
-        <button type="button" disabled={!entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => entry.providerId && manageAccounts(entry.providerId)}>{!entry.accountCountsAvailable || entry.totalAccounts > 0n ? "Manage accounts" : "Add account"}</button>
+        <button type="button" disabled={!entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
+          if (!entry.providerId) return;
+          if (entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.enabled) addAccount(entry.providerId);
+          else manageAccounts(entry.providerId);
+        }}>{!entry.accountCountsAvailable || entry.totalAccounts > 0n ? "Manage accounts" : "Add account"}</button>
         {entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled && entry.providerId ? <span>Turn on this provider to add an account.</span> : null}
         {entry.presetId === ProviderPresetId.UNSPECIFIED && entry.provider ? <><button type="button" onClick={() => editCustom(entry.provider!)}>Edit custom provider</button><button type="button" onClick={() => deleteCustom(entry.provider!)}>Delete custom provider</button></> : null}
         {entry.presetId !== ProviderPresetId.UNSPECIFIED ? <button type="button" disabled={!customCopy} onClick={() => { if (!customCopy) return; const copy: Document = { ...customCopy, enabled: true }; delete copy.preset_id; createCustom(copy); }}>Create custom copy</button> : null}

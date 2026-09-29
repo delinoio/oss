@@ -77,6 +77,16 @@ it("shows API provider inventory and enables custom creation only with required 
   expect(screen.getByRole("switch", { name: "Turn on Local provider" })).toBeTruthy();
 });
 
+it("opens a new account draft for an enabled provider with no accounts", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "Account-ready provider", endpoint: "https://api.example.test/v1", protocol: "openai-chat", authentication: "bearer", enabled: true });
+  const value = fixture([provider], undefined, () => ({ entries: [{ presetId: ProviderPresetId.UNSPECIFIED, providerId: provider.id, provider, displayName: "Account-ready provider", enabled: true, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] }));
+  render(value.view(<Settings visible close={() => {}} />));
+  await screen.findByRole("heading", { name: "Account-ready provider" });
+  fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+  await screen.findByRole("heading", { name: "New AI account" });
+  expect((screen.getByRole("combobox", { name: "Provider" }) as HTMLSelectElement).value).toBe(provider.id);
+});
+
 it("keeps provider inventory loading distinct and fails closed without required capabilities", async () => {
   const resolveReads: ((value: ProviderInventory) => void)[] = [];
   const pending = fixture([], undefined, () => new Promise<ProviderInventory>((resolve) => { resolveReads.push(resolve); }));
