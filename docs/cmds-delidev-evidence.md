@@ -3191,3 +3191,61 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+## Issue #1102: verified settled failed Claude Resume (2026-09-30)
+
+The public Worker may retain an immutable v2 continuation checkpoint after a
+correlated, non-aborted failed Claude input with eligible inline history,
+unchanged permission, acknowledged settled callbacks, clean original input EOF
+and independently confirmed native/workspace cleanup. The server accepts the
+matching failed report while retaining the failed outcome, paused dispatch and
+no automatic continuation intent. Existing authenticated Resume and its CLI
+semantics claim only the oldest new input under fresh execution authority.
+Historical accepted v1 reports and unproved Stop/aborted, changed-permission,
+child/background or unfinished-callback histories retain their previous gates.
+
+Controlled private history fixtures exercise original failed EOF retention,
+checkpoint inspection/restoration, fresh process replacement only with explicit
+Resume, original input-ID replay refusal, and root/Read/Bash/answered-question
+history without replaying native sends or callback replies. Missing/changed
+history, permission drift and unfinished callbacks refuse retention. Worker
+fixtures separately prove that a public failed completion flag cannot replace
+the original native EOF controller. Domain and server matrices independently
+reject aborted errors, unsettled work, changed permission and mixed ownership.
+
+Authenticated public server/Worker RPC fixtures cover Execute and Plan failure
+completion, blocked automatic FIFO, one fresh oldest-input claim, immutable
+selection/account/history, Resume receipt replay and refusal of automatic
+intent with a failed predecessor. Lost-report reconciliation preserves the
+original failed outcome and problem, restores only confirmed cleanup and stays
+paused; receipt replay creates no replacement recovery job. Recovery acceptance
+and result commit both recheck original settled evidence.
+
+Executed checks:
+
+- Focused Go tests for Claude continuation, Resume and recovery passed.
+- Focused race tests for original failed EOF/checkpoint and Worker retention
+  passed, including root/Read/Bash/answered-question histories.
+- `go test -race ./cmds/delidev-cli/internal/server -run
+  '^TestClaudeFailedResumeClaimsNextFIFOInputOnce$' -count=1 -timeout=2m`
+  passed for Execute and Plan. The test owns a bounded Worker stream for its
+  complete turn/Resume scenario instead of reusing the setup stream's shorter
+  deadline; the initial race attempt expired that setup stream.
+- `go vet ./cmds/delidev-cli/...` and `go fmt ./...` passed.
+- Required `go test -race ./cmds/delidev-cli/...` did **not** pass: the run
+  reported CLI integration failures and package timeouts in Grok, server,
+  store, Worker and workspace tests. The workspace suite also reported
+  `TestWorkspaceDiffUnbornAndBoundedResults` timing out its Git operation.
+  A separately logged CLI race run reproduced
+  `TestCLISessionAcceptanceQueueAndArchive` failing its creation-comparison
+  Git diff with `workspace file reader is unavailable`. Several independent
+  Go suites were running concurrently on this machine; that observation does
+  not establish a passing broad suite or prove the cause of every failure.
+
+These are isolated temporary protocol/history/process and authenticated RPC
+fixtures. The public fixture's checkpoint digest represents independently
+retained Worker proof; it does not launch the installed Claude CLI. No new
+installed-Claude failed-provider run, hosted-account inference, native desktop
+interaction, Windows/Linux runtime, distribution or release acceptance is
+claimed. No protocol, frontend or Rust source changes are needed for this
+existing Resume/recovery boundary.
