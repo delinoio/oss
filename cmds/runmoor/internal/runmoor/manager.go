@@ -854,7 +854,16 @@ func (m *Manager) prepare(ctx context.Context, id string) {
 				return
 			}
 			e = driver.Prepare(ctx, c, p.Spec, *r, s, jit, func(h Handle) error {
-				return m.Store.Update(func(s *Snapshot) error { s.Runners[id].Handle = h; return nil })
+				return m.Store.Update(func(s *Snapshot) error {
+					s.Runners[id].Handle = h
+					if h.PID > 0 {
+						if s.RunnerTartStarts == nil {
+							s.RunnerTartStarts = map[string]string{}
+						}
+						s.RunnerTartStarts[id] = h.tartProcessStart
+					}
+					return nil
+				})
 			})
 		}
 	}

@@ -238,16 +238,28 @@ func interruptProcess(cmd *exec.Cmd) {
 	}
 }
 
-func tartRunProcessAlive(pid int) (bool, error) {
+func tartRunProcessAlive(pid int, processStart string) (bool, error) {
 	if pid <= 0 {
 		return false, syscall.EINVAL
 	}
 	err := unix.Kill(pid, 0)
-	if err == nil || err == unix.EPERM {
-		return true, nil
-	}
 	if err == unix.ESRCH {
 		return false, nil
 	}
-	return false, err
+	if err != nil && err != unix.EPERM {
+		return false, err
+	}
+	if processStart == "" {
+		// Older state has no process-start identity. Keep it conservatively
+		// reserved until the numeric PID is no longer present.
+		return true, nil
+	}
+	currentStart, err := tartRunProcessStartIdentity(pid)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return currentStart == processStart, nil
 }

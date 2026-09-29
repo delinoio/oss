@@ -94,6 +94,7 @@ type TartDriver struct {
 	HostCheck       func(context.Context) error
 	GuestExecutable string
 	processAlive    func(int) (bool, error)
+	processIdentity func(int) (string, error)
 }
 
 func tartEnv(c Config) []string {
@@ -711,59 +712,66 @@ func replaceCommandVMName(args []string, original, replacement string) ([]string
 	return result, replaced
 }
 
-func (t *TartDriver) startOwned(ctx context.Context, c Config, name, installation, entity string, args []string) (int, error) {
+func (t *TartDriver) startOwned(ctx context.Context, c Config, name, installation, entity string, args []string) (int, string, error) {
 	if err := ctx.Err(); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	dir, err := openVerifiedVMOwnerAt(c, name, name, installation, entity)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	defer dir.Close()
 	current, err := t.vmOwned(ctx, c, name, installation, entity)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if err = ctx.Err(); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if current.Running {
-		return 0, problem(ErrPreparation, "The owned Tart VM is already running.", "Wait for it to stop before starting it again.")
+		return 0, "", problem(ErrPreparation, "The owned Tart VM is already running.", "Wait for it to stop before starting it again.")
 	}
 	alias := tartRunAlias(entity)
 	if err = removeStaleTartRunAlias(c, alias); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if _, _, err = createTartCommandAlias(c, alias); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if err = ctx.Err(); err != nil {
 		_ = removeTartRunAlias(c, alias)
-		return 0, err
+		return 0, "", err
 	}
 	pinnedArgs, replaced := replaceCommandVMName(args, name, alias)
 	if !replaced {
 		_ = removeTartRunAlias(c, alias)
-		return 0, ambiguousVMOwnership()
+		return 0, "", ambiguousVMOwnership()
 	}
 	executor, ok := t.Exec.(PinnedCommandExecutor)
 	if !ok {
 		_ = removeTartRunAlias(c, alias)
-		return 0, problem(ErrDependency, "The Tart command runner cannot bind operations to an owned VM.", "Use the supported Runmoor release and preserve the VM until its ownership can be verified.")
+		return 0, "", problem(ErrDependency, "The Tart command runner cannot bind operations to an owned VM.", "Use the supported Runmoor release and preserve the VM until its ownership can be verified.")
 	}
 	if err = ctx.Err(); err != nil {
 		_ = removeTartRunAlias(c, alias)
-		return 0, err
+		return 0, "", err
 	}
 	pid, runErr := executor.StartPinned(c.TartExecutable, pinnedArgs, tartEnv(c), dir)
 	if runErr != nil {
 		_ = removeTartRunAlias(c, alias)
-		return 0, problem(ErrDependency, "Tart command failed.", "Check Tart 2.x.x, Guest Agent RPC and the private VM directory.")
+		return 0, "", problem(ErrDependency, "Tart command failed.", "Check Tart 2.x.x, Guest Agent RPC and the private VM directory.")
+	}
+	if pid <= 0 {
+		return pid, "", problem(ErrDependency, "Tart did not return a valid process identity.", "Keep the VM and reservation intact while Tart startup is uncertain.")
+	}
+	processStart, err := t.tartProcessStartIdentity(pid)
+	if err != nil || processStart == "" {
+		return pid, "", problem(ErrOwnership, "The Tart process start identity cannot be verified.", "Preserve the VM, run alias and reservation until the started process is confirmed exited.")
 	}
 	if err = verifyVMOwnerAt(c, name, name, installation, entity); err != nil {
-		return pid, err
+		return pid, processStart, err
 	}
-	return pid, nil
+	return pid, processStart, nil
 }
 
 func tartRunAlias(entity string) string { return "rm-run-" + entity }
@@ -828,17 +836,35 @@ func tartRunAliasPresent(c Config, alias string) (bool, error) {
 	return true, nil
 }
 
-func (t *TartDriver) tartProcessAlive(pid int) (bool, error) {
-	if t.processAlive != nil {
-		return t.processAlive(pid)
+func (t *TartDriver) tartProcessStartIdentity(pid int) (string, error) {
+	if t.processIdentity != nil {
+		return t.processIdentity(pid)
 	}
-	return tartRunProcessAlive(pid)
+	return tartRunProcessStartIdentity(pid)
+}
+
+func (t *TartDriver) tartProcessAlive(pid int, processStart string) (bool, error) {
+	if t.processAlive != nil {
+		alive, err := t.processAlive(pid)
+		if err != nil || !alive || processStart == "" {
+			return alive, err
+		}
+		currentStart, err := t.tartProcessStartIdentity(pid)
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return currentStart == processStart, nil
+	}
+	return tartRunProcessAlive(pid, processStart)
 }
 
 // A missing canonical directory is not proof that a detached Tart run ended:
 // the open-directory alias and recorded Tart process can outlive that name.
 // Preserve the execution until its recorded process is confirmed exited.
-func (t *TartDriver) confirmTartVMAbsent(c Config, r Runner) error {
+func (t *TartDriver) confirmTartVMAbsent(c Config, r Runner, s Snapshot) error {
 	aliasPresent, err := tartRunAliasPresent(c, tartRunAlias(r.ID))
 	if err != nil {
 		return err
@@ -849,7 +875,11 @@ func (t *TartDriver) confirmTartVMAbsent(c Config, r Runner) error {
 		}
 		return nil
 	}
-	alive, err := t.tartProcessAlive(r.Handle.PID)
+	processStart := s.RunnerTartStarts[r.ID]
+	if s.Images[r.ID] != nil {
+		processStart = s.ImageTartStarts[r.ID]
+	}
+	alive, err := t.tartProcessAlive(r.Handle.PID, processStart)
 	if err != nil || alive {
 		return ambiguousVMOwnership()
 	}
@@ -932,10 +962,11 @@ func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 	if _, e := t.runOwned(ctx, c, s.Installation, r.ID, name, []string{"set", name, "--cpu", strconv.Itoa(p.Resources.CPU), "--memory", strconv.FormatInt(p.Resources.MemoryMiB, 10)}, nil); e != nil {
 		return e
 	}
-	pid, e := t.startOwned(ctx, c, name, s.Installation, r.ID, []string{"run", "--no-graphics", "--no-audio", name})
+	pid, processStart, e := t.startOwned(ctx, c, name, s.Installation, r.ID, []string{"run", "--no-graphics", "--no-audio", name})
 	if e != nil {
 		if pid > 0 {
 			h.PID = pid
+			h.tartProcessStart = processStart
 			if publishErr := publish(h); publishErr != nil {
 				return publishErr
 			}
@@ -946,6 +977,7 @@ func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 		return problem(ErrPreparation, "Cannot start the owned Tart clone.", "Check virtualization support and the two-VM limit.")
 	}
 	h.PID = pid
+	h.tartProcessStart = processStart
 	if e = publish(h); e != nil {
 		return e
 	}
@@ -1074,7 +1106,7 @@ func (t *TartDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapshot
 			return Observation{}, promoteErr
 		}
 		if _, e = os.Lstat(vmPath(c, name)); os.IsNotExist(e) {
-			if e = t.confirmTartVMAbsent(c, r); e != nil {
+			if e = t.confirmTartVMAbsent(c, r, s); e != nil {
 				return Observation{}, e
 			}
 			return Observation{Handle: h}, nil
@@ -1123,7 +1155,7 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 		return ambiguousVMOwnership()
 	}
 	if _, e := os.Lstat(vmPath(c, name)); os.IsNotExist(e) {
-		if e = t.confirmTartVMAbsent(c, r); e != nil {
+		if e = t.confirmTartVMAbsent(c, r, s); e != nil {
 			return e
 		}
 		return removeTartRunAlias(c, tartRunAlias(r.ID))
@@ -1135,7 +1167,7 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 		return e
 	}
 	if !v.Running {
-		if e = t.confirmTartVMAbsent(c, r); e != nil {
+		if e = t.confirmTartVMAbsent(c, r, s); e != nil {
 			return e
 		}
 		return removeTartRunAlias(c, tartRunAlias(r.ID))
@@ -1153,7 +1185,7 @@ func (t *TartDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) e
 			return e
 		}
 		if !v.Running {
-			if e = t.confirmTartVMAbsent(c, r); e != nil {
+			if e = t.confirmTartVMAbsent(c, r, s); e != nil {
 				return e
 			}
 			return removeTartRunAlias(c, tartRunAlias(r.ID))
@@ -1301,7 +1333,7 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 	if err := promoteCreatedTartVM(c, name, s.Installation, r.ID); err != nil {
 		return err
 	}
-	if err := t.confirmTartVMAbsent(c, r); err != nil {
+	if err := t.confirmTartVMAbsent(c, r, s); err != nil {
 		return err
 	}
 	deletionName := deletionVMName(r.ID)
@@ -1332,7 +1364,7 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 		} else if !os.IsNotExist(originalErr) {
 			return problem(ErrCleanup, "Cannot inspect the Tart VM for cleanup.", "Check private data directory permissions; its reservation remains held.")
 		} else {
-			if err = t.confirmTartVMAbsent(c, r); err != nil {
+			if err = t.confirmTartVMAbsent(c, r, s); err != nil {
 				return err
 			}
 			if err = removeTartRunAlias(c, tartRunAlias(r.ID)); err != nil {

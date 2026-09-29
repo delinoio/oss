@@ -176,7 +176,10 @@ func (f *tartFixture) StartPinned(name string, args, env []string, dir *os.File)
 }
 func fakeTart(c Config) (*TartDriver, *tartFixture) {
 	f := &tartFixture{c: c, running: map[string]bool{}, version: "2.37.0", guestOS: tartGuestOSDarwin}
-	return &TartDriver{Exec: f, HostCheck: func(context.Context) error { return nil }}, f
+	return &TartDriver{
+		Exec: f, HostCheck: func(context.Context) error { return nil },
+		processIdentity: func(int) (string, error) { return "fixture-process-start", nil },
+	}, f
 }
 
 type tartVMInfoResponse struct {
@@ -296,9 +299,12 @@ func TestImageOpenWaitsForConfirmedVMStartup(t *testing.T) {
 				if got := s.View().ImageTartPIDs[im.ID]; got != 123 {
 					t.Fatalf("persisted setup Tart PID = %d, want 123", got)
 				}
+				if got := s.View().ImageTartStarts[im.ID]; got != "fixture-process-start" {
+					t.Fatalf("persisted setup Tart process start = %q, want fixture identity", got)
+				}
 				status, marshalErr := json.Marshal(statusOf(s.View(), false))
-				if marshalErr != nil || strings.Contains(string(status), "image_tart_pids") {
-					t.Fatal("private image Tart PID leaked through status JSON", marshalErr)
+				if marshalErr != nil || strings.Contains(string(status), "image_tart_pids") || strings.Contains(string(status), "fixture-process-start") {
+					t.Fatal("private image Tart process state leaked through status JSON", marshalErr)
 				}
 				return
 			}
@@ -516,7 +522,16 @@ func TestTartImageLifecycleAndCredentialBoundary(t *testing.T) {
 	r := Runner{ID: newID(), Backend: Tart, Image: im.ID}
 	r.Name = "runmoor-" + r.ID
 	snap := s.View()
-	if e = driver.Prepare(ctx, c, p, r, snap, "fixture-jit", func(h Handle) error { r.Handle = h; return nil }); e != nil {
+	if e = driver.Prepare(ctx, c, p, r, snap, "fixture-jit", func(h Handle) error {
+		r.Handle = h
+		if h.PID > 0 {
+			if h.tartProcessStart != "fixture-process-start" {
+				t.Fatalf("published Tart process start = %q, want fixture identity", h.tartProcessStart)
+			}
+			snap.RunnerTartStarts = map[string]string{r.ID: h.tartProcessStart}
+		}
+		return nil
+	}); e != nil {
 		t.Fatal(e)
 	}
 	obs, e := driver.Inspect(ctx, c, r, snap)

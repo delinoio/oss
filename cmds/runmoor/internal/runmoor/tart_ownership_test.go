@@ -361,7 +361,7 @@ func TestTartStartUsesTheVerifiedDirectoryAfterNameReplacement(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	pid, err := driver.startOwned(context.Background(), c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
+	pid, _, err := driver.startOwned(context.Background(), c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
 	requireCode(t, err, ErrOwnership)
 	if pid != 123 {
 		t.Fatalf("started Tart PID was lost after ownership recheck failed: %d", pid)
@@ -407,7 +407,7 @@ func TestTartStartDoesNotLaunchAfterCallerCancelsDuringPrecheck(t *testing.T) {
 		}
 		cancel()
 	}
-	_, err := driver.startOwned(ctx, c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
+	_, _, err := driver.startOwned(ctx, c, name, s.View().Installation, id, []string{"run", "--no-graphics", "--no-audio", name})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("owned start error = %v, want context cancellation", err)
 	}
@@ -811,6 +811,56 @@ func TestTartCleanupPreservesADeletionNameCollision(t *testing.T) {
 	}
 	if err := verifyVMOwnerRecord(c, name, s.View().Installation, id); err != nil {
 		t.Fatal("collision discarded the durable owner record", err)
+	}
+}
+
+func TestTartCleanupRecognizesReusedPIDAsExited(t *testing.T) {
+	c, s := fixtureStore(t)
+	id := newID()
+	name := "rm-" + id
+	if err := claimVM(c, name, s.View().Installation, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := createTartCommandAlias(c, tartRunAlias(id)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(func(snapshot *Snapshot) error {
+		snapshot.RunnerTartStarts = map[string]string{id: "darwin:100:10"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	driver, _ := fakeTart(c)
+	driver.processAlive = func(pid int) (bool, error) {
+		if pid != 4242 {
+			t.Fatalf("checked Tart PID = %d, want 4242", pid)
+		}
+		return true, nil
+	}
+	driver.processIdentity = func(int) (string, error) { return "darwin:200:20", nil }
+	runner := Runner{ID: id, Handle: Handle{VM: name, PID: 4242}}
+	if err := driver.Cleanup(context.Background(), c, runner, s.View()); err != nil {
+		t.Fatalf("PID reuse prevented cleanup of the confirmed-exited Tart process: %v", err)
+	}
+	if _, err := os.Lstat(vmOwnerPath(c, name)); !os.IsNotExist(err) {
+		t.Fatalf("completed cleanup retained the owner record: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(c.Storage.Data, "tart", "vms", tartRunAlias(id))); !os.IsNotExist(err) {
+		t.Fatalf("completed cleanup retained the stale Tart alias: %v", err)
+	}
+}
+
+func TestTartProcessStartIdentityParser(t *testing.T) {
+	stat := "123 (fixture ) process) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 987654 20"
+	got, err := parseLinuxProcessStartIdentity(stat, "boot-id\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "linux:boot-id:987654" {
+		t.Fatalf("process start identity = %q, want linux:boot-id:987654", got)
+	}
+	if _, err := parseLinuxProcessStartIdentity("123 (missing fields) S", "boot-id"); err == nil {
+		t.Fatal("malformed process stat was accepted")
 	}
 }
 

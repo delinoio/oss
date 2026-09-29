@@ -34,14 +34,15 @@ func (m *ImageManager) imageRunner(im *Image) Runner {
 }
 
 func (m *ImageManager) confirmImageTartExited(c Config, im *Image) error {
-	if err := m.Tart.confirmTartVMAbsent(c, m.imageRunner(im)); err != nil {
+	s := m.Store.View()
+	if err := m.Tart.confirmTartVMAbsent(c, m.imageRunner(im), s); err != nil {
 		return err
 	}
 	return removeTartRunAlias(c, tartRunAlias(im.ID))
 }
 
 func (m *ImageManager) startTart(ctx context.Context, c Config, im *Image, installation string, args []string) (int, error) {
-	pid, err := m.Tart.startOwned(ctx, c, im.VM, installation, im.ID, args)
+	pid, processStart, err := m.Tart.startOwned(ctx, c, im.VM, installation, im.ID, args)
 	if pid > 0 {
 		if persistErr := m.Store.Update(func(s *Snapshot) error {
 			if s.Images[im.ID] == nil {
@@ -51,6 +52,10 @@ func (m *ImageManager) startTart(ctx context.Context, c Config, im *Image, insta
 				s.ImageTartPIDs = map[string]int{}
 			}
 			s.ImageTartPIDs[im.ID] = pid
+			if s.ImageTartStarts == nil {
+				s.ImageTartStarts = map[string]string{}
+			}
+			s.ImageTartStarts[im.ID] = processStart
 			return nil
 		}); persistErr != nil {
 			return pid, persistErr
@@ -65,6 +70,7 @@ func (m *ImageManager) stopTart(ctx context.Context, c Config, im *Image, s Snap
 	}
 	return m.Store.Update(func(snapshot *Snapshot) error {
 		delete(snapshot.ImageTartPIDs, im.ID)
+		delete(snapshot.ImageTartStarts, im.ID)
 		return nil
 	})
 }
@@ -336,6 +342,7 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		if e := m.Store.Update(func(v *Snapshot) error {
 			delete(v.Images, im.ID)
 			delete(v.ImageTartPIDs, im.ID)
+			delete(v.ImageTartStarts, im.ID)
 			return nil
 		}); e != nil {
 			return nil, e
@@ -407,6 +414,7 @@ func (m *ImageManager) imageFailure(id string, err error) error {
 			if released && i.Phase == ImageOpen {
 				i.Phase = ImagePreparing
 				delete(s.ImageTartPIDs, id)
+				delete(s.ImageTartStarts, id)
 			}
 		}
 		return nil
@@ -604,6 +612,7 @@ func (m *ImageManager) Reconcile(ctx context.Context, c Config) error {
 							current.Problem = problem(ErrImage, "The owned setup VM is absent after its Tart process exited.", "Remove the image revision or restore its matching Tart VM data.")
 						}
 						delete(s.ImageTartPIDs, id)
+						delete(s.ImageTartStarts, id)
 					}
 					return nil
 				}); err != nil {
@@ -635,6 +644,7 @@ func (m *ImageManager) Reconcile(ctx context.Context, c Config) error {
 					im.Phase = ImagePreparing
 				}
 				delete(s.ImageTartPIDs, id)
+				delete(s.ImageTartStarts, id)
 				return nil
 			}); e != nil {
 				return e
