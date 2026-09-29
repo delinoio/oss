@@ -150,3 +150,10 @@ Run DeliDev Go race tests/vet, protocol checks, API-client tests and desktop
 - [Project](project-delidev.md)
 - [Complete requirements](cmds-delidev-requirements.md)
 - [Evidence ledger](cmds-delidev-evidence.md)
+
+Creation recovery also validates the published image's original server identity
+against the live scope before accepting an already existing filename. Immutable
+SQLite validation rejects adjacent WAL/SHM/journal files, including during legacy
+creation and migration-image checks; it never ingests external sidecar state or
+opens a backup as a writable live database. Foreign/corrupt images remain intact
+and end a durable creation with recovery-required rather than false success.

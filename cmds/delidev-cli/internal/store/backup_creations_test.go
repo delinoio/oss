@@ -238,3 +238,51 @@ func TestBackupCreationWaitersHonorCancellationDuringOtherImageOwnership(t *test
 		t.Fatal("canceled creation waited for unrelated image lock")
 	}
 }
+
+func TestBackupCreationRecoveryRejectsForeignImageAndAdjacentWAL(t *testing.T) {
+	for _, scenario := range []string{"foreign", "sidecar"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, root, ctx, owner := creationFixture(t)
+			row, _, err := s.RequestBackup(ctx, domain.NewID(), owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, intent, _ := DecodeBackupCreation(row)
+			target := filepath.Join(root, "backups", string(intent.BackupID)+".sqlite")
+			if scenario == "foreign" {
+				other, otherRoot, otherCtx, _ := creationFixture(t)
+				id, err := other.Backup(otherCtx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw, err := os.ReadFile(filepath.Join(otherRoot, "backups", string(id)+".sqlite"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(target, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if _, err := s.BackupID(ctx, intent.BackupID); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(target+"-wal", []byte("untrusted fixture"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, err := s.RunBackupCreation(ctx, row.ID, owner)
+			job, _, decodeErr := DecodeBackupCreation(current)
+			if err == nil || decodeErr != nil || job.State != domain.JobFailed || job.Problem.Code != domain.RecoveryRequired {
+				t.Fatal(job, err, decodeErr)
+			}
+			after, err := os.ReadFile(target)
+			if err != nil || string(before) != string(after) {
+				t.Fatal("unsafe image changed", err)
+			}
+		})
+	}
+}

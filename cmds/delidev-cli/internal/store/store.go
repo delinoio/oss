@@ -772,9 +772,13 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 	}
 	s.gate.Lock()
 	defer s.gate.Unlock()
+	var owner domain.ID
+	if err := s.db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&owner); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", storageError(err)
+	}
 	path := filepath.Join(s.root, "backups", string(id)+".sqlite")
 	if _, err := os.Lstat(path); err == nil {
-		if err := ValidateBackup(ctx, path); err != nil {
+		if err := validateBackup(ctx, path, &owner); err != nil {
 			return "", err
 		}
 		// An earlier attempt may have renamed the file but failed to sync its
@@ -818,7 +822,7 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 	if closeErr != nil {
 		return "", storageError(closeErr)
 	}
-	if err := ValidateBackup(ctx, pending); err != nil {
+	if err := validateBackup(ctx, pending, &owner); err != nil {
 		return "", err
 	}
 	if err := os.Rename(pending, path); err != nil {
@@ -829,16 +833,35 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 	}
 	return id, nil
 }
-func ValidateBackup(ctx context.Context, path string) error {
+func ValidateBackup(ctx context.Context, path string) error { return validateBackup(ctx, path, nil) }
+
+func validateBackup(ctx context.Context, path string, owner *domain.ID) error {
 	if err := security.RegularPrivate(path); err != nil {
 		return storageError(err)
 	}
-	db, err := sql.Open("sqlite", databaseURI(path, true))
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		if _, err := os.Lstat(path + suffix); !errors.Is(err, os.ErrNotExist) {
+			return backupUnavailable()
+		}
+	}
+	db, err := sql.Open("sqlite", databaseURI(path, true)+"&immutable=1")
 	if err != nil {
 		return storageError(err)
 	}
 	defer db.Close()
-	return inspect(ctx, db, false)
+	if err := inspect(ctx, db, false); err != nil {
+		return err
+	}
+	if owner != nil {
+		var observed domain.ID
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&observed); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return storageError(err)
+		}
+		if observed != *owner {
+			return backupUnavailable()
+		}
+	}
+	return nil
 }
 
 // The schema declaration is kept literal for review; this check prevents the

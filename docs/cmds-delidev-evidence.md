@@ -2299,3 +2299,9 @@ quiescence, preserved live authorization, quarantine of historical execution and
 scheduling state, atomic commit/recovery and preserved deletion obligations.
 These creation tests do not establish that restore boundary or whole-workspace
 snapshot/session permanent deletion acceptance.
+- Complete DeliDev Go race tests and vet passed after durable creation, including
+  CLI 185.041s, server 355.829s, store 115.119s and Worker 160.837s. API-client
+  tests (41), desktop tests (801), typecheck/build and Buf lint/breaking/generated
+  drift passed. A later recovery-hardening check additionally rejects foreign
+  published images and adjacent WAL without changing their bytes; focused real
+  backup/migration/store race tests passed (7.510s).
