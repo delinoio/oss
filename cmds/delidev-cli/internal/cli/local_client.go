@@ -45,6 +45,13 @@ func pairLocalDevice(ctx context.Context, o options, root string, kind domain.De
 	if err := security.CheckPrivateDir(o.dataDir); err != nil {
 		return nil, err
 	}
+	recoveryLock, err := lockDesktopClient(o.dataDir, root)
+	if err != nil {
+		return nil, err
+	}
+	if recoveryLock != nil {
+		defer recoveryLock.Close()
+	}
 	identity, err := security.LoadIdentity(o.dataDir)
 	if err != nil {
 		return nil, err

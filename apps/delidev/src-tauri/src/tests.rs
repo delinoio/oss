@@ -176,6 +176,23 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
         connector.connect(),
         Err(NativeFailure::CredentialUnavailable)
     ));
+    let inspected = connector.inspect_desktop_registration().unwrap();
+    assert_eq!(inspected.state, DesktopRegistrationState::Revoked);
+    assert_eq!(inspected.device_id, first.device_id);
+    let request = uuid::Uuid::now_v7().to_string();
+    let recovered = connector
+        .recover_desktop_registration(&first.device_id, &inspected.revision, &request)
+        .unwrap();
+    let retried = connector
+        .recover_desktop_registration(&first.device_id, &inspected.revision, &request)
+        .unwrap();
+    assert_ne!(recovered.device_id, first.device_id);
+    assert_ne!(recovered.token, first.token);
+    assert_eq!(recovered.server_id, first.server_id);
+    assert_eq!(recovered.device_id, retried.device_id);
+    assert_eq!(recovered.token, retried.token);
+    assert_eq!(connector.connect().unwrap().device_id, recovered.device_id);
+    assert_eq!(connector.local_worker_proof().unwrap().token, proof.token);
 }
 
 #[test]
