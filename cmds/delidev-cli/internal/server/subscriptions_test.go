@@ -436,9 +436,14 @@ func TestSubscriptionExecutionRegistrationCannotUseAPIRelay(t *testing.T) {
 	}
 	// The waiting execution keeps its exact claim while refresh owns the next
 	// lease; a definite busy refusal is retried without another native launch.
-	waiting := *take
-	waiting.Mutation = &pb.Mutation{RequestId: string(domain.NewID()), Id: take.Mutation.Id, ExpectedRevision: jobRevision}
-	if _, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, &waiting)); domain.SafeError(rpc.ClientError(err)).Code != domain.ResourceExhausted {
+	waiting := &pb.TakeSubscriptionRequest{
+		Mutation:    &pb.Mutation{RequestId: string(domain.NewID()), Id: take.Mutation.Id, ExpectedRevision: jobRevision},
+		MachineId:   take.MachineId,
+		InstanceId:  take.InstanceId,
+		OperationId: take.OperationId,
+		Action:      take.Action,
+	}
+	if _, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, waiting)); domain.SafeError(rpc.ClientError(err)).Code != domain.ResourceExhausted {
 		t.Fatal("waiting execution failed instead of retaining its account", err)
 	}
 	clear(lease.Bundle)
@@ -447,7 +452,7 @@ func TestSubscriptionExecutionRegistrationCannotUseAPIRelay(t *testing.T) {
 	if _, err := f.finish(lease, rotated, true, true, true); err != nil {
 		t.Fatal(err)
 	}
-	resumed, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, &waiting))
+	resumed, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, waiting))
 	if err != nil {
 		t.Fatal("waiting execution could not take the rotated generation", err)
 	}

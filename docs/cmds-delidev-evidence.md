@@ -3234,3 +3234,13 @@ acceptance, native Windows/Linux subscription runtime, release, desktop login
 controls or full uncertain-lease recovery is claimed. All authentication material
 is synthetic, all runtime state is temporary, and no user credential is imported.
 The complete issue #964 requirements remain open beyond this increment.
+
+
+Maintenance of [PR #1124](https://github.com/delinoio/oss/pull/1124) found a
+regression-test protobuf request copied by value, including its internal mutex.
+The test now constructs a fresh request with the original fenced fields instead.
+All focused subscription server race tests pass (21.387 seconds), current
+DeliDev-wide and repository-wide (`go vet ./...`) vet pass, and root
+formatting reports no changes. The full race
+suite limitation above remains visible; this test-only repair changes no product
+contract or authentication authority.
