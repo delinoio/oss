@@ -3206,9 +3206,8 @@ evidence. Generated Go/TypeScript schemas and CLI/desktop reads are additive.
 Executed focused verification used isolated temporary SQLite and loopback
 provider/native fixtures: store PR activity race tests passed (7.577s), server
 PR activity race tests passed (6.324s), CLI metadata parity passed (0.696s), and
-the first two desktop source-inspection tests passed. Later dedicated proof
-replay/inspection checks and full required validation are recorded below when
-complete. LFS assets were hydrated before builds, and required ignored embed
+the first two desktop source-inspection tests passed. Dedicated proof replay/inspection checks and subsequent required
+validation are recorded below. LFS assets were hydrated before builds, and required ignored embed
 output was explicitly generated for Go hooks. No real PAT/account, Git push by
 DeliDev, native remediation, production verifier or multi-platform distribution
 acceptance was performed.
@@ -3229,7 +3228,7 @@ The three activity component tests passed separately on Node 24, including
 explicit proof-source inspection and rejection of foreign version ownership.
 `pnpm proto:check` passed lint, compatibility and exact Go/TypeScript freshness.
 
-The first complete `go test -race -p 1 ./cmds/delidev-cli/...` run reported CLI
+The initial required `go test -race -p 1 ./cmds/delidev-cli/...` run reported CLI
 workspace-read and detached-worker readiness failures in unchanged native
 fixtures; its CLI package failed after 370.223s. These failures are not reported
 as passed or as PR activity regressions without independent reproduction.
@@ -3267,3 +3266,29 @@ uses a bounded five-second wait for the two post-save observations and asserts
 that the delayed reply was exercised; the focused real-server/CLI test passes.
 Runtime request deadlines, product persistence, receipts and the expected
 revision-two CLI result are unchanged. No user PAT or provider account is used.
+
+### PR #1118 broader local rerun limitations
+
+Post-rename `go vet ./cmds/delidev-cli/...` passed. The first post-repair Node 24
+`pnpm test` rerun completed 75 files / 944 tests with 73 passing files and
+940 passing tests; four existing App/Settings observations failed. A second
+complete invocation with `VITEST_MAX_WORKERS=2` completed with 73 passing files
+and 937 passing tests, with seven existing App/Settings observation/test deadline
+failures. The new activity cases and delayed profile fixture passed in both.
+Neither post-repair invocation is a green frontend suite, and reducing workers
+did not resolve these local failures. The earlier complete Node 24 pass and the
+focused deterministic CI regression remain separately recorded above.
+
+Broader Go runs also report native fixture failures outside PR activity. The
+initial Grok package exceeded its ten-minute package limit after native reply
+and initialization failures; the initial server package reached the same limit
+in `TestClaudeRecoveryRechecksOriginalSuccessBoundary` during a SQLite fixture
+commit. The captured pre-rename rerun reports CLI, Grok, NativeWire and OpenCode
+failures, including NativeWire's oversize-owned-scope stop observation. The
+post-rename required race invocation again failed the independently reproduced
+workspace-reader case (test 74.51s, CLI package 324.876s). Remaining packages
+were still executing at repair publication; no complete Go race-suite pass or
+root cause for the other native/UI failures is claimed. Production deadlines,
+native ownership, recovery and protocol behavior were not changed to satisfy
+these observations. Local evidence is narrower than full-suite or native
+acceptance, and CI must be assessed independently on the pushed repair head.
