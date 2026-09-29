@@ -25,7 +25,14 @@ func (s *Service) ListProviderPresets(ctx context.Context, req *connect.Request[
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error { return tx.Authorize() }); err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
-	raw, _ := json.Marshal(providers.Presets())
+	// Keep the legacy editable preset payload compatible with older desktop
+	// clients. Preset provenance is carried by provider inventory activation,
+	// while the provider defaults remain plain editable configuration here.
+	legacyPresets := providers.Presets()
+	for i := range legacyPresets {
+		legacyPresets[i].Provider.PresetID = nil
+	}
+	raw, _ := json.Marshal(legacyPresets)
 	response := connect.NewResponse(&pb.ListProviderPresetsResponse{PresetsJson: raw})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil

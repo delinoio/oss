@@ -10,6 +10,8 @@ Issue #1046 adds server-owned activation for API providers. Go owns provider ide
 
 The closed preset IDs are `vercel-ai-gateway`, `openrouter`, `openai`, `anthropic`, `xai`, `deepseek`, `ollama`, `lm-studio` and `vllm`. Inventory includes all nine as virtual Off entries before activation. First activation saves the canonical server-defined provider once; later Off/On mutations retain its UUID. A preset is an API provider, not native subscription configuration. Saved managed presets must match server-pinned name, endpoint, API protocol and discovery defaults. Generic writes and imports cannot forge or edit managed authority. Create custom copy starts a separate provider with a new UUID and no preset ID, account, credential, or model copies; its API fields are then editable.
 
+The legacy `ListProviderPresets` JSON preserves the top-level preset ID and editable provider defaults but omits nested `provider.preset_id`, so older desktop clients can continue editing or copying those values. Activation provenance comes from provider inventory and is attached to the provider only when the activation mutation is sent.
+
 The store enforces one saved provider for each nonempty preset ID with a durable unique index and a transactionally translated typed conflict. Concurrent first activation elects one request. Mutation receipts retain ordinary actor/request/revision semantics; exact replay is observational and cannot reapply a prior toggle. Do not backfill unrelated documents just to make defaults explicit.
 
 ## Provider inventory and account scope

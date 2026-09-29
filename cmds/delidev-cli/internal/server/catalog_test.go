@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -44,9 +45,19 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 		t.Fatalf("read provider presets: %v", err)
 	}
 	var openAI domain.Provider
-	for _, preset := range presets {
+	for _, preset := range providers.Presets() {
 		if preset.ID == domain.PresetOpenAI {
 			openAI = preset.Provider
+		}
+	}
+	for _, preset := range presets {
+		if preset.Provider.PresetID != nil {
+			t.Fatalf("legacy editable preset payload included activation provenance: %+v", preset.Provider.PresetID)
+		}
+		if preset.ID == domain.PresetOpenAI {
+			if openAI.Name != preset.Provider.Name || openAI.Endpoint != preset.Provider.Endpoint {
+				t.Fatal("legacy preset defaults do not match canonical activation defaults")
+			}
 		}
 	}
 	openAI.SetEnabled(true)
