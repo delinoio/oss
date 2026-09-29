@@ -154,6 +154,7 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
   // Session creation can opt into server-owned, Worker-executed automatic titles.
   SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 = 1;
+  SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1 = 2;
 }
 message StopServerRequest {
   string request_id = 1;
@@ -764,6 +765,8 @@ message ResolveModelResponse {
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc ForkSession(ForkSessionRequest) returns (ForkSessionResponse);
+  rpc GetSessionFork(GetSessionForkRequest) returns (GetSessionForkResponse);
   rpc LinkSessionPullRequest(LinkSessionPullRequestRequest) returns (LinkSessionPullRequestResponse);
   rpc UnlinkSessionPullRequest(UnlinkSessionPullRequestRequest) returns (UnlinkSessionPullRequestResponse);
   rpc ReadSessionReviewContext(ReadSessionReviewContextRequest) returns (ReadSessionReviewContextResponse);
@@ -786,6 +789,35 @@ service SessionService {
   rpc EditLocalReviewComment(EditLocalReviewCommentRequest) returns (EditLocalReviewCommentResponse);
   rpc DeleteLocalReviewComment(DeleteLocalReviewCommentRequest) returns (DeleteLocalReviewCommentResponse);
   rpc SubmitLocalReview(SubmitLocalReviewRequest) returns (SubmitLocalReviewResponse);
+}
+message ForkSessionRequest {
+  Mutation mutation = 1;
+  string expected_turn_id = 2;
+  string name = 3;
+  // Unspecified selects Worktree for projects and General Chat otherwise.
+  ForkWorkspace workspace = 4;
+  // Write-only secondary same-machine authority for explicit Local sharing.
+  string local_worker_token = 5;
+}
+enum ForkWorkspace {
+  FORK_WORKSPACE_UNSPECIFIED = 0;
+  FORK_WORKSPACE_WORKTREE = 1;
+  FORK_WORKSPACE_GENERAL_CHAT = 2;
+  FORK_WORKSPACE_LOCAL = 3;
+}
+message GetSessionForkRequest {
+  string job_id = 1;
+}
+message GetSessionForkResponse {
+  Resource job = 1;
+  Resource session = 2;
+}
+message ForkSessionResponse {
+  Resource job = 1;
+  // Absent until native conversation/workspace preparation and cleanup succeed.
+  Resource session = 2;
+  string request_id = 3;
+  bool replayed = 4;
 }
 message LinkSessionPullRequestRequest {
   string request_id = 1;

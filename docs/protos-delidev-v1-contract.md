@@ -332,3 +332,14 @@ counts without replaying acceptance or filesystem work. Regenerate Go, TypeScrip
 and Connect Query bindings together.
 
 Provider activation adds an owner/client-only `ProviderService.ListProviderInventory`, closed capability/preset enums, account-list-only `ListResourcesRequest.provider_id`, and additive `SearchModels.enabled_providers_only`. Omitted model filtering preserves existing behavior. Provider enabled and preset provenance remain optional fields in the canonical provider JSON document for legacy compatibility. Inventory capabilities let clients detect older servers that ignore filters; Workers cannot read it. See [provider activation](cmds-delidev-provider-activation-contract.md), and regenerate Go messages/Connect handlers and TypeScript Connect Query bindings together.
+
+## Codex session forks (#1092)
+
+`SessionService.ForkSession` accepts owner/paired-client mutation identity, exact
+source revision/native turn, child name and closed `ForkWorkspace`. The dedicated
+write-only Local proof is never ordinary receipt material. `GetSessionFork` reads
+the original job and optional published child; an accepted job is not a child.
+`SystemCapability.CODEX_SESSION_FORK_V1` is additive. Ordinary Worker credentials
+remain excluded from these product methods and complete their original job via
+existing authenticated `WatchWork`/`ReportWork`. See the
+[fork contract](cmds-delidev-forks-contract.md). No destructive migration occurs.

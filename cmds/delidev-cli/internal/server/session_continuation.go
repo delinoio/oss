@@ -24,6 +24,9 @@ func continuationDigest(raw []byte) string {
 // initial snapshot/route; the successor retains the exact preceding progress.
 // There is no native, credential or filesystem operation inside this transaction.
 func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, explicit bool) (store.Record, error) {
+	if err := tx.RequireNoSessionFork(sr.ID); err != nil {
+		return store.Record{}, err
+	}
 	if session.InitialExecution == nil || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.Execution == nil || !session.Execution.CleanupVerified || (session.Dispatch != domain.DispatchReady && session.Dispatch != domain.DispatchBlocked && !(explicit && session.Dispatch == domain.DispatchPaused)) {
 		return store.Record{}, continuationConflict()
 	}
@@ -93,6 +96,9 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 		return store.Record{}, nativeCompletionUncertain()
 	}
 	input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
+	// The first child turn imports the fork checkpoint. Every later turn uses
+	// its own verified completion on that history, never the creation boundary.
+	input.Fork = nil
 	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
 	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.InitialExecution.ID, HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: continuationDigest(job.Input), InputMode: assignment.Input.Mode, PromptDigest: continuationDigest([]byte(assignment.Input.Prompt)), Intent: intent}
 	if err := input.Validate(); err != nil {

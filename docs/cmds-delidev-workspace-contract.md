@@ -172,3 +172,17 @@ HEAD validation, filter checks and private diff administration remain mandatory.
 No result is cached across observations and the 15-second read deadline remains.
 This reduces repeated process/journal setup on Windows without relaxing native
 ownership or accepting partial metadata.
+
+## Independent fork workspaces (#1092)
+
+Follow the [fork contract](cmds-delidev-forks-contract.md). Optional omitted
+`fork_source_id`/`fork_source_path` preparation fields preserve historical JSON.
+The owning Worker holds the original closed execution inspection while deriving
+actual HEAD commits, then copies each repository into a separate detached
+`--no-checkout` worktree without fetch or checkout filters. It copies the exact
+non-split index and bounded regular files, including staged, unstaged, ignored
+and untracked data. General Chat copies its owned tree. Source and target hashes,
+HEAD and index are rechecked after every repository and after native creation.
+Explicit authenticated Local uses the same files. Links, nested repositories,
+special files, split indexes and unborn Git are outside the initial profile;
+refusal cannot silently drop data or publish partial preparation.

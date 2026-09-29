@@ -592,3 +592,17 @@ the image inventory; reads stop while hidden and uncertain acceptance retries
 still use only their original request.
 
 The **API Providers** and **Models** settings content follows [provider activation](cmds-delidev-provider-activation-contract.md). Validate all required inventory capabilities before enabling these workflows; render server-derived exact account counts and bounded results, and use active-only model queries for display and new selections. Zero accounts is a valid provider state: keep Add account optional and show no account-required error or notice. Models allow manual registration without an account and explain that automatic discovery requires a connected account. Real request failures remain visible. Off references remain explicit and retained. Switches use exact revision-bound intents and resolve uncertain outcomes from the same request; no optimistic state is authority. This feature does not implement Settings shell geometry or the account wizard.
+
+## Codex Fork presentation (#1092)
+
+The completed-session action is gated by `CODEX_SESSION_FORK_V1`. A mounted
+connection controller retains its name/workspace draft, exact uncertain request
+and accepted job through conversation navigation; Escape hides the modal without
+losing that operation. The name input receives focus. A changed source revision
+requires discarding the fresh draft and inspecting the new boundary. Default
+workspace copying is independent; explicit Local requires fresh same-machine
+Worker proof. Poll `GetSessionFork` only by the accepted job ID, stop automatic
+polling on terminal/uncertain state and offer explicit refresh. Open the child
+only after verified publication. The [fork contract](cmds-delidev-forks-contract.md)
+keeps Go ownership and current eligibility authoritative. Component tests do not
+establish native desktop or other-platform acceptance.

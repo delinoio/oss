@@ -123,3 +123,12 @@ counts without replaying acceptance or filesystem work. Regenerate Go, TypeScrip
 and Connect Query bindings together.
 
 Generated `ProviderQuery` exposes bounded provider inventory and the client maps typed `provider_disabled` failures. Desktop provider/model consumers require provider activation, active-provider model filtering and account-provider filtering capabilities; split account views and their wizard additionally require `ACCOUNT_TYPE_FILTER`. Use generated inventory/model queries; do not infer availability from generic resource pages or query unfiltered providers as fallback. Preserve exact mutation requests across uncertain outcomes. See [provider activation](cmds-delidev-provider-activation-contract.md).
+
+## Codex fork clients (#1092)
+
+Generated messages, the `ForkWorkspace`/server capability enums and the existing
+`SessionQuery` namespace now expose `forkSession` and `getSessionFork`. The
+[fork contract](cmds-delidev-forks-contract.md) keeps native paths and creation
+logic in Go. Preserve exact uncertain requests; observe accepted operations by
+job ID instead of issuing another mutation. Desktop connection memory retains
+its controller through navigation and separates acceptance from child publication.

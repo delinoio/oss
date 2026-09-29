@@ -24,6 +24,7 @@ Issue #1052 adds same-snapshot server-side daily and per-model analytics to the 
 The desktop shell combines the issue #1044 project-grouped session sidebar and bounded independent project/global/project-session pages with the issue #1059 shared rail and seven menu-specific context panes. Usage keeps its draft filters in the Usage context pane while retaining the Token Usage hierarchy, exact daily/model charts and complete data tables. The responsive native-dialog drawer uses explicit Apply behavior. The Pull requests destination requires an explicit repository selection and Load; Settings repository browsing remains separate. PR detail navigation, collection selection, allowance confirmations and exact mutation retries remain available, while disposable observations are dropped on exit. The deferred New project action opens the existing Project editor, query-local read retries preserve current pages, and successful project saves use the existing Settings invalidation path without resetting sidebar cursors. The desktop contract and evidence ledger record implementation boundaries and acceptance limits; this adds no RPC or backend GitHub capability.
 
 ## Domain Contract Documents
+- [Same-account native Codex forks](cmds-delidev-forks-contract.md) owns issue #1092 acceptance, native history, independent workspaces and child continuation.
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Storage operations](cmds-delidev-storage-contract.md)
 - [CLI/server/Worker contract](cmds-delidev-contract.md)

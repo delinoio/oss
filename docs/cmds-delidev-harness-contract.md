@@ -1476,3 +1476,17 @@ The existing complete prepared manifest now supplies Claude's ordered repository
 Retain the complete ordered list privately in the API session and original Worker checkpoint, and bind it into the native configuration digest. Preserve legacy omitted-root checkpoint bytes/digests for single-directory sessions. Copy caller-owned lists before retaining them. Continuation derives expected roots from the immutable accepted manifest, compares both native and Worker checkpoint scope, revalidates canonical directories and original workspace ownership, and uses fresh process/runtime/credential ownership. Metadata-only completed-report recovery uses the same independent roots with no native launch, prompt replay, tool replay or filesystem restoration; successful recovery stays paused until explicit Resume. Secondary repository files remain their original prepared workspaces. Original root history, tool/interaction eligibility and process/workspace cleanup still require their separate proofs.
 
 Native structured initialization logs include only the additional-root count alongside existing ownership/version fields; paths never enter those logs or native metadata-only checkpoint bytes. Worktree and authenticated same-machine Local use the same adapter. No remote Local reinterpretation or project-configuration edit may change a retained session's roots.
+
+## Native Codex Fork (#1092)
+
+The [fork contract](cmds-delidev-forks-contract.md) adds `thread/fork` for pinned
+Codex 0.151.0. Read-only source inspection requires completed legacy root history,
+no goal, no native queue, exact last-turn input digests and a private rollout
+returned by native metadata. The child uses a fresh home, remapped cwd/roots,
+inclusive `lastTurnId`, `excludeTurns` and `deferGoalContinuation`. Compare the
+complete bounded native turn prefix, new identity, original parent link, idle
+state and immutable effective policy/defaults. No user input is replayed.
+Native creation uses an unregistered relay token with no inference authority;
+the first explicit child turn receives its ordinary fresh grant. Completed
+text/reasoning histories are supported; tool/rich/child histories are rejected
+until their inherited auxiliary state has its own verified adapter.

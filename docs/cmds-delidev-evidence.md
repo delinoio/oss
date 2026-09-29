@@ -3191,3 +3191,23 @@ desktop launcher change and are not hidden by a passing focused suite. Generated
 desktop/client `dist` and temporary smoke data were removed after verification.
 No successful fresh-server connection, responsive native Quit, macOS x64/13
 runtime, Windows/Linux runtime or production signing is claimed.
+
+## Issue #1092 same-account Codex forks (2026-09-30)
+
+- Added authenticated Connect/CLI acceptance and status, additive typed capability
+  and generated bindings, durable once-only Worker jobs, original actor/current
+  eligibility checks, atomic child publication and source reservations.
+- Implemented native terminal-prefix Fork into a fresh private runtime, bounded
+  independent workspace/index copies, complete before/after snapshot verification,
+  empty child queue and immutable first/subsequent child continuation. Desktop
+  retains exact retry/job identity through navigation and opens published children.
+- Executed deterministic two-dirty-repository copying/source-preservation and
+  second-repository-failure cleanup tests; RPC idempotency/publication/immutable
+  child-selection tests pass. Installed macOS arm64 Codex 0.151.0 adapter smoke
+  passes native Fork, inherited context, separate cwd/runtime and unchanged source
+  rollout bytes using only private temporary state and a scripted loopback provider.
+- Complete required validation and integrated public CLI/Worker evidence are being
+  recorded separately after the final implementation. No user credentials,
+  hosted-account inference, native Windows/Linux or release acceptance is claimed.
+  Settled text/reasoning is the initial profile; tool/rich/unknown child/goal
+  inheritance, cross-account forks and Sidechat remain excluded.

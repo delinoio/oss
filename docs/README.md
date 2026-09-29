@@ -39,6 +39,7 @@ Each project must have one project index document and one or more domain contrac
 ## Project Catalog
 
 ### delidev
+- [Same-account native Codex forks](cmds-delidev-forks-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Storage operations](cmds-delidev-storage-contract.md)
 - [Project index](project-delidev.md)

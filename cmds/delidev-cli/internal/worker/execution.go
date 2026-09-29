@@ -134,8 +134,33 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		logger.InfoContext(ctx, "native_execution_predecessor_verified", "previous_execution_id", c.Previous.ExecutionID)
 	}
+	if f := input.Fork; f != nil {
+		native, err := readForkCheckpoint(manager.Root, input)
+		if err != nil {
+			return nil, err
+		}
+		checkpoint.Native = native
+		nativeHome = filepath.Join(runtimeRoot, string(f.RuntimeID), "codex")
+		env, err = replaceCodexHome(env, nativeHome)
+		if err != nil {
+			return nil, err
+		}
+	}
 	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codex.APIProvider, Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: input.Configuration.Instructions, Options: input.Configuration.Options}
 	settings.WorkspaceRoots = nativeWorkspaceRoots(manifest)
+	if input.Fork != nil {
+		settings.Effort = valueOrEmpty(checkpoint.Native.Effective.Effort)
+		settings.Options.ServiceTier = valueOrEmpty(checkpoint.Native.Effective.ServiceTier)
+		settings.Options.ApprovalPolicy = string(checkpoint.Native.Effective.ApprovalPolicy)
+		switch checkpoint.Native.Effective.Sandbox.Type {
+		case codex.ReadOnly:
+			settings.Options.Permission = domain.PermissionReadOnly
+		case codex.WorkspaceWrite:
+			settings.Options.Permission = domain.PermissionWorkspaceWrite
+		case codex.FullAccess:
+			settings.Options.Permission = domain.PermissionFullAccess
+		}
+	}
 	if err := codex.ValidateThreadSettings(settings); err != nil {
 		return nil, err
 	}
@@ -205,6 +230,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				intent = codex.ResumeAfterTerminal
 			}
 			_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)
+		}
+	} else if f := input.Fork; f != nil {
+		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
+		if err == nil {
+			_, err = client.VerifyContinuation(ctx, f.HistoryRequestID, checkpoint.Native, codex.ContinueAfterSuccess)
 		}
 	} else {
 		bound, err = client.StartThread(ctx, input.ThreadRequestID, settings)
