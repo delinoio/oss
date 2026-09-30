@@ -537,3 +537,52 @@ func TestSnapshotFailedRestoreCleansOwnedStaging(t *testing.T) {
 		})
 	}
 }
+
+func TestSnapshotRejectsNestedGitAdministration(t *testing.T) {
+	for _, directory := range []bool{false, true} {
+		t.Run(fmt.Sprint("directory=", directory), func(t *testing.T) {
+			m := manager(t)
+			prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+			manifest, err := m.Prepare(context.Background(), prepare)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nested := filepath.Join(manifest.PrimaryPath, "ignored-checkout", ".git")
+			if err := os.MkdirAll(filepath.Dir(nested), 0700); err != nil {
+				t.Fatal(err)
+			}
+			external := t.TempDir()
+			if directory {
+				if err := os.MkdirAll(filepath.Join(nested, "objects", "info"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(nested, "objects", "info", "alternates"), []byte(external+"\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(nested, "config"), []byte("[include]\npath = "+external+"/config\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(nested, []byte("gitdir: "+external+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			root := filepath.Join(m.Root, "workspaces", string(prepare.SessionID))
+			before, err := walkSnapshot(context.Background(), root, "", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, action := range []StorageAction{StoragePreview, StorageCreate, StorageCleanup} {
+				input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: action, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID(), PreviewDigest: strings.Repeat("a", 64)}
+				if _, err := m.Storage(context.Background(), input); domain.SafeError(err).Code != domain.Unsupported {
+					t.Fatal("nested Git administration accepted", action, err)
+				}
+				if _, err := os.Stat(m.snapshotPath(input.SnapshotID)); !os.IsNotExist(err) {
+					t.Fatal("unsupported snapshot published", err)
+				}
+			}
+			after, err := walkSnapshot(context.Background(), root, "", nil)
+			if err != nil || inventoryDigest(before) != inventoryDigest(after) {
+				t.Fatal("rejected nested checkout changed", err)
+			}
+		})
+	}
+}

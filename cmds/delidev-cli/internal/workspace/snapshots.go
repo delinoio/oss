@@ -268,9 +268,9 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			return result, err
 		}
 		for _, entry := range sources.Entries {
-			// Nested submodule/linked Git pointers require independent object stores;
-			// copying the pointer alone would not be a faithful recoverable snapshot.
-			if strings.HasSuffix(entry.Path, "/.git") && !os.FileMode(entry.Mode).IsDir() {
+			// Only declared repositories receive independent Git closure validation.
+			// Nested administration, including directories, may hide external stores.
+			if strings.HasSuffix(entry.Path, "/.git") {
 				return result, snapshotUnsupported()
 			}
 		}
