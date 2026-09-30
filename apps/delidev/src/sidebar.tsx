@@ -295,7 +295,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, nav
   };
 
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
-  return <aside className="sidebar" aria-label="Application sidebar">
+  return <aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label="Application sidebar">
     <nav ref={rail} className="sidebar-rail" aria-label="Primary navigation">
       <SidebarButton label="Sessions" icon="sessions" current={sessionNavigation} onClick={() => navigate(Surface.Sessions)} />
       <SidebarButton label="Pull requests" icon="pull-requests" current={surface === Surface.PullRequests} onClick={() => navigate(Surface.PullRequests)} />
