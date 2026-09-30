@@ -3,7 +3,7 @@
 use std::{
     collections::HashSet,
     future::Future,
-    io,
+    io::{self, Write},
     os::unix::ffi::OsStrExt,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
@@ -93,9 +93,24 @@ fn signal_group(pid: u32, signal: i32) -> Result<(), CaptureFailure> {
     let pid = i32::try_from(pid).map_err(|_| CaptureFailure::Cleanup)?;
     // SAFETY: this group was created for the launched child before exec.
     let result = unsafe { libc::kill(-pid, signal) };
-    if result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+    let os_code = if result == 0 {
+        None
+    } else {
+        io::Error::last_os_error().raw_os_error()
+    };
+    if result == 0 || os_code == Some(libc::ESRCH) {
         Ok(())
     } else {
+        tracing::error!(
+            stage = "cleanup_signal",
+            signal,
+            ?os_code,
+            "group signaling failed"
+        );
+        let _ = writeln!(
+            io::stderr().lock(),
+            "clibox fspy supervisor: stage=cleanup_signal signal={signal} os_code={os_code:?}"
+        );
         Err(CaptureFailure::Cleanup)
     }
 }
@@ -452,6 +467,8 @@ where
     };
     let group_live = group_exists(pid);
     let tracked_live = receiver.live_processes();
+    let group_failed = group_live.is_err();
+    let tracked_failed = tracked_live.is_err();
     match (group_live, tracked_live) {
         (Ok(true), _) => {
             let cleanup =
@@ -466,6 +483,19 @@ where
             return Err(cleanup.err().unwrap_or(CaptureFailure::DescendantSurvived));
         }
         (Err(_), _) | (_, Err(_)) => {
+            let cancelled = cancelled.load(Ordering::Acquire);
+            tracing::error!(
+                stage = "completion_inspection",
+                cancelled,
+                group_failed,
+                tracked_failed,
+                "post-exit process inspection failed"
+            );
+            let _ = writeln!(
+                io::stderr().lock(),
+                "clibox fspy supervisor: stage=completion_inspection cancelled={cancelled} \
+                 group_failed={group_failed} tracked_failed={tracked_failed}"
+            );
             let _ = cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
             let _ = receiver.finish();
             return Err(CaptureFailure::Cleanup);

@@ -78,3 +78,10 @@ Linux and macOS execution report handlers retain signal ownership through encodi
 Native behavior tests must exercise all seven commands and the eight supported targets, including Alpine consumers and pnport regressions where interception changes. Run root `cargo test`, formatting and applicable lint checks, `pnpm --filter @delino/clibox test`, `pnpm --filter @delino/clibox test:package`, and public-docs `pnpm test` when that frontend changes. Package and CI inventories must include the companion crate and affected native sources. Do not count parser, fixture, or macOS-only tests as validation for other native targets.
 
 The macOS owned-group timeout fixture leaves two seconds for injected process startup so its deadline tests a running child and cleanup under loaded CI hosts. Cleanup retries transient process-inspection failures within the fixed graceful and force-confirmation windows, and still fails when liveness cannot be confirmed. The separate root-executable admission-delay fixture checks timeout before launch.
+
+The macOS autowatch fixture's shutdown failures retain child stdout and stderr,
+including the child test harness's assertion. macOS supervisor diagnostics
+distinguish a failed group signal from a failed post-exit liveness inspection
+using only lifecycle stages, signal numbers, numeric OS errors and boolean
+inspection state. These diagnostics do not change cancellation, cleanup budgets
+or the requirement to confirm owned-process termination.

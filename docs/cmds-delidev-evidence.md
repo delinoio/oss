@@ -3327,3 +3327,43 @@ limitations remain recorded above; these focused checks do not establish a
 complete local Go race-suite or Rust workspace pass. The new merge head needs
 fresh hosted CI. Codex review quota exhaustion still supplies no completed
 review or approval, and no real-provider or platform acceptance is claimed.
+
+### PR #1113 macOS autowatch CI diagnostics (2026-09-30)
+
+The macOS clibox consumer job at `27b2f6a0`
+([job 109696114950](https://github.com/delinoio/oss/actions/runs/36654591282/job/109696114950))
+passes 78 fspy tests but fails the autowatch fixture's child shutdown assertion
+after both observed runs. A controlled local repetition exposes the hidden
+child assertion: autowatch returns `cleanup_failure` / status 1 while its
+cancellation fixture expects 130. This differs from the earlier local missed-run
+timeout and does not establish the failing native call or its cause.
+
+The macOS fixture now retains uncaptured child stdout and stderr for startup,
+rerun and shutdown failures. The supervisor logs redacted group-signal and
+post-exit inspection stages, numeric native errors and boolean inspection state;
+fallback diagnostic writes cannot panic on a closed stderr. Cancellation status,
+cleanup budgets and fail-closed liveness checks are preserved. This is an
+observability change, not a demonstrated correction of the intermittent failure.
+
+Diagnostic-enabled local repeats and the complete 79-test fspy library suite
+pass. The 24 launcher tests, 95 repository contract checks, crate Clippy with
+warnings denied and workspace formatting check pass. Release-build npm and
+pnpm installed-consumer smoke checks pass on local macOS arm64 with offline
+installs and lifecycle scripts disabled. No remote-target or release acceptance
+is inferred from these local checks.
+
+The initial root Rust command passes clibox unit/integration targets, then stops
+at two unchanged pnport tests because their pnport-mode injection artifact is
+missing. The documented native prerequisite builds successfully. Retrying the
+whole workspace with `fspy_preload_unix/pnport` enabled then fails the unchanged
+clibox `fspy_open` tests because that feature selects a different shared preload
+mode. The default tracer mode is restored for focused clibox validation. Neither
+root invocation establishes a complete workspace pass. Fresh hosted CI must
+evaluate the diagnostics commit, and the shutdown failure's cause remains
+unconfirmed.
+
+After rebuilding in the default mode, the complete locked six-crate clibox
+command passes all unit, executable process, integration and doctest targets,
+including both `fspy_open` cases and the autowatch fixture. This separates the
+workspace preload-mode validation problem from the unresolved hosted shutdown
+failure; it does not turn either failed root command into a full workspace pass.

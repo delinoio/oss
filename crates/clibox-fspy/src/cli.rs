@@ -5575,9 +5575,10 @@ mod tests {
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
             .arg("--exact")
             .arg("cli::tests::macos_autowatch_child")
+            .arg("--nocapture")
             .env("CLIBOX_FSPY_MAC_WATCH_ROOT", directory.path())
             .current_dir(directory.path())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
@@ -5589,7 +5590,8 @@ mod tests {
                     child.kill().unwrap();
                     let output = child.wait_with_output().unwrap();
                     panic!(
-                        "macOS autowatch missed run {expected}: {}",
+                        "macOS autowatch missed run {expected}: stdout: {}\nstderr: {}",
+                        String::from_utf8_lossy(&output.stdout),
                         String::from_utf8_lossy(&output.stderr)
                     );
                 }
@@ -5602,7 +5604,13 @@ mod tests {
         }
         // SAFETY: this PID is the owned test child, not an arbitrary process.
         unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
-        assert!(child.wait().unwrap().success());
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "macOS autowatch shutdown failed: stdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[cfg(target_os = "macos")]
