@@ -66,9 +66,20 @@ native acceptance. Product probe/operation deadlines were not relaxed.
 
 The full `GOMAXPROCS=4 go test -race -p 2 -timeout 20m
 ./cmds/delidev-cli/...` invocation reported CLI and harness timeout failures.
+Observed failures included Grok discovery and Claude request-delivery and
+checkpoint/process-replacement timeouts. The already-failing invocation was
+interrupted in its remaining native harness packages; the remaining packages
+did not complete and are not claimed as checked by that invocation.
 The host's observed load rose from about 114 to 589 on 16 CPUs during these
 attempts. This is operating context, not proof of the cause of every failure.
 The invocation is not a successful full-suite gate.
+
+The final sequential scoped race repeat at the committed implementation passed
+apiproxy and CLI but its server package timed out after five minutes. It reported
+continuation-assignment deadlines in the switched-history and explicit-Resume
+fixtures, with an in-progress SQLite WAL write in the timeout stack. These
+results do not supersede the earlier passing scoped invocation or establish a
+successful complete current-head race gate. No product deadline was changed.
 
 No hosted-account inference/billing, subscription switching, desktop UI,
 Windows/Linux native execution or release acceptance is claimed. The scoped
