@@ -304,6 +304,7 @@ func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
 		filepath.Join("processes", string(w.SessionID)+".recovery.lock"),
 		filepath.Join("title-runtimes", string(title.JobID)+"-restored", "content"),
 		filepath.Join("runtimes", string(execution.ExecutionID), "content"),
+		filepath.Join("pr-git", string(execution.ExecutionID), "scope.json"),
 		filepath.Join("jobs", string(job.JobID), "outbox"),
 		filepath.Join("jobs", string(job.JobID)+".json"),
 		filepath.Join("workspace-recovery", string(job.JobID)+".json"),

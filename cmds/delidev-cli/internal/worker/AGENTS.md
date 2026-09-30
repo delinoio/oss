@@ -478,4 +478,12 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Reusing a completed session deletion proof requires absence of the full removal inventory, including job/session process records and recovery locks plus bounded matching title runtimes. Preserve restored replacements as pending.
 
+- Manual PR Git execution follows the integration/workspace contracts. Only an immutable supported assignment can prepare the closed native Git bridge under the original execution lease. Preserve Worker Git auth separately from harness account context, exact fork/ref/base/head and rebase lease, one synchronized push claim, bounded joined child ownership and independent post-native push proof. Missing/uncertain proof cannot grant handled state or replay.
+
+- Manual Git authentication remains in the separately owned Worker bridge, never reversible harness environment variables. Pin scope/configuration, isolate local-command lookup from network authentication, authenticate push claims with a parent-only key, and cancel/join the bounded loopback bridge before proof or lease release.
+
+- Manual PR rebase continuation uses only the fixed noninteractive editor to preserve the original commit message. Never forward a harness-selected editor or weaken the original-head push lease.
+
 - Verified settled Claude failures may retain v2 checkpoints only with correlated original input, eligible inline history, unchanged permission, acknowledged settled callbacks, clean original EOF and independently confirmed native/workspace cleanup. Preserve failure and paused dispatch; only explicit Resume may claim a fresh execution for the oldest new input. Never resend the failed input, tools or replies. Lost-report recovery compares original immutable journals/checkpoint/history without native work, preserves the failed outcome and remains paused. Aborted/Stop, changed-permission and unproved child/background histories stay excluded; never upgrade accepted v1 history.
+
+- The authenticated PR Git bridge never executes local Git outside the harness sandbox. Validate closed local operands before the live capability grant; run local Git in the sandboxed launcher with no native auth context and independently joined temporary process ownership. Permanent session cleanup includes every original execution's PR Git scope and refuses restored scope replay.

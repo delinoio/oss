@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -253,25 +254,38 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 }
 
 func (s *Service) dispatchExecution(ctx context.Context, record store.Record) error {
+	// This private server coordinator owns dispatch, including its retained PR
+	// history read. Establish its own owner context instead of depending on the
+	// ticker caller; public RPC and Worker authorization remain independent.
+	ctx = domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice})
+	attempt, observations, prepareErr := s.preparePRFixDispatch(ctx, record)
 	identity := struct {
 		Session  domain.ID
 		Revision uint64
 	}{record.ID, record.Revision}
-	result, err := s.Store.Mutate(ctx, domain.NewID(), "session.dispatch.execution", identity, func(tx *store.Tx) (any, error) {
-		sr, session, err := sessionRecord(tx, record.ID)
-		if err != nil {
-			return nil, err
-		}
-		if sr.Revision != record.Revision {
-			return nil, firstDispatchConflict()
-		}
-		if session.InitialExecution == nil {
-			_, err = queueInitialExecution(tx, sr, session, false)
-		} else {
-			_, err = queueContinuation(tx, sr, session, false)
-		}
-		return sessionReceipt{SessionID: sr.ID}, err
-	})
+	var result store.Result
+	err := prepareErr
+	if err == nil {
+		result, err = s.Store.Mutate(ctx, domain.NewID(), "session.dispatch.execution", identity, func(tx *store.Tx) (any, error) {
+			sr, session, err := sessionRecord(tx, record.ID)
+			if err != nil {
+				return nil, err
+			}
+			if sr.Revision != record.Revision {
+				return nil, firstDispatchConflict()
+			}
+			var job store.Record
+			if session.InitialExecution == nil {
+				job, err = queueInitialExecution(tx, sr, session, false)
+			} else {
+				job, err = queueContinuation(tx, sr, session, false)
+			}
+			if err == nil {
+				err = bindPRFixAssignment(tx, attempt, job, observations)
+			}
+			return sessionReceipt{SessionID: sr.ID}, err
+		})
+	}
 	if err == nil {
 		s.logger.InfoContext(ctx, "session_execution_queued", "session_id", record.ID, "request_id", result.RequestID)
 		return nil
@@ -280,7 +294,7 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 	if problem.Code == domain.ProviderDisabled {
 		s.logger.InfoContext(ctx, "session_dispatch_denied", "operation", "new_execution", "session_id", record.ID, "reason", problem.Code, "enabled", false)
 	}
-	if ctx.Err() != nil || problem.Code == domain.Conflict || problem.Code == domain.Internal || problem.Cause != "" {
+	if ctx.Err() != nil || (problem.Code == domain.Conflict && prepareErr == nil) || problem.Code == domain.Internal || problem.Cause != "" {
 		return err
 	}
 	// A failed native/configuration check rolls back the complete claim first.
@@ -311,20 +325,32 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 	return err
 }
 
-// No provider/native work runs here. Each bounded claim transaction commits an
-// immutable job for the outbound Worker stream, which revalidates real native
-// settings and filesystem/process ownership before it can send the assigned input.
+// Manual PR fixes perform bounded provider reads before their claim transaction.
+// Each claim commits an immutable job for the outbound Worker stream; only that
+// Worker revalidates native settings and filesystem/process ownership, executes
+// the harness and verifies its push. No native publication runs on the server.
 func (s *Service) runExecutionDispatch(parent context.Context) {
 	ctx := domain.WithPrincipal(parent, domain.Principal{Type: domain.OwnerDevice})
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	var after domain.ID
+	var fixAfter domain.ID
+	// Slow provider reads occupy a separate bounded lane, never the ordinary
+	// serial queue scan. Keep each original session unique and join on shutdown.
+	active := map[domain.ID]bool{}
+	completed := make(chan domain.ID, 4)
+	var fixes sync.WaitGroup
+	defer fixes.Wait()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
+		for len(completed) > 0 {
+			delete(active, <-completed)
+		}
+		fixAfter = s.reconcilePRFixes(ctx, fixAfter)
 		page, more, err := s.Store.ExecutionCandidates(ctx, after, 50)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -337,8 +363,33 @@ func (s *Service) runExecutionDispatch(parent context.Context) {
 				return
 			}
 			after = record.ID
+			if active[record.ID] {
+				continue
+			}
+			manual, err := s.isPRFixCandidate(ctx, record.ID)
+			if err != nil {
+				s.logger.WarnContext(ctx, "manual_pr_fix_candidate_failed", "session_id", record.ID, "code", domain.SafeError(err).Code)
+				continue
+			}
+			if manual {
+				if len(active) >= cap(completed) {
+					continue
+				}
+				active[record.ID] = true
+				fixes.Add(1)
+				go func() {
+					defer fixes.Done()
+					defer func() { completed <- record.ID }()
+					bounded, cancel := context.WithTimeout(ctx, 75*time.Second)
+					defer cancel()
+					if err := s.dispatchExecution(bounded, record); err != nil && ctx.Err() == nil {
+						s.logger.WarnContext(ctx, "manual_pr_fix_dispatch_failed", "session_id", record.ID, "code", domain.SafeError(err).Code)
+					}
+				}()
+				continue
+			}
 			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err := s.dispatchExecution(bounded, record)
+			err = s.dispatchExecution(bounded, record)
 			cancel()
 			if err != nil && (domain.SafeError(err).Cause != "" || domain.SafeError(err).Code == domain.Internal) && ctx.Err() == nil {
 				s.logger.WarnContext(ctx, "session_execution_storage_failed", "session_id", record.ID, "code", domain.SafeError(err).Code)

@@ -1281,6 +1281,30 @@
     "WatchForwardRequestsResponse": {
       "kind": "message",
       "file": "delidev/v1/worker.proto"
+    },
+    "PullRequestFixService": {
+      "kind": "service",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "GetPullRequestFixCapabilitiesRequest": {
+      "kind": "message",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "GetPullRequestFixCapabilitiesResponse": {
+      "kind": "message",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "PullRequestFixProfile": {
+      "kind": "enum",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "RequestPullRequestFixRequest": {
+      "kind": "message",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "RequestPullRequestFixResponse": {
+      "kind": "message",
+      "file": "delidev/v1/pr_fix.proto"
     }
   }
 }

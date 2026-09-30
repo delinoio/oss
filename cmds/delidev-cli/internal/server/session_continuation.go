@@ -92,6 +92,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if !bytes.Equal(input.Preparation, assignment.Preparation) || !bytes.Equal(input.Manifest, assignment.Manifest) {
 		return store.Record{}, nativeCompletionUncertain()
 	}
+	input.Remediation = nil
 	input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
 	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
 	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.InitialExecution.ID, HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: continuationDigest(job.Input), InputMode: assignment.Input.Mode, PromptDigest: continuationDigest([]byte(assignment.Input.Prompt)), Intent: intent}

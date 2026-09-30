@@ -94,6 +94,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			output, returned = nil, err
 		}
 	}()
+	var prGit *workspace.PRGitTool
+	if input.Remediation != nil {
+		prGit, err = lease.PreparePRGitTool(ctx, *input.Remediation, preparation, manifest)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if err := prGit.Close(); err != nil {
+				output, returned = nil, err
+			}
+		}()
+	}
 	// The private runtime is retained for native resume/reconciliation. Never
 	// inherit an existing directory after an interrupted first execution.
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
@@ -133,6 +145,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			return nil, executionCheckpointUncertain()
 		}
 		logger.InfoContext(ctx, "native_execution_predecessor_verified", "previous_execution_id", c.Previous.ExecutionID)
+	}
+	if prGit != nil {
+		env = prGit.Environment(env)
 	}
 	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codex.APIProvider, Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: input.Configuration.Instructions, Options: input.Configuration.Options}
 	settings.WorkspaceRoots = nativeWorkspaceRoots(manifest)
@@ -294,6 +309,16 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err := client.Close(); err != nil {
 			return nil, err
 		}
+		var push *domain.PRPushProof
+		if prGit != nil {
+			if err := prGit.Close(); err != nil {
+				return nil, err
+			}
+			bounded, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			proof := prGit.VerifyPush(bounded)
+			cancel()
+			push = &proof
+		}
 		if err := lease.Close(); err != nil {
 			return nil, err
 		}
@@ -311,7 +336,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		default:
 			return nil, publicationUncertain()
 		}
-		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), LastSequence: sequence, Outcome: outcome, CleanupVerified: true}
+		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), LastSequence: sequence, Outcome: outcome, CleanupVerified: true, PRPush: push}
 		if err := completion.Validate(); err != nil {
 			return nil, err
 		}

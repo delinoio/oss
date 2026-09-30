@@ -46,4 +46,14 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Permanent session deletion uses owner/client Connect mutations and original-job reads plus an independent owning-Worker cleanup lane under `docs/cmds-delidev-storage-contract.md`. Join maintenance at shutdown. Forward cleanup reports remain admissible during deletion, while session controls, new copies and native socket authority are closed; final purge requires independently confirmed original peers.
 
+- Manual PR fixes belong in `pr_fix.go` and the additive authenticated PullRequestFixService. Bind exact original evidence/project selections and final session/link revisions, recheck provider/Worker/native gates outside/inside their owning boundaries, and atomically compose ordinary queue/routing with stable-PR ownership. Explicit Resume cannot bypass PR assignment proof; automatic remediation remains separate. Follow the integration contract.
+
+- Coalesce identical initial manual-fix actor/request selections before provider inspection with bounded cancellable ownership. Recheck durable receipts after waiting; accepted replay bypasses gate capacity, and foreign input/actors cannot share ownership.
+
+- The private execution-dispatch entry point establishes server-owner context before retained PR-history reads. Public RPCs and store boundaries still validate their authenticated actor; ordinary dispatch must not depend on ticker-provided context.
+
+- Optional manual-fix preflight cannot replace ordinary dispatch lifecycle/error precedence when no queued input exists. The ordinary claim transaction remains authoritative for active, paused, archived and empty states.
+
 - Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.
+
+- Manual fix selections must use the retained set's exact local repository resource before policy or profile lookup. Slow provider preflights occupy a separate four-session cancellable dispatch lane, joined at shutdown; ordinary execution retains its five-second claim bound and cannot wait behind remote reads.

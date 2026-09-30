@@ -305,6 +305,9 @@ func (t *Tx) DismissPRProblem(id domain.ID, expected uint64, version string) (Re
 	if r.Revision != expected || value.ContentVersion != version {
 		return r, prProblemConflict()
 	}
+	if value.State == domain.PRProblemHandled {
+		return r, domain.Fail(domain.Conflict, "This original problem already has verified push evidence.", "Inspect its retained handling record; dismissal cannot erase it.")
+	}
 	if value.State == domain.PRProblemDismissed {
 		return r, nil
 	}

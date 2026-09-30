@@ -62,6 +62,7 @@ owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
 - Local and remote operation preserve original native ownership, explicit authorization, credential isolation and uncertainty.
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.
+- Manual PR fixes use explicit original evidence/project ownership, eligible sessions and Worker Git authentication; the server lookup PAT never authorizes publication. Native completion requires independent push/cleanup proof before exact evidence handling. Automatic execution and unperformed native/account acceptance remain separate.
 - PR activity preserves immutable source/version/actor metadata across Go, generated clients, CLI and desktop. Attempt success cannot establish verified handling; only a dedicated original verification source can project that outcome.
 
 ## Change Policy

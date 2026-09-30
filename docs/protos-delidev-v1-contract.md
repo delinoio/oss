@@ -369,3 +369,5 @@ only original session/deletion IDs, plan digest and retained request UUID. No
 paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
+
+`PullRequestFixService` owns typed Codex Git capability and authenticated owner/client manual fix acceptance. Version-1 selection JSON carries explicit project/repository and exact decimal set/problem revisions/content versions; responses return current original attempt/session/set resources and receipt identity. New independent messages/service preserve existing wire allocations and forwarding exports. Workers cannot invoke these business mutations; native Git authority/proof follows the integration contract.

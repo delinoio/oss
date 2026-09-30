@@ -121,7 +121,7 @@ The Worker selects the configured preferred base remote, otherwise origin, other
 
 Validate all fully qualified native branch names before networking, then independently read current exact base/head refs. Fetch only those objects with no destination ref, no configured ref mapping, tag following, pruning, submodule recursion, FETCH_HEAD write, automatic maintenance or commit-graph write. HTTP redirects are disabled. Independently verify both commit objects and repeat selected-remote, URL-expansion and remote-branch checks before creating the ordinary detached worktree. A moved/deleted head or base, changed destination, authentication failure or cancellation prevents readiness without stale fallback. Downloaded unreferenced Git objects may remain after a failed preparation; existing refs, index, branch, working data and other worktrees are retained.
 
-The existing journal and process owner govern cancellation and rollback; original fetch descendants must be joined before cleanup. A ready identical retry and ready recovery perform no new fetch. This proves original preparation only: the later remediation execution controller still needs fresh PR/Worker Git preflight and direct native-harness commit/push integration. Preparation does not change branches, merge/rebase, push or convey Git authority to an isolated AI runtime. Older ordinary manifests omit the additive field without changing their bytes.
+The existing journal and process owner govern cancellation and rollback; original fetch descendants must be joined before cleanup. A ready identical retry and ready recovery perform no new fetch. This proves original preparation only: the manual PR fix profile below separately supplies fresh PR/Worker Git preflight and direct native-harness commit/push integration. Preparation does not change branches, merge/rebase, push or convey Git authority to an isolated AI runtime. Older ordinary manifests omit the additive field without changing their bytes.
 
 Native command references: [Git fetch](https://git-scm.com/docs/git-fetch), [remote URL expansion](https://git-scm.com/docs/git-remote), [exact remote refs](https://git-scm.com/docs/git-ls-remote), [native ref validation](https://git-scm.com/docs/git-check-ref-format).
 
@@ -132,7 +132,7 @@ The common first-execution lease now revalidates each explicit PR-prepared repos
 
 This bounded 30-second check runs only read-only Git under the preparation/session process owner, with fsmonitor disabled, no fetch and no changes to index, FETCH_HEAD, refs or files. Its owned children must finish before the ordinary execution owner is published. Failure leaves the prepared manifest intact and does not create an execution claim or native process scope. A separately authorized fresh attempt needs distinct job/execution identities and rechecks real facts. Structured start/ready/failure logs contain only session/repository IDs and safe codes.
 
-The shared lease applies this check before any native runner starts a fresh PR-prepared execution. An ordinary continuation still uses its existing native-history/ownership contract; it cannot infer fresh remediation or push authority from this historical target. A fresh per-attempt Git preflight for reused sessions and the direct-harness Git-auth/commit-push flow remain separate controller work. No native Git read proves GitHub API identity, write permission or an actual successful push.
+The shared lease applies this check before any native runner starts a fresh PR-prepared execution. An ordinary continuation still uses its existing native-history/ownership contract; it cannot infer fresh remediation or push authority from this historical target. The manual PR fix profile below supplies a separate fresh per-attempt Git preflight for reused sessions and the direct-harness Git-auth/commit-push flow. No native Git read proves GitHub API identity, write permission or an actual successful push.
 
 A failed private lease preflight is not a public resend grant. The assignment-bound reporting boundary below distinguishes a positively recorded pre-native rejection from uncertain native completion. Private fresh-identity claims cannot bypass this server-owned boundary.
 
@@ -142,7 +142,7 @@ The private Worker read envelope may select `pr_candidate` instead of a public f
 
 Inspect the actual prepared repository path using its original selected remote and Worker's prepared native Git authentication. Its current HEAD must equal the selected PR head; permit either detached HEAD or exactly the PR's head branch, rejecting an unrelated named branch even at the same commit. Require a clean index/worktree including untracked and ignored content, and independently verify original remote base/head operands, selected remote and local state again after networking. The shared first-PR startup preflight still requires detached HEAD. No fetch, checkout, reset, stage, commit or push occurs, and the read preserves original files, refs, index, FETCH_HEAD, manifest and active execution claim. An ordinary session may now match after later commits even when its original preparation commit differs.
 
-The version-1 private result contains only original read/session/repository UUIDs, `matches` or `different`, exact whole-request SHA-256 digest and bounded UTC observation time. Confirmed state/branch/head differences remain distinct from inaccessible/unknown Git or uncertain ownership, which return a typed error without matching proof. The server validates the exclusive result against its original pending request/current paired Worker, then rechecks the original candidate revision, live project scope and exactly one original stable PR association. Concurrent pause/Archive/activity or unlink invalidates the candidate even after a syntactically valid Worker report. This observation creates no durable job, input, receipt, startup phase or native grant. Public Fix now/session selection and execution-time revalidation still require controller composition; a successful read does not establish write access or authorize commit/push.
+The version-1 private result contains only original read/session/repository UUIDs, `matches` or `different`, exact whole-request SHA-256 digest and bounded UTC observation time. Confirmed state/branch/head differences remain distinct from inaccessible/unknown Git or uncertain ownership, which return a typed error without matching proof. The server validates the exclusive result against its original pending request/current paired Worker, then rechecks the original candidate revision, live project scope and exactly one original stable PR association. Concurrent pause/Archive/activity or unlink invalidates the candidate even after a syntactically valid Worker report. This observation creates no durable job, input, receipt, startup phase or native grant. Public Fix now composes this matching read with the separate manual profile below and execution-time revalidation; a successful read alone does not establish write access or authorize commit/push.
 
 ### Original PR startup phase journal
 
@@ -180,3 +180,28 @@ The following source-backed notes were relocated from the project index at `12b3
 First-execution configuration, initial account selection, input claim and per-Agent routing state share one durable transaction. The public first-dispatch coordinator validates current installation/account/workspace/Worker evidence and exact native selection in the same transaction as its immutable job. Eligible ready sessions dispatch automatically; paused/restored first sessions require explicit Resume, and failed checks consume no input or routing. Template contents/order are retained exactly, later edits cannot rewrite them, and current restrictions still apply.
 
 An internal completed-execution inspection now correlates the original Worker operation/outbox/native checkpoint with current closed workspace/process ownership, preserving results without relaunch or report replay. The dedicated public execution-recovery RPC/CLI and Worker job now reconcile a retained completed execution atomically after Worker replacement, preserving outcome and pause until explicit Resume. Missing historical interaction evidence and safe surviving-process reattachment remain separate requirements.
+
+
+Manual Fix now retains the ordinary execution lease through native closure and independent push verification. Its closed private Git bridge binds original source transport/executable/auth context and exact ref/base/head, exposes exact non-secret operands, claims one push synchronously before launch, joins native children and emits only original verified/unchanged/uncertain proof. Rebase conflict publication requires an original-head lease. Preserve original files and uncertainty after interruption; no bridge or Go controller automatically commits/pushes. See the manual-fix section of the integration contract.
+
+The manual Git launcher's local capability connects only to a canonical
+`127.0.0.1` listener owned by the original Worker. It carries no reversible Git
+authentication context. The Worker keeps immutable scope/configuration and a
+private push-claim MAC key in memory, serializes bounded cancellable commands,
+validates closed local-command operands without executing them, and retains
+native authentication only for exact network operations. The harness launcher
+runs local Git and any repository helpers under its inherited native sandbox,
+with a credential-free environment and the captured commit identity. Local
+process ownership uses a private sandbox temporary directory and is joined
+before returning; uncertain cleanup retains its journal. External input/output
+file flags, configuration options, path traversal and pathspec magic are rejected. It cancels/joins the listener and commands before proof while keeping
+the original execution lease. Changed configuration, forged metadata or uncertain
+shutdown cannot grant handling or another push; process restart cannot rebuild
+a missing original capability/proof key. This is a private Worker tool boundary,
+not a server-side Git publisher or new public RPC.
+
+The exact allowed `rebase --continue` uses a fixed noninteractive no-op editor to preserve the original commit message after conflict resolution. No harness editor or arbitrary interactive rebase is accepted; its eventual push still requires the exact original-head lease. Git editor precedence follows the [Git editor contract](https://git-scm.com/docs/git-var#Documentation/git-var.txt-GITEDITOR).
+
+Permanent session deletion includes each original execution's `pr-git` capability
+scope in the same independently checked Worker removal inventory. A restored
+scope invalidates a previously completed deletion proof.

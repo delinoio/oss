@@ -61,6 +61,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   github pr problems list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]
   github pr problems dismiss --id ID --revision N --content-version SHA256
   github pr remediation list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]
+  github pr remediation capabilities
+  github pr remediation fix --input PATH|-
   github pr remediation resume --id SET_ID --revision N
   provider presets
   provider inventory [--query TEXT] [--enabled-only] [--limit N] [--page-token TOKEN]
