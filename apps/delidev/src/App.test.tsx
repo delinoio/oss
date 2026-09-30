@@ -199,18 +199,21 @@ it("invalidates the loaded sidebar pages after saving without resetting their cu
   const value = fixture([], [repository], [project], true);
   render(<App transport={value.transport} />);
   await screen.findByRole("button", { name: `Existing project. Project ID: ${project.id}` });
-  fireEvent.click(screen.getByRole("button", { name: "Next project page" }));
+  reach("projects");
   await waitFor(() => expect(value.projectRequests).toContain("project-next"));
-  fireEvent.click(screen.getByRole("button", { name: "Next session page" }));
+  reach("sessions");
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === "" && request.pageToken === "global-next")).toBe(true));
   fireEvent.click(screen.getByRole("button", { name: `Existing project. Project ID: ${project.id}` }));
-  fireEvent.click(await screen.findByRole("button", { name: "Next page of Existing project sessions" }));
+  await waitFor(() => expect(window.document.querySelector('[data-continuation="Existing project sessions"]')).toBeTruthy());
+  reach("Existing project sessions");
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === project.id && request.pageToken === "project-session-next")).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "Project and conversation options" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === "" && request.includeArchived && request.pageToken === "")).toBe(true));
-  fireEvent.click(await screen.findByRole("button", { name: "Next session page" }));
+  reach("sessions");
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === "" && request.includeArchived && request.pageToken === "global-next")).toBe(true));
-  fireEvent.click(await screen.findByRole("button", { name: "Next page of Existing project sessions" }));
+  await waitFor(() => expect(window.document.querySelector('[data-continuation="Existing project sessions"]')).toBeTruthy());
+  reach("Existing project sessions");
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === "" && request.includeArchived && request.pageToken === "global-next")).toBe(true));
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === project.id && request.includeArchived && request.pageToken === "project-session-next")).toBe(true));
 
@@ -225,6 +228,7 @@ it("invalidates the loaded sidebar pages after saving without resetting their cu
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   expect(await screen.findByRole("button", { name: "New Project" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   await waitFor(() => expect(value.projectRequests.filter((page) => page === "project-next")).toHaveLength(currentProjectReads + 1));
   await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === "" && request.includeArchived && request.pageToken === "global-next")).toHaveLength(currentGlobalReads + 1));
   await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === project.id && request.includeArchived && request.pageToken === "project-session-next")).toHaveLength(currentProjectSessionReads + 1));
@@ -563,6 +567,19 @@ it("discards notification and import drafts on close without saving", async () =
   expect((screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement).value).toBe("");
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
+
+function reach(label: string, remaining = 96) {
+  const root = window.document.querySelector<HTMLDivElement>(".sidebar-list")!;
+  Object.defineProperty(root, "clientHeight", { configurable: true, value: 400 });
+  const rect = (top: number) => ({ top, bottom: top + 1, left: 0, right: 200, width: 200, height: 1, x: 0, y: top, toJSON: () => ({}) });
+  vi.spyOn(root, "getBoundingClientRect").mockReturnValue({ ...rect(0), bottom: 400, height: 400 });
+  for (const anchor of root.querySelectorAll<HTMLElement>("[data-continuation]")) {
+    vi.spyOn(anchor, "getBoundingClientRect").mockReturnValue(rect(600));
+  }
+  const anchor = root.querySelector<HTMLElement>(`[data-continuation="${label}"]`)!;
+  vi.mocked(anchor.getBoundingClientRect).mockReturnValueOnce(rect(400 + remaining));
+  fireEvent.scroll(root);
+}
 
 
 afterEach(() => vi.unstubAllGlobals());

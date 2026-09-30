@@ -113,3 +113,21 @@ The complete race result above belongs to `a1d486adcfa5ee5af27cd814c704218e8c3e8
 not this merge result; its unresolved failures and the original frontend suite
 limits remain recorded. No full-suite success or live queue acceptance is
 inferred from the merge checks.
+
+## Subsequent Home navigation merge
+
+After publishing `845c1515852f79f8a1812d23b272057bc156ff63`, main advanced to
+`ac142883f5d35c6d326099b4f66f02f5a4cb0b1f` with the Home navigation change.
+The resulting frontend instruction conflict retained both the ALLGREEN rules
+and the incoming Home navigation/Settings lifetime rules. Frontend source and
+the desktop contract merged without code conflicts; the queue Go source is
+unchanged from the preceding merge result.
+
+The DeliDev API client build and desktop `pnpm typecheck` passed. From the
+desktop directory, `pnpm exec vitest run src/github-ci.test.tsx src/pr-problems.test.tsx src/home-navigation.test.ts src/sidebar.test.tsx --maxWorkers=1 --fileParallelism=false --testTimeout=30000`
+passed four files / 50 tests in 5.01s. Logs are
+`/private/tmp/issue-1105-home-merge-client.log`,
+`/private/tmp/issue-1105-home-merge-typecheck.log` and
+`/private/tmp/issue-1105-home-merge-frontend.log`. The complete suites were not
+repeated for this instruction-only conflict resolution, and their recorded
+limits remain unchanged. Generated repository-owned output was removed again.
