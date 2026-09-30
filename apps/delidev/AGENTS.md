@@ -12,6 +12,8 @@ Keep implementation evidence in independent files under `docs/evidence/delidev/i
 
 - Settings > Projects follows the Projects-only presentation exception in `docs/apps-delidev-desktop-contract.md` and `src/AGENTS.md`. Preserve issue #1138 opening disposal and the shared shell and other categories.
 
+- Home-only sidebar Inbox/Search actions and their consumed wide/compact focus handoff follow `docs/apps-delidev-desktop-contract.md` and the scoped `src/AGENTS.md` rules. Preserve mounted connection state and existing read-only navigation.
+
 GitHub Integrations presentation follows `docs/apps-delidev-desktop-contract.md` and `docs/cmds-delidev-integrations-contract.md`. Keep one create action, truthful read states, separate token-storage/identity observations, complete official-form guidance and the shared Settings lifecycle. The source owner retains exact mutation, credential and pagination safeguards.
 
 Diagnostics presentation is owned by `src/doctor.tsx`, `src/doctor.css` and the scoped frontend instructions, following `docs/apps-delidev-diagnostics-contract.md`.
