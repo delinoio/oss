@@ -37,3 +37,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Claude continuation candidates require a correlated non-aborted successful or failed root outcome, unchanged permission and settled original input/callback/task/compaction facts. A `background_requested` terminal is ineligible even without a tracked background-task event. Failed predecessors require explicit Resume intent; a candidate never substitutes for independently verified native history and cleanup.
 
 - Permanent-deletion copies for manual compaction retain a distinct original action UUID, never a replacement conversation execution ID. Reject missing, malformed or mixed action ownership; existing deletion plans retain their exact bytes and digest. Follow `docs/cmds-delidev-claude-compaction-contract.md`.
+
+- Keep negotiated native accounting unit kinds distinct under the usage contract. GrokClosedInput preserves its supplied uint64 total, original input/history/closure/source references and immutable attribution; it has no pricing or budget contribution.
