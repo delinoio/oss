@@ -35,6 +35,48 @@ func parseActiveRule(raw []byte) (domain.ActiveRepositoryRule, error) {
 	}
 	sum := sha256.Sum256(canonical)
 	rule.Digest = hex.EncodeToString(sum[:])
+	if rule.Type == "workflows" {
+		p, ok := jsonObject(f["parameters"])
+		var rows []json.RawMessage
+		if !ok || domain.Decode(p["workflows"], &rows) != nil || rows == nil || len(rows) > domain.MaxRuleChecks {
+			return rule, queryUnavailable()
+		}
+		w := &domain.RequiredRuleWorkflows{Workflows: []domain.RequiredWorkflowReference{}}
+		for key := range p {
+			if key != "workflows" && key != "do_not_enforce_on_create" {
+				w.UnknownParameters = true
+			}
+		}
+		if _, exists := p["do_not_enforce_on_create"]; exists {
+			w.DoNotEnforceOnCreate, ok = nullableBool(p, "do_not_enforce_on_create")
+			if !ok || w.DoNotEnforceOnCreate == nil {
+				return rule, queryUnavailable()
+			}
+		}
+		for _, raw := range rows {
+			f, ok := jsonObject(raw)
+			id, idOK := exactUnsigned(f["repository_id"])
+			if !ok || !idOK {
+				return rule, queryUnavailable()
+			}
+			ref := domain.RequiredWorkflowReference{RepositoryID: strconv.FormatUint(id, 10), Path: stringField(f, "path")}
+			for key := range f {
+				if key != "repository_id" && key != "path" && key != "sha" && key != "ref" {
+					w.UnknownParameters = true
+				}
+			}
+			for key, dest := range map[string]**string{"sha": &ref.SHA, "ref": &ref.Ref} {
+				if _, exists := f[key]; exists {
+					*dest, ok = nullableString(f, key)
+					if !ok {
+						return rule, queryUnavailable()
+					}
+				}
+			}
+			w.Workflows = append(w.Workflows, ref)
+		}
+		rule.RequiredWorkflows = w
+	}
 	if rule.Type == "required_status_checks" {
 		p, ok := jsonObject(f["parameters"])
 		strict, strictOK := nullableBool(p, "strict_required_status_checks_policy")

@@ -1,8 +1,13 @@
 import { items, object, text, type Document } from "./documents";
-import { bounded, positive } from "./github-query-model";
+import { bounded, positive, sha } from "./github-query-model";
 
 const digest = (value: unknown) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const sourceKinds = new Map([["Repository", "repository"], ["Organization", "organization"], ["Enterprise", "enterprise"]]);
+
+export function validWorkflowReference(raw: unknown): boolean {
+  const value = object(raw);
+  return positive(value.repository_id) && bounded(value.path, 1024) && value.path.startsWith(".github/workflows/") && !/[\\\r\n]/.test(value.path) && !value.path.split("/").some((part: string) => !part || part === "." || part === "..") && (value.sha == null || sha(value.sha)) && (value.ref == null || bounded(value.ref, 1024));
+}
 
 export function validPRRules(raw: unknown, item: Document): boolean {
   const value = object(raw);
@@ -16,6 +21,16 @@ export function validPRRules(raw: unknown, item: Document): boolean {
     const source = JSON.stringify([rule.native_source_kind, rule.source]);
     if (sources.has(rule.ruleset_id) && sources.get(rule.ruleset_id) !== source) return false;
     sources.set(rule.ruleset_id, source);
+    if (rule.required_workflows != null) {
+      const workflows = object(rule.required_workflows);
+      if (rule.type !== "workflows" || rule.required_checks != null || !Array.isArray(workflows.workflows) || workflows.workflows.length > 100 || (workflows.unknown_parameters != null && typeof workflows.unknown_parameters !== "boolean") || (workflows.do_not_enforce_on_create != null && typeof workflows.do_not_enforce_on_create !== "boolean")) return false;
+      const seen = new Set<string>();
+      for (const raw of workflows.workflows) {
+        const ref = object(raw), key = `${ref.repository_id}:${ref.path}`;
+        if (!validWorkflowReference(raw) || seen.has(key)) return false;
+        seen.add(key);
+      }
+    }
     if (rule.type !== "required_status_checks") {
       if (rule.required_checks != null) return false;
       continue;
@@ -52,6 +67,7 @@ export function PRRules({ value }: { value: Document }) {
             <tbody>{items(required.checks).map((raw) => { const check = object(raw); return <tr key={`${text(check.context)}:${text(check.integration_id)}`}><th scope="row">{text(check.context)}</th><td>{check.integration_id == null ? "No App restriction reported" : check.integration_id === "0" ? "Provider reported 0 · unresolved" : `App ${text(check.integration_id)}`}</td></tr>; })}</tbody>
           </table> : <p>This rule lists no required status checks.</p>}
         </> : null}
+        {rule.required_workflows ? <ul aria-label="Required workflows">{items(object(rule.required_workflows).workflows).map((raw) => { const ref = object(raw); return <li key={`${ref.repository_id}:${ref.path}`}>Repository {text(ref.repository_id)} · <code>{text(ref.path)}</code> · {ref.sha ? <code>{text(ref.sha)}</code> : "No immutable source SHA; evaluation remains unknown"}</li>; })}</ul> : null}
       </article>;
     })}
   </section>;

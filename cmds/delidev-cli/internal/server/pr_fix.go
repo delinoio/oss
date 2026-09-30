@@ -209,7 +209,7 @@ func eligiblePRFixSession(tx *store.Tx, r store.Record, project domain.ID) error
 		return err
 	}
 	if instance.Validate() != nil || time.Since(seen) > domain.WorkerConnectionTimeout {
-		return domain.Fail(domain.Unavailable, "The linked execution Worker is offline.", "Reconnect that Worker before reusing this session.")
+		return domain.Fail(domain.Unavailable, "The linked Runner Device is offline.", "Reconnect that Runner Device before reusing this session.")
 	}
 	var input domain.ExecutionJobInput
 	if session.InitialExecution == nil {

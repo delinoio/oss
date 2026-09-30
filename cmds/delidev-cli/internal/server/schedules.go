@@ -264,7 +264,7 @@ func (s *Service) ControlSchedule(ctx context.Context, req *connect.Request[pb.C
 }
 
 func scheduleReconfigurationRequired() error {
-	return domain.Fail(domain.Conflict, "The schedule requires reconfiguration before activation.", "Edit its selected project, Agent Worker and execution Worker to clear the retained disabling problem.")
+	return domain.Fail(domain.Conflict, "The schedule requires reconfiguration before activation.", "Edit its selected project, Agent Worker and Runner Device to clear the retained disabling problem.")
 }
 
 func (s *Service) DeleteSchedule(ctx context.Context, req *connect.Request[pb.DeleteScheduleRequest]) (*connect.Response[pb.DeleteScheduleResponse], error) {

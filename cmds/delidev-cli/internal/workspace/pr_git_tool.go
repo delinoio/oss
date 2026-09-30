@@ -151,7 +151,7 @@ func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.
 		if domain.SafeError(err).Cause != "git_exit" {
 			return nil, err
 		}
-		return nil, domain.Fail(domain.MissingInput, "The execution Worker lacks PR Git push access.", "Prepare native Git write authentication on this Worker; the server lookup PAT cannot be substituted.")
+		return nil, domain.Fail(domain.MissingInput, "The Runner Device lacks PR Git push access.", "Prepare native Git write authentication on this Runner Device; the server lookup PAT cannot be substituted.")
 	}
 	configuration, err := git.run(ctx, path, "config", "--null", "--show-origin", "--list")
 	if err != nil {
