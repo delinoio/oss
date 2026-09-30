@@ -62,3 +62,22 @@ lock, without changing process cwd or user configuration.
 'TestLaunchAdmission|TestDesktopLaunchAdmissionPreservesRelativeEnsureScope'
 -count=1` passed both packages, including the existing concurrent native-control
 admission regression.
+
+## Aggregate startup deadline review
+
+Automatic/desktop startup now shares one 35-second context deadline across
+admission, startup-controller joining, original store ownership and readiness.
+Each nested phase can only shorten that deadline. Admission/controller locks
+check cancellation before and after acquisition; intent publication and native
+spawn also check it. An interruption after retaining running intent returns a
+truthful recovery-required outcome without falsely claiming process startup or
+cleanup. Ordinary explicit Start keeps its original per-phase bounds.
+
+`go test -race ./cmds/delidev-cli/internal/cli
+./cmds/delidev-cli/internal/userservice -run
+'TestDesktopLaunch|TestLaunchAdmission' -count=1` passed both packages. The
+aggregate test deliberately supplies no caller deadline, holds service admission
+for 18 seconds and then continues to hold the startup controller. It returns
+within the shared 35-second budget instead of adding a fresh 20-second wait,
+with neither lifecycle publication nor a detached process log. Separate canceled
+uncontended-lock checks prove cancellation cannot acquire fresh admission.

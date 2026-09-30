@@ -17,9 +17,85 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
+
+func TestDesktopLaunchSharesDeadlineAcrossAdmissionAndController(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	admission, err := userservice.AdmitLaunch(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admission.Close()
+	controller, err := security.TryLock(filepath.Join(root, "startup.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Close()
+	// Deliberately use no caller deadline. The production aggregate budget must
+	// prevent sequential admission/controller waits from consuming 18 + 20s.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := time.Now()
+	done := make(chan error, 1)
+	go func() {
+		_, err := detachedStartup(ctx, options{dataDir: root}, server.Config{DataDir: root, Listen: "127.0.0.1:0"}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}, startupDesktopLaunch)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatal("launch did not join held service admission", err)
+	case <-time.After(18 * time.Second):
+	}
+	if err := admission.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if domain.SafeError(err).Code != domain.Unavailable {
+			t.Fatal("aggregate timeout lost its typed outcome", err)
+		}
+	case <-time.After(21 * time.Second):
+		cancel()
+		<-done
+		t.Fatal("joined startup exceeded the native command budget")
+	}
+	if elapsed := time.Since(started); elapsed >= joinedStartupTimeout+2*time.Second {
+		t.Fatal("sequential waits reset the aggregate budget", elapsed)
+	}
+	if intent, err := server.ReadLifecycle(root); err != nil || intent.Version != 0 {
+		t.Fatal("timed-out controller published intent", intent, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "server.log")); !os.IsNotExist(err) {
+		t.Fatal("timed-out controller spawned a replacement")
+	}
+}
+
+func TestDesktopLaunchCanceledControllersCannotAcquireUncontendedLocks(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := userservice.AdmitLaunch(ctx, root); domain.SafeError(err).Code != domain.Canceled {
+		t.Fatal("canceled launch acquired service admission", err)
+	}
+	if _, err := waitStartupController(ctx, root); domain.SafeError(err).Code != domain.Canceled {
+		t.Fatal("canceled launch acquired startup controller", err)
+	}
+	if _, err := detachedStartup(ctx, options{dataDir: root}, server.Config{DataDir: root, Listen: "127.0.0.1:0"}, IO{}, startupDesktopLaunch); domain.SafeError(err).Code != domain.Canceled {
+		t.Fatal("canceled fresh launch was admitted", err)
+	}
+	if intent, err := server.ReadLifecycle(root); err != nil || intent.Version != 0 {
+		t.Fatal("canceled fresh launch published intent", intent, err)
+	}
+}
 
 func TestDesktopLaunchAdmissionPreservesRelativeEnsureScope(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private")

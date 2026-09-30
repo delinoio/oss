@@ -36,8 +36,15 @@ func AdmitLaunch(ctx context.Context, root string) (*LaunchAdmission, error) {
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		if err := child.Err(); err != nil {
+			return nil, domain.SafeError(err)
+		}
 		lock, err := security.TryLock(m.path("-control.lock"))
 		if err == nil {
+			if err := child.Err(); err != nil {
+				lock.Close()
+				return nil, domain.SafeError(err)
+			}
 			return &LaunchAdmission{root: canonical, lock: lock}, nil
 		}
 		if domain.SafeError(err).Code != domain.Conflict {

@@ -34,6 +34,10 @@ const (
 	startupObservation
 )
 
+// Joined automatic/desktop waits share one budget, leaving five seconds for
+// the native host's 40-second command envelope and bounded output cleanup.
+const joinedStartupTimeout = 35 * time.Second
+
 func ensureDetached(ctx context.Context, o options, config server.Config, streams IO, automatic bool) (any, error) {
 	mode := startupExplicit
 	if automatic {
@@ -43,6 +47,14 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 }
 
 func detachedStartup(ctx context.Context, o options, config server.Config, streams IO, mode startupMode) (any, error) {
+	if mode != startupExplicit {
+		child, cancel := context.WithTimeout(ctx, joinedStartupTimeout)
+		defer cancel()
+		ctx = child
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, domain.SafeError(err)
+	}
 	if _, err := worker.LoadCredential(o.dataDir); err == nil {
 		return nil, domain.Fail(domain.PermissionDenied, "Server startup requires an owner scope, not a paired device scope.", "Run the lifecycle command on the server machine with its original data directory.")
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -74,6 +86,9 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 	}
 	lock, err := security.TryLock(filepath.Join(o.dataDir, "startup.lock"))
 	if (mode == startupDesktopLaunch || mode == startupDesktopRetry || mode == startupObservation) && err != nil && domain.SafeError(err).Code == domain.Conflict {
+		if config.Logger != nil {
+			config.Logger.InfoContext(ctx, "server_start_joining_original_controller", "mode", mode)
+		}
 		lock, err = waitStartupController(ctx, o.dataDir)
 	}
 	if err != nil {
@@ -142,6 +157,9 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 		// an authenticated compatible listener without inventing restart intent.
 		// Ordinary explicit startup retains its existing legacy adoption behavior.
 		if intent.Version == 0 && mode != startupObservation && mode != startupDesktopLaunch && mode != startupDesktopRetry && !serviceManaged {
+			if err := ctx.Err(); err != nil {
+				return nil, domain.SafeError(err)
+			}
 			if _, err := server.WriteRunning(o.dataDir, config); err != nil {
 				return nil, err
 			}
@@ -188,6 +206,9 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 		}
 	}
 	if mode != startupEnsure {
+		if err := ctx.Err(); err != nil {
+			return nil, domain.SafeError(err)
+		}
 		intent, err = server.WriteRunning(o.dataDir, config)
 		if err != nil {
 			return nil, err
@@ -247,6 +268,9 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 	}
 	if config.Logger != nil {
 		config.Logger.InfoContext(ctx, "server_start_admitted", "mode", mode)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, domain.Fail(domain.RecoveryRequired, "Startup was interrupted after retaining running intent.", "Inspect server status before retrying; no replacement process was spawned by this controller.")
 	}
 	if err := cmd.Start(); err != nil {
 		return nil, domain.Fail(domain.Unavailable, "The server process could not start.", "Inspect the executable and data directory permissions.")
@@ -345,7 +369,14 @@ func waitStartupController(ctx context.Context, root string) (*security.Lock, er
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		if err := child.Err(); err != nil {
+			return nil, domain.SafeError(err)
+		}
 		lock, err := security.TryLock(filepath.Join(root, "startup.lock"))
+		if err == nil && child.Err() != nil {
+			lock.Close()
+			return nil, domain.SafeError(child.Err())
+		}
 		if err == nil || domain.SafeError(err).Code != domain.Conflict {
 			return lock, err
 		}
