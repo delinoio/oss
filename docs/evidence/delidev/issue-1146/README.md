@@ -62,8 +62,19 @@ on the isolated issue branch; no completion PR or maintenance heartbeat exists.
   response-buffer clearing change.
 - `go vet ./internal/domain ./internal/providers`: passed.
 - `go vet ./...` from `cmds/delidev-cli`: passed.
-- `go test -timeout=20m ./...` from `cmds/delidev-cli`: the CLI package failed;
-  the remaining packages are still running. A structured CLI rerun is pending
-  to identify the failure precisely. This is not a passing full-suite result.
+- `go test -timeout=20m ./...` from `cmds/delidev-cli`: completed with exit status 1, including CLI and Claude harness failures and
+  20-minute Codex harness/workspace package timeouts. This is not a passing
+  full-suite result.
+- `go test -json -timeout=20m ./internal/cli`: failed at
+  `TestCLISessionAcceptanceQueueAndArchive`, `sessions_test.go:202`, where
+  `session create --wait` returned a typed operation timeout after durable
+  acceptance. The original full run also reported Claude probe cleanup,
+  late-acknowledgment and owned-scope timing failures. Their baseline cause has
+  not been established; no unrelated execution-lifecycle repair is claimed.
+
+The new OAuth entrypoints are referenced only within their helpers and tests;
+no existing product path invokes them, as verified with `rg`. Existing CLI and
+harness execution implementations were not modified. These observations do not establish that the broader failures are
+pre-existing or that full validation passes.
 Fixtures do not prove native callback behavior, actual provider acceptance,
 server recovery/cancellation, or Windows/Linux/macOS OAuth integration.
