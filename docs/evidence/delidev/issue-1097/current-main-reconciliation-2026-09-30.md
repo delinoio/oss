@@ -63,6 +63,9 @@ GOMAXPROCS=2 go test -race -p 1 -parallel 1 -timeout 5m
 -count=1 -v`. It failed during the discovery initialization handshake before
 account selection, with typed `unavailable` diagnostics. It proves no A-to-B
 native acceptance. Product probe/operation deadlines were not relaxed.
+An identical isolated repeat after stopping the broad invocation also failed
+at discovery initialization in 28.94 seconds. No account switch or provider
+inference occurred in that repeat; it does not remove the native acceptance gap.
 
 The full `GOMAXPROCS=4 go test -race -p 2 -timeout 20m
 ./cmds/delidev-cli/...` invocation reported CLI and harness timeout failures.
