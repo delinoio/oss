@@ -175,7 +175,9 @@ bytes, split UTF-8, reattachment gaps and Stop/Archive/deletion barriers.
 Keep executed checks and retained fixtures distinct from native Windows/Linux,
 real remote Worker, native desktop visual and release acceptance. The desktop
 currently provides a bounded plain-text output view with line input and control
-bytes. Send line appends native Enter (carriage return) to the exact UTF-8 draft
+bytes. It retains the single accepted creation resource for immediate selection
+and attachment even when that terminal is beyond the current 50-record history
+page; bounded history pagination remains independent. Send line appends native Enter (carriage return) to the exact UTF-8 draft
 for Unix PTY and Windows ConPTY input, not a full VT/full-screen application emulator. Byte-stream consumers
 retain all native control bytes. Current evidence belongs under `docs/evidence/delidev/issue-1088/`; retain the frozen historical ledger.
 

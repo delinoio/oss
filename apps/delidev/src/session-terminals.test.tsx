@@ -92,3 +92,42 @@ it("focuses the attached terminal input and sends exact UTF-8 and native resize 
     view.unmount(); release(); client.clear();
   }
 });
+
+it("attaches to the accepted creation beyond the first full history page", async () => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const history = Array.from({ length: 50 }, () => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 2n, documentJson: encode({ state: "closed", cleanup_verified: true }) }));
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 4n, documentJson: encode({ state: "running" }) });
+  const createTerminal = vi.fn(() => ({ terminal }));
+  const controlTerminal = vi.fn((_request: unknown) => ({ terminal }));
+  const watched: string[] = [];
+  const listResources = vi.fn(() => ({ resources: history, nextPageToken: "older-page" }));
+  let release = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources });
+    router.service(TerminalService, { createTerminal, controlTerminal, watchTerminalOutput: async function* (request) {
+      watched.push(request.terminalId);
+      yield { epoch: newRequestId(), sequence: 1n, data: new TextEncoder().encode("new original terminal"), terminal };
+      await held;
+    } });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} close={() => {}} /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: /Terminal 50/ });
+    await waitFor(() => expect((screen.getByRole("button", { name: "Create terminal" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Create terminal" }));
+    await screen.findByText("new original terminal");
+    expect(watched).toEqual([terminal.id]);
+    expect(createTerminal).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(listResources.mock.calls.length).toBeGreaterThan(1));
+    fireEvent.change(screen.getByRole("textbox", { name: "Terminal input" }), { target: { value: "original" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send line" }));
+    await waitFor(() => expect(controlTerminal).toHaveBeenCalledTimes(1));
+    expect(controlTerminal.mock.calls[0]![0]).toMatchObject({ mutation: { id: terminal.id, expectedRevision: 4n }, action: TerminalAction.INPUT });
+    expect(screen.getByText("new original terminal")).toBeTruthy();
+  } finally {
+    view.unmount(); release(); client.clear();
+  }
+});

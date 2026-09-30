@@ -26,13 +26,16 @@ export class TerminalText {
 export function SessionTerminals({ session, close }: { session: Resource; close: () => void }) {
   const [shell, setShell] = useState("");
   const [selected, setSelected] = useState("");
+  const [createdTerminal, setCreatedTerminal] = useState<Resource>();
   const [page, setPage] = useState("");
   const list = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.TERMINAL, sessionId: session.id, pageToken: page, pageSize: 50 } }, { retry: false, refetchInterval: 1000 });
-  const create = useRetainedMutation(`terminal-create:${session.id}`, TerminalQuery.createTerminal, (value) => { if (value.terminal) setSelected(value.terminal.id); setPage(""); void list.refetch(); });
+  const create = useRetainedMutation(`terminal-create:${session.id}`, TerminalQuery.createTerminal, (value) => { if (value.terminal) { setCreatedTerminal(value.terminal); setSelected(value.terminal.id); } setPage(""); void list.refetch(); });
   const status = useQuery(SystemQuery.getStatus, {});
   const supported = status.data?.capabilities.includes(SystemCapability.SESSION_TERMINALS_V1) ?? false;
   const blocked = !supported || create.busy || create.uncertain || text(document(session).archive) !== "active";
-  const resource = list.data?.resources.find((value) => value.id === selected);
+  // The accepted resource can be beyond the first history page. Retain just
+  // that one selection so creation immediately attaches to the original shell.
+  const resource = list.data?.resources.find((value) => value.id === selected) ?? (createdTerminal?.id === selected ? createdTerminal : undefined);
   return <aside className="session-files" aria-label="Session terminals">
     <header><h3>Terminals</h3><button onClick={close}>Hide terminals</button></header>
     <p>Terminals run on this session's Worker in its primary workspace. Agent Stop preserves them. Archive closes their owned processes.</p>
