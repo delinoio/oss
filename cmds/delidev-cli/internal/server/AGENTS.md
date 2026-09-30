@@ -82,3 +82,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Bind first fork-child `ThreadBound` publication to the exact assigned native child thread and reject `InputAccepted` reuse of the inherited source turn. Validate both before changing progress or queue accounting; a rejected event cannot change the child, source or original execution job.
 
 - Fork status observation and acceptance-receipt reads require current owner/client authority inside the same read transaction before retrieving job or child documents. Worker or missing principals cannot observe this client-only RPC; a stale paired principal cannot bypass current device authorization.
+
+- Validate incoming subagent telemetry before merging retained last-available facts: Claude task reports cannot supply output/observed model; Codex activity cannot supply output/observed/requested models; Codex collaboration cannot supply observed models or content blocks. Keep retained earlier telemetry independently readable and reject an invalid complete batch before writes. Follow `docs/cmds-delidev-subagents-contract.md`.

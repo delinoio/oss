@@ -134,6 +134,26 @@ func invalidSubagent() error {
 }
 
 func (o SubagentObservation) Validate() error {
+	// Validate the incoming source before retained last-available values are
+	// merged. A task/activity report cannot claim absent native telemetry.
+	switch o.Source {
+	case ClaudeTaskSource:
+		if o.Output != nil || o.ObservedModel != nil {
+			return invalidSubagent()
+		}
+	case CodexActivitySource:
+		if o.Output != nil || o.ObservedModel != nil || o.RequestedModel != nil {
+			return invalidSubagent()
+		}
+	case CodexCollaborationSource:
+		if o.ObservedModel != nil || o.Output != nil && len(o.Output.Blocks) != 0 {
+			return invalidSubagent()
+		}
+	case CodexHistorySource, ClaudeContentSource, ClaudeHistorySource:
+		// These sources can supply independently verified output and model.
+	default:
+		return invalidSubagent()
+	}
 	if o.Tool != nil && (o.Tool.Validate() != nil || o.Tool.NativeID != o.ParentToolID || o.Tool.Name != "Agent" && o.Tool.Name != "Task") {
 		return invalidSubagent()
 	}
