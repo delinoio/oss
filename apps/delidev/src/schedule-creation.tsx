@@ -87,10 +87,10 @@ export function ScheduleCreation({ definition, change, active, blocked, localAva
           <label>Scheduled prompt<textarea required rows={3} maxLength={262144} placeholder="Describe what the agent should do on each run..." value={text(definition.prompt)} onChange={(event) => field("prompt")(event.target.value)} /></label>
         </section>
         <section className="schedule-creation-card schedule-creation-execution" aria-labelledby={`${radios}-execution`}>
-          <h3 id={`${radios}-execution`}>Execution</h3><p>Agent Worker and Execution Worker are required.</p>
+          <h3 id={`${radios}-execution`}>Execution</h3><p>Agent Worker and Runner Device are required.</p>
           <div className="schedule-creation-selectors">
             <ResourceChoice label="Agent Worker" kind={EntityKind.AGENT} value={text(definition.agent_id)} active={active} required showStatus change={field("agent_id")} />
-            <ResourceChoice label="Execution Worker" kind={EntityKind.MACHINE} value={text(definition.machine_id)} active={active} disabled={local} required showStatus change={field("machine_id")} />
+            <ResourceChoice label="Runner Device" kind={EntityKind.MACHINE} value={text(definition.machine_id)} active={active} disabled={local} required showStatus change={field("machine_id")} />
           </div>
           <fieldset className="schedule-creation-radio-group"><legend>Workspace</legend><div className="schedule-creation-radio-cards">
             <label><input type="radio" name={`${radios}-workspace`} checked={!local} onChange={() => field("workspace")(Workspace.Worktree)} /><span>Worktree</span></label>
