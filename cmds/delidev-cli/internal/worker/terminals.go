@@ -340,12 +340,18 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 		m.live[a.ID] = native
 		return result
 	case domain.TerminalClose:
+		lost, err := m.shutdownLoss(a)
+		if err != nil {
+			result.State, result.Problem = domain.TerminalUncertain, domain.SafeError(err)
+			return result
+		}
+		result.OutputLost = lost
 		if native != nil {
 			native.cancel()
 			_ = native.handle.Close()
 			<-native.outputDone
 			result = native.result
-			result.OutputLost = native.outputLost
+			result.OutputLost = result.OutputLost || native.outputLost || lost
 			delete(m.live, a.ID)
 		} else if a.Terminal.Pending != nil && a.Terminal.Pending.Action == domain.TerminalCreate && !a.Terminal.Pending.Claimed {
 			// Archive won before the durable create claim. The server now rejects
@@ -529,13 +535,25 @@ func (m *terminalManager) close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for id, native := range m.live {
+		// Synchronize conservative loss before cancellation can abandon a queued
+		// suffix. A replacement can publish it only through an exact close claim.
+		pending := native.result
+		pending.State, pending.CleanupVerified, pending.OutputLost = domain.TerminalUncertain, false, true
+		pending.Problem = domain.Fail(domain.RecoveryRequired, "Terminal shutdown has not confirmed original cleanup.", "Reconcile the original process owner through an explicit close.")
+		if err := m.saveShutdown(id, pending); err != nil {
+			m.config.Logger.Warn("terminal_shutdown_journal_unavailable", "terminal_id", id, "code", domain.SafeError(err).Code)
+		}
 		native.cancel()
 		_ = native.handle.Close()
-		<-native.outputDone
-		if err := m.reconcile(id); err != nil {
-			m.config.Logger.Warn("terminal_shutdown_cleanup_unconfirmed", "terminal_id", id, "code", domain.SafeError(err).Code)
+		result := m.finishNative(id, native)
+		if err := m.saveShutdown(id, result); err != nil {
+			// Retain the joined in-memory outcome too when synchronization fails.
+			m.live[id] = native
+			m.config.Logger.Warn("terminal_shutdown_journal_unavailable", "terminal_id", id, "code", domain.SafeError(err).Code)
 		}
-		delete(m.live, id)
+		if !result.CleanupVerified {
+			m.config.Logger.Warn("terminal_shutdown_cleanup_unconfirmed", "terminal_id", id, "code", domain.SafeError(result.Problem).Code)
+		}
 	}
 }
 

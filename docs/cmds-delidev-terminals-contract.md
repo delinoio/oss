@@ -135,7 +135,7 @@ another replacement must claim its own authority. Auxiliary report retry waits
 for a synchronized confirmed current-instance close claim. Missing or changed
 process evidence remains uncertain; adoption cannot create a shell or resend a
 control. Finished results retry their exact report;
-confirmed reports retire the journal. Terminal reports share a 64 KiB JSON limit
+confirmed reports retire the journal. Worker shutdown synchronizes an original-terminal/instance-bound loss observation before cancelling output, then retains its joined native result before dropping the live entry. A replacement reads that observation only for an independently claimed close; it carries loss monotonically but still reconciles the original process index, never borrowing cleanup authority from the shutdown record. Terminal reports share a 64 KiB JSON limit
 between Worker and server, covering both accepted 4,096-byte paths even under
 worst-case six-byte JSON escaping. Journal reads and writes share a 68 KiB
 envelope bound that reserves room for ownership metadata around a maximum-sized
