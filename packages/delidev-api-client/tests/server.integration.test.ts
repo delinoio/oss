@@ -95,7 +95,11 @@ it("decodes the Go server's typed authentication error without returning credent
 
 it("exposes typed user-service capability and metadata without native side effects", async () => {
   const system = createClient(SystemService, transport);
-  expect((await system.getStatus({})).capabilities).toContain(SystemCapability.USER_SERVICES_V1);
+  expect((await system.getStatus({})).capabilities).toEqual(expect.arrayContaining([
+    SystemCapability.AUTOMATIC_TITLES_V1,
+    SystemCapability.SESSION_FORWARDING_V1,
+    SystemCapability.USER_SERVICES_V1,
+  ]));
   const result = await system.getUserService({ kind: UserServiceKind.SERVER });
   expect(result.service).toMatchObject({ kind: UserServiceKind.SERVER, revision: 0n, state: UserServiceState.ABSENT, loginEnabled: false });
   expect(JSON.stringify(result, (_, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain(token);
