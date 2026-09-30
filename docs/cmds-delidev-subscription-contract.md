@@ -8,7 +8,7 @@ Existing-login import, externally supplied token bundles, internal-only `chatgpt
 
 ## Runtime and Language
 
-Go owns server and Worker business logic. The native profile pins installed Codex `0.151.0`; DeliDev never installs it. The managed profile uses the official app-server protocol, a fresh private `CODEX_HOME`, file-backed native authentication and the built-in OpenAI provider. API execution and discovery retain their existing ephemeral credential profile.
+Go owns server and Worker business logic. The native profile pins installed Codex `0.151.0`; DeliDev never installs it. The managed profile uses the official app-server protocol, a fresh private `CODEX_HOME`, file-backed native authentication and the built-in OpenAI provider. API execution and discovery retain their existing ephemeral credential profile. The current native Fork coordinator uses that API profile and rejects managed subscription sources before accepting work. Source inspection cannot grant credentials; managed Fork requires its own verified protected lease and joined write-back.
 
 ## Users and Operators
 

@@ -85,3 +85,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Bind first fork-child `ThreadBound` publication to the exact assigned native child thread and reject `InputAccepted` reuse of the inherited source turn. Validate both before changing progress or queue accounting; a rejected event cannot change the child, source or original execution job.
 
 - Fork status observation and acceptance-receipt reads require current owner/client authority inside the same read transaction before retrieving job or child documents. Worker or missing principals cannot observe this client-only RPC; a stale paired principal cannot bypass current device authorization.
+
+- The current native Fork coordinator has an API-only authentication profile. Reject managed subscription source assignments through their closed domain validation before accepting a job or starting native work; do not borrow execution credentials or introduce relay fallback. Follow the fork and subscription contracts.
