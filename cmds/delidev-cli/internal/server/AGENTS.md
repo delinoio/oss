@@ -47,3 +47,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Repository metadata support is independently advertised and accepted under issue #1142. Reject all unknown/duplicate capabilities and validate optional GitHub maps against current negotiated Machine support, inspected remote keys, existing identity validators and the 128-remote/1 MiB bounds. Preserve strict input decoding, atomic repository saves and legacy omission.
 
 - Repository inspection enrichment presence, including explicit null, cannot bypass capability validation; a present `github_repositories` must be a non-null validated map.
+
+- Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.
