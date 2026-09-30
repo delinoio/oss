@@ -51,53 +51,20 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if instance.Validate() != nil || seen.After(time.Now().UTC().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
 		return store.Record{}, domain.Fail(domain.Unavailable, "The original Worker is not currently connected.", "Reconnect the owning machine; the retained input and account selection remain unchanged.")
 	}
-	selected := session.ExecutionSelection()
-	previous, err := tx.SessionExecutionJob(sr.ID, selected.ID)
+	assignment, completion, assignmentDigest, err := checkedContinuationPredecessor(tx, sr, session)
 	if err != nil {
-		return store.Record{}, err
-	}
-	job, err := store.Decode[domain.Job](previous)
-	if err != nil {
-		return store.Record{}, err
-	}
-	var assignment domain.ExecutionJobInput
-	var completion domain.ExecutionCompletion
-	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || !session.OwnsExecution(assignment) || assignment.SessionID != sr.ID || job.MachineID != session.MachineID || domain.Decode(job.Output, &completion) != nil || completion.Version != 2 || completion.ValidateForHarness(assignment.Configuration.Harness) != nil || session.Execution.JobID != previous.ID {
-		return store.Record{}, nativeCompletionUncertain()
-	}
-	terminalState := map[domain.ExecutionOutcome]domain.JobState{domain.ExecutionSucceeded: domain.JobSucceeded, domain.ExecutionFailed: domain.JobFailed, domain.ExecutionStopped: domain.JobCanceled}[completion.Outcome]
-	if job.State != terminalState || job.FinishedAt == nil {
-		return store.Record{}, nativeCompletionUncertain()
-	}
-	priorInput, err := tx.Get(domain.QueueKind, assignment.InputID)
-	if err != nil {
-		return store.Record{}, err
-	}
-	queued, err := store.Decode[domain.QueuedInput](priorInput)
-	if err != nil {
-		return store.Record{}, err
-	}
-	if priorInput.SessionID != sr.ID || queued.Delivery != domain.InputAccepted || queued.ExecutionID != assignment.ExecutionID || queued.NativeRequestID != assignment.TurnRequestID || queued.Prompt != assignment.Input.Prompt || queued.Mode != assignment.Input.Mode {
-		return store.Record{}, nativeCompletionUncertain()
-	}
-	if err := checkContinuationInputs(tx, sr.ID, assignment, *session.Execution); err != nil {
 		return store.Record{}, err
 	}
 	// Recheck current authority against the immutable selection even when Resume
 	// has no input yet. The Worker rechecks native history before the later send.
-	input, err := checkedExecutionAssignment(tx, sr, session, machine, assignment)
+	account, connection := session.ContinuationAccount()
+	candidate := continuationAssignment(session, assignment, completion, assignmentDigest, intent, account, connection)
+	input, err := checkedExecutionAssignment(tx, sr, session, machine, candidate)
 	if err != nil {
 		return store.Record{}, err
 	}
 	if !bytes.Equal(input.Preparation, assignment.Preparation) || !bytes.Equal(input.Manifest, assignment.Manifest) {
 		return store.Record{}, nativeCompletionUncertain()
-	}
-	input.Remediation = nil
-	input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
-	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
-	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.InitialExecution.ID, HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: continuationDigest(job.Input), InputMode: assignment.Input.Mode, PromptDigest: continuationDigest([]byte(assignment.Input.Prompt)), Intent: intent}
-	if err := input.Validate(); err != nil {
-		return store.Record{}, err
 	}
 	ir, err := tx.OldestQueuedInput(sr.ID)
 	if err != nil {
@@ -109,6 +76,14 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 		return store.Record{}, err
 	}
 	next, err := store.Decode[domain.QueuedInput](ir)
+	if err != nil {
+		return store.Record{}, err
+	}
+	prior, err := tx.Get(domain.QueueKind, assignment.InputID)
+	if err != nil {
+		return store.Record{}, err
+	}
+	queued, err := store.Decode[domain.QueuedInput](prior)
 	if err != nil {
 		return store.Record{}, err
 	}
@@ -132,6 +107,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	session.ActiveExecutionID, session.Outcome, session.Dispatch = input.ExecutionID, domain.ExecutionNotStarted, domain.DispatchClaimed
 	session.ExecutionRecoveryJobID = ""
 	session.Execution, session.Problem, session.NextExecutionIntent = nil, nil, ""
+	session.CurrentNativeHistory = ""
 	if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
 		return store.Record{}, err
 	}
@@ -163,4 +139,63 @@ func checkContinuationInputs(tx *store.Tx, sessionID domain.ID, assignment domai
 		requests[input.NativeRequestID] = true
 	}
 	return nil
+}
+
+func checkedContinuationPredecessor(tx *store.Tx, sr store.Record, session domain.Session) (domain.ExecutionJobInput, domain.ExecutionCompletion, string, error) {
+	if session.InitialExecution == nil || session.Execution == nil || session.ActiveExecutionID != "" || !session.Execution.CleanupVerified || session.Recovery != domain.NoRecovery || session.PendingSteerID != "" {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", continuationConflict()
+	}
+	if (session.Outcome != domain.ExecutionSucceeded && session.Outcome != domain.ExecutionFailed && session.Outcome != domain.ExecutionStopped) || session.Execution.Outcome != session.Outcome {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", continuationConflict()
+	}
+	selected := session.ExecutionSelection()
+	previous, err := tx.SessionExecutionJob(sr.ID, selected.ID)
+	if err != nil {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", err
+	}
+	job, err := store.Decode[domain.Job](previous)
+	if err != nil {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", err
+	}
+	var assignment domain.ExecutionJobInput
+	var completion domain.ExecutionCompletion
+	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || !session.OwnsExecution(assignment) || assignment.SessionID != sr.ID || job.MachineID != session.MachineID || domain.Decode(job.Output, &completion) != nil || completion.Version != 2 || completion.ValidateForHarness(assignment.Configuration.Harness) != nil || session.Execution.JobID != previous.ID {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", nativeCompletionUncertain()
+	}
+	terminalState := map[domain.ExecutionOutcome]domain.JobState{domain.ExecutionSucceeded: domain.JobSucceeded, domain.ExecutionFailed: domain.JobFailed, domain.ExecutionStopped: domain.JobCanceled}[completion.Outcome]
+	if job.State != terminalState || job.FinishedAt == nil {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", nativeCompletionUncertain()
+	}
+	priorInput, err := tx.Get(domain.QueueKind, assignment.InputID)
+	if err != nil {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", err
+	}
+	queued, err := store.Decode[domain.QueuedInput](priorInput)
+	if err != nil {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", err
+	}
+	if priorInput.SessionID != sr.ID || queued.Delivery != domain.InputAccepted || queued.ExecutionID != assignment.ExecutionID || queued.NativeRequestID != assignment.TurnRequestID || queued.Prompt != assignment.Input.Prompt || queued.Mode != assignment.Input.Mode {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", nativeCompletionUncertain()
+	}
+	if err := checkContinuationInputs(tx, sr.ID, assignment, *session.Execution); err != nil {
+		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", err
+	}
+
+	return assignment, completion, continuationDigest(job.Input), nil
+}
+
+func continuationAssignment(session domain.Session, assignment domain.ExecutionJobInput, completion domain.ExecutionCompletion, digest string, intent domain.ExecutionIntent, account, connection domain.ID) domain.ExecutionJobInput {
+	input := assignment
+	// A successor must not inherit the preceding one-shot PR Git authority.
+	input.Remediation = nil
+	input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
+	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
+	input.AccountID, input.ConnectionID = account, connection
+	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.InitialExecution.ID, HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: digest, InputMode: assignment.Input.Mode, PromptDigest: continuationDigest([]byte(assignment.Input.Prompt)), Intent: intent}
+	// A switch back may select the same account after its connection rotated.
+	// The checkpoint still belongs to the complete original account/connection.
+	if account != assignment.AccountID || connection != assignment.ConnectionID {
+		input.Continuation.PreviousAccountID, input.Continuation.PreviousConnectionID = assignment.AccountID, assignment.ConnectionID
+	}
+	return input
 }

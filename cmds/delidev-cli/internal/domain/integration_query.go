@@ -312,6 +312,9 @@ func (r RepositoryQueryResult) Validate() error {
 			return invalid()
 		}
 	case RepositoryCI:
+		if r.CI != nil && r.CI.MergeQueue != nil && r.CI.MergeQueue.RepositoryNodeID != r.Repository.NodeID {
+			return invalid()
+		}
 		if r.CI == nil || r.Rules != nil || r.Diff != nil || r.Checks != nil || r.Statuses != nil || r.CI.Validate(r.Items[0]) != nil {
 			return invalid()
 		}

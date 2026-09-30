@@ -48,11 +48,17 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Manual PR fixes belong in `pr_fix.go` and the additive authenticated PullRequestFixService. Bind exact original evidence/project selections and final session/link revisions, recheck provider/Worker/native gates outside/inside their owning boundaries, and atomically compose ordinary queue/routing with stable-PR ownership. Explicit Resume cannot bypass PR assignment proof; automatic remediation remains separate. Follow the integration contract.
 
+- Continuation construction clears the predecessor's one-shot remediation authority before validating current execution selection, including explicit account switching. Only a fresh exact input/attempt binding can attach PR Git authority to the successor; preserve the complete original checkpoint account/connection independently.
+
 - Coalesce identical initial manual-fix actor/request selections before provider inspection with bounded cancellable ownership. Recheck durable receipts after waiting; accepted replay bypasses gate capacity, and foreign input/actors cannot share ownership.
 
 - The private execution-dispatch entry point establishes server-owner context before retained PR-history reads. Public RPCs and store boundaries still validate their authenticated actor; ordinary dispatch must not depend on ticker-provided context.
 
 - Optional manual-fix preflight cannot replace ordinary dispatch lifecycle/error precedence when no queued input exists. The ordinary claim transaction remains authoritative for active, paused, archived and empty states.
+
+- Explicit stopped Codex API account selection follows the sessions/proxy contracts. Require an owner or paired client principal at the service boundary before validation or mutation, in addition to HTTP role checks and transactional device-revocation checks. Require exact terminal/cleanup/checkpoint evidence and current eligibility from the original candidate snapshot; retain revisioned selection history, pause until explicit Resume and never reroute automatically. Preserve original usage/assignments and read the predecessor checkpoint under its complete original account/connection pair while creating a fresh successor grant. Explicitly switching away and back after reconnection must retain the original checkpoint connection independently of the fresh selected connection. Missing or account-bound history cannot switch; every switched relay request independently rejects remote history references.
+
+- Repeated native history-mode observations must revalidate live execution authority through a read-only path when the retained sticky mode is unchanged; do not create a receipt or wake store watchers for each provider request. Recheck authority and history mode at the commit boundary for actual transitions.
 
 - Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.
 
