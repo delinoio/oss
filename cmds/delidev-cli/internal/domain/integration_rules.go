@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"path"
 	"sort"
 	"strings"
 )
@@ -47,6 +48,28 @@ type RequiredRuleChecks struct {
 	Checks               []RequiredRuleCheck `json:"checks"`
 }
 
+// An explicit source SHA is the only supported workflow resolution profile.
+// Ref is retained as evidence, never resolved or substituted for a missing SHA.
+type RequiredWorkflowReference struct {
+	RepositoryID string  `json:"repository_id"`
+	Path         string  `json:"path"`
+	SHA          *string `json:"sha,omitempty"`
+	Ref          *string `json:"ref,omitempty"`
+}
+
+func (v RequiredWorkflowReference) Validate() error {
+	if !PositiveDecimal(v.RepositoryID) || Text(v.Path, "workflow path", 1024, true) != nil || path.Clean(v.Path) != v.Path || !strings.HasPrefix(v.Path, ".github/workflows/") || strings.ContainsAny(v.Path, "\\\r\n") || v.SHA != nil && !repositorySHA(*v.SHA) || v.Ref != nil && Text(*v.Ref, "workflow ref", 1024, true) != nil {
+		return invalidPRObservation()
+	}
+	return nil
+}
+
+type RequiredRuleWorkflows struct {
+	UnknownParameters    bool                        `json:"unknown_parameters,omitempty"`
+	DoNotEnforceOnCreate *bool                       `json:"do_not_enforce_on_create,omitempty"`
+	Workflows            []RequiredWorkflowReference `json:"workflows"`
+}
+
 type ActiveRepositoryRule struct {
 	Type             string            `json:"type"`
 	RulesetID        string            `json:"ruleset_id"`
@@ -55,14 +78,29 @@ type ActiveRepositoryRule struct {
 	Source           string            `json:"source"`
 	// Digest covers the entire original provider rule, including parameters not
 	// exposed by this projection. It detects changes without publishing policy internals.
-	Digest         string              `json:"digest"`
-	RequiredChecks *RequiredRuleChecks `json:"required_checks,omitempty"`
+	Digest            string                 `json:"digest"`
+	RequiredChecks    *RequiredRuleChecks    `json:"required_checks,omitempty"`
+	RequiredWorkflows *RequiredRuleWorkflows `json:"required_workflows,omitempty"`
 }
 
 func (r ActiveRepositoryRule) Key() string { return r.RulesetID + ":" + r.Type }
 func (r ActiveRepositoryRule) Validate() error {
 	if !PositiveDecimal(r.RulesetID) || Text(r.Type, "rule type", 100, true) != nil || Text(r.Source, "ruleset source", 512, true) != nil || Text(r.NativeSourceKind, "ruleset source type", 64, true) != nil || strings.ContainsAny(r.Type+r.Source+r.NativeSourceKind, "\r\n") || r.SourceKind != ClassifyRulesetSource(r.NativeSourceKind) || !lowerDigest(r.Digest) {
 		return invalidPRObservation()
+	}
+	if r.RequiredWorkflows != nil {
+		w := r.RequiredWorkflows
+		if r.Type != "workflows" || r.RequiredChecks != nil || w.Workflows == nil || len(w.Workflows) > MaxRuleChecks {
+			return invalidPRObservation()
+		}
+		seen := map[string]bool{}
+		for _, ref := range w.Workflows {
+			key := ref.RepositoryID + ":" + ref.Path
+			if ref.Validate() != nil || seen[key] {
+				return invalidPRObservation()
+			}
+			seen[key] = true
+		}
 	}
 	if r.Type != "required_status_checks" {
 		if r.RequiredChecks != nil {

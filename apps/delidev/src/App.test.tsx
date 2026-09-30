@@ -73,7 +73,7 @@ it("creates an automatically named session from the first message and explicit W
   expect(window.document.activeElement).toBe(firstMessage);
   fireEvent.change(firstMessage, { target: { value: "Fix the startup crash" } });
   fireEvent.change(composer.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
-  fireEvent.change(composer.getByLabelText("Execution Worker"), { target: { value: value.machine.id } });
+  fireEvent.change(composer.getByLabelText("Runs on"), { target: { value: value.machine.id } });
   expect(screen.getByRole("heading", { name: "What would you like to work on?" })).toBeTruthy();
   expect(screen.getByText("General Chat · isolated projectless directory on the selected Worker")).toBeTruthy();
   fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter" });

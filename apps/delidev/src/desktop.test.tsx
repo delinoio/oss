@@ -100,7 +100,7 @@ it("registers and inspects this computer through only the saved window's fixed W
   render(<Desktop />);
   await screen.findByText("Your sessions, in one place");
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Execution Workers" }));
+  fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
   await screen.findByText(/local Worker could not be inspected/);
   fireEvent.click(screen.getByRole("button", { name: "Register this computer" }));
   await screen.findByText(`Execution machine: ${machine}`);
