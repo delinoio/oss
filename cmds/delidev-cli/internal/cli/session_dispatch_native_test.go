@@ -51,6 +51,7 @@ const (
 	nativeScheduledWorkspaces
 	nativeCronWorkspace
 	nativeLocalReviewWorkspaces
+	nativeForkWorkspaces
 )
 
 func TestManualNativeCLILocalRepositories(t *testing.T) {
@@ -67,6 +68,10 @@ func TestManualNativeCLIScheduledWorkspaces(t *testing.T) {
 
 func TestManualNativeCLICronWorkspace(t *testing.T) {
 	testManualNativeCLI(t, false, nativeCronWorkspace)
+}
+
+func TestManualNativeCLISessionFork(t *testing.T) {
+	testManualNativeCLI(t, false, nativeForkWorkspaces)
 }
 
 func TestManualNativeCLILocalReview(t *testing.T) {
@@ -103,11 +108,18 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 	if profile == nativeLocalReviewWorkspaces {
 		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 2}}
 	}
+	if profile == nativeForkWorkspaces {
+		scenarios = []nativeScenario{{domain.ExecuteMode, domain.GeneralChat, 0}, {domain.ExecuteMode, domain.Worktree, 2}}
+	}
 	for _, scenario := range scenarios {
 		mode := scenario.mode
 		multipleRepositories := scenario.repositories > 1
 		t.Run(string(scenario.workspace)+"/"+string(mode), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			duration := 120 * time.Second
+			if profile == nativeForkWorkspaces {
+				duration = 8 * time.Minute
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), duration)
 			defer cancel()
 			root := filepath.Join(t.TempDir(), "server")
 			ready := make(chan struct{})
@@ -277,7 +289,14 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				options.Permission = domain.PermissionWorkspaceWrite
 			}
 			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: []domain.WeightedAccount{{ID: domain.ID(account["id"].(string)), Weight: 1}}, Options: options})["resource"].(map[string]any)
-			create := []string{"session", "create", "--request-id", string(domain.NewID()), "--wait"}
+			create := []string{"session", "create", "--request-id", string(domain.NewID())}
+			if profile != nativeForkWorkspaces {
+				create = append(create, "--wait")
+			}
+			// Fork acceptance needs a completed source, rather than the ordinary
+			// create command's short readiness wait. This profile uses public
+			// asynchronous acceptance and the bounded completion observation below;
+			// the fork command still exercises its real --wait deadline.
 			type localCheckout struct{ root, head string }
 			var localCheckouts []localCheckout
 			if scenario.workspace == domain.Local {
@@ -621,6 +640,10 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			}
 			if calls.Load() != expectedCalls || validations.Load() != 1 {
 				t.Fatal("public receipt replay repeated validation or inference")
+			}
+			if profile == nativeForkWorkspaces {
+				verifyNativeCLIFork(t, ctx, run, id, state, value, workerRoot, &calls)
+				return
 			}
 			initialBytes, _ := json.Marshal(state.InitialExecution)
 			originalThread := state.Execution.NativeThreadID

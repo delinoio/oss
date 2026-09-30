@@ -369,3 +369,14 @@ only original session/deletion IDs, plan digest and retained request UUID. No
 paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
+
+## Codex session forks (#1092)
+
+`SessionService.ForkSession` accepts owner/paired-client mutation identity, exact
+source revision/native turn, child name and closed `ForkWorkspace`. The dedicated
+write-only Local proof is never ordinary receipt material. `GetSessionFork` reads
+the original job and optional published child; an accepted job is not a child.
+`SystemCapability.CODEX_SESSION_FORK_V1` is additive. Ordinary Worker credentials
+remain excluded from these product methods and complete their original job via
+existing authenticated `WatchWork`/`ReportWork`. See the
+[fork contract](cmds-delidev-forks-contract.md). No destructive migration occurs.

@@ -43,6 +43,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [API provider activation](cmds-delidev-provider-activation-contract.md)
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
+- [Same-account Codex session forks](cmds-delidev-forks-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
 - [Retained activity](cmds-delidev-activity-contract.md)

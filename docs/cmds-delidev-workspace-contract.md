@@ -180,3 +180,22 @@ The following source-backed notes were relocated from the project index at `12b3
 First-execution configuration, initial account selection, input claim and per-Agent routing state share one durable transaction. The public first-dispatch coordinator validates current installation/account/workspace/Worker evidence and exact native selection in the same transaction as its immutable job. Eligible ready sessions dispatch automatically; paused/restored first sessions require explicit Resume, and failed checks consume no input or routing. Template contents/order are retained exactly, later edits cannot rewrite them, and current restrictions still apply.
 
 An internal completed-execution inspection now correlates the original Worker operation/outbox/native checkpoint with current closed workspace/process ownership, preserving results without relaunch or report replay. The dedicated public execution-recovery RPC/CLI and Worker job now reconcile a retained completed execution atomically after Worker replacement, preserving outcome and pause until explicit Resume. Missing historical interaction evidence and safe surviving-process reattachment remain separate requirements.
+
+
+## Independent fork workspaces (#1092)
+
+Follow the [fork contract](cmds-delidev-forks-contract.md). Optional omitted
+`fork_source_id`/`fork_source_path` preparation fields preserve historical JSON.
+The owning Worker holds the original closed execution inspection while deriving
+actual HEAD commits, then copies each repository into a separate detached
+`--no-checkout` worktree without fetch or checkout filters. It copies the exact
+non-split index and bounded regular files, preserving original directory and
+file permission modes independently of the Worker umask, including staged, unstaged, ignored
+and untracked data. Source reads and destination writes use separate opened
+filesystem roots; linked destinations are rejected before copying, and copied
+files/directories are synchronized before the ready manifest. General Chat
+copies its owned tree. Source and target hashes,
+HEAD and index are rechecked after every repository and after native creation.
+Explicit authenticated Local uses the same files. Links, nested repositories,
+special files, split indexes and unborn Git are outside the initial profile;
+refusal cannot silently drop data or publish partial preparation.

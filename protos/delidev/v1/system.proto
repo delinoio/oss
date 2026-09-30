@@ -55,6 +55,9 @@ enum SystemCapability {
   // Optional current-user registrations on the server computer, never remote Workers.
   SYSTEM_CAPABILITY_USER_SERVICES_V1 = 3;
   SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1 = 9;
+
+  // Reserved for issue #1092 in the repository allocation ledger.
+  SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1 = 13;
 }
 
 message StopServerRequest {

@@ -1575,3 +1575,18 @@ Schema v20 now provides an internal PR remediation coordination core: one durabl
 Internal remediation planning now lists original linked session candidates by recent activity and validates explicit new-session configuration without reserving accounts or advancing routing. PR-head preparation preserves companion repositories and primary cwd; current account/native/Worker checks reject unsupported selections before a preparation can be queued. The public controller and direct-harness Git writes remain unfinished; current native candidate matching is implemented separately below.
 
 The private Worker observation channel now verifies an existing Local/Worktree session's current PR head, branch, remote operands and clean state without changing files or native ownership. Original candidate revision/project/link checks invalidate stale observations after pause, Archive or unlink. This supplies candidate evidence; public Fix now/coalescing, fresh startup authorization and direct-harness Git writes remain unfinished.
+
+
+## Native Codex Fork (#1092)
+
+The [fork contract](cmds-delidev-forks-contract.md) adds `thread/fork` for pinned
+Codex 0.151.0. Read-only source inspection requires completed legacy root history,
+no goal, no native queue, exact last-turn input digests and a private rollout
+returned by native metadata. The child uses a fresh home, remapped cwd/roots,
+inclusive `lastTurnId`, `excludeTurns` and `deferGoalContinuation`. Compare the
+complete bounded native turn prefix, new identity, original parent link, idle
+state and immutable effective policy/defaults. No user input is replayed.
+Native creation uses an unregistered relay token with no inference authority;
+the first explicit child turn receives its ordinary fresh grant. Completed
+text/reasoning histories are supported; tool/rich/child histories are rejected
+until their inherited auxiliary state has its own verified adapter.

@@ -145,3 +145,12 @@ Worker cleanup queries and `PERMANENT_SESSION_DELETION_V1` retain the additive
 protocol without duplicating Go ownership logic. Preserve original request IDs,
 BigInt revisions and pending/unknown removal state; no automatic mutation replay.
 See the [storage contract](cmds-delidev-storage-contract.md).
+
+## Codex fork clients (#1092)
+
+Generated messages, the `ForkWorkspace`/server capability enums and the existing
+`SessionQuery` namespace now expose `forkSession` and `getSessionFork`. The
+[fork contract](cmds-delidev-forks-contract.md) keeps native paths and creation
+logic in Go. Preserve exact uncertain requests; observe accepted operations by
+job ID instead of issuing another mutation. Desktop connection memory retains
+its controller through navigation and separates acceptance from child publication.
