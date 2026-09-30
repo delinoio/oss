@@ -14,6 +14,8 @@ Read the relevant owner before changing its behavior, including cross-domain con
 
 Keep implementation evidence in independent files under `docs/evidence/delidev/issue-<number>/`. Update instructions only when their rules or ownership change, not merely to record another validation run.
 
+Current-user service completion follows `docs/cmds-delidev-user-services-contract.md`: join the product controller and intent observer, acquire the bounded state gate independently of their canceled context, then atomically publish positive completion while retaining runtime ownership. Status readers and completion publication must share this gate, including Windows permission inspection.
+
 Native session compaction for issues #1093, #1202 and #1203 follows the planned shared boundary in `docs/cmds-delidev-compaction-contract.md`. Its reservations must land on main before dependent implementation. Preserve original transcript/outcome, once-only native claims and independent history/cleanup verification; native acknowledgment never grants a successor checkpoint.
 
 - Browser ownership and cleanup follow `docs/cmds-delidev-browser-contract.md`. Keep bounded non-secret profile metadata on the original paired-client Device document with independent UUID-v7 identity/revision, exact authorization and receipts. Account deletion atomically marks every device obligation; session deletion and Archive retain profiles. Service-owned browser messages avoid reserved shared enum numbers and SQLite migrations; never persist browsing content or paths.
