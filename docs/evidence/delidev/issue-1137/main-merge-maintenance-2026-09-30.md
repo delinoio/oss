@@ -25,6 +25,12 @@ Stop confirmation/receipt behavior. The first merged full run passed 1,052 tests
 and failed the category/header title expectation; the composed title fixes that
 failure, and the required complete `pnpm test` pipeline is rerun afterward.
 
+The final merged `VITEST_MAX_WORKERS=1 pnpm test` passes the complete pipeline:
+1,053 tests across 88 files, generated client build, UI typecheck, packaging,
+launcher/asset and widget checks, and production build. The launch/pairing/recovery
+and native-service admission Go tests pass again under `-race`, and
+`go vet -p 2 ./cmds/delidev-cli/...` passes on the merged source.
+
 Root `cargo test -j 2 -- --test-threads=1` was rerun for the merged tree. It again
 fails the two unchanged clibox wait tests with `dns_configuration`, including a
 TLS test expecting `tls_certificate`. This remains a whole-workspace validation
