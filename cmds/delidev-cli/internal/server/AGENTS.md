@@ -2,6 +2,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Keep PR activity projection and original-source validation in `activity_pr.go` under the activity contract. Validate immutable original versions and stable numeric PR ownership, preserve historical navigation across repository renames, cap complete pages in protobuf and JSON, and advertise the typed activity capability. Reads cannot change Inbox or PR handling or infer verified handling from an attempt.
+
 - The executable is `delidev`; ordinary commands cannot implicitly start the server. Server/sidecar behavior is identical. Local detached TLS readiness may trust only the explicitly configured certificate, with exact peer matching, certificate validity/server-use checks and authenticated status. Wildcard binds dial matching loopback; ordinary/remote clients retain standard hostname and CA verification. Release the completed child startup lifecycle lock before serving any HTTP request, so authenticated readiness already permits immediate reuse and explicit Stop even while startup logging or maintenance setup is delayed.
 
 - Keep business logic in Go and product communication in authenticated Connect. Workers initiate outbound connections; never add a client-facing WebSocket or SSE API.
@@ -47,3 +49,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Authenticated user-service native control and managed restore share the original lifecycle gate through intent and native effects. Replacement must refuse unfinished control and end the old server epoch before replacement state can serve requests.
 
 - Managed restore must synchronize stopped lifecycle intent through the prepared pre-publication barrier before replacement. Barrier failure preserves the original live image for rollback; exact receipt replay never stops a later explicitly restarted epoch.
+
+- Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.

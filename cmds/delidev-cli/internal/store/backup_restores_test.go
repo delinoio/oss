@@ -833,3 +833,63 @@ func TestBackupRestoreParentSyncFailurePreservesLive(t *testing.T) {
 		t.Fatal("directory durability failure changed the source image", err)
 	}
 }
+
+func TestBackupRestorePreservesSessionPRActivityDeletion(t *testing.T) {
+	s, root, ctx, in, _ := restoreFixture(t)
+	f := newRemediationStoreFixture(t, s)
+	attempt, err := f.reserve(t, domain.PRRemediationAutomatic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt = f.bind(t, attempt)
+	bound, err := Decode[domain.PRRemediationAttempt](attempt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The reserved transition predates session binding and has no session_id.
+	// Its deletion tombstone must survive restoration along with bound history.
+	if rows := prActivityRows(t, s); len(rows) != 3 {
+		t.Fatal("fixture omitted original observed/reserved/bound activity", len(rows))
+	}
+	backup, err := s.Backup(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := s.InspectBackup(ctx, backup, in.ServerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Backup, in.SHA256 = observed.Backup, observed.SHA256
+	_, err = s.Mutate(ctx, domain.NewID(), "fixture.delete-pr-activity-session", nil, func(tx *Tx) (any, error) {
+		r, err := tx.Get(domain.SessionKind, bound.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, tx.Delete(r.Kind, r.ID, r.Revision)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows := prActivityRows(t, s); len(rows) != 1 {
+		t.Fatal("deletion retained original session-owned transitions", len(rows))
+	}
+	in.ExpectedRevision, _ = s.RestoreRevision(ctx)
+	if _, _, err := s.RestoreBackup(ctx, domain.NewID(), in); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	reopened, err := Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if rows := prActivityRows(t, reopened); len(rows) != 1 {
+		t.Fatal("restore resurrected deleted activity or erased shared PR evidence", len(rows))
+	}
+	for _, id := range []domain.ID{bound.SessionID, bound.InputID} {
+		var retained int
+		if err := reopened.db.QueryRow("SELECT count(*) FROM entities WHERE id=?", id).Scan(&retained); err != nil || retained != 0 {
+			t.Fatal("restore resurrected original session-owned state", id, retained, err)
+		}
+	}
+}
