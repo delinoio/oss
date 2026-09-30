@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -17,9 +18,10 @@ function resource(kind: EntityKind, name: string, projectId = "", values: Record
   return row;
 }
 
-function mountSidebar({ projects, sessions, props = {} }: {
+function mountSidebar({ projects, sessions, props = {}, stateful = false }: {
   projects: (pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;
   sessions: (request: { projectId: string; includeArchived: boolean; pageToken: string }) => { sessions: Resource[]; nextPageToken?: string } | Promise<{ sessions: Resource[]; nextPageToken?: string }>;
+  stateful?: boolean;
   props?: Partial<ComponentProps<typeof Sidebar>>;
 }) {
   const projectRequests: string[] = [];
@@ -41,13 +43,19 @@ function mountSidebar({ projects, sessions, props = {} }: {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 60000, refetchOnWindowFocus: false } } });
   const openSession = vi.fn();
   const openSettings = vi.fn();
-  const newSession = vi.fn();
-  const navigate = vi.fn();
   let currentProps = props;
-  const tree = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><Sidebar surface={Surface.Sessions} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} openSettings={openSettings} {...currentProps} /></QueryClientProvider></TransportProvider>;
+  let selectSurface!: (surface: Surface) => void;
+  const newSession = vi.fn(() => { if (stateful) selectSurface(Surface.NewSession); });
+  const navigate = vi.fn((surface: Surface) => { if (stateful) selectSurface(surface); });
+  function Harness() {
+    const [surface, setSurface] = useState(Surface.Sessions);
+    selectSurface = setSurface;
+    return <Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} openSettings={openSettings} {...currentProps} />;
+  }
+  const tree = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><Harness /></QueryClientProvider></TransportProvider>;
   const view = render(tree());
   const setProps = (next: Partial<ComponentProps<typeof Sidebar>>) => { currentProps = { ...currentProps, ...next }; view.rerender(tree()); };
-  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, projectRequests, sessionRequests };
+  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
 }
 
 it("keeps equal-name projects separate, includes empty projects, and only reads expanded project pages", async () => {
@@ -381,4 +389,88 @@ it("keeps the same local/saved management controller mounted through disclosure 
   expect(summary.querySelector(".sidebar-status-running")).toBeNull();
   value.setProps({ serverPresentation: { kind: ServerPresentationKind.Local } });
   expect(screen.getByRole("button", { name: /Local server Server 0.1.0/ })).toBe(summary);
+});
+
+
+function expectHeaderActions(home: boolean) {
+  const header = window.document.querySelector<HTMLElement>(".sidebar-header")!;
+  expect(within(header).getByRole("heading", { name: "DeliDev" })).toBeTruthy();
+  expect([...header.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"))).toEqual(home ? ["Inbox", "Search"] : []);
+  expect(header.querySelector(".sidebar-header-actions") === null).toBe(!home);
+  for (const label of ["Inbox", "Search"]) {
+    const action = within(header).queryByRole("button", { name: label });
+    if (home) expect(action?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    else expect(action).toBeNull();
+  }
+}
+
+it.each(["loading", "empty", "denied", "unavailable", "cached-refresh"])("shows home-only header actions independently of %s reads", async (mode) => {
+  let finish!: () => void;
+  const gate = new Promise<void>((resolve) => { finish = resolve; });
+  let failedRefresh = false;
+  const value = mountSidebar({ stateful: true,
+    projects: async () => {
+      if (mode === "loading") await gate;
+      if (mode === "denied" || mode === "unavailable" || failedRefresh) throw new ConnectError("Fixture read failure", mode === "denied" ? Code.PermissionDenied : Code.Unavailable);
+      return { resources: [] };
+    }, sessions: async () => { if (mode === "loading") await gate; return { sessions: [] }; },
+  });
+  if (mode === "loading") await screen.findByText("Loading projects…");
+  else if (mode === "denied") await screen.findByText("You do not have permission to view projects.");
+  else if (mode === "unavailable") await screen.findByText("Could not connect to load projects.");
+  else await screen.findByText("No projects loaded.");
+  if (mode === "cached-refresh") {
+    failedRefresh = true;
+    await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+    await screen.findByText("Could not refresh projects. Previous data is shown.");
+  }
+  expectHeaderActions(true);
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expectHeaderActions(true);
+  const reads = [value.projectRequests.length, value.sessionRequests.length];
+  for (const surface of [Surface.PullRequests, Surface.Usage, Surface.Schedules, Surface.Activity, Surface.Inbox, Surface.Search]) {
+    value.setSurface(surface);
+    expectHeaderActions(false);
+    expect([value.projectRequests.length, value.sessionRequests.length]).toEqual(reads);
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expectHeaderActions(true);
+  expect(value.openSession).not.toHaveBeenCalled();
+  expect(value.openSettings).not.toHaveBeenCalled();
+  finish();
+});
+
+it("retains sidebar page scopes, group expansion and per-surface scroll through header navigation", async () => {
+  const project = resource(EntityKind.PROJECT, "Retained project");
+  const value = mountSidebar({ stateful: true,
+    projects: (page) => ({ resources: [project], nextPageToken: page ? undefined : "project-next" }),
+    sessions: (request) => ({ sessions: [], nextPageToken: request.pageToken ? undefined : request.projectId ? "group-next" : "global-next" }),
+  });
+  fireEvent.click(await screen.findByRole("button", { name: `Retained project. Project ID: ${project.id}` }));
+  await waitFor(() => expect(screen.queryByText("Loading Retained project sessions…")).toBeNull());
+  reach("Retained project sessions");
+  await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === project.id && request.pageToken === "group-next")).toBe(true));
+  reach("projects");
+  await waitFor(() => expect(value.projectRequests).toContain("project-next"));
+  reach("sessions");
+  await waitFor(() => expect(value.sessionRequests.some((request) => request.pageToken === "global-next")).toBe(true));
+  const list = window.document.querySelector<HTMLElement>(".sidebar-list")!;
+  list.scrollTop = 180;
+  fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
+  expectHeaderActions(false);
+  expect(list.scrollTop).toBe(0);
+  list.scrollTop = 45;
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expectHeaderActions(true);
+  expect(list.scrollTop).toBe(180);
+  expect(screen.getByRole("button", { name: `Retained project. Project ID: ${project.id}` }).getAttribute("aria-expanded")).toBe("true");
+  expect(screen.queryByRole("button", { name: /First project page|First session page|First page of Retained project sessions|Next page/ })).toBeNull();
+  await waitFor(() => {
+    expect(value.projectRequests).toContain("project-next");
+    expect(value.sessionRequests.some((request) => !request.projectId && request.pageToken === "global-next")).toBe(true);
+    expect(value.sessionRequests.some((request) => request.projectId === project.id && request.pageToken === "group-next")).toBe(true);
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
+  expect(list.scrollTop).toBe(45);
+  expect(value.openSession).not.toHaveBeenCalled();
 });

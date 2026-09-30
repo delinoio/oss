@@ -2,8 +2,8 @@ import { create } from "@bufbuild/protobuf";
 import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { afterEach, expect, it, vi } from "vitest";
+import { ConfigurationService, EntityKind, InboxService, InboxSource, IntegrationService, InteractionService, SearchArchiveState, SearchService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode } from "./documents";
 
@@ -23,6 +23,10 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const saveConfiguration = vi.fn(async (request: { kind: EntityKind; documentJson: Uint8Array }) => ({ resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson }) }));
   const projectRequests: string[] = [];
   const sessionRequests: { projectId: string; includeArchived: boolean; pageToken: string }[] = [];
+  const searches = vi.fn((request: { query: string; archive: SearchArchiveState; pageToken: string }) => ({ hits: [], nextPageToken: request.pageToken ? undefined : "search-next" }));
+  const inboxReads = vi.fn((_request: unknown) => ({ entries: [] }));
+  const readStates = vi.fn(() => ({}));
+  const responses = vi.fn(() => ({}));
   const preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status });
@@ -47,11 +51,13 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
         await new Promise<void>((resolve) => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); });
       },
     });
-    router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: async () => ({ preferences }) });
+    router.service(InboxService, { listInbox: inboxReads, setInboxReadState: readStates, getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: async () => ({ preferences }) });
+    router.service(SearchService, { searchConversations: searches });
+    router.service(InteractionService, { respondQuestion: responses, respondApproval: responses });
     router.service(IntegrationService, { queryRepositoryIntegration: githubQuery });
     router.service(ConfigurationService, { saveConfiguration });
   });
-  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, projectRequests, sessionRequests, agent, machine };
+  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, projectRequests, sessionRequests, agent, machine, searches, inboxReads, readStates, responses };
 }
 
 it("creates an automatically named session from the first message and explicit Workers", async () => {
@@ -574,3 +580,162 @@ function reach(label: string, remaining = 96) {
   vi.mocked(anchor.getBoundingClientRect).mockReturnValueOnce(rect(400 + remaining));
   fireEvent.scroll(root);
 }
+
+
+afterEach(() => vi.unstubAllGlobals());
+
+function viewport(compact = false) {
+  const listeners = new Set<() => void>();
+  const media = { matches: compact, media: "(max-width: 759px)", addEventListener: (_name: string, listener: () => void) => listeners.add(listener), removeEventListener: (_name: string, listener: () => void) => listeners.delete(listener) };
+  vi.stubGlobal("matchMedia", vi.fn(() => media));
+  return (matches: boolean) => { media.matches = matches; listeners.forEach((listener) => listener()); };
+}
+
+function animationFrames() {
+  let id = 0;
+  const frames = new Map<number, FrameRequestCallback>();
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => { frames.set(++id, callback); return id; });
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => { frames.delete(id); });
+  return () => act(() => { const current = [...frames.values()]; frames.clear(); current.forEach((callback) => callback(0)); });
+}
+
+function headerAction(name: "Inbox" | "Search") {
+  return within(window.document.querySelector<HTMLElement>(".sidebar-header")!).getByRole("button", { name });
+}
+
+function expectNoNavigationWrites(value: ReturnType<typeof fixture>) {
+  for (const mutation of [value.enqueues, value.controls, value.creates, value.readStates, value.responses, value.githubQuery, value.saveConfiguration]) expect(mutation).not.toHaveBeenCalled();
+}
+
+it("hands wide header focus to main before first Search autofocus and preserves search/filter pages", async () => {
+  viewport();
+  const flushFrames = animationFrames();
+  const value = fixture();
+  const view = render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  const inbox = headerAction("Inbox");
+  inbox.focus();
+  fireEvent.click(inbox);
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+  expect(window.document.querySelector(".sidebar-header-actions")).toBeNull();
+  await screen.findByText("No retained requests or execution results.");
+  fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: InboxSource.INTERACTION } });
+  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+  await screen.findByText("No items match these filters.");
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  const search = headerAction("Search");
+  search.focus();
+  fireEvent.click(search);
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+  const input = screen.getByRole("textbox", { name: "Search conversations" });
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  fireEvent.change(input, { target: { value: "keep this search" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Archive" }), { target: { value: SearchArchiveState.ARCHIVED } });
+  fireEvent.click(within(input.closest("form")!).getByRole("button", { name: "Search" }));
+  await screen.findByText("No retained conversation matches.");
+  fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: "Next page" }));
+  await screen.findByText("No further conversations on this page.");
+  expect(value.searches.mock.calls.at(-1)?.[0]).toMatchObject({ query: "keep this search", archive: SearchArchiveState.ARCHIVED, pageToken: "search-next" });
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(headerAction("Search"));
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+  flushFrames();
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+  expect(screen.getByRole("textbox", { name: "Search conversations" })).toBe(input);
+  expect((input as HTMLInputElement).value).toBe("keep this search");
+  expect((screen.getByRole("combobox", { name: "Archive" }) as HTMLSelectElement).value).toBe(String(SearchArchiveState.ARCHIVED));
+  await waitFor(() => expect(value.searches.mock.calls.at(-1)?.[0].pageToken).toBe("search-next"));
+  view.rerender(<StrictMode><App transport={value.transport} connectionEpoch={1} /></StrictMode>);
+  await waitFor(() => expect(value.searches.mock.calls.filter(([request]) => request.pageToken === "search-next").length).toBeGreaterThan(1));
+  flushFrames();
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(headerAction("Inbox"));
+  expect((screen.getByRole("combobox", { name: "Source" }) as HTMLSelectElement).value).toBe(String(InboxSource.INTERACTION));
+  await waitFor(() => expect(value.inboxReads.mock.calls.at(-1)?.[0]).toMatchObject({ source: InboxSource.INTERACTION }));
+  expectNoNavigationWrites(value);
+});
+
+it.each(["Inbox", "Search"] as const)("closes the compact drawer and focuses the persistent %s opener", async (name) => {
+  viewport(true);
+  const flushFrames = animationFrames();
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(screen.getByRole("button", { name: "Open session navigation" }));
+  const action = headerAction(name);
+  action.focus();
+  fireEvent.click(action);
+  const opener = screen.getByRole("button", { name: `Open ${name.toLowerCase()} filters` });
+  expect(document.activeElement).toBe(opener);
+  expect(opener.getAttribute("aria-expanded")).toBe("false");
+  expect(document.querySelector(".sidebar-pane-dialog")?.hasAttribute("open")).toBe(false);
+  flushFrames();
+  expect(document.activeElement).toBe(opener);
+  fireEvent.click(opener);
+  expect(document.querySelector(".sidebar-pane-dialog")?.hasAttribute("open")).toBe(true);
+  if (name === "Search") {
+    flushFrames();
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Search conversations" }));
+  }
+  // jsdom emulates dialog lifecycle only; native focus containment and return
+  // require independent rendered evidence in a browser or desktop host.
+  fireEvent(document.querySelector(".sidebar-pane-dialog")!, new Event("cancel", { cancelable: true }));
+  expect(opener.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(opener);
+  fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
+  expect(opener.getAttribute("aria-expanded")).toBe("false");
+  expectNoNavigationWrites(value);
+});
+
+it.each(["replacement", "settings", "resize"])("consumes or discards header focus intent during %s", async (mode) => {
+  const resize = viewport(mode === "resize");
+  const flushFrames = animationFrames();
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  if (mode === "resize") fireEvent.click(screen.getByRole("button", { name: "Open session navigation" }));
+  act(() => {
+    fireEvent.click(headerAction("Inbox"));
+    if (mode === "replacement") {
+      const replacement = screen.getByRole("button", { name: "Pull requests" });
+      replacement.focus();
+      fireEvent.click(replacement);
+    } else if (mode === "settings") fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    else resize(false);
+  });
+  flushFrames();
+  if (mode === "replacement") expect(document.activeElement).toBe(screen.getByRole("button", { name: "Pull requests" }));
+  else if (mode === "settings") {
+    expect(document.activeElement?.closest("dialog")?.classList.contains("sidebar-pane-dialog")).not.toBe(true);
+    expect(document.activeElement).not.toBe(screen.getByRole("main"));
+    fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+    flushFrames();
+    expect(document.activeElement).not.toBe(screen.getByRole("main"));
+  } else expect(document.activeElement).toBe(screen.getByRole("main"));
+  expectNoNavigationWrites(value);
+});
+
+it("keeps a New session draft and a selected conversation across both header destinations", async () => {
+  viewport();
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const message = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(message, { target: { value: "Keep my unsent input" } });
+  for (const name of ["Inbox", "Search"] as const) {
+    fireEvent.click(headerAction(name));
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(message);
+    expect((message as HTMLTextAreaElement).value).toBe("Keep my unsent input");
+  }
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  const firstMessage = screen.getByRole("textbox", { name: "First message" });
+  fireEvent.change(firstMessage, { target: { value: "Keep my creation draft" } });
+  for (const name of ["Inbox", "Search"] as const) {
+    fireEvent.click(headerAction(name));
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    expect(screen.getByRole("textbox", { name: "First message" })).toBe(firstMessage);
+    expect((firstMessage as HTMLTextAreaElement).value).toBe("Keep my creation draft");
+  }
+  expectNoNavigationWrites(value);
+});

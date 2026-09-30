@@ -565,13 +565,21 @@ dialog.modal-full-window::backdrop { background: transparent; }
 .account-wizard > header h3 { margin: 0 0 5px; font-size: 1.15rem; }
 .account-wizard > header p { margin: 0; }
 .account-wizard > form { margin-top: 18px; }
-.account-provider-choices { margin-block: 16px; padding: 14px; border: 1px solid #d8dee8; border-radius: 9px; }
-.account-provider-choices legend { padding-inline: 5px; font-weight: 600; }
-.account-provider-choices label.radio { display: flex; align-items: center; gap: 10px; padding: 9px 4px; }
-.account-provider-choices input[type=radio] { width: 18px; height: 18px; margin: 0; }
+.account-wizard { container-type: inline-size; color: #202632; }
+.account-wizard h4 { margin: 0 0 8px; font-size: 1.05rem; }
+.account-wizard > p { color: #5b6577; }
+.account-provider-choices { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-block: 16px; }
+.account-provider-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; min-height: 88px; padding: 16px; border: 1px solid #d8dee8; border-radius: 9px; background: #fff; color: #202632; text-align: left; }
+.account-provider-action > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.account-provider-action strong { display: block; font-weight: 650; }
+.account-provider-method { display: block; margin-top: 6px; color: #5b6577; }
+.account-provider-chevron { flex: 0 0 auto; color: #5b6577; font-size: 1.4rem; }
+.account-provider-action:hover { border-color: #2563d8; background: #f7f9fc; }
+.account-provider-action:focus-visible, .account-wizard h4:focus-visible { outline: 2px solid #2563d8; outline-offset: 3px; }
+@container (min-width: 560px) { .account-provider-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .subscription-account-create { margin-top: 22px; }
 .subscription-account-create h3 { margin-bottom: 8px; }
-@media (max-width: 760px) { .account-result dl { grid-template-columns: minmax(0, 1fr); } .account-wizard, .subscription-account-create { padding: 16px; } }
+@media (max-width: 760px) { .account-result dl { grid-template-columns: minmax(0, 1fr); } .subscription-account-create { padding: 16px; } }
 .provider-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 320px; margin-top: 20px; padding: 28px; border: 1px solid #d8dee8; border-radius: 12px; color: #5b6577; background: #ffffff; text-align: center; }
 .provider-empty svg { width: 22px; height: 22px; margin-bottom: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .provider-empty h2 { margin: 0 0 8px; color: #202632; font-size: 1.1rem; }
