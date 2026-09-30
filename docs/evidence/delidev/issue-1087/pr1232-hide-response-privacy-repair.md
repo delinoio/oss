@@ -1,0 +1,5 @@
+# PR #1232: browsing-data-free idempotent Hide
+
+Follow-up inspection of the Hide retry repair found that an absent-view retry could return a retained profile's tabs without an exact live-view match. Hide now returns an empty cleanup response for every request, including an unrelated window or superseded presentation; it still closes only an exact matching original child. Ordinary authorized state reads retain their existing independent boundary. This correction preserves idempotent cleanup while removing browsing data from its response.
+
+The extended `repeated_hide_preserves_a_replacement_view` regression proves that initial, repeated, superseded and unrelated-window cleanup responses contain no tabs, while the replacement remains accessible through its authorized status read. The complete controlled pinned-CEF host suite passed 44 tests (20 library and 24 host) with four real-sidecar fixtures explicitly ignored. Real-provider/OS acceptance remains separate. The native scoped instructions and owning contract now explicitly retain the response exclusion.

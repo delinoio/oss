@@ -93,8 +93,9 @@ Closing the panel releases its view, retaining its request context/profile.
 Failed Hide retains its exact presentation identity and retries that closure,
 including after unmount or late open completion. Hides are serialized; resize
 and reopening wait for successful closure. Native Hide confirms an already
-absent original view without touching a replacement, and old cleanup cannot
-clear the replacement's frontend identity. Closure acceptance does not replace
+absent original view without touching a replacement and returns no browsing
+data, including for unrelated-window requests. Old cleanup cannot clear the
+replacement's frontend identity. Closure acceptance does not replace
 the independent native close/shutdown proofs required for profile deletion.
 Profile directory traversal, tab reads, URL policy preparation and durable writes
 run on serialized storage workers without holding the native state lock during

@@ -898,14 +898,6 @@ impl BrowserHost {
 
     fn hide(&self, window: &str, profile: &str, view_id: &str) -> Result<BrowserState> {
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
-        let p = state
-            .profiles
-            .get(profile)
-            .ok_or(NativeFailure::InvalidEvidence)?;
-        let result = BrowserState {
-            tabs: p.tabs.clone(),
-            removal_pending: p.removing,
-        };
         // A superseding reservation already closes the previous child. Retried
         // cleanup proves that old view is absent without touching its replacement.
         let view = if state
@@ -924,7 +916,12 @@ impl BrowserHost {
         {
             host.close_browser(1);
         }
-        Ok(result)
+        // Cleanup returns no browsing data, including when the supplied profile
+        // belongs to another window or the old presentation is already absent.
+        Ok(BrowserState {
+            tabs: Tabs::default(),
+            removal_pending: false,
+        })
     }
 
     pub fn status(&self, window: &str, profile: &str, view_id: &str) -> Result<BrowserState> {
@@ -2097,9 +2094,21 @@ mod tests {
     #[test]
     fn repeated_hide_preserves_a_replacement_view() {
         let (_temp, host, record, view_id, request) = active_storage_fixture();
-        host.hide("fixture", &record.id, &view_id).unwrap();
+        assert!(
+            host.hide("fixture", &record.id, &view_id)
+                .unwrap()
+                .tabs
+                .tabs
+                .is_empty()
+        );
         assert!(host.state.lock().unwrap().views.is_empty());
-        host.hide("fixture", &record.id, &view_id).unwrap();
+        assert!(
+            host.hide("fixture", &record.id, &view_id)
+                .unwrap()
+                .tabs
+                .tabs
+                .is_empty()
+        );
         let replacement = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &replacement).unwrap();
         host.state.lock().unwrap().views.insert(
@@ -2113,7 +2122,20 @@ mod tests {
                 view_id: replacement.clone(),
             },
         );
-        host.hide("fixture", &record.id, &view_id).unwrap();
+        assert!(
+            host.hide("fixture", &record.id, &view_id)
+                .unwrap()
+                .tabs
+                .tabs
+                .is_empty()
+        );
+        assert!(
+            host.hide("unrelated-window", &record.id, &replacement)
+                .unwrap()
+                .tabs
+                .tabs
+                .is_empty()
+        );
         assert!(host.status("fixture", &record.id, &replacement).is_ok());
     }
 
