@@ -501,3 +501,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Windows global OpenCode runtime context must also be a canonical local-drive directory before launch. Refuse UNC/device/root-relative contexts during initialization, including Build, rather than discovering incompatible runtime ownership only at Plan comparison or native checkpoint retention.
 
 - Workspace read and WatchWork lanes retain independent execution ownership but share the workspace Manager's per-session observation/storage gate through anchored read and native child cleanup. Session-bound version-2 read indexes participate in permanent deletion and completed-proof absence checks. Preserve unknown or legacy unassigned owners as recovery-required, without native replay.
+
+- Snapshot staging removal requires the workspace owner's original operation-bound native-directory claim. Join job owners before validated cleanup, include staging claims in permanent-deletion absence inventories, and verify staging remains absent before generic copy cleanup; preserve unknown or reappearing staging.

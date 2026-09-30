@@ -289,7 +289,7 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			result.RemovedSourceBytes = snapshot.SourceBytes
 		}
 		if staged {
-			if err := removeSnapshotTree(ctx, staging); err != nil {
+			if err := m.cleanupStorageStaging(ctx, original); err != nil {
 				return result, ResultUncertain()
 			}
 		}
@@ -321,7 +321,7 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 				if err != nil || inventoryDigest(current) != inventoryDigest(snapshot.Inventory) {
 					return result, ResultUncertain()
 				}
-				if err := removeSnapshotTree(ctx, staging); err != nil {
+				if err := m.cleanupStorageStaging(ctx, original); err != nil {
 					return result, ResultUncertain()
 				}
 			}

@@ -212,6 +212,14 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			return e
 		}
 		for _, path := range paths {
+			if filepath.Dir(path) == filepath.Join(root, "snapshot-staging") {
+				// Workspace cleanup already checked the original native staging
+				// identity. A later replacement must remain protected here.
+				if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
+					return domain.SessionDeletionPending()
+				}
+				continue
+			}
 			if e := removeSessionTree(ctx, root, path); e != nil {
 				return e
 			}

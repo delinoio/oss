@@ -561,7 +561,15 @@ kind and named/opened identity immediately before unlink. New entries are never
 selected, and atomic empty-directory removal refuses remaining unknown contents.
 Changes during removal retain the claim, remaining bytes and recovery uncertainty;
 partial recovery checks the same intent and root identity. Scratch cleanup keeps
-its separate operation-owned enumeration. Verification and directory
+its separate operation-owned enumeration. Only create/cleanup and restore create
+scratch. After exclusive directory creation, synchronize an external versioned
+claim binding the exact operation/request digest, preparation, session/machine,
+snapshot/action and native root identity before copying. Direct failure cleanup,
+explicit recovery and permanent deletion verify that claim through the opened
+removal root before touching entries. Preview grants no scratch authority;
+missing/legacy proof or replacement directories remain protected without adoption.
+Keep claims until coordinated permanent deletion checks scratch absence; a later
+reappearing directory cannot pass generic Worker copy cleanup. Verification and directory
 synchronization remain mandatory. A second
 repository copy failure or cancellation cannot remove either original repository.
 Failures after a namespace transition retain recovery uncertainty and private

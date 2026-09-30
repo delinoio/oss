@@ -35,9 +35,9 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	if count >= maxPublishedSnapshots {
 		return empty, domain.Fail(domain.ResourceExhausted, "The Worker snapshot inventory is full.", "Delete an unneeded verified snapshot before requesting another; sources remain intact.")
 	}
-	staging := filepath.Join(m.Root, "snapshot-staging", string(r.OperationID))
-	if err := os.Mkdir(staging, 0700); err != nil {
-		return empty, ResultUncertain()
+	staging, err := m.createStorageStaging(r)
+	if err != nil {
+		return empty, err
 	}
 	defer func() {
 		// A scratch copy is never a published snapshot. Preserve uncertain cleanup
@@ -48,7 +48,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 		if m.storageScratchCleanupFault != nil {
 			err = m.storageScratchCleanupFault(staging)
 		} else {
-			err = removeSnapshotTree(cleanup, staging)
+			err = m.cleanupStorageStaging(cleanup, r)
 		}
 		if err != nil {
 			returned = ResultUncertain()

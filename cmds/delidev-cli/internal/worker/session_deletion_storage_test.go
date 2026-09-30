@@ -96,3 +96,36 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionDeletionPreservesForeignStorageStaging(t *testing.T) {
+	config, work, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	prepare := workspace.PrepareRequest{SessionID: work.SessionID, MachineID: work.MachineID, OriginMachineID: work.MachineID, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}}
+	input := workspace.StorageRequest{Version: 1, OperationID: domain.NewID(), Action: workspace.StoragePreview, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest}
+	raw, _ := json.Marshal(input)
+	instance := work.Copies[0].InstanceID
+	job := domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobClaimed, MachineID: work.MachineID, InstanceID: instance, AssignedDeviceID: work.DeviceID, Input: raw, AcceptedAt: time.Now().UTC()}
+	document, _ := json.Marshal(job)
+	resource := &pb.Resource{Id: string(input.OperationID), Revision: 2, SchemaVersion: 1, Kind: pb.EntityKind_ENTITY_KIND_JOB, SessionId: string(work.SessionID), DocumentJson: document}
+	result, err := runJob(context.Background(), config, instance, resource, job)
+	if err != nil || result.Problem != nil {
+		t.Fatal(err, result.Problem)
+	}
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: input.OperationID, Type: job.Type, Revision: 2, InstanceID: instance, Digest: result.Digest})
+	staging := filepath.Join(config.Root, "snapshot-staging", string(input.OperationID))
+	if err := os.Mkdir(staging, 0700); err != nil {
+		t.Fatal(err)
+	}
+	foreign := filepath.Join(staging, "foreign")
+	if err := os.WriteFile(foreign, []byte("preserve foreign scratch"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteSessionCopies(context.Background(), config, work); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("deletion adopted unowned scratch", err)
+	}
+	if raw, err := os.ReadFile(foreign); err != nil || string(raw) != "preserve foreign scratch" {
+		t.Fatal("foreign scratch removed", err)
+	}
+	if _, err := os.Stat(manifest.PrimaryPath); err != nil {
+		t.Fatal("foreign scratch did not block workspace removal", err)
+	}
+}

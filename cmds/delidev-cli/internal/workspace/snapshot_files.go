@@ -320,7 +320,7 @@ func syncSnapshotDir(path string) error { return security.SyncParent(filepath.Jo
 
 // Removal never follows a link or leaves the opened private namespace. It is
 // cancellable and bounded; unfinished removal remains reachable for recovery.
-func removeSnapshotTree(ctx context.Context, path string) error {
+func removeSnapshotTree(ctx context.Context, path string, expectedIdentity ...string) error {
 	before, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		return nil
@@ -333,6 +333,17 @@ func removeSnapshotTree(ctx context.Context, path string) error {
 		return err
 	}
 	defer root.Close()
+	opened, err := root.Open(".")
+	if err != nil {
+		return ResultUncertain()
+	}
+	actual, statErr := opened.Stat()
+	identity, identityErr := directoryFileIdentity(opened)
+	opened.Close()
+	named, namedErr := os.Lstat(path)
+	if statErr != nil || identityErr != nil || namedErr != nil || !os.SameFile(before, actual) || !os.SameFile(actual, named) || (len(expectedIdentity) > 0 && identity != expectedIdentity[0]) {
+		return ResultUncertain()
+	}
 	count := 0
 	var remove func(*os.Root) error
 	remove = func(parent *os.Root) error {

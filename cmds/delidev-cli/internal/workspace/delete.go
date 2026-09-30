@@ -53,6 +53,10 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		return domain.SessionDeletionPending()
 	}
 	defer observationLock.Close()
+	stage = "storage-staging-ownership"
+	if err := m.cleanupDeletionStaging(ctx, w); err != nil {
+		return err
+	}
 	storedManifest, e := m.deletionSnapshotManifest(ctx, w)
 	if e != nil {
 		return e
