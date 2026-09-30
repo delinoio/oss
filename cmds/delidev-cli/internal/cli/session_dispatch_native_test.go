@@ -33,6 +33,10 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 	testManualNativeCLI(t, false, nativeDefaultWorkspaces)
 }
 
+func TestManualNativeCLIAccountSwitch(t *testing.T) {
+	testManualNativeCLI(t, false, nativeAccountSwitchWorkspaces)
+}
+
 func TestManualNativeCLISteer(t *testing.T) {
 	testManualNativeCLI(t, true, nativeDefaultWorkspaces)
 }
@@ -51,6 +55,7 @@ const (
 	nativeScheduledWorkspaces
 	nativeCronWorkspace
 	nativeLocalReviewWorkspaces
+	nativeAccountSwitchWorkspaces
 )
 
 func TestManualNativeCLILocalRepositories(t *testing.T) {
@@ -103,11 +108,20 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 	if profile == nativeLocalReviewWorkspaces {
 		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 2}}
 	}
+	if profile == nativeAccountSwitchWorkspaces {
+		scenarios = []nativeScenario{{domain.ExecuteMode, domain.GeneralChat, 0}}
+	}
 	for _, scenario := range scenarios {
 		mode := scenario.mode
 		multipleRepositories := scenario.repositories > 1
 		t.Run(string(scenario.workspace)+"/"+string(mode), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			deadline := 120 * time.Second
+			if profile == nativeAccountSwitchWorkspaces {
+				// Two independently owned native startups and account validations may
+				// run on a busy host. Keep product probe/operation bounds unchanged.
+				deadline = 3 * time.Minute
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), deadline)
 			defer cancel()
 			root := filepath.Join(t.TempDir(), "server")
 			ready := make(chan struct{})
@@ -213,6 +227,33 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				if err != nil || !strings.Contains(string(body), "fixture-model") {
 					t.Error("native execution changed accepted input/model")
 				}
+				if profile == nativeAccountSwitchWorkspaces {
+					var request map[string]json.RawMessage
+					if json.Unmarshal(body, &request) != nil {
+						t.Error("invalid native history request")
+					}
+					for _, field := range []string{"previous_response_id", "conversation"} {
+						if value, ok := request[field]; ok && string(value) != "null" {
+							t.Error("account-bound remote state reached the switched provider")
+						}
+					}
+					if call > 1 && strings.Contains(string(body), "resp_public_fixture_1") {
+						t.Error("A response identity reached B")
+					}
+					var items []map[string]json.RawMessage
+					if json.Unmarshal(request["input"], &items) != nil {
+						t.Error("native full history is not an ordered item list")
+					}
+					for _, item := range items {
+						var kind string
+						if json.Unmarshal(item["type"], &kind) == nil && kind == "item_reference" {
+							t.Error("account-bound item reference reached the switched provider")
+						}
+					}
+					if call == 2 && strings.Count(string(body), "Public execution complete.") != 1 {
+						t.Error("B did not receive the original assistant history exactly once")
+					}
+				}
 				if profile == nativeLocalReviewWorkspaces {
 					reviewScenario.respond(t, w, r, body, call)
 					return
@@ -276,7 +317,14 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			if scenario.workspace != domain.GeneralChat {
 				options.Permission = domain.PermissionWorkspaceWrite
 			}
-			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: []domain.WeightedAccount{{ID: domain.ID(account["id"].(string)), Weight: 1}}, Options: options})["resource"].(map[string]any)
+			candidates := []domain.WeightedAccount{{ID: domain.ID(account["id"].(string)), Weight: 1}}
+			var switchAccount map[string]any
+			if profile == nativeAccountSwitchWorkspaces {
+				switchAccount = run([]string{"account", "create"}, domain.Account{Alias: "Compatible B", ProviderID: domain.ID(provider["id"].(string)), Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected})["resource"].(map[string]any)
+				switchAccount = run([]string{"account", "connect", "--id", switchAccount["id"].(string), "--revision", revision(switchAccount), "--keyless"}, nil)["account"].(map[string]any)
+				candidates = append(candidates, domain.WeightedAccount{ID: domain.ID(switchAccount["id"].(string)), Weight: 1})
+			}
+			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: candidates, Options: options})["resource"].(map[string]any)
 			create := []string{"session", "create", "--request-id", string(domain.NewID()), "--wait"}
 			type localCheckout struct{ root, head string }
 			var localCheckouts []localCheckout
@@ -499,6 +547,13 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			}
 			checkUsage := func(responses, missing int) {
 				t.Helper()
+				if profile == nativeAccountSwitchWorkspaces && missing > 0 {
+					b := run([]string{"usage", "summary", "--session-id", id, "--account-id", switchAccount["id"].(string)}, nil)
+					if b["totals"].(map[string]any)["responses"] != float64(0) || b["accepted_executions_without_response"] != float64(missing) {
+						t.Fatal("new execution usage coverage was attributed to A", b)
+					}
+					missing = 0
+				}
 				summary := run([]string{"usage", "summary", "--session-id", id, "--account-id", account["id"].(string)}, nil)
 				totals := summary["totals"].(map[string]any)
 				if totals["responses"] != float64(responses) || totals["total"].(map[string]any)["known_total"] != fmt.Sprint(responses*2) || summary["accepted_executions_without_response"] != float64(missing) || summary["actual_cost"] != "USAGE_COST_STATE_UNAVAILABLE" {
@@ -650,6 +705,9 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				if string(retained) != string(initialBytes) || state.Execution.NativeThreadID != originalThread || state.Execution.ExecutionID == previousExecution || state.Dispatch != domain.DispatchReady || state.Outcome != domain.ExecutionSucceeded || state.ActiveExecutionID != "" || state.NextExecutionIntent != domain.ContinueAutomatically {
 					t.Fatal("continuation replaced history, snapshot or ownership")
 				}
+				if profile == nativeAccountSwitchWorkspaces && (state.InitialExecution.InitialAccountID != domain.ID(account["id"].(string)) || state.ExecutionSelection().AccountID != domain.ID(switchAccount["id"].(string))) {
+					t.Fatal("execution attribution crossed account history")
+				}
 				checkRoots()
 				previousExecution = state.Execution.ExecutionID
 				expectedRequests := int64(count)
@@ -690,6 +748,41 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				if calls.Load() != 3 || validations.Load() != 1 {
 					t.Fatal("review replay repeated native requests or account validation")
 				}
+				return
+			}
+			if profile == nativeAccountSwitchWorkspaces {
+				current := run([]string{"session", "get", "--id", id}, nil)
+				stopped := run([]string{"session", "stop", "--id", id, "--revision", revision(current)}, nil)["session"].(map[string]any)
+				switchAccount = run([]string{"account", "validate", "--id", switchAccount["id"].(string), "--revision", revision(switchAccount)}, nil)["account"].(map[string]any)
+				args := []string{"session", "switch-account", "--id", id, "--revision", revision(stopped), "--account-id", switchAccount["id"].(string), "--request-id", string(domain.NewID())}
+				selected := run(args, nil)
+				replay := run(args, nil)
+				if replay["replayed"] != true || len(replay["session"].(map[string]any)["data"].(map[string]any)["account_changes"].([]any)) != 1 {
+					t.Fatal("lost switch acknowledgement duplicated selection history")
+				}
+				// This profile proves only the explicit A-to-B boundary. The original
+				// fixture below separately exercises longer FIFO and interrupt chains.
+				second := enqueue("Public second prompt", domain.PlanMode)
+				select {
+				case <-time.After(1200 * time.Millisecond):
+				case <-ctx.Done():
+					t.Fatal("account-switch fixture deadline")
+				}
+				if calls.Load() != 1 || selected["session"].(map[string]any)["data"].(map[string]any)["dispatch"] != string(domain.DispatchPaused) {
+					t.Fatal("account selection automatically dispatched queued input")
+				}
+				current = run([]string{"session", "get", "--id", id}, nil)
+				run([]string{"session", "resume", "--id", id, "--revision", revision(current)}, nil)
+				waitTurn(2, second)
+				replay = run(args, nil)
+				if replay["replayed"] != true || len(replay["session"].(map[string]any)["data"].(map[string]any)["account_changes"].([]any)) != 1 || calls.Load() != 2 || validations.Load() != 2 {
+					t.Fatal("completed A-to-B receipt replay changed history or repeated provider work")
+				}
+				messages = run([]string{"message", "list", "--session-id", id}, nil)["resources"].([]any)
+				if len(messages) != 4 {
+					t.Fatal("account switching lost the original native transcript")
+				}
+				t.Log("public CLI A-to-B switch retained complete ordered native history, rejected A-bound remote identifiers, remained paused until Resume, used fresh B ownership and replayed one selection; keyless loopback only")
 				return
 			}
 			// Complete two FIFO turns in fresh native processes on the original history.
@@ -741,7 +834,11 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			}
 			queue = run([]string{"queue", "list", "--session-id", id}, nil)["inputs"].([]any)
 			messages = run([]string{"message", "list", "--session-id", id}, nil)["resources"].([]any)
-			if len(queue) != 5 || len(messages) != 10 || validations.Load() != 1 {
+			expectedValidations := int64(1)
+			if profile == nativeAccountSwitchWorkspaces {
+				expectedValidations = 2
+			}
+			if len(queue) != 5 || len(messages) != 10 || validations.Load() != expectedValidations {
 				t.Fatal("continuation lost ordered input/transcript or repeated provider validation")
 			}
 			for n, entry := range queue {
