@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
@@ -140,6 +141,16 @@ type sessionAPI struct {
 	restoredAlways      uint32
 	permissionRestore   *interactionHTTPAttempt
 	todoRead            bool
+
+	reconciliation          ReconciliationState
+	reconciliationMu        sync.Mutex
+	reconciliationCancel    context.CancelFunc
+	reconciliationDenied    bool
+	reconciliationRead      bool
+	reconciliationReadBytes int
+	verifyStreamOwner       func(context.Context) error
+	recovered               []inputObservation
+	recoveredObserver       *inputObserver
 }
 
 type sessionCreation struct {
