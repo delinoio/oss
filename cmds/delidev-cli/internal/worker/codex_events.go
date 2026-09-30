@@ -121,7 +121,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			c.blocked = true
 		}
 	}()
-	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
+	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
 		return false, publicationUncertain()
 	}
 	if event.Kind == codex.LateTurnResponseEvent && event.Action == codex.SteerTurnAction {
