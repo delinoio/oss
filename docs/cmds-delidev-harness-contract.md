@@ -1611,6 +1611,11 @@ them. Original request bytes count toward the existing 4 MiB reducer bound, and
 both representations share the existing public event and stored journal limits.
 Historical typed-only evidence grants no new interaction/reply authority.
 
+Validate the complete outer request ID against the earlier retained event,
+including the original kind and decimal spelling. Keep normalized namespace
+keys for duplicate detection and native request digests; equality of those keys
+alone cannot establish original public request identity.
+
 Write decisions preserve `allow-once`, `allow-edits-session` and `reject-once`. The remembered edit provenance arises only after the original session-scoped reply is durably claimed/transmitted, natively resolved and its approving Write completes. Later unrequested Writes retain that original arrival; this changes neither synchronized defaults nor a replaced process. Pinned Read has an automatic permission cycle without a client permission request. Preserve it without inventing an allow/deny response. `PermissionRejected` is original Write denial with reported accounting, not user Stop. Richer Stop or revocation immediately cancels new response admission and joins owned cleanup; without a separately verified richer native Stop terminal, retain recovery instead of manufacturing success or interruption proof.
 
 Native questions retain each exact original question string as its answer key, original options and explicit nullable multi-select. Accepted answers cover all original questions and may include bounded notes; `cancelled` sends no answer/annotation/partial fields and continues the input; `skip_interview` retains only explicitly selected partial answers. Validate the original bounded native encoding before accepting and again before sending. Wrong response families, null/mixed fields, stale/foreign requests and competing replies fail before native side effects. Transport delivery, original native resolution, completed tool result, execution termination and owned cleanup remain separate. Only independently observed original resolution plus completed result yields the server-derived `native-grok-tool-result` acceptance and closes the original interaction once.

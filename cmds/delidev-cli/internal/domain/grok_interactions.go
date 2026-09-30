@@ -1,6 +1,9 @@
 package domain
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"reflect"
+)
 
 type GrokFileDecision string
 type GrokPlanDecision string
@@ -36,9 +39,9 @@ func (r GrokInteractionRequest) Validate(kind InteractionType, id InteractionReq
 	if r.Version != GrokProtocolVersion || r.ObservationID.Validate() != nil || r.Event.ArrivalID.Validate() != nil || r.Event.RequestID == nil || r.Event.ProposalJSON == "" {
 		return invalidInteraction()
 	}
-	original, e1 := id.Key()
-	retained, e2 := r.Event.RequestID.Key()
-	if e1 != nil || e2 != nil || original != retained {
+	_, e1 := id.Key()
+	_, e2 := r.Event.RequestID.Key()
+	if e1 != nil || e2 != nil || !reflect.DeepEqual(id, *r.Event.RequestID) {
 		return invalidInteraction()
 	}
 	for _, digest := range []string{r.RequestDigest, r.ProposalDigest} {

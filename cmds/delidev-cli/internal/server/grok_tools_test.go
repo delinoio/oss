@@ -12,6 +12,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -72,6 +73,7 @@ func publicGrokWriteFixture(t *testing.T, requestIDs ...domain.InteractionReques
 			event = f.event(domain.ExecutionInteractionRequested, sequence)
 			event.Interaction = &domain.ExecutionInteractionUpdate{ID: id, Type: domain.NativeApprovalInteraction, NativeRequestID: *observation.RequestID, NativeItemID: *payload.Tool.ID, Grok: request}
 			rejectChangedGrokProposal(t, f, event)
+			rejectChangedGrokRequestRepresentation(t, f, event)
 			f.publish(t, event)
 			return f, rows[i+1:], id, sequence
 		}
@@ -129,6 +131,45 @@ func TestGrokPublicLegacyProposalCannotAcquireReply(t *testing.T) {
 	_, after := readPublishedInteraction(t, f, id)
 	if !reflect.DeepEqual(retained, after) {
 		t.Fatal("rejected historical reply changed retained evidence")
+	}
+}
+
+func rejectChangedGrokRequestRepresentation(t *testing.T, f *publicationFixture, event domain.ExecutionEvent) {
+	t.Helper()
+	id := event.Interaction.NativeRequestID
+	if id.Kind != domain.InteractionDecimalID {
+		return
+	}
+	number, err := strconv.ParseInt(id.Decimal, 10, 64)
+	if err != nil {
+		return
+	}
+	legacy := domain.InteractionRequestID{Kind: domain.InteractionNumberID, Number: &number}
+	originalKey, _ := id.Key()
+	legacyKey, _ := legacy.Key()
+	if originalKey != legacyKey {
+		// The original -0 spelling already has a distinct namespace key.
+		return
+	}
+	raw, err := json.Marshal(event)
+	var changed domain.ExecutionEvent
+	if err != nil || domain.Decode(raw, &changed) != nil {
+		t.Fatal("original numeric Grok request", err)
+	}
+	changed.Interaction.NativeRequestID = legacy
+	before, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.call(f.requestEvent(t, changed)); err == nil {
+		t.Fatal("normalized request key substituted a different representation")
+	}
+	if _, err := f.service.Store.Get(context.Background(), domain.InteractionKind, changed.Interaction.ID); err == nil {
+		t.Fatal("changed numeric representation created an interaction")
+	}
+	after, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("changed numeric representation advanced session progress", err)
 	}
 }
 func TestGrokPublicWriteAcceptanceResultAndLostReceipts(t *testing.T) {
@@ -505,7 +546,7 @@ func TestGrokPublicRememberedWriteRetainsOriginalCompletedApproval(t *testing.T)
 }
 
 func TestGrokPublicNumericApprovalPreservesRequestAndClaim(t *testing.T) {
-	for _, spelling := range []string{"-0", "9223372036854775808", "-9223372036854775809"} {
+	for _, spelling := range []string{"0", "42", "-42", "-0", "9223372036854775808", "-9223372036854775809"} {
 		t.Run(spelling, func(t *testing.T) {
 			identity := domain.InteractionRequestID{Kind: domain.InteractionDecimalID, Decimal: spelling}
 			f, _, id, _ := publicGrokWriteFixture(t, identity)

@@ -398,6 +398,11 @@ Issue #1091 adds typed `grok-tool-observed`/`grok_tool`, exclusive `Interaction.
 
 Existing `RespondQuestion`, `RespondApproval`, owning-Worker response claims, metadata-only controls, delivery publications and exact receipt replay carry these variants. Accepted original tool results create the server-derived `native-grok-tool-result` evidence; a Worker cannot assert it through generic acceptance publication. Native Plan uses the original approval request and adds no common Plan gate. No protobuf service, generated binding, relational schema migration or Worker permission expansion is required. CLI `interaction respond` and `interaction approve` accept the same exclusive `{"grok": ...}` document through file/stdin after reading and validating the original interaction; credential stdin remains separate. Historical missing variants preserve existing bytes and do not gain this profile's authority.
 
+Original Grok interaction request IDs must match the complete retained value,
+including kind and decimal spelling. Historical numeric and decimal variants
+may share a duplicate-detection namespace key; that key cannot substitute one
+representation for another or grant a reply to a changed request.
+
 ### Stopped Codex API account selection
 
 `SessionService.SwitchSessionAccount` is an additive owner/client-only mutation, capability-gated by `STOPPED_CODEX_ACCOUNT_SWITCH_V1` (wire value 5, allocated on main) in System status. Its `Mutation` binds the exact session revision/request and `account_id` selects an original candidate; actor-bound reference receipts return current `SessionChange`. Admission, historical attribution, full native history and explicit Resume follow the [sessions contract](cmds-delidev-sessions-contract.md). It performs no native side effect or automatic execution. Go, TypeScript and Connect Query bindings are generated from the service-owned schema; existing capabilities retain their wire values.
