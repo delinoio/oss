@@ -6,7 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { EntityKind, EventAction, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, WatchEventsResponseSchema, newRequestId } from "@delinoio/delidev-api-client";
-import { encode } from "./documents";
+import { document, encode, object } from "./documents";
+import { subagentFixture } from "./subagent-test-fixture";
 import { MutationIntents } from "./mutation";
 import { SessionView } from "./session";
 
@@ -18,7 +19,9 @@ test("large child publications preserve root streaming and refresh only the pagi
   // child inventory would overflow the transcript's independent 8 MiB bound.
   const children = Array.from({ length: 20 }, () => create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.SUBAGENT, schemaVersion: 1, revision: 1n, documentJson: encode({ observed: "x".repeat(512000) }) }));
   const message = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.MESSAGE, schemaVersion: 1, revision: 1n, documentJson: encode({ role: "assistant", text: "Root transcript still streams" }) });
-  const page = create(ResourceSchema, { ...children[0], documentJson: encode({ root_id: id, observation: { native_id: "paged-child", parent_id: id, status: "running", output: null, usage: null } }) });
+  const page = subagentFixture(id), record = document(page);
+  object(record.observation).output = { native_message_id: "original-paged-message", text: "paged-child", partial: true };
+  page.documentJson = encode(record);
   let published = false, childFetches = 0;
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBAGENT_OBSERVATION_V1] }) });

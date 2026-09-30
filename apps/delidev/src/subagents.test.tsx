@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { create } from "@bufbuild/protobuf";
 import { expect, test } from "vitest";
-import { EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, newRequestId } from "@delinoio/delidev-api-client";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ResourceService, SystemService, SystemCapability } from "@delinoio/delidev-api-client";
 import { Subagents, SubagentRows } from "./subagents";
+import { document, encode, object } from "./documents";
+import { subagentFixture } from "./subagent-test-fixture";
 
 test("shows native hierarchy, missing telemetry and exact observed child counters without controls", () => {
-  const root = newRequestId(), parent = newRequestId();
-  const row = (native: string, parentId: string, model: string | null, usage: unknown) => create(ResourceSchema, {
-    id: newRequestId(), revision: 1n, kind: EntityKind.SUBAGENT, schemaVersion: 1,
-    documentJson: new TextEncoder().encode(JSON.stringify({ root_id: root, execution_id: newRequestId(), harness: "codex", native_version: "0.151.0",
-      sources: [{ source: "codex-collaboration", source_id: "original-spawn", sequence: 3 }],
-      observation: { native_id: native, parent_id: parentId, status: "running", requested_model: "requested-only", observed_model: model, output: null, usage },
-    })),
-  });
-  render(<SubagentRows rows={[row(parent, root, null, null), row("nested-native-child", parent, "observed-model", { scope: "child-cumulative", total: "18446744073709551615", input: null, output: "0" })]} />);
-  expect(screen.getByText("nested-native-child")).toBeTruthy();
+  const session = newRequestId(), one = subagentFixture(session), two = subagentFixture(session);
+  const first = document(one), second = document(two), parent = String(object(first.observation).native_id), nested = String(object(second.observation).native_id);
+  object(first.observation).observed_model = null; object(first.observation).output = null;
+  second.execution_id = first.execution_id; second.root_id = first.root_id; object(second.observation).parent_id = parent;
+  const usage = { scope: "child-cumulative", total: "9223372036854775807", input: "0", output: "0", native_report: '{"total":{"inputTokens":0,"cachedInputTokens":0,"outputTokens":0,"reasoningOutputTokens":0,"totalTokens":9223372036854775807},"last":{"inputTokens":0,"cachedInputTokens":0,"outputTokens":0,"reasoningOutputTokens":0,"totalTokens":0}}' };
+  object(second.observation).usage = usage; object((second.sources as unknown[])[0]).usage = usage;
+  one.documentJson = encode(first); two.documentJson = encode(second);
+  render(<SubagentRows sessionId={session} rows={[one, two]} />);
+  expect(screen.getByText(nested)).toBeTruthy();
   expect(screen.getAllByText(parent).length).toBe(2);
   expect(screen.getByText("Observed: observed-model")).toBeTruthy();
   expect(screen.getByText("Observed: Unavailable")).toBeTruthy();
-  expect(screen.getByText("Total: 18446744073709551615")).toBeTruthy();
+  expect(screen.getByText("Total: 9223372036854775807")).toBeTruthy();
   expect(screen.getByText("Output: 0")).toBeTruthy();
   expect(screen.getAllByText("Requested: requested-only").length).toBe(2);
   expect(screen.queryByRole("button")).toBeNull();
