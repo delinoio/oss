@@ -118,7 +118,7 @@ func TestClaudeLostFailedReportRecoveryPreservesOriginalFailure(t *testing.T) {
 	f, _ := claudeRootOutcomeCompletionFixture(t, domain.ExecutionFailed, func(f *publicationFixture) { f.registerGrant(t) })
 	row, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
 	before, decodeErr := store.Decode[domain.Session](row)
-	if err != nil || decodeErr != nil {
+	if err != nil || decodeErr != nil || before.Problem == nil {
 		t.Fatal("original failure is unavailable", err, decodeErr)
 	}
 	problem, _ := json.Marshal(before.Problem)
@@ -139,5 +139,9 @@ func TestClaudeLostFailedReportRecoveryPreservesOriginalFailure(t *testing.T) {
 	retained, _ := json.Marshal(session.Problem)
 	if !bytes.Equal(problem, retained) {
 		t.Fatal("recovery replaced the original failure classification")
+	}
+	jobProblem, _ := json.Marshal(original.Problem)
+	if !bytes.Equal(problem, jobProblem) {
+		t.Fatal("recovery erased the failed execution job diagnostic")
 	}
 }
