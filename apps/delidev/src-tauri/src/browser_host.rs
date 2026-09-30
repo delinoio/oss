@@ -117,6 +117,33 @@ enum DiscoveryPass {
     Poll,
     Exit { deadline: Instant },
 }
+#[derive(Default)]
+struct ReservationAttempt {
+    cancelled: Mutex<bool>,
+}
+impl ReservationAttempt {
+    fn run(&self, callback: impl FnOnce() -> Result<()>) -> Result<()> {
+        let cancelled = self.cancelled.lock().map_err(|_| NativeFailure::Busy)?;
+        if *cancelled {
+            return Err(NativeFailure::Stopped);
+        }
+        callback()
+    }
+
+    fn wait(
+        &self,
+        receiver: std::sync::mpsc::Receiver<Result<()>>,
+        timeout: Duration,
+    ) -> Result<()> {
+        match receiver.recv_timeout(timeout) {
+            Ok(result) => result,
+            Err(_) => {
+                *self.cancelled.lock().map_err(|_| NativeFailure::Busy)? = true;
+                Err(NativeFailure::Stopped)
+            }
+        }
+    }
+}
 pub struct BrowserHost {
     root: PathBuf,
     connector: Arc<Connector>,
@@ -185,11 +212,16 @@ impl BrowserHost {
         let _publication = self.publication.lock().map_err(|_| NativeFailure::Busy)?;
         let host = Arc::clone(self);
         let (send, receive) = std::sync::mpsc::sync_channel(1);
+        let attempt = Arc::new(ReservationAttempt::default());
+        let callback = Arc::clone(&attempt);
         app.run_on_main_thread(move || {
-            let _ = send.send(host.reserve(&window, &view_id));
+            let _ = send.send(callback.run(|| host.reserve(&window, &view_id)));
         })
         .map_err(|_| NativeFailure::SidecarFailed)?;
-        receive.recv().map_err(|_| NativeFailure::SidecarFailed)?
+        // Exit may stop the UI loop before this callback runs. Release the
+        // worker fence within a bound and invalidate that late callback, so the
+        // address-worker join cannot wait forever after native shutdown.
+        attempt.wait(receive, Duration::from_secs(5))
     }
 
     pub fn begin_exit(&self, code: i32) -> bool {
@@ -1892,6 +1924,31 @@ mod tests {
         .unwrap();
         let restored: Tabs = read_json(&path.join("tabs.json")).unwrap();
         assert_eq!(restored.tabs[0].url, "https://fixture.test/current");
+    }
+
+    #[test]
+    fn abandoned_ui_reservation_releases_fence_and_cannot_publish_late() {
+        let (_temp, host, record, view_id, _request) = active_storage_fixture();
+        let attempt = Arc::new(ReservationAttempt::default());
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        let copy = Arc::clone(&host);
+        let waiting = Arc::clone(&attempt);
+        let worker = thread::spawn(move || {
+            let _publication = copy.publication.lock().unwrap();
+            waiting.wait(receive, Duration::from_millis(5))
+        });
+        assert_eq!(worker.join().unwrap(), Err(NativeFailure::Stopped));
+        assert!(host.publication.try_lock().is_ok());
+        let late_id = uuid::Uuid::now_v7().to_string();
+        let late = attempt.run(|| host.reserve("fixture", &late_id));
+        send.send(late).unwrap_err();
+        assert_eq!(late, Err(NativeFailure::Stopped));
+        assert_eq!(
+            host.state.lock().unwrap().reservations.get("fixture"),
+            Some(&view_id)
+        );
+        host.prepare_control("fixture", &record.id, &view_id, Action::Reload, None, None)
+            .unwrap();
     }
 
     #[test]

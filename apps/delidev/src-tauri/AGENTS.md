@@ -34,6 +34,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - First-tab initialization must use the same staged publication fence and reservation check; a superseded initial open cannot publish its starting address into a replacement profile.
 
+- Bound the worker's UI-reservation wait and cancel unexecuted late callbacks before releasing its publication fence. Native shutdown must not leave the address-worker join waiting for a reservation callback that the UI loop can no longer deliver.
+
 - Observed-address writes must stage first and recheck the profile, child generation and current reservation under the same worker publication fence before replacing durable tabs.
 
 - Retain asynchronous raw-child creation failure only for its exact profile, generation and reservation. Native state polling and ordinary controls must surface the typed failure until explicit presentation retry; stale creation failures must not poison replacements or hide tracked removal.

@@ -89,6 +89,8 @@ UI-affine CEF publication. Tab controls stage and fsync private replacement file
 before checking the exact reservation at publication. A separate worker fence
 serializes the final replacement with reservation acceptance on the UI loop;
 only the worker waits for that callback, and native state is released during I/O.
+Reservation waits are bounded to five seconds and cancel an unexecuted late UI
+callback, releasing the worker fence if native exit stops callback delivery.
 Superseded staged writes are discarded without changing durable or live tabs.
 First-tab initialization uses that same staged publication boundary, so a
 superseded initial open cannot seed the replacement's profile with its address.
