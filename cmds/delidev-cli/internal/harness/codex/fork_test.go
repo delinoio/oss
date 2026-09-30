@@ -99,3 +99,31 @@ func TestForkDefaultsRejectPolicyDrift(t *testing.T) {
 		t.Fatal("changed temporary-file permission accepted")
 	}
 }
+
+func TestForkRolloutProofRejectsUnprotectedLinkedFile(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home = filepath.Join(home, "private-native-home")
+	if security.PrivateDir(home) != nil || security.PrivateDir(filepath.Join(home, "sessions")) != nil {
+		t.Fatal("private home")
+	}
+	public := filepath.Join(t.TempDir(), "external.jsonl")
+	if err := os.WriteFile(public, []byte("unprotected native rollout\n"), 0666); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(public, 0666); err != nil {
+		t.Fatal(err)
+	}
+	if security.RegularPrivate(public) == nil {
+		t.Skip("fixture filesystem created an owner-only external file")
+	}
+	path := filepath.Join(home, "sessions", "rollout.jsonl")
+	if err := os.Link(public, path); err != nil {
+		t.Skip("native hard-link fixture unavailable")
+	}
+	if _, err := forkRolloutDigest(context.Background(), home, path); err == nil {
+		t.Fatal("private directory hid an unprotected rollout file")
+	}
+}

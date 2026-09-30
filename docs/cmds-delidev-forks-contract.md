@@ -113,6 +113,10 @@ operator investigation. No source execution claim is advanced by inspection.
 The product never selects a rollout path. Native metadata selects one exact
 regular Worker-private `sessions/*.jsonl` file, with canonical rooted accesses,
 link/special-file refusal, immutable byte proof and before/after identity checks.
+Rollout descendant permissions use owner-only Windows DACL checks through the
+private-state security owner; Unix keeps its existing group/other write-bit
+refusal. A private home alone cannot hide an unprotected linked file. Go's
+emulated Windows permission bits are not an ACL observation.
 Secret Local proof is dedicated write-only authority, excluded from receipts.
 Fork receives no registered inference grant; only later ordinary execution may
 receive one after current eligibility checks. Imported source workspaces remain

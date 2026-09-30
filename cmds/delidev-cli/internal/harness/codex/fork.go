@@ -315,7 +315,7 @@ func forkRolloutDigest(ctx context.Context, home, path string) ([sha256.Size]byt
 	for _, part := range strings.Split(rel, string(filepath.Separator)) {
 		current = filepath.Join(current, part)
 		info, err := root.Lstat(current)
-		if err != nil || info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) || info.Mode().Perm()&0022 != 0 {
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) || !forkPrivateRolloutNode(filepath.Join(home, current), info) {
 			return result, unsupportedFork()
 		}
 	}

@@ -179,3 +179,19 @@ relevant; this run alone does not prove that every timeout is a baseline failure
 The last workspace binary was already compiled at that revision and used only
 private fixtures while the independent frontend merge was prepared. No broad Go
 success is claimed.
+
+## PR #1176 Windows CI repair: native rollout permissions
+
+The published-head Windows job
+[109780710503](https://github.com/delinoio/oss/actions/runs/36682437243/job/109780710503)
+failed `TestForkRolloutProofRejectsForeignLinksChangesAndCancellation` while
+inspecting its valid private fixture. Unix write-bit checks had been applied to
+Windows' emulated mode bits. Windows rollout nodes now use the existing
+owner-only DACL checks; Unix retains its write-bit refusal. A new native-file
+fixture rejects an unprotected hard-linked rollout even inside a private home.
+
+`GOMAXPROCS=4 go test -race ./cmds/delidev-cli/internal/harness/codex -run '^TestFork' -count=1`
+passed on macOS. The Windows amd64 test binary cross-compiled successfully with
+`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 GOMAXPROCS=4 go test -c ./cmds/delidev-cli/internal/harness/codex`.
+Cross-compilation does not execute Windows ACL validation; that result awaits
+native CI on the pushed repair head.

@@ -3,7 +3,14 @@
 
 package codex
 
-import "syscall"
+import (
+	"os"
+	"syscall"
+)
 
 // A swapped FIFO must not block a bounded snapshot after a regular-file check.
 func forkNonblockFlag() int { return syscall.O_NONBLOCK }
+
+func forkPrivateRolloutNode(_ string, info os.FileInfo) bool {
+	return info.Mode().Perm()&0022 == 0
+}
