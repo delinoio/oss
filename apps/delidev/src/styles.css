@@ -592,20 +592,93 @@ dialog.modal-full-window::backdrop { background: transparent; }
 .account-wizard > header h3 { margin: 0 0 5px; font-size: 1.15rem; }
 .account-wizard > header p { margin: 0; }
 .account-wizard > form { margin-top: 18px; }
-.account-provider-choices { margin-block: 16px; padding: 14px; border: 1px solid #d8dee8; border-radius: 9px; }
-.account-provider-choices legend { padding-inline: 5px; font-weight: 600; }
-.account-provider-choices label.radio { display: flex; align-items: center; gap: 10px; padding: 9px 4px; }
-.account-provider-choices input[type=radio] { width: 18px; height: 18px; margin: 0; }
+.account-wizard { container-type: inline-size; color: #202632; }
+.account-wizard h4 { margin: 0 0 8px; font-size: 1.05rem; }
+.account-wizard > p { color: #5b6577; }
+.account-provider-choices { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-block: 16px; }
+.account-provider-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; min-height: 88px; padding: 16px; border: 1px solid #d8dee8; border-radius: 9px; background: #fff; color: #202632; text-align: left; }
+.account-provider-action > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.account-provider-action strong { display: block; font-weight: 650; }
+.account-provider-method { display: block; margin-top: 6px; color: #5b6577; }
+.account-provider-chevron { flex: 0 0 auto; color: #5b6577; font-size: 1.4rem; }
+.account-provider-action:hover { border-color: #2563d8; background: #f7f9fc; }
+.account-provider-action:focus-visible, .account-wizard h4:focus-visible { outline: 2px solid #2563d8; outline-offset: 3px; }
+@container (min-width: 560px) { .account-provider-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .subscription-account-create { margin-top: 22px; }
 .subscription-account-create h3 { margin-bottom: 8px; }
-@media (max-width: 760px) { .account-result dl { grid-template-columns: minmax(0, 1fr); } .account-wizard, .subscription-account-create { padding: 16px; } }
+@media (max-width: 760px) { .account-result dl { grid-template-columns: minmax(0, 1fr); } .subscription-account-create { padding: 16px; } }
 .provider-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 320px; margin-top: 20px; padding: 28px; border: 1px solid #d8dee8; border-radius: 12px; color: #5b6577; background: #ffffff; text-align: center; }
 .provider-empty svg { width: 22px; height: 22px; margin-bottom: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .provider-empty h2 { margin: 0 0 8px; color: #202632; font-size: 1.1rem; }
 .provider-empty p { max-width: 32rem; margin: 0; line-height: 1.5; }
 
+/* Only Agent Workers uses the approved bounded column and earlier toolbar reflow. */
+.settings-agent-column { width: 100%; max-width: 1040px; min-width: 0; margin-inline: auto; }
+.settings-agent-column > .settings-category-heading { padding-bottom: 24px; border-bottom: 1px solid #d8dee8; }
+.settings-agent-column .settings-category-title h1 { font-size: 26px; }
+.settings-agent-column .settings-agent-summary { font-size: 14px; }
+.settings-agent-column .settings-agent-scope { margin-top: 4px; font-size: 12px; }
+.settings-agent-column button { border-radius: 8px; }
+.settings-agent-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 360px; padding: 28px; border: 1px solid #d8dee8; border-radius: 12px; background: #fafbfc; text-align: center; }
+.settings-agent-icon-tile { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 20px; border: 1px solid #d8dee8; border-radius: 12px; color: #5b6577; background: #ffffff; }
+.settings-agent-icon-tile .settings-category-icon { width: 28px; height: 28px; }
+.settings-agent-empty h2 { margin: 0 0 10px; color: #202632; font-size: 20px; line-height: 1.3; }
+.settings-agent-empty p { max-width: 440px; margin: 0; color: #5b6577; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.settings-agent-list { border: 1px solid #d8dee8; border-radius: 12px; background: #ffffff; }
+.settings-agent-row { display: flex; flex-wrap: wrap; align-items: center; gap: 20px 24px; padding: 20px; }
+.settings-agent-row + .settings-agent-row { border-top: 1px solid #d8dee8; }
+.settings-agent-details { flex: 1 1 280px; min-width: 0; overflow-wrap: anywhere; }
+.settings-agent-details h3 { margin: 0 0 8px; font-size: 16px; }
+.settings-agent-details p { margin: 0 0 6px; color: #5b6577; font-size: 14px; }
+.settings-agent-details small { display: block; font-size: 12px; }
+.settings-agent-actions { min-width: 0; margin: 0; }
+.settings-agent-actions button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+/* Projects is the scoped exception to the shared white/40px/8px Settings defaults. */
+.settings-projects { color: #202024; background: #f5f5f7; font-size: 13px; --muted: #62626a; --border: #dcdce1; --accent: #0067d9; }
+.settings-projects .settings-content-column { width: 100%; max-width: 820px; min-width: 0; margin-inline: auto; }
+.settings-projects .settings-category-title h1 { font-size: 24px; font-weight: 600; }
+.settings-projects .settings-category-title p { color: #62626a; }
+.settings-projects button, .settings-projects input:not([type=checkbox]), .settings-projects select { min-height: 36px; padding: 7px 10px; border-radius: 7px; border-color: #85858d; }
+.settings-projects button.primary { border-color: #0067d9; }
+.settings-projects :focus-visible { outline-color: #0067d9; }
+.settings-projects .settings-category-heading { flex-wrap: wrap; }
+.settings-projects .settings-toolbar { margin-left: auto; }
+.settings-projects .project-empty, .settings-projects .project-list, .settings-projects .project-field-group, .settings-projects .project-deletion { border: 1px solid #dcdce1; border-radius: 12px; background: white; }
+.settings-projects .project-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; padding: 28px; text-align: center; }
+.settings-projects .project-empty-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 16px; border-radius: 12px; color: #62626a; background: #f5f5f7; }
+.settings-projects .project-empty-icon svg { width: 24px; height: 24px; flex-basis: 24px; }
+.settings-projects .project-empty h2 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
+.settings-projects .project-empty p { max-width: 430px; margin: 0; color: #62626a; line-height: 1.5; }
+.settings-projects .project-empty p + p { margin-top: 12px; }
+.settings-projects .project-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 20px; }
+.settings-projects .project-row + .project-row { border-top: 1px solid #dcdce1; }
+.settings-projects .project-identity { min-width: 0; flex: 1 1 240px; overflow-wrap: anywhere; }
+.settings-projects .project-identity h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.settings-projects .project-identity small { color: #62626a; font-size: 13px; }
+.settings-projects .project-editor > h3 { font-size: 17px; font-weight: 600; }
+.settings-projects .project-editor > fieldset { min-width: 0; }
+.settings-projects .project-field-group { min-width: 0; margin: 0 0 16px; padding: 16px 20px 20px; }
+.settings-projects .project-field-group > legend { padding-inline: 5px; font-size: 13px; font-weight: 600; }
+.settings-projects .project-field-group p { color: #62626a; line-height: 1.5; }
+.settings-projects .project-field-group p:last-child { margin-bottom: 0; }
+.settings-projects .project-field-group label.checkbox { font-size: 13px; }
+.settings-projects .project-field-group fieldset { min-width: 0; }
+.settings-projects .project-field-group ol { padding-left: 20px; }
+.settings-projects .project-field-group li { min-width: 0; margin-block: 12px; overflow-wrap: anywhere; }
+.settings-projects .project-field-group li > .actions { margin-top: 8px; }
+.settings-projects .project-deletion { padding: 20px; overflow-wrap: anywhere; }
+.settings-projects .project-deletion p { color: #62626a; line-height: 1.5; }
+.settings-projects .problem, .settings-projects .notice, .settings-projects .actions { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 959px) {
+  .settings-projects .settings-category-heading { flex-direction: column; }
+  .settings-projects .settings-toolbar { justify-content: flex-start; width: 100%; margin-left: 0; }
+}
+
 @media (max-width: 1099px) {
   .settings-content { padding: 24px; }
+  .settings-agent-column > .settings-category-heading { flex-direction: column; }
+  .settings-agent-column .settings-toolbar { justify-content: flex-start; width: 100%; }
 }
 @media (max-width: 759px) {
   .modal-header-full-window { padding-inline: 16px; }
@@ -616,6 +689,7 @@ dialog.modal-full-window::backdrop { background: transparent; }
   .settings-compact-selector select { min-height: 40px; color: #202632; font-size: 1rem; }
   .settings-category-heading { flex-wrap: wrap; gap: 14px; }
   .settings-toolbar { justify-content: flex-start; width: 100%; }
+  .settings-agent-empty { min-height: 280px; padding: 24px; }
 }
 
 /* GitHub profile presentation shares the existing Settings workflow owners. */

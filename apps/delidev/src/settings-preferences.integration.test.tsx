@@ -31,6 +31,8 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }, { timeout: 5000 }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
+  // The real Go save and subsequent list refresh can exceed the default
+  // one-second DOM wait on CI; retain a bounded wait for the committed result.
   const edit = await screen.findByRole("button", { name: "Edit Server preferences" }, { timeout: 5000 });
   expect(delayedAcknowledgment).toBe(true);
   const resources = createClient(ResourceService, transport);
