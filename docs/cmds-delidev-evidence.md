@@ -3762,3 +3762,82 @@ these focused checks do not establish a complete local Go race or Rust
 workspace pass. Fresh hosted CI is required for the new merge head. Codex's
 unchanged review-quota notice still supplies neither a completed review nor
 approval.
+
+### App-icon 20% enlargement (2026-09-30)
+
+The owner approved a uniform 1.2× enlargement of the existing app icon, keeping
+its colored ribbon, gradient, proportions and transparent background/central
+cutout. The source was hydrated from the exact local LFS object
+`88a91d0ea8462b0b8d59d53d212a4f4030f99a2775eb733b38be8234b077364f`
+(585,665 bytes). One Lanczos SRT transform around `(627, 627)`, with scale 1.2,
+zero rotation and a transparent virtual canvas, preserves the 1254×1254 RGBA8
+canvas. The approved artwork is baked into the source rather than enlarged
+again during platform export. No frontend/Rust code, bundle configuration,
+public interface or in-app button size changed.
+
+The final source is 788,603 bytes with SHA-256
+`1100564e6a9a977c89aeb273c12297f5434850b0954f9e0e83e10ca0b2cf9d53`;
+its existing exact-path LFS attribute and `icon-source@2x.png` density marker
+remain intact. Its nonzero-alpha bounds change from `(257, 175, 1058, 1071)` to
+`(183, 84, 1145, 1160)`, remaining inside the canvas. Mean alpha coverage changes
+from 31.9858% to 46.0668%, consistent with the 1.44× area increase.
+
+Each final Windows ICO frame (16, 24, 32, 48, 64 and 256px) was exported from the
+enlarged source and decoded again after packaging. The 256px ICO pixels match
+the native PNG exactly. Every export retains near-opaque ribbon interiors,
+transparent background and central-cutout samples, and graded edge alpha;
+mean alpha coverage differs from the new source by at most 0.131 percentage
+points. Representative transformed interior colors differ by at most one
+8-bit channel value. Light, dark and checkerboard before/after composites and
+both-theme frame contact sheets were visually inspected without visible
+clipping or color/edge damage. These checks establish asset appearance, not
+Windows/Linux installed-shell acceptance.
+
+The existing asset-preparation and package-verifier suites pass all 18 tests.
+The two repository LFS asset contracts also pass, including after the new source
+pointer was committed. The first macOS dry run stopped at sandbox denial of the
+Go build cache; the same existing command was retried with the required access.
+`pnpm bundle:macos-dry-run` then passed on macOS arm64: native executable and Go
+sidecar, CEF resources/helpers, widget extensions, macOS 13 metadata, notices and
+ad-hoc signatures were verified. The generated `DeliDev.icns` contains the
+required 512-point Retina entry (1024×1024 pixels) and a 256×256 entry; their mean
+alpha coverage differs from the enlarged source by at most 0.008 percentage
+points. No production signing, notarization, publication or installed Dock
+appearance is claimed. Generated desktop/client `dist` directories were removed
+after verification.
+
+
+### PR #1113 enlarged-icon merge repair (2026-09-30)
+
+Merge main revision `2e89b18f6c09c91e1ec052880dbfcbba3a4dd120` (#1133) into
+this outbound-proxy branch. Preserve both appended evidence histories, including
+the preceding permission-guidance and current-user service merge verification.
+The enlarged native PNG/ICO, scoped icon policy and desktop contract remain
+byte-identical to main. Hydrate the exact new source LFS object and verify its
+788,603-byte size and SHA-256
+`1100564e6a9a977c89aeb273c12297f5434850b0954f9e0e83e10ca0b2cf9d53`.
+No additional enlargement or asset conversion is applied to the source assets.
+
+The actual asset-preparation command passes. On Node.js 24.20.0, complete
+`pnpm test` from `apps/delidev` passes all 74 files / 948 tests, client build and
+type checking, eight packaging checks, sixteen asset/launcher checks, native
+Swift widget fixtures and the production build. All 95 repository contract
+checks pass, including the exact-path LFS asset contracts.
+
+Final source alpha bounds are `(183, 84, 1145, 1160)` within the unchanged
+1254px canvas. Mean alpha coverage is 46.0668%; the native PNG and every decoded
+ICO frame differ by at most 0.131 percentage points. Ribbon interiors are
+near-opaque, edges retain graded alpha, and background/cutout samples remain
+transparent. An initial exact single-pixel center assertion rejects the 16px
+frame's alpha 5/255; inspecting its central 3×3 samples confirms fully
+transparent pixels alongside the downsampling edge contribution. Larger frames
+and the native PNG have a zero-alpha center. The 256px ICO pixels match the
+native PNG exactly. Final light, dark and checkerboard composites were visually
+inspected without clipping or visible edge/color damage.
+
+Generated desktop/client `dist` directories are removed after verification.
+This merge changes no Rust, Go, protobuf or frontend application source.
+The imported prior native-bundle evidence is preserved as historical evidence;
+no new native package, installed-shell, production-signing or release acceptance
+is claimed. Fresh CI must evaluate the new merge head, while Codex's unchanged
+quota notice remains neither a completed review nor approval.
