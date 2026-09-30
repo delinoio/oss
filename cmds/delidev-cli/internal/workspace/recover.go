@@ -313,6 +313,12 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 	}
 	git := m.Git
 	git.OwnerID = owner
+	if restored != nil {
+		// Restored object stores are independent private copies, including long
+		// Windows object paths. Use the same offline/read-only command profile as
+		// snapshot inspection rather than ambient Git settings or source authority.
+		git.readOnly, git.offline = true, true
+	}
 	for _, repo := range manifest.Repositories {
 		if input.Type == domain.Local {
 			// The user's current branch may gain its first commit, or switch to an
@@ -323,10 +329,16 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 		} else {
 			head, err := git.run(ctx, repo.Path, "rev-parse", "--verify", "HEAD^{commit}")
 			if err != nil || !canonicalCommit(trimGit(head)) || (validation == preparationIdentity && trimGit(head) != repo.StartingCommit) {
+				if restored != nil {
+					m.logRestoredIdentityFailure(input.SessionID, repo.ID, restoredIdentityHead)
+				}
 				return "", ResultUncertain()
 			}
 			branch, err := git.run(ctx, repo.Path, "rev-parse", "--abbrev-ref", "HEAD")
 			if err != nil || trimGit(branch) == "" || (validation == preparationIdentity && trimGit(branch) != "HEAD") {
+				if restored != nil {
+					m.logRestoredIdentityFailure(input.SessionID, repo.ID, restoredIdentityBranch)
+				}
 				return "", ResultUncertain()
 			}
 		}
@@ -337,10 +349,12 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 			expected := filepath.Join(repo.Path, ".git")
 			info, err := os.Lstat(expected)
 			if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				m.logRestoredIdentityFailure(input.SessionID, repo.ID, restoredIdentityDirectory)
 				return "", ResultUncertain()
 			}
 			prepared, err := git.revParseFields(ctx, repo.Path, 2, "--git-common-dir", "--absolute-git-dir")
 			if err != nil || !sameNativePath(prepared[0], expected) || !sameNativePath(prepared[1], expected) {
+				m.logRestoredIdentityFailure(input.SessionID, repo.ID, restoredIdentityOwnership)
 				return "", ResultUncertain()
 			}
 			continue
@@ -398,6 +412,19 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 	}
 	digest := sha256.Sum256(raw)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+type restoredIdentityStage string
+
+const (
+	restoredIdentityHead      restoredIdentityStage = "head"
+	restoredIdentityBranch    restoredIdentityStage = "branch"
+	restoredIdentityDirectory restoredIdentityStage = "git-directory"
+	restoredIdentityOwnership restoredIdentityStage = "git-ownership"
+)
+
+func (m *Manager) logRestoredIdentityFailure(session, repository domain.ID, stage restoredIdentityStage) {
+	m.Logger.Warn("restored_workspace_identity_failed", "session_id", session, "repository_id", repository, "stage", stage, "code", domain.RecoveryRequired)
 }
 
 // Local preparation captures administrative identity without changing checkout

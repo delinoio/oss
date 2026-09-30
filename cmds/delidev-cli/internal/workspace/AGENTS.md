@@ -21,5 +21,6 @@ Follow the root and parent instructions and docs/cmds-delidev-workspace-contract
 - Failed snapshot capture retains recovery ownership when independent scratch removal is unconfirmed. Explicit recovery must remove the whole original staging tree before settling failure.
 
 - On Windows retain the native file/directory symlink kind in the private inventory and recreate that type explicitly, including forward and dangling directory targets. Link-text equality alone cannot prove faithful restoration.
+- Restored Git identity checks use the same offline read-only profile as snapshot inspection, including command-local Windows long-path support. Failure logging contains only closed phases, session/repository IDs and stable codes, never paths or native output.
 
 - Permanent deletion validates reserved snapshots against the original session/machine/preparation and captures the stored workspace manifest before removal. Restored independent Git stays within its managed root; never run its removal against an original Local/source checkout.

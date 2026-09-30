@@ -403,7 +403,10 @@ index-only change invalidates the exact cleanup preview.
 
 Windows offline Git commands explicitly enable `core.longpaths` at command scope
 because private operation/repository paths can exceed the default 260-character
-limit and ambient configuration is excluded. This does not modify source Git
+limit and ambient configuration is excluded. Restored workspace identity and
+cleanup checks use this same offline read-only profile. Their failure logs expose
+only closed identity phases, session/repository IDs and stable error codes.
+This does not modify source Git
 configuration. Failed independent Git checks log only the closed commit/object/
 location phase, session/repository IDs and stable error code, never paths, native
 output or workspace content.
