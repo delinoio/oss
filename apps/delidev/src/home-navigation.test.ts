@@ -93,7 +93,7 @@ it("refreshes only accepted ranges atomically, retaining previous rows on failur
   const reader = vi.fn<NavigationReader>(async (token) => token === "" ? { rows: [first], nextPageToken: "next" } : { rows: [second], nextPageToken: "unseen" });
   await chain.refresh(reader); await chain.append(reader); await chain.refresh(reader);
   expect(reader.mock.calls.map(([token]) => token)).toEqual(["", "next", "", "next"]);
-  const refresh = vi.fn<NavigationReader>(async (token) => { if (token) throw new ConnectError("Offline", Code.Unavailable); return { rows: [], nextPageToken: "next" }; });
+  const refresh = vi.fn<NavigationReader>(async (token) => { if (token) throw new ConnectError("Offline", Code.Unavailable); return { rows: [{ ...first, revision: 2n }], nextPageToken: "next" }; });
   await chain.refresh(refresh);
   expect(chain.getSnapshot().rows).toEqual([first, second]);
   expect(chain.getSnapshot().error?.stage).toBe(ReadStage.Refresh);
@@ -111,7 +111,7 @@ it.each([
   const original: NavigationReader = async (token) => ({ rows: [token ? second : first], nextPageToken: token ? "" : "accepted-next" });
   await chain.refresh(original); await chain.append(original);
   const accepted = chain.getSnapshot();
-  const shifted = vi.fn<NavigationReader>(async (token) => ({ rows: [replacement], nextPageToken: token ? lastNext : firstNext }));
+  const shifted = vi.fn<NavigationReader>(async (token) => ({ rows: token || firstNext !== "accepted-next" ? [replacement] : [{ ...first, revision: 2n }], nextPageToken: token ? lastNext : firstNext }));
   await chain.refresh(shifted);
   expect(shifted.mock.calls.map(([token]) => token)).toEqual(reads);
   expect(chain.getSnapshot().rows).toEqual([first, second]);
@@ -132,12 +132,31 @@ it("retries only the failed accepted refresh range while keeping its boundaries"
   const first = row(), second = row(), replacement = row();
   const original: NavigationReader = async (token) => ({ rows: [token ? second : first], nextPageToken: token ? "tail" : "accepted-next" });
   await chain.refresh(original); await chain.append(original);
-  await chain.refresh(async (token) => { if (token) throw new ConnectError("Offline", Code.Unavailable); return { rows: [replacement], nextPageToken: "accepted-next" }; });
-  const retry = vi.fn<NavigationReader>(async () => ({ rows: [replacement], nextPageToken: "tail" }));
+  await chain.refresh(async (token) => { if (token) throw new ConnectError("Offline", Code.Unavailable); return { rows: [{ ...first, revision: 2n }], nextPageToken: "accepted-next" }; });
+  const refreshedSecond = { ...second, revision: 2n };
+  const retry = vi.fn<NavigationReader>(async () => ({ rows: [refreshedSecond], nextPageToken: "renewed-tail" }));
   await chain.retry(retry);
   expect(retry.mock.calls.map(([token]) => token)).toEqual(["accepted-next"]);
-  expect(chain.getSnapshot().rows).toEqual([first, replacement]);
+  expect(chain.getSnapshot().rows).toEqual([first, refreshedSecond]);
   expect(chain.getSnapshot().pages.map(({ token }) => token)).toEqual(["", "accepted-next"]);
   expect(chain.getSnapshot().nextPageToken).toBe("tail");
   expect(chain.getSnapshot().error).toBeUndefined();
+});
+
+
+it("accepts opaque cursor renewal while refreshing only the original range tokens", async () => {
+  const chain = new NavigationChain(); chain.activate();
+  const first = row(), second = row();
+  await chain.refresh(async () => ({ rows: [first], nextPageToken: "accepted-next" }));
+  await chain.append(async () => ({ rows: [second], nextPageToken: "accepted-tail" }));
+  const refreshedFirst = { ...first, revision: 2n }, refreshedSecond = { ...second, revision: 3n };
+  const renewed = vi.fn<NavigationReader>(async (token) => ({ rows: [token ? refreshedSecond : refreshedFirst], nextPageToken: token ? "renewed-tail" : "renewed-next" }));
+  await chain.refresh(renewed);
+  expect(renewed.mock.calls.map(([token]) => token)).toEqual(["", "accepted-next"]);
+  expect(chain.getSnapshot().rows).toEqual([refreshedFirst, refreshedSecond]);
+  expect(chain.getSnapshot().pages.map(({ token, nextPageToken }) => [token, nextPageToken])).toEqual([["", "accepted-next"], ["accepted-next", "accepted-tail"]]);
+  expect(chain.getSnapshot().nextPageToken).toBe("accepted-tail");
+  expect(chain.getSnapshot().error).toBeUndefined();
+  await chain.refresh(renewed);
+  expect(renewed.mock.calls.map(([token]) => token)).toEqual(["", "accepted-next", "", "accepted-next"]);
 });

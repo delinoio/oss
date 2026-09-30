@@ -98,7 +98,12 @@ export class NavigationChain {
         if (refreshing) currentToken = acceptedPage!.token;
         const batch = await reader(currentToken, controller.signal);
         if (!this.active || generation !== this.generation || controller.signal.aborted) return;
-        if ((refreshing || retryOnly) && (!acceptedPage || batch.nextPageToken !== acceptedPage.nextPageToken)) {
+        // Cursors are opaque and the server renews their expiry on each read.
+        // Compare the visible range end and continuation presence, then retain
+        // the original tokens so refresh cannot discover a different range.
+        const boundaryChanged = acceptedPage && (Boolean(batch.nextPageToken) !== Boolean(acceptedPage.nextPageToken)
+          || Boolean(acceptedPage.nextPageToken) && batch.rows.at(-1)?.id !== acceptedPage.rows.at(-1)?.id);
+        if ((refreshing || retryOnly) && (!acceptedPage || boundaryChanged)) {
           console.warn("delidev.home_navigation.read_failed", { stage, classification: FailureCode.CursorExpired });
           this.publish({ ...previous, loading: undefined, error: { stage, token: currentToken, failure: { code: FailureCode.CursorExpired, message: "The loaded list boundaries changed.", guidance: "Reload this list to accept a new chain." } } });
           return;
@@ -109,8 +114,9 @@ export class NavigationChain {
           this.publish({ ...previous, loading: undefined, error: { stage, token: currentToken, stalled: true, failure: { code: FailureCode.Internal, message: "The list continuation did not advance.", guidance: "Reload this list to resume navigation." } } });
           return;
         }
-        if (retryOnly) pages[retryIndex] = { ...batch, token: currentToken };
-        else pages.push({ ...batch, token: currentToken });
+        const acceptedBatch = { ...batch, nextPageToken: acceptedPage?.nextPageToken ?? batch.nextPageToken, token: currentToken };
+        if (retryOnly) pages[retryIndex] = acceptedBatch;
+        else pages.push(acceptedBatch);
         if (!batch.nextPageToken) break;
         currentToken = batch.nextPageToken;
       }
