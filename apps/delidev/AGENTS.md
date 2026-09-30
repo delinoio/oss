@@ -12,4 +12,6 @@ Keep implementation evidence in independent files under `docs/evidence/delidev/i
 
 - Activity filter presentation follows the bounded treatment in `docs/apps-delidev-desktop-contract.md` and the source owner below; preserve the shared shell/server controls and the authority of issues #1137/#1149.
 
+GitHub Integrations presentation follows `docs/apps-delidev-desktop-contract.md` and `docs/cmds-delidev-integrations-contract.md`. Keep one create action, truthful read states, separate token-storage/identity observations, complete official-form guidance and the shared Settings lifecycle. The source owner retains exact mutation, credential and pagination safeguards.
+
 Diagnostics presentation is owned by `src/doctor.tsx`, `src/doctor.css` and the scoped frontend instructions, following `docs/apps-delidev-diagnostics-contract.md`.
