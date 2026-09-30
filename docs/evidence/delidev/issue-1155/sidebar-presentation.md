@@ -42,8 +42,19 @@ asynchronous element waits. No deadline was raised and no unchanged test or
 product behavior was altered to accommodate these attempts.
 
 Separate package stages passed: all 8 bundle-verifier cases, all 16 asset/launcher
-cases, native Swift widget fixtures, and `pnpm build`. The complete pipeline rerun
-and cleanup outcome are recorded below after completion.
+cases, native Swift widget fixtures, and `pnpm build`. The complete one-worker `pnpm test` rerun used a temporary local scheduler
+override, then restored the committed Vitest configuration. It passed client
+generation/type checking and 960/971 tests in 80/85 files. Eight App/tray cases
+exceeded unchanged 5-second deadlines, and three unchanged Claude/provider/server
+preferences integration cases failed asynchronous element waits. These occurred
+under substantial concurrent host work; the exact cause is not proven. This
+rerun is not a green full suite and did not reach its later package stages.
+The separately executed package stages above provide their actual results.
+All 11 new PR regression cases also passed in both full attempts.
+
+After verification, the temporary Rsbuild fixture/server and browser processes
+were removed/stopped, the original Vitest config was restored, and the app/client
+generated `dist` directories were removed. No generated output is committed.
 
 ## Rendered browser verification
 
