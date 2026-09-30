@@ -48,6 +48,8 @@ If an atomic authentication write fails before publishing its destination and be
 
 The lease pins operation, account generation, Worker machine/device/instance, server epoch and original lease revision. Completion checks that original revision while preserving later metadata edits and cancellation. The connection ID remains stable across bundle rotations. The final native bundle is saved under a new immutable generation, old protected references are tombstoned, and independently confirmed native/file cleanup precedes another grant.
 
+Finish's ownership-error guard ends after the ownership mutation and final required vault cleanup commit, before its response-resource observation. A canceled or failed presentation read cannot add a recovery fence to settled state. Failed final cleanup still fences ownership, and accepted receipt replay preserves that fence without repeating vault work.
+
 Successful `account/read` does not prove refresh. Both Worker and server require changed token material, a strictly newer native `last_refresh` value and unchanged account/user identity. Server identity commitments enforce one managed owner for the same provider account/user across account aliases. Local logout proves native/file removal and server vault cleanup; provider-wide revocation remains best-effort and is never reported as confirmed.
 
 The pinned native login-completed envelope includes nullable `onboardingEntrypoint` metadata. Accept null or the pinned closed `life_sciences` value without launching another onboarding flow or treating presentation metadata as authentication evidence; reject unknown values while still requiring the original login identity and successful completion.

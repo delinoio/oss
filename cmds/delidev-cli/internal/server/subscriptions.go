@@ -768,8 +768,12 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			}
 		}
 	}
+	// Ownership mutation and the last vault cleanup are settled. A canceled
+	// response-resource read cannot turn that committed receipt into recovery.
+	owned = false
 	r, err := s.accountRecord(ctx, input.Account)
 	if err != nil {
+		s.logger.WarnContext(ctx, "subscription_completion_presentation_unavailable", "account_id", input.Account, "lease_id", input.Lease, "replayed", replayed, "code", domain.SafeError(err).Code)
 		return nil, rpc.Error(err, c)
 	}
 	// Unreferenced staged/old generations stay vault-owned and are never granted.
