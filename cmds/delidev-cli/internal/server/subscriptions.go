@@ -604,7 +604,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 		}
 		state := original.Subscription
 		lease := state.Lease
-		if state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
+		// Receipt replay above is read-only. A new finish cannot resolve an
+		// ownership loss or touch its vault generations through this channel.
+		if state.RecoveryRequired || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
 		owned = true
@@ -673,7 +675,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				return nil, err
 			}
 			state := a.Subscription
-			if state.Generation != input.Generation {
+			if state.RecoveryRequired || state.Generation != input.Generation {
 				return nil, subscriptionDenied()
 			}
 			if state.Pending != nil {
