@@ -239,8 +239,8 @@ func TestSnapshotSecondRepositoryDiskFailurePreservesAllSources(t *testing.T) {
 			}
 			// Compare the complete files and Git state, including both repositories,
 			// so cleanup cannot silently mutate surviving sources before it fails.
-			_, sourceBytes, digest, err := m.storageObservation(context.Background(), input)
-			if err != nil || sourceBytes != preview.SourceBytes || digest != preview.PreviewDigest {
+			observation, err := m.storageObservation(context.Background(), input)
+			if err != nil || observation.Whole.Bytes != preview.SourceBytes || observation.Digest != preview.PreviewDigest {
 				t.Fatal("disk exhaustion changed original workspace or Git data", err)
 			}
 			if _, err := os.Lstat(m.snapshotPath(input.SnapshotID)); !os.IsNotExist(err) {
@@ -612,5 +612,58 @@ func TestSnapshotAbsentRemovalRecoveryRequiresOriginalIntent(t *testing.T) {
 				t.Fatal("unproven absence settled as removal", err)
 			}
 		})
+	}
+}
+
+func TestSnapshotCleanupNeverAdoptsRacedSourceWrites(t *testing.T) {
+	m := manager(t)
+	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := m.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(manifest.PrimaryPath, "keep")
+	if err := os.WriteFile(path, []byte("captured original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StoragePreview, Preparation: prepare, Manifest: manifest}
+	preview := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest
+	raced := false
+	m.storageBeforeRemovalClaim = func() {
+		raced = true
+		if err := os.WriteFile(path, []byte("new uncaptured user bytes"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := m.Storage(context.Background(), input)
+	if !raced || domain.SafeError(err).Code != domain.RecoveryRequired || result.RemovedSourceBytes != 0 {
+		t.Fatal("raced source authorized removal", result, err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || string(raw) != "new uncaptured user bytes" {
+		t.Fatal("uncaptured source was not restored", err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Root, "workspace-removals", string(input.OperationID))); !os.IsNotExist(err) {
+		t.Fatal("whole source claim was not restored", err)
+	}
+	raw, err = os.ReadFile(filepath.Join(m.snapshotPath(input.SnapshotID), "workspace", "chat", "keep"))
+	if err != nil || string(raw) != "captured original" {
+		t.Fatal("snapshot adopted uncaptured bytes", err)
+	}
+	var intent storageRemovalIntent
+	raw, err = os.ReadFile(m.removalIntentPath(input.OperationID))
+	if err != nil || domain.Decode(raw, &intent) != nil {
+		t.Fatal("original intent missing", err)
+	}
+	for _, entry := range intent.Inventory.Entries {
+		if entry.Path == "chat/keep" && entry.Size != uint64(len("captured original")) {
+			t.Fatal("deletion authority adopted raced data")
+		}
+	}
+	m.storageBeforeRemovalClaim = nil
+	recovered := storageDo(t, m, recoveryRequest(input))
+	if recovered.WorkspaceState != domain.WorkspacePresent || recovered.RecoveredJobState != domain.JobFailed || recovered.Snapshot == nil {
+		t.Fatal("raced cleanup did not preserve both copies", recovered)
 	}
 }

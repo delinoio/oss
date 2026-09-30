@@ -154,6 +154,7 @@ type StorageResult struct {
 	CleanupVerified       bool                         `json:"cleanup_verified"`
 }
 type snapshotManifest struct {
+	SourceInventory  snapshotInventory `json:"source_inventory"`
 	SourceBytes      uint64            `json:"source_bytes,string"`
 	SourceDigest     string            `json:"source_digest"`
 	Version          uint32            `json:"version"`
@@ -263,19 +264,19 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		if err := validateStorageRoot(root, live); err != nil {
 			return result, err
 		}
-		sources, sourceBytes, observationDigest, err := m.storageObservation(ctx, r)
+		observation, err := m.storageObservation(ctx, r)
 		if err != nil {
 			return result, err
 		}
-		for _, entry := range sources.Entries {
+		for _, entry := range observation.Data.Entries {
 			// Only declared repositories receive independent Git closure validation.
 			// Nested administration, including directories, may hide external stores.
 			if strings.HasSuffix(entry.Path, "/.git") {
 				return result, snapshotUnsupported()
 			}
 		}
-		result.SourceBytes = sourceBytes
-		result.PreviewDigest = observationDigest
+		result.SourceBytes = observation.Whole.Bytes
+		result.PreviewDigest = observation.Digest
 		retained, err := m.snapshotBytes(ctx, r.Preparation.SessionID)
 		if err != nil {
 			return result, err
@@ -288,7 +289,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		if r.Action == StorageCleanup && result.PreviewDigest != r.PreviewDigest {
 			return result, domain.Fail(domain.Conflict, "Workspace contents changed after the cleanup preview.", "Request a fresh preview before cleanup.")
 		}
-		snapshot, err := m.createSnapshot(ctx, r, identity, sources, result.PreviewDigest)
+		snapshot, err := m.createSnapshot(ctx, r, identity, observation.Data, result.PreviewDigest)
 		if err != nil {
 			return result, err
 		}
@@ -301,8 +302,8 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			// All repositories and independent object stores are synchronized and fully
 			// re-read before this single source namespace transition. No per-repository
 			// deletion can precede successful whole-workspace snapshot publication.
-			_, _, observation, err := m.storageObservation(ctx, r)
-			if err != nil || observation != result.PreviewDigest {
+			observation, err := m.storageObservation(ctx, r)
+			if err != nil || observation.Digest != result.PreviewDigest {
 				return result, ResultUncertain()
 			}
 			if err := process.ReconcileOwnerContext(ctx, m.Git.ProcessRoot, r.Preparation.SessionID); err != nil {
@@ -312,13 +313,21 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if err := ctx.Err(); err != nil {
 				return result, err
 			}
-			if err := m.retainRemovalIntent(ctx, r, root); err != nil {
+			if err := m.retainRemovalIntent(ctx, r, root, result.Snapshot.SHA256); err != nil {
 				return result, err
+			}
+			if m.storageBeforeRemovalClaim != nil {
+				m.storageBeforeRemovalClaim()
 			}
 			if err := renameStorage(root, removal); err != nil {
 				return result, err
 			}
 			if err := m.confirmRemoval(ctx, r, removal, false); err != nil {
+				// No unlink occurred. Preserve raced user bytes at their original
+				// name when possible; a foreign replacement keeps the claim private.
+				if restoreErr := renameStorage(removal, root); restoreErr != nil {
+					m.Logger.Warn("storage_claim_restore_pending", "operation_id", r.OperationID, "code", domain.SafeError(restoreErr).Code)
+				}
 				return result, ResultUncertain()
 			}
 			if err := removeSnapshotTree(ctx, removal); err != nil {

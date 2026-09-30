@@ -295,8 +295,11 @@ access, and original configuration remains unchanged.
 Cleanup requires an exact successful original preview. Every repository is
 published and re-read before a single atomic no-replace rename claims the entire
 source root for deletion. An independently synchronized immutable removal intent
-binds its complete inventory outside that root. Claimed contents are compared
-again before bounded anchored deletion and directory synchronization. A second
+binds the complete source inventory already pinned in the verified published
+snapshot outside that root. A fresh mutable inventory never grants deletion
+authority. Claimed contents are compared against that pinned inventory; a mismatch
+restores the whole source name without replacement when possible, otherwise
+retains both the claim and recovery uncertainty. Verification precedes bounded anchored deletion and directory synchronization. A second
 repository copy failure or cancellation cannot remove either original repository.
 Failures after a namespace transition retain recovery uncertainty and private
 copies. Cancellation/failure after verified snapshot publication but before source

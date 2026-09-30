@@ -9,3 +9,5 @@ Follow the root and parent instructions and docs/cmds-delidev-workspace-contract
 - Failed unpublished restoration cleans only its original operation-owned staging independently of caller cancellation; unconfirmed scratch cleanup stays recovery-required.
 
 - Cleanup/deletion recovery requires the original synchronized removal intent even after both namespace names are absent; absence alone is never verified removal.
+
+- Bind cleanup removal authority to the verified snapshot source inventory, never a later mutable observation. Compare the claimed namespace to that inventory and restore the source name without replacement on mismatch before any unlink.

@@ -66,11 +66,11 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	if err != nil {
 		return empty, err
 	}
-	_, sourceBytes, sourceDigest, err := m.storageObservation(ctx, r)
-	if err != nil || sourceDigest != expectedDigest {
+	observation, err := m.storageObservation(ctx, r)
+	if err != nil || observation.Digest != expectedDigest {
 		return empty, ResultUncertain()
 	}
-	snapshot := snapshotManifest{SourceBytes: sourceBytes, SourceDigest: sourceDigest, Version: 1, ID: r.SnapshotID, OperationID: r.OperationID, Workspace: r.Manifest, Preparation: r.Preparation, OriginalIdentity: identity, Inventory: inventory, CreatedAt: time.Now().UTC()}
+	snapshot := snapshotManifest{SourceBytes: observation.Whole.Bytes, SourceDigest: observation.Digest, SourceInventory: observation.Whole, Version: 1, ID: r.SnapshotID, OperationID: r.OperationID, Workspace: r.Manifest, Preparation: r.Preparation, OriginalIdentity: identity, Inventory: inventory, CreatedAt: time.Now().UTC()}
 	raw, err := json.Marshal(snapshot)
 	if err != nil {
 		return empty, err
@@ -334,7 +334,13 @@ func (m *Manager) snapshotBytes(ctx context.Context, session domain.ID) (uint64,
 // Preview and cleanup compare both filesystem data and the original Git
 // administrative/object inventories. An index-only change must stale a preview
 // even when every worktree file has the same bytes.
-func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (snapshotInventory, uint64, string, error) {
+type storageObservationResult struct {
+	Data   snapshotInventory
+	Whole  snapshotInventory
+	Digest string
+}
+
+func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (storageObservationResult, error) {
 	root := filepath.Join(m.Root, "workspaces", string(r.Preparation.SessionID))
 	skip := func(path string) bool {
 		for _, repo := range r.Manifest.Repositories {
@@ -346,11 +352,11 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sna
 	}
 	data, err := walkSnapshot(ctx, root, "", skip)
 	if err != nil {
-		return data, 0, "", err
+		return storageObservationResult{}, err
 	}
 	whole, err := walkSnapshot(ctx, root, "", nil)
 	if err != nil {
-		return data, 0, "", err
+		return storageObservationResult{}, err
 	}
 	observations := []snapshotInventory{whole}
 	git := m.Git
@@ -360,7 +366,7 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sna
 	for _, repo := range r.Manifest.Repositories {
 		fields, err := git.revParseFields(ctx, repo.Path, 2, "--git-common-dir", "--absolute-git-dir")
 		if err != nil {
-			return data, 0, "", err
+			return storageObservationResult{}, err
 		}
 		for i, path := range fields {
 			if i == 1 && sameNativePath(path, fields[0]) {
@@ -368,17 +374,17 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sna
 			}
 			inventory, err := walkSnapshot(ctx, path, "", func(path string) bool { return path == "worktrees" || strings.HasPrefix(path, "worktrees/") })
 			if err != nil {
-				return data, 0, "", err
+				return storageObservationResult{}, err
 			}
 			observations = append(observations, inventory)
 		}
 	}
 	raw, err := json.Marshal(observations)
 	if err != nil {
-		return data, 0, "", err
+		return storageObservationResult{}, err
 	}
 	sum := sha256.Sum256(raw)
-	return data, whole.Bytes, hex.EncodeToString(sum[:]), nil
+	return storageObservationResult{Data: data, Whole: whole, Digest: hex.EncodeToString(sum[:])}, nil
 }
 
 // Git follows links inside its administration directories. Such links cannot

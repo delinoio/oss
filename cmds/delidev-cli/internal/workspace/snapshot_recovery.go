@@ -3,6 +3,8 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -14,23 +16,38 @@ import (
 )
 
 type storageRemovalIntent struct {
-	Version     uint32            `json:"version"`
-	OperationID domain.ID         `json:"operation_id"`
-	SessionID   domain.ID         `json:"session_id"`
-	SnapshotID  domain.ID         `json:"snapshot_id"`
-	Action      StorageAction     `json:"action"`
-	Inventory   snapshotInventory `json:"inventory"`
+	Version        uint32            `json:"version"`
+	OperationID    domain.ID         `json:"operation_id"`
+	SessionID      domain.ID         `json:"session_id"`
+	SnapshotID     domain.ID         `json:"snapshot_id"`
+	Action         StorageAction     `json:"action"`
+	SnapshotDigest string            `json:"snapshot_digest,omitempty"`
+	Inventory      snapshotInventory `json:"inventory"`
 }
 
 func (m *Manager) removalIntentPath(id domain.ID) string {
 	return filepath.Join(m.Root, "storage-removal-intents", string(id)+".json")
 }
-func (m *Manager) retainRemovalIntent(ctx context.Context, r StorageRequest, path string) error {
-	inventory, err := walkSnapshot(ctx, path, "", nil)
-	if err != nil {
-		return err
+func (m *Manager) retainRemovalIntent(ctx context.Context, r StorageRequest, path string, expectedDigest ...string) error {
+	var inventory snapshotInventory
+	var snapshotDigest string
+	if r.Action == StorageCleanup {
+		pinned, digest, err := m.cleanupRemovalInventory(r)
+		if err != nil {
+			return err
+		}
+		if len(expectedDigest) > 0 && digest != expectedDigest[0] {
+			return ResultUncertain()
+		}
+		inventory, snapshotDigest = pinned, digest
+	} else {
+		var err error
+		inventory, err = walkSnapshot(ctx, path, "", nil)
+		if err != nil {
+			return err
+		}
 	}
-	intent := storageRemovalIntent{Version: 1, OperationID: r.OperationID, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, Action: r.Action, Inventory: inventory}
+	intent := storageRemovalIntent{Version: 1, OperationID: r.OperationID, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, Action: r.Action, Inventory: inventory, SnapshotDigest: snapshotDigest}
 	raw, err := json.Marshal(intent)
 	if err != nil || len(raw) > maxSnapshotManifest {
 		return ResultUncertain()
@@ -53,6 +70,12 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 	var intent storageRemovalIntent
 	if domain.Decode(raw, &intent) != nil || intent.Version != 1 || intent.OperationID != r.OperationID || intent.SessionID != r.Preparation.SessionID || intent.SnapshotID != r.SnapshotID || intent.Action != r.Action {
 		return ResultUncertain()
+	}
+	if r.Action == StorageCleanup {
+		pinned, digest, err := m.cleanupRemovalInventory(r)
+		if err != nil || digest != intent.SnapshotDigest || inventoryDigest(pinned) != inventoryDigest(intent.Inventory) {
+			return ResultUncertain()
+		}
 	}
 	if partial {
 		exists, err := storageExists(path)
@@ -162,10 +185,11 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if _, err := m.verifyWorkspaceIdentity(ctx, r.Preparation, manifest, continuationIdentity); err != nil {
 				return result, err
 			}
-			_, result.SourceBytes, result.PreviewDigest, err = m.storageObservation(ctx, original)
+			observation, err := m.storageObservation(ctx, original)
 			if err != nil {
 				return result, err
 			}
+			result.SourceBytes, result.PreviewDigest = observation.Whole.Bytes, observation.Digest
 			result.WorkspaceState = domain.WorkspacePresent
 			if original.Action == StorageCreate && snapshotExists {
 				result.RecoveredJobState = domain.JobSucceeded
@@ -306,4 +330,16 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 		return ResultUncertain()
 	}
 	return security.SyncParent(path)
+}
+
+// Source removal authority comes from the already verified published snapshot,
+// never from a fresh inventory that could adopt uncaptured concurrent writes.
+func (m *Manager) cleanupRemovalInventory(r StorageRequest) (snapshotInventory, string, error) {
+	raw, err := security.ReadPrivate(filepath.Join(m.snapshotPath(r.SnapshotID), "snapshot.json"), maxSnapshotManifest)
+	var pinned snapshotManifest
+	if err != nil || domain.Decode(raw, &pinned) != nil || pinned.Version != 1 || pinned.ID != r.SnapshotID || pinned.OperationID != r.OperationID || pinned.SourceDigest != r.PreviewDigest || manifestDigest(pinned.Workspace) != manifestDigest(r.Manifest) || pinned.SourceInventory.Bytes != pinned.SourceBytes || len(pinned.SourceInventory.Entries) == 0 || len(pinned.SourceInventory.Entries) > MaxSnapshotEntries || pinned.SourceBytes > MaxSnapshotBytes {
+		return snapshotInventory{}, "", ResultUncertain()
+	}
+	sum := sha256.Sum256(raw)
+	return pinned.SourceInventory, hex.EncodeToString(sum[:]), nil
 }
