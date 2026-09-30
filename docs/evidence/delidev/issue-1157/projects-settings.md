@@ -1,6 +1,6 @@
 # Issue #1157 Projects settings presentation
 
-Date: 2026-09-30. Base inspected: `74701b8948694e2bf8f8ba6d07e596c2d2f358a7` (`origin/main`). The implementation and regression tests are in the commit containing this record.
+Date: 2026-09-30. Base inspected: `74701b8948694e2bf8f8ba6d07e596c2d2f358a7` (`origin/main`). The implementation and regression tests are included in this change's commits.
 
 ## Implemented boundary
 
@@ -27,3 +27,10 @@ Calculated sRGB contrast: primary text/white 16.24:1, secondary text/white 6.04:
 ## Remaining acceptance limits
 
 No source-bound native DeliDev CEF smoke run was performed. Native macOS, Windows and Ubuntu X11 dialog/background inertness, keyboard containment and host opener restoration remain unverified. Actual native 200% zoom is also unverified: 640×410 tests the corresponding reduced CSS viewport for a 1280×820 surface but is reflow evidence, not actual zoom acceptance. Browser/component/build-verifier/widget fixture success cannot establish supported native platform acceptance or publication. No native geometry, signing or release claim is made.
+
+
+## First PR maintenance pass
+
+PR #1191's first maintenance inventory reported conflicts after main advanced. Merged `origin/main` at `9d110ced702e66bb50974c5ec98e830b86adbe5b`, preserving the Projects-only editor/deletion classes alongside the AI API Keys nouns and Diagnostics ownership, heading and mounted workflow changes. No upstream feature was dropped to resolve the three conflicts.
+
+The combined source passed the required package-local `pnpm test`: all 1,029 tests across 88 files, generated-client preparation, TypeScript checking, bundle/asset/desktop-launch verifier checks, widget fixtures and the production build. The same temporary worker/time bounds described above were used; the committed Vitest configuration was restored. Generated repository-owned `dist` directories were removed before committing. The earlier browser visual observations remain tied to the original issue implementation; no new native or actual-zoom acceptance is inferred from the merge validation.
