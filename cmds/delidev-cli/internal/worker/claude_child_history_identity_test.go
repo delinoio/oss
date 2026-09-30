@@ -11,6 +11,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/google/uuid"
 )
 
@@ -22,6 +23,12 @@ func TestSubagentClaudeHistoryPublishesEachOriginalLeafOnceAfterAcknowledgment(t
 		t.Fatal(err)
 	}
 	cfg := claude.APIStreamConfig{Home: filepath.Join(root, "claude"), Workspace: filepath.Join(root, "workspace")}
+	// Unix mode bits cannot establish an owner-only Windows ACL. Create the
+	// native home with the shared private-directory policy so descendants
+	// inherit that ACL; keep the production transcript reader unchanged.
+	if err := security.PrivateDir(cfg.Home); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(cfg.Workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +55,11 @@ func TestSubagentClaudeHistoryPublishesEachOriginalLeafOnceAfterAcknowledgment(t
 		if err := os.WriteFile(base+".meta.json", meta, 0o600); err != nil {
 			t.Fatal(err)
 		}
+		for _, path := range []string{base + ".jsonl", base + ".meta.json"} {
+			if err := security.RegularPrivate(path); err != nil {
+				t.Fatal("history fixture is not owner-only", domain.SafeError(err).Code)
+			}
+		}
 	}
 	for i, id := range []string{"first_child", "second_child"} {
 		tool, kind := []string{"tool_original_one", "tool_original_two"}[i], claude.LocalAgentTask
@@ -71,6 +83,10 @@ func TestSubagentClaudeHistoryPublishesEachOriginalLeafOnceAfterAcknowledgment(t
 		}
 	}
 	complete("first_child")
+	child := c.children["first_child"]
+	if _, err := claude.ReadChildTranscript(ctx, cfg.Home, c.binding.journal.SessionID, cfg.Workspace, claude.ChildHistoryBinding{TaskID: child.NativeID, ToolID: child.ParentToolID, AgentType: agentType, Description: description, SpawnDepth: depth}, c.childProofs[child.NativeID], nil); err != nil {
+		t.Fatal("private history fixture is unavailable before receipt publication", domain.SafeError(err).Code)
+	}
 	rpc.lose = true
 	before := len(rpc.events)
 	if err := c.PublishChildHistory(ctx, cfg); err == nil || len(c.childHistorySources) != 0 {
