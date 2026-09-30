@@ -1,5 +1,10 @@
 name: Setup CI Go dependencies
 description: Restore Go modules and build cache without saving before validation
+inputs:
+  cache-scope:
+    description: Optional validation scope isolating independently saved Go caches
+    required: false
+    default: ''
 outputs:
   cache-key:
     description: Exact cache key for a successful main job to save
@@ -31,6 +36,7 @@ runs:
       id: restore
       with:
         path: ${{ steps.paths.outputs.paths }}
-        key: ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
+        key: ci-go-v1${{ inputs.cache-scope != '' && format('-{0}', inputs.cache-scope) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
         restore-keys: |
+          ci-go-v1${{ inputs.cache-scope != '' && format('-{0}', inputs.cache-scope) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
           ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
