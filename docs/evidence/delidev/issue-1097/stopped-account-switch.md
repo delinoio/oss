@@ -231,3 +231,58 @@ After the guard, `GOMAXPROCS=2 go test -race -p 1 -timeout 5m
 and the existing account-switch, receipt, revocation and continuation checks.
 This focused pass does not replace the broader failures or establish the
 still-missing complete native A-to-B acceptance.
+
+## PR #1177 updated-main conflict repair
+
+The final pre-push repair inventory reported new conflicts with main. This
+branch merges `b1b3e9e7c55511086a284021850426d48484b127` without rebasing.
+Only the domain/server/Worker `AGENTS.md` files conflicted: both the stopped
+Codex account-switch rules and main's independently settled failed-Claude
+continuation rules are retained. Main's frontend, Rust manifest, CI and
+activity changes remain identical to that base; no frontend or Rust source
+was edited to resolve this merge.
+
+Post-merge checks with the same private Go toolchain/cache passed:
+
+- `GOMAXPROCS=2 go test -race -p 2 -timeout 5m
+  ./cmds/delidev-cli/internal/server ./cmds/delidev-cli/internal/domain -run
+  '^Test(AccountSwitch|StoppedAccountSwitch|HistoryObservation|Continuation|Claude.*(Failed|Continuation|Recovery))'
+  -count=1`: passed (server 282.901 seconds, domain 2.354 seconds).
+- `GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/...`: passed.
+- `node --test scripts/ci/delidev-proto.test.mjs
+  scripts/ci/delidev-structure.test.mjs scripts/ci/go-test.test.mjs`: passed
+  all 15 tests, including main's Windows package-partition/precompile contract.
+- `pnpm proto:lint`: passed.
+
+The first merged `pnpm test` from `apps/delidev` passed type checking and
+1,121 of 1,122 component tests; the existing App test for abandoning an
+uncertain New Project save reached its five-second timeout. No assertion
+failure or native inference was observed in that failure. The same complete
+App file then passed all 44 tests with `pnpm exec vitest run src/App.test.tsx
+--maxWorkers=1` (23.60 seconds). These results remain recorded independently
+of the bounded-concurrency full frontend retry.
+
+The app's exact-path LFS icon was hydrated for the merged checkout. The
+LFS pull downloaded/materialized the PNG but reported an index-refresh
+error while the three instruction files still had unmerged index entries;
+file inspection and `git lfs ls-files` confirmed the 788,603-byte PNG was
+hydrated. No asset source bytes were changed.
+
+`VITEST_MAX_WORKERS=2 GOMAXPROCS=2 GOFLAGS='-p=2' pnpm test` from
+`apps/delidev` then passed the complete script: client build, frontend type
+check, all 1,122 tests across 89 files (95.40 seconds), 8 native-package dry-run
+checks, 16 launcher/asset checks, widget fixtures and the production frontend
+build. The unchanged five-second test deadline was preserved. These component,
+fixture and build results do not establish native desktop acceptance.
+
+`DEVHUD_PROTO_BASELINE=b1b3e9e7c55511086a284021850426d48484b127 pnpm
+proto:breaking` and forced `pnpm proto:fresh` also passed. Together with the
+lint result above, the merged schemas/bindings passed all protocol-check
+stages without generated-source drift. Imported main's activity descriptors
+and this PR's account-switch method/capability are retained together.
+
+The merged `packages/delidev-api-client` suite also passed all 44 tests
+(11.95 seconds) with the same private Go environment and two Vitest workers.
+The app/client generated `dist` directories were removed after validation.
+All historical broader-race failures and incomplete native A-to-B acceptance
+remain independent limitations; this merge does not change them.
