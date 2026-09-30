@@ -212,6 +212,33 @@ func TestTerminalCloseBeforeNativeStartUsesOriginalJournal(t *testing.T) {
 	}
 }
 
+func TestTerminalFailedCreateRetainsAbandonedPublisherOutput(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	root := filepath.Join(t.TempDir(), "worker")
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	workspaces := workspace.Manager{Root: root, Logger: logger}
+	input := workspace.PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := workspaces.Prepare(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Losing the original anchored directory rejects creation after the output
+	// publisher starts. Its joined cancellation must remain visible in the
+	// native result rather than silently claiming complete retained output.
+	if err := os.Rename(manifest.PrimaryPath, manifest.PrimaryPath+"-moved"); err != nil {
+		t.Fatal(err)
+	}
+	manager := newTerminalManager(ctx, Config{Root: root, Logger: logger}, nil, Credential{MachineID: input.MachineID}, domain.NewID())
+	result := manager.execute(terminal.Assignment{ID: domain.NewID(), SessionID: input.SessionID, Terminal: domain.Terminal{State: domain.TerminalStarting, ShellOverride: "/bin/sh", Rows: 24, Columns: 80}, Operation: domain.TerminalOperation{Action: domain.TerminalCreate}, Preparation: &input, Manifest: &manifest})
+	if !result.OutputLost || result.State != domain.TerminalUncertain || result.CleanupVerified || result.Problem == nil || len(manager.live) != 0 {
+		t.Fatal("failed creation discarded output loss or manufactured ownership cleanup", result)
+	}
+	if err := result.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTerminalFailedControlPreservesCleanupRecoveryProblem(t *testing.T) {
 	for _, action := range []domain.TerminalAction{domain.TerminalInput, domain.TerminalResize} {
 		t.Run(string(action), func(t *testing.T) {

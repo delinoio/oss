@@ -275,6 +275,7 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 				}
 			}
 			<-native.outputDone
+			result.OutputLost = native.outputLost
 			result.State, result.Problem = domain.TerminalExited, domain.SafeError(err)
 			if !result.CleanupVerified {
 				result.State = domain.TerminalUncertain
