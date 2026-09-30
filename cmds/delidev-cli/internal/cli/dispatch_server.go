@@ -44,6 +44,4 @@ func dispatchServer(ctx context.Context, c client, o options, rest []string, str
 	default:
 		return emit(nil, usage()), true
 	}
-
-	return 0, false
 }
