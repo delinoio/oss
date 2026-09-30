@@ -46,6 +46,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Replace shared browser children only when their selected tab identity changes. Closing a background tab or selecting the current tab preserves page state, navigation history, pending creation and exact retained failure.
 
+- Before replacing a selected/final tab child or superseding a presentation, synchronously unmap every old child before dropping handles or advancing generations. An unmap failure retains the original views and cleanup identity; request asynchronous close only after releasing native state. Removal/quit retain each child handle until its exact callback, so concurrent Hide cannot mistake a delayed close for invisibility.
+
 - Browser Hide is idempotent for an exact original view: synchronously hide only its matching native child before acknowledging success, or retain ownership until its exact close callback proves absence. Pending native creation and failed native hiding keep the original identity pending and deny ordinary controls. Confirm absence without touching a superseding view and return no browsing data from cleanup, including absent or unrelated-window requests. Preserve trusted-document checks and offline closure; native close accounting still gates process shutdown.
 
 - Actual native window close and explicit saved-window destruction must invalidate its browser reservation and pending context creation and request raw-child closure on the UI loop before destroying the parent. The saved-window Destroyed fallback checks the original binding instance before closing its exact window view and releasing the binding. Tray hiding preserves presentation; window closure retains profiles and native callback counts until independent shutdown.

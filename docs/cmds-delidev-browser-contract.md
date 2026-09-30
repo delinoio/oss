@@ -90,6 +90,13 @@ the final tab still replaces or releases every affected shared child.
 The persistent closed compact sidebar dialog and open nonmodal wide sidebar
 region do not block browser presentation. Visible dialogs, hidden panels and
 clipped geometry cannot leave an external child above app UI.
+Selected/final-tab replacement synchronously unmaps every superseded shared child
+before dropping any handle or advancing any generation. Failure retains the
+original views for exact Hide cleanup; no replacement child is created. Presentation
+reservation/open obey the same unmap-before-release rule. Removal and quit retain
+closing handles until their exact callbacks, so Hide can still reach a child whose
+asynchronous close has not completed. Close requests after tab replacement run
+outside native state; pending old creation callbacks remain generation-guarded.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
@@ -111,6 +118,8 @@ and request raw-child closure on the UI loop before destroying the parent. The
 saved-window Destroyed fallback checks the original binding instance before closing
 the view and dropping its binding. Tray hiding retains presentation; window closure
 retains profiles and the native callback counts needed for independent shutdown.
+Window closure also unmaps a current child before dropping its handle; on failure
+it retains that closing view while still requesting teardown.
 Profile directory traversal, tab reads, URL policy preparation and durable writes
 run on serialized storage workers without holding the native state lock during
 I/O. Trusted documents and presentation/control generations are rechecked before

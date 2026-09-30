@@ -96,6 +96,11 @@ struct View {
     view_id: String,
 }
 #[derive(Default)]
+struct TabReplacement {
+    requests: Vec<ViewRequest>,
+    closing: Vec<Browser>,
+}
+#[derive(Default)]
 struct State {
     profiles: BTreeMap<String, RuntimeProfile>,
     views: BTreeMap<String, View>,
@@ -106,14 +111,25 @@ struct State {
     discovery_pending: bool,
 }
 impl State {
-    fn select_tab(&mut self, profile: &str, selected: &str) -> Result<Vec<ViewRequest>> {
+    fn select_tab(
+        &mut self,
+        profile: &str,
+        selected: &str,
+        mut unmap: impl FnMut(&View) -> Result<()>,
+    ) -> Result<TabReplacement> {
         let labels: Vec<String> = self
             .views
             .iter()
             .filter(|(_, v)| v.profile == profile && !v.closing && v.request.tab != selected)
             .map(|(label, _)| label.clone())
             .collect();
-        let mut requests = Vec::new();
+        // CloseBrowser is asynchronous. Confirm every superseded child is
+        // invisible before dropping any handle or advancing a generation; a
+        // failed native unmap keeps the original views available to Hide.
+        for label in &labels {
+            unmap(&self.views[label])?;
+        }
+        let mut replacement = TabReplacement::default();
         // Closing a background tab or selecting the current tab must preserve
         // the selected child's page state and native navigation stack.
         for label in labels {
@@ -123,10 +139,8 @@ impl State {
                 .ok_or(NativeFailure::Stopped)?;
             let generation = self.generation;
             let view = self.views.get_mut(&label).unwrap();
-            if let Some(b) = view.browser.take()
-                && let Some(h) = b.host()
-            {
-                h.close_browser(1)
+            if let Some(browser) = view.browser.take() {
+                replacement.closing.push(browser);
             }
             view.generation = generation;
             view.failure = None;
@@ -135,10 +149,10 @@ impl State {
             view.request.generation = generation;
             view.request.tab = selected.into();
             if !selected.is_empty() {
-                requests.push(view.request.clone());
+                replacement.requests.push(view.request.clone());
             }
         }
-        Ok(requests)
+        Ok(replacement)
     }
 
     fn exit_when_ready(&self) -> Option<i32> {
@@ -222,10 +236,22 @@ impl BrowserHost {
     // UI loop only: release the superseded child before asynchronous authority
     // reads can fail. Removing its view also rejects late creation callbacks.
     fn reserve(&self, window: &str, view_id: &str) -> Result<()> {
+        self.reserve_with(window, view_id, unmap_view)
+    }
+
+    fn reserve_with(
+        &self,
+        window: &str,
+        view_id: &str,
+        mut unmap: impl FnMut(&View) -> Result<()>,
+    ) -> Result<()> {
         canonical_id(view_id)?;
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         if self.stopping.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
+        }
+        if let Some(previous) = state.views.get(window) {
+            unmap(previous)?;
         }
         state.reservations.insert(window.into(), view_id.into());
         let previous = state.views.remove(window);
@@ -596,12 +622,20 @@ impl BrowserHost {
         if state.reservations.get(window.label()) != Some(&view_id) {
             return Err(NativeFailure::Stopped);
         }
-        if let Some(view) = state.views.remove(window.label())
-            && let Some(b) = view.browser
-            && let Some(h) = b.host()
-        {
-            h.close_browser(1);
+        if let Some(view) = state.views.get(window.label()) {
+            unmap_view(view)?;
         }
+        let previous = state
+            .views
+            .remove(window.label())
+            .and_then(|view| view.browser);
+        drop(state);
+        if let Some(browser) = previous
+            && let Some(host) = browser.host()
+        {
+            host.close_browser(1);
+        }
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         let p = state
             .profiles
             .get_mut(&record.id)
@@ -895,9 +929,14 @@ impl BrowserHost {
                 let selected = p.tabs.selected.clone();
                 // Profile tabs are shared: every live user observes the same selected
                 // tab, including closing the last tab without deleting the profile.
-                let requests = state.select_tab(profile, &selected)?;
+                let replacement = state.select_tab(profile, &selected, unmap_view)?;
                 drop(state);
-                self.recreate_children(profile, &requests, |request| {
+                for browser in replacement.closing {
+                    if let Some(host) = browser.host() {
+                        host.close_browser(1);
+                    }
+                }
+                self.recreate_children(profile, &replacement.requests, |request| {
                     create_child(self, app, profile.into(), request.clone(), context.clone())
                 })?;
                 state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
@@ -914,18 +953,7 @@ impl BrowserHost {
     }
 
     fn hide(&self, window: &str, profile: &str, view_id: &str) -> Result<BrowserState> {
-        self.hide_with(window, profile, view_id, |view| {
-            if let Some(browser) = &view.browser {
-                let host = browser.host().ok_or(NativeFailure::InvalidEvidence)?;
-                position(
-                    host.window_handle(),
-                    view.request.bounds,
-                    view.request.scale,
-                    false,
-                )?;
-            }
-            Ok(())
-        })
+        self.hide_with(window, profile, view_id, unmap_view)
     }
 
     fn hide_with(
@@ -936,7 +964,7 @@ impl BrowserHost {
         mut unmap: impl FnMut(&View) -> Result<()>,
     ) -> Result<BrowserState> {
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
-        // A superseding reservation already closes the previous child. Retried
+        // A superseding reservation already unmaps the previous child. Retried
         // cleanup proves that old view is absent without touching its replacement.
         if let Some(view) = state
             .views
@@ -1117,13 +1145,20 @@ impl BrowserHost {
     }
 
     fn close_profile(&self, profile: &str) {
-        let Ok(mut state) = self.state.lock() else {
+        let Ok(state) = self.state.lock() else {
             return;
         };
-        for view in state.views.values_mut().filter(|v| v.profile == profile) {
-            if let Some(browser) = view.browser.take()
-                && let Some(host) = browser.host()
-            {
+        // Retain each handle until its exact callback. Hide during asynchronous
+        // teardown must still find the original child; close outside state.
+        let closing: Vec<_> = state
+            .views
+            .values()
+            .filter(|view| view.profile == profile)
+            .filter_map(|view| view.browser.clone())
+            .collect();
+        drop(state);
+        for browser in closing {
+            if let Some(host) = browser.host() {
                 host.close_browser(1);
             }
         }
@@ -1239,14 +1274,15 @@ impl BrowserHost {
                 profiles.push(id.clone());
             }
         }
-        for view in state
+        let closing: Vec<_> = state
             .views
-            .values_mut()
+            .values()
             .filter(|view| profiles.contains(&view.profile))
-        {
-            if let Some(browser) = view.browser.take()
-                && let Some(host) = browser.host()
-            {
+            .filter_map(|view| view.browser.clone())
+            .collect();
+        drop(state);
+        for browser in closing {
+            if let Some(host) = browser.host() {
                 host.close_browser(1);
             }
         }
@@ -1318,32 +1354,48 @@ impl BrowserHost {
     // retain profiles and callback accounting until actual CEF teardown.
     pub fn close_window(&self, window: &str) -> Result<()> {
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        let hidden = if let Some(view) = state.views.get_mut(window) {
+            view.closing = true;
+            unmap_view(view)
+        } else {
+            Ok(())
+        };
         state.reservations.remove(window);
         for profile in state.profiles.values_mut() {
             profile.pending.retain(|request| request.window != window);
         }
-        let view = state.views.remove(window);
+        let browser = state
+            .views
+            .get(window)
+            .and_then(|view| view.browser.clone());
+        if hidden.is_ok() {
+            state.views.remove(window);
+        }
         drop(state);
-        if let Some(browser) = view.and_then(|view| view.browser)
+        if let Some(browser) = browser
             && let Some(host) = browser.host()
         {
             host.close_browser(1);
         }
-        Ok(())
+        hidden
     }
 
     pub fn close_all(&self) {
         if let Ok(mut state) = self.state.lock() {
-            for v in state.views.values_mut() {
-                if let Some(b) = v.browser.take()
-                    && let Some(h) = b.host()
-                {
-                    h.close_browser(1);
-                }
-            }
+            let closing: Vec<_> = state
+                .views
+                .values()
+                .filter_map(|view| view.browser.clone())
+                .collect();
             for p in state.profiles.values_mut() {
                 p.pending.clear();
                 p.context.take();
+            }
+            drop(state);
+            for browser in closing {
+                if let Some(host) = browser.host() {
+                    host.close_browser(1);
+                }
             }
         }
     }
@@ -1849,6 +1901,27 @@ fn window_info(r: &ViewRequest) -> WindowInfo {
     }
     info
 }
+fn unmap_view(view: &View) -> Result<()> {
+    if let Some(browser) = &view.browser {
+        let hidden = browser
+            .host()
+            .ok_or(NativeFailure::InvalidEvidence)
+            .and_then(|host| {
+                position(
+                    host.window_handle(),
+                    view.request.bounds,
+                    view.request.scale,
+                    false,
+                )
+            });
+        if let Err(code) = hidden {
+            tracing::warn!(operation = "browser_unmap", ?code);
+        }
+        hidden?;
+    }
+    Ok(())
+}
+
 fn hide_browser(browser: &Browser, request: &ViewRequest) -> Result<()> {
     let host = browser.host().ok_or(NativeFailure::InvalidEvidence)?;
     // Native invisibility is synchronous; CloseBrowser only requests teardown.
@@ -2214,8 +2287,9 @@ mod tests {
             .state
             .lock()
             .unwrap()
-            .select_tab(&record.id, &selected)
-            .unwrap();
+            .select_tab(&record.id, &selected, unmap_view)
+            .unwrap()
+            .requests;
         assert_eq!(requests.len(), 1);
         let generation = requests[0].generation;
         host.prepare_control(
@@ -2232,7 +2306,13 @@ mod tests {
         assert_eq!(tabs.selected, selected);
         assert_eq!(tabs.tabs.len(), 1);
         let mut state = host.state.lock().unwrap();
-        assert!(state.select_tab(&record.id, &selected).unwrap().is_empty());
+        assert!(
+            state
+                .select_tab(&record.id, &selected, unmap_view)
+                .unwrap()
+                .requests
+                .is_empty()
+        );
         assert_eq!(state.views["fixture"].generation, generation);
         assert_eq!(state.views["fixture"].request.tab, selected);
         assert_eq!(state.views["fixture"].failure, None);
@@ -2247,9 +2327,123 @@ mod tests {
         )
         .unwrap();
         let mut state = host.state.lock().unwrap();
-        assert!(state.select_tab(&record.id, "").unwrap().is_empty());
+        assert!(
+            state
+                .select_tab(&record.id, "", unmap_view)
+                .unwrap()
+                .requests
+                .is_empty()
+        );
         assert!(state.views["fixture"].generation > generation);
         assert!(state.views["fixture"].request.tab.is_empty());
+    }
+
+    #[test]
+    fn tab_replacement_unmaps_the_old_child_before_generation_advance_and_hide() {
+        for selected in [uuid::Uuid::now_v7().to_string(), String::new()] {
+            let (_temp, host, record, view_id, original) = active_storage_fixture();
+            let visible = std::cell::Cell::new(true);
+            let mut state = host.state.lock().unwrap();
+            state.generation = original.generation;
+            state.live = 1; // The superseded CEF close callback is still pending.
+            let replacement = state
+                .select_tab(&record.id, &selected, |view| {
+                    assert_eq!(view.generation, original.generation);
+                    assert_eq!(view.request.tab, original.tab);
+                    visible.set(false);
+                    Ok(())
+                })
+                .unwrap();
+            assert!(!visible.get());
+            assert_eq!(replacement.requests.is_empty(), selected.is_empty());
+            let generation = state.views["fixture"].generation;
+            assert!(generation > original.generation);
+            drop(state);
+            host.hide_with("fixture", &record.id, &view_id, |_| {
+                // Hide has no old handle after replacement. Its earlier unmap
+                // must already have proved that the delayed old child is hidden.
+                assert!(!visible.get());
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(host.state.lock().unwrap().live, 1);
+            host.child_closed(&original);
+            assert_eq!(host.state.lock().unwrap().live, 0);
+        }
+    }
+
+    #[test]
+    fn shared_tab_unmap_failure_retains_all_original_views_for_hide() {
+        let (_temp, host, record, view_id, original) = active_storage_fixture();
+        let mut sibling = original.clone();
+        sibling.window = "sibling".into();
+        let mut state = host.state.lock().unwrap();
+        state.generation = original.generation;
+        state.views.insert(
+            sibling.window.clone(),
+            View {
+                profile: record.id.clone(),
+                generation: sibling.generation,
+                request: sibling.clone(),
+                browser: None,
+                failure: None,
+                creation_pending: false,
+                closing: false,
+                view_id: view_id.clone(),
+            },
+        );
+        let mut attempts = 0;
+        let result = state.select_tab(&record.id, &uuid::Uuid::now_v7().to_string(), |_| {
+            attempts += 1;
+            if attempts == 2 {
+                Err(NativeFailure::SidecarFailed)
+            } else {
+                Ok(())
+            }
+        });
+        assert!(matches!(result, Err(NativeFailure::SidecarFailed)));
+        assert_eq!(attempts, 2);
+        for view in state.views.values() {
+            assert_eq!(view.generation, original.generation);
+            assert_eq!(view.request.tab, original.tab);
+            assert_eq!(view.view_id, view_id);
+        }
+        assert_eq!(state.generation, original.generation);
+        drop(state);
+        for window in ["fixture", "sibling"] {
+            host.hide_with(window, &record.id, &view_id, |view| {
+                assert_eq!(view.request.tab, original.tab);
+                Ok(())
+            })
+            .unwrap();
+        }
+        assert!(host.state.lock().unwrap().views.is_empty());
+    }
+
+    #[test]
+    fn failed_reservation_unmap_preserves_the_original_cleanup_identity() {
+        let (_temp, host, record, view_id, original) = active_storage_fixture();
+        let replacement = uuid::Uuid::now_v7().to_string();
+        assert_eq!(
+            host.reserve_with("fixture", &replacement, |_| Err(
+                NativeFailure::SidecarFailed
+            )),
+            Err(NativeFailure::SidecarFailed)
+        );
+        let state = host.state.lock().unwrap();
+        assert_eq!(state.reservations["fixture"], view_id);
+        assert_eq!(state.views["fixture"].generation, original.generation);
+        drop(state);
+        host.hide_with("fixture", &record.id, &view_id, |view| {
+            assert_eq!(view.request.tab, original.tab);
+            Ok(())
+        })
+        .unwrap();
+        host.reserve("fixture", &replacement).unwrap();
+        assert_eq!(
+            host.state.lock().unwrap().reservations["fixture"],
+            replacement
+        );
     }
 
     #[test]
