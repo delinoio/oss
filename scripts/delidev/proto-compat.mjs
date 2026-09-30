@@ -14,7 +14,22 @@ export function generateCompatibility() {
   const target = resolve(directory, 'delidev_pb.ts');
   const marker = '// @generated DeliDev compatibility re-exports';
   const original = readFileSync(target, 'utf8').split(marker)[0].trimEnd().replace('const legacyBase:', 'export const file_delidev_v1_delidev:');
-  const files = [...new Set(Object.values(layout.declarations).map(item => basename(item.file, '.proto'))) ].sort();
+  // The relocation map describes historical declarations only. New service files
+  // must join both aggregate views through the compatibility schema's imports.
+  const descriptors = JSON.parse(execFileSync(process.execPath, [
+    resolve(root, 'node_modules/@bufbuild/buf/bin/buf'), 'build',
+    '--as-file-descriptor-set', '--exclude-source-info', '--output', '-#format=json',
+  ], { cwd: root, encoding: 'utf8' }));
+  const legacy = descriptors.file.find(file => file.name === layout.legacyFile);
+  if (!legacy) throw new Error('Missing DeliDev compatibility schema');
+  const files = [...new Set((legacy.publicDependency ?? []).map(index => {
+    const path = legacy.dependency[index];
+    const imported = descriptors.file.find(file => file.name === path);
+    if (!imported || imported.package !== legacy.package || !path.startsWith('delidev/v1/')) {
+      throw new Error('Invalid DeliDev compatibility public import');
+    }
+    return basename(path, '.proto');
+  }))].sort();
   const order = Object.keys(layout.declarations);
   const modules = files.map(file => `file_delidev_v1_${file}`);
   // Aggregate at runtime so adding to one service does not rewrite a central

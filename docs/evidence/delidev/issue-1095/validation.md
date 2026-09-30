@@ -6,7 +6,7 @@ All authentication fixtures use synthetic JWT/token material, temporary private 
 
 ## Checks executed on the replacement
 
-Implementation revision: `39ce1b5014a5f219a1c7904340ffc1d8a4e777f9` (documentation-only follow-ups retain this source revision).
+Original implementation revision: `39ce1b5014a5f219a1c7904340ffc1d8a4e777f9`. The later protocol compatibility repair is recorded separately below.
 
 - `go test ./cmds/delidev-cli/... -run 'Subscription|Managed|Bundle' -count=1`: passed, including protected Connect/SQLite lifecycle, concurrent leases, cancellation/revocation, bundle rotation, lost write-back, native process fixtures and execution authentication cleanup.
 - `go vet ./cmds/delidev-cli/...`: passed; the final implementation including capability coexistence was also checked with `GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/...` and passed.
@@ -25,3 +25,18 @@ Implementation revision: `39ce1b5014a5f219a1c7904340ffc1d8a4e777f9` (documentati
 ## Acceptance limits
 
 These fixtures establish deterministic protocol and ownership behavior, not real subscription OAuth, hosted inference, installed-Codex subscription execution, desktop login controls, full uncertain-lease recovery, native Windows/Linux runtime acceptance or release readiness. Complete issue #964 remains independent and unfinished.
+
+## First PR maintenance repair
+
+Main `7f356266f` was merged in `959c4070`, retaining its AI API Keys terminology and Diagnostics presentation together with the managed subscription contract. No Go implementation or schema change came from that base merge.
+
+PR #1174's protocol job and macOS/Ubuntu Go jobs all reported the same aggregate-reflection omission: the compatibility generator took its service inventory from the historical declaration relocation map, excluding the new subscription schema. The repair derives both Go and TypeScript aggregate files from compiled `delidev.proto` public imports, preserves historical declaration order, and leaves the relocation map unchanged. TypeScript coverage now verifies canonical subscription declaration identity and reconstructed service reflection.
+
+Executed against the repaired generated output:
+
+- `GOMAXPROCS=2 go test -p 2 ./protos/...`: passed, including the previously failing aggregate reflection test.
+- API client `pnpm test` and `pnpm typecheck`: all 44 tests and typecheck passed.
+- `node --test scripts/ci/delidev-proto.test.mjs scripts/ci/delidev-structure.test.mjs`: all six checks passed.
+- `pnpm proto:lint` and `pnpm proto:breaking`: passed.
+
+These focused repair checks do not supersede the complete native-suite failures or real-account acceptance limits above. New-head CI and review remain separate evidence after publication.
