@@ -138,6 +138,9 @@ func (t *Tx) putPRProblem(id domain.ID, expected uint64, value domain.PRProblem)
 	} else {
 		_, err = t.tx.ExecContext(t.ctx, "UPDATE pr_problem_records SET current=? WHERE id=?", value.Current, id)
 	}
+	if err == nil && expected == 0 {
+		err = t.recordPRActivity(r, value.SetID, value.Target, domain.PRActivityObserved, []domain.PRRemediationProblemRef{{ID: r.ID, ContentVersion: value.ContentVersion}}, nil)
+	}
 	return r, storageError(err)
 }
 
@@ -315,6 +318,9 @@ func (t *Tx) DismissPRProblem(id domain.ID, expected uint64, version string) (Re
 	}
 	r, err = t.putPRProblem(id, expected, value)
 	if err != nil {
+		return r, err
+	}
+	if err = t.recordPRActivity(r, value.SetID, value.Target, domain.PRActivityDismissed, []domain.PRRemediationProblemRef{{ID: r.ID, ContentVersion: value.ContentVersion}}, nil); err != nil {
 		return r, err
 	}
 	setRecord, set, err := t.GetPRProblemSet(value.SetID)

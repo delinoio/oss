@@ -86,3 +86,16 @@ Repository Rust source was not modified, so root Cargo testing was not required.
 The required desktop icon LFS object was hydrated before consuming it. The
 API-client and frontend `dist` output was explicitly generated for consumers and
 removed after checks; generated output and private logs are not tracked.
+
+## Current-main integration repair
+
+The PR base advanced to `9d110ced702e66bb50974c5ec98e830b86adbe5b` after
+publication. A normal merge preserved both new Activity contracts and manual-fix
+contracts. Manual completion now retains the upstream dedicated Activity proof
+in the same transaction as its exact handled versions, only after original
+native, cleanup and push verification. Dismissal and unverified outcomes cannot
+create this record. `go test -race -p 1 ./cmds/delidev-cli/internal/store
+-run 'TestPRFix|TestPRActivity' -count=1` passed after the merge; new assertions
+check the exact original proof references and absence for every unverified or
+dismissed scenario. This controlled evidence is not real native/account
+acceptance.

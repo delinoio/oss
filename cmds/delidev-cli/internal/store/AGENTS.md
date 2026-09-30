@@ -2,6 +2,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- PR activity follows `docs/cmds-delidev-activity-contract.md`: publish immutable metadata with its source transaction, preserve receipt/alias/unchanged-state deduplication and original actor/time/version references, and remove all session-owned attempt transitions on deletion, including pre-binding reservations. Do not backfill inferred history. Dedicated verification retention is independently bounded and proof-replay-safe; no production verifier or public write is enabled by its private storage boundary.
+
 - `backup create --wait` returns a typed nonzero exit for failed or unconfirmed completion and retains the accepted request/job result on failure, interruption and read errors. Waiting never creates a replacement job.
 
 - Managed creation and pre-migration publication share the 8 GiB inspection/deletion bound. Reject oversized copies before publication, preserve the live database and settle durable size-limit failures terminally.
@@ -109,3 +111,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - `migration-reservations.json` allocates pending work separately from executable migrations. Establish changes to reservations on main before starting dependent branches. Version 25 from an unmerged branch is not proof of schema identity; preserve unidentified data and return recovery-required.
 
 - Manual fixes retain optional original Git/project selection on existing attempts. Only original assignment-bound verified push plus successful native completion/cleanup can handle exact evidence; dismissal wins a race and handled audit cannot be erased. Missing/uncertain proof retains stable PR ownership. Cancel only an explicitly removed unstarted original input atomically; preserve legacy attempts without inventing push proof.
+
+- Manual fix completion must retain dedicated Activity verification in the same transaction as exact handled versions, after original native, cleanup and push proof. An outcome alone cannot create verification.

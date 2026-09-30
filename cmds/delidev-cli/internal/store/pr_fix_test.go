@@ -79,6 +79,28 @@ func TestPRFixOnlyVerifiedOriginalPushHandlesEvidence(t *testing.T) {
 			v, _ := Decode[domain.PRRemediationAttempt](finished)
 			rows := readProblemFixture(t, s, f.set.ID)
 			p, _ := Decode[domain.PRProblem](rows[0])
+			verifications := 0
+			if err := s.Read(notificationOwner(), func(tx *Tx) error {
+				all, err := tx.List(Filter{Kind: domain.ProblemKind, Limit: 100})
+				if err != nil {
+					return err
+				}
+				for _, row := range all {
+					var value domain.PRHandlingVerification
+					if json.Unmarshal(row.Data, &value) == nil && value.Type == domain.PRHandlingVerificationRecord {
+						if value.Validate() != nil || value.SetID != f.set.ID || len(value.Problems) != 1 || value.Problems[0] != f.problems[0] {
+							t.Fatal("foreign Activity proof")
+						}
+						verifications++
+					}
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "verified" && verifications != 1 || scenario != "verified" && verifications != 0 {
+				t.Fatal("outcome fabricated or omitted Activity proof", scenario, verifications)
+			}
 			if scenario == "verified" {
 				if p.State != domain.PRProblemHandled || p.Handling == nil || p.Handling.AttemptID != a.ID || v.State != domain.PRRemediationFinished {
 					t.Fatal("verified push lost handling", v.State, p.State)
