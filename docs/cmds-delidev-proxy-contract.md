@@ -40,6 +40,12 @@ Decoded JSON object names also enter independent global and parent-path matchers
 
 HTTP-200 standalone error envelopes use the same protected-code/local-body fallback as non-200 errors before returning a synthesized HTTP 502 response. A successful transport status cannot bypass protected-value checks.
 
+Cancellation may abort the original downstream response, but every started
+body/deadline cancellation callback is joined before the HTTP handler returns.
+Its response-writer ownership cannot cross into another request on a reused
+downstream connection. Later requests with a revoked execution token still fail
+authorization without another protected key read or upstream attempt.
+
 ## Logging
 Use structured `api_proxy_request_finished` metadata: correlation/execution/session/account/provider/model IDs, closed operation and phase, stream selection, submission uncertainty, HTTP status, typed failure code and duration. `submitted` means an HTTP attempt began, not proof that upstream accepted it. Native failed terminal events retain failure classification. Keys, endpoint URLs, native model strings, prompt/output bytes and provider diagnostic text are excluded.
 

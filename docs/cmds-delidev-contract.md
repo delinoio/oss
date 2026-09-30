@@ -106,6 +106,12 @@ Stream reflection checks include decoded JSON key fragments at both global and o
 
 Controller creation failure before native startup removes only the current attempt's original empty scope and synchronizes its parent. Nonempty/replaced evidence and uncertain durability remain recoverable failures; native-started scopes always require their existing ownership proof.
 
+Native relay cancellation retains its original response-writer ownership until
+all started body/deadline callbacks finish. A downstream connection's later
+request cannot inherit an earlier cancellation deadline; revoked tokens fail
+without another key read or upstream attempt. See the
+[relay contract](cmds-delidev-proxy-contract.md).
+
 ## Logging
 Use `log/slog` on stderr with correlation, operation, session, and Worker IDs. Stable typed failures retain safe causes and recovery guidance. Prompts, raw emails, tokens, provider bodies, and internal instructions are excluded. Structured JSON is never mixed with progress.
 

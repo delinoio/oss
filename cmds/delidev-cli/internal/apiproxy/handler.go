@@ -170,8 +170,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusServiceUnavailable, domain.Unavailable)
 		return
 	}
-	stopBody := context.AfterFunc(ctx, func() { _ = r.Body.Close(); _ = controller.SetWriteDeadline(time.Now()) })
-	defer stopBody()
+	bodyStopped := make(chan struct{})
+	stopBody := context.AfterFunc(ctx, func() {
+		defer close(bodyStopped)
+		_ = r.Body.Close()
+		_ = controller.SetWriteDeadline(time.Now())
+	})
+	defer func() {
+		// AfterFunc's stop does not join an already running callback. Retain
+		// writer ownership until it finishes so a late cancellation deadline
+		// cannot affect the next request on a reused downstream connection.
+		if !stopBody() {
+			<-bodyStopped
+		}
+	}()
 	bodyLimit := int64(maxBody)
 	if lease.Scope.Purpose == domain.SessionTitleUsage {
 		bodyLimit = 1 << 20
