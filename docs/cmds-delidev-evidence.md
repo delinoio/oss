@@ -3717,3 +3717,54 @@ The normal Node `24.20.0` frontend `pnpm test` passes all 76 files/973 tests, ei
 The complete root `go test -race -timeout=20m ./cmds/delidev-cli/...` passes with exit 0 in 1,003.71 seconds across 22 tested packages (10 valid cache results; remaining packages executed), with no race-detector report (`/tmp/delidev-1125-services-merge-go-race.log`). The CLI passes in 225.505 seconds, Grok in 990.996s, server in 698.635 seconds, user services in 7.658 seconds, Worker in 265.470 seconds and workspace in 515.173 seconds. This is a complete passing race result for this merged tree, distinct from the earlier failed attempts and isolated retries. The CLI workspace fixture that failed in earlier runs passes within this complete run; no cause or fix for its earlier failure is inferred.
 
 No Rust source changed, and earlier root Rust/native compile results remain attributed to their original revision. The controlled native/provider fixtures use temporary state; this repair does not add real-account inference, actual service registration, native desktop interaction, Windows/Linux runtime, logout/relogin or release acceptance. Upstream native evidence and its limits, earlier failed complete-suite attempts and the prior Codex review quota response remain independently recorded. Generated repository-owned `dist` output is removed after validation. The pushed head requires fresh remote CI and review.
+
+### App-icon 20% enlargement (2026-09-30)
+
+The owner approved a uniform 1.2× enlargement of the existing app icon, keeping
+its colored ribbon, gradient, proportions and transparent background/central
+cutout. The source was hydrated from the exact local LFS object
+`88a91d0ea8462b0b8d59d53d212a4f4030f99a2775eb733b38be8234b077364f`
+(585,665 bytes). One Lanczos SRT transform around `(627, 627)`, with scale 1.2,
+zero rotation and a transparent virtual canvas, preserves the 1254×1254 RGBA8
+canvas. The approved artwork is baked into the source rather than enlarged
+again during platform export. No frontend/Rust code, bundle configuration,
+public interface or in-app button size changed.
+
+The final source is 788,603 bytes with SHA-256
+`1100564e6a9a977c89aeb273c12297f5434850b0954f9e0e83e10ca0b2cf9d53`;
+its existing exact-path LFS attribute and `icon-source@2x.png` density marker
+remain intact. Its nonzero-alpha bounds change from `(257, 175, 1058, 1071)` to
+`(183, 84, 1145, 1160)`, remaining inside the canvas. Mean alpha coverage changes
+from 31.9858% to 46.0668%, consistent with the 1.44× area increase.
+
+Each final Windows ICO frame (16, 24, 32, 48, 64 and 256px) was exported from the
+enlarged source and decoded again after packaging. The 256px ICO pixels match
+the native PNG exactly. Every export retains near-opaque ribbon interiors,
+transparent background and central-cutout samples, and graded edge alpha;
+mean alpha coverage differs from the new source by at most 0.131 percentage
+points. Representative transformed interior colors differ by at most one
+8-bit channel value. Light, dark and checkerboard before/after composites and
+both-theme frame contact sheets were visually inspected without visible
+clipping or color/edge damage. These checks establish asset appearance, not
+Windows/Linux installed-shell acceptance.
+
+The existing asset-preparation and package-verifier suites pass all 18 tests.
+The two repository LFS asset contracts also pass, including after the new source
+pointer was committed. The first macOS dry run stopped at sandbox denial of the
+Go build cache; the same existing command was retried with the required access.
+`pnpm bundle:macos-dry-run` then passed on macOS arm64: native executable and Go
+sidecar, CEF resources/helpers, widget extensions, macOS 13 metadata, notices and
+ad-hoc signatures were verified. The generated `DeliDev.icns` contains the
+required 512-point Retina entry (1024×1024 pixels) and a 256×256 entry; their mean
+alpha coverage differs from the enlarged source by at most 0.008 percentage
+points. No production signing, notarization, publication or installed Dock
+appearance is claimed. Generated desktop/client `dist` directories were removed
+after verification.
+
+### PR #1125 enlarged-icon main conflict repair (2026-09-30)
+
+Merged the immutable fetched `main` revision `2e89b18f6c09c91e1ec052880dbfcbba3a4dd120` into the Grok branch from `5f7f5bb0cecbecc62758b545b242cf9d62a01158`. Only the evidence ledger conflicted. Both appended histories are retained, together with the PR's existing implemented Grok status and main's approved icon scale, desktop contract and scoped instructions. No Go, Rust, protocol or generated-client source changed; the complete passing DeliDev race result above remains attributed to `5f7f5bb0` and was not repeated for this asset/documentation merge.
+
+All 14 LFS payloads match their committed pointer size and SHA-256. The enlarged 1254px source is 788,603 bytes with digest `1100564e6a9a977c89aeb273c12297f5434850b0954f9e0e83e10ca0b2cf9d53`, bounds `(183, 84, 1145, 1160)` and mean alpha 0.4606678. Compared with the prior independently hash-verified cached source, alpha area is 1.440227×, consistent with the baked-in 1.2× scale. Final native PNG and all six ICO frames retain opaque interior samples (minimum alpha 249), graded edges, clear corner/background and source-backed central-cutout samples. Export alpha coverage differs from the source by at most 0.001304, and the 256px ICO pixels exactly match the native PNG (`/tmp/delidev-1125-icon-enlargement-merge-validation.json`). The first diagnostic sampled integer index `(8, 8)` as the center of the 16px export and encountered alpha 5 (the independent canonical resize has alpha 4 there). Even-size raster centers lie between pixels; the corrected floor-side sample `(7, 7)` is clear in both the canonical resize and final export. Assets were not changed to satisfy this diagnostic. Final light/dark/checkerboard composites were visually inspected with the expected larger artwork, intact cutout/gradient and no visible clipping (`/tmp/delidev-1125-icon-enlargement-merge-composites.png`).
+
+The asset preflight passes. Normal Node `24.20.0` frontend `pnpm test` passes all 76 files/973 tests, generated-client build/type checking, eight packaging cases, 16 asset/launcher cases, native Swift widget fixtures and production build (`/tmp/delidev-1125-icon-enlargement-merge-frontend.log`). Public-docs build/content/routes and all 95 CI contract cases pass. No fresh native bundle, installed-shell or release acceptance is claimed; upstream icon/native proof retains its original scope. Generated repository-owned `dist` output is removed after verification. Fresh CI and review are required for the pushed head.
