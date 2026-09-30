@@ -86,12 +86,14 @@ it("shows the complete grouped navigation once and keeps its selected category i
   const value = fixture([]);
   render(value.view(<Settings visible close={() => {}} />));
   const navigation = screen.getByRole("navigation", { name: "Settings categories" });
-  const labels = ["AI Subscription Accounts", "API Accounts", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Execution Workers", "Paired devices", "Server preferences", "Integrations", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
+  const labels = ["AI Subscription", "API Accounts", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Execution Workers", "Paired devices", "Server preferences", "Integrations", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
   const values = ["subscription-accounts", "api-accounts", "providers", "models", "agent-workers", "instructions", "projects", "repositories", "execution-workers", "paired-devices", "server-preferences", "integrations", "diagnostics", "notifications", "transfer", "backups"];
   expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI & agents", "Workspace", "System"]);
   expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
   const categorySelect = screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement;
   expect(categorySelect.options).toHaveLength(16);
+  expect(Array.from(categorySelect.options, (option) => option.textContent)).toEqual(labels);
+  expect(Array.from(categorySelect.options, (option) => option.value)).toEqual(values);
   expect(Array.from(categorySelect.querySelectorAll("optgroup"), (group) => group.label)).toEqual(["AI & agents", "Workspace", "System"]);
   expect(categorySelect.value).toBe("providers");
   for (const [index, label] of labels.entries()) {
@@ -102,6 +104,11 @@ it("shows the complete grouped navigation once and keeps its selected category i
     expect(categorySelect.value).toBe(values[index]);
   }
   expect(categorySelect.value).toBe("backups");
+  fireEvent.change(categorySelect, { target: { value: "subscription-accounts" } });
+  expect(categorySelect.selectedOptions[0].textContent).toBe("AI Subscription");
+  expect(categorySelect.value).toBe("subscription-accounts");
+  expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy();
+  expect(within(navigation).getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
 });
 
 it("keeps API provider accounts optional when none are connected", async () => {
