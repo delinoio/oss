@@ -76,7 +76,7 @@ func TestRepositoryMetadataNegotiationAndReportValidation(t *testing.T) {
 		_, err := client.ReportWork(ctx, ownerRequest(credential, &pb.ReportWorkRequest{Mutation: &pb.Mutation{Id: claimed.Id, ExpectedRevision: claimed.Revision, RequestId: string(domain.NewID())}, MachineId: device.Machine.Id, InstanceId: instance, OutputJson: output}))
 		return err
 	}
-	for _, raw := range []string{`{"root":"/test/checkout","name":"checkout","remotes":["origin"],"default_refs":{},"github_repositories":{"foreign":{"owner":"owner","name":"repo"}}}`, `{"root":"/test/checkout","name":"checkout","remotes":["origin"],"default_refs":{},"github_repositories":{"origin":{"owner":"owner","name":"repo","url":"private"}}}`} {
+	for _, raw := range []string{`{"root":"/test/checkout","name":"checkout","remotes":["origin"],"default_refs":{},"github_repositories":null}`, `{"root":"/test/checkout","name":"checkout","remotes":["origin"],"default_refs":{},"github_repositories":{"foreign":{"owner":"owner","name":"repo"}}}`, `{"root":"/test/checkout","name":"checkout","remotes":["origin"],"default_refs":{},"github_repositories":{"origin":{"owner":"owner","name":"repo","url":"private"}}}`} {
 		if err := report([]byte(raw)); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatal("foreign/raw metadata accepted", err)
 		}
@@ -85,6 +85,9 @@ func TestRepositoryMetadataNegotiationAndReportValidation(t *testing.T) {
 	// authority to return an enriched result from an earlier negotiated process.
 	if _, err := attach(nil); err != nil {
 		t.Fatal(err)
+	}
+	if err := report([]byte(`{"root":"/test/checkout","name":"checkout","remotes":["origin"],"default_refs":{},"github_repositories":null}`)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatal("unnegotiated null metadata accepted", err)
 	}
 	raw, _ := json.Marshal(good)
 	if err := report(raw); connect.CodeOf(err) != connect.CodeInvalidArgument {

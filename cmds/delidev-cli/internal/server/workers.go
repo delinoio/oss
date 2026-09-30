@@ -576,7 +576,14 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 				if err != nil {
 					return nil, err
 				}
-				if output.GitHubRepositories != nil && !slices.Contains(machineValue.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
+				// Presence, including a null field, requires negotiation. A null value
+				// cannot masquerade as legacy omission or a validated metadata map.
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(outputJSON, &fields); err != nil {
+					return nil, domain.Fail(domain.InvalidArgument, "Repository inspection is unreadable.", "Reinspect the repository.")
+				}
+				_, enriched := fields["github_repositories"]
+				if enriched && (output.GitHubRepositories == nil || !slices.Contains(machineValue.WorkerCapabilities, domain.RepositoryInspectionMetadataV1)) {
 					return nil, domain.Fail(domain.InvalidArgument, "Repository metadata was not negotiated.", "Reattach a compatible Worker before reporting enrichment.")
 				}
 				if err := output.ValidateGitHubRepositories(); err != nil {
