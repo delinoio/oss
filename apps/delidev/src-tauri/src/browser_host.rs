@@ -1359,8 +1359,14 @@ impl BrowserHost {
             join.join().map_err(|_| NativeFailure::SidecarFailed)?;
         }
         let _storage = self.storage.lock().map_err(|_| NativeFailure::Busy)?;
+        self.finish_forgotten(Instant::now())?;
+        self.finish_account_removals()
+    }
+
+    // Called only after independent native shutdown and the address-worker join,
+    // with storage serialized. Offline forgotten scopes cannot spend this budget.
+    fn finish_account_removals(&self) -> Result<()> {
         let started = Instant::now();
-        self.finish_forgotten(started)?;
         let mut first_failure = None;
         let cursor_path = self.root.join("removal-cursor.json");
         let mut paths = fs::read_dir(self.root.join("removals"))
@@ -2569,6 +2575,47 @@ esac
             0
         );
     }
+    #[test]
+    fn depleted_forgotten_budget_preserves_account_purge_progress() {
+        let (_temp, host, mut record) = storage_fixture();
+        record.data.state = ProfileState::RemovalPending;
+        record.data.deletion_request_id = uuid::Uuid::now_v7().to_string();
+        let cache = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
+        fs::write(cache.join("cookies"), b"fixture web credentials").unwrap();
+        host.prepare_removal(record.clone(), None).unwrap();
+        let forgotten = ForgottenScope {
+            server_id: uuid::Uuid::now_v7().to_string(),
+            device_id: uuid::Uuid::now_v7().to_string(),
+            connection_id: uuid::Uuid::now_v7().to_string(),
+            pairing_id: uuid::Uuid::now_v7().to_string(),
+            request_id: uuid::Uuid::now_v7().to_string(),
+            expected_revision: 1,
+        };
+        let deferred = host
+            .forgotten_path(&forgotten.server_id, &forgotten.device_id)
+            .unwrap();
+        browser::write_private(&deferred, &forgotten).unwrap();
+        host.stopping.store(true, Ordering::Release);
+        let _storage = host.storage.lock().unwrap();
+        // Model the exhausted first queue directly, without a 45-second sleep.
+        // The production second phase creates its own fresh budget internally.
+        host.finish_forgotten(Instant::now() - Duration::from_secs(46))
+            .unwrap();
+        assert!(deferred.exists());
+        host.finish_account_removals().unwrap();
+        assert!(!cache.exists());
+        assert_eq!(
+            read_json::<String>(&host.root.join("removal-cursor.json")).unwrap(),
+            record.id
+        );
+        let intent = host
+            .root
+            .join("removals")
+            .join(format!("{}.json", record.id));
+        assert!(read_json::<Removal>(&intent).unwrap().shutdown_confirmed);
+        assert!(deferred.exists());
+    }
+
     #[test]
     fn offline_acknowledgment_retains_intent_without_failing_normal_quit() {
         let temp = tempfile::tempdir().unwrap();

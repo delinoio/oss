@@ -1,0 +1,5 @@
+# PR #1232: independent post-shutdown cleanup budgets
+
+Addresses Codex thread `PRRT_kwDORRAKg86nrB6H`. Forgotten-scope inspection and account-removal handling had shared one start time, allowing retained unavailable saved scopes to exhaust the entire account queue budget before its cursor advanced. Each queue now gets its own 45-second/64-intent budget after the existing native shutdown and address-worker join gates. Existing observer/acknowledgment child deadlines remain unchanged; no in-flight child is detached. The owning contract and native instructions record the independent bounds.
+
+The pinned-CEF controlled regression `depleted_forgotten_budget_preserves_account_purge_progress` passes. With an expired forgotten phase and retained original scope, the actual account phase still advances its cursor, deletes a profile with fixture credentials and retains the original offline acknowledgment intent. It models budget exhaustion without a 45-second sleep; no real-provider or OS shutdown acceptance is claimed.

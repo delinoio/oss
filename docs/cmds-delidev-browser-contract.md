@@ -183,8 +183,11 @@ uncertain response. Each independent scope is handled separately. Once native
 shutdown is independently complete, local directory deletion can proceed offline;
 the server remains pending until a fresh exact ownership/status read and original
 confirmation succeeds. A retry does not reopen the profile or infer completion.
-Each exit handles at most 64 intents within a 45-second loop budget, with the
-existing 40-second sidecar command bound; remaining or uncertain intents stay
+Each exit gives forgotten scopes and account-removal intents independent budgets
+of at most 64 intents and 45 seconds per queue. Offline forgotten-scope inspection
+cannot consume the account queue's time or prevent its cursor advancement.
+Existing two-second observer and 40-second acknowledgment child bounds remain;
+an in-flight child retains its joined bound. Remaining or uncertain intents stay
 pending for a later process cleanup. A private durable account-removal cursor
 rotates the ordered intent inventory before acknowledgment, so retained offline
 receipts cannot repeatedly exclude later profiles from local purge. Deferred acknowledgments and exhausted
