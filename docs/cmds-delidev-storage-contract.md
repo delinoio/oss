@@ -380,8 +380,11 @@ snapshot wrapper entries (`workspace` and `snapshot.json`) beyond a complete
 the workspace bound. Private manifests and removal intents use their explicit
 8 MiB strict JSON decoding budget; public command documents retain 1 MiB limits. Files are copied through opened anchored
 parents with exclusive destinations, identity checks, full SHA-256 inventories,
-mode preservation and synchronization. Ordinary symlinks, including escaping
-links, remain links and are never opened. Windows inventories additionally retain the native file/directory symlink type and recreate it explicitly, including forward and dangling directory targets. Sockets, devices, FIFOs and other
+mode preservation and synchronization. Root and nested directory identity,
+mode, size and modification time are rechecked around inventory reads and copies;
+late root entries, including writes through a retained handle after a cleanup
+claim, invalidate the observation before publication or unlink. Ordinary symlinks,
+including escaping links, remain links and are never opened. Windows inventories additionally retain the native file/directory symlink type and recreate it explicitly, including forward and dangling directory targets. Sockets, devices, FIFOs and other
 unsupported special files block cleanup. Snapshot bytes are sensitive private
 Worker data, never server data or diagnostic content.
 

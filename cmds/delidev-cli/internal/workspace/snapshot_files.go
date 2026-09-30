@@ -67,7 +67,7 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 	}
 	defer root.Close()
 	opened, err := root.Stat(".")
-	if err != nil || !os.SameFile(rootInfo, opened) {
+	if err != nil || !sameSnapshotFile(rootInfo, opened) {
 		return inventory, ResultUncertain()
 	}
 	if destination != "" {
@@ -252,7 +252,11 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 		err = syncSnapshotDir(destination)
 	}
 	final, finalErr := os.Lstat(source)
-	if err == nil && (finalErr != nil || !os.SameFile(rootInfo, final)) {
+	anchored, anchoredErr := root.Stat(".")
+	// Root entries are enumerated before child reads, just like nested entries.
+	// A retained directory handle can mutate this root even after a rename claim;
+	// identity alone must not authorize an incomplete inventory or source removal.
+	if err == nil && (finalErr != nil || anchoredErr != nil || !sameSnapshotFile(rootInfo, final) || !sameSnapshotFile(rootInfo, anchored)) {
 		err = ResultUncertain()
 	}
 	sort.Slice(inventory.Entries, func(i, j int) bool { return inventory.Entries[i].Path < inventory.Entries[j].Path })
