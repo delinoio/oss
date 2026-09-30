@@ -253,6 +253,10 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 }
 
 func (s *Service) dispatchExecution(ctx context.Context, record store.Record) error {
+	attempt, observations, prepareErr := s.preparePRFixDispatch(ctx, record)
+	if prepareErr != nil {
+		return prepareErr
+	}
 	identity := struct {
 		Session  domain.ID
 		Revision uint64
@@ -265,10 +269,14 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 		if sr.Revision != record.Revision {
 			return nil, firstDispatchConflict()
 		}
+		var job store.Record
 		if session.InitialExecution == nil {
-			_, err = queueInitialExecution(tx, sr, session, false)
+			job, err = queueInitialExecution(tx, sr, session, false)
 		} else {
-			_, err = queueContinuation(tx, sr, session, false)
+			job, err = queueContinuation(tx, sr, session, false)
+		}
+		if err == nil {
+			err = bindPRFixAssignment(tx, attempt, job, observations)
 		}
 		return sessionReceipt{SessionID: sr.ID}, err
 	})
@@ -319,12 +327,14 @@ func (s *Service) runExecutionDispatch(parent context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	var after domain.ID
+	var fixAfter domain.ID
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
+		fixAfter = s.reconcilePRFixes(ctx, fixAfter)
 		page, more, err := s.Store.ExecutionCandidates(ctx, after, 50)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -337,7 +347,7 @@ func (s *Service) runExecutionDispatch(parent context.Context) {
 				return
 			}
 			after = record.ID
-			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+			bounded, cancel := context.WithTimeout(ctx, 75*time.Second)
 			err := s.dispatchExecution(bounded, record)
 			cancel()
 			if err != nil && (domain.SafeError(err).Cause != "" || domain.SafeError(err).Code == domain.Internal) && ctx.Err() == nil {

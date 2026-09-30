@@ -7,7 +7,7 @@ import (
 
 func TestRemediationPolicyReplacementDoesNotInheritAuthority(t *testing.T) {
 	defaults := DefaultRemediationPolicy()
-	if defaults.CIFailure || defaults.ReviewFeedback || defaults.MergeConflict || defaults.AttemptLimit != 3 || defaults.ConflictStrategy != MergeConflictStrategy || defaults.SessionStrategy != ReuseSession {
+	if defaults.CIFailure || defaults.ReviewFeedback || defaults.MergeConflict || defaults.AttemptLimit != 3 || defaults.ConflictStrategy != RebaseConflictStrategy || defaults.SessionStrategy != ReuseSession {
 		t.Fatal(defaults)
 	}
 	defaults.CIFailure, defaults.ReviewFeedback, defaults.MergeConflict = true, true, true

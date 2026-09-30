@@ -513,3 +513,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
+
+- Manual Fix now uses generated PullRequestFixQuery, explicit project selection and typed capability gating. Share the stable PR mutation key across surfaces; validate acknowledgments before releasing original wire bytes, including after unmount, and retain original request on malformed/uncertain results. Handled display requires original push audit and never implies provider thread resolution. Follow the integration contract.

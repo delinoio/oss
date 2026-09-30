@@ -29,6 +29,7 @@ type PRProblemState string
 
 const (
 	PRProblemUnhandled PRProblemState = "unhandled"
+	PRProblemHandled   PRProblemState = "handled"
 	PRProblemDismissed PRProblemState = "locally-dismissed"
 )
 
@@ -126,6 +127,7 @@ type PRProblem struct {
 	Conflict         *PRConflictSnapshot      `json:"conflict,omitempty"`
 	Current          bool                     `json:"current"`
 	State            PRProblemState           `json:"state"`
+	Handling         *PRProblemHandling       `json:"handling,omitempty"`
 	Dismissal        *PRProblemDismissal      `json:"dismissal,omitempty"`
 }
 
@@ -149,7 +151,17 @@ func (v PRFeedbackProviderState) validate(kind PRFeedbackKind) error {
 	return nil
 }
 
+type PRProblemHandling struct {
+	AttemptID   ID        `json:"attempt_id"`
+	ExecutionID ID        `json:"execution_id"`
+	PushedHead  string    `json:"pushed_head"`
+	At          time.Time `json:"at"`
+}
+
 func (v PRProblem) Validate() error {
+	if (v.State == PRProblemHandled) != (v.Handling != nil) || (v.Handling != nil && (UniqueIDs([]ID{v.Handling.AttemptID, v.Handling.ExecutionID}) != nil || !repositorySHA(v.Handling.PushedHead) || !ciEvidenceTime(v.Handling.At))) {
+		return invalidPRProblem()
+	}
 	if v.Version != 1 || v.Type != PRProblemEvidenceRecord || v.SetID.Validate() != nil || v.Target.Validate() != nil || v.Observation.Validate() != nil || !lowerDigest(v.ContentVersion) {
 		return invalidPRProblem()
 	}
@@ -174,7 +186,7 @@ func (v PRProblem) Validate() error {
 		return invalidPRProblem()
 	}
 	switch v.State {
-	case PRProblemUnhandled:
+	case PRProblemUnhandled, PRProblemHandled:
 		if v.Dismissal != nil {
 			return invalidPRProblem()
 		}

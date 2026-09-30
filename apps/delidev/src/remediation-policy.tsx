@@ -7,7 +7,7 @@ export enum ReviewerSelectorKind { User = "user", Bot = "bot", App = "app", Perm
 export enum ReviewerPermission { Read = "READ", Triage = "TRIAGE", Write = "WRITE", Maintain = "MAINTAIN", Admin = "ADMIN" }
 
 export function defaultRemediationPolicy(): Document {
-  return { ci_failure: false, review_feedback: false, merge_conflict: false, conflict_strategy: ConflictStrategy.Merge, session_strategy: RemediationSessionStrategy.Reuse, attempt_limit: 3 };
+  return { ci_failure: false, review_feedback: false, merge_conflict: false, conflict_strategy: ConflictStrategy.Rebase, session_strategy: RemediationSessionStrategy.Reuse, attempt_limit: 3 };
 }
 
 function PolicyChoice({ label, value, values, change }: { label: string; value: unknown; values: string[]; change: (value: string) => void }) {

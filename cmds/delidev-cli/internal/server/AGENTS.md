@@ -41,3 +41,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Keep process startup/shutdown in `server_startup.go`, HTTP authorization in `server_http.go`, Connect registration in `server_routes.go`, and system status/capability responses in `server_status.go`. New service behavior belongs in its service file; preserve middleware and registration order.
+
+- Manual PR fixes belong in `pr_fix.go` and the additive authenticated PullRequestFixService. Bind exact original evidence/project selections and final session/link revisions, recheck provider/Worker/native gates outside/inside their owning boundaries, and atomically compose ordinary queue/routing with stable-PR ownership. Explicit Resume cannot bypass PR assignment proof; automatic remediation remains separate. Follow the integration contract.

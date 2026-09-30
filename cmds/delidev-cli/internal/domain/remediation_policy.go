@@ -29,7 +29,7 @@ type RemediationPolicy struct {
 }
 
 func DefaultRemediationPolicy() RemediationPolicy {
-	return RemediationPolicy{ConflictStrategy: MergeConflictStrategy, SessionStrategy: ReuseSession, AttemptLimit: 3}
+	return RemediationPolicy{ConflictStrategy: RebaseConflictStrategy, SessionStrategy: ReuseSession, AttemptLimit: 3}
 }
 
 func (p RemediationPolicy) Validate() error {
