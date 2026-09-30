@@ -289,4 +289,6 @@ protected. This does not complete permanent session/Sidechat deletion, database
 restore, the desktop storage surface or deferred native platform acceptance;
 follow the storage/workspace contracts and evidence ledger.
 
+Local connection and registration permission guidance distinguishes device authorization, ownership and owner-only filesystem access, including macOS/Linux private modes. Permission failures never establish revocation or authorize automatic repair; existing data remains preserved under the desktop contract.
+
 Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
