@@ -1,0 +1,11 @@
+# PR #1182 Home navigation and Models merge
+
+Date: 2026-09-30. Previous PR head: `6ef885ddf645744a5850fadc1fba55b13cce8dcd`. Merged main: `6d7004d2e37c42da5febd9dd3db06fb1fade019e`, pinned to the fetched revision and verified from the merge parent. Host: macOS arm64, Node.js `v24.11.0`. The existing branch and checkout matched the PR, were clean and had no other active repair process before this merge.
+
+Keep the new Models list and Home navigation ownership alongside the complete Activity rule, including its visible nonshrinking outlet. Preserve Home's connection-owned automatic catalog/session chains, independent scopes, cache protection, accepted-boundary refreshes and mounted server-management disclosure. The outlet remains inside the original scrolling list, and Activity keeps its independent manual selectors, exact draft/applied IDs and scoped styles.
+
+Reconcile the server-preferences test by using main's named `serverRoundTripWait` (five seconds) for every relevant UI lookup while retaining this PR's real 1,200ms delayed committed-save acknowledgment, its explicit acknowledgment assertion, exact Go defaults, singleton identity and revision assertions. Preserve the overall 15-second test deadline and main's committed fixture-owned waits.
+
+Prepared desktop assets were hydrated. Generated API client build and desktop typecheck passed. `pnpm exec vitest run src/activity-sidebar.test.tsx src/sidebar.test.tsx src/App.test.tsx src/home-navigation.test.ts src/settings-models.test.tsx src/settings-preferences.integration.test.tsx --maxWorkers=1` passed all 117 tests in six files (29.43 seconds). This includes the real temporary-server preference save. The final combined frontend pipeline is recorded separately after this merge commit.
+
+Before merging, only Cloudflare Pages was present and successful for the previous head; absent GitHub Actions evidence is not a CI pass. Codex code and security reviews for that head were running, with no unresolved actionable threads in the paginated inventory. These observations do not apply to the next pushed head. Component/build evidence does not establish native CEF, zoom, keyboard or platform acceptance; preserve `activity-sidebar-validation.md` and the original issue-specific limits.

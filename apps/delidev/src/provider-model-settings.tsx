@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { ConfigurationQuery, EntityKind, ProviderInventoryCapability, ProviderPresetId, ProviderQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
@@ -148,45 +149,84 @@ export function ApiProviderSettings({
   </section>;
 }
 
-export function ActiveModelSettings({ active, createModel, editModel, priceModel }: {
+export interface ModelListState { query: string; page: string }
+
+function ModelReadProblem({ error, busy, retry, label }: { error: unknown; busy: boolean; retry: () => unknown; label: string }) {
+  const transient = error && [Code.Unavailable, Code.DeadlineExceeded, Code.Unknown, Code.Internal].includes(ConnectError.from(error).code);
+  return error ? <div className="models-read-problem" role="group" aria-label={label}>
+    <Problem error={error} />
+    {transient ? <button type="button" disabled={busy} onClick={() => void retry()}>Retry</button> : null}
+  </div> : null;
+}
+
+export function ActiveModelSettings({ active, state, changeState, createModel, editModel, priceModel }: {
   active: boolean;
+  state: ModelListState;
+  changeState: (state: ModelListState) => void;
   createModel: () => void;
   editModel: (resource: Resource) => void;
   priceModel: (resource: Resource) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState("");
+  const { query, page } = state;
   const inventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 200, pageToken: "" }, { enabled: active });
   const ready = providerInventoryReady(inventory.data?.capabilities);
   const models = useQuery(ProviderQuery.searchModels, { query, providerId: "", includeHidden: true, pageSize: 50, pageToken: page, enabledProvidersOnly: true }, { enabled: active && ready });
   const enabledProviders = ready ? inventory.data?.entries ?? [] : [];
   const connectedAccounts = enabledProviders.reduce((sum, entry) => sum + entry.connectedAccounts, 0n);
   const accountCountsKnown = enabledProviders.every((entry) => entry.accountCountsAvailable);
-  const providerInventoryComplete = !inventory.data?.nextPageToken;
+  const providerInventoryComplete = Boolean(inventory.data && !inventory.data.nextPageToken);
+  const noEnabledProviders = enabledProviders.length === 0 && providerInventoryComplete;
+  // Retained data describes this scope's last successful result; a refresh
+  // failure does not replace it. Initial failures have no model data.
+  const hasEmptyResults = ready && models.data?.models.length === 0;
+  const emptyFirstPage = hasEmptyResults && !query && !page && !noEnabledProviders;
+  const knownZeroAccounts = enabledProviders.length > 0 && providerInventoryComplete && accountCountsKnown && connectedAccounts === 0n;
+  const hidePagination = hasEmptyResults && !page && !models.data?.nextPageToken;
   const providers = new Map((models.data?.providers ?? []).map((provider) => [provider.id, provider]));
   const grouped = new Map<string, Resource[]>();
   for (const model of models.data?.models ?? []) {
-    const data = document(model);
-    const providerID = text(data.provider_id);
-    grouped.set(providerID, [...(grouped.get(providerID) ?? []), model]);
+    const providerID = text(document(model).provider_id);
+    const entries = grouped.get(providerID) ?? [];
+    entries.push(model);
+    grouped.set(providerID, entries);
   }
-  useEffect(() => { setPage(""); }, [query]);
-  return <section aria-label="Models from active API providers">
-    <header><p>New model choices come only from enabled API providers. Existing disabled references stay attached to their original identities.</p><button className="primary" type="button" disabled={!ready} onClick={createModel}>New Model</button></header>
-    <label>Search active provider models<input value={query} maxLength={256} onChange={(event) => setQuery(event.target.value)} /></label>
-    <Problem error={inventory.error || models.error} />
+  return <section className="models-list" aria-label="Models from active API providers">
+    <header className="models-header">
+      <div><h1 aria-live="polite" aria-atomic="true">Models</h1><p>Saved on the selected server.</p></div>
+      <button className="primary" type="button" disabled={!ready} onClick={createModel}><span aria-hidden="true">+</span> New Model</button>
+    </header>
+    <label className="models-search">Search active provider models
+      <span className="models-search-control"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg><input value={query} maxLength={256} placeholder="Search models..." onChange={(event) => changeState({ query: event.target.value, page: "" })} /></span>
+    </label>
+    {inventory.isLoading ? <p role="status">Loading provider inventory…</p> : null}
+    {inventory.isFetching && inventory.data ? <p role="status">Refreshing provider inventory.</p> : null}
+    <ModelReadProblem error={inventory.error} busy={inventory.isFetching || !active} retry={inventory.refetch} label="Provider inventory read failure" />
+    {inventory.error && inventory.data ? <p role="status">Provider refresh failed. Showing the last successfully loaded provider state.</p> : null}
     {!inventory.error && inventory.data && !ready ? <p role="alert">This server does not report the required provider and active-model filtering capabilities. Update the server before using model settings.</p> : null}
-    {models.isFetching && models.data ? <p role="status">Refreshing active provider models.</p> : null}
-    {ready && enabledProviders.length === 0 ? <p className="notice">No API providers are enabled. Turn on a provider in API Providers.</p> : null}
-    {ready && enabledProviders.length > 0 && providerInventoryComplete && accountCountsKnown && connectedAccounts === 0n && !models.data?.models.length ? <p className="notice">You can add models manually. Connect an entry in AI API Keys only when you want to discover models automatically.</p> : null}
-    {ready && [...grouped.entries()].map(([providerID, entries]) => <section key={providerID} aria-label={`Models from ${resourceName(providers.get(providerID))}`}>
+    {ready && models.isLoading ? <p role="status">Loading active provider models…</p> : null}
+    {ready && models.isFetching && models.data ? <p role="status">Refreshing active provider models.</p> : null}
+    <ModelReadProblem error={models.error} busy={models.isFetching || !active || !ready} retry={models.refetch} label="Model search read failure" />
+    {ready && models.data && (models.error || inventory.error) ? <p role="status">Refresh failed. Showing the last successfully loaded results.</p> : null}
+    {emptyFirstPage ? <section className="models-empty" aria-label="No models yet">
+      <span className="models-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7h10v10H7zM9 3v4m6-4v4M9 17v4m6-4v4M3 9h4m-4 6h4m10-6h4m-4 6h4" /></svg></span>
+      <h2>No models yet</h2><p>Add models manually using New Model.</p>
+      {knownZeroAccounts ? <div className="models-account-guidance"><p>You can add models without an API account.</p><p>Connect an account only for automatic model discovery.</p></div> : null}
+    </section> : hasEmptyResults ? <p className="models-empty-message">{noEnabledProviders ? "No API providers are enabled. Turn on a provider in API Providers." : page ? "No models on this page." : "No models match this search."}</p> : null}
+    {ready && [...grouped.entries()].map(([providerID, entries]) => <section className="models-provider-group" key={providerID} aria-label={`Models from ${resourceName(providers.get(providerID))}`}>
       <h3>{resourceName(providers.get(providerID))}</h3>
-      {entries.map((model) => {
+      <div className="models-rows">{entries.map((model) => {
         const data = document(model);
-        return <article className="result" key={model.id}><h4>{text(data.name) || text(data.native_id)}</h4><p>Native ID: {text(data.native_id) || "Unavailable"}</p><p>CLI alias: {text(data.alias) || "None"} · {data.new === true ? "NEW" : "Reviewed"} · {data.hidden === true ? "Hidden" : "Visible"}</p><p>Configured harnesses: {items(data.harnesses).map(text).join(", ") || "None"}</p><div className="actions"><button type="button" disabled={model.schemaVersion !== 1} onClick={() => editModel(model)}>Edit model</button><button type="button" disabled={model.schemaVersion !== 1} onClick={() => priceModel(model)}>Token pricing</button></div></article>;
-      })}
+        return <article className="models-row" key={model.id}>
+          <div className="models-row-details">
+            <div className="models-row-heading"><h4>{text(data.name) || text(data.native_id)}</h4><span className="models-status">{data.new === true ? "NEW" : "Reviewed"}</span><span className="models-status">{data.hidden === true ? "Hidden" : "Visible"}</span></div>
+            <div className="models-identifiers"><p>Native ID: {text(data.native_id) || "Unavailable"}</p><p>CLI alias: {text(data.alias) || "None"}</p></div>
+            <p>Configured harnesses: {items(data.harnesses).map(text).join(", ") || "None"}</p>
+          </div>
+          <div className="models-row-actions"><button type="button" disabled={model.schemaVersion !== 1} onClick={() => editModel(model)}>Edit model</button><button type="button" disabled={model.schemaVersion !== 1} onClick={() => priceModel(model)}>Token pricing</button></div>
+        </article>;
+      })}</div>
     </section>)}
-    {ready && models.data?.models.length === 0 ? <p className="empty">{query ? "No models match this search." : "No models yet for the enabled providers."}</p> : null}
-    <nav aria-label="Model pages"><button type="button" disabled={!page || models.isFetching} onClick={() => setPage("")}>First page</button><More available={Boolean(models.data?.nextPageToken)} busy={models.isFetching} load={() => setPage(models.data!.nextPageToken)} /></nav>
+    {ready && !hidePagination ? <nav className="models-pages" aria-label="Model pages"><button type="button" disabled={!page || models.isFetching} onClick={() => changeState({ query, page: "" })}>First page</button><More available={Boolean(models.data?.nextPageToken)} busy={models.isFetching} load={() => changeState({ query, page: models.data!.nextPageToken })} /></nav> : null}
+    <p className="models-footnote">New model choices come only from enabled API providers. Existing disabled references stay attached to their original identities.</p>
   </section>;
 }
