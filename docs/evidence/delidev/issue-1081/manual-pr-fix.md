@@ -274,3 +274,18 @@ After that merge, the race command covering `TestPRFix`, `TestManualPRFix`,
 server (12.410s) and store (9.829s). `go vet ./cmds/delidev-cli/...` passed on the
 merged source. Required frontend validation runs separately on that merged tree;
 the immutable broad result above remains bound to its recorded source revision.
+
+## Latest merged frontend completion
+
+On merged source `44eb2599523bd9b527ff377ef43982111459b762`, the required
+`pnpm test` in `apps/delidev` completed successfully: API-client generation,
+frontend typecheck, all 1,126 Vitest cases in 90 files, eight bundle fixtures,
+sixteen desktop/asset fixtures, widget checks and production build passed.
+This supersedes the earlier frontend failure as the current merged frontend
+result without erasing its historical observations or asserting their cause.
+No real native/account acceptance follows from this component/build result.
+
+Required icon source remained LFS-hydrated. API-client and frontend `dist`
+directories were removed after consumers finished. The separately recorded
+full Go race failures remain visible; current merged manual-fix/dispatch race
+checks, isolated Git bridge race checks and merged full CLI Go vet passed.
