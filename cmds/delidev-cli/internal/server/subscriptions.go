@@ -90,7 +90,7 @@ func subscriptionInstallation(tx *store.Tx, machineID domain.ID) (domain.Install
 		return domain.Installation{}, err
 	}
 	if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
-		return domain.Installation{}, domain.Fail(domain.Unsupported, "The selected Worker has no managed Codex capability.", "Connect a current Worker with a verified installed Codex profile.")
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "The selected Runner Device has no managed Codex capability.", "Connect a current Runner Device with a verified installed Codex profile.")
 	}
 	var selected *domain.Installation
 	for i := range machine.Installations {
@@ -104,7 +104,7 @@ func subscriptionInstallation(tx *store.Tx, machineID domain.ID) (domain.Install
 	if selected != nil && selected.Version == domain.CodexProtocolVersion && selected.State == domain.InstallationDetected && selected.ProtocolVerified && selected.ResolvedPath != "" && selected.Problem == nil && selected.Protocol != nil && selected.Protocol.Protocol == domain.ProtocolFor(domain.Codex) && selected.Protocol.State == domain.ProtocolVerified && selected.Protocol.Problem == nil && selected.ObservedAt != nil && !selected.ObservedAt.IsZero() && !selected.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
 		return *selected, nil
 	}
-	return domain.Installation{}, domain.Fail(domain.Unsupported, "Managed subscriptions require installed Codex 0.151.0.", "Discover and verify that exact native installation on the explicitly selected Worker.")
+	return domain.Installation{}, domain.Fail(domain.Unsupported, "Managed subscriptions require installed Codex 0.151.0.", "Discover and verify that exact native installation on the explicitly selected Runner Device.")
 }
 
 func subscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store.Record, domain.Account, error) {
@@ -134,7 +134,7 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 	}
 	action := subscriptionAction(req.Msg.Action)
 	if action == "" || action == domain.SubscriptionExecute || (req.Msg.DeviceCode && action != domain.SubscriptionLogin) || domain.ID(req.Msg.MachineId).Validate() != nil {
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Choose a supported subscription operation and Worker.", "Use login, refresh or logout with an explicit machine."), c)
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Choose a supported subscription operation and Runner Device.", "Use login, refresh or logout with an explicit machine."), c)
 	}
 	actor, ok := domain.PrincipalFrom(ctx)
 	if !ok || actor.Type == domain.WorkerDevice {
