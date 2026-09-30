@@ -356,10 +356,14 @@ func (t *Tx) applySessionDeletion(v SessionDeletion) error {
 		return e
 	}
 
-	session.Dispatch = domain.DispatchPaused
-	session.NextExecutionIntent = ""
-	if _, e = t.Put(domain.SessionKind, row.ID, row.Revision, row.SessionID, row.ProjectID, session); e != nil {
-		return e
+	// Recovery may reapply the same irrevocable intent after a lost receipt.
+	// Preserve revisions/events when pause and cancellation are already durable.
+	if session.Dispatch != domain.DispatchPaused || session.NextExecutionIntent != "" {
+		session.Dispatch = domain.DispatchPaused
+		session.NextExecutionIntent = ""
+		if _, e = t.Put(domain.SessionKind, row.ID, row.Revision, row.SessionID, row.ProjectID, session); e != nil {
+			return e
+		}
 	}
 	rows, e := t.tx.QueryContext(t.ctx, "SELECT id FROM entities WHERE kind='job' AND session_id=?", v.SessionID)
 	if e != nil {

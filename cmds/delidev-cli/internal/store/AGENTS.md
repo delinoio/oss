@@ -109,3 +109,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - `migration-reservations.json` allocates pending work separately from executable migrations. Establish changes to reservations on main before starting dependent branches. Version 25 from an unmerged branch is not proof of schema identity; preserve unidentified data and return recovery-required.
 
 - Permanent session deletion follows `docs/cmds-delidev-storage-contract.md`: synchronize irrevocable metadata-only intent outside SQLite before pause/cancellation, retain original actor/request/assignment ownership and non-content tombstones, and reconstruct obligations before serving restored state. Purge only after every original Worker and both forwarding peers confirm cleanup; remove all containing managed backups, redact retained receipts, and keep offline/uncertain cleanup pending without reclaimed-byte claims.
+
+- Reapplying permanent deletion intent must preserve existing paused session revisions and events when no new transition is needed.

@@ -175,6 +175,8 @@ Waiting reads the accepted job without replaying acceptance and preserves its
 identity/progress on cancellation or a failed read. Revisions remain decimal-safe.
 Archive continues to preserve content and is independent of this operation.
 
+Reapplying an already durable pause preserves the session revision and events.
+
 Go persists a synchronized private `session-deletions/<session>.json` obligation
 outside replaceable SQLite **before** pausing dispatch or requesting cancellation.
 It binds the original server, actor, request, revision and every immutable claimed

@@ -289,3 +289,47 @@ func TestSessionDeletionRecoversIntentBeforeLostSQLAcknowledgment(t *testing.T) 
 		t.Fatal(e)
 	}
 }
+
+func TestSessionDeletionIntentReplayPreservesPausedRevisionAndEvents(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	server := domain.NewID()
+	if err := s.BindIdentity(ctx, server); err != nil {
+		t.Fatal(err)
+	}
+	target, _, _ := deletionSession(t, s, "target")
+	request := domain.NewID()
+	if _, _, err := s.DeleteSession(ctx, request, target.ID, server, target.Revision); err != nil {
+		t.Fatal(err)
+	}
+	paused, err := s.Get(ctx, domain.SessionKind, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.Events(ctx, 0, target.ID, MaxPage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, reapply := range []func() error{
+		func() error {
+			_, replay, err := s.DeleteSession(ctx, request, target.ID, server, target.Revision)
+			if err == nil && !replay {
+				t.Fatal("original deletion request was not replayed")
+			}
+			return err
+		},
+		func() error { return s.RestoreSessionDeletionIntents(ctx, server) },
+	} {
+		if err := reapply(); err != nil {
+			t.Fatal(err)
+		}
+		current, err := s.Get(ctx, domain.SessionKind, target.ID)
+		if err != nil || current.Revision != paused.Revision || !current.UpdatedAt.Equal(paused.UpdatedAt) || string(current.Data) != string(paused.Data) {
+			t.Fatal("reapplied intent changed the paused session", current, err)
+		}
+		currentEvents, err := s.Events(ctx, 0, target.ID, MaxPage)
+		if err != nil || len(currentEvents) != len(events) {
+			t.Fatal("reapplied intent republished session events", len(currentEvents), err)
+		}
+	}
+}
