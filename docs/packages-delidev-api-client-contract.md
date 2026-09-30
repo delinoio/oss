@@ -114,7 +114,7 @@ IntegrationQuery also exports generated ListPullRequestRemediationAttempts and R
 
 ### Managed database backup observation
 
-SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and remaining session deletion/restoration work. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
+SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and remaining session deletion and Worker snapshot work. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
 
 
 ### Durable backup creation
@@ -128,6 +128,22 @@ counts without replaying acceptance or filesystem work. Regenerate Go, TypeScrip
 and Connect Query bindings together.
 
 Generated `ProviderQuery` exposes bounded provider inventory and the client maps typed `provider_disabled` failures. Desktop provider/model consumers require provider activation, active-provider model filtering and account-provider filtering capabilities; split account views and their wizard additionally require `ACCOUNT_TYPE_FILTER`. Use generated inventory/model queries; do not infer availability from generic resource pages or query unfiltered providers as fallback. Preserve exact mutation requests across uncertain outcomes. See [provider activation](cmds-delidev-provider-activation-contract.md).
+
+### Managed database restore
+
+`SystemService.RestoreBackup` and `GetBackupRestore` are owner/paired-client-only
+operations. `MANAGED_BACKUP_RESTORE_V1` (wire value 7) advertises availability,
+preserving published `SESSION_FORWARDING_V1` value 2 and `USER_SERVICES_V1`
+value 3; `InspectBackup`
+adds an exact uint64 `restore_revision`. Restoration requires a UUID-v7 request,
+original backup revision/metadata/digest, a present exact expected live revision
+and explicit confirmation. Generated Go and TypeScript/Connect Query descriptors
+must reproduce together. `prepared`, `published`, `restored` and `rolled-back`
+remain distinct; publication ends the old server epoch, while startup reconciles
+the external journal before opening SQLite. Keep request UUIDs and decimal
+revisions exact across uncertain responses; polling never repeats replacement.
+Follow the [storage contract](cmds-delidev-storage-contract.md) for authorization,
+deletion enforcement, historical quarantine, bounds and recovery evidence limits.
 
 ### Current-user service metadata
 

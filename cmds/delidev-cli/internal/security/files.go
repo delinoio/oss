@@ -111,3 +111,15 @@ func ReadPrivate(path string, max int64) ([]byte, error) {
 // SyncParent makes a newly created private file name durable before dependent
 // state is committed, including a pre-migration database backup.
 func SyncParent(path string) error { return syncDirectory(filepath.Dir(path)) }
+
+// ReplacePrivateFile publishes a caller-validated same-volume staged file. The
+// caller must journal uncertain outcomes before use and synchronize both names.
+func ReplacePrivateFile(from, to string) error {
+	if err := RegularPrivate(from); err != nil {
+		return err
+	}
+	if err := RegularPrivate(to); err != nil {
+		return err
+	}
+	return replaceFile(from, to)
+}
