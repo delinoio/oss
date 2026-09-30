@@ -72,3 +72,16 @@ are ordinary Rust fixtures. These do not prove a real renderer's shutdown/flush
 race, actual web history/password behavior, provider login, Windows/X11 rendering,
 platform installation or signed release acceptance. Real native/account/platform
 acceptance remains separate from implemented source and automated evidence.
+
+## First PR maintenance pass
+
+PR #1201 merged main `2b658e05353a858e328f82a636d8bc49dbccb709` after publication. The only conflict
+was appended CSS: both the Browser panel and GitHub profile scopes were retained.
+The browser Go/native implementation remained unchanged. Default `pnpm test` in
+`apps/delidev` passed all 1,055 tests in 90 files, type/client compilation, bundle
+and launch/asset/widget fixtures and the production build. The six affected
+Browser/cleanup/Settings/App/GitHub files also passed 95 tests with one worker.
+The earlier default observation failures above are retained as historical
+validation at the pinned pre-merge source, not as the result of this merged run.
+Generated `dist` output was removed again. Whole-service Go and root Rust failures
+remain distinct from the passing browser and merged frontend evidence.
