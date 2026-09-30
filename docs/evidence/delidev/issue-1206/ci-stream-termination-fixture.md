@@ -47,8 +47,16 @@ report after disconnection, and the original finished job journal containing
   limit. Other Go suites were active on the same host, and system load was high;
   this is possible contributing context, not proof of their root cause. No
   complete local suite pass is claimed.
-- A serialized `go test -race -p=1 -timeout=20m ./cmds/delidev-cli/...` rerun is
-  in progress; its result remains pending.
+- A serialized `go test -race -p=1 -timeout=20m ./cmds/delidev-cli/...` rerun
+  also failed in untouched CLI fixtures:
+  `TestCLIConnectionCommandsPreservePrivatePairingAndRequireExplicitScope`
+  reported server-start timeout, and `TestCLISessionAcceptanceQueueAndArchive`
+  reported an unavailable workspace reader. After that failed package, the
+  additional run was explicitly interrupted in the connections package; remaining
+  packages were not completed by this rerun. These local full-suite limits remain
+  unresolved and do not establish the root cause of the hosted Ubuntu failure.
+- The repair commit passed the repository pre-commit Go formatting hook. No
+  runtime behavior, active protocol declarations or generated bindings changed.
 
 ## Limits
 
