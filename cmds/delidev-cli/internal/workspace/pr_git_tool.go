@@ -73,10 +73,19 @@ const (
 )
 
 func originalPRGitEnvironment() []string {
+	return snapshotPRGitEnvironment(gitEnvironment(), runtime.GOOS == "windows")
+}
+
+func snapshotPRGitEnvironment(environment []string, caseInsensitive bool) []string {
 	values := map[string]string{}
-	for _, entry := range gitEnvironment() {
+	for _, entry := range environment {
 		name, value, _ := strings.Cut(entry, "=")
-		values[strings.ToUpper(name)] = value
+		// Only Windows collapses case variants. POSIX lowercase entries must
+		// remain inert rather than replacing the preflight's Git/SSH lookup.
+		if caseInsensitive {
+			name = strings.ToUpper(name)
+		}
+		values[name] = value
 	}
 	out := make([]string, 0, len(values))
 	for name, value := range values {
