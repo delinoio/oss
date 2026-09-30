@@ -17,6 +17,8 @@ func TestSwitchedHistoryGuardRunsBeforeCredentialsOrUpstream(t *testing.T) {
 			`{"model":"fixed-model","input":[],"previous_response_id":"resp_A"}`,
 			`{"model":"fixed-model","input":[],"conversation":{"id":"conv_A"}}`,
 			`{"model":"fixed-model","input":[{"type":"item_reference","id":"item_A"}]}`,
+			`{"model":"fixed-model","input":["unrelated",{"type":"item_reference","id":"item_A"}]}`,
+			`{"model":"fixed-model","input":[{"type":"item_reference","id":"item_A"},42]}`,
 		} {
 			t.Run(path+body, func(t *testing.T) {
 				f := newProxyFixture(t, domain.OpenAIResponses, []Operation{ResponseCreate, ResponseCompact}, func(w http.ResponseWriter, r *http.Request) { t.Error("account-bound request reached upstream") })

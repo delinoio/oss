@@ -158,9 +158,15 @@ func validateRequest(ctx context.Context, raw []byte, lease *Lease, op Operation
 		// Responses item references are another form of provider-owned history.
 		// Preserve ordinary native full items and function-call identities, but
 		// never classify a remote item lookup as portable conversation content.
-		var items []map[string]json.RawMessage
+		var items []json.RawMessage
 		if json.Unmarshal(object["input"], &items) == nil {
-			for _, item := range items {
+			for _, rawItem := range items {
+				// An unrelated non-object must not hide another item's remote
+				// reference if a compatible provider accepts mixed input arrays.
+				var item map[string]json.RawMessage
+				if json.Unmarshal(rawItem, &item) != nil {
+					continue
+				}
 				var kind string
 				if json.Unmarshal(item["type"], &kind) == nil && kind == "item_reference" {
 					accountBound = true
