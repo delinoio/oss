@@ -54,7 +54,7 @@ it("excludes the current desktop from revocation and guards direct confirmations
   fireEvent.click(confirm);
   expect(value.revoke).not.toHaveBeenCalled();
 });
-it("preserves another device's confirmation and blocks a stale new request", async () => {
+it("discards another device's confirmation on close and reads its new revision", async () => {
   const value = fixture();
   const current = newRequestId();
   const view = render(value.view(<Settings visible currentDeviceId={current} close={() => {}} />));
@@ -63,9 +63,10 @@ it("preserves another device's confirmation and blocks a stale new request", asy
   view.rerender(value.view(<Settings visible={false} currentDeviceId={current} close={() => {}} />));
   value.state.current = create(ResourceSchema, { ...value.original, revision: 5n });
   view.rerender(value.view(<Settings visible currentDeviceId={current} close={() => {}} />));
-  await value.client.invalidateQueries();
-  await screen.findByText(/This device changed after the confirmation/);
-  expect((screen.getByRole("button", { name: "Confirm device revocation" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
+  await screen.findByRole("button", { name: "Revoke Paired desktop" });
+  expect(screen.queryByRole("button", { name: "Confirm device revocation" })).toBeNull();
   expect(value.revoke).not.toHaveBeenCalled();
 });
 it("runs diagnostics only while selected and distinguishes owner evidence from credential-store health", async () => {
