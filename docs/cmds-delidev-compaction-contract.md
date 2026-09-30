@@ -91,6 +91,10 @@ revisions and usage remain unchanged. No schema version, data rewrite or migrati
 is introduced, so no migration backup is needed for this extension.
 
 Private Worker command/registration claims live under the action job directory.
+Each claim creates missing private root/jobs/job directories and validates existing
+components before its atomic write; shared or symlinked scopes are rejected rather
+than repaired. Compaction does not rely on the ordinary execution publisher to
+create this scope.
 After native and workspace cleanup join, an exclusive atomic
 `compaction-checkpoints/<action-id>.json` file binds server/device/instance/job and exact assignment revision, canonical
 assignment digest, original assignment/completion and native checkpoint/reference.

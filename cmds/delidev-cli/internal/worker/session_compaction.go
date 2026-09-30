@@ -42,6 +42,30 @@ type sessionCompactionCheckpoint struct {
 
 const maxCompactionCheckpoint = 10 << 20
 
+// Claims use a closed filename set inside the original action's private scope.
+type compactionClaimName string
+
+const (
+	compactionRegistrationClaim compactionClaimName = "compaction-registration.json"
+	compactionCommandClaim      compactionClaimName = "compaction-command.json"
+)
+
+func writeCompactionClaim(root string, job domain.ID, name compactionClaimName, value any) error {
+	if job.Validate() != nil || name != compactionRegistrationClaim && name != compactionCommandClaim {
+		return domain.CompactionUncertain()
+	}
+	// Compaction has no execution publisher to create its per-job directory.
+	// Validate every component again before either claim, including the command
+	// claim written after native launch, without repairing a foreign scope.
+	directory := filepath.Join(root, "jobs", string(job))
+	for _, path := range []string{root, filepath.Join(root, "jobs"), directory} {
+		if err := security.PrivateDir(path); err != nil {
+			return domain.CompactionUncertain()
+		}
+	}
+	return writeJSON(filepath.Join(directory, string(name)), value)
+}
+
 type compactionPhase string
 
 const (
@@ -143,7 +167,7 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 		RequestID domain.ID `json:"request_id"`
 		Digest    string    `json:"credential_digest"`
 	}{i.ActionID, registration, hex.EncodeToString(digest[:])}
-	if err := writeJSON(filepath.Join(config.Root, "jobs", string(owner), "compaction-registration.json"), intent); err != nil {
+	if err := writeCompactionClaim(config.Root, owner, compactionRegistrationClaim, intent); err != nil {
 		return nil, domain.CompactionUncertain()
 	}
 	phase = compactionRegister
@@ -172,7 +196,7 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	}()
 	// Synchronize the original command claim before its one native send. The
 	// outer Worker journal refuses all interrupted starts, including pre-ack loss.
-	if err := writeJSON(filepath.Join(config.Root, "jobs", string(owner), "compaction-command.json"), struct {
+	if err := writeCompactionClaim(config.Root, owner, compactionCommandClaim, struct {
 		ActionID    domain.ID `json:"action_id"`
 		ExecutionID domain.ID `json:"execution_id"`
 	}{i.ActionID, i.Assignment.ExecutionID}); err != nil {

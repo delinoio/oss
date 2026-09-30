@@ -86,3 +86,21 @@ uncertain action ownership.
 -count=1` passed after the fix (16.735 s), using the same isolated Go 1.26.8
 toolchain/cache on macOS arm64. This regression check does not change the full-suite
 or installed-native acceptance limitations recorded above.
+
+## PR #1195 private claim-directory repair
+
+The first compaction registration claim failed when its per-job directory did not
+exist. Before repair, the new claim-persistence regression also accepted a symlinked
+or shared per-job scope. Both production registration and command paths now share
+one closed-filename writer that creates missing private directories and validates
+every root/jobs/job component before atomic persistence. Existing foreign scopes
+are rejected without changing their permissions or publishing either claim.
+
+`go test -race -p 1 ./cmds/delidev-cli/internal/worker -run '^TestCompaction'
+-count=1` passed (2.055 s). It verifies original action/request/execution bytes,
+private directory/file permissions, rejected malformed identities and filenames,
+unsafe scope rejection, interrupted-command no-replay and original null/zero/native
+outcome handling. Windows ACLs remain independently enforced by the existing
+security primitive; Unix shared-mode fixtures are explicitly skipped there.
+These filesystem and controlled lifecycle checks do not establish installed-native
+manual compaction acceptance.

@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -133,5 +135,89 @@ func TestCompactionRestoreRejectsChangedOriginalAssignment(t *testing.T) {
 	i.Restore.Manifest = json.RawMessage(`{"changed":true}`)
 	if i.Validate() == nil {
 		t.Fatal("changed immutable workspace gained restore authority")
+	}
+}
+
+func TestCompactionClaimsCreatePrivateScopeAndRetainIdentity(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "worker")
+	job, action, execution := domain.NewID(), domain.NewID(), domain.NewID()
+	registration := struct {
+		ActionID  domain.ID `json:"action_id"`
+		RequestID domain.ID `json:"request_id"`
+	}{action, domain.NewID()}
+	if err := writeCompactionClaim(root, job, compactionRegistrationClaim, registration); err != nil {
+		t.Fatal("first registration failed without a pre-created job directory", err)
+	}
+	command := struct {
+		ActionID    domain.ID `json:"action_id"`
+		ExecutionID domain.ID `json:"execution_id"`
+	}{action, execution}
+	if err := writeCompactionClaim(root, job, compactionCommandClaim, command); err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(root, "jobs", string(job))
+	for _, path := range []string{root, filepath.Join(root, "jobs"), directory} {
+		if err := security.CheckPrivateDir(path); err != nil {
+			t.Fatal("claim scope is not private", err)
+		}
+	}
+	for name, original := range map[compactionClaimName]any{compactionRegistrationClaim: registration, compactionCommandClaim: command} {
+		expected, _ := json.Marshal(original)
+		retained, err := security.ReadPrivate(filepath.Join(directory, string(name)), 1024)
+		if err != nil || string(retained) != string(expected) {
+			t.Fatal("claim identity changed during atomic persistence", err)
+		}
+	}
+	if err := writeCompactionClaim(root, "invalid-job", compactionCommandClaim, command); err == nil {
+		t.Fatal("invalid job acquired a claim scope")
+	}
+	if err := writeCompactionClaim(root, job, compactionClaimName("../foreign.json"), command); err == nil {
+		t.Fatal("open filename escaped the action claim scope")
+	}
+}
+
+func TestCompactionClaimsRejectUnsafeScopeBeforeWriting(t *testing.T) {
+	for _, component := range []string{"root", "jobs", "job", "shared-jobs", "shared-job"} {
+		t.Run(component, func(t *testing.T) {
+			if runtime.GOOS == "windows" && strings.HasPrefix(component, "shared-") {
+				t.Skip("Unix permission bits do not define Windows private-directory ACLs")
+			}
+			root := filepath.Join(t.TempDir(), "worker")
+			job := domain.NewID()
+			scope := root
+			if component != "root" {
+				if err := security.PrivateDir(root); err != nil {
+					t.Fatal(err)
+				}
+				scope = filepath.Join(root, "jobs")
+				if component == "job" || component == "shared-job" {
+					if err := security.PrivateDir(scope); err != nil {
+						t.Fatal(err)
+					}
+					scope = filepath.Join(scope, string(job))
+				}
+			}
+			if strings.HasPrefix(component, "shared-") {
+				if err := os.Mkdir(scope, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(scope, 0755); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				target := t.TempDir()
+				if err := os.Symlink(target, scope); err != nil {
+					t.Skip("fixture cannot create a directory symlink", err)
+				}
+			}
+			for _, name := range []compactionClaimName{compactionRegistrationClaim, compactionCommandClaim} {
+				if err := writeCompactionClaim(root, job, name, struct{ ActionID domain.ID }{domain.NewID()}); err == nil {
+					t.Fatal("unsafe scope accepted a claim", name)
+				}
+				if _, err := os.Lstat(filepath.Join(root, "jobs", string(job), string(name))); !os.IsNotExist(err) {
+					t.Fatal("rejected scope published a claim", name, err)
+				}
+			}
+		})
 	}
 }
