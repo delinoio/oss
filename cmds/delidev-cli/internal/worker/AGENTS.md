@@ -490,6 +490,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Install managed execution credential cleanup at the auth-file write boundary, before publisher/registration failure paths, including predecessor runtimes. Remove and synchronize only owned authentication after confirmed native closure or before any native ownership; unconfirmed startup/closure retains its recovery lease.
 
+- Confirmed pre-native execution failure, including a definitively closed failed Open, returns the byte-identical unused original bundle only after its auth-file comparison/removal and retained-file scan succeed. Keep success and refresh false; the protected Finish proof permits preserving the original generation, never reporting native execution success. Changed files or unconfirmed cleanup retain uncertainty.
+
 - Capture the final managed execution bundle and native identity once while the native wire is still open, before terminal Close. Earlier exits may use the same bounded read before their deferred Close; never query a closed wire or retry a failed capture. After joined native cleanup, require the retained auth file to match the captured bytes before removal and protected write-back.
 
 - Retained managed native history must pass the bounded cleanup scan for both raw tokens and padded/unpadded standard/URL Base64 copies before confirming credential removal. Retain original history and uncertain ownership when that scan fails.

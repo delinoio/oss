@@ -19,6 +19,8 @@ issue is recorded directly when no implementation PR exists yet.
 ## Runtime and Language
 Protocol Buffers and Connect RPC, with Go server/CLI clients. Native harness protocols never escape the Worker adapter boundary.
 
+Managed execution's existing protected `FinishSubscription` fields encode confirmed pre-native failure with false success/refresh, true cleanup and the byte-identical unused original bundle. The server independently compares the immutable generation before releasing ownership; no schema numbers or generated declarations change. Missing/changed bytes or cleanup alone retain recovery rather than authorizing old-generation redistribution. Follow the [managed subscription contract](cmds-delidev-subscription-contract.md).
+
 ## Users and Operators
 Authenticated owner clients and separately authorized outbound Workers. No unauthenticated product API or browser client.
 

@@ -157,7 +157,7 @@ func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
 				if mode == "take" {
 					t.Fatal("uncertain delivery invented a completion")
 				}
-				if !finish.CleanupConfirmed || finish.Succeeded {
+				if !finish.CleanupConfirmed || finish.Succeeded || !bytes.Equal(finish.Bundle, bundle) {
 					t.Fatal("pre-native cleanup outcome was not independently reported")
 				}
 			default:

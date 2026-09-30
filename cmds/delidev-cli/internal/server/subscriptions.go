@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/url"
@@ -619,6 +620,21 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 		if err != nil {
 			return nil, rpc.Error(err, c)
 		}
+		// A failed execution may release only confirmed pre-native ownership.
+		// Cleanup alone is insufficient: the Worker must return the exact unused
+		// original bundle, independently compared with its immutable generation.
+		preNativeFailure := lease.Action == domain.SubscriptionExecute && !input.Success && input.Cleanup && !input.Refresh && len(req.Msg.Bundle) != 0
+		if preNativeFailure {
+			old, err := vault.Get(ctx, credentials.Ref{Owner: input.Account, ID: state.Generation, Purpose: credentials.AccountLogin})
+			if err != nil {
+				return nil, rpc.Error(err, c)
+			}
+			unchanged := bytes.Equal(old, req.Msg.Bundle)
+			clear(old)
+			if !unchanged {
+				return nil, rpc.Error(subscriptionDenied(), c)
+			}
+		}
 		if usable && lease.Action != domain.SubscriptionLogout {
 			_, identity, err := subscription.Parse(req.Msg.Bundle)
 			if err != nil {
@@ -658,9 +674,13 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			}
 		}
 		if input.Cleanup {
-			keep := domain.ID("")
+			// An uncertain failed operation retains its blocked original material
+			// for recovery. Explicit logout still removes every owned reference.
+			keep := state.Generation
 			if usable && lease.Action != domain.SubscriptionLogout {
 				keep = domain.ID(m.RequestId)
+			} else if lease.Action == domain.SubscriptionLogout {
+				keep = ""
 			}
 			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep); err != nil {
 				return nil, rpc.Error(err, c)
@@ -691,7 +711,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 					return nil, err
 				}
 			}
-			if !input.Cleanup || (!usable && lease.Action != domain.SubscriptionLogin) {
+			if !input.Cleanup || (!usable && lease.Action != domain.SubscriptionLogin && !preNativeFailure) {
 				state.RecoveryRequired = true
 				a.Health = domain.AccountFailed
 				// Keep the lease and old generation denied. Neither an error nor
@@ -738,7 +758,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 		// Cancellation can win during vault staging. Take remains blocked by the
 		// account gate until the unpublished new generation is tombstoned too.
 		if !usable && input.Cleanup {
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, ""); err != nil {
+			keep := original.Subscription.Generation
+			if lease.Action == domain.SubscriptionLogout {
+				keep = ""
+			}
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep); err != nil {
 				// The owned-error defer records recovery after releasing accountGate.
 				return nil, rpc.Error(err, c)
 			}

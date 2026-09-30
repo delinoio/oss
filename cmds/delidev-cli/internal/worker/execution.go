@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -172,7 +173,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		defer func() {
 			if managedPreNativeCleanup {
 				managedCleanup = cleanupExecutionAuthentication(nativeHome, managed.response.Bundle, managed.response.Bundle) == nil
-				if !managedCleanup {
+				if managedCleanup {
+					// This closed pre-native outcome returns unused original bytes;
+					// it does not claim native execution or authentication success.
+					managedLatest = bytes.Clone(managed.response.Bundle)
+				} else {
 					output, returned = nil, subscription.Invalid()
 				}
 			}

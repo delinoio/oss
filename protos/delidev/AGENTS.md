@@ -124,6 +124,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - DeliDev SubscriptionService separates owner/client Request/Cancel/Progress from current machine/device/instance-bound Watch/Take/PublishProgress/Finish. Keep secret bundles bounded to 64 KiB and restricted to the protected Take/Finish messages, the closed subscription action/capability enums and generation/lease revision fences; never move bundles into jobs, resources, receipts or ordinary outputs. Follow `docs/cmds-delidev-subscription-contract.md`.
 
+- The existing protected execution Finish shape distinguishes confirmed pre-native failure through false success/refresh, true cleanup and a byte-identical return of the original immutable bundle. The server must verify all facts before preserving the original generation and releasing that lease. No new wire number, owner import endpoint, public secret response or cleanup-only release is introduced.
+
 - Issue #1142 reserves repository-inspection metadata Worker value 6 and attachment-response support field 3, retaining provenance from closed PR #1193 whose Worker value was 5. Main owns value 5 for native compaction. Reservation kinds must match the existing baseline declaration kind, including message-field additions. Keep them allocation-only until the dependent implementation; do not advertise support from a reservation. Follow the protocol and structure contracts.
 
 
