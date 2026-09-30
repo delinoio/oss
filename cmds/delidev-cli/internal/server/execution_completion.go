@@ -69,8 +69,8 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 		}
 		if session.Recovery == domain.NoRecovery {
 			session.ActiveExecutionID = ""
-			// Agent completion proves only its own process graph. The shared
-			// session publication barrier separately waits for terminal cleanup.
+			// Agent cleanup proves only its own process graph. Store.Put
+			// separately waits for original terminal and forward cleanup.
 			if session.Archive == domain.ArchivePending {
 				session.Archive = domain.Archived
 			}

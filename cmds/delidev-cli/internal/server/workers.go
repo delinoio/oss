@@ -69,6 +69,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		switch capability {
 		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1:
 			capabilities = append(capabilities, domain.SessionTerminalsV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1:
+			capabilities = append(capabilities, domain.SessionForwardingV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1:
 			capabilities = append(capabilities, domain.AutomaticTitlesCodexV1)
 		default:

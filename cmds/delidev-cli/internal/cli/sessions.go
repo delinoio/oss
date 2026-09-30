@@ -62,6 +62,8 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	switch action {
 	case "terminal":
 		return sessionTerminalCommand(ctx, c, o, args[1:], streams)
+	case "forward":
+		return sessionForward(ctx, c, o, args[1:], streams)
 	case "pr":
 		return sessionPRCommand(ctx, c, o, args[1:])
 	case "files":

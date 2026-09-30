@@ -94,7 +94,8 @@ enum EntityKind {
   ENTITY_KIND_JOB = 24;
   ENTITY_KIND_PAIRING = 25;
   ENTITY_KIND_STEER = 26;
-  ENTITY_KIND_TERMINAL = 27;
+  ENTITY_KIND_FORWARD = 27;
+  ENTITY_KIND_TERMINAL = 28;
 }
 
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
@@ -155,7 +156,8 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
   // Session creation can opt into server-owned, Worker-executed automatic titles.
   SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 = 1;
-  SYSTEM_CAPABILITY_SESSION_TERMINALS_V1 = 2;
+  SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 = 2;
+  SYSTEM_CAPABILITY_SESSION_TERMINALS_V1 = 3;
 }
 message StopServerRequest {
   string request_id = 1;
@@ -266,6 +268,7 @@ service WorkerService {
   rpc ClaimTerminal(ClaimTerminalRequest) returns (ClaimTerminalResponse);
   rpc ReportTerminal(ReportTerminalRequest) returns (ReportTerminalResponse);
   rpc PublishTerminalOutput(PublishTerminalOutputRequest) returns (PublishTerminalOutputResponse);
+  rpc WatchForwardRequests(WatchForwardRequestsRequest) returns (stream WatchForwardRequestsResponse);
   rpc WatchWorkspaceReads(WatchWorkspaceReadsRequest) returns (stream WatchWorkspaceReadsResponse);
   rpc ReportWorkspaceRead(ReportWorkspaceReadRequest) returns (ReportWorkspaceReadResponse);
   rpc AttachWorker(AttachWorkerRequest) returns (AttachWorkerResponse);
@@ -393,7 +396,8 @@ message AttachWorkerRequest {
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
   WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 = 1;
-  WORKER_CAPABILITY_SESSION_TERMINALS_V1 = 2;
+  WORKER_CAPABILITY_SESSION_FORWARDING_V1 = 2;
+  WORKER_CAPABILITY_SESSION_TERMINALS_V1 = 3;
 }
 message AttachWorkerResponse {
   Resource machine = 1;
@@ -1812,3 +1816,114 @@ message PublishTerminalOutputRequest {
   bytes data = 6;
 }
 message PublishTerminalOutputResponse {}
+// A session forward is explicitly selected, client-owned and loopback-only.
+// Traffic is opaque, ordered and bounded; it carries no product credentials.
+service ForwardService {
+  rpc StartForward(StartForwardRequest) returns (StartForwardResponse);
+  rpc GetForward(GetForwardRequest) returns (GetForwardResponse);
+  rpc StopForward(StopForwardRequest) returns (StopForwardResponse);
+  // A fresh claim grants one native lifetime. Receipt replay grants none.
+  rpc ClaimForward(ClaimForwardRequest) returns (ClaimForwardResponse);
+  rpc WatchForward(WatchForwardRequest) returns (stream WatchForwardResponse);
+  rpc SendForward(SendForwardRequest) returns (SendForwardResponse);
+  rpc ReportForwardCleanup(ReportForwardCleanupRequest) returns (ReportForwardCleanupResponse);
+}
+message StartForwardRequest {
+  string request_id = 1;
+  string session_id = 2;
+  uint64 expected_session_revision = 3;
+  string machine_id = 4;
+  uint32 worker_port = 5;
+  // Zero selects an OS-assigned local port. An occupied explicit port fails.
+  uint32 local_port = 6;
+}
+message ForwardChange {
+  Resource forward = 1;
+  bool replayed = 2;
+}
+message StartForwardResponse {
+  Resource forward = 1;
+  bool replayed = 2;
+}
+
+message GetForwardResponse {
+  Resource forward = 1;
+  bool replayed = 2;
+}
+
+message StopForwardResponse {
+  Resource forward = 1;
+  bool replayed = 2;
+}
+
+message ReportForwardCleanupResponse {
+  Resource forward = 1;
+  bool replayed = 2;
+}
+
+message GetForwardRequest {
+  string session_id = 1;
+  string forward_id = 2;
+}
+message StopForwardRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+}
+message ForwardPeer {
+  string forward_id = 1;
+  string session_id = 2;
+  string runtime_id = 3;
+  // Required for a Worker peer; forbidden for a client peer.
+  string machine_id = 4;
+  string instance_id = 5;
+}
+message ClaimForwardRequest {
+  string request_id = 1;
+  ForwardPeer peer = 2;
+}
+message ClaimForwardResponse {
+  Resource forward = 1;
+  bool granted = 2;
+}
+message WatchForwardRequest {
+  ForwardPeer peer = 1;
+  // Client's exact bound loopback IP:port. Empty for Worker peers.
+  string local_endpoint = 2;
+}
+message WatchForwardResponse {
+  bool heartbeat = 1;
+  bool ready = 2;
+  ForwardFrame frame = 3;
+}
+enum ForwardFrameKind {
+  FORWARD_FRAME_KIND_UNSPECIFIED = 0;
+  FORWARD_FRAME_KIND_OPEN = 1;
+  FORWARD_FRAME_KIND_DATA = 2;
+  FORWARD_FRAME_KIND_EOF = 3;
+  FORWARD_FRAME_KIND_CLOSE = 4;
+}
+message ForwardFrame {
+  string connection_id = 1;
+  uint64 sequence = 2;
+  ForwardFrameKind kind = 3;
+  // At most 32 KiB, and only for DATA.
+  bytes data = 4;
+}
+message SendForwardRequest {
+  ForwardPeer peer = 1;
+  ForwardFrame frame = 2;
+}
+message SendForwardResponse {}
+message ReportForwardCleanupRequest {
+  string request_id = 1;
+  ForwardPeer peer = 2;
+  // Report only after the original listener/socket handles and work are joined.
+}
+message WatchForwardRequestsRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+message WatchForwardRequestsResponse {
+  bool heartbeat = 1;
+  Resource forward = 2;
+}

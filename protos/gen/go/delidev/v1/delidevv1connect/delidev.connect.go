@@ -53,6 +53,8 @@ const (
 	UsageServiceName = "delidev.v1.UsageService"
 	// TerminalServiceName is the fully-qualified name of the TerminalService service.
 	TerminalServiceName = "delidev.v1.TerminalService"
+	// ForwardServiceName is the fully-qualified name of the ForwardService service.
+	ForwardServiceName = "delidev.v1.ForwardService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -157,6 +159,9 @@ const (
 	// WorkerServicePublishTerminalOutputProcedure is the fully-qualified name of the WorkerService's
 	// PublishTerminalOutput RPC.
 	WorkerServicePublishTerminalOutputProcedure = "/delidev.v1.WorkerService/PublishTerminalOutput"
+	// WorkerServiceWatchForwardRequestsProcedure is the fully-qualified name of the WorkerService's
+	// WatchForwardRequests RPC.
+	WorkerServiceWatchForwardRequestsProcedure = "/delidev.v1.WorkerService/WatchForwardRequests"
 	// WorkerServiceWatchWorkspaceReadsProcedure is the fully-qualified name of the WorkerService's
 	// WatchWorkspaceReads RPC.
 	WorkerServiceWatchWorkspaceReadsProcedure = "/delidev.v1.WorkerService/WatchWorkspaceReads"
@@ -401,6 +406,27 @@ const (
 	// TerminalServiceWatchTerminalOutputProcedure is the fully-qualified name of the TerminalService's
 	// WatchTerminalOutput RPC.
 	TerminalServiceWatchTerminalOutputProcedure = "/delidev.v1.TerminalService/WatchTerminalOutput"
+	// ForwardServiceStartForwardProcedure is the fully-qualified name of the ForwardService's
+	// StartForward RPC.
+	ForwardServiceStartForwardProcedure = "/delidev.v1.ForwardService/StartForward"
+	// ForwardServiceGetForwardProcedure is the fully-qualified name of the ForwardService's GetForward
+	// RPC.
+	ForwardServiceGetForwardProcedure = "/delidev.v1.ForwardService/GetForward"
+	// ForwardServiceStopForwardProcedure is the fully-qualified name of the ForwardService's
+	// StopForward RPC.
+	ForwardServiceStopForwardProcedure = "/delidev.v1.ForwardService/StopForward"
+	// ForwardServiceClaimForwardProcedure is the fully-qualified name of the ForwardService's
+	// ClaimForward RPC.
+	ForwardServiceClaimForwardProcedure = "/delidev.v1.ForwardService/ClaimForward"
+	// ForwardServiceWatchForwardProcedure is the fully-qualified name of the ForwardService's
+	// WatchForward RPC.
+	ForwardServiceWatchForwardProcedure = "/delidev.v1.ForwardService/WatchForward"
+	// ForwardServiceSendForwardProcedure is the fully-qualified name of the ForwardService's
+	// SendForward RPC.
+	ForwardServiceSendForwardProcedure = "/delidev.v1.ForwardService/SendForward"
+	// ForwardServiceReportForwardCleanupProcedure is the fully-qualified name of the ForwardService's
+	// ReportForwardCleanup RPC.
+	ForwardServiceReportForwardCleanupProcedure = "/delidev.v1.ForwardService/ReportForwardCleanup"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -1357,6 +1383,7 @@ type WorkerServiceClient interface {
 	ClaimTerminal(context.Context, *connect.Request[v1.ClaimTerminalRequest]) (*connect.Response[v1.ClaimTerminalResponse], error)
 	ReportTerminal(context.Context, *connect.Request[v1.ReportTerminalRequest]) (*connect.Response[v1.ReportTerminalResponse], error)
 	PublishTerminalOutput(context.Context, *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error)
+	WatchForwardRequests(context.Context, *connect.Request[v1.WatchForwardRequestsRequest]) (*connect.ServerStreamForClient[v1.WatchForwardRequestsResponse], error)
 	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest]) (*connect.ServerStreamForClient[v1.WatchWorkspaceReadsResponse], error)
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
@@ -1406,6 +1433,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+WorkerServicePublishTerminalOutputProcedure,
 			connect.WithSchema(workerServiceMethods.ByName("PublishTerminalOutput")),
+			connect.WithClientOptions(opts...),
+		),
+		watchForwardRequests: connect.NewClient[v1.WatchForwardRequestsRequest, v1.WatchForwardRequestsResponse](
+			httpClient,
+			baseURL+WorkerServiceWatchForwardRequestsProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("WatchForwardRequests")),
 			connect.WithClientOptions(opts...),
 		),
 		watchWorkspaceReads: connect.NewClient[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse](
@@ -1495,6 +1528,7 @@ type workerServiceClient struct {
 	claimTerminal         *connect.Client[v1.ClaimTerminalRequest, v1.ClaimTerminalResponse]
 	reportTerminal        *connect.Client[v1.ReportTerminalRequest, v1.ReportTerminalResponse]
 	publishTerminalOutput *connect.Client[v1.PublishTerminalOutputRequest, v1.PublishTerminalOutputResponse]
+	watchForwardRequests  *connect.Client[v1.WatchForwardRequestsRequest, v1.WatchForwardRequestsResponse]
 	watchWorkspaceReads   *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
 	reportWorkspaceRead   *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
 	attachWorker          *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
@@ -1528,6 +1562,11 @@ func (c *workerServiceClient) ReportTerminal(ctx context.Context, req *connect.R
 // PublishTerminalOutput calls delidev.v1.WorkerService.PublishTerminalOutput.
 func (c *workerServiceClient) PublishTerminalOutput(ctx context.Context, req *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error) {
 	return c.publishTerminalOutput.CallUnary(ctx, req)
+}
+
+// WatchForwardRequests calls delidev.v1.WorkerService.WatchForwardRequests.
+func (c *workerServiceClient) WatchForwardRequests(ctx context.Context, req *connect.Request[v1.WatchForwardRequestsRequest]) (*connect.ServerStreamForClient[v1.WatchForwardRequestsResponse], error) {
+	return c.watchForwardRequests.CallServerStream(ctx, req)
 }
 
 // WatchWorkspaceReads calls delidev.v1.WorkerService.WatchWorkspaceReads.
@@ -1601,6 +1640,7 @@ type WorkerServiceHandler interface {
 	ClaimTerminal(context.Context, *connect.Request[v1.ClaimTerminalRequest]) (*connect.Response[v1.ClaimTerminalResponse], error)
 	ReportTerminal(context.Context, *connect.Request[v1.ReportTerminalRequest]) (*connect.Response[v1.ReportTerminalResponse], error)
 	PublishTerminalOutput(context.Context, *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error)
+	WatchForwardRequests(context.Context, *connect.Request[v1.WatchForwardRequestsRequest], *connect.ServerStream[v1.WatchForwardRequestsResponse]) error
 	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
@@ -1646,6 +1686,12 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		WorkerServicePublishTerminalOutputProcedure,
 		svc.PublishTerminalOutput,
 		connect.WithSchema(workerServiceMethods.ByName("PublishTerminalOutput")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceWatchForwardRequestsHandler := connect.NewServerStreamHandler(
+		WorkerServiceWatchForwardRequestsProcedure,
+		svc.WatchForwardRequests,
+		connect.WithSchema(workerServiceMethods.ByName("WatchForwardRequests")),
 		connect.WithHandlerOptions(opts...),
 	)
 	workerServiceWatchWorkspaceReadsHandler := connect.NewServerStreamHandler(
@@ -1736,6 +1782,8 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 			workerServiceReportTerminalHandler.ServeHTTP(w, r)
 		case WorkerServicePublishTerminalOutputProcedure:
 			workerServicePublishTerminalOutputHandler.ServeHTTP(w, r)
+		case WorkerServiceWatchForwardRequestsProcedure:
+			workerServiceWatchForwardRequestsHandler.ServeHTTP(w, r)
 		case WorkerServiceWatchWorkspaceReadsProcedure:
 			workerServiceWatchWorkspaceReadsHandler.ServeHTTP(w, r)
 		case WorkerServiceReportWorkspaceReadProcedure:
@@ -1785,6 +1833,10 @@ func (UnimplementedWorkerServiceHandler) ReportTerminal(context.Context, *connec
 
 func (UnimplementedWorkerServiceHandler) PublishTerminalOutput(context.Context, *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.PublishTerminalOutput is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) WatchForwardRequests(context.Context, *connect.Request[v1.WatchForwardRequestsRequest], *connect.ServerStream[v1.WatchForwardRequestsResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchForwardRequests is not implemented"))
 }
 
 func (UnimplementedWorkerServiceHandler) WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error {
@@ -4072,4 +4124,232 @@ func (UnimplementedTerminalServiceHandler) ControlTerminal(context.Context, *con
 
 func (UnimplementedTerminalServiceHandler) WatchTerminalOutput(context.Context, *connect.Request[v1.WatchTerminalOutputRequest], *connect.ServerStream[v1.WatchTerminalOutputResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TerminalService.WatchTerminalOutput is not implemented"))
+}
+
+// ForwardServiceClient is a client for the delidev.v1.ForwardService service.
+type ForwardServiceClient interface {
+	StartForward(context.Context, *connect.Request[v1.StartForwardRequest]) (*connect.Response[v1.StartForwardResponse], error)
+	GetForward(context.Context, *connect.Request[v1.GetForwardRequest]) (*connect.Response[v1.GetForwardResponse], error)
+	StopForward(context.Context, *connect.Request[v1.StopForwardRequest]) (*connect.Response[v1.StopForwardResponse], error)
+	// A fresh claim grants one native lifetime. Receipt replay grants none.
+	ClaimForward(context.Context, *connect.Request[v1.ClaimForwardRequest]) (*connect.Response[v1.ClaimForwardResponse], error)
+	WatchForward(context.Context, *connect.Request[v1.WatchForwardRequest]) (*connect.ServerStreamForClient[v1.WatchForwardResponse], error)
+	SendForward(context.Context, *connect.Request[v1.SendForwardRequest]) (*connect.Response[v1.SendForwardResponse], error)
+	ReportForwardCleanup(context.Context, *connect.Request[v1.ReportForwardCleanupRequest]) (*connect.Response[v1.ReportForwardCleanupResponse], error)
+}
+
+// NewForwardServiceClient constructs a client for the delidev.v1.ForwardService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewForwardServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ForwardServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	forwardServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ForwardService").Methods()
+	return &forwardServiceClient{
+		startForward: connect.NewClient[v1.StartForwardRequest, v1.StartForwardResponse](
+			httpClient,
+			baseURL+ForwardServiceStartForwardProcedure,
+			connect.WithSchema(forwardServiceMethods.ByName("StartForward")),
+			connect.WithClientOptions(opts...),
+		),
+		getForward: connect.NewClient[v1.GetForwardRequest, v1.GetForwardResponse](
+			httpClient,
+			baseURL+ForwardServiceGetForwardProcedure,
+			connect.WithSchema(forwardServiceMethods.ByName("GetForward")),
+			connect.WithClientOptions(opts...),
+		),
+		stopForward: connect.NewClient[v1.StopForwardRequest, v1.StopForwardResponse](
+			httpClient,
+			baseURL+ForwardServiceStopForwardProcedure,
+			connect.WithSchema(forwardServiceMethods.ByName("StopForward")),
+			connect.WithClientOptions(opts...),
+		),
+		claimForward: connect.NewClient[v1.ClaimForwardRequest, v1.ClaimForwardResponse](
+			httpClient,
+			baseURL+ForwardServiceClaimForwardProcedure,
+			connect.WithSchema(forwardServiceMethods.ByName("ClaimForward")),
+			connect.WithClientOptions(opts...),
+		),
+		watchForward: connect.NewClient[v1.WatchForwardRequest, v1.WatchForwardResponse](
+			httpClient,
+			baseURL+ForwardServiceWatchForwardProcedure,
+			connect.WithSchema(forwardServiceMethods.ByName("WatchForward")),
+			connect.WithClientOptions(opts...),
+		),
+		sendForward: connect.NewClient[v1.SendForwardRequest, v1.SendForwardResponse](
+			httpClient,
+			baseURL+ForwardServiceSendForwardProcedure,
+			connect.WithSchema(forwardServiceMethods.ByName("SendForward")),
+			connect.WithClientOptions(opts...),
+		),
+		reportForwardCleanup: connect.NewClient[v1.ReportForwardCleanupRequest, v1.ReportForwardCleanupResponse](
+			httpClient,
+			baseURL+ForwardServiceReportForwardCleanupProcedure,
+			connect.WithSchema(forwardServiceMethods.ByName("ReportForwardCleanup")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// forwardServiceClient implements ForwardServiceClient.
+type forwardServiceClient struct {
+	startForward         *connect.Client[v1.StartForwardRequest, v1.StartForwardResponse]
+	getForward           *connect.Client[v1.GetForwardRequest, v1.GetForwardResponse]
+	stopForward          *connect.Client[v1.StopForwardRequest, v1.StopForwardResponse]
+	claimForward         *connect.Client[v1.ClaimForwardRequest, v1.ClaimForwardResponse]
+	watchForward         *connect.Client[v1.WatchForwardRequest, v1.WatchForwardResponse]
+	sendForward          *connect.Client[v1.SendForwardRequest, v1.SendForwardResponse]
+	reportForwardCleanup *connect.Client[v1.ReportForwardCleanupRequest, v1.ReportForwardCleanupResponse]
+}
+
+// StartForward calls delidev.v1.ForwardService.StartForward.
+func (c *forwardServiceClient) StartForward(ctx context.Context, req *connect.Request[v1.StartForwardRequest]) (*connect.Response[v1.StartForwardResponse], error) {
+	return c.startForward.CallUnary(ctx, req)
+}
+
+// GetForward calls delidev.v1.ForwardService.GetForward.
+func (c *forwardServiceClient) GetForward(ctx context.Context, req *connect.Request[v1.GetForwardRequest]) (*connect.Response[v1.GetForwardResponse], error) {
+	return c.getForward.CallUnary(ctx, req)
+}
+
+// StopForward calls delidev.v1.ForwardService.StopForward.
+func (c *forwardServiceClient) StopForward(ctx context.Context, req *connect.Request[v1.StopForwardRequest]) (*connect.Response[v1.StopForwardResponse], error) {
+	return c.stopForward.CallUnary(ctx, req)
+}
+
+// ClaimForward calls delidev.v1.ForwardService.ClaimForward.
+func (c *forwardServiceClient) ClaimForward(ctx context.Context, req *connect.Request[v1.ClaimForwardRequest]) (*connect.Response[v1.ClaimForwardResponse], error) {
+	return c.claimForward.CallUnary(ctx, req)
+}
+
+// WatchForward calls delidev.v1.ForwardService.WatchForward.
+func (c *forwardServiceClient) WatchForward(ctx context.Context, req *connect.Request[v1.WatchForwardRequest]) (*connect.ServerStreamForClient[v1.WatchForwardResponse], error) {
+	return c.watchForward.CallServerStream(ctx, req)
+}
+
+// SendForward calls delidev.v1.ForwardService.SendForward.
+func (c *forwardServiceClient) SendForward(ctx context.Context, req *connect.Request[v1.SendForwardRequest]) (*connect.Response[v1.SendForwardResponse], error) {
+	return c.sendForward.CallUnary(ctx, req)
+}
+
+// ReportForwardCleanup calls delidev.v1.ForwardService.ReportForwardCleanup.
+func (c *forwardServiceClient) ReportForwardCleanup(ctx context.Context, req *connect.Request[v1.ReportForwardCleanupRequest]) (*connect.Response[v1.ReportForwardCleanupResponse], error) {
+	return c.reportForwardCleanup.CallUnary(ctx, req)
+}
+
+// ForwardServiceHandler is an implementation of the delidev.v1.ForwardService service.
+type ForwardServiceHandler interface {
+	StartForward(context.Context, *connect.Request[v1.StartForwardRequest]) (*connect.Response[v1.StartForwardResponse], error)
+	GetForward(context.Context, *connect.Request[v1.GetForwardRequest]) (*connect.Response[v1.GetForwardResponse], error)
+	StopForward(context.Context, *connect.Request[v1.StopForwardRequest]) (*connect.Response[v1.StopForwardResponse], error)
+	// A fresh claim grants one native lifetime. Receipt replay grants none.
+	ClaimForward(context.Context, *connect.Request[v1.ClaimForwardRequest]) (*connect.Response[v1.ClaimForwardResponse], error)
+	WatchForward(context.Context, *connect.Request[v1.WatchForwardRequest], *connect.ServerStream[v1.WatchForwardResponse]) error
+	SendForward(context.Context, *connect.Request[v1.SendForwardRequest]) (*connect.Response[v1.SendForwardResponse], error)
+	ReportForwardCleanup(context.Context, *connect.Request[v1.ReportForwardCleanupRequest]) (*connect.Response[v1.ReportForwardCleanupResponse], error)
+}
+
+// NewForwardServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewForwardServiceHandler(svc ForwardServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	forwardServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ForwardService").Methods()
+	forwardServiceStartForwardHandler := connect.NewUnaryHandler(
+		ForwardServiceStartForwardProcedure,
+		svc.StartForward,
+		connect.WithSchema(forwardServiceMethods.ByName("StartForward")),
+		connect.WithHandlerOptions(opts...),
+	)
+	forwardServiceGetForwardHandler := connect.NewUnaryHandler(
+		ForwardServiceGetForwardProcedure,
+		svc.GetForward,
+		connect.WithSchema(forwardServiceMethods.ByName("GetForward")),
+		connect.WithHandlerOptions(opts...),
+	)
+	forwardServiceStopForwardHandler := connect.NewUnaryHandler(
+		ForwardServiceStopForwardProcedure,
+		svc.StopForward,
+		connect.WithSchema(forwardServiceMethods.ByName("StopForward")),
+		connect.WithHandlerOptions(opts...),
+	)
+	forwardServiceClaimForwardHandler := connect.NewUnaryHandler(
+		ForwardServiceClaimForwardProcedure,
+		svc.ClaimForward,
+		connect.WithSchema(forwardServiceMethods.ByName("ClaimForward")),
+		connect.WithHandlerOptions(opts...),
+	)
+	forwardServiceWatchForwardHandler := connect.NewServerStreamHandler(
+		ForwardServiceWatchForwardProcedure,
+		svc.WatchForward,
+		connect.WithSchema(forwardServiceMethods.ByName("WatchForward")),
+		connect.WithHandlerOptions(opts...),
+	)
+	forwardServiceSendForwardHandler := connect.NewUnaryHandler(
+		ForwardServiceSendForwardProcedure,
+		svc.SendForward,
+		connect.WithSchema(forwardServiceMethods.ByName("SendForward")),
+		connect.WithHandlerOptions(opts...),
+	)
+	forwardServiceReportForwardCleanupHandler := connect.NewUnaryHandler(
+		ForwardServiceReportForwardCleanupProcedure,
+		svc.ReportForwardCleanup,
+		connect.WithSchema(forwardServiceMethods.ByName("ReportForwardCleanup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.ForwardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ForwardServiceStartForwardProcedure:
+			forwardServiceStartForwardHandler.ServeHTTP(w, r)
+		case ForwardServiceGetForwardProcedure:
+			forwardServiceGetForwardHandler.ServeHTTP(w, r)
+		case ForwardServiceStopForwardProcedure:
+			forwardServiceStopForwardHandler.ServeHTTP(w, r)
+		case ForwardServiceClaimForwardProcedure:
+			forwardServiceClaimForwardHandler.ServeHTTP(w, r)
+		case ForwardServiceWatchForwardProcedure:
+			forwardServiceWatchForwardHandler.ServeHTTP(w, r)
+		case ForwardServiceSendForwardProcedure:
+			forwardServiceSendForwardHandler.ServeHTTP(w, r)
+		case ForwardServiceReportForwardCleanupProcedure:
+			forwardServiceReportForwardCleanupHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedForwardServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedForwardServiceHandler struct{}
+
+func (UnimplementedForwardServiceHandler) StartForward(context.Context, *connect.Request[v1.StartForwardRequest]) (*connect.Response[v1.StartForwardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ForwardService.StartForward is not implemented"))
+}
+
+func (UnimplementedForwardServiceHandler) GetForward(context.Context, *connect.Request[v1.GetForwardRequest]) (*connect.Response[v1.GetForwardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ForwardService.GetForward is not implemented"))
+}
+
+func (UnimplementedForwardServiceHandler) StopForward(context.Context, *connect.Request[v1.StopForwardRequest]) (*connect.Response[v1.StopForwardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ForwardService.StopForward is not implemented"))
+}
+
+func (UnimplementedForwardServiceHandler) ClaimForward(context.Context, *connect.Request[v1.ClaimForwardRequest]) (*connect.Response[v1.ClaimForwardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ForwardService.ClaimForward is not implemented"))
+}
+
+func (UnimplementedForwardServiceHandler) WatchForward(context.Context, *connect.Request[v1.WatchForwardRequest], *connect.ServerStream[v1.WatchForwardResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ForwardService.WatchForward is not implemented"))
+}
+
+func (UnimplementedForwardServiceHandler) SendForward(context.Context, *connect.Request[v1.SendForwardRequest]) (*connect.Response[v1.SendForwardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ForwardService.SendForward is not implemented"))
+}
+
+func (UnimplementedForwardServiceHandler) ReportForwardCleanup(context.Context, *connect.Request[v1.ReportForwardCleanupRequest]) (*connect.Response[v1.ReportForwardCleanupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ForwardService.ReportForwardCleanup is not implemented"))
 }

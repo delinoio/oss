@@ -516,6 +516,29 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 		if err != nil {
 			return Record{}, err
 		}
+		// Every Archive completion also shares the socket-cleanup gate, including
+		// late preparation, title and agent reports. Native process completion alone
+		// cannot release a session's separately owned forward lifetimes.
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return Record{}, err
+		}
+		var fields map[string]json.RawMessage
+		var archive domain.ArchiveState
+		if json.Unmarshal(raw, &fields) == nil && json.Unmarshal(fields["archive"], &archive) == nil && archive == domain.Archived {
+			pending, err := t.SessionForwardsPending(id)
+			if err != nil {
+				return Record{}, err
+			}
+			if pending {
+				fields["archive"], _ = json.Marshal(domain.ArchivePending)
+				raw, err := json.Marshal(fields)
+				if err != nil {
+					return Record{}, err
+				}
+				value = json.RawMessage(raw)
+			}
+		}
 	}
 	body, err := json.Marshal(value)
 	if err != nil || len(body) > 1<<20 {
@@ -594,6 +617,9 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	}
 	if kind == domain.SessionKind {
 		if err := t.requireTerminalCleanup(id); err != nil {
+			return err
+		}
+		if err := t.StopForwards(id, ""); err != nil {
 			return err
 		}
 	}

@@ -67,3 +67,105 @@ func TestTerminalArchiveAndDeletionRequireSelectedOwnedCleanup(t *testing.T) {
 		t.Fatal("proven terminal cleanup still blocked deletion", err)
 	}
 }
+
+func TestSessionArchiveWaitsForTerminalAndForwardCleanup(t *testing.T) {
+	for _, terminalFirst := range []bool{true, false} {
+		name := "forward-first"
+		if terminalFirst {
+			name = "terminal-first"
+		}
+		t.Run(name, func(t *testing.T) {
+			s, _ := openTest(t)
+			ctx := context.Background()
+			sessionID, terminalID, forwardID := domain.NewID(), domain.NewID(), domain.NewID()
+			mutate := func(call func(*Tx) (any, error)) {
+				t.Helper()
+				if _, err := s.Mutate(ctx, domain.NewID(), "archive.fixture", nil, call); err != nil {
+					t.Fatal(err)
+				}
+			}
+			mutate(func(tx *Tx) (any, error) {
+				if _, err := tx.Put(domain.SessionKind, sessionID, 0, sessionID, "", domain.Session{Archive: domain.NotArchived, Recovery: domain.NoRecovery}); err != nil {
+					return nil, err
+				}
+				if _, err := tx.Put(domain.TerminalKind, terminalID, 0, sessionID, "", domain.Terminal{State: domain.TerminalRunning, Rows: 24, Columns: 80}); err != nil {
+					return nil, err
+				}
+				return tx.Put(domain.ForwardKind, forwardID, 0, sessionID, "", domain.Forward{State: domain.ForwardActive, ClientClaimed: true, WorkerClaimed: true})
+			})
+			attemptCompletion := func(tx *Tx) (any, error) {
+				row, err := tx.Get(domain.SessionKind, sessionID)
+				if err != nil {
+					return nil, err
+				}
+				value, err := Decode[domain.Session](row)
+				if err != nil {
+					return nil, err
+				}
+				value.Archive = domain.Archived
+				return tx.Put(domain.SessionKind, row.ID, row.Revision, row.SessionID, row.ProjectID, value)
+			}
+			mutate(func(tx *Tx) (any, error) {
+				if err := tx.StopForwards(sessionID, ""); err != nil {
+					return nil, err
+				}
+				return attemptCompletion(tx)
+			})
+			assertArchive := func(want domain.ArchiveState) {
+				t.Helper()
+				row, err := s.Get(ctx, domain.SessionKind, sessionID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				value, err := Decode[domain.Session](row)
+				if err != nil || value.Archive != want {
+					t.Fatalf("Archive = %s, want %s: %v", value.Archive, want, err)
+				}
+			}
+			assertArchive(domain.ArchivePending)
+			for _, closeTerminal := range []bool{terminalFirst, !terminalFirst} {
+				mutate(func(tx *Tx) (any, error) {
+					if closeTerminal {
+						row, err := tx.Get(domain.TerminalKind, terminalID)
+						if err != nil {
+							return nil, err
+						}
+						value, err := Decode[domain.Terminal](row)
+						if err != nil {
+							return nil, err
+						}
+						if value.CloseRequestID == "" {
+							t.Fatal("Archive did not request original terminal cleanup")
+						}
+						value.State, value.CleanupVerified, value.CloseRequestID = domain.TerminalClosed, true, ""
+						if _, err := tx.Put(domain.TerminalKind, row.ID, row.Revision, row.SessionID, row.ProjectID, value); err != nil {
+							return nil, err
+						}
+						return nil, tx.CompleteTerminalArchive(sessionID)
+					}
+					row, err := tx.Get(domain.ForwardKind, forwardID)
+					if err != nil {
+						return nil, err
+					}
+					value, err := Decode[domain.Forward](row)
+					if err != nil {
+						return nil, err
+					}
+					if value.State != domain.ForwardStopping {
+						t.Fatal("Archive did not stop the original forward")
+					}
+					value.State, value.ClientClean, value.WorkerClean = domain.ForwardStopped, true, true
+					if _, err := tx.Put(domain.ForwardKind, row.ID, row.Revision, row.SessionID, row.ProjectID, value); err != nil {
+						return nil, err
+					}
+					return attemptCompletion(tx)
+				})
+				if closeTerminal == terminalFirst {
+					assertArchive(domain.ArchivePending)
+				} else {
+					assertArchive(domain.Archived)
+				}
+			}
+		})
+	}
+}
