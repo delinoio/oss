@@ -24,3 +24,12 @@ The completed original aggregate Go race run remains an actual exit-1 result and
 ## Remote observations and limits
 
 At the opening inventory, head `aa72fa0fdd7b774a09f22f25789255876071c8f6` had passed Linux Go, Go Quality, protocol/client, environment and release-contract checks. macOS and Windows Go were running. There were no unresolved eligible Codex threads; code and security reviews were running for that exact head. A repair push invalidates those checks and reviews as evidence for its new head. Fresh pending activity is deferred to the next scheduled pass. No merge readiness, human approval, real provider-account session, native installation or release acceptance is claimed.
+
+The final one-shot inventory, after merge commit `3834611c6e96b260b8e66d79d389b9818a41c5b6`, found no failed or pending CI checks on the still-remote prior head, but contained four new non-outdated Codex threads that arrived during validation. They are unassessed and remain unresolved for the next scheduled explicit repair pass:
+
+- `PRRT_kwDORRAKg86ndQyj`: selected Claude child-history ancestry projection.
+- `PRRT_kwDORRAKg86ndQy1`: changed original requested model.
+- `PRRT_kwDORRAKg86ndQy_`: Claude-only metadata on Codex observations.
+- `PRRT_kwDORRAKg86ndQzF`: later Claude task transcript flags.
+
+The final inventory was not repeated. No source repair or resolution for these new findings is claimed in this pass. The scheduled repair must assess each independently before CI. The old four handled threads stay resolved.
