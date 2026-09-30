@@ -39,4 +39,8 @@ Executed against the repaired generated output:
 - `node --test scripts/ci/delidev-proto.test.mjs scripts/ci/delidev-structure.test.mjs`: all six checks passed.
 - `pnpm proto:lint` and `pnpm proto:breaking`: passed.
 
+Repair source revision: `979f8b44fe7f320be2972aff8c1ca4752a40df14`. The same five-package focused subscription race command and `GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/...` passed again after regeneration. The repository pre-commit Go formatting hook also passed.
+
+The post-repair `pnpm proto:check` completed format/lint and breaking checks, then its generation step failed because a referenced `container/heap` archive was missing from the shared Go build cache. A second generation through `GOCACHE=<temporary task cache> GOMAXPROCS=2 pnpm proto:generate` passed. The normal freshness assertions (`git diff --exit-code` over all four generated-source roots and no untracked generated files) then passed with no output changes. This isolated retry did not change repository configuration or the user's shared cache.
+
 These focused repair checks do not supersede the complete native-suite failures or real-account acceptance limits above. New-head CI and review remain separate evidence after publication.
