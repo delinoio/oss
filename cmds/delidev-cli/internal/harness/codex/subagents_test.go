@@ -71,6 +71,12 @@ func TestSubagentDescendantInspectionReadsHistoryWithoutChildControls(t *testing
 			t.Fatal("history coverage or missing model changed")
 		}
 	}
+	childFromRead := e.Subagents[0]
+	parentFromRead := domain.ID(childFromRead.ParentID)
+	notice, err := observeFixture(c, "thread/started", map[string]any{"thread": threadWire{ID: domain.ID(childFromRead.NativeID), ParentThreadID: &parentFromRead, SessionID: c.execution.thread.SessionID, CLIVersion: SupportedVersion, ModelProvider: c.execution.settings.Provider, Status: ThreadStatus{Type: ThreadIdle}}})
+	if err != nil || notice.Kind != SubagentEvent || notice.Subagents[0].ID != childFromRead.ID {
+		t.Fatal("start notification lost inventory-proved ownership", err)
+	}
 	activity := Event{Kind: SubagentActivityEvent, ThreadID: c.thread, AgentThreadID: domain.ID(e.Subagents[0].NativeID), ItemID: "original-activity", Correlated: true}
 	observed, err := c.ObserveResolvedActivity(context.Background(), activity)
 	if err != nil || observed.Subagents[0].Source != domain.CodexActivitySource || observed.Subagents[0].SourceID != activity.ItemID || observed.Subagents[0].Output != nil {
@@ -132,5 +138,33 @@ func TestSubagentActivityUsesCanonicalStringKind(t *testing.T) {
 	}
 	if _, err := c.observeSubagentActivity(json.RawMessage(`{"type":"subAgentActivity","id":"native-activity","kind":{"type":"completed"},"agentThreadId":"`+string(child)+`","agentPath":"/native-child"}`), turn); err == nil {
 		t.Fatal("noncanonical activity kind accepted")
+	}
+}
+
+func TestSubagentThreadStartedRequiresPriorOwnershipEvidence(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	parent := c.thread
+	thread := threadWire{ID: child, ParentThreadID: &parent, SessionID: c.execution.thread.SessionID, CLIVersion: SupportedVersion, ModelProvider: c.execution.settings.Provider, Status: ThreadStatus{Type: ThreadIdle}}
+	for _, parentID := range []domain.ID{c.thread, domain.NewID()} {
+		parent = parentID
+		event, err := observeFixture(c, "thread/started", map[string]any{"thread": thread})
+		if err != nil || event.Kind != MetadataEvent || len(event.Subagents) != 0 || len(c.subagents) != 0 || c.execution.active != turn {
+			t.Fatal("unproved start notification invented child ownership or changed the root", err)
+		}
+	}
+	parent = c.thread
+	spawn := map[string]any{"type": "collabAgentToolCall", "id": "original-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "running", "message": nil}}}
+	proved, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn})
+	if err != nil || proved.Kind != SubagentEvent || len(proved.Subagents) != 1 {
+		t.Fatal("original spawn after an early notification was lost", err)
+	}
+	observed, err := observeFixture(c, "thread/started", map[string]any{"thread": thread})
+	if err != nil || observed.Kind != SubagentEvent || observed.Subagents[0].ID != proved.Subagents[0].ID || observed.Subagents[0].ParentID != string(c.thread) {
+		t.Fatal("proved start notification changed original child ownership", err)
+	}
+	parent = domain.NewID()
+	if _, err := observeFixture(c, "thread/started", map[string]any{"thread": thread}); err == nil || c.subagents[string(child)].ParentID != string(c.thread) {
+		t.Fatal("changed parent notification was accepted or reparented the child")
 	}
 }

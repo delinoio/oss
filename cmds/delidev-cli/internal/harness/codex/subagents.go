@@ -254,20 +254,18 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 		}
 		if domain.Decode(native.Params, &v) == nil && v.Thread.ParentThreadID != nil {
 			t := v.Thread
-			if t.ID.Validate() != nil || t.ParentThreadID.Validate() != nil || t.SessionID != c.execution.thread.SessionID || t.ModelProvider != c.execution.settings.Provider || t.CLIVersion != SupportedVersion || validateThreadStatus(t.Status) != nil {
+			if t.ID.Validate() != nil || t.ID == c.thread || t.ParentThreadID.Validate() != nil || t.SessionID != c.execution.thread.SessionID || t.ModelProvider != c.execution.settings.Provider || t.CLIVersion != SupportedVersion || validateThreadStatus(t.Status) != nil {
 				return Event{}, true, incompatible()
-			}
-			if *t.ParentThreadID != c.thread {
-				if _, ok := c.subagents[string(*t.ParentThreadID)]; !ok {
-					return Event{}, true, incompatible()
-				}
 			}
 			o, ok := c.subagents[string(t.ID)]
-			if ok && o.ParentID != string(*t.ParentThreadID) {
-				return Event{}, true, incompatible()
-			}
 			if !ok {
-				o = domain.SubagentObservation{ID: domain.NewID(), NativeID: string(t.ID), ParentID: string(*t.ParentThreadID), Status: domain.SubagentPending, Source: domain.CodexHistorySource, SourceID: string(t.ID)}
+				// A start notification may precede the original spawn evidence.
+				// It cannot allocate product ownership; wait for the canonical
+				// sender/receiver spawn or the validated descendant inventory.
+				return c.childMetadata(), true, nil
+			}
+			if o.ParentID != string(*t.ParentThreadID) {
+				return Event{}, true, incompatible()
 			}
 			o.Source, o.SourceID, o.Usage = domain.CodexHistorySource, string(t.ID), nil
 			e, err := c.childEvent([]domain.SubagentObservation{o})
