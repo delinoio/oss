@@ -3425,6 +3425,21 @@ Worker and workspace. Earlier failed invocations remain recorded above; this
 successful rerun does not imply that their intermittent failures were repaired. This is temporary fixture/build evidence,
 not installed-native, remote transport, real-account or release acceptance.
 
+PR #1112's hosted protocol/client job at head `3544288f` passed protocol and
+client checks but failed the real-Go singleton server-preferences fixture while
+waiting for `Edit Server preferences` after saving. Delaying the original
+settings save and settings-list reads by 600 ms each reproduced that failure
+under the default one-second wait. The fixture now waits at most 15 seconds for
+the actual initial and refreshed controls, within a 45-second scenario deadline.
+It still checks the exact Go defaults, unchanged singleton identity, final
+revision and edited document, and verifies exactly two save requests. The
+focused delayed fixture passed, then full `pnpm test` from `apps/delidev` under
+Node.js 24 passed 74 files / 945 tests, type checking, package/launcher fixtures,
+widget checks and the production build. This repair changes test timing only;
+production RPCs, mutation retries and account-switch behavior are unchanged.
+The failed hosted invocation remains recorded; CI for the repair commit is
+pending after push, and no new native or real-account acceptance is claimed.
+
 ### Initial privacy-safe macOS status widget (#1090, 2026-09-30)
 
 - Added macOS 13 WidgetKit and Intents selection extensions (`io.delino.delidev.widget` and `io.delino.delidev.widget.selection`) sharing only `group.io.delino.delidev` metadata with the desktop. Each instance selects an exact saved-profile UUID; no default/fallback, account credentials, endpoint, prompt, conversation text, networking or agent action is available. Go/RPC/CLI business semantics and schemas remain unchanged.
