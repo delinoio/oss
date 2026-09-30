@@ -2759,6 +2759,214 @@
       "member": "WORKER_CAPABILITY_SESSION_TERMINALS_V1",
       "oldBranchNumber": 3,
       "number": 4
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_GEMINI",
+      "number": 10,
+      "presetId": "gemini"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_GROQ",
+      "number": 11,
+      "presetId": "groq"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_MISTRAL",
+      "number": 12,
+      "presetId": "mistral"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_TOGETHER_AI",
+      "number": 13,
+      "presetId": "together-ai"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_FIREWORKS_AI",
+      "number": 14,
+      "presetId": "fireworks-ai"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_PERPLEXITY",
+      "number": 15,
+      "presetId": "perplexity"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_COHERE",
+      "number": 16,
+      "presetId": "cohere"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_CEREBRAS",
+      "number": 17,
+      "presetId": "cerebras"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_NEBIUS",
+      "number": 18,
+      "presetId": "nebius"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_NOVITA",
+      "number": 19,
+      "presetId": "novita"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_DEEPINFRA",
+      "number": 20,
+      "presetId": "deepinfra"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_HUGGING_FACE",
+      "number": 21,
+      "presetId": "hugging-face"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_VENICE",
+      "number": 22,
+      "presetId": "venice"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_SCALEWAY",
+      "number": 23,
+      "presetId": "scaleway"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_BASETEN",
+      "number": 24,
+      "presetId": "baseten"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_MOONSHOT",
+      "number": 25,
+      "presetId": "moonshot"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_MOONSHOT_CN",
+      "number": 26,
+      "presetId": "moonshot-cn"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_MINIMAX",
+      "number": 27,
+      "presetId": "minimax"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_MINIMAX_CN",
+      "number": 28,
+      "presetId": "minimax-cn"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_SILICONFLOW",
+      "number": 29,
+      "presetId": "siliconflow"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_SILICONFLOW_CN",
+      "number": 30,
+      "presetId": "siliconflow-cn"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_QIANFAN",
+      "number": 31,
+      "presetId": "qianfan"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_TENCENT_TOKENHUB",
+      "number": 32,
+      "presetId": "tencent-tokenhub"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_TENCENT_TOKENHUB_INTERNATIONAL",
+      "number": 33,
+      "presetId": "tencent-tokenhub-international"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_INTERNATIONAL",
+      "number": 34,
+      "presetId": "alibaba-model-studio-international"
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_HONG_KONG",
+      "number": 35,
+      "presetId": "alibaba-model-studio-hong-kong"
     }
   ]
 }

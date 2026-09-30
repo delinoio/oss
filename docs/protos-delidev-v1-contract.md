@@ -6,6 +6,47 @@ names and numbers remain unchanged. `protos/delidev/allocations.json` records ma
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 
+## Issue #1148 provider preset reservations
+
+`allocations.json` reserves the following additive `ProviderPresetId` values for
+issue #1148. The ledger records the originating issue and exact stable preset ID;
+existing values 0–9 remain immutable. These reservations must land on main before
+the corresponding source declarations and generated clients are implemented.
+They do not advertise provider availability, discovery support or account readiness.
+
+| Value | Stable preset ID | Enum suffix after `PROVIDER_PRESET_ID_` |
+|---|---|---|
+| 10 | `gemini` | `GEMINI` |
+| 11 | `groq` | `GROQ` |
+| 12 | `mistral` | `MISTRAL` |
+| 13 | `together-ai` | `TOGETHER_AI` |
+| 14 | `fireworks-ai` | `FIREWORKS_AI` |
+| 15 | `perplexity` | `PERPLEXITY` |
+| 16 | `cohere` | `COHERE` |
+| 17 | `cerebras` | `CEREBRAS` |
+| 18 | `nebius` | `NEBIUS` |
+| 19 | `novita` | `NOVITA` |
+| 20 | `deepinfra` | `DEEPINFRA` |
+| 21 | `hugging-face` | `HUGGING_FACE` |
+| 22 | `venice` | `VENICE` |
+| 23 | `scaleway` | `SCALEWAY` |
+| 24 | `baseten` | `BASETEN` |
+| 25 | `moonshot` | `MOONSHOT` |
+| 26 | `moonshot-cn` | `MOONSHOT_CN` |
+| 27 | `minimax` | `MINIMAX` |
+| 28 | `minimax-cn` | `MINIMAX_CN` |
+| 29 | `siliconflow` | `SILICONFLOW` |
+| 30 | `siliconflow-cn` | `SILICONFLOW_CN` |
+| 31 | `qianfan` | `QIANFAN` |
+| 32 | `tencent-tokenhub` | `TENCENT_TOKENHUB` |
+| 33 | `tencent-tokenhub-international` | `TENCENT_TOKENHUB_INTERNATIONAL` |
+| 34 | `alibaba-model-studio-international` | `ALIBABA_MODEL_STUDIO_INTERNATIONAL` |
+| 35 | `alibaba-model-studio-hong-kong` | `ALIBABA_MODEL_STUDIO_HONG_KONG` |
+
+The one-time provider seeding migration requires its own main-established storage
+reservation. The issue's investigated schema-25 proposal cannot reuse a version
+already assigned to another feature; follow the storage ledger and ordered sequence.
+
 ## Scope
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 

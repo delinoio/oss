@@ -2,6 +2,8 @@
 
 - Use service-specific schema files and preserve the compatibility `delidev.proto` import. Shared numeric additions must match `allocations.json`; reservations do not advertise support. Run the normal generated-source pipeline and never hand-edit generated output. The exact declaration-relocation map preserves FILE compatibility checks without suppressing semantic changes.
 
+- Issue #1148 reserves `ProviderPresetId` values 10–35 in its table order, preserving existing values 0–9. New issue-owned reservations use `issue`, rather than inventing an originating PR number. Land the reservations on main before activating declarations or regenerating dependent bindings; the reservation alone does not expose the additional providers.
+
 - PR activity activates only #1118's existing main reservations in `activity.proto`: ActivityKind 7–10, ActivityEntry.pull_request 15 and ListActivityResponse.capabilities 3. Keep typed metadata/actor/mode/state separate from private source content and independently verified handling. Regenerate service-owned bindings and compatibility facades together.
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.

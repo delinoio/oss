@@ -26,7 +26,7 @@ TypeScript import paths; generated code is never resolved by choosing a merge si
 Regenerate from the reconciled source schema.
 
 The numeric allocation ledger binds each new enum member or existing-message field
-to its original PR and a unique number. Existing main assignments are immutable.
+to its originating PR or issue and a unique number. Existing main assignments are immutable.
 Reservations do not advertise capability support or activate implementation.
 New allocations must be established on main before dependent feature branches use
 them. Existing shared message semantics still require explicit composition.
