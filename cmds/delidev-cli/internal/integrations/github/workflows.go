@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -268,7 +269,21 @@ func (c *Client) readRequiredWorkflows(ctx context.Context, token []byte, reposi
 	if !wanted || ci.TestMerge == nil || ci.InMergeQueue {
 		return nil
 	}
-	runs, err := c.requiredWorkflowInventory(ctx, token, repository, item, *ci, rules)
+	// Optional enrichment must leave time for the repeated ordinary inventory,
+	// rules and PR publication brackets. Cap serial work instead of consuming
+	// the owning query's deadline; only a complete inventory can become proof.
+	budget := 3 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline) / 4; remaining < budget {
+			budget = remaining
+		}
+	}
+	proofContext, cancel := context.WithTimeout(ctx, budget)
+	runs, err := c.requiredWorkflowInventory(proofContext, token, repository, item, *ci, rules)
+	if proofContext.Err() != nil {
+		err = proofContext.Err()
+	}
+	cancel()
 	if ctx.Err() != nil {
 		return domain.SafeError(ctx.Err())
 	}

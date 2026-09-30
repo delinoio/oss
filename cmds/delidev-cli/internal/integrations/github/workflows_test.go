@@ -386,6 +386,48 @@ func TestOversizedOptionalWorkflowProofPreservesOrdinaryCI(t *testing.T) {
 	}
 }
 
+func TestOptionalWorkflowDeadlinePreservesRepeatedOrdinaryCIAndJoinsReads(t *testing.T) {
+	for _, mode := range []string{"source", "run", "jobs", "second-pass"} {
+		t.Run(mode, func(t *testing.T) {
+			c := workflowAndOrdinaryClientFixture(t)
+			original := c.http.Transport
+			started, stopped, sourceReads := 0, 0, 0
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			defer cancel()
+			parentDeadline, _ := ctx.Deadline()
+			c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/repositories/11" {
+					sourceReads++
+				}
+				block := mode == "source" && r.URL.Path == "/repositories/11" || mode == "run" && r.URL.Path == "/repos/fixture-owner/repo/actions/runs/91" || mode == "jobs" && r.URL.Path == "/repos/fixture-owner/repo/actions/runs/91/attempts/1/jobs" || mode == "second-pass" && r.URL.Path == "/repositories/11" && sourceReads > 2
+				if !block {
+					return original.RoundTrip(r)
+				}
+				deadline, ok := r.Context().Deadline()
+				if !ok || !deadline.Before(parentDeadline) {
+					t.Fatal("optional read consumed the owning query deadline")
+				}
+				started++
+				<-r.Context().Done()
+				stopped++
+				return nil, r.Context().Err()
+			})
+			value, err := c.QueryRepository(ctx, []byte("private-fixture-pat"), "fixture-owner", "repo", domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryCI, Number: "17"})
+			if err != nil || ctx.Err() != nil || started == 0 || stopped != started || value.CI == nil || value.CI.WorkflowRuns != nil || value.CI.Result.State != domain.CIUnknown || value.CI.Validate(value.Items[0]) != nil {
+				t.Fatal("optional timeout erased ordinary CI or left an active read", err, started, stopped)
+			}
+			if len(value.CI.TestMerge.Contexts) != 1 || len(value.CI.Result.Requirements) != 2 {
+				t.Fatal("ordinary observations were not published")
+			}
+			for _, requirement := range value.CI.Result.Requirements {
+				if requirement.Workflow == nil && requirement.State != domain.CITerminalFailure {
+					t.Fatal("ordinary required check assessment changed")
+				}
+			}
+		})
+	}
+}
+
 func TestWorkflowSuiteInventoryCompletesPaginationAndCannotIgnoreUnboundActions(t *testing.T) {
 	for _, mode := range []string{"complete", "missing-run", "missing-app", "malformed-app", "foreign-parent", "changed-total"} {
 		t.Run(mode, func(t *testing.T) {
