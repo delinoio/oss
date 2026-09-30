@@ -757,7 +757,27 @@ async fn open_browser(
     })
     .await
     .map_err(|_| NativeFailure::SidecarFailed)??;
-    if let Some(original) = binding {
+    if let Some(original) = &binding {
+        let current = saved_binding(&window, &windows)?;
+        if current.instance != original.instance
+            || !current.profile.same_authority(&original.profile)
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    } else {
+        trusted_main(&window)?;
+    }
+    let storage_host = Arc::clone(host.inner());
+    let storage_scope = scope.clone();
+    let storage_record = record.clone();
+    let label = window.label().to_string();
+    let storage_view = view_id.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        storage_host.prepare_open(&label, &storage_view, storage_scope, storage_record, &url)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)??;
+    if let Some(original) = &binding {
         let current = saved_binding(&window, &windows)?;
         if current.instance != original.instance
             || !current.profile.same_authority(&original.profile)
@@ -771,7 +791,7 @@ async fn open_browser(
     let (send, receive) = tokio::sync::oneshot::channel();
     let copy = app.clone();
     app.run_on_main_thread(move || {
-        let _ = send.send(host.open(&copy, &window, scope, record, url, bounds, view_id));
+        let _ = send.send(host.open(&copy, &window, scope, record, bounds, view_id));
     })
     .map_err(|_| NativeFailure::SidecarFailed)?;
     receive.await.map_err(|_| NativeFailure::SidecarFailed)?
@@ -812,7 +832,43 @@ async fn control_browser(
             return Err(NativeFailure::Stopped);
         }
     }
-    if let Some(original) = binding {
+    if let Some(original) = &binding {
+        let current = saved_binding(&window, &windows)?;
+        if current.instance != original.instance
+            || !current.profile.same_authority(&original.profile)
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    } else {
+        trusted_main(&window)?;
+    }
+    let prepared_revision = if matches!(
+        action,
+        browser_host::Action::Hide | browser_host::Action::Resize
+    ) {
+        None
+    } else {
+        let storage_host = Arc::clone(host.inner());
+        let label = window.label().to_string();
+        let storage_profile = profile_id.clone();
+        let storage_view = view_id.clone();
+        let storage_url = url.clone();
+        Some(
+            tauri::async_runtime::spawn_blocking(move || {
+                storage_host.prepare_control(
+                    &label,
+                    &storage_profile,
+                    &storage_view,
+                    action,
+                    storage_url.as_deref(),
+                    tab_id.as_deref(),
+                )
+            })
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)??,
+        )
+    };
+    if let Some(original) = &binding {
         let current = saved_binding(&window, &windows)?;
         if current.instance != original.instance
             || !current.profile.same_authority(&original.profile)
@@ -833,7 +889,7 @@ async fn control_browser(
             &view_id,
             action,
             url,
-            tab_id,
+            prepared_revision,
             bounds,
         ));
     })

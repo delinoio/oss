@@ -27,3 +27,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Protected browser contexts follow `docs/cmds-delidev-browser-contract.md`. Reserve exact presentation IDs before asynchronous Go reads, keep raw external CEF children outside Tauri IPC/scripts, and count native creation/close callbacks through exit. Never remove a profile before poller join, all native close proofs and independently observed CEF shutdown return; retain original offline removal intents and exact acknowledgment retries.
 
 - Before forgetting a saved connection, persist its original browser scope for local purge. Discover completed CLI removals through retained connection tombstones; deny reopen and purge only after independently completed CEF shutdown, without using deleted client credentials or claiming remote acknowledgment.
+
+- Browser validation, profile reads and durable writes run on serialized workers without holding native state during I/O. Post only CEF/native presentation work to the UI loop, recheck trusted documents and exact generations after preparation, coalesce bounded address updates, and join their worker before post-shutdown purge.
