@@ -104,3 +104,27 @@ outcome handling. Windows ACLs remain independently enforced by the existing
 security primitive; Unix shared-mode fixtures are explicitly skipped there.
 These filesystem and controlled lifecycle checks do not establish installed-native
 manual compaction acceptance.
+
+## Post-review aggregate validation
+
+After repair commits `22a49c745` and `b75e83374`,
+`go vet -p 1 ./cmds/delidev-cli/...` passed with no diagnostics.
+`GOMAXPROCS=2 go test -race -p 2 -timeout=10m ./cmds/delidev-cli/...`
+completed with exit 1. CLI (265.356 s), Claude (158.394 s), Codex (178.096 s),
+OpenCode (78.859 s), storage (447.143 s) and the complete Worker package
+(370.289 s) passed, along with the other completed packages.
+
+Grok, server and workspace packages reached their ten-minute package bounds.
+Their timeout snapshots showed existing initialization/Plan,
+execution-authority and PR-worktree preparation tests still running, respectively.
+These snapshots do not establish the cause of the package timeouts. The focused
+compaction checks above passed independently; the aggregate run is not a full-suite
+pass. No race-detector report appeared in the collected output. No production or
+fixture ownership/deadline requirements were changed to obtain these results.
+
+The original broader-race failures, failed frontend singleton retry and unverified
+installed Claude 2.1.236 compaction acceptance remain recorded above. This repair
+rerun did not repeat frontend or installed-native acceptance, and does not upgrade
+protocol fixtures into account/platform acceptance. Generated repository-owned
+`dist` directories were removed after validation; the private test processes from
+this aggregate run had exited before final cleanup.
