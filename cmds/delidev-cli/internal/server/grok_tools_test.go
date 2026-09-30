@@ -345,3 +345,22 @@ func TestGrokPublicOriginalPlanQuestionsRevisionsAndTransitions(t *testing.T) {
 		})
 	}
 }
+
+func TestGrokInitialPlanTerminalDoesNotCreateCommonPlanGate(t *testing.T) {
+	f := newGrokPublicationFixture(t, domain.PlanMode)
+	f.registerGrant(t)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+	usage := grokServerResponse(f, 3, 1)
+	f.publish(t, usage)
+	event := f.event(domain.ExecutionTurnFinished, 4)
+	event.Outcome = domain.ExecutionSucceeded
+	event.GrokToolsTerminal = &domain.GrokToolsTerminal{Kind: domain.GrokClosedFirstTools, NativeEventID: string(f.thread) + "-100", TimestampMS: "1", ElapsedMS: "3", Model: f.input.Configuration.NativeModel, Reason: domain.GrokToolsEndTurn, Counts: usage.GrokUsage.Counts, TotalTokens: "16", ModelCalls: "1", APIDurationMS: "2", Turns: "1"}
+	f.publish(t, event)
+	f.reportCompletion(t, domain.ExecutionCompletion{Version: 1, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, NativeThreadID: domain.NativeIdentity(f.thread), NativeTurnID: domain.NativeIdentity(f.turn), LastSequence: 4, Outcome: domain.ExecutionSucceeded, CleanupVerified: true})
+	record, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	session, decodeErr := store.Decode[domain.Session](record)
+	if err != nil || decodeErr != nil || session.Execution.GrokToolsTerminal == nil || session.Dispatch != domain.DispatchPaused {
+		t.Fatal("original Plan terminal/report was replaced with a common gate", err, decodeErr)
+	}
+}
