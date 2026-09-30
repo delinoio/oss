@@ -20,3 +20,5 @@ export * as UsageQuery from "./gen/delidev/v1/delidev-UsageService_connectquery.
 export * as IntegrationQuery from "./gen/delidev/v1/delidev-IntegrationService_connectquery.js";
 
 export * as WorkspaceStorageQuery from "./gen/delidev/v1/delidev-WorkspaceStorageService_connectquery.js";
+
+export * as ForwardQuery from "./gen/delidev/v1/delidev-ForwardService_connectquery.js";

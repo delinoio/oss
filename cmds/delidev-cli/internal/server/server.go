@@ -56,6 +56,7 @@ type Service struct {
 	delidevv1connect.UnimplementedResourceServiceHandler
 	delidevv1connect.UnimplementedConfigurationServiceHandler
 	delidevv1connect.UnimplementedDeviceServiceHandler
+	delidevv1connect.UnimplementedForwardServiceHandler
 	delidevv1connect.UnimplementedWorkerServiceHandler
 	delidevv1connect.UnimplementedAccountServiceHandler
 	delidevv1connect.UnimplementedProviderServiceHandler
@@ -84,6 +85,11 @@ type Service struct {
 	pairAttempts       map[string]attemptWindow
 	workerStreams      map[domain.ID]workerStream
 	auxiliaryStreams   map[domain.ID]workerStream
+	forwardsOnce       sync.Once
+	forwardEpoch       domain.ID
+	forwardsMu         sync.Mutex
+	forwardRelays      map[domain.ID]*forwardRelay
+	forwardLanes       map[domain.ID]*forwardLane
 	workspaceReadsMu   sync.Mutex
 	workspaceReaders   map[domain.ID]*workspaceReader
 	executionOnce      sync.Once
@@ -318,6 +324,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	mux.Handle(delidevv1connect.NewConfigurationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewDeviceServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewWorkerServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewForwardServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewAccountServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewProviderServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewIntegrationServiceHandler(s, options...))
@@ -403,7 +410,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	})
 }
 func (s *Service) GetStatus(_ context.Context, req *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
-	response := connect.NewResponse(&pb.GetStatusResponse{Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, SchemaVersion: store.SchemaVersion, ServerId: string(s.Identity.ServerID), Listener: s.Endpoint.URL, StartedAt: s.Endpoint.StartedAt.Format(time.RFC3339Nano), Stopping: s.stopping.Load(), Capabilities: []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1, pb.SystemCapability_SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1}})
+	response := connect.NewResponse(&pb.GetStatusResponse{Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, SchemaVersion: store.SchemaVersion, ServerId: string(s.Identity.ServerID), Listener: s.Endpoint.URL, StartedAt: s.Endpoint.StartedAt.Format(time.RFC3339Nano), Stopping: s.stopping.Load(), Capabilities: []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1, pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1, pb.SystemCapability_SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1}})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }

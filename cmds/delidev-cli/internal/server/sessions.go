@@ -434,6 +434,11 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 		if r.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload current state before controlling it.")
 		}
+		if action == domain.ArchiveSession {
+			if err := tx.StopForwards(r.ID, ""); err != nil {
+				return nil, err
+			}
+		}
 		titleCleanupPending := false
 		if action == domain.StopSession || action == domain.ArchiveSession {
 			titleCleanupPending, err = cancelSessionTitleJob(tx, value.TitleJobID)

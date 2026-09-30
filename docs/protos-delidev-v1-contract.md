@@ -343,7 +343,13 @@ to the current session; cancellation binds it to the original current job.
 Successful preview, exact snapshot and original recovery job references have
 separate fields. Responses expose current original Resource jobs with request
 UUID/replay status; polling never resends native side effects. GetStatus adds
-`WORKSPACE_STORAGE_V1`. Snapshot metadata stays in the existing Snapshot kind
+`WORKSPACE_STORAGE_V1` at enum value 3; the existing `SESSION_FORWARDING_V1`
+retains value 2. Capability values are distinct and never alias or reinterpret
+main's forwarding capability. Snapshot metadata stays in the existing Snapshot kind
 and generated Go/TypeScript/Connect Query bindings reproduce from the schema.
 The [storage contract](cmds-delidev-storage-contract.md) owns exact authorization,
 state publication, safe copying, cancellation and explicit recovery semantics.
+
+## Authenticated development-server forwarding
+
+Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.

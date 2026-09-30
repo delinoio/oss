@@ -51,11 +51,12 @@ const (
 	UsageKind       Kind = "usage"
 	JobKind         Kind = "job"
 	RoutingKind     Kind = "routing"
+	ForwardKind     Kind = "forward"
 )
 
 func (k Kind) Valid() bool {
 	switch k {
-	case PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind:
+	case ForwardKind, PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind:
 		return true
 	default:
 		return false

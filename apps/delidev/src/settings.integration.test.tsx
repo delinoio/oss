@@ -529,8 +529,8 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Real server profile" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "fixture-owner" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  // The real server commits durable SQLite state before the list refresh.
-  // Allow the fixture's bounded I/O budget instead of the one-second DOM default.
+  // Each save crosses the real Go mutation and list refetch. Use the ordinary
+  // one-second wait only if this fixture stops exercising the native server.
   fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }, { timeout: 15000 }));
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Renamed server profile" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));

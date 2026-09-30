@@ -134,3 +134,7 @@ its exact receipt. Explicit recovery is separate from native replay. Generated
 `WORKSPACE_STORAGE_V1` permits clients to discover this boundary; no desktop
 storage workflow or automatic retention is implied. Decimal byte/revision values
 remain precise. See the [storage contract](cmds-delidev-storage-contract.md).
+
+## Authenticated development-server forwarding
+
+Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
