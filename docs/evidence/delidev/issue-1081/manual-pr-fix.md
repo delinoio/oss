@@ -37,7 +37,7 @@ local Git repositories. They do not use user GitHub/provider credentials.
 | `go test -p 1 ./cmds/delidev-cli/internal/cli -run 'TestPRFix' -count=1` | Passed six CLI receipt, source, request and capability cases. |
 | `go test -p 1 ./cmds/delidev-cli/internal/workspace -run '^TestPRGitToolForkPush' -count=1 -timeout=8m` | Passed (151.425 seconds). Actual Git push to the test-owned fork, original-source proof, missing write access, changed remote head, push-only destination rewrite, no-push success, exact lease argument restriction and replay rejection. Earlier runs hit the bounded preparation timeout; no production deadline was relaxed. |
 | `go test -p 1 ./cmds/delidev-cli/internal/workspace -run '^TestPRGitPushOnlyRewrite' -count=1` | Passed. Real Git configuration read rejects a matching `pushInsteadOf` and permits an unrelated rewrite. |
-| `go vet -p 1 ./cmds/delidev-cli/...` | Passed for the implementation. A final repeat including added CLI/domain fixtures is in progress at this record's initial publication. |
+| `go vet -p 1 ./cmds/delidev-cli/...` | Passed, including the final repeat with added CLI/domain fixtures. |
 | `pnpm proto:check` | Passed formatting, lint, pointer-only baseline breaking check and forced generation without drift. |
 | `pnpm exec vitest run tests/legacy-imports.test.ts` in the API-client package | Passed both compatibility/reflection cases. |
 | `pnpm typecheck` in `apps/delidev` | Passed for the final frontend source. |
