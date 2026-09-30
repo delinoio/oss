@@ -45,3 +45,25 @@ Executed on 2026-09-30 with `GOCACHE=/tmp/delidev-1171-gocache GOMAXPROCS=4`:
 The CI-merge archive includes main's actual activity writer and validation.
 These are isolated SQLite and protocol-source fixtures; they do not establish
 real native/account/distribution acceptance or reclaimed physical space.
+
+## Final validation and limits
+
+Source repair commit: `4948d23b`. With the same private Go cache and `GOMAXPROCS=4`, `go vet -p 2 ./cmds/delidev-cli/...` passed. The exact CI-merge
+archive's complete store suite (`go test -p 2
+./cmds/delidev-cli/internal/store -count=1`) passed in 315.473 seconds, covering
+main's actual PR activity integration beyond the original failing fixture.
+
+The required root race command was attempted with per-package fail-fast:
+`go test -race -p 2 -failfast ./cmds/delidev-cli/...`. It finished with exit 1 after
+`TestCLISessionAcceptanceQueueAndArchive` hit the previously documented
+creation-diff `unavailable` failure at `sessions_test.go:239`; the CLI package took
+179.583 seconds. Fail-fast did not run every remaining package, and this is not a
+full-suite pass. The runner had already exited when cancellation was considered;
+no process signals were sent. This does not change the prior issue README's
+unchanged-base qualification or claim a new reproduction on base-only source.
+
+The GitHub Codex connector separately reported exhausted code-review credits in
+[its PR comment](https://github.com/delinoio/oss/pull/1171#issuecomment-5907048194).
+Repository-admin action is required to restore fresh review capacity. No review
+approval or fresh CI pass is inferred from this repair's local checks; publication
+starts new CI and invalidates the previous head's results.
