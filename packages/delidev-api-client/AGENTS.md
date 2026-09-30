@@ -4,6 +4,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Generated ActivityQuery retains the typed PR metadata and PR_HANDLING_V1 capability under the activity contract. Keep exact source revisions and version references; source inspection is an explicit disposable read, and attempt success cannot become verified handling.
+
 - DeliDev generated user-service queries retain exact bigint revisions and original requests; capability support is separate from native manager availability and cleanup. Keep private native identities and credentials off the service wire, and follow `docs/cmds-delidev-user-services-contract.md`.
 
 - Backup job observation uses owner/client `GetBackupCreation` and `GetBackupDeletion` independently of bounded history pages. Keep accepted IDs and exact revisions through navigation, refresh inventory after observed completion, and never replay a mutation to poll status. Follow `docs/cmds-delidev-storage-contract.md`.

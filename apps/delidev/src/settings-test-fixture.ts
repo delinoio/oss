@@ -8,6 +8,7 @@ import processInfo from "node:process";
 import { promisify } from "node:util";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
+import { configure, getConfig } from "@testing-library/react";
 import { SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
 
 export const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
@@ -24,10 +25,16 @@ export async function stopChild(child?: ChildProcess) {
 
 // Call once per integration test file; no process or database is shared across files.
 export function useSettingsFixture() {
+const originalUiConfig = getConfig();
 let directory: string, transport: Transport, providerOrigin: string, binary: string, scope: string;
 let process: ChildProcess | undefined, worker: ChildProcess | undefined, provider: Server | undefined;
 afterEach(() => vi.unstubAllGlobals());
 beforeAll(async () => {
+  // These fixtures wait for real, sometimes sequential Go RPCs rather than a
+  // synchronous router. The library's one-second default is not a server SLA.
+  // Keep the wait bounded and restore the caller's setting after cleanup;
+  // return to the default only if fixture reads become synchronously coordinated.
+  configure({ asyncUtilTimeout: 5000, reactStrictMode: originalUiConfig.reactStrictMode });
   directory = await mkdtemp(join(tmpdir(), "delidev-settings-"));
   binary = join(directory, processInfo.platform === "win32" ? "delidev.exe" : "delidev");
   await promisify(execFile)("go", ["build", "-o", binary, "./cmds/delidev-cli"], { cwd: resolve(processInfo.cwd(), "../.."), timeout: 120000 });
@@ -74,6 +81,7 @@ afterAll(async () => {
     }
     await stopChild(process);
   } finally {
+    configure({ asyncUtilTimeout: originalUiConfig.asyncUtilTimeout, reactStrictMode: originalUiConfig.reactStrictMode });
     if (provider?.listening) await new Promise<void>((resolve) => provider!.close(() => resolve()));
     if (directory) await rm(directory, { recursive: true, force: true });
   }

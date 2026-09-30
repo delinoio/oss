@@ -53,7 +53,7 @@ func (c *ClaudeContentPublisher) RetainCompletion(ctx context.Context, api *clau
 	if !c.tasks.InlineBashHistoryReady() || c.citationHistoryUnsupported {
 		return completion, nil
 	}
-	if completion.Outcome != domain.ExecutionSucceeded || c.terminal == nil || c.stop != nil || c.denial != nil || c.interruption != nil || len(c.messages) == 0 {
+	if c.terminal == nil || !c.terminal.ContinuationCandidate() || c.terminal.Outcome() != completion.Outcome || c.stop != nil || c.denial != nil || c.interruption != nil || len(c.messages) == 0 {
 		return completion, nil
 	}
 	for _, tool := range c.tools {
@@ -81,7 +81,7 @@ func (c *ClaudeContentPublisher) RetainCompletion(ctx context.Context, api *clau
 	completion.Version, completion.NativeCheckpointDigest = 2, digest
 	c.checkpoint = &completion
 	if logger := b.publisher.config.Logger; logger != nil {
-		logger.InfoContext(ctx, "claude_original_checkpoint_retained", "job_id", b.journal.JobID, "execution_id", b.journal.ExecutionID)
+		logger.InfoContext(ctx, "claude_original_checkpoint_retained", "job_id", b.journal.JobID, "execution_id", b.journal.ExecutionID, "outcome", completion.Outcome)
 	}
 	return completion, nil
 }

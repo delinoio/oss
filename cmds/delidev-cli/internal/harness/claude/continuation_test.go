@@ -179,6 +179,89 @@ func TestClosedContinuationPreservesFailureUntilExplicitResume(t *testing.T) {
 	}
 }
 
+func TestOriginalFailedEOFCheckpointPreservesFailureAndRequiresExplicitResume(t *testing.T) {
+	for _, change := range []string{"original", "read", "bash", "question", "unfinished-callback", "permission", "missing-history", "changed-history"} {
+		t.Run(change, func(t *testing.T) {
+			s, transport := continuationFixture(t)
+			switch change {
+			case "read":
+				s = readContinuationFixture(t)
+			case "bash":
+				s, _ = approvedBashContinuationFixture(t)
+			case "question":
+				s, _ = answeredQuestionContinuationFixture(t)
+			}
+			transport = s.stream.(*sessionFixtureTransport)
+			ctx := context.Background()
+			s.current.terminal.Error = true
+			for _, message := range s.history.messages {
+				s.current.seen[message.NativeID] = true
+			}
+			if result, err := s.FinishOriginalInput(ctx, s.config.Process.OwnerID, s.config.SessionID, s.current.input, s.current.turnID); err != nil || !result.Error {
+				t.Fatal("failed input lost original clean EOF", err)
+			}
+			path := filepath.Join(s.config.Home, "projects", "delidev", string(s.config.SessionID)+".jsonl")
+			switch change {
+			case "unfinished-callback":
+				s.current.interactions = map[domain.ID]*interactionState{domain.NewID(): {echoed: true}}
+			case "permission":
+				s.permissionChanged = true
+			case "missing-history":
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			case "changed-history":
+				if err := os.WriteFile(path, []byte("{}\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			closed, err := s.RetainOriginalCompletion(ctx, s.config.Process.OwnerID, s.config.SessionID, s.current.input, s.current.turnID)
+			if change != "original" && change != "read" && change != "bash" && change != "question" {
+				if err == nil || closed != nil {
+					t.Fatal("unproved failed history acquired a checkpoint")
+				}
+				return
+			}
+			if err != nil || !closed.requiresResume {
+				t.Fatal("failed EOF did not retain paused history", err)
+			}
+			raw, ref, err := closed.RetainCheckpoint(ctx)
+			if err != nil || !ref.RequiresResume {
+				t.Fatal("failed checkpoint lost explicit intent", err)
+			}
+			cfg := s.config
+			cfg.API = APIConfig{ServerOrigin: s.serverOrigin}
+			inspection := cfg
+			inspection.Instructions = ""
+			if err := InspectCheckpoint(ctx, inspection, checkpointDigest([]byte(cfg.Instructions)), raw, ref); err != nil {
+				t.Fatal("comparison-only failed checkpoint rejected", err)
+			}
+			restored, err := RestoreCheckpoint(ctx, cfg, raw, ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			api := APIConfig{ServerOrigin: s.serverOrigin, Token: nativeAPIFixtureToken}
+			if _, err := ContinueAPISession(ctx, restored, domain.NewID(), api, ContinueSuccessfulRun); err == nil || restored.used {
+				t.Fatal("failed checkpoint automatically started another process")
+			}
+			next, err := ContinueAPISession(ctx, restored, domain.NewID(), api, ResumeTerminalRun)
+			if err != nil {
+				t.Fatal("explicit failed Resume was blocked", err)
+			}
+			defer next.Close()
+			if next.current.terminal.Successful() || next.current.input != ref.InputID || next.config.Process.OwnerID == ref.OwnerID {
+				t.Fatal("replacement lost failure or reused execution ownership")
+			}
+			if _, err := next.SendInput(ctx, ref.InputID, "Never resend the failed input", ResumeTerminalRun); err == nil {
+				t.Fatal("Resume resent its predecessor")
+			}
+			if transport.sends.Load() != 0 || transport.replies.Load() != 0 || transport.interrupts.Load() != 0 {
+				t.Fatal("retention or inspection replayed native work")
+			}
+		})
+	}
+}
+
 func TestClosedContinuationRejectsChangedAuthorityOrHistoryWithoutReplay(t *testing.T) {
 	for _, name := range []string{"owner", "token", "origin", "intent", "used", "file-missing", "file-content", "file-metadata", "instructions", "settings", "runtime", "canceled"} {
 		t.Run(name, func(t *testing.T) {

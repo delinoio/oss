@@ -2,6 +2,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- PR activity follows `docs/cmds-delidev-activity-contract.md`: publish immutable metadata with its source transaction, preserve receipt/alias/unchanged-state deduplication and original actor/time/version references, and remove all session-owned attempt transitions on deletion, including pre-binding reservations. Do not backfill inferred history. Dedicated verification retention is independently bounded and proof-replay-safe; no production verifier or public write is enabled by its private storage boundary.
+
 - `backup create --wait` returns a typed nonzero exit for failed or unconfirmed completion and retains the accepted request/job result on failure, interruption and read errors. Waiting never creates a replacement job.
 
 - Managed creation and pre-migration publication share the 8 GiB inspection/deletion bound. Reject oversized copies before publication, preserve the live database and settle durable size-limit failures terminally.
