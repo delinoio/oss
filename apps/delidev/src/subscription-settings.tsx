@@ -157,7 +157,7 @@ function SubscriptionRow({ account, now, unavailable }: { account: SubscriptionA
       <div className="actions"><button type="button" disabled={!canDisconnect} onClick={() => { setConfirm(false); account.disconnect?.(); disconnectButton.current?.focus(); }}>Confirm disconnection</button><button type="button" onClick={closeConfirm}>Keep account connected</button></div>
     </div> : null}
     {details ? <div id={detailsId} className="subscription-details"><h4>Account details</h4><dl><div><dt>Health</dt><dd>{account.health || "Unknown"}</dd></div><div><dt>Account</dt><dd>{account.enabled ? "Enabled" : "Disabled"}</dd></div><div><dt>Provider status</dt><dd>{account.providerState}</dd></div><div><dt>Exhaustion</dt><dd>{account.confirmedExhausted ? "Confirmed exhausted" : "Not confirmed exhausted"}</dd></div></dl>
-      <div className="subscription-quota-grid">{account.windows.map((window, index) => <QuotaWindow key={`${window.id}:${index}`} window={window} now={now} />)}</div>
+      {account.windows.length > 2 ? <div className="subscription-quota-grid">{account.windows.slice(2).map((window, index) => <QuotaWindow key={`${window.id}:${index + 2}`} window={window} now={now} />)}</div> : null}
       <div className="actions"><button type="button" disabled={!account.metadataAvailable} onClick={account.details}>Manage metadata</button><button type="button" onClick={() => { setDetails(false); menuButton.current?.focus(); }}>Close account details</button></div>
     </div> : null}
   </article>;

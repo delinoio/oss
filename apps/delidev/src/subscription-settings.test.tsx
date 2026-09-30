@@ -158,3 +158,21 @@ it.each([Operation.Uncertain, Operation.CleanupPending, Operation.Failed])("bloc
   expect(first.refresh).not.toHaveBeenCalled();
   expect(first.disconnect).not.toHaveBeenCalled();
 });
+
+
+it.each([1, 2, 3])("renders each of %i quota windows once when account details are open", (count) => {
+  const first = row("chatgpt", Array.from({ length: count }, (_, index) => window(`window-${index}`, .5)));
+  render(view([first]));
+  expect(screen.getAllByRole("progressbar")).toHaveLength(Math.min(2, count));
+  fireEvent.click(screen.getByRole("button", { name: `More actions for ${first.alias}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Account details" }));
+  expect(screen.getAllByRole("progressbar")).toHaveLength(count);
+  for (const quota of first.windows) expect(screen.getAllByRole("progressbar", { name: `${quota.id} remaining` })).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Close account details" }));
+  expect(screen.getAllByRole("progressbar")).toHaveLength(Math.min(2, count));
+  if (count > 2) {
+    fireEvent.click(screen.getByRole("button", { name: `Show all ${count} quota windows` }));
+    expect(screen.getAllByRole("progressbar")).toHaveLength(count);
+    for (const quota of first.windows) expect(screen.getAllByRole("progressbar", { name: `${quota.id} remaining` })).toHaveLength(1);
+  }
+});
