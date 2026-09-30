@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { archive, publish } from '../scripts/github-release.mjs';
+import { gzipSync, gunzipSync } from 'node:zlib';
+import { archive, archiveNames, darwinNotices, publish, readDarwinArchive } from '../scripts/github-release.mjs';
+import { machO } from './fixtures.mjs';
 import { extractExecutable, identity } from '../../../scripts/release/linux-packages/model.mjs';
 
 const plan = identity({ project: 'clibox', version: '1.2.3', revision: 'a'.repeat(40) });
-const files = new Map([['clibox-linux-amd64.tar.gz', Buffer.from('amd64')], ['clibox-linux-arm64.tar.gz', Buffer.from('arm64')], ['SHA256SUMS', Buffer.from('checksums')]]);
+const files = new Map([...archiveNames, 'SHA256SUMS'].map((name) => [name, Buffer.from(name)]));
 function fixture() {
   const state = { release: null, writes: 0, signed: 0, tag: plan.revision, rejectSignature: false, interrupt: false };
   const adapters = {
@@ -30,10 +32,10 @@ test('GNU release archive is deterministic and contains exactly the original exe
 test('publication completes a signed draft and reuses a complete public release without writes', async () => {
   const { state, adapters } = fixture();
   await publish({ plan, files }, adapters);
-  assert.equal(state.release.draft, false); assert.equal(state.release.assets.length, 6); assert.equal(state.signed, 3);
+  assert.equal(state.release.draft, false); assert.equal(state.release.assets.length, 10); assert.equal(state.signed, 5);
   const writes = state.writes;
   await publish({ plan, files }, adapters);
-  assert.equal(state.writes, writes); assert.equal(state.signed, 3);
+  assert.equal(state.writes, writes); assert.equal(state.signed, 5);
 });
 test('interrupted upload resumes only missing assets and preserves completed signatures', async () => {
   const { state, adapters } = fixture();
@@ -43,8 +45,35 @@ test('interrupted upload resumes only missing assets and preserves completed sig
   const firstSignature = state.release.assets.find(({ name }) => name.endsWith('.sigstore.json')).bytes;
   adapters.upload = upload;
   await publish({ plan, files }, adapters);
-  assert.equal(state.release.draft, false); assert.equal(state.signed, 3);
+  assert.equal(state.release.draft, false); assert.equal(state.signed, 5);
   assert.equal(state.release.assets.find(({ name }) => name.endsWith('.sigstore.json')).bytes, firstSignature);
+});
+test('Darwin archives retain executable bytes and original license notices reproducibly', () => {
+  for (const arch of ['amd64', 'arm64']) {
+    const binary = machO(arch);
+    const notices = darwinNotices();
+    const bytes = archive(binary, notices);
+    assert.deepEqual(bytes, archive(binary, notices));
+    const entries = readDarwinArchive(bytes, arch);
+    assert.deepEqual(entries.get('clibox'), binary);
+    for (const [name, value] of notices) assert.deepEqual(entries.get(name), value);
+    assert.throws(() => readDarwinArchive(bytes, arch === 'amd64' ? 'arm64' : 'amd64'), /architecture/u);
+    assert.throws(() => readDarwinArchive(archive(binary), arch), /Incomplete/u);
+    notices.set('LICENSE.fspy', Buffer.from('missing original notice'));
+    assert.throws(() => readDarwinArchive(archive(binary, notices), arch), /license mismatch/u);
+    notices.set('../outside', Buffer.from('untrusted'));
+    assert.throws(() => readDarwinArchive(archive(binary, notices), arch), /Invalid Darwin archive entry/u);
+  }
+});
+test('Darwin archive verification rejects missing execute bits and truncated payloads', () => {
+  const bytes = archive(machO('arm64'), darwinNotices());
+  const tar = gunzipSync(bytes);
+  tar.write('0000644\0', 100, 8);
+  tar.fill(32, 148, 156);
+  const checksum = tar.subarray(0, 512).reduce((sum, byte) => sum + byte, 0);
+  tar.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 8);
+  assert.throws(() => readDarwinArchive(gzipSync(tar), 'arm64'), /Invalid Darwin archive payload/u);
+  assert.throws(() => readDarwinArchive(gzipSync(gunzipSync(bytes).subarray(0, 600)), 'arm64'), /Incomplete Darwin archive/u);
 });
 test('wrong tags, corrupt bytes, bad signatures and incomplete public releases fail before writes', async () => {
   const { state, adapters } = fixture(); state.tag = 'b'.repeat(40);

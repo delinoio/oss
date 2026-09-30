@@ -1,0 +1,31 @@
+class Clibox < Formula
+  desc "Native utilities for configuration, processes, and file workflows"
+  homepage "https://oss.delino.io/clibox/"
+  version "__VERSION__"
+  license "Apache-2.0"
+
+  depends_on :macos
+
+  on_intel do
+    url "__DARWIN_AMD64_URL__"
+    sha256 "__DARWIN_AMD64_SHA256__"
+  end
+  on_arm do
+    url "__DARWIN_ARM64_URL__"
+    sha256 "__DARWIN_ARM64_SHA256__"
+  end
+
+  def install
+    bin.install "clibox"
+    prefix.install "LICENSE", "NOTICE", "LICENSE.fspy"
+  end
+
+  test do
+    assert_equal "clibox #{version}", shell_output("#{bin}/clibox --version").strip
+    assert_match "Usage:", shell_output("#{bin}/clibox --help")
+    assert_match "Apache License", (prefix/"LICENSE").read
+    assert_match "VoidZero", (prefix/"LICENSE.fspy").read
+    (testpath/"input.txt").write("homebrew fixture")
+    assert_equal "aG9tZWJyZXcgZml4dHVyZQ==", shell_output("#{bin}/clibox base64 encode --input=#{testpath}/input.txt").strip
+  end
+end

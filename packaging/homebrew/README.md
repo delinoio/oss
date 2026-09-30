@@ -9,6 +9,7 @@ Supported package identifiers:
 - `with-watch` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`)
 - `derun` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`)
 - `runmoor` (prebuilt formula: macOS 14+ `darwin/arm64` only)
+- `clibox` (prebuilt formula: macOS `darwin/amd64` and `darwin/arm64`, starting with the next release)
 
 Runmoor uses the signed public release archive without rebuilding it. Its dedicated workflow verifies all release assets and runs native Homebrew installation, tests and audit before obtaining tap publication credentials. Initial publication and recovery can target an existing public version without a new release. See `docs/cmds-runmoor-foundation.md` and this directory's `AGENTS.md` for the contract.
 

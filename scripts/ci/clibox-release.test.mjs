@@ -55,7 +55,7 @@ test("OIDC is restricted to exact-tag enabled publication after the complete ver
   const publish = release.jobs.publish.steps.find(({ run }) => run?.includes("publish.mjs --publish"));
   assert.equal(publish.env.CLIBOX_NPM_PUBLISH_ENABLED, "${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}");
   assert.ok(release.jobs.package.steps.find(({ run }) => run?.includes("publish.mjs") && !run.includes("--publish")));
-  assert.doesNotMatch(JSON.stringify(release), /secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN|action-gh-release|homebrew/u);
+  assert.doesNotMatch(JSON.stringify(release), /NODE_AUTH_TOKEN|NPM_TOKEN|action-gh-release/u);
   assert.match(source(".github/workflows/release-clibox.yml"), /npm publication disabled/u);
   const uploaded = release.jobs.package.steps.find(({ uses }) => uses?.startsWith("actions/upload-artifact@"));
   const downloaded = release.jobs.publish.steps.find(({ uses }) => uses?.startsWith("actions/download-artifact@"));
@@ -74,6 +74,36 @@ test("publication installs an exact OIDC-capable npm before checking and using i
   assert.match(steps[check].run, /npm 11\.5\.1\+ is required for OIDC/u);
 });
 
+test("macOS Homebrew validates both native architectures before obtaining tap-only credentials", () => {
+  const native = release.jobs["homebrew-test"];
+  assert.deepEqual(native.needs, ["prepare", "publish-release"]);
+  assert.deepEqual(native.strategy.matrix.include, [
+    { runner: "macos-15-intel", arch: "amd64", machine: "x86_64" },
+    { runner: "macos-14", arch: "arm64", machine: "arm64" },
+  ]);
+  assert.match(JSON.stringify(native.steps), /brew audit --strict/u);
+  assert.match(JSON.stringify(native.steps), /brew test/u);
+  const job = release.jobs.homebrew;
+  assert.deepEqual(job.needs, ["prepare", "homebrew-test"]);
+  for (const guarded of [native, job]) {
+    for (const condition of ["dry_run == 'false'", "github.repository == 'delinoio/oss'", "refs/tags/clibox@v"]) assert.ok(guarded.if.includes(condition));
+    assert.doesNotMatch(guarded.if, /NPM_PUBLISH_ENABLED/u);
+  }
+  const verify = job.steps.findIndex(({ run }) => run?.includes('homebrew.mjs prepare --validated'));
+  const token = job.steps.findIndex(({ uses }) => uses?.startsWith('actions/create-github-app-token@'));
+  const publish = job.steps.findIndex(({ run }) => run?.includes('homebrew.mjs publish --validated'));
+  assert.ok(verify >= 0 && verify < token && token < publish);
+  assert.equal(job.steps[token].with.repositories, 'homebrew-tap');
+  assert.equal(job.steps[token].with['permission-contents'], 'write');
+  for (const [id, value] of Object.entries(release.jobs)) if (id !== 'homebrew') assert.doesNotMatch(JSON.stringify(value), /DELINO_RELEASE_BOT_PRIVATE_KEY/u);
+  assert.equal(job.steps.filter(({ uses }) => uses?.startsWith('actions/download-artifact@')).length, 2);
+  assert.deepEqual(release.jobs['homebrew-readback'].needs, ['prepare', 'homebrew']);
+  assert.deepEqual(release.jobs['homebrew-readback'].strategy.matrix.runner, ['macos-15-intel', 'macos-14']);
+  assert.match(JSON.stringify(release.jobs['homebrew-readback']), /brew install delinoio\/tap\/clibox/u);
+  for (const name of ['homebrew-test', 'homebrew', 'homebrew-readback']) assert.ok(release.jobs.summary.needs.includes(name));
+  assert.match(JSON.stringify(release.jobs.package), /homebrew.mjs render/u);
+});
+
 test("clibox input changes select its aggregated consumer checks and force external Cargo inputs", () => {
   const id = "node-clibox-test";
   assert.equal(jobPaths[id].workspace, "@delino/clibox");
@@ -83,7 +113,7 @@ test("clibox input changes select its aggregated consumer checks and force exter
   const smoke = source("packages/clibox/scripts/smoke.mjs");
   for (const command of ["text", "time", "base64", "hash"]) assert.ok(smoke.includes('invoke(["' + command + '"'));
   for (const event of [Event.Push, Event.PullRequest]) {
-    for (const file of ["packages/clibox/src/launcher.cjs", "crates/clibox/src/main.rs", "crates/clibox-config/src/lib.rs", "crates/clibox-fspy/src/lib.rs", "crates/fspy/src/lib.rs", "crates/clibox-system/src/lib.rs", "crates/clibox-transform/src/lib.rs", "crates/clibox-wait/src/lib.rs", ".github/workflows/release-clibox.yml", "scripts/release/project.mjs"]) {
+    for (const file of ["packages/clibox/src/launcher.cjs", "crates/clibox/src/main.rs", "crates/clibox-config/src/lib.rs", "crates/clibox-fspy/src/lib.rs", "crates/fspy/src/lib.rs", "crates/clibox-system/src/lib.rs", "crates/clibox-transform/src/lib.rs", "crates/clibox-wait/src/lib.rs", ".github/workflows/release-clibox.yml", "scripts/release/project.mjs", "packaging/homebrew/templates/clibox.rb.tmpl", "scripts/release/update-homebrew.sh", "NOTICE"]) {
       const plan = planJobs(event, [file]);
       assert.equal(plan.jobs[id], true, file);
       assert.equal(plan.forced[id], !file.startsWith("packages/clibox/"), file);

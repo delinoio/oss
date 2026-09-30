@@ -2,21 +2,65 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { gzipSync } from 'node:zlib';
-import { ensure, event, isMain, packageRoot, revision } from './common.mjs';
+import { gzipSync, gunzipSync } from 'node:zlib';
+import { ensure, event, isMain, packageRoot, revision, sourceText } from './common.mjs';
 import { tarEntries, verifySet } from './package.mjs';
 import { identity, sha256 } from '../../../scripts/release/linux-packages/model.mjs';
 import { readElf, verifyBundle } from '../../../scripts/release/linux-packages/release-input.mjs';
 
-// Fixed single-file ustar metadata keeps GNU archives reproducible across retries.
-export function archive(binary) {
+export const archiveNames = ['clibox-linux-amd64.tar.gz', 'clibox-linux-arm64.tar.gz', 'clibox-darwin-amd64.tar.gz', 'clibox-darwin-arm64.tar.gz'];
+export const unsignedNames = [...archiveNames, 'SHA256SUMS'];
+export const assetNames = unsignedNames.flatMap((name) => [name, `${name}.sigstore.json`]);
+export function darwinNotices() {
+  return new Map([
+    ['LICENSE', Buffer.from(sourceText('crates/clibox/LICENSE'))],
+    ['NOTICE', Buffer.from(sourceText('NOTICE'))],
+    // The embedded fspy, materialized-artifact and vt code share this original MIT notice.
+    ['LICENSE.fspy', Buffer.from(sourceText('crates/fspy/LICENSE'))],
+  ]);
+}
+
+function entry(name, bytes, mode) {
   const header = Buffer.alloc(512);
-  header.write('clibox');
+  header.write(name);
   const octal = (n, offset, width) => header.write(`${n.toString(8).padStart(width - 1, '0')}\0`, offset, width);
-  octal(0o755, 100, 8); octal(0, 108, 8); octal(0, 116, 8); octal(binary.length, 124, 12); octal(0, 136, 12);
+  octal(mode, 100, 8); octal(0, 108, 8); octal(0, 116, 8); octal(bytes.length, 124, 12); octal(0, 136, 12);
   header.fill(32, 148, 156); header[156] = 48; header.write('ustar\0', 257); header.write('00', 263);
   header.write(`${header.reduce((sum, byte) => sum + byte, 0).toString(8).padStart(6, '0')}\0 `, 148, 8);
-  return gzipSync(Buffer.concat([header, binary, Buffer.alloc((512 - binary.length % 512) % 512 + 1024)]), { level: 9 });
+  return Buffer.concat([header, bytes, Buffer.alloc((512 - bytes.length % 512) % 512)]);
+}
+
+// Fixed ustar metadata preserves existing single-file GNU archive bytes exactly.
+export function archive(binary, notices = new Map()) {
+  return gzipSync(Buffer.concat([entry('clibox', binary, 0o755), ...[...notices].map(([name, bytes]) => entry(name, bytes, 0o644)), Buffer.alloc(1024)]), { level: 9 });
+}
+
+export function inspectMachO(binary, arch) {
+  ensure(['amd64', 'arm64'].includes(arch) && binary.length >= 32 && binary.readUInt32LE(0) === 0xfeedfacf && binary.readUInt32LE(4) === (arch === 'amd64' ? 0x1000007 : 0x100000c) && binary.readUInt32LE(12) === 2, 'Wrong Mach-O executable architecture');
+}
+
+export function readDarwinArchive(bytes, arch) {
+  const tar = gunzipSync(bytes, { maxOutputLength: 64 * 1024 * 1024 });
+  const expected = darwinNotices();
+  const entries = new Map();
+  let offset = 0;
+  while (offset + 512 <= tar.length) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const text = (start, end) => header.subarray(start, end).toString().split('\0')[0];
+    const name = text(0, 100);
+    const size = Number.parseInt(text(124, 136), 8);
+    const mode = Number.parseInt(text(100, 108), 8);
+    const checksum = header.reduce((sum, byte, i) => sum + (i >= 148 && i < 156 ? 32 : byte), 0);
+    ensure(checksum === Number.parseInt(text(148, 156), 8) && text(257, 263) === 'ustar' && !text(345, 500) && header[156] === 48 && (name === 'clibox' || expected.has(name)) && !entries.has(name), 'Invalid Darwin archive entry');
+    ensure(Number.isSafeInteger(size) && size > 0 && offset + 512 + size <= tar.length && mode === (name === 'clibox' ? 0o755 : 0o644), 'Invalid Darwin archive payload');
+    entries.set(name, tar.subarray(offset + 512, offset + 512 + size));
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  ensure(entries.size === expected.size + 1 && entries.has('clibox') && offset + 1024 <= tar.length && tar.subarray(offset).every((byte) => byte === 0), 'Incomplete Darwin archive');
+  for (const [name, expectedBytes] of expected) ensure(entries.get(name)?.equals(expectedBytes), `Darwin license mismatch: ${name}`);
+  inspectMachO(entries.get('clibox'), arch);
+  return entries;
 }
 
 export function stage(directory, output, sourceRevision, inspect = readElf) {
@@ -31,6 +75,12 @@ export function stage(directory, output, sourceRevision, inspect = readElf) {
       const executable = path.join(temp, arch);
       writeFileSync(executable, binary); inspect(executable, arch);
       files.set(`clibox-linux-${arch}.tar.gz`, archive(binary));
+    }
+    for (const [cpu, arch] of [['x64', 'amd64'], ['arm64', 'arm64']]) {
+      const artifact = artifacts.find(({ name }) => name === `@delino/clibox-darwin-${cpu}`);
+      const binary = tarEntries(readFileSync(path.join(directory, artifact.filename))).get('bin/clibox').bytes;
+      inspectMachO(binary, arch);
+      files.set(`clibox-darwin-${arch}.tar.gz`, archive(binary, darwinNotices()));
     }
   } finally { rmSync(temp, { recursive: true, force: true }); }
   files.set('SHA256SUMS', Buffer.from([...files].map(([name, bytes]) => `${sha256(bytes)}  ${name}\n`).join('')));

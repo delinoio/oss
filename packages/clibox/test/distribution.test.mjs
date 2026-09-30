@@ -1,4 +1,5 @@
-import { stage } from '../scripts/github-release.mjs';
+import { archiveNames, readDarwinArchive, stage } from '../scripts/github-release.mjs';
+import { machO } from './fixtures.mjs';
 import { extractExecutable } from '../../../scripts/release/linux-packages/model.mjs';
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -107,7 +108,7 @@ test("pack validates native executable versions and the complete nine-tarball bo
     const fixture = path.join(directory, target.suffix);
     mkdirSync(path.join(fixture, "bin"), { recursive: true });
     writeFileSync(path.join(fixture, "package.json"), JSON.stringify(packageManifest(target, version, sourceRevision)));
-    const payload = Buffer.from("inert\r\nfixture\0binary");
+    const payload = target.os === "darwin" ? machO(target.cpu === "x64" ? "amd64" : "arm64") : Buffer.from("inert\r\nfixture\0binary");
     writeFileSync(path.join(fixture, "bin", target.binary), payload);
     writeFileSync(path.join(fixture, "LICENSE"), sourceText("crates/clibox/LICENSE"));
     writeFileSync(path.join(fixture, "README.md"), sourceText("packages/clibox/README.md"));
@@ -128,10 +129,15 @@ test("pack validates native executable versions and the complete nine-tarball bo
   }
   assert.deepEqual(verifySet(tarballs, sourceRevision).map(({ name }) => name), names);
   const staged = stage(tarballs, path.join(directory, "github"), sourceRevision, () => []);
+  assert.deepEqual([...staged.files.keys()], [...archiveNames, "SHA256SUMS"]);
   for (const [cpu, arch] of [["x64", "amd64"], ["arm64", "arm64"]]) {
     const artifact = verifySet(tarballs, sourceRevision).find(({ name }) => name === `@delino/clibox-linux-${cpu}-gnu`);
     const binary = tarEntries(readFileSync(path.join(tarballs, artifact.filename))).get("bin/clibox").bytes;
     assert.deepEqual(extractExecutable(staged.files.get(`clibox-linux-${arch}.tar.gz`), "clibox"), binary);
+    const macPackage = tarEntries(readFileSync(path.join(tarballs, tarballName(`@delino/clibox-darwin-${cpu}`, version))));
+    const macArchive = readDarwinArchive(staged.files.get(`clibox-darwin-${arch}.tar.gz`), arch);
+    assert.deepEqual(macArchive.get("clibox"), macPackage.get("bin/clibox").bytes);
+    assert.deepEqual(macArchive.get("LICENSE"), macPackage.get("LICENSE").bytes);
   }
   writeFileSync(path.join(tarballs, "unexpected.txt"), "unexpected");
   assert.throws(() => verifySet(tarballs, sourceRevision), /exactly nine/u);

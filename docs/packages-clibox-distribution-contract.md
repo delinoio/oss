@@ -1,7 +1,7 @@
-# clibox npm distribution
+# clibox npm and native distribution
 
 ## Scope
-`packages/clibox` owns the private source workspace and generates the public `@delino/clibox` launcher and eight platform packages.
+`packages/clibox` owns the private source workspace and generates the public `@delino/clibox` launcher, eight platform packages, and signed GNU Linux/macOS archives. It also verifies and publishes the macOS Homebrew Formula through the shared tap renderer.
 
 ## Runtime and Language
 The launcher is unbundled CommonJS using Node.js built-ins on Node.js 22+. Build and release tooling is ESM on the repository's Node.js 24 baseline. No frontend bundler is necessary for this native CLI wrapper.
@@ -72,10 +72,22 @@ Public consumer documentation is maintained at `apps/public-docs/docs/clibox` an
 - [npm package metadata](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/)
 - [npm trusted publishing prerequisites](https://docs.npmjs.com/cli/v11/commands/npm-trust/#prerequisites)
 
-## GNU GitHub Release and native packages
+## GitHub Release and native packages
 
-`github-release.mjs` verifies the complete nine-tarball set and extracts the exact GNU npm executable bytes. It checks ELF architecture, CPU requirements, runtime libraries and the glibc 2.34 ceiling, then creates deterministic single-executable `clibox-linux-amd64.tar.gz` and `clibox-linux-arm64.tar.gz` archives plus SHA256SUMS. Dry runs validate these without credentials or signatures.
+`github-release.mjs` verifies the complete nine-tarball set and extracts the exact GNU npm executable bytes. It checks ELF architecture, CPU requirements, runtime libraries and the glibc 2.34 ceiling, then creates deterministic single-executable `clibox-linux-amd64.tar.gz` and `clibox-linux-arm64.tar.gz` archives plus SHA256SUMS. The same verified set supplies `clibox-darwin-amd64.tar.gz` and `clibox-darwin-arm64.tar.gz`, validated as the matching 64-bit Mach-O executables. macOS archives carry unchanged native bytes, complete Apache-2.0 `LICENSE`, root `NOTICE`, and `LICENSE.fspy` retaining the original MIT notice shared by imported fspy, materialized-artifact and vt code. Their binary mode is 0755 and notice modes are 0644. The GNU archive format and bytes remain unchanged. SHA256SUMS lists all four archives; each archive and the manifest receive a source-bound Sigstore bundle (ten assets). Dry runs validate these and render the candidate Formula without credentials or signatures.
 
 The separate `publish-release` job requires the exact first-party tag/commit, matching source version and Actions OIDC. It resolves annotated tags, stages a stable draft, verifies all existing bytes and source-bound Sigstore bundles before writes, uploads only missing assets, verifies complete readback, and publishes. Conflicting bytes and incomplete public releases fail closed. An identical public release is read-only on retry. Retain the verified npm artifact set instead of rebuilding after partial publication.
 
 The common `release-linux-packages.yml` follows GitHub publication and produces stable APT/DNF packages for both architectures under [the native repository contract](repository-linux-packages-contract.md). Its protected Environment includes `clibox@v*`; this does not grant npm publication authority. Preview remains reserved. Native installs do not require Node.js and do not install desktop helpers, modify user configuration or start services.
+
+## macOS Homebrew
+
+From the next release after this integration reaches main, `delinoio/tap/clibox` installs the prebuilt macOS x64 or arm64 executable without Node.js, Rust, a source build, service registration or configuration changes. Linux Homebrew is excluded; the existing npm and native Linux channels retain their own contracts. No version bump or publication is part of integration development, and historical public releases are not backfilled.
+
+`homebrew.mjs` has three internal commands: `render --archives DIR --output FILE` verifies candidate checksums, Mach-O architecture, archive entries/modes and notices before rendering; `prepare --output FILE [--validated DIR]` downloads and verifies the exact public release; `publish --validated DIR` requires the exact first-party Actions tag/commit and a tap-only token. The validated directory must contain identical `amd64/clibox.rb` and `arm64/clibox.rb` files from successful native tests. All commands derive version and revision from their immutable source checkout.
+
+Public verification resolves annotated tags, checks Cargo/npm source versions, the release commit and stable/public state, and the exact ten-asset inventory. Downloads use fixed GitHub asset-ID endpoints with bounded sizes; every digest and all five Sigstore bundles are checked against the release workflow and source commit. Rendering verifies the checksum manifest and both macOS archive inventories, licenses and CPU types. Publication repeats verification and compares the exact tested Formula bytes before the shared renderer writes `Formula/clibox.rb` to `delinoio/homebrew-tap`.
+
+`release-clibox.yml` runs the two native Homebrew gates after GitHub publication, independently of npm enablement. Both gates install the full Formula from an ephemeral validation tap, run `brew test` and `brew audit --strict`, check the exact version and preserve the tested Formula artifact. The publication job rechecks both artifacts before obtaining a fresh tap-only bot token; only that job receives the app private key. Public readback then installs/tests the tap on both architectures. Dry runs stop at candidate rendering; ordinary tests and local development never modify a developer's Homebrew installation. All three Homebrew phase results appear in the release summary.
+
+Same-version identical retries are no-ops, changed same-version Formulae and downgrades fail, and unrelated Formulae remain untouched. Recover by rerunning failed jobs in the original exact-tag release workflow with retained artifacts, without moving tags or replacing public release assets. Package fixtures cover archive identity/permissions/notices, public-source/signature/digest failures and evidence mismatch; shared release fixtures cover rendering and tap retry/upgrade guards. Relevant template, renderer and NOTICE changes select clibox CI and invalidate package task caches.
