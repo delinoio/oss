@@ -1099,14 +1099,22 @@ impl BrowserHost {
         self.finish_forgotten(started)?;
         let mut first_failure = None;
         let mut processed = 0;
-        for entry in fs::read_dir(self.root.join("removals"))
+        let cursor_path = self.root.join("removal-cursor.json");
+        let mut paths = fs::read_dir(self.root.join("removals"))
             .map_err(|_| NativeFailure::StorageUnavailable)?
-        {
-            let entry = entry.map_err(|_| NativeFailure::StorageUnavailable)?;
-            let path = entry.path();
-            if path.extension().and_then(|v| v.to_str()) != Some("json") {
-                continue;
-            }
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<std::io::Result<Vec<_>>>()
+            .map_err(|_| NativeFailure::StorageUnavailable)?;
+        paths.retain(|path| path.extension().and_then(|v| v.to_str()) == Some("json"));
+        paths.sort();
+        if cursor_path.exists() {
+            let cursor: String = read_json(&cursor_path)?;
+            canonical_id(&cursor)?;
+            let after = self.root.join("removals").join(format!("{cursor}.json"));
+            let next = paths.partition_point(|path| path <= &after);
+            paths.rotate_left(next);
+        }
+        for path in paths {
             if processed >= 64 || started.elapsed() >= Duration::from_secs(45) {
                 tracing::warn!(
                     operation = "browser_removal",
@@ -1122,6 +1130,9 @@ impl BrowserHost {
             if path.file_stem().and_then(|s| s.to_str()) != Some(removal.record.id.as_str()) {
                 return Err(NativeFailure::InvalidEvidence);
             }
+            // Persist progress before any offline acknowledgment can exhaust the
+            // exit budget. Retained receipts must not monopolize every later exit.
+            browser::write_private(&cursor_path, &removal.record.id)?;
             let result = (|| -> Result<()> {
                 // The durable original intent already denies reopen. Remove locally
                 // after native shutdown even if the owning server is temporarily offline.
@@ -1819,6 +1830,39 @@ mod tests {
         let retry: Removal = read_json(&intent).unwrap();
         assert_eq!(retry.request_id, original_request);
         assert!(!cache.exists());
+    }
+
+    #[test]
+    fn offline_receipts_rotate_across_exits_without_starving_later_profiles() {
+        let (_temp, host, mut record) = storage_fixture();
+        record.revision = 2;
+        record.data.state = ProfileState::RemovalPending;
+        record.data.deletion_request_id = uuid::Uuid::now_v7().to_string();
+        let mut caches = Vec::new();
+        for _ in 0..65 {
+            record.id = uuid::Uuid::now_v7().to_string();
+            record.data.account_id = uuid::Uuid::now_v7().to_string();
+            caches.push(browser::profile_path(&host.root.join("profiles"), &record).unwrap());
+            host.prepare_removal(record.clone(), None).unwrap();
+        }
+        host.stopping.store(true, Ordering::Release);
+        host.finish_removals().unwrap();
+        assert_eq!(caches.iter().filter(|cache| cache.exists()).count(), 1);
+        assert_eq!(
+            fs::read_dir(host.root.join("removals")).unwrap().count(),
+            65
+        );
+
+        // Restart, rather than reusing in-memory progress. Every receipt remains
+        // offline, so only the durable cursor can reach the remaining directory.
+        let restarted = BrowserHost::new(host.root.clone(), Arc::clone(&host.connector)).unwrap();
+        restarted.stopping.store(true, Ordering::Release);
+        restarted.finish_removals().unwrap();
+        assert!(caches.iter().all(|cache| !cache.exists()));
+        assert_eq!(
+            fs::read_dir(host.root.join("removals")).unwrap().count(),
+            65
+        );
     }
     #[test]
     fn pending_cleanup_waits_for_owned_late_flush_and_native_close_proof() {
