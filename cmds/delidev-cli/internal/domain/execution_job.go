@@ -11,6 +11,7 @@ import (
 // arrives separately through an authenticated digest-only grant registration;
 // upstream credentials and raw execution tokens never belong in this document.
 type ExecutionJobInput struct {
+	Fork                *ForkExecution         `json:"fork,omitempty"`
 	Version             uint32                 `json:"version"`
 	SessionID           ID                     `json:"session_id"`
 	MachineID           ID                     `json:"machine_id"`
@@ -79,7 +80,7 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 }
 
 func (i ExecutionJobInput) Validate() error {
-	if !((i.Version == 1 && i.Continuation == nil) || (i.Version == 2 && i.Continuation != nil)) || i.Installation.Harness != i.Configuration.Harness {
+	if !((i.Version == 1 && i.Continuation == nil && i.Fork == nil) || (i.Version == 2 && i.Continuation != nil && i.Fork == nil) || (i.Version == 3 && i.Continuation == nil && i.Fork != nil)) || i.Installation.Harness != i.Configuration.Harness {
 		return Fail(Unsupported, "The execution assignment profile is incompatible.", "Use a matching server and Worker native profile.")
 	}
 	for _, id := range []ID{i.SessionID, i.MachineID, i.ExecutionID, i.InputID, i.ThreadRequestID, i.TurnRequestID, i.AccountID, i.ConnectionID} {
@@ -108,6 +109,9 @@ func (i ExecutionJobInput) Validate() error {
 	}
 	if i.Continuation != nil {
 		return i.Continuation.Validate(i)
+	}
+	if i.Fork != nil {
+		return i.Fork.Validate(i)
 	}
 	return nil
 }

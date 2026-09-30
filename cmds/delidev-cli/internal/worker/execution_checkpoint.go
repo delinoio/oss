@@ -224,6 +224,9 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 	if input.Continuation != nil {
 		ref.HistoryExecutionID = input.Continuation.HistoryExecutionID
 	}
+	if input.Fork != nil {
+		ref.HistoryExecutionID = input.Fork.RuntimeID
+	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[completion.Outcome]
 	checkpoint := CodexExecutionCheckpoint{Version: 1, JobID: jobID, SessionID: ref.SessionID, MachineID: ref.MachineID, HistoryExecutionID: ref.HistoryExecutionID, AssignmentInputDigest: ref.AssignmentInputDigest, ConfigurationDigest: ref.ConfigurationDigest, AccountID: ref.AccountID, ConnectionID: ref.ConnectionID, Completion: completion, Native: codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: domain.ID(completion.NativeTurnID), Status: status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}}
 	if !checkpoint.matches(ref) {
