@@ -21,7 +21,9 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  const edit = await screen.findByRole("button", { name: "Edit Server preferences" });
+  // The real Go save and subsequent list refresh can exceed the default
+  // one-second DOM wait on CI; retain a bounded wait for the committed result.
+  const edit = await screen.findByRole("button", { name: "Edit Server preferences" }, { timeout: 5000 });
   const resources = createClient(ResourceService, transport);
   const first = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(first).toHaveLength(1);
@@ -31,12 +33,11 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
   fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  await screen.findByRole("button", { name: "Edit Server preferences" });
+  await screen.findByRole("button", { name: "Edit Server preferences" }, { timeout: 5000 });
   const latest = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(latest).toHaveLength(1);
   expect(latest[0].id).toBe(first[0].id);
   expect(latest[0].revision).toBe(first[0].revision + 1n);
   expect(document(latest[0])).toEqual({ ...defaults, default_routing: "priority", automatic_fetch: false });
 }, 15000);
-
 

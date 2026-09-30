@@ -2,16 +2,24 @@ package domain
 
 // ClaudeContinuationBoundary checks public original-input facts. The Worker
 // must additionally prove its private native history and exclusive workspace;
-// these observations alone can never reconstruct a missing checkpoint.
+// these observations alone can never reconstruct a missing checkpoint. A
+// settled failure is eligible only for explicit Resume, never automatic FIFO.
 func (p ExecutionProgress) ClaudeContinuationBoundary(input ID) bool {
 	if !p.ClaudeTasks.InlineBashHistoryReady() || !p.ClaudeCompaction.Closed() {
 		return false
 	}
 	t := p.ClaudeTerminal
-	if t == nil || t.Validate() != nil || t.InputID != input || t.Outcome() != ExecutionSucceeded || p.Outcome != ExecutionSucceeded || p.ClaudeStop != nil || p.ClaudeDenial != nil || p.ClaudeInterruption != nil || p.OpenCodeStop != nil || p.Waiting != (NativeWaiting{}) || p.UnconfirmedResponses != 0 || len(p.AcceptedInputs) > 1 || len(p.AcceptedInputs) == 1 && p.AcceptedInputs[0].InputID != input || p.SteerAttempts != 0 {
+	if t == nil || !t.ContinuationCandidate() || t.InputID != input || p.Outcome != t.Outcome() || p.ClaudeStop != nil || p.ClaudeDenial != nil || p.ClaudeInterruption != nil || p.OpenCodeStop != nil || p.Waiting != (NativeWaiting{}) || p.UnconfirmedResponses != 0 || len(p.AcceptedInputs) > 1 || len(p.AcceptedInputs) == 1 && p.AcceptedInputs[0].InputID != input || p.SteerAttempts != 0 {
 		return false
 	}
 	return p.ClaudeProgress == nil || !p.ClaudeProgress.PermissionChanged && (p.ClaudeProgress.Permission == nil || *p.ClaudeProgress.Permission == p.Observed.ClaudePermission)
+}
+
+// ContinuationCandidate excludes aborted and background-requested histories
+// even without a tracked task event. Background restoration needs its own
+// proof; cleanup and exact inline history remain separate requirements.
+func (v ClaudeTerminalObservation) ContinuationCandidate() bool {
+	return v.Validate() == nil && v.Reason != ClaudeAbortedStreaming && v.Reason != ClaudeAbortedTools && v.Reason != ClaudeBackgroundRequested && (v.Outcome() == ExecutionSucceeded || v.Outcome() == ExecutionFailed)
 }
 
 // This public candidate preserves a completed original root Read, including a
