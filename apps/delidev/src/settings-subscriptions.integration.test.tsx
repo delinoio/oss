@@ -44,11 +44,11 @@ it("keeps subscription-only metadata CRUD reachable, sends no native lifecycle R
   providerDisclosure.open = true;
   expect(screen.getByRole("button", { name: "Add native subscription provider" })).toBeTruthy();
   expect(await screen.findByRole("button", { name: "Add subscription configuration" })).toBeTruthy();
-  fireEvent.change(screen.getByLabelText("Search providers"), { target: { value: "unmatched native provider" } });
-  await waitFor(() => expect(within(screen.getByLabelText("Filter accounts by provider")).queryByRole("option", { name: /ChatGPT editable provider/ })).toBeNull());
+  fireEvent.change(within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Search providers"), { target: { value: "unmatched native provider" } });
+  await waitFor(() => expect(within(within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Filter accounts by provider")).queryByRole("option", { name: /ChatGPT editable provider/ })).toBeNull());
   expect(screen.getByRole("article", { name: "ChatGPT editable alias" })).toBeTruthy();
-  fireEvent.change(screen.getByLabelText("Search providers"), { target: { value: "ChatGPT" } });
-  await screen.findByRole("option", { name: /ChatGPT editable provider/ });
+  fireEvent.change(within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Search providers"), { target: { value: "ChatGPT" } });
+  await within(within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Filter accounts by provider")).findByRole("option", { name: /ChatGPT editable provider/ });
   fireEvent.change(within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Filter accounts by provider"), { target: { value: provider.id } });
   expect(await screen.findByText("Provider filter: ChatGPT editable provider")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
