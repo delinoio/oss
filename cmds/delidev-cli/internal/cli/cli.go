@@ -121,6 +121,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	defer c.transport.CloseIdleConnections()
 	if command != "events" && !(command == "session" && len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start") {
 		limit := 30 * time.Second
+		// Inspection and replacement each own a 30-second server deadline.
+		// Allow the original typed outcome to arrive before the client times out.
+		if command == "backup" && len(rest) > 0 && (rest[0] == "restore" || rest[0] == "inspect") {
+			limit = 35 * time.Second
+			c.transport.ResponseHeaderTimeout = limit
+		}
 		if command == "github" {
 			limit = 40 * time.Second
 			c.transport.ResponseHeaderTimeout = limit

@@ -229,7 +229,10 @@ func TestProbeOwnsBoundedInspectedInitialization(t *testing.T) {
 			for _, name := range []string{"XAI_API_KEY", "GROK_CONFIG", "GROK_CONFIG_PATH", "GROK_LOG_FILE", "GROK_AGENT", "GROK_OIDC_ISSUER", "NODE_OPTIONS", "HTTPS_PROXY", "SSH_AUTH_SOCK", "BASH_ENV", "RUST_LOG", "HOME", "GROK_HOME"} {
 				config.Process.Env = append(config.Process.Env, name+"=private-environment-sentinel")
 			}
-			timeout := 5 * time.Second
+			// Use Probe's existing whole-operation budget: Windows inspection and
+			// ACP startup each launch an owned subprocess, so a shorter caller
+			// deadline can expire before a malformed protocol frame is observed.
+			timeout := 10 * time.Second
 			if test.mode == "timeout" || test.mode == "inventory-missing" {
 				timeout = 250 * time.Millisecond
 			}

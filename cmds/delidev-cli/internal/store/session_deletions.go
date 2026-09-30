@@ -187,6 +187,9 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 	if e := t.Authorize(); e != nil {
 		return v, false, e
 	}
+	if e := s.checkRestoreRequestReservation(request); e != nil {
+		return v, false, e
+	}
 	old, e := s.readSessionDeletion(session)
 	if e == nil {
 		if old.RequestID != request || old.Actor != actor || old.ServerID != server || old.ExpectedRevision != revision {
@@ -202,7 +205,7 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 				return old, true, e
 			}
 		}
-		if e := sessionDeletionReceipt(ctx, sqltx, old); e != nil {
+		if e := s.sessionDeletionReceipt(ctx, sqltx, old); e != nil {
 			return old, true, e
 		}
 		if e := sqltx.Commit(); e != nil {
@@ -563,12 +566,12 @@ func (s *Store) RestoreSessionDeletionIntents(ctx context.Context, server domain
 			e = t.purgeSession(v)
 		}
 		if e == nil {
-			e = sessionDeletionReceipt(ctx, tx, v)
+			e = s.sessionDeletionReceipt(ctx, tx, v)
 		}
 		if e == nil {
 			for _, w := range v.Workers {
 				if w.Acknowledged {
-					if _, e = sessionDeletionAckReceipt(ctx, tx, v, w); e != nil {
+					if _, e = s.sessionDeletionAckReceipt(ctx, tx, v, w); e != nil {
 						break
 					}
 				}
@@ -666,7 +669,7 @@ func (s *Store) persistSessionDeletionAck(ctx context.Context, v SessionDeletion
 		return storageError(e)
 	}
 	defer tx.Rollback()
-	existing, e := sessionDeletionAckReceipt(ctx, tx, v, w)
+	existing, e := s.sessionDeletionAckReceipt(ctx, tx, v, w)
 	if e != nil {
 		return e
 	}
@@ -689,7 +692,10 @@ func (s *Store) persistSessionDeletionAck(ctx context.Context, v SessionDeletion
 }
 
 // sessionDeletionAckReceipt returns whether an exact receipt already existed.
-func sessionDeletionAckReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion, w SessionDeletionWorker) (bool, error) {
+func (s *Store) sessionDeletionAckReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion, w SessionDeletionWorker) (bool, error) {
+	if e := s.checkRestoreRequestReservation(w.RequestID); e != nil {
+		return false, e
+	}
 	digest, e := mutationDigest(w.RequestID, "session.delete.ack", struct {
 		Server, Session, Deletion, Device, Machine domain.ID
 		Work                                       string
@@ -715,7 +721,10 @@ func sessionDeletionAckReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletio
 	return false, storageError(e)
 }
 
-func sessionDeletionReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion) error {
+func (s *Store) sessionDeletionReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion) error {
+	if e := s.checkRestoreRequestReservation(v.RequestID); e != nil {
+		return e
+	}
 	digest, e := sessionDeletionDigest(v)
 	if e != nil {
 		return e
