@@ -167,14 +167,15 @@ type snapshotManifest struct {
 	CreatedAt        time.Time         `json:"created_at"`
 }
 type restoreBinding struct {
-	Version          uint32    `json:"version"`
-	OperationID      domain.ID `json:"operation_id"`
-	SessionID        domain.ID `json:"session_id"`
-	SnapshotID       domain.ID `json:"snapshot_id"`
-	SnapshotDigest   string    `json:"snapshot_digest"`
-	Published        bool      `json:"published"`
-	ManifestDigest   string    `json:"manifest_digest"`
-	OriginalIdentity string    `json:"original_identity"`
+	DirectoryIdentity string    `json:"directory_identity,omitempty"`
+	Version           uint32    `json:"version"`
+	OperationID       domain.ID `json:"operation_id"`
+	SessionID         domain.ID `json:"session_id"`
+	SnapshotID        domain.ID `json:"snapshot_id"`
+	SnapshotDigest    string    `json:"snapshot_digest"`
+	Published         bool      `json:"published"`
+	ManifestDigest    string    `json:"manifest_digest"`
+	OriginalIdentity  string    `json:"original_identity"`
 }
 
 func manifestDigest(m Manifest) string {
@@ -376,7 +377,11 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if err != nil || inventoryDigest(inventory) != inventoryDigest(snap.Inventory) {
 				return result, ResultUncertain()
 			}
-			binding := restoreBinding{Version: 1, OperationID: r.OperationID, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, SnapshotDigest: metadata.SHA256, ManifestDigest: manifestDigest(snap.Workspace), OriginalIdentity: snap.OriginalIdentity}
+			binding := restoreBinding{Version: 2, OperationID: r.OperationID, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, SnapshotDigest: metadata.SHA256, ManifestDigest: manifestDigest(snap.Workspace), OriginalIdentity: snap.OriginalIdentity}
+			binding.DirectoryIdentity, err = restoredDirectoryIdentity(staging, snap.Workspace)
+			if err != nil {
+				return result, ResultUncertain()
+			}
 			// Pending comparison metadata grants no publication authority. Invalidate
 			// an earlier restore before claiming this operation's destination.
 			raw, _ := json.Marshal(binding)
@@ -395,6 +400,10 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			restoreStaging = ""
 			// Only a synchronized successful no-replace publication may establish
 			// ownership. Matching foreign bytes or a missing staging tree cannot.
+			identity, err := restoredDirectoryIdentity(root, snap.Workspace)
+			if err != nil || identity != binding.DirectoryIdentity {
+				return result, ResultUncertain()
+			}
 			binding.Published = true
 			raw, _ = json.Marshal(binding)
 			if err := security.WriteAtomic(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {

@@ -579,7 +579,14 @@ self-contained Git stores at that same path. Its pending form grants no ownershi
 only the original operation/snapshot/hash-bound proof synchronized after successful
 no-replace publication permits restore recovery, restored execution identity or
 coordinated deletion. A matching foreign destination and absent scratch cannot
-prove publication. Lost proof preserves uncertainty without repeating the rename.
+prove publication. Version-2 proof additionally pins native filesystem directory
+identity (Unix device/inode or Windows volume/file index) for the published root,
+all repositories and their independent Git stores. Recheck it around subsequent
+Git identity inspection and coordinated deletion; byte-identical replacement
+directories cannot borrow prior publication. Ordinary file/index/config changes
+and new commits retain identity. Missing or legacy proof remains uncertain and
+cannot be reconstructed from current paths. Lost proof preserves uncertainty
+without repeating the rename.
 This comparison does not manufacture
 native harness checkpoint or continuation support. Snapshot deletion requires an
 explicit owner/client request and cannot remove a stored workspace's only

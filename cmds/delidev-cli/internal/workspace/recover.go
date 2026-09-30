@@ -304,7 +304,11 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 	var restored *restoreBinding
 	if raw, err := security.ReadPrivate(m.restoreBindingPath(input.SessionID), 4096); err == nil {
 		var binding restoreBinding
-		if domain.Decode(raw, &binding) != nil || binding.Version != 1 || !binding.Published || binding.OperationID.Validate() != nil || !digestValid(binding.SnapshotDigest) || binding.SessionID != input.SessionID || binding.SnapshotID.Validate() != nil || binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || input.Type == domain.Local {
+		if domain.Decode(raw, &binding) != nil || binding.Version != 2 || !binding.Published || !digestValid(binding.DirectoryIdentity) || binding.OperationID.Validate() != nil || !digestValid(binding.SnapshotDigest) || binding.SessionID != input.SessionID || binding.SnapshotID.Validate() != nil || binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || input.Type == domain.Local {
+			return "", ResultUncertain()
+		}
+		current, err := restoredDirectoryIdentity(root, manifest)
+		if err != nil || current != binding.DirectoryIdentity {
 			return "", ResultUncertain()
 		}
 		restored = &binding
@@ -404,6 +408,10 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 		}
 	}
 	if restored != nil {
+		current, err := restoredDirectoryIdentity(root, manifest)
+		if err != nil || current != restored.DirectoryIdentity {
+			return "", ResultUncertain()
+		}
 		return restored.OriginalIdentity, nil
 	}
 	raw, err := json.Marshal(identity)

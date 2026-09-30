@@ -69,7 +69,7 @@ func TestSnapshotRestoreRecoveryRejectsMatchingForeignPublication(t *testing.T) 
 }
 
 func TestSnapshotRestoreRecoveryRequiresOriginalPublicationProof(t *testing.T) {
-	for _, mutation := range []string{"missing", "pending", "operation", "snapshot", "digest"} {
+	for _, mutation := range []string{"missing", "pending", "legacy", "operation", "snapshot", "digest"} {
 		t.Run(mutation, func(t *testing.T) {
 			m, input := storedGeneralChat(t)
 			storageDo(t, m, input)
@@ -86,6 +86,8 @@ func TestSnapshotRestoreRecoveryRequiresOriginalPublicationProof(t *testing.T) {
 				}
 			case "pending":
 				binding.Published = false
+			case "legacy":
+				binding.Version, binding.DirectoryIdentity = 1, ""
 			case "operation":
 				binding.OperationID = domain.NewID()
 			case "snapshot":

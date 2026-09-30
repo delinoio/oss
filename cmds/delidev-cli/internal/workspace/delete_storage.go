@@ -79,9 +79,14 @@ func (m *Manager) deletionRestoredWorkspace(ctx context.Context, w domain.Sessio
 		return false, nil
 	}
 	var binding restoreBinding
-	if err != nil || domain.Decode(raw, &binding) != nil || binding.Version != 1 || !binding.Published || !digestValid(binding.SnapshotDigest) || binding.SessionID != w.SessionID || binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || !slices.ContainsFunc(w.Copies, func(c domain.SessionDeletionCopy) bool {
+	if err != nil || domain.Decode(raw, &binding) != nil || binding.Version != 2 || !binding.Published || !digestValid(binding.DirectoryIdentity) || !digestValid(binding.SnapshotDigest) || binding.SessionID != w.SessionID || binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || !slices.ContainsFunc(w.Copies, func(c domain.SessionDeletionCopy) bool {
 		return c.Type == domain.WorkspaceStorageJob && c.JobID == binding.OperationID && c.SnapshotID == binding.SnapshotID
 	}) {
+		return false, domain.SessionDeletionPending()
+	}
+	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
+	identity, err := restoredDirectoryIdentity(root, manifest)
+	if err != nil || identity != binding.DirectoryIdentity {
 		return false, domain.SessionDeletionPending()
 	}
 	// The original snapshot may already have been explicitly deleted after a
@@ -98,6 +103,10 @@ func (m *Manager) deletionRestoredWorkspace(ctx context.Context, w domain.Sessio
 		if err != nil || !sameNativePath(fields[0], expected) || !sameNativePath(fields[1], expected) {
 			return false, domain.SessionDeletionPending()
 		}
+	}
+	identity, err = restoredDirectoryIdentity(root, manifest)
+	if err != nil || identity != binding.DirectoryIdentity {
+		return false, domain.SessionDeletionPending()
 	}
 	return true, nil
 }
