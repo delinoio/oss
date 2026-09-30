@@ -6,8 +6,15 @@ names and numbers remain unchanged. `protos/delidev/allocations.json` records ma
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 
+The [planned shared compaction contract](cmds-delidev-compaction-contract.md)
+reserves `EntityKind` 32, `SystemCapability` 15, `WorkerCapability` 5 and
+`SessionChange.compaction_job` 9 for issues #1093, #1202 and #1203. These are
+ledger reservations only: no schema declaration, generated binding, RPC or
+capability advertisement is activated by the reservation change. The owning
+issue is recorded directly when no implementation PR exists yet.
+
 Issue #1206's pending [native Codex model observation contract](cmds-delidev-native-models-contract.md)
-reserves server capability 15 and Worker capability 5. Keep these out of active
+reserves server capability 16 and Worker capability 6. Keep these out of active
 schemas and capability advertisements until a dependent implementation follows
 main-established allocations. No new RPC or generated binding is activated by
 the reservation prerequisite.
@@ -349,7 +356,7 @@ Provider activation adds an owner/client-only `ProviderService.ListProviderInven
 
 `SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
-System capability wire values retain `AUTOMATIC_TITLES_V1 = 1` and the merged `SESSION_FORWARDING_V1 = 2`; the additive `USER_SERVICES_V1` uses `3`. `GetStatus` advertises all three independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3` and `PERMANENT_SESSION_DELETION_V1 = 9`; native accounting adds the reserved `NATIVE_ACCOUNTING_V1 = 4`. `GetStatus` advertises each independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 
@@ -375,3 +382,5 @@ only original session/deletion IDs, plan digest and retained request UUID. No
 paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
+
+Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).

@@ -1,5 +1,10 @@
 # Issue #1206: native model discovery prerequisites
 
+This file records the initial prerequisite validation. The later
+[main reconciliation](main-reconciliation-2026-09-30.md) preserves these historical
+results and moves the pending discovery capabilities to server 16 and Worker 6
+after main established the compaction allocations.
+
 ## Inspected baseline and scope
 
 On 2026-09-30, fetched and inspected `origin/main` at

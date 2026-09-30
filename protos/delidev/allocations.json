@@ -2761,20 +2761,64 @@
       "number": 4
     },
     {
-      "issue": 1206,
+      "issue": 1203,
+      "sharedIssues": [
+        1093,
+        1202
+      ],
+      "kind": "enum",
+      "declaration": "EntityKind",
+      "member": "ENTITY_KIND_COMPACTION",
+      "number": 32
+    },
+    {
+      "issue": 1203,
+      "sharedIssues": [
+        1093,
+        1202
+      ],
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
+      "number": 15
+    },
+    {
+      "issue": 1203,
+      "sharedIssues": [
+        1093,
+        1202
+      ],
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
+      "number": 5
+    },
+    {
+      "issue": 1203,
+      "sharedIssues": [
+        1093,
+        1202
+      ],
+      "kind": "message",
+      "declaration": "SessionChange",
+      "member": "compaction_job",
+      "number": 9
+    },
+    {
+      "pr": 1212,
       "kind": "enum",
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
-      "number": 15,
-      "pr": 1212
+      "oldBranchNumber": 15,
+      "number": 16
     },
     {
-      "issue": 1206,
+      "pr": 1212,
       "kind": "enum",
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
-      "number": 5,
-      "pr": 1212
+      "oldBranchNumber": 5,
+      "number": 6
     }
   ]
 }

@@ -33,8 +33,8 @@ observation controls or canonical model registration.
 
 ## Interfaces and Contracts
 
-Reserve `SystemCapability.SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 15`
-and `WorkerCapability.WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 5` in
+Reserve `SystemCapability.SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 16`
+and `WorkerCapability.WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 6` in
 `protos/delidev/allocations.json`. Neither member is activated in this prerequisite
 change. The [structure contract](cmds-delidev-structure-contract.md) requires these
 shared reservations to reach main before dependent implementation. Pending
@@ -84,9 +84,10 @@ cannot be replaced by partial failed data; failed operations retain the selected
 scope's last successful observation without claiming it is fresh.
 
 This reservation change adds no executable database migration and does not choose
-a new migration version. The executable registry remains at schema 24 and the
-existing 25–27 reservations remain unchanged. If implementation needs a schema
-change, establish its version on main first and preserve the complete preceding
+a new migration version. The executable registry includes main-established schema
+25 for Grok accounting; pending versions 26 and 27 remain unchanged. If
+implementation needs a schema change, establish its version on main first and
+preserve the complete preceding
 sequence, backup-first atomic upgrades and historical records. A protocol
 reservation cannot authorize a database version or an empty migration.
 
