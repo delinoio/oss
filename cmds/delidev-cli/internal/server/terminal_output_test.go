@@ -72,7 +72,8 @@ func TestTerminalOutputLossPreservesAcknowledgedCursor(t *testing.T) {
 			if reconnect {
 				view.Close()
 			}
-			result.State, result.CleanupVerified, result.OutputLost = domain.TerminalExited, true, true
+			result.State, result.OutputLost = domain.TerminalUncertain, true
+			result.Problem = domain.Fail(domain.RecoveryRequired, "Fixture cleanup is unconfirmed.", "Reconcile the original terminal.")
 			raw, _ = json.Marshal(result)
 			if _, err := client.ReportTerminal(ctx, ownerRequest(worker, &pb.ReportTerminalRequest{RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: instance, TerminalId: claim.TerminalId, ResultJson: raw})); err != nil {
 				t.Fatal(err)
@@ -84,7 +85,36 @@ func TestTerminalOutputLossPreservesAcknowledgedCursor(t *testing.T) {
 				}
 				defer view.Close()
 			}
-			sawGap := false
+			if !view.Receive() || !view.Msg().Gap || view.Msg().Epoch != epoch || view.Msg().Sequence != 2 || len(view.Msg().Data) != 0 {
+				t.Fatal("missing original output-loss gap with preserved cursor", view.Err())
+			}
+			// The persisted loss fact is monotonic. Later reports may change
+			// resource metadata without losing another byte or replaying output.
+			for i := 0; i < 2; i++ {
+				result.Problem = domain.Fail(domain.Unavailable, "Fixture observation changed.", "Inspect the original terminal.")
+				raw, _ = json.Marshal(result)
+				updated, err := client.ReportTerminal(ctx, ownerRequest(worker, &pb.ReportTerminalRequest{RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: instance, TerminalId: claim.TerminalId, ResultJson: raw}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for {
+					if !view.Receive() {
+						t.Fatal("missing changed terminal metadata", view.Err())
+					}
+					frame := view.Msg()
+					if frame.Gap || len(frame.Data) != 0 || frame.Epoch != epoch || frame.Sequence != 2 {
+						t.Fatal("metadata revision repeated output loss or changed its acknowledged cursor")
+					}
+					if frame.Terminal != nil && frame.Terminal.Revision == updated.Msg.Terminal.Revision {
+						break
+					}
+				}
+			}
+			result.State, result.CleanupVerified, result.Problem = domain.TerminalExited, true, nil
+			raw, _ = json.Marshal(result)
+			if _, err := client.ReportTerminal(ctx, ownerRequest(worker, &pb.ReportTerminalRequest{RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: instance, TerminalId: claim.TerminalId, ResultJson: raw})); err != nil {
+				t.Fatal(err)
+			}
 			for view.Receive() {
 				frame := view.Msg()
 				if len(frame.Data) != 0 {
@@ -93,10 +123,12 @@ func TestTerminalOutputLossPreservesAcknowledgedCursor(t *testing.T) {
 				if frame.Epoch != epoch || frame.Sequence != 2 {
 					t.Fatal("output-loss notification changed the acknowledged cursor")
 				}
-				sawGap = sawGap || frame.Gap
+				if frame.Gap {
+					t.Fatal("confirmed cleanup repeated an already observed output loss")
+				}
 			}
-			if view.Err() != nil || !sawGap {
-				t.Fatal("missing final output-loss gap", view.Err())
+			if view.Err() != nil {
+				t.Fatal(view.Err())
 			}
 		})
 	}

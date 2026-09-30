@@ -145,6 +145,7 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 		return stream.Send(message)
 	}
 	after, epoch, revision := req.Msg.AfterSequence, domain.ID(req.Msg.Epoch), uint64(0)
+	observedOutputLoss := false
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	nextHeartbeat := time.Time{}
@@ -176,7 +177,7 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 		// output after eviction/restart. A fresh observer must see that unknown
 		// prefix even without a prior cursor or a durable Worker loss report.
 		unknownRetention := epoch == "" && ring.sequence == 0
-		gap := (value.OutputLost && revision != record.Revision) || cursorGap || unknownRetention
+		gap := (value.OutputLost && !observedOutputLoss) || cursorGap || unknownRetention
 		// Losing unpublished bytes changes completeness, not acknowledgment of
 		// retained bytes. Only an invalid cursor may replay the retained suffix.
 		if epoch != ring.epoch || cursorGap {
@@ -195,6 +196,9 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 				return err
 			}
 			revision = record.Revision
+			// A durable loss flag survives unrelated metadata revisions. This
+			// attachment reports that fact once; a fresh attachment observes it anew.
+			observedOutputLoss = observedOutputLoss || value.OutputLost
 			nextHeartbeat = time.Now().Add(10 * time.Second)
 		}
 		for _, c := range chunks {
