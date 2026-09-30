@@ -516,6 +516,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Key managed-preset rows and activation intents by stable preset identity before and after first activation publishes its saved UUID. An inventory refresh or Settings navigation must preserve the exact uncertain request and disabled switch until its original acknowledgment is resolved; custom providers keep UUID-based identity.
 
+- GitHub Integrations follows the approved #1147 presentation in the desktop/integration contracts: one eligible create action, distinct loading/error/stale/empty-page states, separate storage and identity facts, first-entry editor focus, and full informational native token-form disclosure. Keep original explicit operations, decimal revisions, immutable uncertain requests, transient write-only PAT clearing, opaque paging and the shared Settings disposal contract; presentation grants no repository capability.
+
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
