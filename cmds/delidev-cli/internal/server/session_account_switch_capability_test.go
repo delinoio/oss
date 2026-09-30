@@ -30,6 +30,7 @@ func TestStoppedAccountSwitchStatusPreservesExistingCapabilities(t *testing.T) {
 		pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1,
 		pb.SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1,
 		pb.SystemCapability_SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1,
+		pb.SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1,
 		pb.SystemCapability_SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1,
 	} {
 		if !slices.Contains(response.Msg.Capabilities, capability) {
