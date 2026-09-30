@@ -44,7 +44,7 @@ function fixture() {
 }
 
 function pane() { return within(screen.getByRole("region", { name: "Schedules navigation and filters" })); }
-function disclosure() { return pane().getAllByRole("button", { name: "Retained history" }).find((button) => button.hasAttribute("aria-expanded"))!; }
+function disclosure() { return pane().getByRole("button", { name: "Retained history" }); }
 function selectMorning() { fireEvent.click(pane().getByRole("button", { name: /^Morning review/ })); }
 
 it("shows explicit state and complete UTC with selection over the whole row", async () => {
@@ -172,6 +172,24 @@ it("focuses only explicit history expansion, keeps the hidden form and draft, an
   fireEvent.submit(input.closest("form")!);
   await waitFor(() => expect(value.history.mock.lastCall?.[0]).toMatchObject({ scheduleId: id, pageSize: 50, pageToken: "" }));
   expect(screen.getByRole("heading", { name: "Occurrence history" })).toBeTruthy();
+  expect(value.closeDrawer).toHaveBeenCalledTimes(1);
+});
+
+it("distinguishes the history disclosure and submit action by accessible name", async () => {
+  const value = fixture();
+  render(value.view());
+  await screen.findByRole("button", { name: /^Morning review/ });
+  const toggle = disclosure();
+  expect(pane().queryByRole("button", { name: "Open retained history" })).toBeNull();
+  fireEvent.click(toggle);
+  expect(pane().getAllByRole("button", { name: "Retained history" })).toHaveLength(1);
+  const submit = pane().getByRole("button", { name: "Open retained history" });
+  expect(submit.textContent).toBe("Retained history");
+  expect(value.history).not.toHaveBeenCalled();
+  const id = newRequestId();
+  fireEvent.change(pane().getByRole("textbox", { name: "Retained schedule ID" }), { target: { value: id } });
+  fireEvent.click(submit);
+  await waitFor(() => expect(value.history.mock.lastCall?.[0]).toMatchObject({ scheduleId: id, pageSize: 50, pageToken: "" }));
   expect(value.closeDrawer).toHaveBeenCalledTimes(1);
 });
 
