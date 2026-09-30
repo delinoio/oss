@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 24
+const SchemaVersion = 25
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -231,6 +231,15 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	}
 	if version < 1 || version > SchemaVersion {
 		return domain.Fail(domain.RecoveryRequired, "The stored schema requires a compatible DeliDev version.", "Use the matching server version; never reset or downgrade the database.")
+	}
+	// Unmerged accounting and diagnostics branches reused schema 25. A version
+	// number alone must never adopt their layout or historical records. Preserve
+	// those files for explicit recovery instead of guessing a migration.
+	if version >= 25 {
+		var layout string
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='native_accounting_layout'").Scan(&layout); err != nil || layout != "grok-closed-input-v1" {
+			return domain.Fail(domain.RecoveryRequired, "The native accounting layout is unrecognized.", "Preserve the original database and use explicit recovery; never adopt an unmerged schema by version number.")
+		}
 	}
 	var check string
 	if err := db.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&check); err != nil || check != "ok" {

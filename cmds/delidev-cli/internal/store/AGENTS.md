@@ -119,3 +119,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Exact acknowledged Worker deletion-report retries with a matching actor/work-bound SQL receipt are read-only. Preserve original metadata and reject conflicting receipts; reconstruct a missing SQL receipt through the original synchronized-intent recovery path.
 
 - Permanent session erasure removes PR activity through each original remediation attempt source, including reservation records without row-level session binding. Redact the validated shared attempt and its index without emitting a new business activity transition; preserve unrelated PR history, original reservation provenance and lifetime counters.
+
+- Schema 25 implements the reserved Grok accounting migration with an independent layout marker; reject unmarked unmerged v25 files without modification. Insert one GrokClosedInput only with the original verified completion receipt and independently confirmed cleanup. Preserve history, exact counters, original assignment attribution, atomic replay and future-only retention; no backfill, pricing or budget writes. Follow the usage/storage contracts.

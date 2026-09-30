@@ -71,7 +71,10 @@ future authorized policy edits.
 
 `cmds/delidev-cli/internal/store/migration-reservations.json` reserves 25 for the
 replacement of #1108, 26 for #1115, and 27 for #1117. Each originally used 25.
-These are plans, not runtime support: the executable registry ends at 24.
+The Grok replacement for issue #1100 implements reserved version 25 with the
+independent `grok-closed-input-v1` layout marker. Versions 26 and 27 remain plans,
+not runtime support; the executable registry ends at 25. Unmarked historical
+version-25 files still require recovery without modification.
 Claude accounting must compose with the Grok accounting schema and shared usage
 meaning established by the preceding change. Request diagnostics follows both
 implemented versions. If that product order changes, revise the ledger on main

@@ -20,6 +20,7 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	until := f.String("until", "", "exclusive RFC3339 timestamp (default: server now)")
 	granularity := f.String("granularity", "", "analytics granularity (day)")
 	timezone := f.String("timezone", "", "explicit IANA timezone for daily analytics")
+	profile := f.String("accounting-profile", "", "native-units-v1 for distinct Codex responses and verified Grok closed inputs")
 	requestBody := &pb.GetUsageSummaryRequest{}
 	f.StringVar(&requestBody.SessionId, "session-id", "", "original session filter")
 	f.StringVar(&requestBody.ProjectId, "project-id", "", "original project filter")
@@ -29,6 +30,12 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	f.BoolVar(&requestBody.GeneralChat, "general-chat", false, "projectless General Chat only")
 	if err := parse(f, args[1:]); err != nil {
 		return nil, err
+	}
+	if *profile != "" {
+		if *profile != "native-units-v1" {
+			return nil, domain.Fail(domain.InvalidArgument, "Invalid usage accounting profile.", "Supported value: native-units-v1.")
+		}
+		requestBody.AccountingProfile = pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1
 	}
 	if *granularity == "" {
 		if *timezone != "" {
@@ -59,6 +66,9 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	response, err := c.usage.GetUsageSummary(ctx, request(c, requestBody))
 	if err != nil {
 		return nil, rpc.ClientError(err)
+	}
+	if requestBody.AccountingProfile != response.Msg.AccountingProfile {
+		return nil, domain.Fail(domain.Unsupported, "The server did not negotiate native accounting.", "Update the server or omit the accounting profile for response-only reads.")
 	}
 	raw, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(response.Msg)
 	if err != nil {
