@@ -171,14 +171,24 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	var managedLatest []byte
 	var closeManagedRPC func()
 	managedCleanup, managedSuccess := false, false
+	managedUnusedOriginal := false
 	managedPreNativeCleanup := false
 	defer func() {
 		if closeManagedRPC != nil {
 			defer closeManagedRPC()
 		}
 		if managed != nil {
+			// Finish may acknowledge a fenced account without establishing safe
+			// ownership. Only a captured bundle or the verified unused original,
+			// together with independent cleanup, permits ordinary job reporting.
+			conclusive := managedCleanup && (managedSuccess || managedUnusedOriginal)
 			if err := managed.finish(managedLatest, managedCleanup, false, managedSuccess); err != nil {
 				output, returned = nil, &managedExecutionUncertain{err}
+			} else if !conclusive {
+				if returned == nil {
+					returned = subscription.Invalid()
+				}
+				output, returned = nil, &managedExecutionUncertain{returned}
 			}
 			clear(managed.response.Bundle)
 		}
@@ -206,6 +216,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 					// This closed pre-native outcome returns unused original bytes;
 					// it does not claim native execution or authentication success.
 					managedLatest = bytes.Clone(managed.response.Bundle)
+					managedUnusedOriginal = true
 				} else {
 					output, returned = nil, subscription.Invalid()
 				}

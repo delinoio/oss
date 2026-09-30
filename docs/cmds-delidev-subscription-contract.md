@@ -58,7 +58,7 @@ Uncertain delivery or completion closes the Worker subscription lane and joins i
 
 ## Security
 
-Uncertain protected execution completion escapes ordinary job-error reporting and closes the primary work lane after joined cleanup. The original started job claim and protected completion journal remain retained; the server records the lost execution lease as recovery-required. Workspace cleanup failures preserve this completion uncertainty, and receipt replay cannot manufacture a successful write-back.
+Uncertain protected execution completion escapes ordinary job-error reporting and closes the primary work lane after joined cleanup. The original started job claim and protected completion journal remain retained; the server records the lost execution lease as recovery-required. Workspace cleanup failures preserve this completion uncertainty, and receipt replay cannot manufacture a successful write-back. A successful protected Finish RPC can acknowledge a fenced account; it permits ordinary execution reporting only after final bundle capture and independent cleanup, or the separately verified unused-original pre-native outcome. Acknowledgment alone cannot replace the started job claim.
 
 Once subscription ownership is recovery-required, every new Finish is denied before vault staging or deletion and again at its final transaction. Only an already accepted receipt may replay through this handler; that read-only replay preserves any later retained lease, pending operation and recovery fence. A late background completion cannot replace the independent recovery path.
 

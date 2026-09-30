@@ -5,6 +5,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http/httptest"
 	"os"
@@ -25,6 +27,14 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
+type managedExecutionFixtureFault string
+
+const (
+	managedFixtureCapture        managedExecutionFixtureFault = "capture"
+	managedFixtureScan           managedExecutionFixtureFault = "scan"
+	managedFixtureStartupCleanup managedExecutionFixtureFault = "startup-cleanup"
+)
+
 func init() {
 	if len(os.Args) < 2 || os.Args[1] != "-c" || os.Args[len(os.Args)-1] != "app-server" || !slices.Contains(os.Args, `forced_login_method="chatgpt"`) {
 		return
@@ -34,6 +44,8 @@ func init() {
 	// Tagged lifecycle drivers retain their separate fixture by requiring direct
 	// native arguments here, rather than intercepting their wrapper arguments.
 	home := os.Getenv("CODEX_HOME")
+	faultBytes, _ := os.ReadFile(filepath.Join(home, "fixture-fault"))
+	fault := managedExecutionFixtureFault(faultBytes)
 	var thread map[string]any
 	reads := 0
 	encoder := json.NewEncoder(os.Stdout)
@@ -65,7 +77,14 @@ func init() {
 			} else if platform == "windows" {
 				family = "windows"
 			}
-			write(request.ID, map[string]any{"codexHome": home, "platformFamily": family, "platformOs": platform, "userAgent": "delidev/" + codex.SupportedVersion + " (fixture)"})
+			agent := "delidev/" + codex.SupportedVersion + " (fixture)"
+			if fault == managedFixtureStartupCleanup {
+				agent = "unsupported native fixture"
+				if os.WriteFile(filepath.Join(home, "history.jsonl"), []byte("synthetic-worker-refresh-first"), 0600) != nil {
+					os.Exit(85)
+				}
+			}
+			write(request.ID, map[string]any{"codexHome": home, "platformFamily": family, "platformOs": platform, "userAgent": agent})
 		case "initialized":
 		case "thread/loaded/list":
 			write(request.ID, map[string]any{"data": []string{}, "nextCursor": nil})
@@ -88,13 +107,22 @@ func init() {
 			if security.WriteAtomic(filepath.Join(home, "auth.json"), workerSubscriptionBundle("rotated")) != nil {
 				os.Exit(82)
 			}
+			if fault == managedFixtureScan {
+				if os.WriteFile(filepath.Join(home, "history.jsonl"), []byte("synthetic-worker-refresh-rotated"), 0600) != nil {
+					os.Exit(86)
+				}
+			}
 			notify("turn/completed", map[string]any{"threadId": thread["id"], "turn": turn(id, codex.TurnCompleted)})
 		case "account/read":
 			reads++
 			if os.WriteFile(filepath.Join(home, "bundle-read-count"), []byte(strconv.Itoa(reads)), 0600) != nil {
 				os.Exit(83)
 			}
-			write(request.ID, map[string]any{"account": map[string]any{"type": "chatgpt", "email": "fixture@example.invalid", "planType": "plus"}, "requiresOpenaiAuth": true})
+			var account any = map[string]any{"type": "chatgpt", "email": "fixture@example.invalid", "planType": "plus"}
+			if fault == managedFixtureCapture {
+				account = nil
+			}
+			write(request.ID, map[string]any{"account": account, "requiresOpenaiAuth": true})
 		default:
 			os.Exit(84)
 		}
@@ -104,7 +132,18 @@ func init() {
 
 type managedExecutionPublicationRPC struct {
 	earlyExecutionRegistrationRPC
-	events []domain.ExecutionEvent
+	events     []domain.ExecutionEvent
+	nativeHome string
+	fault      managedExecutionFixtureFault
+}
+
+func (f *managedExecutionPublicationRPC) RegisterExecution(ctx context.Context, req *connect.Request[pb.RegisterExecutionRequest]) (*connect.Response[pb.RegisterExecutionResponse], error) {
+	if f.fault != "" {
+		if err := os.WriteFile(filepath.Join(f.nativeHome, "fixture-fault"), []byte(f.fault), 0600); err != nil {
+			return nil, err
+		}
+	}
+	return f.earlyExecutionRegistrationRPC.RegisterExecution(ctx, req)
 }
 
 func (f *managedExecutionPublicationRPC) PublishExecution(_ context.Context, req *connect.Request[pb.PublishExecutionRequest]) (*connect.Response[pb.PublishExecutionResponse], error) {
@@ -187,5 +226,80 @@ func TestManagedExecutionCapturesRotatedBundleBeforeNativeClose(t *testing.T) {
 	reads, err := security.ReadPrivate(filepath.Join(home, "bundle-read-count"), 16)
 	if err != nil || string(reads) != "1" {
 		t.Fatal("terminal cleanup did not capture the native bundle exactly once")
+	}
+}
+
+func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) {
+	for _, fault := range []managedExecutionFixtureFault{managedFixtureCapture, managedFixtureScan, managedFixtureStartupCleanup} {
+		t.Run(string(fault), func(t *testing.T) {
+			f := newCheckpointFixture(t)
+			f.input.ExecutionID = domain.NewID()
+			f.input.Configuration.Subscription = true
+			f.input.ConfigurationDigest, _ = f.input.Configuration.Digest()
+			binary, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.input.Installation.ResolvedPath, err = filepath.EvalSymlinks(binary)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager := &workspace.Manager{Root: f.root}
+			preparation := workspace.PrepareRequest{SessionID: f.input.SessionID, MachineID: f.input.MachineID, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}}
+			manifest, err := manager.Prepare(context.Background(), preparation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.input.Preparation, _ = json.Marshal(preparation)
+			f.input.Manifest, _ = json.Marshal(manifest)
+			f.job.Input, _ = json.Marshal(f.input)
+			f.job.InstanceID, f.job.AcceptedAt = domain.NewID(), time.Now().UTC()
+			document, _ := json.Marshal(f.job)
+			resource := &pb.Resource{Id: string(f.jobID), Kind: pb.EntityKind_ENTITY_KIND_JOB, SchemaVersion: 1, Revision: 9, SessionId: string(f.input.SessionID), DocumentJson: document}
+			bundle := workerSubscriptionBundle("first")
+			defer clear(bundle)
+			authentication := &earlyExecutionSubscriptionRPC{bundle: bundle, finished: make(chan *pb.FinishSubscriptionRequest, 1)}
+			_, handler := delidevv1connect.NewSubscriptionServiceHandler(authentication)
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			token, err := security.RandomToken()
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential := Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: server.URL, ServerID: domain.NewID(), DeviceID: domain.NewID(), PairingID: domain.NewID(), MachineID: f.input.MachineID, Token: token}
+			client := &managedExecutionPublicationRPC{nativeHome: filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex"), fault: fault}
+
+			if err := security.PrivateDir(filepath.Join(f.root, "jobs")); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			config := Config{Root: f.root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
+			err = runAndReportJob(ctx, config, client, credential, f.job.InstanceID, assignment{context: ctx, cancel: func() {}}, resource, f.job)
+			var uncertain *managedExecutionUncertain
+			if !errors.As(err, &uncertain) || client.reported {
+				t.Fatal("acknowledged fenced finish authorized ordinary job reporting", err)
+			}
+			raw, readErr := security.ReadPrivate(filepath.Join(f.root, "jobs", string(f.jobID)+".json"), 2<<20)
+			var retained journal
+			if readErr != nil || domain.Decode(raw, &retained) != nil || retained.State != journalStarted || retained.Problem != nil || len(retained.Output) != 0 {
+				t.Fatal("acknowledged fenced finish replaced the original started claim", readErr)
+			}
+			select {
+			case finish := <-authentication.finished:
+				defer clear(finish.Bundle)
+				if finish.Succeeded && finish.CleanupConfirmed {
+					t.Fatal("fixture did not exercise uncertain native authentication")
+				}
+				if fault == managedFixtureCapture && finish.Succeeded {
+					t.Fatal("capture fixture did not exercise final bundle capture failure")
+				}
+				if fault == managedFixtureScan && (!finish.Succeeded || finish.CleanupConfirmed) {
+					t.Fatal("scan fixture did not isolate retained-file cleanup failure")
+				}
+			default:
+				t.Fatal("uncertain execution omitted its protected fenced Finish")
+			}
+		})
 	}
 }

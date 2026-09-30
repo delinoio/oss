@@ -144,6 +144,10 @@ func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
 				}
 			} else {
 				output, err = executeSession(context.Background(), Config{Root: f.root, execution: publication, executionContext: context.Background()}, f.jobID, f.job)
+				var uncertain *managedExecutionUncertain
+				if errors.As(err, &uncertain) {
+					t.Fatal("verified unused-original cleanup interrupted the work lane", err)
+				}
 			}
 			if err == nil || len(output) != 0 {
 				t.Fatal("pre-native failure was reported as completed execution", err)

@@ -490,6 +490,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Uncertain protected execution completion must also escape ordinary job-error reporting, retain its started claim journal and close/join the primary work lane. Independent workspace cleanup failures cannot erase that uncertainty; server stream loss fences the original execution lease before another account grant.
 
+- An acknowledged protected Finish may retain a fenced account. Keep execution uncertain unless final bundle capture and independent cleanup both succeeded, or the separately verified pre-native cleanup returned the unused original bundle. RPC acknowledgment alone cannot authorize ordinary job reporting or overwrite the started claim journal.
+
 - Install managed execution credential cleanup at the auth-file write boundary, before publisher/registration failure paths, including predecessor runtimes. Remove and synchronize only owned authentication after confirmed native closure or before any native ownership; unconfirmed startup/closure retains its recovery lease.
 
 - Confirmed pre-native execution failure, including a definitively closed failed Open, returns the byte-identical unused original bundle only after its auth-file comparison/removal and retained-file scan succeed. Keep success and refresh false; the protected Finish proof permits preserving the original generation, never reporting native execution success. Changed files or unconfirmed cleanup retain uncertainty.
