@@ -107,7 +107,7 @@ test("SIGTERM reaches the active child during preparation and execution", { skip
       const fs = require('node:fs');
       process.on('SIGTERM', () => { fs.writeFileSync(${JSON.stringify(receipt)}, 'terminated'); process.exit(0); });
       setInterval(() => {}, 1000);
-      process.stdout.write('ready\\n');
+      process.stdout.write('child-ready\\n');
     `;
     const wrapper = spawn(process.execPath, ["--input-type=module", "-e", `
       import { runDesktop } from ${JSON.stringify(new URL("./run-desktop.mjs", import.meta.url).href)};
@@ -118,13 +118,23 @@ test("SIGTERM reaches the active child during preparation and execution", { skip
         run: async (_command, _args, _options, lifecycle) => {
           calls++;
           if (${JSON.stringify(stage)} === 'run' && calls === 1) return { code: 0, signal: null };
-          return spawnDevServer(process.execPath, ['-e', ${JSON.stringify(childCode)}], { stdio: 'inherit', shell: false }, lifecycle);
+          const running = spawnDevServer(process.execPath, ['-e', ${JSON.stringify(childCode)}], { stdio: 'inherit', shell: false }, lifecycle);
+          process.stdout.write('wrapper-ready\\n');
+          return running;
         }
       }));
     `], { stdio: ["ignore", "pipe", "pipe"] });
     t.after(() => { if (wrapper.exitCode === null && wrapper.signalCode === null) wrapper.kill("SIGTERM"); });
     const exited = once(wrapper, "exit");
-    await once(wrapper.stdout, "data");
+    // Inherited child stdout can arrive while the wrapper is still returning
+    // from spawn, before its signal handlers exist. Wait for both readiness
+    // markers so scheduling under load cannot kill the wrapper prematurely.
+    let output = "";
+    for await (const chunk of wrapper.stdout.iterator({ destroyOnReturn: false })) {
+      output += chunk;
+      if (output.includes("child-ready\n") && output.includes("wrapper-ready\n")) break;
+    }
+    assert.ok(output.includes("child-ready\n") && output.includes("wrapper-ready\n"));
     wrapper.kill("SIGTERM");
     const [code, signal] = await exited;
     assert.equal(code, null);
