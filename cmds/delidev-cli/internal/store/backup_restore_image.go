@@ -71,6 +71,10 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		"DELETE FROM entities WHERE kind IN ('device','pairing')",
 		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind='device'",
 		"INSERT INTO credential_verifiers SELECT c.* FROM current_state.credential_verifiers c JOIN current_state.entities e ON e.id=c.device_id WHERE json_extract(e.body,'$.type')='client' AND json_extract(e.body,'$.revoked')=0",
+		// Vault generations and immutable routing are current explicit authority,
+		// not historical configuration that a database rollback may reactivate.
+		"DELETE FROM entities WHERE kind IN ('network_profile','network_route')",
+		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind IN ('network_profile','network_route')",
 		// Worker files are not restored. Their database association must be
 		// explicitly paired again after startup, never implicitly reattached.
 		"UPDATE entities SET body=json_set(body,'$.revoked',json('true')) WHERE kind='device' AND json_extract(body,'$.type')='worker'",
