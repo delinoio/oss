@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -148,12 +150,75 @@ func TestRestoreRPCRequiresOriginalInspectionAndCurrentAuthority(t *testing.T) {
 	}
 	defer reopened.Close()
 	s.Store = reopened
+	lifecycle, err := LockLifecycle(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := WriteRunning(root, Config{})
+	lifecycle.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	result, err = s.RestoreBackup(ctx, connect.NewRequest(request))
 	if err != nil || !result.Msg.Replayed || result.Msg.Receipt.State != pb.BackupRestoreState_BACKUP_RESTORE_STATE_RESTORED {
 		t.Fatal(result, err)
 	}
+	intent, err = ReadLifecycle(root)
+	if err != nil || intent != replacement {
+		t.Fatal("receipt replay stopped the explicitly restarted epoch", intent, err)
+	}
 	status, err := s.GetBackupRestore(ctx, connect.NewRequest(&pb.GetBackupRestoreRequest{RequestId: request.RequestId}))
 	if err != nil || status.Msg.Receipt.State != pb.BackupRestoreState_BACKUP_RESTORE_STATE_RESTORED {
 		t.Fatal(status, err)
+	}
+}
+
+func TestRestoreStoppedIntentFailurePreservesOriginalDatabase(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := s.Store.BindIdentity(ctx, s.Identity.ServerID); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: backup.Msg.Id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := s.Store.Root()
+	intent := filepath.Join(root, "server-lifecycle.json")
+	if err := os.Mkdir(intent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	s.stop = func() {}
+	requestID := domain.NewID()
+	revision := inspection.Msg.RestoreRevision
+	_, err = s.RestoreBackup(ctx, connect.NewRequest(&pb.RestoreBackupRequest{RequestId: string(requestID), Backup: inspection.Msg.Backup, Sha256: inspection.Msg.Sha256, ExpectedRestoreRevision: &revision, Confirm: true}))
+	if err == nil {
+		t.Fatal("restore accepted an uncommitted stopped intent")
+	}
+	if err := os.Remove(intent); err != nil {
+		t.Fatal(err)
+	}
+	s.Store.Close()
+	reopened, err := store.Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	s.Store = reopened
+	receipt, err := reopened.GetBackupRestore(ctx, requestID)
+	if err != nil || receipt.State != store.RestoreRolledBack {
+		t.Fatal("stopped-intent failure published a replacement", receipt, err)
+	}
+	current, err := reopened.RestoreRevision(ctx)
+	if err != nil || current != revision {
+		t.Fatal("stopped-intent failure changed the live revision", current, err)
+	}
+	observed, err := reopened.InspectBackup(ctx, domain.ID(backup.Msg.Id), s.Identity.ServerID)
+	if err != nil || observed.SHA256 != inspection.Msg.Sha256 {
+		t.Fatal("stopped-intent failure changed the source backup", observed, err)
 	}
 }

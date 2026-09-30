@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func restoreFixture(t *testing.T) (*Store, string, context.Context, BackupRestoreInput, domain.ID) {
@@ -58,11 +59,13 @@ func TestBackupRestoreProcessCrash(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, _, err = s.restoreBackup(ctx, control.Request, control.Input, func(boundary string) error {
+		_, _, err = s.restoreBackupWithBarrier(ctx, control.Request, control.Input, func(boundary string) error {
 			if boundary == control.Boundary {
 				os.Exit(89)
 			}
 			return nil
+		}, func() error {
+			return security.WriteAtomic(filepath.Join(control.Root, "epoch-ended.json"), []byte(`{"stopped":true}`))
 		})
 		t.Fatal("crash checkpoint not reached", err)
 	}
@@ -105,6 +108,9 @@ func TestBackupRestoreProcessCrash(t *testing.T) {
 			default:
 				if laterErr == nil || err != nil || receipt.State != RestoreCompleted {
 					t.Fatal(laterErr, receipt, err)
+				}
+				if _, err := security.ReadPrivate(filepath.Join(root, "epoch-ended.json"), 64); err != nil {
+					t.Fatal("publication crossed an uncommitted epoch barrier", err)
 				}
 			}
 		})

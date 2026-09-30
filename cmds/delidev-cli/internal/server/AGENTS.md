@@ -45,3 +45,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
 
 - Authenticated user-service native control and managed restore share the original lifecycle gate through intent and native effects. Replacement must refuse unfinished control and end the old server epoch before replacement state can serve requests.
+
+- Managed restore must synchronize stopped lifecycle intent through the prepared pre-publication barrier before replacement. Barrier failure preserves the original live image for rollback; exact receipt replay never stops a later explicitly restarted epoch.

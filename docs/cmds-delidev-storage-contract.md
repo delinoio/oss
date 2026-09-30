@@ -228,8 +228,12 @@ WAL checkpoint and SQLite closure, synchronize that barrier before atomic
 same-volume platform replacement and synchronization of both directories. No
 restore code unlinks live WAL/SHM/journal files. The source backup remains unchanged.
 
-Publication ends the old server epoch and records stopped lifecycle intent. It
-returns `published`, which is distinct from verified startup. Any uncertain outcome
+Before atomic replacement, the server synchronizes stopped lifecycle intent under
+the same lifecycle gate. A failed stop-intent barrier preserves the original live
+image behind the prepared journal; startup records rollback. A crash after rename
+cannot leave running intent that permits automatic `server ensure`. Exact receipt
+replay does not suppress a later explicitly restarted epoch. Publication ends the
+old server epoch and returns `published`, which is distinct from verified startup. Any uncertain outcome
 after SQLite closure also ends the epoch. Startup, under the exclusive server lock
 and before opening SQLite, accepts exactly the journal-pinned original or candidate
 fingerprint: preserve the original and record `rolled-back`, or record `restored`

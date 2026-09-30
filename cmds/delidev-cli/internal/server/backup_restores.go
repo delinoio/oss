@@ -46,15 +46,26 @@ func (s *Service) RestoreBackup(ctx context.Context, req *connect.Request[pb.Res
 	}
 	defer lifecycle.Close()
 	input := store.BackupRestoreInput{Backup: store.Backup{ID: domain.ID(req.Msg.Backup.Id), Bytes: req.Msg.Backup.SizeBytes, ModifiedAt: modified.UTC()}, SHA256: req.Msg.Sha256, ExpectedRevision: *req.Msg.ExpectedRestoreRevision, ServerID: s.Identity.ServerID, Actor: actor}
-	v, replayed, err := s.Store.RestoreBackup(ctx, domain.ID(req.Msg.RequestId), input)
+	epochStopped := false
+	v, replayed, err := s.Store.RestoreBackupWithBarrier(ctx, domain.ID(req.Msg.RequestId), input, func() error {
+		if err := writeStopped(s.Store.Root(), domain.ID(req.Msg.RequestId), configurationDigest(Config{})); err != nil {
+			return err
+		}
+		epochStopped = true
+		return nil
+	})
 	if s.Store.RestoreFrozen() {
 		// Publication and uncertain post-close outcomes both end the original
 		// epoch. Startup reconciles the journal before opening any database.
 		s.stopping.Store(true)
-		if stoppedErr := writeStopped(s.Store.Root(), domain.ID(req.Msg.RequestId), configurationDigest(Config{})); stoppedErr != nil {
-			s.logger.WarnContext(ctx, "backup_restore_stop_intent_failed", "correlation_id", correlation, "code", domain.SafeError(stoppedErr).Code)
-			if err == nil {
-				err = stoppedErr
+		// A pre-publication failure can still leave SQLite closed. Suppress
+		// automatic restart conservatively without repeating a committed barrier.
+		if !epochStopped {
+			if stoppedErr := writeStopped(s.Store.Root(), domain.ID(req.Msg.RequestId), configurationDigest(Config{})); stoppedErr != nil {
+				s.logger.WarnContext(ctx, "backup_restore_stop_intent_failed", "correlation_id", correlation, "code", domain.SafeError(stoppedErr).Code)
+				if err == nil {
+					err = stoppedErr
+				}
 			}
 		}
 		time.AfterFunc(100*time.Millisecond, s.stop)

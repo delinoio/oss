@@ -268,9 +268,19 @@ func (s *Store) RestoreBackup(ctx context.Context, request domain.ID, in BackupR
 	return s.restoreBackup(ctx, request, in, nil)
 }
 
+// RestoreBackupWithBarrier commits server-owned lifecycle intent before atomic
+// publication. Receipt replay never invokes the barrier or stops a newer epoch.
+func (s *Store) RestoreBackupWithBarrier(ctx context.Context, request domain.ID, in BackupRestoreInput, beforePublish func() error) (BackupRestore, bool, error) {
+	return s.restoreBackupWithBarrier(ctx, request, in, nil, beforePublish)
+}
+
 // checkpoint is deterministic crash/fault injection used only by tests. Returning
 // an error after preparation retains the external recovery barrier for startup.
 func (s *Store) restoreBackup(ctx context.Context, request domain.ID, in BackupRestoreInput, checkpoint func(string) error) (BackupRestore, bool, error) {
+	return s.restoreBackupWithBarrier(ctx, request, in, checkpoint, nil)
+}
+
+func (s *Store) restoreBackupWithBarrier(ctx context.Context, request domain.ID, in BackupRestoreInput, checkpoint func(string) error, beforePublish func() error) (BackupRestore, bool, error) {
 	var result BackupRestore
 	if request.Validate() != nil || in.validate() != nil {
 		return result, false, restoreConflict()
@@ -458,6 +468,15 @@ func (s *Store) restoreBackup(ctx context.Context, request domain.ID, in BackupR
 	if checkpoint != nil {
 		if err := checkpoint("prepared"); err != nil {
 			return result, false, err
+		}
+	}
+	// The prepared journal owns both possible outcomes. End the server epoch
+	// durably before rename so a crash cannot make automatic ensure serve the
+	// replacement. A failed lifecycle barrier keeps the original image and
+	// leaves startup to record rollback; it never permits publication.
+	if beforePublish != nil {
+		if err := beforePublish(); err != nil {
+			return result, false, storageError(err)
 		}
 	}
 	if err := ctx.Err(); err != nil {
