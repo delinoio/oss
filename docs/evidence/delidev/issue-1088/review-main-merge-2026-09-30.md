@@ -18,7 +18,7 @@ No incoming implementation is discarded. The production stylesheet contains
 Executed against the composed checkout:
 
 - `VITEST_MAX_WORKERS=1 GOMAXPROCS=2 pnpm test` in `apps/delidev`: the complete
-  command passed, including API-client generation/build, frontend typecheck,
+  command passed, including API-client build, frontend typecheck,
   95 files / 1,222 tests, eight bundle checks, 16 launch/asset checks, widget
   fixtures and production build. Hydrate the required icon LFS asset first.
 - Root `pnpm ci:contracts`: all 113 checks passed, including protocol allocation
