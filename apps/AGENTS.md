@@ -1,4 +1,5 @@
 ### Instructions for `apps/`
+- DeliDev fresh native main launch automatically starts/reuses its bounded Go-owned local runtime once; renderer lifecycle/restoration only observes. Keep routine infrastructure outside startup/sidebar/tray and retain mounted advanced connection controls in System > Connection & diagnostics plus transport-independent Troubleshooting. Follow docs/apps-delidev-desktop-contract.md.
 
 - Follow root `AGENTS.md` and project-specific docs before adding or changing app code.
 - Keep app-specific contracts synchronized in the project index doc (`docs/project-*.md`) and relevant app-domain contract docs (`docs/apps-*.md`) in the same change.

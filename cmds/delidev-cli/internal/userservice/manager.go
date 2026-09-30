@@ -566,3 +566,46 @@ func ManagedIntent(root string, kind Kind) (installed, stopped bool, err error) 
 	}
 	return !r.Removed, r.Desired == Stopped, nil
 }
+
+// LockStartupAdmission pins the registration against every Control mutation.
+// Callers must acquire it before product startup/lifecycle locks and retain it
+// until their detached spawn/readiness attempt ends. It changes no service
+// intent and never contacts or mutates the native service manager.
+func LockStartupAdmission(ctx context.Context, root string, kind Kind) (*security.Lock, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return nil, domain.SafeError(err)
+	}
+	if err := security.CheckPrivateDir(root); err != nil {
+		return nil, err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, domain.SafeError(err)
+	}
+	m := New(root, kind, nil)
+	if err := m.check(); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, domain.SafeError(err)
+		}
+		gate, err := security.TryLock(m.path("-control.lock"))
+		if err == nil {
+			return gate, nil
+		}
+		if domain.SafeError(err).Code != domain.Conflict {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, domain.SafeError(ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}

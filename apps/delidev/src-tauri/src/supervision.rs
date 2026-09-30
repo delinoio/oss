@@ -6,7 +6,7 @@ use std::{
 
 use serde::Serialize;
 
-use crate::{Connector, NativeFailure};
+use crate::{Connection, Connector, NativeFailure};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -40,6 +40,8 @@ struct Shared {
     status: LocalServerStatus,
     generation: u64,
     exit: bool,
+    launch: Option<crate::Result<Connection>>,
+    retrying_launch: bool,
 }
 struct State {
     value: Mutex<Shared>,
@@ -52,7 +54,7 @@ struct State {
 pub struct Supervision {
     connector: Arc<Connector>,
     shared: Arc<State>,
-    task: Option<thread::JoinHandle<()>>,
+    task: Mutex<Option<thread::JoinHandle<()>>>,
 }
 impl Supervision {
     pub fn new(connector: Arc<Connector>) -> Self {
@@ -61,12 +63,33 @@ impl Supervision {
                 status: LocalServerStatus::default(),
                 generation: 0,
                 exit: false,
+                launch: None,
+                retrying_launch: false,
             }),
             wake: Condvar::new(),
         });
         let worker = Arc::clone(&connector);
         let state = Arc::clone(&shared);
         let task = thread::spawn(move || {
+            // The host owns this one initial operation. Supervision cannot race
+            // it, and observing the retained result never repeats pairing.
+            let launch = worker.launch_connect(false);
+            {
+                let mut value = state.value.lock().unwrap_or_else(|e| e.into_inner());
+                value.status = match &launch {
+                    Ok(_) => LocalServerStatus {
+                        state: LocalServerState::Ready,
+                        ..LocalServerStatus::default()
+                    },
+                    Err(code) => LocalServerStatus {
+                        state: LocalServerState::Blocked,
+                        failure: Some(*code),
+                        ..LocalServerStatus::default()
+                    },
+                };
+                value.launch = Some(launch);
+                state.wake.notify_all();
+            }
             let mut attempts = 0_u32;
             let mut previous = LocalServerStatus::default();
             loop {
@@ -115,7 +138,72 @@ impl Supervision {
         Self {
             connector,
             shared,
-            task: Some(task),
+            task: Mutex::new(Some(task)),
+        }
+    }
+
+    pub fn launch_connection(&self) -> crate::Result<Connection> {
+        let mut value = self.shared.value.lock().map_err(|_| NativeFailure::Busy)?;
+        while value.launch.is_none() && !value.exit {
+            value = self
+                .shared
+                .wake
+                .wait(value)
+                .map_err(|_| NativeFailure::Busy)?;
+        }
+        if value.exit {
+            return Err(NativeFailure::Stopped);
+        }
+        let connection = value
+            .launch
+            .as_ref()
+            .ok_or(NativeFailure::Stopped)?
+            .clone()?;
+        drop(value);
+        // A retained success is never fresh readiness after an explicit Stop.
+        // This joins Go's current intent observation without replaying bootstrap.
+        if self.connector.ensure()? != LocalServerState::Ready {
+            return Err(NativeFailure::Stopped);
+        }
+        Ok(connection)
+    }
+
+    pub fn retry_launch(&self) -> crate::Result<Connection> {
+        {
+            let mut value = self.shared.value.lock().map_err(|_| NativeFailure::Busy)?;
+            if value.launch.is_none() || value.retrying_launch || value.exit {
+                return Err(NativeFailure::Busy);
+            }
+            value.retrying_launch = true;
+        }
+        let result = self.connector.launch_connect(true);
+        {
+            let mut value = self.shared.value.lock().map_err(|_| NativeFailure::Busy)?;
+            value.retrying_launch = false;
+            value.launch = Some(result.clone());
+            value.generation = value.generation.wrapping_add(1);
+            self.shared.wake.notify_all();
+        }
+        result
+    }
+
+    pub fn adopt_connection(&self, connection: &Connection) {
+        let mut value = self.shared.value.lock().unwrap_or_else(|e| e.into_inner());
+        value.launch = Some(Ok(connection.clone()));
+        value.generation = value.generation.wrapping_add(1);
+        self.shared.wake.notify_all();
+    }
+
+    pub fn stop(&self) {
+        self.connector.exiting.store(true, Ordering::Release);
+        {
+            let mut state = self.shared.value.lock().unwrap_or_else(|e| e.into_inner());
+            state.exit = true;
+            self.shared.wake.notify_all();
+        }
+        // Join only short CLI controllers; detached servers retain ownership.
+        if let Some(task) = self.task.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            let _ = task.join();
         }
     }
 
@@ -135,17 +223,7 @@ impl Supervision {
 }
 impl Drop for Supervision {
     fn drop(&mut self) {
-        self.connector.exiting.store(true, Ordering::Release);
-        {
-            let mut state = self.shared.value.lock().unwrap_or_else(|e| e.into_inner());
-            state.exit = true;
-            self.shared.wake.notify_all();
-        }
-        // Join only our short CLI controller. Detached servers have independent
-        // ownership and log handles, and are never terminated on desktop exit.
-        if let Some(task) = self.task.take() {
-            let _ = task.join();
-        }
+        self.stop();
     }
 }
 

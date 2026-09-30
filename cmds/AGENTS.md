@@ -1,4 +1,5 @@
 ### Instructions for `cmds/`
+- DeliDev desktop launch/retry are explicit native infrastructure operations, distinct from ordinary product commands, Start and intent-only Ensure. Preserve native-service admission and same-process stopped-intent suppression under the scoped CLI and service contracts.
 
 - Follow root `AGENTS.md` and command-specific docs in `docs/project-*.md` plus relevant `docs/cmds-*.md` files.
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.

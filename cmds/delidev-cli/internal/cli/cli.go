@@ -140,7 +140,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		value, err := desktopRecoveryCommand(ctx, o, rest)
 		return emit(value, err)
 	}
-	if command == "server" && len(rest) > 0 && (rest[0] == "start" || rest[0] == "run" || rest[0] == "ensure") {
+	if command == "server" && len(rest) > 0 && (rest[0] == "start" || rest[0] == "run" || rest[0] == "ensure" || rest[0] == "desktop-launch" || rest[0] == "desktop-retry") {
 		value, err := start(ctx, o, rest, streams)
 		return emit(value, err)
 	}
@@ -788,6 +788,31 @@ func start(ctx context.Context, o options, args []string, streams IO) (any, erro
 	}
 	if *origins != "" {
 		configuration.AllowedOrigins = strings.Split(*origins, ",")
+	}
+	if args[0] == "desktop-launch" || args[0] == "desktop-retry" {
+		if *foreground {
+			return nil, usage()
+		}
+		mode := desktopLaunch
+		if args[0] == "desktop-retry" {
+			mode = desktopRetry
+		}
+		if err := security.PrivateDir(o.dataDir); err != nil {
+			return nil, err
+		}
+		bootstrap, err := joinDesktopBootstrap(ctx, o.dataDir)
+		if err != nil {
+			return nil, err
+		}
+		defer bootstrap.Close()
+		value, err := startDetachedMode(ctx, o, configuration, streams, mode)
+		if err != nil {
+			return nil, err
+		}
+		if state, ok := value.(map[string]any)["state"]; ok {
+			return map[string]any{"state": state}, nil
+		}
+		return pairLocalDevice(ctx, o, filepath.Join(o.dataDir, "desktop-client"), domain.ClientDevice)
 	}
 	if args[0] == "ensure" {
 		if *foreground {

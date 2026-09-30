@@ -326,7 +326,7 @@ it("revokes a real paired client through settings and reads bounded server diagn
   const retained = await createClient(ResourceService, transport).getResource({ kind: EntityKind.DEVICE, id: credential.device_id as string });
   expect(document(retained.resource).revoked).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Return to devices" }));
-  fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
   await screen.findByText("Server owner credential loaded");
   expect(screen.getByText("Read succeeded")).toBeTruthy();
   expect(screen.getByText("Not performed")).toBeTruthy();

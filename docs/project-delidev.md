@@ -11,6 +11,8 @@ The desktop app icon keeps its original colored ribbon and transparent cutouts, 
 
 The current pull-request work additionally addresses issues #1056 and #1057: opt-in automatic titles use a separate, capability-negotiated title Worker lane, and the desktop starts sessions from a chat-first page while retaining the existing conversation surface. This increment does not claim completion of issue #964; native desktop visual and real-provider/account acceptance limits remain explicit in the evidence ledger.
 
+Issue #1137 amends the desktop default: each fresh trusted main native process owns one automatic local launch and joined credential result, with Go-owned native-service admission and authenticated identity verification before product entry. Same-process Stop stays suppressed until explicit advanced Start; restored windows and renderer lifecycle only observe. Connection controls move to Settings > System > Connection & diagnostics, with transport-independent Troubleshooting and all 16 categories retained. Ordinary CLI and saved-server windows retain their existing startup/authority boundaries. The [desktop contract](apps-delidev-desktop-contract.md) and [service contract](cmds-delidev-user-services-contract.md) define the change; actual platform evidence remains separate.
+
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its standalone/sidecar executable is `delidev`.
 

@@ -259,12 +259,12 @@ it("refreshes reads after recovery without replacing the connection's session dr
   const value = fixture();
   value.status.mockRejectedValueOnce(new ConnectError("Server is stopped", Code.Unavailable));
   const view = render(<App transport={value.transport} connectionReady={false} />);
-  await screen.findByText("Server unavailable");
+  await screen.findByText("Connection unavailable");
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Retain this across server restart" } });
   view.rerender(<App transport={value.transport} connectionReady connectionEpoch={1} />);
-  await screen.findByText("Server 0.1.0");
+  await screen.findByText("Connected");
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe("Retain this across server restart");
   expect(value.enqueues).not.toHaveBeenCalled();
@@ -346,14 +346,14 @@ it("drops connection-scoped drafts and caches when the selected transport change
 it("does not present cached server status as current connectivity after a failed refresh", async () => {
   const value = fixture();
   const view = render(<App transport={value.transport} />);
-  await screen.findByText("Server 0.1.0");
+  await screen.findByText("Connected");
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Keep while disconnected" } });
   value.status.mockRejectedValue(new ConnectError("Server disconnected", Code.Unavailable));
   view.rerender(<App transport={value.transport} connectionEpoch={1} />);
-  await screen.findByText("Server unavailable");
-  expect(screen.queryByText("Server 0.1.0")).toBeNull();
+  await screen.findByText("Connection unavailable");
+  expect(window.document.querySelector(".sidebar-footer")?.textContent).not.toContain("Connected");
   expect((composer as HTMLTextAreaElement).value).toBe("Keep while disconnected");
   expect(value.enqueues).not.toHaveBeenCalled();
 });

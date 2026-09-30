@@ -81,8 +81,42 @@ async fn connect_local(
     let result = tauri::async_runtime::spawn_blocking(move || connector.connect())
         .await
         .map_err(|_| NativeFailure::SidecarFailed)?;
-    supervision.refresh();
     let connection = result?;
+    supervision.adopt_connection(&connection);
+    if connection.endpoint != "http://127.0.0.1:46310" {
+        return Err(NativeFailure::Incompatible);
+    }
+    Ok(connection)
+}
+
+// Only the original trusted main document can observe or explicitly retry the
+// host-owned launch. Saved windows and CEF helper processes never bootstrap.
+#[tauri::command]
+async fn launch_connection(
+    window: WebviewWindow<Cef>,
+    supervision: tauri::State<'_, Arc<Supervision>>,
+) -> Result<Connection, NativeFailure> {
+    trusted_main(&window)?;
+    let supervision = Arc::clone(supervision.inner());
+    let connection = tauri::async_runtime::spawn_blocking(move || supervision.launch_connection())
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+    if connection.endpoint != "http://127.0.0.1:46310" {
+        return Err(NativeFailure::Incompatible);
+    }
+    Ok(connection)
+}
+
+#[tauri::command]
+async fn retry_launch(
+    window: WebviewWindow<Cef>,
+    supervision: tauri::State<'_, Arc<Supervision>>,
+) -> Result<Connection, NativeFailure> {
+    trusted_main(&window)?;
+    let supervision = Arc::clone(supervision.inner());
+    let connection = tauri::async_runtime::spawn_blocking(move || supervision.retry_launch())
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
     if connection.endpoint != "http://127.0.0.1:46310" {
         return Err(NativeFailure::Incompatible);
     }
@@ -108,6 +142,7 @@ async fn recover_local_registration(
     device_id: String,
     revision: String,
     request_id: String,
+    supervision: tauri::State<'_, Arc<Supervision>>,
 ) -> Result<Connection, NativeFailure> {
     trusted_main(&window)?;
     let connector = Arc::clone(connector.inner());
@@ -119,6 +154,7 @@ async fn recover_local_registration(
     if connection.endpoint != "http://127.0.0.1:46310" {
         return Err(NativeFailure::Incompatible);
     }
+    supervision.adopt_connection(&connection);
     Ok(connection)
 }
 
@@ -730,7 +766,6 @@ fn run() -> Result<(), NativeFailure> {
     }
     let executable = std::env::current_exe().map_err(|_| NativeFailure::SidecarMissing)?;
     let connector = Arc::new(Connector::new(bundled_sidecar(&executable)?, root)?);
-    let supervision = Arc::new(Supervision::new(Arc::clone(&connector)));
     let tray = Arc::new(TrayHost::default());
     let notifications = Arc::new(NotificationHost::default());
     let app = tauri::Builder::<Cef>::new()
@@ -738,10 +773,11 @@ fn run() -> Result<(), NativeFailure> {
         .manage(Arc::clone(&tray))
         .manage(Arc::clone(&notifications))
         .manage(connector)
-        .manage(Arc::clone(&supervision))
         .invoke_handler(tauri::generate_handler![
             open_github,
             connect_local,
+            launch_connection,
+            retry_launch,
             inspect_local_registration,
             recover_local_registration,
             local_server_status,
@@ -792,6 +828,11 @@ fn run() -> Result<(), NativeFailure> {
         })
         .setup(|app| {
             let result = (|| -> tauri::Result<()> {
+                // Register before loading the main renderer, so its first
+                // observation joins the initial native operation.
+                app.manage(Arc::new(Supervision::new(Arc::clone(
+                    app.state::<Arc<Connector>>().inner(),
+                ))));
                 create_main(app.handle())?;
                 if app.state::<Arc<TrayHost>>().install(app.handle()).is_err() {
                     tracing::warn!(
@@ -832,6 +873,11 @@ fn run() -> Result<(), NativeFailure> {
             // return from app.run separate so an exit event cannot imply that
             // the native runtime has actually finished.
             tracing::info!(operation = "desktop_exit", state = "runtime-exit-event");
+            _app.state::<Arc<Supervision>>().stop();
+            tracing::info!(
+                operation = "desktop_exit",
+                state = "startup-supervision-joined"
+            );
             exiting_notifications.stop();
             tracing::info!(operation = "desktop_exit", state = "notifications-joined");
             exiting.stop();

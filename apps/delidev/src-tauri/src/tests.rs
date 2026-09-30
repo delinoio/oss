@@ -113,7 +113,9 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
     assert_eq!(first.device_id, second.device_id);
     assert_eq!(first.token, second.token);
     // A client/connector exit has no server stop side effect.
-    let replacement = Connector::new(connector.executable.clone(), connector.root.clone()).unwrap();
+    let mut replacement =
+        Connector::new(connector.executable.clone(), connector.root.clone()).unwrap();
+    replacement.listen = connector.listen.clone();
     let reopened = replacement.connect().unwrap();
     assert_eq!(reopened.server_id, first.server_id);
     let owner: serde_json::Value =
@@ -182,6 +184,7 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
     assert_eq!(inspected.state, DesktopRegistrationState::Revoked);
     assert_eq!(inspected.device_id, first.device_id);
     let request = uuid::Uuid::now_v7().to_string();
+    replacement.listen = "127.0.0.1:46310".into();
     // A production connector cannot recover this fixture's alternate endpoint.
     // Failure must precede new registrations and fixed credential publication.
     let old_credential =
@@ -664,5 +667,185 @@ fn real_saved_connection_keeps_owner_local_and_remote_authority_separate() {
         client
             .pair_saved("../escape", "invalid", Zeroizing::new(vec![]))
             .is_err()
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn host_launch_is_joined_once_and_cached_readiness_cannot_undo_stop() {
+    use std::{os::unix::fs::PermissionsExt, sync::Arc};
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("scope");
+    fs::create_dir_all(root.join("desktop-client")).unwrap();
+    let client = metadata();
+    fs::write(root.join("desktop-client/device.json"), document(&client)).unwrap();
+    let executable = temporary.path().join("sidecar");
+    let ready = serde_json::json!({"reused":true,"status":{"version":"0.1.0","protocol_version":1,"listener":"http://127.0.0.1:46310"}});
+    let client_json = serde_json::to_string(&serde_json::json!({"version":client.version,"type":"client","endpoint":client.endpoint,"server_id":client.server_id,"device_id":client.device_id,"pairing_id":client.pairing_id,"machine_id":""})).unwrap();
+    fs::write(
+        &executable,
+        format!(
+            r#"#!/bin/sh
+root="$2"
+printf '%s\n' "$3 $4" >> "$root/calls"
+case "$3 $4" in
+ 'server desktop-launch')
+  while [ ! -f "$root/release" ]; do /bin/sleep 0.01; done
+  result='{client_json}' ;;
+ 'server ensure')
+  if [ -f "$root/stopped" ]; then result='{{"state":"stopped"}}'; else result='{ready}'; fi ;;
+ 'device pair-local'|'device inspect') result='{client_json}' ;;
+ *) exit 2 ;;
+esac
+printf '%s' '{{"version":1,"result":'"$result"'}}'
+"#
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let connector = Arc::new(Connector::new(executable, root.clone()).unwrap());
+    let supervision = Arc::new(Supervision::new(connector));
+    let first = Arc::clone(&supervision);
+    let second = Arc::clone(&supervision);
+    let a = thread::spawn(move || first.launch_connection());
+    let b = thread::spawn(move || second.launch_connection());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !root.join("calls").exists() {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(supervision.status().state, LocalServerState::Checking);
+    assert_eq!(
+        fs::read_to_string(root.join("calls")).unwrap(),
+        "server desktop-launch\n"
+    );
+    fs::write(root.join("release"), []).unwrap();
+    assert_eq!(a.join().unwrap().unwrap().device_id, client.device_id);
+    assert_eq!(b.join().unwrap().unwrap().device_id, client.device_id);
+    assert_eq!(
+        supervision.launch_connection().unwrap().server_id,
+        client.server_id
+    );
+    let calls = fs::read_to_string(root.join("calls")).unwrap();
+    assert_eq!(
+        calls
+            .lines()
+            .filter(|v| *v == "server desktop-launch")
+            .count(),
+        1
+    );
+    assert_eq!(
+        calls.lines().filter(|v| *v == "device pair-local").count(),
+        0
+    );
+    fs::write(root.join("stopped"), []).unwrap();
+    assert!(matches!(
+        supervision.launch_connection(),
+        Err(NativeFailure::Stopped)
+    ));
+    assert_eq!(
+        fs::read_to_string(root.join("calls"))
+            .unwrap()
+            .lines()
+            .filter(|v| *v == "server desktop-launch")
+            .count(),
+        1
+    );
+    supervision.stop();
+    assert!(matches!(
+        supervision.launch_connection(),
+        Err(NativeFailure::Stopped)
+    ));
+}
+
+#[test]
+fn missing_sidecar_is_a_joined_product_failure_without_replaying_startup() {
+    let temporary = tempfile::tempdir().unwrap();
+    let connector = std::sync::Arc::new(
+        Connector::new(
+            temporary.path().join("missing"),
+            temporary.path().join("scope"),
+        )
+        .unwrap(),
+    );
+    let supervision = Supervision::new(connector);
+    for _ in 0..3 {
+        assert!(matches!(
+            supervision.launch_connection(),
+            Err(NativeFailure::SidecarMissing)
+        ));
+    }
+    assert!(!temporary.path().join("scope").exists());
+    supervision.stop();
+}
+
+#[test]
+#[ignore = "requires an explicitly built Go sidecar; bootstraps only an isolated temporary server"]
+fn real_host_launch_joins_pairing_stop_and_fresh_process_boundaries() {
+    use std::sync::Arc;
+    let binary =
+        PathBuf::from(std::env::var_os("DELIDEV_TEST_SIDECAR").expect("explicit sidecar required"));
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("scope");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    let make_connector = || {
+        let mut value = Connector::new(binary.clone(), root.clone()).unwrap();
+        value.listen = address.clone();
+        Arc::new(value)
+    };
+    let cleanup = make_connector();
+    struct Cleanup(Arc<Connector>);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = self.0.run(&["server".into(), "stop".into()]);
+        }
+    }
+    let _cleanup = Cleanup(Arc::clone(&cleanup));
+    let first = Arc::new(Supervision::new(make_connector()));
+    let second = Arc::new(Supervision::new(make_connector()));
+    let a = Arc::clone(&first);
+    let b = Arc::clone(&second);
+    let a = thread::spawn(move || a.launch_connection());
+    let b = thread::spawn(move || b.launch_connection());
+    let a = a.join().unwrap().unwrap();
+    let b = b.join().unwrap().unwrap();
+    assert_eq!(a.server_id, b.server_id);
+    assert_eq!(a.device_id, b.device_id);
+    assert_eq!(a.token, b.token);
+    let credential = Zeroizing::new(fs::read(root.join("desktop-client/device.json")).unwrap());
+    for _ in 0..3 {
+        assert_eq!(first.launch_connection().unwrap().device_id, a.device_id);
+    }
+    assert_eq!(
+        &*credential,
+        &fs::read(root.join("desktop-client/device.json")).unwrap()
+    );
+    cleanup.run(&["server".into(), "stop".into()]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while root.join("server.json").exists() {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(matches!(
+        first.launch_connection(),
+        Err(NativeFailure::Stopped)
+    ));
+    assert!(matches!(
+        second.launch_connection(),
+        Err(NativeFailure::Stopped)
+    ));
+    assert!(matches!(first.retry_launch(), Err(NativeFailure::Stopped)));
+    first.stop();
+    second.stop();
+    let fresh = Supervision::new(make_connector());
+    let reopened = fresh.launch_connection().unwrap();
+    assert_eq!(reopened.server_id, a.server_id);
+    assert_eq!(reopened.device_id, a.device_id);
+    fresh.stop();
+    assert!(
+        cleanup.run(&["server".into(), "status".into()]).is_ok(),
+        "host exit stopped detached server"
     );
 }

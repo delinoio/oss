@@ -1,4 +1,5 @@
 ### Instructions
+- DeliDev issue #1137 makes a fresh trusted main desktop process intentional local Start, owned once by the native host. Preserve Go-owned service-control admission through intent publication/spawn, same-process Stop until explicit advanced Start or fresh launch, joined credential observation and saved connect-only authority. Routine connection controls belong in Connection & diagnostics; retain transport-independent Troubleshooting, all 16 Settings categories and original uncertain requests. Follow the desktop and user-service contracts.
 
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
 - License repository-owned source and future distributions under Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.

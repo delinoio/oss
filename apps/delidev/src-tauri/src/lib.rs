@@ -49,11 +49,12 @@ pub enum NativeFailure {
     InvalidInput,
     StorageUnavailable,
     Stopped,
+    ServiceManaged,
 }
 
 type Result<T> = std::result::Result<T, NativeFailure>;
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Connection {
     pub endpoint: String,
     pub server_id: String,
@@ -159,11 +160,6 @@ impl Connector {
         if !executable.is_absolute() || !root.is_absolute() {
             return Err(NativeFailure::InvalidEvidence);
         }
-        let metadata =
-            fs::symlink_metadata(&executable).map_err(|_| NativeFailure::SidecarMissing)?;
-        if !metadata.is_file() || metadata.file_type().is_symlink() {
-            return Err(NativeFailure::SidecarMissing);
-        }
         Ok(Self {
             executable,
             root,
@@ -174,7 +170,7 @@ impl Connector {
     }
 
     pub fn connect(&self) -> Result<Connection> {
-        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         tracing::info!(operation = "local_connect", phase = "start");
         let result = self.connect_inner();
         match &result {
@@ -240,12 +236,31 @@ impl Connector {
         })
     }
 
+    fn launch_connect(&self, retry: bool) -> Result<Connection> {
+        let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
+        tracing::info!(operation = "desktop_launch", phase = "preparing");
+        let result = self.connect_mode(if retry {
+            "desktop-retry"
+        } else {
+            "desktop-launch"
+        });
+        match &result {
+            Ok(_) => tracing::info!(operation = "desktop_launch", phase = "ready"),
+            Err(code) => tracing::warn!(operation = "desktop_launch", phase = "failed", ?code),
+        }
+        result
+    }
+
     fn connect_inner(&self) -> Result<Connection> {
+        self.connect_mode("start")
+    }
+
+    fn connect_mode(&self, operation: &str) -> Result<Connection> {
         // The Go executable owns compatibility, startup locking and detachment.
         // Dropping this client never invokes stop or assumes server ownership.
         let started = self.run(&[
             "server".into(),
-            "start".into(),
+            operation.into(),
             "--listen".into(),
             self.listen.clone().into(),
             "--allowed-origins".into(),
@@ -254,15 +269,26 @@ impl Connector {
         if started.get("state").and_then(|value| value.as_str()) == Some("stopped") {
             return Err(NativeFailure::Stopped);
         }
-        let client_root = self.root.join("desktop-client");
-        let metadata = self.run(&[
-            "device".into(),
-            "pair-local".into(),
-            "--device-dir".into(),
-            client_root.clone().into_os_string(),
-        ])?;
+        if started.get("state").and_then(|value| value.as_str()) == Some("service-managed") {
+            return Err(NativeFailure::ServiceManaged);
+        }
+        let metadata = if operation == "start" {
+            self.run(&[
+                "device".into(),
+                "pair-local".into(),
+                "--device-dir".into(),
+                self.root.join("desktop-client").into_os_string(),
+            ])?
+        } else {
+            // Go joins cross-process startup and original client pairing under
+            // one bootstrap lock; repeated host observations only inspect.
+            started
+        };
         let metadata: DeviceMetadata =
             serde_json::from_value(metadata).map_err(|_| NativeFailure::InvalidEvidence)?;
+        if self.listen != "127.0.0.1:0" && metadata.endpoint != format!("http://{}", self.listen) {
+            return Err(NativeFailure::Incompatible);
+        }
         self.read_local_connection(metadata)
     }
 
@@ -305,6 +331,11 @@ impl Connector {
     ) -> Result<serde_json::Value> {
         if self.exiting.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
+        }
+        let metadata =
+            fs::symlink_metadata(&self.executable).map_err(|_| NativeFailure::SidecarMissing)?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(NativeFailure::SidecarMissing);
         }
         let mut command = Command::new(&self.executable);
         command
@@ -425,7 +456,7 @@ impl Connector {
     }
 
     fn ensure(&self) -> Result<LocalServerState> {
-        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         let value = self.run(&[
             "server".into(),
             "ensure".into(),

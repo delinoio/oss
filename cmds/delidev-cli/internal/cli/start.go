@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -21,7 +22,25 @@ func startDetached(ctx context.Context, o options, config server.Config, streams
 	return ensureDetached(ctx, o, config, streams, false)
 }
 
+type startupMode uint8
+
+const (
+	explicitStartup startupMode = iota
+	intentRecovery
+	desktopLaunch
+	desktopRetry
+)
+
 func ensureDetached(ctx context.Context, o options, config server.Config, streams IO, automatic bool) (any, error) {
+	mode := explicitStartup
+	if automatic {
+		mode = intentRecovery
+	}
+	return startDetachedMode(ctx, o, config, streams, mode)
+}
+
+func startDetachedMode(ctx context.Context, o options, config server.Config, streams IO, mode startupMode) (any, error) {
+	automatic := mode == intentRecovery
 	if _, err := worker.LoadCredential(o.dataDir); err == nil {
 		return nil, domain.Fail(domain.PermissionDenied, "Server startup requires an owner scope, not a paired device scope.", "Run the lifecycle command on the server machine with its original data directory.")
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -37,7 +56,17 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 	if err := security.PrivateDir(o.dataDir); err != nil {
 		return nil, domain.SafeError(err)
 	}
-	lock, err := security.TryLock(filepath.Join(o.dataDir, "startup.lock"))
+	// Service management takes its control lock before touching product locks.
+	// Hold the same admission through intent publication and native spawn; a
+	// snapshot-only check would race installation or removal.
+	if mode == desktopLaunch || mode == desktopRetry {
+		admission, err := userservice.LockStartupAdmission(ctx, o.dataDir, userservice.Server)
+		if err != nil {
+			return nil, err
+		}
+		defer admission.Close()
+	}
+	lock, err := startupControllerLock(ctx, o.dataDir, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -55,16 +84,19 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 	if err != nil {
 		return nil, err
 	}
+	if mode == desktopRetry && intent.Version != 0 && intent.State == server.DesiredStopped {
+		return map[string]any{"state": "stopped"}, nil
+	}
 	serviceManaged, serviceStopped := false, false
-	if automatic {
+	if automatic || (mode == desktopLaunch || mode == desktopRetry) {
 		serviceManaged, serviceStopped, err = userservice.ManagedIntent(o.dataDir, userservice.Server)
 		if err != nil {
 			return nil, err
 		}
-		if intent.State != server.DesiredRunning {
+		if automatic && intent.State != server.DesiredRunning {
 			return map[string]any{"state": "stopped"}, nil
 		}
-		if !intent.Matches(config) {
+		if automatic && !intent.Matches(config) {
 			return nil, domain.Fail(domain.Unsupported, "Automatic startup configuration differs from the original server.", "Use the original controller configuration or explicitly start the desired server after reviewing its state.")
 		}
 	}
@@ -83,6 +115,15 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 		if status.Msg.ProtocolVersion != rpc.ProtocolVersion || status.Msg.Version != rpc.Version {
 			return nil, domain.Fail(domain.Unsupported, "A different server version already owns this scope.", "Use its compatible CLI or explicitly stop it after reviewing active sessions.")
 		}
+		if (mode == desktopLaunch || mode == desktopRetry) && !strings.HasSuffix(config.Listen, ":0") {
+			scheme := "http://"
+			if config.TLSCertificate != "" {
+				scheme = "https://"
+			}
+			if status.Msg.Listener != scheme+config.Listen {
+				return nil, domain.Fail(domain.Unsupported, "A different listener owns the original server scope.", "Preserve its sessions and use its original compatible client or explicitly stop it before changing the listener.")
+			}
+		}
 		if status.Msg.Stopping || intent.State == server.DesiredStopped {
 			return nil, domain.Fail(domain.Conflict, "The server is stopping.", "Wait for confirmed shutdown before explicitly starting again.")
 		}
@@ -98,6 +139,12 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 		return status, nil
 	} else if code := domain.SafeError(err).Code; code != domain.ServerUnavailable && code != domain.Unavailable {
 		return nil, err
+	}
+	if (mode == desktopLaunch || mode == desktopRetry) && serviceManaged {
+		if config.Logger != nil {
+			config.Logger.InfoContext(ctx, "desktop_launch_blocked", "reason", "native_service_owned")
+		}
+		return map[string]any{"state": "service-managed"}, nil
 	}
 	if automatic && serviceManaged {
 		if serviceStopped {
@@ -117,6 +164,9 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 			ownership.Close()
 		}
 	}()
+	if err := ctx.Err(); err != nil {
+		return nil, domain.SafeError(err)
+	}
 	if !automatic {
 		intent, err = server.WriteRunning(o.dataDir, config)
 		if err != nil {
@@ -167,6 +217,9 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 	cmd.Stdout = log
 	cmd.Stderr = log
 	detach(cmd)
+	if err := ctx.Err(); err != nil {
+		return nil, domain.SafeError(err)
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, domain.Fail(domain.Unavailable, "The server process could not start.", "Inspect the executable and data directory permissions.")
 	}
@@ -230,6 +283,61 @@ func waitStartupOwnership(ctx context.Context, root string, config server.Config
 		waiting = true
 		select {
 		case <-deadline.Done():
+		case <-ticker.C:
+		}
+	}
+}
+
+// A second desktop joins the original startup rather than publishing a busy
+// launch outcome. Ordinary explicit CLI start retains its fail-fast admission.
+func startupControllerLock(ctx context.Context, root string, mode startupMode) (*security.Lock, error) {
+	if mode != desktopLaunch && mode != desktopRetry {
+		return security.TryLock(filepath.Join(root, "startup.lock"))
+	}
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, domain.SafeError(err)
+		}
+		lock, err := security.TryLock(filepath.Join(root, "startup.lock"))
+		if err == nil {
+			return lock, nil
+		}
+		if domain.SafeError(err).Code != domain.Conflict {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, domain.SafeError(ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+// Keep server admission and the retained initial client pairing in one bounded
+// Go-owned operation. Two fresh hosts cannot race the client recovery/pair gate.
+func joinDesktopBootstrap(ctx context.Context, root string) (*security.Lock, error) {
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, domain.SafeError(err)
+		}
+		gate, err := security.TryLock(filepath.Join(root, "desktop-bootstrap.lock"))
+		if err == nil {
+			return gate, nil
+		}
+		if domain.SafeError(err).Code != domain.Conflict {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, domain.SafeError(ctx.Err())
 		case <-ticker.C:
 		}
 	}
