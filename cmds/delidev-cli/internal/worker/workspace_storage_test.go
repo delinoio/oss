@@ -2,6 +2,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -264,5 +265,65 @@ func TestStorageRetirementHandlesUnpublishedRecoveryAndTerminalFailure(t *testin
 				}
 			}
 		})
+	}
+}
+
+func TestStorageRetirementSurvivesAcknowledgmentBeforeReportedTransition(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	manager := workspace.Manager{Root: filepath.Join(t.TempDir(), "worker"), Logger: logger}
+	prepare := workspace.PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := manager.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := workspace.StorageRequest{Version: 1, OperationID: domain.NewID(), PreviousState: domain.WorkspacePresent, Action: workspace.StoragePreview, Preparation: prepare, Manifest: manifest}
+	preview, err := manager.Storage(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.OperationID, input.Action, input.SnapshotID, input.PreviewDigest = domain.NewID(), workspace.StorageCleanup, domain.NewID(), preview.PreviewDigest
+	raw, _ := json.Marshal(input)
+	instance := domain.NewID()
+	job := domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobClaimed, MachineID: prepare.MachineID, InstanceID: instance, Input: raw, AcceptedAt: time.Now().UTC()}
+	document, _ := json.Marshal(job)
+	assigned := &pb.Resource{Id: string(input.OperationID), Revision: 2, SchemaVersion: 1, Kind: pb.EntityKind_ENTITY_KIND_JOB, SessionId: string(prepare.SessionID), DocumentJson: document}
+	if err := security.PrivateDir(filepath.Join(manager.Root, "jobs")); err != nil {
+		t.Fatal(err)
+	}
+	config := Config{Root: manager.Root, Logger: logger}
+	result, err := runJob(context.Background(), config, instance, assigned, job)
+	if err != nil || result.Problem != nil {
+		t.Fatal(err, result.Problem)
+	}
+	accepted := job
+	accepted.State, accepted.Output = domain.JobSucceeded, result.Output
+	ack := proto.Clone(assigned).(*pb.Resource)
+	ack.Revision++
+	ack.DocumentJson, _ = json.Marshal(accepted)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	// A terminal acknowledgement is persisted, but interruption prevents the
+	// reported journal transition. Startup must complete exactly this retirement.
+	if err := acknowledgeStorageRemoval(ctx, config, assigned, job, result, ack); err == nil {
+		t.Fatal("interrupted retirement succeeded")
+	}
+	path := filepath.Join(manager.Root, "jobs", assigned.Id+".json")
+	raw, err = security.ReadPrivate(path, 2<<20)
+	var retained journal
+	if err != nil || domain.Decode(raw, &retained) != nil || retained.State != journalFinished {
+		t.Fatal("fixture did not retain unreported journal", err)
+	}
+	if err := retireStorageReports(context.Background(), config); err != nil {
+		t.Fatal("restart retirement", err)
+	}
+	raw, err = security.ReadPrivate(path, 2<<20)
+	if err != nil || domain.Decode(raw, &retained) != nil || retained.State != journalReported || retained.ReportID != result.ReportID || !bytes.Equal(retained.Output, result.Output) {
+		t.Fatal("original report transition changed", err)
+	}
+	for _, directory := range []string{"storage-removal-intents", "storage-removal-claims", "storage-removal-retirements"} {
+		entries, err := os.ReadDir(filepath.Join(manager.Root, directory))
+		if err != nil || len(entries) != 0 {
+			t.Fatal("retirement artifacts remain", directory, err)
+		}
 	}
 }

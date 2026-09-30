@@ -442,7 +442,9 @@ removal so interrupted acknowledgment cleanup can retry safely. Direct
 failed/canceled operations also retire their intent once acknowledged; uncertain
 reports and failed recovery attempts retain the predecessor intent. Successful
 explicit recovery can retire an interrupted cleanup before snapshot publication
-without requiring nonexistent snapshot metadata. A bounded
+without requiring nonexistent snapshot metadata. The acknowledgment-bound retirement receipt is synchronized before the original
+journal transitions to reported and binds the exact result digest. Restart may
+finish that transition from matching persisted proof without native replay. A bounded
 metadata-only retirement receipt survives interruptions and retries intent
 retirement at Worker startup; it never grants further native removal.
 

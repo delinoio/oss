@@ -4,11 +4,14 @@ package worker
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -21,13 +24,14 @@ import (
 // This small receipt survives a crash after report acknowledgment. It carries
 // no workspace inventory and never grants another native removal operation.
 type storageRetirement struct {
-	Version     int                               `json:"version"`
-	JobID       domain.ID                         `json:"job_id"`
-	ReportID    domain.ID                         `json:"report_id"`
-	Digest      string                            `json:"assignment_digest"`
-	Revision    uint64                            `json:"assignment_revision"`
-	ProblemCode domain.Code                       `json:"problem_code,omitempty"`
-	Removal     workspace.StorageRemovalReference `json:"removal"`
+	Version      int                               `json:"version"`
+	JobID        domain.ID                         `json:"job_id"`
+	ReportID     domain.ID                         `json:"report_id"`
+	Digest       string                            `json:"assignment_digest"`
+	Revision     uint64                            `json:"assignment_revision"`
+	ResultDigest string                            `json:"result_digest"`
+	ProblemCode  domain.Code                       `json:"problem_code,omitempty"`
+	Removal      workspace.StorageRemovalReference `json:"removal"`
 }
 
 func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.Resource, job domain.Job, result journal, ack *pb.Resource) error {
@@ -59,7 +63,14 @@ func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.
 	default:
 		return nil
 	}
-	if result.State != journalReported {
+	if result.State != journalFinished && result.State != journalReported {
+		return workspace.ResultUncertain()
+	}
+	// Save the acknowledgement proof before the reported transition. A crash
+	// after either publication is recoverable from this original journal/receipt.
+	rawJournal, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(result.JobID)+".json"), 2<<20)
+	var original journal
+	if err != nil || domain.Decode(rawJournal, &original) != nil || !reflect.DeepEqual(original, result) {
 		return workspace.ResultUncertain()
 	}
 	if input.Action == workspace.StorageRecover {
@@ -71,7 +82,7 @@ func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.
 	if input.Action != workspace.StorageCleanup && input.Action != workspace.StorageDelete {
 		return nil
 	}
-	receipt := storageRetirement{Version: 1, JobID: result.JobID, ReportID: result.ReportID, Digest: result.Digest, Revision: result.Revision, Removal: workspace.StorageRemovalReference{OperationID: input.OperationID, SessionID: input.Preparation.SessionID, SnapshotID: input.SnapshotID, Action: input.Action}}
+	receipt := storageRetirement{ResultDigest: storageJournalResultDigest(result), Version: 1, JobID: result.JobID, ReportID: result.ReportID, Digest: result.Digest, Revision: result.Revision, Removal: workspace.StorageRemovalReference{OperationID: input.OperationID, SessionID: input.Preparation.SessionID, SnapshotID: input.SnapshotID, Action: input.Action}}
 	if result.Problem != nil {
 		receipt.ProblemCode = result.Problem.Code
 	}
@@ -102,7 +113,7 @@ func retireStorageReport(ctx context.Context, config Config, path string, receip
 	}
 	raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(receipt.JobID)+".json"), 2<<20)
 	var reported journal
-	if err != nil || domain.Decode(raw, &reported) != nil || reported.Version != 1 || reported.State != journalReported || reported.JobID != receipt.JobID || reported.ReportID != receipt.ReportID || reported.Revision != receipt.Revision || reported.Digest != receipt.Digest {
+	if err != nil || domain.Decode(raw, &reported) != nil || reported.Version != 1 || (reported.State != journalReported && reported.State != journalFinished) || storageJournalResultDigest(reported) != receipt.ResultDigest || reported.JobID != receipt.JobID || reported.ReportID != receipt.ReportID || reported.Revision != receipt.Revision || reported.Digest != receipt.Digest {
 		return workspace.ResultUncertain()
 	}
 	if receipt.ProblemCode != "" {
@@ -123,6 +134,17 @@ func retireStorageReport(ctx context.Context, config Config, path string, receip
 			}
 		} else if output.Action != workspace.StorageRecover || output.RecoveredJobState != domain.JobFailed || receipt.Removal.Action != workspace.StorageCleanup || output.WorkspaceState != domain.WorkspacePresent || output.RemovedSourceBytes != 0 {
 			return workspace.ResultUncertain()
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if reported.State == journalFinished {
+		// Only a validated terminal server acknowledgement persisted in the
+		// receipt can complete this transition; no native work or report is replayed.
+		reported.State = journalReported
+		if err := writeJSON(filepath.Join(config.Root, "jobs", string(receipt.JobID)+".json"), reported); err != nil {
+			return err
 		}
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -178,4 +200,13 @@ func retireStorageReports(ctx context.Context, config Config) error {
 		}
 	}
 	return nil
+}
+
+func storageJournalResultDigest(j journal) string {
+	raw, _ := json.Marshal(struct {
+		Output  json.RawMessage
+		Problem *domain.Error
+	}{j.Output, j.Problem})
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }

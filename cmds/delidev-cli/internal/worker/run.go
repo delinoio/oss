@@ -629,12 +629,12 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 		}
 		return err
 	}
-	result.State = journalReported
-	if err := writeJSON(filepath.Join(config.Root, "jobs", resource.Id+".json"), result); err != nil {
-		return err
-	}
 	if err := acknowledgeStorageRemoval(ctx, config, resource, job, result, acknowledged.Msg.Job); err != nil {
 		config.Logger.Warn("storage_intent_retirement_pending", "job_id", resource.Id, "code", domain.SafeError(err).Code)
+		return err
+	}
+	result.State = journalReported
+	if err := writeJSON(filepath.Join(config.Root, "jobs", resource.Id+".json"), result); err != nil {
 		return err
 	}
 	config.Logger.InfoContext(ctx, "worker job reported", "machine_id", credential.MachineID, "job_id", resource.Id, "type", job.Type, "reported_problem", result.Problem != nil)
