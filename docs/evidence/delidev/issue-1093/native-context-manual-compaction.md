@@ -23,8 +23,18 @@ Executed on macOS arm64 with Go 1.26.8 and isolated temporary state:
   restore assignments and preserve native null/zero and failed compact status.
 - `go vet -p 1 ./cmds/delidev-cli/...` passed with no diagnostics.
 - Protocol lint and breaking checks passed; generated-client typecheck and all
-  44 client tests passed. Full `pnpm proto:check` freshness is checked against the
-  committed generated sources.
+  44 client tests passed. Full `pnpm proto:check` passed after merging base
+  `9d110ced702e66bb50974c5ec98e830b86adbe5b`, with the breaking baseline pinned
+  to that exact main revision; generated sources reproduced without drift.
+  Generated-client typecheck and all 44 tests passed again after the merge.
+- Post-merge focused race checks passed for CLI/server/Worker (2.108 s /
+  19.139 s / 2.017 s), and full Go vet passed again.
+- `pnpm test` in `apps/delidev` passed typecheck and 1,012 frontend tests, but the
+  existing singleton Server Preferences integration test failed while waiting for
+  its create/edit button. An isolated retry also failed. The aggregate command
+  stopped before its bundle/desktop/widget/build stages. This change has no
+  frontend implementation diff against the merged base, and does not claim that
+  the complete frontend suite passed or establish the failure's cause.
 - `GOMAXPROCS=2 go test -race -p 2 -timeout=30m ./cmds/delidev-cli/...` ran but did
   not pass. Existing CLI forwarding/session fixtures, discovery probes and Claude/
   Codex owned-process fixtures failed with unavailable/recovery/cleanup timeouts.
