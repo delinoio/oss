@@ -104,6 +104,39 @@ struct State {
     discovery_pending: bool,
 }
 impl State {
+    fn select_tab(&mut self, profile: &str, selected: &str) -> Result<Vec<ViewRequest>> {
+        let labels: Vec<String> = self
+            .views
+            .iter()
+            .filter(|(_, v)| v.profile == profile && v.request.tab != selected)
+            .map(|(label, _)| label.clone())
+            .collect();
+        let mut requests = Vec::new();
+        // Closing a background tab or selecting the current tab must preserve
+        // the selected child's page state and native navigation stack.
+        for label in labels {
+            self.generation = self
+                .generation
+                .checked_add(1)
+                .ok_or(NativeFailure::Stopped)?;
+            let generation = self.generation;
+            let view = self.views.get_mut(&label).unwrap();
+            if let Some(b) = view.browser.take()
+                && let Some(h) = b.host()
+            {
+                h.close_browser(1)
+            }
+            view.generation = generation;
+            view.failure = None;
+            view.request.generation = generation;
+            view.request.tab = selected.into();
+            if !selected.is_empty() {
+                requests.push(view.request.clone());
+            }
+        }
+        Ok(requests)
+    }
+
     fn exit_when_ready(&self) -> Option<i32> {
         if self.live == 0 && !self.discovery_pending {
             self.exit_code
@@ -843,35 +876,9 @@ impl BrowserHost {
                 let p = state.profiles.get_mut(profile).unwrap();
                 let context = p.context.clone().ok_or(NativeFailure::Busy)?;
                 let selected = p.tabs.selected.clone();
-                let labels: Vec<String> = state
-                    .views
-                    .iter()
-                    .filter(|(_, v)| v.profile == profile)
-                    .map(|(label, _)| label.clone())
-                    .collect();
-                let mut requests = Vec::new();
                 // Profile tabs are shared: every live user observes the same selected
                 // tab, including closing the last tab without deleting the profile.
-                for label in labels {
-                    state.generation = state
-                        .generation
-                        .checked_add(1)
-                        .ok_or(NativeFailure::Stopped)?;
-                    let generation = state.generation;
-                    let view = state.views.get_mut(&label).unwrap();
-                    if let Some(b) = view.browser.take()
-                        && let Some(h) = b.host()
-                    {
-                        h.close_browser(1)
-                    }
-                    view.generation = generation;
-                    view.failure = None;
-                    view.request.generation = generation;
-                    view.request.tab = selected.clone();
-                    if !selected.is_empty() {
-                        requests.push(view.request.clone());
-                    }
-                }
+                let requests = state.select_tab(profile, &selected)?;
                 drop(state);
                 self.recreate_children(profile, &requests, |request| {
                     create_child(self, app, profile.into(), request.clone(), context.clone())
@@ -2027,6 +2034,64 @@ mod tests {
             serde_json::to_vec(&host.state.lock().unwrap().profiles[&record.id].tabs).unwrap(),
             before
         );
+    }
+
+    #[test]
+    fn background_tab_close_preserves_selected_child_generation() {
+        let (_temp, host, record, view_id, original) = active_storage_fixture();
+        host.prepare_control(
+            "fixture",
+            &record.id,
+            &view_id,
+            Action::NewTab,
+            Some("https://fixture.test/selected"),
+            None,
+        )
+        .unwrap();
+        let selected = host.state.lock().unwrap().profiles[&record.id]
+            .tabs
+            .selected
+            .clone();
+        let requests = host
+            .state
+            .lock()
+            .unwrap()
+            .select_tab(&record.id, &selected)
+            .unwrap();
+        assert_eq!(requests.len(), 1);
+        let generation = requests[0].generation;
+        host.prepare_control(
+            "fixture",
+            &record.id,
+            &view_id,
+            Action::CloseTab,
+            None,
+            Some(&original.tab),
+        )
+        .unwrap();
+        let path = host.state.lock().unwrap().profiles[&record.id].path.clone();
+        let tabs: Tabs = read_json(&path.join("tabs.json")).unwrap();
+        assert_eq!(tabs.selected, selected);
+        assert_eq!(tabs.tabs.len(), 1);
+        let mut state = host.state.lock().unwrap();
+        assert!(state.select_tab(&record.id, &selected).unwrap().is_empty());
+        assert_eq!(state.views["fixture"].generation, generation);
+        assert_eq!(state.views["fixture"].request.tab, selected);
+        assert_eq!(state.views["fixture"].failure, None);
+        drop(state);
+        host.prepare_control(
+            "fixture",
+            &record.id,
+            &view_id,
+            Action::CloseTab,
+            None,
+            Some(&selected),
+        )
+        .unwrap();
+        let mut state = host.state.lock().unwrap();
+        assert!(state.select_tab(&record.id, "").unwrap().is_empty());
+        assert!(state.views["fixture"].generation > generation);
+        assert!(state.views["fixture"].request.tab.is_empty());
     }
 
     #[test]

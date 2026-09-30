@@ -42,6 +42,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Shared-profile tab replacement must attempt every affected child even when an earlier creation fails. Retain each exact view's failure and return the first failure only after all replacements have been attempted.
 
+- Replace shared browser children only when their selected tab identity changes. Closing a background tab or selecting the current tab preserves page state, navigation history, pending creation and exact retained failure.
+
 - Browser Hide is idempotent for an exact original view: close only its matching child, and confirm its absence without touching a superseding view. Preserve trusted-document checks and offline closure; native close accounting still gates process shutdown.
 
 - Browser cleanup discovery uses an independent read-only controller with a two-second joined-child deadline; never hold the interactive connector gate through offline polling. Stage saved-connection purge only after fallible window setup, bind its exact original removal identity, and require a fresh retained Go removal receipt plus complete CEF shutdown before deleting bytes. Unchanged paired evidence cancels only the unaccepted intent; uncertain acceptance and independent account removal remain pending. Follow `docs/cmds-delidev-browser-contract.md`.

@@ -1,0 +1,5 @@
+# PR #1232: preserve the selected child on background-tab closure
+
+Addresses Codex thread `PRRT_kwDORRAKg86no65p`. Prepared tab storage already retained the selected UUID when closing a background tab, but native publication replaced every profile child regardless. Publication now changes only views whose selected tab UUID changed. An unchanged selected child retains its page state, navigation history, generation, pending creation and retained failure; actual selection changes and final-tab closure keep shared-user replacement/closure behavior.
+
+The pinned CEF controlled regression `background_tab_close_preserves_selected_child_generation` passes. It selects a newly created tab, closes the original background tab through durable preparation, reads back the one remaining selected tab, proves no replacement request/generation change occurs, and proves final-tab closure still advances its generation to an empty selection. Native page state/navigation retention is established by avoiding child replacement in this path; no real-provider/OS acceptance is claimed. The owning contract and native instructions retain this invariant.

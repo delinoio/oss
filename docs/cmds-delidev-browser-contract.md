@@ -79,6 +79,10 @@ When a shared-profile tab operation replaces multiple children, every affected
 window receives a creation attempt even if another attempt fails. Each failure
 is retained against its exact view; the initiating command returns the first
 failure after attempting all replacements.
+Children whose selected tab identity is unchanged remain intact when closing a
+background tab or selecting the current tab, preserving in-page state, navigation
+history, pending creation and exact retained failure. Changing selection or closing
+the final tab still replaces or releases every affected shared child.
 The persistent closed compact sidebar dialog and open nonmodal wide sidebar
 region do not block browser presentation. Visible dialogs, hidden panels and
 clipped geometry cannot leave an external child above app UI.
