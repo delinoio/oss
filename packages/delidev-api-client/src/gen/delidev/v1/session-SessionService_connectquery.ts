@@ -5,6 +5,16 @@
 import { SessionService } from "./session_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.CompactSession
+ */
+export const compactSession = SessionService.method.compactSession;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.GetSessionContext
+ */
+export const getSessionContext = SessionService.method.getSessionContext;
+
+/**
  * @generated from rpc delidev.v1.SessionService.LinkSessionPullRequest
  */
 export const linkSessionPullRequest = SessionService.method.linkSessionPullRequest;

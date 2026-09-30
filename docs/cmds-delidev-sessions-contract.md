@@ -559,3 +559,12 @@ The following source-backed notes were relocated from the project index at `12b3
 Uncertain question/approval response delivery now automatically inspects the original native conversation and exact retained turn/input scope after retaining the original delivery observation. Already observed exact live proof uses its original queued durable publication; history/closure alone never manufactures acceptance or permits a resend. Native pause and earlier recovery remain independent. Lost-event historical reconstruction and safe surviving-process reattachment remain required.
 
 Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
+
+## Explicit native context and manual compaction composition
+
+The independent issue-1093 composition adds owner/client context reads and a
+durable manual action after a verified successful Claude 2.1.236 API boundary.
+Its action result, cleanup, history checkpoint and failure/Resume rules remain
+separate from conversation outcomes and the existing automatic observation family.
+See [the owning compaction contract](cmds-delidev-compaction-contract.md); earlier
+private/manual and automatic-only evidence scopes above retain their qualifications.

@@ -20,6 +20,7 @@ import (
 type publicationFixture struct {
 	*authorityFixture
 	thread, turn domain.ID
+	revision     uint64
 }
 
 func newPublicationFixture(t *testing.T) *publicationFixture {
@@ -85,7 +86,11 @@ func (f *publicationFixture) requestEvent(t *testing.T, e domain.ExecutionEvent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &pb.PublishExecutionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: 1}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), EventJson: raw}
+	revision := f.revision
+	if revision == 0 {
+		revision = 1
+	}
+	return &pb.PublishExecutionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: revision}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), EventJson: raw}
 }
 
 func (f *publicationFixture) call(req *pb.PublishExecutionRequest) (*connect.Response[pb.PublishExecutionResponse], error) {

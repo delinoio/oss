@@ -494,6 +494,12 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 			if err != nil {
 				return Record{}, err
 			}
+			// A manual action owns native cleanup separately from the preceding
+			// conversation. No other late completion may archive over its claim.
+			var compaction domain.ID
+			if rawClaim, present := fields["compaction_job_id"]; present && (json.Unmarshal(rawClaim, &compaction) != nil || compaction != "") {
+				pending = true
+			}
 			if pending {
 				fields["archive"], _ = json.Marshal(domain.ArchivePending)
 				raw, err := json.Marshal(fields)

@@ -41,3 +41,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Keep process startup/shutdown in `server_startup.go`, HTTP authorization in `server_http.go`, Connect registration in `server_routes.go`, and system status/capability responses in `server_status.go`. New service behavior belongs in its service file; preserve middleware and registration order.
+
+- Native context and manual compaction follow `docs/cmds-delidev-compaction-contract.md`. Owner/client-only acceptance atomically pauses FIFO and retains one revision/request-bound job; reference-only receipt replay must support compaction. Preserve prior outcomes, exact native result/cleanup and queued versus claimed cancellation, including account disconnect. Context reads cannot infer current utilization or expose private assignment paths.
+
+- Forwarding and other late Archive completions must preserve unresolved `compaction_job_id` ownership; conversation cleanup or forwarding cleanup alone cannot release a manual action.

@@ -16,6 +16,11 @@ func claudeRootCompletionFixture(t *testing.T, beforeTerminal ...func(*publicati
 	for _, setup := range beforeTerminal {
 		setup(f)
 	}
+	return f, publishClaudeRootCompletionFixture(t, f, terminal)
+}
+
+func publishClaudeRootCompletionFixture(t *testing.T, f *publicationFixture, terminal domain.ExecutionEvent) domain.ExecutionCompletion {
+	t.Helper()
 	u := domain.ClaudeMessageUpdate{ID: domain.NewID(), NativeID: "msg_original_completed", Model: f.input.Configuration.NativeModel}
 	index, text := uint32(0), "Original retained content"
 	for _, kind := range []domain.ClaudeMessageMutation{domain.ClaudeMessageStart, domain.ClaudeBlockStart, domain.ClaudeBlockAppend, domain.ClaudeBlockComplete, domain.ClaudeBlockStop, domain.ClaudeMessageStop} {
@@ -40,7 +45,7 @@ func claudeRootCompletionFixture(t *testing.T, beforeTerminal ...func(*publicati
 	f.publish(t, terminal)
 	completion := f.completion()
 	completion.Version, completion.NativeCheckpointDigest, completion.LastSequence = 2, strings.Repeat("ab", 32), terminal.Sequence
-	return f, completion
+	return completion
 }
 
 func TestClaudeContinuationRequiresOriginalSuccessPermissionAndReport(t *testing.T) {

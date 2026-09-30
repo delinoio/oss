@@ -33,3 +33,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Common parsing, authenticated clients, document input, and output envelopes belong to `arguments.go`, `client.go`, `document.go`, and `output.go`. Command-family dispatch belongs in `dispatch_<family>.go`; preserve request ID propagation and the generic resource fallback.
+
+- Provide `session context --id` and `session compact --id --revision` through the authenticated Connect APIs in `docs/cmds-delidev-compaction-contract.md`. Context is read-only; compaction retains the supplied UUID-v7 request identity and returns the durable job without claiming native success.

@@ -47,17 +47,21 @@ func (s Session) OwnsExecution(i ExecutionJobInput) bool {
 // ExecutionContinuation retains the preceding public progress before advancing
 // Session.Execution. Native paths/defaults stay in the digest-bound Worker file.
 type ExecutionContinuation struct {
-	HistoryExecutionID    ID                  `json:"history_execution_id"`
-	HistoryRequestID      ID                  `json:"history_request_id"`
-	Previous              ExecutionProgress   `json:"previous"`
-	Completion            ExecutionCompletion `json:"completion"`
-	AssignmentInputDigest string              `json:"assignment_input_digest"`
-	InputMode             SessionMode         `json:"input_mode"`
-	PromptDigest          string              `json:"prompt_digest"`
-	Intent                ExecutionIntent     `json:"intent"`
+	Compaction            *SessionCompactionRef `json:"compaction,omitempty"`
+	HistoryExecutionID    ID                    `json:"history_execution_id"`
+	HistoryRequestID      ID                    `json:"history_request_id"`
+	Previous              ExecutionProgress     `json:"previous"`
+	Completion            ExecutionCompletion   `json:"completion"`
+	AssignmentInputDigest string                `json:"assignment_input_digest"`
+	InputMode             SessionMode           `json:"input_mode"`
+	PromptDigest          string                `json:"prompt_digest"`
+	Intent                ExecutionIntent       `json:"intent"`
 }
 
 func (c ExecutionContinuation) Validate(input ExecutionJobInput) error {
+	if c.Compaction != nil && (input.Configuration.Harness != ClaudeCode || c.Compaction.Validate() != nil || c.Compaction.ExecutionID != c.Previous.ExecutionID || c.Compaction.RequiresResume && c.Intent != ContinueExplicitly) {
+		return CompactionUncertain()
+	}
 	invalid := func() error {
 		return Fail(RecoveryRequired, "Continuation does not match a verified preceding execution.", "Preserve the original assignment, terminal history and cleanup proof before sending new input.")
 	}
