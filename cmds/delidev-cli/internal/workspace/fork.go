@@ -163,6 +163,9 @@ func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child do
 			return request, ResultUncertain()
 		}
 		spec := RepositorySpec{ID: repo.ID, Checkout: repo.Path, Base: domain.Reference{Type: domain.CommitReference, Name: commit}, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}}
+		if kind == domain.Worktree {
+			spec.ForkRegistrationSource = repo.Source
+		}
 		if kind == domain.Local {
 			spec.Starting = domain.Reference{}
 		}

@@ -15,6 +15,8 @@ type ForkOrigin struct {
 	NativeThreadID    NativeIdentity   `json:"native_thread_id"`
 	CheckpointDigest  string           `json:"checkpoint_digest"`
 	Snapshot          InitialExecution `json:"snapshot"`
+	WorkerDeviceID    ID               `json:"worker_device_id"`
+	JobInputDigest    string           `json:"job_input_digest"`
 }
 
 type ForkJobInput struct {
@@ -93,6 +95,15 @@ func canonicalDigest(value string) bool {
 func (r ForkJobResult) ValidateIdentity(input ForkJobInput) error {
 	if r.Version != 1 || !r.CleanupVerified || r.ChildSessionID != input.ChildSessionID || r.RuntimeID != input.RuntimeID || r.NativeTurnID != input.Completion.NativeTurnID || r.NativeThreadID == input.Completion.NativeThreadID || r.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil || !canonicalDigest(r.CheckpointDigest) {
 		return Fail(RecoveryRequired, "Fork completion lacks its exact verified child boundary.", "Retain the original Worker operation without repeating native Fork.")
+	}
+	return nil
+}
+
+// Validate checks the child-owned publication seed without reopening its parent.
+func (f ForkOrigin) Validate() error {
+	digest, err := f.Snapshot.Configuration.Digest()
+	if err != nil || digest != f.Snapshot.ConfigurationDigest || f.Snapshot.Configuration.Harness != Codex || f.SourceRevision == 0 || f.SourceSessionID.Validate() != nil || f.SourceExecutionID.Validate() != nil || f.JobID.Validate() != nil || f.RuntimeID.Validate() != nil || f.WorkerDeviceID.Validate() != nil || f.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil || f.SourceTurnID.Validate(Codex, NativeTurnIdentity) != nil || !canonicalDigest(f.CheckpointDigest) || !canonicalDigest(f.JobInputDigest) || f.Snapshot.InitialAccountID.Validate() != nil || f.Snapshot.ConnectionID.Validate() != nil {
+		return Fail(RecoveryRequired, "The child lost its immutable fork boundary.", "Preserve the child-owned seed and original Worker checkpoint.")
 	}
 	return nil
 }

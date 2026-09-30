@@ -19,13 +19,16 @@ import (
 )
 
 type RepositorySpec struct {
-	PRTarget        *domain.PRGitTarget `json:"pr_target,omitempty"`
-	ID              domain.ID           `json:"id"`
-	Checkout        string              `json:"checkout"`
-	PreferredRemote string              `json:"preferred_remote,omitempty"`
-	Base            domain.Reference    `json:"base"`
-	Starting        domain.Reference    `json:"starting"`
-	AutoFetch       bool                `json:"auto_fetch"`
+	// ForkRegistrationSource preserves the original common-directory authority
+	// after the parent managed workspace is deleted. Copying still uses Checkout.
+	ForkRegistrationSource string              `json:"fork_registration_source,omitempty"`
+	PRTarget               *domain.PRGitTarget `json:"pr_target,omitempty"`
+	ID                     domain.ID           `json:"id"`
+	Checkout               string              `json:"checkout"`
+	PreferredRemote        string              `json:"preferred_remote,omitempty"`
+	Base                   domain.Reference    `json:"base"`
+	Starting               domain.Reference    `json:"starting"`
+	AutoFetch              bool                `json:"auto_fetch"`
 }
 type PrepareRequest struct {
 	// ForkSourceID is an immutable Worker-owned copy profile. Ordinary creation
@@ -122,7 +125,7 @@ func (r PrepareRequest) validate() error {
 		return err
 	}
 	for _, repo := range r.Repositories {
-		if !filepath.IsAbs(repo.Checkout) {
+		if !filepath.IsAbs(repo.Checkout) || repo.ForkRegistrationSource != "" && !filepath.IsAbs(repo.ForkRegistrationSource) {
 			return domain.Fail(domain.InvalidArgument, "A checkout path must be absolute on this Worker.", "Use Worker repository inspection.")
 		}
 	}
@@ -163,6 +166,9 @@ func (r PrepareRequest) validateStructure() error {
 	primary := false
 	prTargets := 0
 	for _, repo := range r.Repositories {
+		if repo.ForkRegistrationSource != "" && (r.ForkSourceID == "" || r.Type != domain.Worktree) {
+			return ResultUncertain()
+		}
 		if err := validatePRPreparation(repo, r.Type); err != nil {
 			return err
 		}
@@ -308,6 +314,16 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 				return failed(err)
 			}
 			prepared := PreparedRepository{ID: spec.ID, Source: inspection.Root, Base: spec.Base, Starting: spec.Starting, Owned: request.Type == domain.Worktree}
+			if spec.ForkRegistrationSource != "" {
+				// Both authorities must still identify one common Git directory before
+				// recording the stable registration source used for recovery and deletion.
+				copied, e := git.run(ctx, inspection.Root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+				registered, re := git.run(ctx, spec.ForkRegistrationSource, "rev-parse", "--path-format=absolute", "--git-common-dir")
+				if e != nil || re != nil || trimGit(copied) != trimGit(registered) {
+					return failed(ResultUncertain())
+				}
+				prepared.Source = spec.ForkRegistrationSource
+			}
 			if request.Type == domain.Local {
 				// Local means exactly the existing checkout. Do not fetch, select a new
 				// starting branch, or prepare a replacement tree for any repository.

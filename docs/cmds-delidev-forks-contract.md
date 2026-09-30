@@ -94,6 +94,26 @@ SQLite state/events; no destructive schema migration or external object storage
 is introduced. The Worker stores one canonical synchronized `fork-completion.json`
 whose exact digest binds the native child and its immutable manifest/configuration.
 
+### Permanent deletion and independent child lifetime
+
+Publication retains the immutable configuration/boundary seed and original Worker
+cleanup device on the child. First continuation verifies that seed and its own
+preparation/checkpoint, without requiring any surviving parent session or fork
+job. Parent permanent deletion removes only the parent-owned job journals and
+native histories; it preserves published child runtimes and managed worktrees.
+Deletion before the child's first input still requires the owning Worker's
+acknowledgement of both its workspace and exact digest-bound fork runtime.
+The cleanup plan carries bounded identities/digests, never native paths or history.
+Interrupted child cleanup retains its original tombstone and checkpoint ownership
+proof. A completed acknowledgement is reusable only while every original copy
+remains absent. An unpublished unresolved fork blocks accepting irreversible
+parent deletion until that original operation proves cleanup or publication.
+
+A managed child copies from the parent's actual repository path while retaining
+the original manifest's stable registration source, after comparing both Git
+common directories. Recovery and removal use that stable source after the parent
+managed workspace has been removed. Explicit Local still owns no checkout files.
+
 ## Security
 
 ### Failure ownership

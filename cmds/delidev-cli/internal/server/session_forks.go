@@ -3,6 +3,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -275,7 +277,7 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 	if _, err := tx.PutJob(preparationID, 0, input.ChildSessionID, r.ProjectID, domain.Job{Type: domain.PrepareWorkspaceJob, State: domain.JobSucceeded, MachineID: job.MachineID, Input: output.Preparation, Output: output.Manifest, AcceptedAt: job.AcceptedAt, FinishedAt: &now}); err != nil {
 		return nil, err
 	}
-	child := domain.Session{Name: input.Name, NameOwner: domain.ManualNameOwner, AgentID: input.SourceAssignment.Configuration.AgentID, MachineID: job.MachineID, ProjectID: r.ProjectID, Workspace: input.Workspace, LocalOrigin: input.LocalOrigin, Source: domain.ManualSession, CreatedBy: input.CreatedBy, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchPaused, Preparation: &domain.SessionPreparation{JobID: preparationID, State: domain.PreparationReady}, Fork: &domain.ForkOrigin{SourceSessionID: input.SourceSessionID, SourceRevision: input.SourceRevision, SourceExecutionID: input.Completion.ExecutionID, SourceTurnID: input.Completion.NativeTurnID, JobID: r.ID, RuntimeID: input.RuntimeID, NativeThreadID: output.NativeThreadID, CheckpointDigest: output.CheckpointDigest, Snapshot: input.Snapshot}}
+	child := domain.Session{Name: input.Name, NameOwner: domain.ManualNameOwner, AgentID: input.SourceAssignment.Configuration.AgentID, MachineID: job.MachineID, ProjectID: r.ProjectID, Workspace: input.Workspace, LocalOrigin: input.LocalOrigin, Source: domain.ManualSession, CreatedBy: input.CreatedBy, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchPaused, Preparation: &domain.SessionPreparation{JobID: preparationID, State: domain.PreparationReady}, Fork: &domain.ForkOrigin{SourceSessionID: input.SourceSessionID, SourceRevision: input.SourceRevision, SourceExecutionID: input.Completion.ExecutionID, SourceTurnID: input.Completion.NativeTurnID, JobID: r.ID, RuntimeID: input.RuntimeID, NativeThreadID: output.NativeThreadID, CheckpointDigest: output.CheckpointDigest, Snapshot: input.Snapshot, WorkerDeviceID: job.AssignedDeviceID, JobInputDigest: forkInputDigest(job.Input)}}
 	if _, err := tx.Put(domain.SessionKind, input.ChildSessionID, 0, input.ChildSessionID, r.ProjectID, child); err != nil {
 		return nil, err
 	}
@@ -302,10 +304,10 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 		if spec.ID != repo.ID || spec.Checkout != repo.Path || spec.AutoFetch || spec.PRTarget != nil || spec.PreferredRemote != "" || spec.Base.Type != domain.CommitReference || spec.Base.Name != manifest.Repositories[i].BaseCommit {
 			return forkConflict()
 		}
-		if input.Workspace == domain.Worktree && (spec.Starting != spec.Base || manifest.Repositories[i].StartingCommit != spec.Base.Name) {
+		if input.Workspace == domain.Worktree && (spec.ForkRegistrationSource != repo.Source || spec.Starting != spec.Base || manifest.Repositories[i].StartingCommit != spec.Base.Name) {
 			return forkConflict()
 		}
-		if input.Workspace == domain.Local && (spec.Starting != (domain.Reference{}) || preparation.OriginMachineID != input.SourceAssignment.MachineID) {
+		if input.Workspace == domain.Local && (spec.ForkRegistrationSource != "" || spec.Starting != (domain.Reference{}) || preparation.OriginMachineID != input.SourceAssignment.MachineID) {
 			return forkConflict()
 		}
 		if repo.Path == source.PrimaryPath && preparation.PrimaryRepository != repo.ID {
@@ -313,4 +315,9 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 		}
 	}
 	return nil
+}
+
+func forkInputDigest(raw []byte) string {
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
 }

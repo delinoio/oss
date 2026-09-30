@@ -17,17 +17,10 @@ func queueForkInitialExecution(tx *store.Tx, sr store.Record, session domain.Ses
 		return store.Record{}, err
 	}
 	f := session.Fork
-	row, err := tx.Get(domain.JobKind, f.JobID)
-	if err != nil {
-		return store.Record{}, err
-	}
-	job, err := store.Decode[domain.Job](row)
-	if err != nil {
-		return store.Record{}, err
-	}
-	var result domain.ForkJobResult
-	var accepted domain.ForkJobInput
-	if job.Type != domain.ForkSessionJob || job.State != domain.JobSucceeded || domain.Decode(job.Input, &accepted) != nil || accepted.Validate() != nil || domain.Decode(job.Output, &result) != nil || result.ChildSessionID != sr.ID || result.RuntimeID != f.RuntimeID || result.CheckpointDigest != f.CheckpointDigest || result.NativeThreadID != f.NativeThreadID || result.NativeTurnID != f.SourceTurnID || accepted.Snapshot.ConfigurationDigest != f.Snapshot.ConfigurationDigest || accepted.SourceSessionID != f.SourceSessionID {
+	// Publication retains the immutable seed on the child. Its native checkpoint
+	// and child-owned preparation are verified again by ordinary execution; the
+	// parent's records may already have been permanently deleted.
+	if f == nil || f.Validate() != nil {
 		return store.Record{}, forkConflict()
 	}
 	_, machine, err := activeMachine(tx, session.MachineID)

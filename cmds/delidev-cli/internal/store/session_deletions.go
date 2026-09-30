@@ -235,6 +235,31 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 	if row.Revision != revision {
 		return v, false, deletionConflict()
 	}
+	// An unresolved native fork can own an unpublished workspace. Preserve its
+	// reservation until the original operation proves cleanup or publication.
+	if e := t.RequireNoSessionFork(session); e != nil {
+		return v, false, e
+	}
+	value, e := Decode[domain.Session](row)
+	if e != nil {
+		return v, false, e
+	}
+	if value.Fork != nil {
+		f := value.Fork
+		if f.Validate() != nil || value.Preparation == nil {
+			return v, false, domain.SessionDeletionPending()
+		}
+		prepared, e := t.Get(domain.JobKind, value.Preparation.JobID)
+		if e != nil {
+			return v, false, e
+		}
+		j, e := Decode[domain.Job](prepared)
+		if e != nil || prepared.SessionID != session || j.Type != domain.PrepareWorkspaceJob || j.State != domain.JobSucceeded {
+			return v, false, domain.SessionDeletionPending()
+		}
+		digest := sha256.Sum256(j.Input)
+		v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: server, SessionID: session, MachineID: value.MachineID, DeviceID: f.WorkerDeviceID, Copies: []domain.SessionDeletionCopy{}, PreparationDigests: []string{hex.EncodeToString(digest[:])}, Fork: &domain.SessionDeletionFork{JobID: f.JobID, RuntimeID: f.RuntimeID, CheckpointDigest: f.CheckpointDigest, JobInputDigest: f.JobInputDigest}}})
+	}
 	// Every current session-owned Worker operation contributes its original
 	// claimed metadata. Never reconstruct ownership from a mutable terminal job.
 	rows, e := sqltx.QueryContext(ctx, "SELECT id,kind,revision,session_id,project_id,X'',created_at,updated_at FROM entities WHERE kind='job' AND session_id=? ORDER BY id LIMIT 4097", session)
@@ -303,6 +328,15 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 				return v, false, domain.SessionDeletionPending()
 			}
 			copy.ExecutionID = input.ExecutionID
+		}
+		if j.Type == domain.ForkSessionJob && j.State != domain.JobSucceeded {
+			var input domain.ForkJobInput
+			if domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.SourceSessionID != session {
+				return v, false, domain.SessionDeletionPending()
+			}
+			// Definite failed/canceled forks never published a child. Their empty or
+			// partially prepared private runtime remains owned by the source job.
+			copy.ExecutionID = input.RuntimeID
 		}
 		if j.Type == domain.PrepareWorkspaceJob {
 			h := sha256.Sum256(original.Input)
