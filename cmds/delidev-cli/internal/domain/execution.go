@@ -35,6 +35,7 @@ type ExecutionConfiguration struct {
 	Templates     []AppliedTemplate `json:"templates"`
 	Instructions  string            `json:"instructions"`
 	GrokContext   *GrokModelContext `json:"grok_context,omitempty"`
+	Subscription  bool              `json:"subscription,omitempty"`
 }
 
 func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent, modelRevision uint64, model Model, defaultPolicy RoutingPolicy, templates []AppliedTemplate) (ExecutionConfiguration, error) {
@@ -102,6 +103,9 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if c.Subscription && c.Harness != Codex {
+		return Fail(Unsupported, "Only Codex has a managed subscription execution profile.", "Keep other harnesses on their separately supported API profiles.")
+	}
 	if c.GrokContext != nil && (c.Harness != GrokBuild || c.GrokContext.Validate() != nil) {
 		return Fail(RecoveryRequired, "The retained Grok model context is invalid.", "Preserve the original model selection and its metadata provenance.")
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -136,6 +137,47 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codex.APIProvider, Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: input.Configuration.Instructions, Options: input.Configuration.Options}
 	settings.WorkspaceRoots = nativeWorkspaceRoots(manifest)
+	var managed *managedSubscriptionLease
+	var managedLatest []byte
+	managedCleanup, managedSuccess := false, false
+	managedPreNativeCleanup := false
+	defer func() {
+		if managed != nil {
+			if err := managed.finish(managedLatest, managedCleanup, false, managedSuccess); err != nil {
+				output, returned = nil, err
+			}
+			clear(managed.response.Bundle)
+		}
+	}()
+	// Native subscription authentication is selected explicitly by the server's
+	// immutable assignment, independently of the existing API token profile.
+	if input.Configuration.Subscription {
+		settings.Provider = "openai"
+		client, closeRPC := subscriptionRPC(connection.Credential)
+		defer closeRPC()
+		managed, err = takeManagedSubscription(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+		if err != nil {
+			return nil, err
+		}
+		if _, _, err := subscription.Parse(managed.response.Bundle); err != nil {
+			return nil, err
+		}
+		// Install cleanup before the atomic write: even a synchronization error
+		// may leave the owned plaintext file committed. Publisher/registration
+		// failures occur before any native process can own this authentication.
+		managedPreNativeCleanup = true
+		defer func() {
+			if managedPreNativeCleanup {
+				managedCleanup = cleanupExecutionAuthentication(nativeHome, managed.response.Bundle, managed.response.Bundle) == nil
+				if !managedCleanup {
+					output, returned = nil, subscription.Invalid()
+				}
+			}
+		}()
+		if err := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
+			return nil, subscription.Invalid()
+		}
+	}
 	if err := codex.ValidateThreadSettings(settings); err != nil {
 		return nil, err
 	}
@@ -175,7 +217,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}
-	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != "/api-proxy/v1" {
+	expectedProxyPath := "/api-proxy/v1"
+	if managed != nil {
+		expectedProxyPath = ""
+	}
+	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != expectedProxyPath {
 		return nil, publicationUncertain()
 	}
 	// Stream authority always owns the process lifetime. Before input has a
@@ -186,13 +232,36 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	client, err := codex.Open(nativeCtx, codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}})
+	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	if managed != nil {
+		nativeConfig.API = nil
+		nativeConfig.ManagedAuthentication = true
+	}
+	// Once startup may own a process, only independently joined native cleanup
+	// may authorize removal. A definite failed Open already proves that closure;
+	// recovery-required startup must retain its authentication and lease.
+	managedPreNativeCleanup = false
+	client, err := codex.Open(nativeCtx, nativeConfig)
 	if err != nil {
+		managedPreNativeCleanup = domain.SafeError(err).Code != domain.RecoveryRequired
 		return nil, err
 	}
 	defer func() {
+		if managed != nil {
+			bounded, stop := context.WithTimeout(context.Background(), 5*time.Second)
+			managedLatest, err = client.ManagedBundle(bounded, false)
+			stop()
+			managedSuccess = err == nil
+		}
 		if err := client.Close(); err != nil {
 			output, returned = nil, domain.SafeError(err)
+			return
+		}
+		if managed != nil {
+			managedCleanup = cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle) == nil
+			if !managedCleanup || !managedSuccess {
+				output, returned = nil, subscription.Invalid()
+			}
 		}
 	}()
 	mapper := NewCodexEventPublisher(publisher)

@@ -108,7 +108,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		}
 	}
 	_, account, err := accountFromTx(tx, input.AccountID, 0)
-	if err != nil || !account.Enabled || account.Type != domain.APIAccount || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID {
+	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID {
 		return empty, executionDenied()
 	}
 	r, err := tx.Get(domain.ProviderKind, input.Configuration.ProviderID)
@@ -120,7 +120,18 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	operations := executionAPIOperations(input, provider.Protocol)
-	if len(operations) == 0 {
+	managed := input.Configuration.Subscription && account.Type == domain.SubscriptionAccount && provider.Protocol == domain.NativeSubscription && provider.SubscriptionHarness != nil && *provider.SubscriptionHarness == domain.Codex && input.Configuration.Harness == domain.Codex
+	if managed {
+		state := account.Subscription
+		if state == nil || state.RecoveryRequired || state.Lease == nil {
+			return empty, executionDenied()
+		}
+		lease := state.Lease
+		if lease.Action != domain.SubscriptionExecute || lease.OperationID != grant.JobID || lease.MachineID != grant.MachineID || lease.InstanceID != grant.InstanceID || lease.DeviceID != grant.DeviceID || lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
+			return empty, executionDenied()
+		}
+	}
+	if (!managed && account.Type != domain.APIAccount) || (len(operations) == 0 && !managed) {
 		return empty, executionDenied()
 	}
 	r, err = tx.Get(domain.ModelKind, input.Configuration.ModelID)
@@ -132,8 +143,10 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, Provider: provider, Operations: operations}
-	if err := scope.Validate(); err != nil {
-		return empty, executionDenied()
+	if !managed {
+		if err := scope.Validate(); err != nil {
+			return empty, executionDenied()
+		}
 	}
 	return scope, nil
 }
@@ -199,6 +212,11 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		return err
 	})
 	if err != nil {
+		return nil, executionDenied()
+	}
+	// Managed subscription registrations bind publication only. They never
+	// authorize the API relay or expose a subscription bundle through it.
+	if scope.Provider.Protocol == domain.NativeSubscription {
 		return nil, executionDenied()
 	}
 	leaseContext, cancel := context.WithCancel(ctx)
@@ -433,7 +451,11 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.Info("execution_credential_registered", "job_id", identity.Job, "machine_id", identity.Machine, "instance_id", identity.Instance, "request_id", meta.RequestId, "api_protocol", registeredScope.Provider.Protocol, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.RegisterExecutionResponse{ProxyPath: apiproxy.Prefix, Replayed: result.Replayed})
+	proxyPath := apiproxy.Prefix
+	if registeredScope.Provider.Protocol == domain.NativeSubscription {
+		proxyPath = ""
+	}
+	response := connect.NewResponse(&pb.RegisterExecutionResponse{ProxyPath: proxyPath, Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }

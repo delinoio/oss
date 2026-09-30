@@ -207,6 +207,7 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
+	configuration.Subscription = provider.Protocol == domain.NativeSubscription
 	digest, err := configuration.Digest()
 	if err != nil {
 		return empty, err

@@ -369,3 +369,7 @@ only original session/deletion IDs, plan digest and retained request UUID. No
 paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
+
+## Managed Codex subscriptions
+
+The additive `subscription.proto` defines owner/client RequestSubscription, CancelSubscription and GetSubscriptionProgress plus separately authorized Worker WatchSubscription, TakeSubscription, PublishSubscriptionProgress and FinishSubscription. Secret bytes exist only in bounded protected Take/Finish fields, never ordinary resources/jobs/events or receipt payloads. The closed action enum, managed-Codex Worker capability and original lease revision/generation fences follow [the subscription contract](cmds-delidev-subscription-contract.md). Subscription publication registrations return no API proxy path or API relay authority. Historical account/snapshot JSON omits the optional subscription extension when absent.

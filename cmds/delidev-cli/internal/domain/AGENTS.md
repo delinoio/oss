@@ -33,3 +33,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Permanent session deletion validates UUID uniqueness against its own 4,096-copy capacity; do not reuse the 1,000-link helper for that ownership plan.
 
 - Claude continuation candidates require a correlated non-aborted successful or failed root outcome, unchanged permission and settled original input/callback/task/compaction facts. A `background_requested` terminal is ineligible even without a tracked background-task event. Failed predecessors require explicit Resume intent; a candidate never substitutes for independently verified native history and cleanup.
+
+- Optional Account.subscription state contains only server-owned generation references, identity commitments and actor/lease fences. Configuration cannot manufacture or replace it; historical accounts omit it unchanged. Keep closed action/phase/capability values under `docs/cmds-delidev-subscription-contract.md`.

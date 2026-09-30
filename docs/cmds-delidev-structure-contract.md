@@ -98,3 +98,9 @@ without registering duplicate global symbols. Physical descriptor ownership foll
 the explicit split-file layout; canonical runtime type registration remains unique.
 These views are generated from service descriptors at runtime so an independent
 service addition does not rewrite a shared serialized descriptor blob.
+
+The compatibility generator derives owned files from the compiled public imports
+of `delidev.proto`, including newly added services. The relocation manifest remains
+a historical order and breaking-check map; it is not the current service inventory.
+Both aggregate views therefore include `SubscriptionService` without adding its
+declarations to the relocation map.

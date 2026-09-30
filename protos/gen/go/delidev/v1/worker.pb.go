@@ -24,9 +24,10 @@ const (
 type WorkerCapability int32
 
 const (
-	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED               WorkerCapability = 0
-	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 WorkerCapability = 1
-	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1     WorkerCapability = 2
+	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1      WorkerCapability = 1
+	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1          WorkerCapability = 2
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1 WorkerCapability = 3
 )
 
 // Enum value maps for WorkerCapability.
@@ -35,11 +36,13 @@ var (
 		0: "WORKER_CAPABILITY_UNSPECIFIED",
 		1: "WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1",
 		2: "WORKER_CAPABILITY_SESSION_FORWARDING_V1",
+		3: "WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1",
 	}
 	WorkerCapability_value = map[string]int32{
-		"WORKER_CAPABILITY_UNSPECIFIED":               0,
-		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1": 1,
-		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":     2,
+		"WORKER_CAPABILITY_UNSPECIFIED":                    0,
+		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1":      1,
+		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":          2,
+		"WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1": 3,
 	}
 )
 
@@ -2515,11 +2518,12 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\vwork_digest\x18\x06 \x01(\tR\n" +
 	"workDigest\"Q\n" +
 	"\x1dReportSessionDeletionResponse\x120\n" +
-	"\x03job\x18\x01 \x01(\v2\x1e.delidev.v1.SessionDeletionJobR\x03job*\x93\x01\n" +
+	"\x03job\x18\x01 \x01(\v2\x1e.delidev.v1.SessionDeletionJobR\x03job*\xc9\x01\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
 	"+WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1\x10\x01\x12+\n" +
-	"'WORKER_CAPABILITY_SESSION_FORWARDING_V1\x10\x022\xc0\f\n" +
+	"'WORKER_CAPABILITY_SESSION_FORWARDING_V1\x10\x02\x124\n" +
+	"0WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1\x10\x032\xc0\f\n" +
 	"\rWorkerService\x12r\n" +
 	"\x17ListSessionDeletionWork\x12*.delidev.v1.ListSessionDeletionWorkRequest\x1a+.delidev.v1.ListSessionDeletionWorkResponse\x12l\n" +
 	"\x15ReportSessionDeletion\x12(.delidev.v1.ReportSessionDeletionRequest\x1a).delidev.v1.ReportSessionDeletionResponse\x12k\n" +

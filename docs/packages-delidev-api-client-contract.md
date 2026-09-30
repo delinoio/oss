@@ -145,3 +145,7 @@ Worker cleanup queries and `PERMANENT_SESSION_DELETION_V1` retain the additive
 protocol without duplicating Go ownership logic. Preserve original request IDs,
 BigInt revisions and pending/unknown removal state; no automatic mutation replay.
 See the [storage contract](cmds-delidev-storage-contract.md).
+
+## Managed Codex subscription clients
+
+The generated SubscriptionService/action types and closed managed-Codex Worker capability are exported with a SubscriptionQuery namespace. Owner/client lifecycle and login-presentation requests remain separate from the protected Go Worker bundle channel. Bundle bytes may never enter query keys, saved state, synchronized resources, errors or ordinary outputs. See [managed subscriptions](cmds-delidev-subscription-contract.md); generated clients alone do not enable desktop login or prove account/platform acceptance.

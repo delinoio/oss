@@ -41,3 +41,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Preserve legacy generated-path reflection exports as well as declaration imports. Generate the aggregate descriptor view in the compatibility pass, retain original declaration order and canonical TypeScript object identity, and cover both direct enumeration and registry construction in compatibility tests.
 
 - Generated SessionQuery permanent-deletion acceptance/status and Worker cleanup queries preserve original UUIDs, BigInt revisions, pending removal and unknown reclaimed bytes. Generate through the canonical split schema and compatibility pass; no client-side ownership decisions or automatic mutation replay. Follow `docs/cmds-delidev-storage-contract.md`.
+
+- DeliDev API clients export the generated SubscriptionService and closed managed Codex capability/action types. Keep authentication bundles out of Query keys, persistence, synchronization, errors and ordinary resource models. Public clients cannot invoke the protected Worker lane. Follow `docs/cmds-delidev-subscription-contract.md` and retain generation freshness checks.
