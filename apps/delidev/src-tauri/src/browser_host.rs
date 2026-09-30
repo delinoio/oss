@@ -1233,8 +1233,9 @@ fn parent(window: &WebviewWindow<Cef>) -> Result<usize> {
     #[cfg(target_os = "linux")]
     {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        // The raw native handle belongs to WebviewWindow, not its Webview.
+        // Keep this bound to the pinned runtime's native X11 parent.
         match window
-            .as_ref()
             .window_handle()
             .map_err(|_| NativeFailure::SidecarFailed)?
             .as_raw()
