@@ -327,8 +327,8 @@ func (s *Store) Replay(ctx context.Context, id domain.ID, operation string, inpu
 	var result Result
 	found := false
 	err = s.Read(ctx, func(tx *Tx) error {
-		if s.restoreReservations[id] {
-			return restoreConflict()
+		if err := s.checkRestoreRequestReservation(id); err != nil {
+			return err
 		}
 		if err := tx.Authorize(); err != nil {
 			return err
@@ -369,8 +369,8 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 		return Result{}, domain.SessionDeletionPending()
 	}
 
-	if s.restoreReservations[id] {
-		return Result{}, restoreConflict()
+	if err := s.checkRestoreRequestReservation(id); err != nil {
+		return Result{}, err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

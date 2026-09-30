@@ -108,6 +108,16 @@ func loadRestoreReservations(root string) (map[domain.ID]bool, error) {
 	return reserved, nil
 }
 
+// The caller holds the store gate. External reservations survive rollback and
+// unaccepted staging, so every SQL receipt path must check them before accepting
+// another operation under the same UUID, including deletion recovery receipts.
+func (s *Store) checkRestoreRequestReservation(id domain.ID) error {
+	if s.restoreReservations[id] {
+		return restoreConflict()
+	}
+	return nil
+}
+
 // A manually rolled-back live database cannot silently revoke a completed
 // external safety boundary. Managed replacements preserve every prior restore
 // receipt; require those markers before migration or serving authorization.
