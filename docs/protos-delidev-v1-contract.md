@@ -6,6 +6,13 @@ names and numbers remain unchanged. `protos/delidev/allocations.json` records ma
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 
+The [planned shared compaction contract](cmds-delidev-compaction-contract.md)
+reserves `EntityKind` 32, `SystemCapability` 15, `WorkerCapability` 5 and
+`SessionChange.compaction_job` 9 for issues #1093, #1202 and #1203. These are
+ledger reservations only: no schema declaration, generated binding, RPC or
+capability advertisement is activated by the reservation change. The owning
+issue is recorded directly when no implementation PR exists yet.
+
 ## Scope
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 
@@ -372,7 +379,7 @@ Generate Go and TypeScript/Connect Query sources together and follow the
 
 ## Repository inspection metadata allocation prerequisite
 
-Issue #1142's replacement implementation uses the allocations originally implemented in closed, unmerged PR #1193: `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 5` and `AttachWorkerResponse.supported_worker_capabilities = 3`. The allocation ledger reserves both meanings before dependent implementation, preserving Worker values 3 and 4 for their existing owners. The original issue's proposed value 3 cannot replace an existing reservation.
+Closed, unmerged PR #1193 implemented repository metadata using Worker value 5 and attachment-response field 3. Main now reserves Worker values 3, 4 and 5 for other owners, including native compaction from issue #1203 at value 5. Issue #1142's replacement therefore reserves `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 6` and `AttachWorkerResponse.supported_worker_capabilities = 3`, retaining original-PR provenance. The original issue's proposed value 3 and the old branch's value 5 cannot replace existing main reservations.
 
 Each reservation uses the kind of its existing declaration (`enum` or `message`); a message-field addition is recorded as `message`, not a separate field declaration kind. The allocation check validates this against the baseline declaration.
 

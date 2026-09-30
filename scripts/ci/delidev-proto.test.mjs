@@ -33,6 +33,13 @@ test('current wire numbers match immutable assignments and future reservations',
   const ledger = JSON.parse(readFileSync(join(root, 'protos/delidev/allocations.json'), 'utf8'));
   const expected = structuredClone(ledger.baseline);
   for (const item of ledger.reservations) {
+    assert.notEqual(Object.hasOwn(item, 'pr'), Object.hasOwn(item, 'issue'), 'an allocation has one original PR or owning issue');
+    assert.ok(Number.isSafeInteger(item.pr ?? item.issue) && (item.pr ?? item.issue) > 0, 'allocation provenance is a positive GitHub number');
+    if (item.sharedIssues !== undefined) {
+      assert.ok(Array.isArray(item.sharedIssues));
+      assert.equal(new Set(item.sharedIssues).size, item.sharedIssues.length, 'shared issue consumers are unique');
+      for (const issue of item.sharedIssues) assert.ok(Number.isSafeInteger(issue) && issue > 0 && issue !== item.issue, 'shared consumers identify other issues');
+    }
     const declaration = expected[item.declaration];
     assert.ok(declaration, `${item.declaration} must have a baseline declaration`);
     assert.equal(item.kind, declaration.kind, `${item.declaration} reservation kind must match its declaration`);
