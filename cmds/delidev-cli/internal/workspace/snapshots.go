@@ -398,6 +398,14 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 				return result, err
 			}
 			restoreStaging = ""
+			// A retained handle can change scratch after the earlier walk. Rename
+			// is publication, so preserve changed bytes behind the pending proof
+			// and compare the entire live tree before granting restored ownership.
+			published, err := walkSnapshot(ctx, root, "", nil)
+			if err != nil || inventoryDigest(published) != inventoryDigest(snap.Inventory) {
+				m.Logger.Warn("restore_published_inventory_changed", "operation_id", r.OperationID, "code", domain.RecoveryRequired)
+				return result, ResultUncertain()
+			}
 			// Only a synchronized successful no-replace publication may establish
 			// ownership. Matching foreign bytes or a missing staging tree cannot.
 			identity, err := restoredDirectoryIdentity(root, snap.Workspace)

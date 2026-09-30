@@ -569,7 +569,10 @@ history reset or new pre-migration backup is needed.
 Restore is available only from the exact current cleanup snapshot of a stored
 session. Its complete private manifest/hash/Git stores are revalidated, the entire
 workspace is copied and verified in owned scratch, then one atomic no-replace
-rename publishes it at the original canonical owned destination. Existing files
+rename publishes it at the original canonical owned destination. Rewalk the
+renamed live root against the pinned complete snapshot inventory before publishing
+restoration ownership. Changed, missing or additional bytes retain the pending
+proof and the live namespace for recovery; do not erase or reconstruct them. Existing files
 are never replaced and no per-repository partial restore is reported. Failed
 unpublished restoration removes only its operation-owned staging with an
 independent bounded cleanup context; unconfirmed scratch cleanup retains
