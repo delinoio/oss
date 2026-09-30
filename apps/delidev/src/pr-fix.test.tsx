@@ -10,7 +10,7 @@ import { MutationIntents } from "./mutation";
 import { PRFixAction } from "./pr-fix";
 import { defaultRemediationPolicy } from "./remediation-policy";
 
-vi.mock("./configuration-fields", () => ({ ResourceChoice: ({ label, value, change, disabled }: { label: string; value: string; change: (value: string) => void; disabled: boolean }) => <label>{label}<input value={value} disabled={disabled} onChange={event => change(event.target.value)} /></label> }));
+vi.mock("./configuration-fields", () => ({ ResourceChoice: ({ label, value, change, disabled, autoFocus }: { label: string; value: string; change: (value: string) => void; disabled: boolean; autoFocus?: boolean }) => <label>{label}<input value={value} disabled={disabled} autoFocus={autoFocus} onChange={event => change(event.target.value)} /></label> }));
 
 function fixture(title = "Original") {
  const project=newRequestId(), at="2026-09-28T00:00:00Z";
@@ -38,6 +38,16 @@ it("binds exact decimal original revisions and an explicit project",async()=>{
  const f=fixture();render(f.view());expect(f.capabilities).not.toHaveBeenCalled();await f.start();await screen.findByText(/Fix accepted in session/);
  const wire=JSON.parse(new TextDecoder().decode(f.send.mock.calls[0][0].documentJson));
  expect(wire).toEqual({set_id:f.set.id,set_revision:"9007199254740993",project_id:f.project,repository_id:f.selection.repositoryId,problems:[{id:f.row.id,revision:"9007199254740995",content_version:"c".repeat(64)}]});expect(f.refreshed).toHaveBeenCalledOnce();
+});
+it("focuses the critical project selector on each form opening", async () => {
+ const f = fixture(); render(f.view());
+ fireEvent.click(screen.getByRole("button", { name: "Fix now" }));
+ expect(globalThis.document.activeElement).toBe(screen.getByLabelText("Fix project"));
+ const cancel = screen.getByRole("button", { name: "Cancel" }); cancel.focus();
+ await waitFor(() => expect(f.capabilities).toHaveBeenCalledOnce());
+ expect(globalThis.document.activeElement).toBe(cancel);
+ fireEvent.click(cancel); fireEvent.click(screen.getByRole("button", { name: "Fix now" }));
+ expect(globalThis.document.activeElement).toBe(screen.getByLabelText("Fix project"));
 });
 it("retains an uncertain original fix across navigation",async()=>{
  const f=fixture();f.send.mockRejectedValueOnce(new ConnectError("Lost original acknowledgment",Code.Unavailable));const v=render(f.view());await f.start();await screen.findByRole("button",{name:"Retry original fix request"});v.rerender(f.view(false));v.rerender(f.view());

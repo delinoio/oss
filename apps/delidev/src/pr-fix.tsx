@@ -34,7 +34,7 @@ function PRFixForm({ blocked, project, setProject, cancel, send }: { blocked: bo
  const capability = useQuery(PullRequestFixQuery.getPullRequestFixCapabilities, {}, { retry: false, gcTime: 0, staleTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false });
  const supported = capability.data?.profiles.includes(PullRequestFixProfile.CODEX_GIT_V1) && !capability.error;
  return <form aria-label="Manual PR fix" onSubmit={event => { event.preventDefault(); if (!blocked && uuid(project) && supported) send(); }}>
-  <ResourceChoice label="Fix project" kind={EntityKind.PROJECT} value={project} change={setProject} active disabled={blocked} required />
+  <ResourceChoice label="Fix project" kind={EntityKind.PROJECT} value={project} change={setProject} active disabled={blocked} required autoFocus />
   <p>The server reuses the most recent eligible linked session or prepares a new PR-head workspace with its configured Codex Agent and Worker. Paused and archived sessions stay paused. The execution Worker uses its prepared Git identity.</p>
   <Problem error={capability.error} />{capability.data && !supported ? <p>This server has no supported manual PR fix profile.</p> : null}
   <button disabled={blocked || !uuid(project) || !supported}>Start fix</button><button type="button" disabled={blocked} onClick={cancel}>Cancel</button>
