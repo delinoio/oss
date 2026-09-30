@@ -122,6 +122,37 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
   return <svg className="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={settingsIcons[category]} /></svg>;
 }
 
+function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: () => void; preview: () => void; remove: () => void }) {
+  const data = document(row);
+  let name = resourceName(row);
+  // Unsupported schemas stay non-actionable. Only bounded inert name text is
+  // projected within the Agent name's 256-byte UTF-8 limit for identifying the
+  // row; it never enters an editor or request.
+  // Remove this projection once the shared document parser supports that schema.
+  if (row.schemaVersion !== 1 && row.documentJson.byteLength <= 1 << 20) {
+    try {
+      const display = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(row.documentJson)));
+      const projectedName = text(display.name) || text(display.alias);
+      // Check code units first so malformed large values never allocate an
+      // equally large UTF-8 buffer merely to validate display text.
+      if (projectedName.length <= 256 && new TextEncoder().encode(projectedName).byteLength <= 256) name = projectedName || name;
+    } catch { /* Malformed display text keeps the existing unnamed fallback. */ }
+  }
+  return <article className="settings-agent-row">
+    <div className="settings-agent-details">
+      <h3>{name}</h3>
+      {text(data.health) ? <p>Status: {text(data.health)}</p> : null}
+      {text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}
+      <small>{row.id}</small>
+    </div>
+    <div className="actions settings-agent-actions">
+      <button type="button" disabled={row.schemaVersion !== 1} aria-label={`Edit ${name}`} onClick={edit}>Edit</button>
+      <button type="button" disabled={row.schemaVersion !== 1} aria-label={`Preview routing for ${name}`} onClick={preview}>Preview routing</button>
+      <button type="button" disabled={row.schemaVersion !== 1} aria-label={`Delete ${name}`} onClick={remove}>Delete</button>
+    </div>
+  </article>;
+}
+
 interface SettingsProps { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
 export function Settings({ visible = true, ...props }: SettingsProps) {
   const client = useQueryClient();
@@ -157,6 +188,7 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
   const isAccountCategory = isApiAccounts || isSubscriptionAccounts;
   const isApiProviders = selectedCategory === SettingsCategory.Providers;
   const isModels = selectedCategory === SettingsCategory.Models;
+  const isAgentWorkers = selectedCategory === SettingsCategory.AgentWorkers;
   const isProjects = selectedCategory === SettingsCategory.Projects;
   const hasSpecializedPanel = isAccountCategory || isApiProviders || isModels;
   const hasOverlay = Boolean(editing || account || deleting || routing || machine || device || pricing);
@@ -279,8 +311,9 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
             {settingsGroups.map((group) => <optgroup label={group.label} key={group.label}>{group.categories.map((category) => <option key={category} value={category}>{settingsCategories[category].label}</option>)}</optgroup>)}
           </select>
         </label>
+        <div className={isAgentWorkers ? "settings-agent-column" : undefined}>
         {area !== SettingsArea.Diagnostics && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
-          <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1><p>{categoryDescription}</p></div>
+          <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : null}<p className={isAgentWorkers ? "settings-agent-scope" : undefined}>{categoryDescription}</p></div>
           {configurationList ? <div className="settings-toolbar">
             <button type="button" onClick={() => void result.refetch()}>Refresh settings</button>
             {editableKinds.includes(kind) && (kind !== EntityKind.SETTINGS || result.data?.resources.length === 0)
@@ -307,16 +340,21 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
               {result.isPending && !result.data ? <p role="status">Loading {selected.label.toLowerCase()}…</p> : null}
               <Problem error={result.error} />
               {result.error && result.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded results.</p> : null}
-              {isProjects ? <ProjectList resources={result.data?.resources ?? []} edit={(row) => setEditing({ initial: row, key: newRequestId() })} remove={setDeleting} /> : result.data?.resources.map((row) => { const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</h3>{kind === EntityKind.DEVICE ? <DeviceDetails resource={row} currentDeviceId={currentDeviceId} /> : null}{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small>{kind === EntityKind.REPOSITORY ? <><RepositoryGitHubAccess selected={row} active={visible && area === SettingsArea.Configuration} /><RepositoryGitHubItems selected={row} active={visible && area === SettingsArea.Configuration} /></> : null}<div className="actions">{kind === EntityKind.DEVICE && row.id === currentDeviceId ? <p>This desktop client cannot revoke its own registration.</p> : null}{kind === EntityKind.DEVICE && data.revoked === false && row.id !== currentDeviceId ? <button disabled={row.schemaVersion !== 1} onClick={() => setDevice(row)}>Revoke {resourceName(row)}</button> : null}{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}>Delete {resourceName(row)}</button> : null}{kind === EntityKind.MODEL ? <button disabled={row.schemaVersion !== 1} onClick={() => setPricing(row)}>Token pricing</button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>Preview routing</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>Inspect installed harnesses</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}</div></article>; })}
-              {isProjects
+              <div className={isAgentWorkers && result.data?.resources.length ? "settings-agent-list" : undefined}>
+              {isProjects ? <ProjectList resources={result.data?.resources ?? []} edit={(row) => setEditing({ initial: row, key: newRequestId() })} remove={setDeleting} /> : result.data?.resources.map((row) => { if (isAgentWorkers) return <AgentWorkerRow key={row.id} row={row} edit={() => setEditing({ initial: row, key: newRequestId() })} preview={() => setRouting(row)} remove={() => setDeleting(row)} />; const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</h3>{kind === EntityKind.DEVICE ? <DeviceDetails resource={row} currentDeviceId={currentDeviceId} /> : null}{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small>{kind === EntityKind.REPOSITORY ? <><RepositoryGitHubAccess selected={row} active={visible && area === SettingsArea.Configuration} /><RepositoryGitHubItems selected={row} active={visible && area === SettingsArea.Configuration} /></> : null}<div className="actions">{kind === EntityKind.DEVICE && row.id === currentDeviceId ? <p>This desktop client cannot revoke its own registration.</p> : null}{kind === EntityKind.DEVICE && data.revoked === false && row.id !== currentDeviceId ? <button disabled={row.schemaVersion !== 1} onClick={() => setDevice(row)}>Revoke {resourceName(row)}</button> : null}{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}>Delete {resourceName(row)}</button> : null}{kind === EntityKind.MODEL ? <button disabled={row.schemaVersion !== 1} onClick={() => setPricing(row)}>Token pricing</button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>Preview routing</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>Inspect installed harnesses</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}</div></article>; })}
+              </div>
+              {isAgentWorkers && successfulEmptyFirstPage
+                ? <section className="settings-agent-empty" aria-label="No agent workers yet"><div className="settings-agent-icon-tile" aria-hidden="true"><SettingsIcon category={SettingsCategory.AgentWorkers} /></div><h2>No agent workers yet</h2><p>Define a harness, model, accounts, and instructions, then reuse them in new sessions.</p></section>
+                : isProjects
                 ? successfulEmptyFirstPage ? <section className="project-empty" aria-label="No projects yet"><div className="project-empty-icon"><SettingsIcon category={SettingsCategory.Projects} /></div><h2>No projects yet</h2><p>Group repositories and choose which Agent Workers and AI accounts a project can use.</p><p>Choose New Project to get started.</p></section>
                   : result.data?.resources.length === 0 && !result.error ? <p>No projects on this page.</p> : null
                 : kind === EntityKind.PROVIDER && page === "" && result.data?.resources.length === 0 && !result.error && !result.data.nextPageToken
                 ? <section className="provider-empty" aria-label="No providers yet"><SettingsIcon category={SettingsCategory.Providers} /><h2>No providers yet</h2><p>Add a provider to configure your models and AI accounts.</p></section>
-                : result.data?.resources.length === 0 ? <p>{kind === EntityKind.PROVIDER ? "No providers on this page." : "No saved entries."}</p> : null}
+                : result.data?.resources.length === 0 ? <p>{isAgentWorkers ? "No agent workers on this page." : kind === EntityKind.PROVIDER ? "No providers on this page." : "No saved entries."}</p> : null}
               {!hidePagination ? <nav className="settings-pages" aria-label="Settings pages"><button type="button" disabled={!page || result.isFetching} onClick={() => setPage("")}>First page</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>Next page</button></nav> : null}
             </>}
           </div>
+        </div>
         </div>
         </div>
       </section>
