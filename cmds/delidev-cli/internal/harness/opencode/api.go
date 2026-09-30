@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net"
+	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -55,6 +57,15 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 	// session has no additive instructions or additional repositories.
 	if err := profile.inspectInstructions(); err != nil {
 		return nil, err
+	}
+	runtimePath := filepath.Dir(config.Probe.Home)
+	runtimeIdentity, err := os.Lstat(runtimePath)
+	if err != nil || !runtimeIdentity.IsDir() {
+		return nil, sessionUncertain()
+	}
+	workspaceIdentity, err := os.Lstat(config.Workspace)
+	if err != nil || !workspaceIdentity.IsDir() {
+		return nil, sessionUncertain()
 	}
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
@@ -159,10 +170,63 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 		}
 	}
 	read := func(path, credential string, status int) ([]byte, error) {
+		// Initialization reads remain distinct from live stream reconciliation.
 		if err := api.alive(); err != nil {
 			return nil, err
 		}
 		return readHTTP(ready, client, origin, path, credential, status)
+	}
+	api.verifyStreamOwner = func(ctx context.Context) error {
+		if ctx.Err() != nil {
+			return unavailable()
+		}
+		original := handle.Identity()
+		current, err := process.ProcessIdentity(original.PID)
+		if err != nil || original.Birth == "" || current.Birth != original.Birth || current.Group != original.Group {
+			return sessionUncertain()
+		}
+		if err := api.alive(); err != nil {
+			return err
+		}
+		for _, directory := range []struct {
+			path     string
+			original os.FileInfo
+		}{{runtimePath, runtimeIdentity}, {config.Workspace, workspaceIdentity}} {
+			current, err := os.Lstat(directory.path)
+			if err != nil || !current.IsDir() || !os.SameFile(current, directory.original) {
+				return sessionUncertain()
+			}
+		}
+		if err := inspectManagedConfig(managed); err != nil {
+			return err
+		}
+		readOriginal := func(path, credential string, expected int) ([]byte, error) {
+			raw, err := readHTTP(ctx, client, origin, path, credential, expected)
+			if err == nil {
+				err = api.accountReconciliationRead(raw)
+			}
+			return raw, err
+		}
+		for _, credential := range []string{"", "incorrect-" + password} {
+			if _, err := readOriginal("/global/health", credential, http.StatusUnauthorized); err != nil {
+				return err
+			}
+		}
+		health, err := readOriginal("/global/health", password, http.StatusOK)
+		if err != nil {
+			return err
+		}
+		if validateHealth(health) != nil {
+			return incompatible()
+		}
+		global, err := readOriginal("/global/config", password, http.StatusOK)
+		if err != nil {
+			return err
+		}
+		if validateEmptyConfig(global) != nil {
+			return incompatible()
+		}
+		return nil
 	}
 	phase = authPhase
 	for _, credential := range []string{"", "incorrect-" + password} {
