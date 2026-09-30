@@ -172,8 +172,8 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   </section>;
 }
 
-export function Sidebar({ surface, selectedSessionId, navigate, openSession, newSession, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  surface: Surface; selectedSessionId: string; navigate: (surface: Surface) => void; openSession: (id: string) => void; newSession: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
+export function Sidebar({ surface, selectedSessionId, navigate, navigateHeader = navigate, openSession, newSession, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  surface: Surface; selectedSessionId: string; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const [compact, setCompact] = useState(false);
@@ -309,10 +309,10 @@ export function Sidebar({ surface, selectedSessionId, navigate, openSession, new
     <div className="sidebar-pane">
       <header className="sidebar-header">
         <h1>DeliDev</h1>
-        <div className="sidebar-header-actions">
-          <button type="button" className="sidebar-header-button" aria-label="Inbox" aria-current={surface === Surface.Inbox ? "page" : undefined} onClick={() => navigate(Surface.Inbox)}><Icon name="inbox" /></button>
-          <button type="button" className="sidebar-header-button" aria-label="Search" aria-current={surface === Surface.Search ? "page" : undefined} onClick={() => navigate(Surface.Search)}><Icon name="search" /></button>
-        </div>
+        {sessionNavigation ? <div className="sidebar-header-actions">
+          <button type="button" className="sidebar-header-button" aria-label="Inbox" onClick={() => navigateHeader(Surface.Inbox)}><Icon name="inbox" /></button>
+          <button type="button" className="sidebar-header-button" aria-label="Search" onClick={() => navigateHeader(Surface.Search)}><Icon name="search" /></button>
+        </div> : null}
       </header>
       <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>Close navigation</button>
       {sessionNavigation ? <button type="button" className="sidebar-new-session" aria-current={surface === Surface.NewSession ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newSession(); setDrawerOpen(false); }}><Icon name="plus" />New session</button> : null}

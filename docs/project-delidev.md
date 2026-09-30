@@ -14,6 +14,8 @@ Issue #1137 makes a fresh main desktop launch sufficient to start/reuse a compat
 - `protos/delidev/v1`: versioned Connect schema; `protos/gen/go/delidev/v1`: generated Go bindings.
 - `packages/delidev-api-client`: generated TypeScript client and bounded transport/synchronization helpers.
 
+New schedule creation adds frequency presets and a creation-only three-section layout under the [desktop contract](apps-delidev-desktop-contract.md#new-schedule-creation-issue-1152), while strict schedule definitions and server recurrence authority remain unchanged.
+
 ## Domain Contract Documents
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)

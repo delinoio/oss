@@ -374,11 +374,11 @@ enum RustiaComponent {
 
 ### CI Baseline
 
-Repository-wide quality CI is defined in `.github/workflows/CI.yml`. The three-OS Go test matrix uses an explicit 20-minute per-package watchdog for native Git, shell and durable SQLite integration; this is not a product command timeout.
+Repository-wide quality CI is defined in `.github/workflows/CI.yml`. Go validation uses complete Linux/macOS suites and four Windows shards under the existing `go-test` job. Windows partitions the native `go list ./...` inventory exactly once and preserves `-p=1` per runner, with shard-scoped caches saved only after successful main validation. Every OS uses an explicit 20-minute per-package watchdog for native Git, shell and durable SQLite integration; this is not a product command timeout. Follow `docs/repository-workflow-contract.md` for shard ownership and measurement.
 
 Coverage expectations:
 - `go-quality`: generates and validates the ignored administrator and ach UI bundles, then runs `go fmt ./...` (failing if formatting changes are applied) and `go vet ./...` on Ubuntu.
-- `go-test`: generates and validates the ignored administrator and ach UI bundles, then runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
+- `go-test`: generates and validates the ignored administrator and ach UI bundles on every runner, then runs the complete Go suite on `ubuntu-latest`, `macos-latest`, and four independent `windows-latest` shards through `scripts/ci/go-test.mjs`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: prepares the DeliDev typed client, frontend and Go sidecar plus WebKitGTK 4.1 development prerequisites, then runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - `rust-test`: prepares the DeliDev typed client, frontend and Go sidecar plus WebKitGTK 4.1 development prerequisites, builds pnport and its injection companion with `cargo build --locked -p pnport -p pnport-preload`, then runs `cargo test --workspace --all-targets`.
