@@ -126,6 +126,10 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - NetworkService owns `v1/network.proto` and generated bindings under `docs/cmds-delidev-network-contract.md`. Activate only the pre-reserved EntityKind 28/29 and SystemCapability 6 values. Owner/client operations keep credentials write-only, revisions exact and server/Worker desired generations separate; Worker metadata exports carry no secrets or native application proof.
 
+- Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
+
+- Managed restore uses reserved `MANAGED_BACKUP_RESTORE_V1 = 7`. Preserve existing capabilities 1/2/3 and generate owner/client restore RPCs, presence-aware revision inputs and typed receipt states from `system.proto`.
+
 - `SwitchSessionAccount` is an additive owner/client-only SessionService mutation with exact actor/revision/request receipts and the typed stopped-Codex-account-switch capability (System wire value 5, established by `allocations.json`). It selects future execution without rewriting history or starting native work; follow the sessions contract and regenerate Go/TypeScript/Connect Query bindings.
 
 - Issue #1142 reserves repository-inspection metadata Worker value 6 and attachment-response support field 3, retaining provenance from closed PR #1193 whose Worker value was 5. Main owns value 5 for native compaction. Reservation kinds must match the existing baseline declaration kind, including message-field additions. Keep them allocation-only until the dependent implementation; do not advertise support from a reservation. Follow the protocol and structure contracts.

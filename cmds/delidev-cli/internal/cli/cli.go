@@ -121,9 +121,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	defer c.transport.CloseIdleConnections()
 	if command != "events" && !(command == "session" && len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start") {
 		limit := 30 * time.Second
-		if command == "network" {
-			// Credential-store work can own the full server-side 30-second
-			// deadline. Keep the response wait beyond that cleanup boundary.
+		// Network credential work and backup inspection/replacement own bounded
+		// 30-second server work. Allow its typed outcome to arrive first.
+		if command == "network" || command == "backup" && len(rest) > 0 && (rest[0] == "restore" || rest[0] == "inspect") {
 			limit = 35 * time.Second
 			c.transport.ResponseHeaderTimeout = limit
 		}

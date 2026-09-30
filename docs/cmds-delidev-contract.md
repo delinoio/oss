@@ -223,3 +223,15 @@ reclaimed disk space. See the [storage contract](cmds-delidev-storage-contract.m
 ### Explicit outbound networking
 
 Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. See [the network contract](cmds-delidev-network-contract.md); Worker bootstrap/native proxy application remains separate.
+
+### Managed database restore commands
+
+`backup restore` uses owner/client `SystemService.RestoreBackup` with explicit
+confirmation, the complete original inspection and its exact live restore
+revision. Retain the UUID-v7 request across an uncertain response; `backup
+restore-status --id REQUEST-ID` reads the original external receipt after explicit
+server restart. Publication ends the original process and durably suppresses
+implicit `server ensure` recovery before replacement. Inspection or status never
+restores credentials, Worker files or historical execution. See the
+[storage contract](cmds-delidev-storage-contract.md) for settled ownership,
+permanent-deletion enforcement, bounded staging and startup recovery.
