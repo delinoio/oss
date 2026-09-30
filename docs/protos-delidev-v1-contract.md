@@ -6,6 +6,12 @@ names and numbers remain unchanged. `protos/delidev/allocations.json` records ma
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 
+Issue #1206's pending [native Codex model observation contract](cmds-delidev-native-models-contract.md)
+reserves server capability 15 and Worker capability 5. Keep these out of active
+schemas and capability advertisements until a dependent implementation follows
+main-established allocations. No new RPC or generated binding is activated by
+the reservation prerequisite.
+
 ## Scope
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 

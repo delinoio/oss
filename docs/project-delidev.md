@@ -40,6 +40,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
+- [Native Codex model observations (pending)](cmds-delidev-native-models-contract.md)
 - [API provider activation](cmds-delidev-provider-activation-contract.md)
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)

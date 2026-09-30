@@ -2759,6 +2759,20 @@
       "member": "WORKER_CAPABILITY_SESSION_TERMINALS_V1",
       "oldBranchNumber": 3,
       "number": 4
+    },
+    {
+      "issue": 1206,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
+      "number": 15
+    },
+    {
+      "issue": 1206,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
+      "number": 5
     }
   ]
 }
