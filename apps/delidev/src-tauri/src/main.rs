@@ -268,6 +268,13 @@ async fn retained_worker_control(
     .await
     .map_err(|_| NativeFailure::SidecarFailed)?
 }
+// Tauri injects trusted framework state separately from the closed IPC fields.
+// Keep this exception on the command; remove it if those injected states are
+// consolidated.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri-injected state is separate from typed IPC input"
+)]
 #[tauri::command]
 async fn remove_connection(
     window: WebviewWindow<Cef>,
@@ -730,6 +737,13 @@ async fn open_connection(
     }
 }
 
+// Tauri injects trusted framework state separately from the closed IPC fields.
+// Keep this exception on the command; remove it if those injected states are
+// consolidated.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri-injected state is separate from typed IPC input"
+)]
 #[tauri::command]
 async fn open_browser(
     window: WebviewWindow<Cef>,
@@ -796,6 +810,13 @@ async fn open_browser(
     .map_err(|_| NativeFailure::SidecarFailed)?;
     receive.await.map_err(|_| NativeFailure::SidecarFailed)?
 }
+// Tauri injects trusted framework state separately from the closed IPC fields.
+// Keep this exception on the command; remove it if those injected states are
+// consolidated.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri-injected state is separate from typed IPC input"
+)]
 #[tauri::command]
 async fn control_browser(
     window: WebviewWindow<Cef>,
@@ -885,12 +906,14 @@ async fn control_browser(
         let _ = send.send(host.control(
             &copy,
             &window,
-            &profile_id,
-            &view_id,
-            action,
-            url,
-            prepared_revision,
-            bounds,
+            browser_host::Control {
+                profile: profile_id,
+                view_id,
+                action,
+                url,
+                prepared_revision,
+                bounds,
+            },
         ));
     })
     .map_err(|_| NativeFailure::SidecarFailed)?;

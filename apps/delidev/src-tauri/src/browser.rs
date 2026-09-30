@@ -478,6 +478,6 @@ mod tests {
         assert_eq!(restarted.tabs[0].url, "https://fixture.test/reloaded");
         assert_eq!(fs::read_dir(root).unwrap().count(), 1);
         assert!(!policy.resource("wss://product.test/socket"));
-        assert!(!Policy::new("https://remote-product.test", "http://127.0.0.1:46310/").is_ok());
+        assert!(Policy::new("https://remote-product.test", "http://127.0.0.1:46310/").is_err());
     }
 }

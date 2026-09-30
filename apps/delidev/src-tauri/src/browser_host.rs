@@ -56,6 +56,14 @@ pub struct BrowserState {
     pub tabs: Tabs,
     pub removal_pending: bool,
 }
+pub struct Control {
+    pub profile: String,
+    pub view_id: String,
+    pub action: Action,
+    pub url: Option<String>,
+    pub prepared_revision: Option<u64>,
+    pub bounds: Option<Bounds>,
+}
 #[derive(Clone)]
 struct ViewRequest {
     window: String,
@@ -391,12 +399,11 @@ impl BrowserHost {
         if state.reservations.get(window.label()) != Some(&view_id) {
             return Err(NativeFailure::Stopped);
         }
-        if let Some(view) = state.views.remove(window.label()) {
-            if let Some(b) = view.browser {
-                if let Some(h) = b.host() {
-                    h.close_browser(1);
-                }
-            }
+        if let Some(view) = state.views.remove(window.label())
+            && let Some(b) = view.browser
+            && let Some(h) = b.host()
+        {
+            h.close_browser(1);
         }
         let p = state
             .profiles
@@ -570,13 +577,18 @@ impl BrowserHost {
         self: &Arc<Self>,
         app: &AppHandle<Cef>,
         window: &WebviewWindow<Cef>,
-        profile: &str,
-        view_id: &str,
-        action: Action,
-        url: Option<String>,
-        prepared_revision: Option<u64>,
-        bounds: Option<Bounds>,
+        control: Control,
     ) -> Result<BrowserState> {
+        let Control {
+            profile,
+            view_id,
+            action,
+            url,
+            prepared_revision,
+            bounds,
+        } = control;
+        let profile = profile.as_str();
+        let view_id = view_id.as_str();
         tracing::debug!(operation = "browser_control", ?action);
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         let view = state
@@ -638,19 +650,18 @@ impl BrowserHost {
                     .ok_or(NativeFailure::InvalidInput)?;
                 let view = state.views.get_mut(window.label()).unwrap();
                 view.request.bounds = bounds;
-                if let Some(b) = &view.browser {
-                    if let Some(h) = b.host() {
-                        position(h.window_handle(), bounds, view.request.scale, true)?;
-                    }
+                if let Some(b) = &view.browser
+                    && let Some(h) = b.host()
+                {
+                    position(h.window_handle(), bounds, view.request.scale, true)?;
                 }
             }
             Action::Hide => {
-                if let Some(v) = state.views.remove(window.label()) {
-                    if let Some(b) = v.browser {
-                        if let Some(h) = b.host() {
-                            h.close_browser(1);
-                        }
-                    }
+                if let Some(v) = state.views.remove(window.label())
+                    && let Some(b) = v.browser
+                    && let Some(h) = b.host()
+                {
+                    h.close_browser(1);
                 }
             }
             Action::NewTab | Action::SelectTab | Action::CloseTab => {
@@ -673,10 +684,10 @@ impl BrowserHost {
                         .ok_or(NativeFailure::Stopped)?;
                     let generation = state.generation;
                     let view = state.views.get_mut(&label).unwrap();
-                    if let Some(b) = view.browser.take() {
-                        if let Some(h) = b.host() {
-                            h.close_browser(1)
-                        }
+                    if let Some(b) = view.browser.take()
+                        && let Some(h) = b.host()
+                    {
+                        h.close_browser(1)
                     }
                     view.generation = generation;
                     view.request.generation = generation;
@@ -874,10 +885,10 @@ impl BrowserHost {
     pub fn close_all(&self) {
         if let Ok(mut state) = self.state.lock() {
             for v in state.views.values_mut() {
-                if let Some(b) = v.browser.take() {
-                    if let Some(h) = b.host() {
-                        h.close_browser(1);
-                    }
+                if let Some(b) = v.browser.take()
+                    && let Some(h) = b.host()
+                {
+                    h.close_browser(1);
                 }
             }
             for p in state.profiles.values_mut() {
@@ -921,10 +932,10 @@ impl BrowserHost {
                     if host.stopping.load(Ordering::Acquire) {
                         break;
                     }
-                    if let Err(code) = host.persist_address(&profile, &request, &url) {
-                        if code != NativeFailure::Stopped {
-                            tracing::warn!(operation = "browser_tabs", ?code);
-                        }
+                    if let Err(code) = host.persist_address(&profile, &request, &url)
+                        && code != NativeFailure::Stopped
+                    {
+                        tracing::warn!(operation = "browser_tabs", ?code);
                     }
                 }
             }
@@ -1187,7 +1198,7 @@ cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<Cef
  fn download_handler(&self)->Option<DownloadHandler>{Some(DenyDownloads::new())}
 }}
 cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<Cef>,profile:String,request:ViewRequest,}impl LifeSpanHandler{
- fn on_after_created(&self,browser:Option<&mut Browser>){let Some(b)=browser else{return};let Ok(mut state)=self.host.state.lock()else{if let Some(h)=b.host(){h.close_browser(1)};return};let removing=state.profiles.get(&self.profile).is_none_or(|p|p.removing);if !removing&&!self.host.stopping.load(Ordering::Acquire)&&let Some(view)=state.views.get_mut(&self.request.window)&&view.generation==self.request.generation{view.browser=Some(b.clone());if let Some(h)=b.host(){if let Err(code)=position(h.window_handle(),view.request.bounds,view.request.scale,true){tracing::warn!(operation="browser_geometry",?code)}}}else if let Some(h)=b.host(){h.close_browser(1)}}
+ fn on_after_created(&self,browser:Option<&mut Browser>){let Some(b)=browser else{return};let Ok(mut state)=self.host.state.lock()else{if let Some(h)=b.host(){h.close_browser(1)};return};let removing=state.profiles.get(&self.profile).is_none_or(|p|p.removing);if !removing&&!self.host.stopping.load(Ordering::Acquire)&&let Some(view)=state.views.get_mut(&self.request.window)&&view.generation==self.request.generation{view.browser=Some(b.clone());if let Some(h)=b.host()&&let Err(code)=position(h.window_handle(),view.request.bounds,view.request.scale,true){tracing::warn!(operation="browser_geometry",?code)}}else if let Some(h)=b.host(){h.close_browser(1)}}
  fn on_before_popup(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_popup_id:i32,_target_url:Option<&CefString>,_target_frame_name:Option<&CefString>,_target_disposition:WindowOpenDisposition,_user_gesture:i32,_popup_features:Option<&PopupFeatures>,_window_info:Option<&mut WindowInfo>,_client:Option<&mut Option<Client>>,_settings:Option<&mut BrowserSettings>,_extra_info:Option<&mut Option<DictionaryValue>>,_no_javascript_access:Option<&mut i32>)->i32{1}
  fn on_before_close(&self,_browser:Option<&mut Browser>){
    let exit = if let Ok(mut state)=self.host.state.lock(){state.live=state.live.saturating_sub(1);if state.live==0{state.exit_code}else{None}}else{None};
@@ -1294,7 +1305,7 @@ fn position(
         ));
         view.setHidden(!visible);
         let _ = scale;
-        return Ok(());
+        Ok(())
     }
     #[cfg(windows)]
     {
@@ -1315,7 +1326,7 @@ fn position(
         }
         .map_err(|_| NativeFailure::SidecarFailed)?;
         let _ = visible;
-        return Ok(());
+        Ok(())
     }
     #[cfg(target_os = "linux")]
     {
