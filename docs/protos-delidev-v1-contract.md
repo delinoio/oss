@@ -13,6 +13,12 @@ ledger reservations only: no schema declaration, generated binding, RPC or
 capability advertisement is activated by the reservation change. The owning
 issue is recorded directly when no implementation PR exists yet.
 
+Issue #1206's pending [native Codex model observation contract](cmds-delidev-native-models-contract.md)
+reserves server capability 16 and Worker capability 7. Keep these out of active
+schemas and capability advertisements until a dependent implementation follows
+main-established allocations. No new RPC or generated binding is activated by
+the reservation prerequisite.
+
 ## Scope
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 
@@ -397,6 +403,8 @@ only original session/deletion IDs, plan digest and retained request UUID. No
 paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
+
+`SessionService.SwitchSessionAccount` is an additive owner/client-only mutation, capability-gated by `STOPPED_CODEX_ACCOUNT_SWITCH_V1` (wire value 5, allocated on main) in System status. Its `Mutation` binds the exact session revision/request and `account_id` selects an original candidate; actor-bound reference receipts return current `SessionChange`. Admission, historical attribution, full native history and explicit Resume follow the [sessions contract](cmds-delidev-sessions-contract.md). It performs no native side effect or automatic execution. Go, TypeScript and Connect Query bindings are generated from the service-owned schema; existing capabilities retain their wire values.
 
 ## Repository inspection metadata allocation prerequisite
 

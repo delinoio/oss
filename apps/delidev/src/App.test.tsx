@@ -539,9 +539,9 @@ it("discards a nested integration profile draft on close before targeted reposit
   expect(value.githubQuery).not.toHaveBeenCalled();
 });
 
-// These independent drafts each traverse a fresh Settings opening. Keeping both
-// workflows in one test made their serial DOM work exceed the CI test watchdog.
-it("discards notification drafts on close without saving", async () => {
+// Each independent draft family owns its complete close/reopen lifecycle check.
+// Keep them separate so unrelated navigation does not consume one test deadline.
+it("discards a notification draft on close without saving", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -560,7 +560,7 @@ it("discards notification drafts on close without saving", async () => {
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
 
-it("discards import drafts on close without saving", async () => {
+it("discards an import draft on close before targeted repository entry without saving", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));

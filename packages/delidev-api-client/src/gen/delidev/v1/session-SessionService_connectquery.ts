@@ -123,3 +123,8 @@ export const deleteLocalReviewComment = SessionService.method.deleteLocalReviewC
  * @generated from rpc delidev.v1.SessionService.SubmitLocalReview
  */
 export const submitLocalReview = SessionService.method.submitLocalReview;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.SwitchSessionAccount
+ */
+export const switchSessionAccount = SessionService.method.switchSessionAccount;

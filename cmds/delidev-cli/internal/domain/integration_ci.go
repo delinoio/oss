@@ -34,6 +34,9 @@ func (v CIContext) Validate(sha string) error {
 	}
 	switch v.Kind {
 	case CICheckRun:
+		if v.Evidence.Workflow != nil && v.Evidence.Workflow.CommitSHA != "" && v.Evidence.Workflow.CommitSHA != v.CommitSHA {
+			return invalidPRObservation()
+		}
 		if v.NativeConclusion != nil && Text(*v.NativeConclusion, "CI conclusion", 64, true) != nil {
 			return invalidPRObservation()
 		}
@@ -76,9 +79,10 @@ func (v CIRollup) Validate(sha string) error {
 type EvaluatedCommitSource string
 
 const (
-	CIHeadCommit      EvaluatedCommitSource = "head"
-	CITestMergeCommit EvaluatedCommitSource = "test-merge"
-	CIUnknownCommit   EvaluatedCommitSource = "unknown"
+	CIHeadCommit       EvaluatedCommitSource = "head"
+	CITestMergeCommit  EvaluatedCommitSource = "test-merge"
+	CIMergeQueueCommit EvaluatedCommitSource = "merge-queue"
+	CIUnknownCommit    EvaluatedCommitSource = "unknown"
 )
 
 type CIState string
@@ -130,6 +134,7 @@ type PullRequestCI struct {
 	TestMerge          *CIRollup               `json:"test_merge,omitempty"`
 	NativeMergeability string                  `json:"native_mergeability"`
 	InMergeQueue       bool                    `json:"in_merge_queue"`
+	MergeQueue         *CIMergeQueue           `json:"merge_queue,omitempty"`
 	Result             RequiredCIResult        `json:"result"`
 }
 
@@ -177,7 +182,7 @@ func workflowEvaluated(v CIContext) bool {
 	}
 	return false
 }
-func ciRequirement(rule ActiveRepositoryRule, check RequiredRuleCheck, contexts []CIContext) CIRequirementResult {
+func ciRequirement(rule ActiveRepositoryRule, check RequiredRuleCheck, contexts []CIContext, queued bool) CIRequirementResult {
 	result := CIRequirementResult{RulesetID: rule.RulesetID, Context: check.Context, IntegrationID: check.IntegrationID, State: CIMissing, Reason: CINoMatchingResult, ResultNodeIDs: []string{}}
 	if check.IntegrationID != nil && *check.IntegrationID == "0" {
 		result.State, result.Reason = CIUnknown, CIAppUnverified
@@ -194,7 +199,9 @@ func ciRequirement(rule ActiveRepositoryRule, check RequiredRuleCheck, contexts 
 				state, reason = CIUnknown, CIAppUnverified
 			} else if v.Application.ID == "15368" && v.WorkflowEvent == nil {
 				state, reason = CIUnknown, CIWorkflowUnverified
-			} else if !workflowEvaluated(v) {
+			} else if queued && v.Application.ID == "15368" && (*v.WorkflowEvent != "merge_group" || v.Evidence.Workflow == nil || v.Evidence.Workflow.SuiteNodeID != v.Evidence.SuiteNodeID || v.Evidence.Workflow.CommitSHA != v.CommitSHA) {
+				state, reason = CIUnknown, CIWorkflowUnverified
+			} else if !queued && !workflowEvaluated(v) {
 				continue
 			}
 		}
@@ -244,12 +251,16 @@ func (v PullRequestCI) Evaluate(item RepositoryItem) RequiredCIResult {
 		result.Reason = CIClosedPR
 		return result
 	}
-	if v.InMergeQueue || v.NativeMergeability == "UNKNOWN" || v.NativeMergeability == "MERGEABLE" && v.TestMerge == nil {
-		return result
-	}
 	contexts := v.Head.Contexts
 	result.Source, result.EvaluatedSHA = CIHeadCommit, v.Head.CommitSHA
-	if v.TestMerge != nil && len(v.TestMerge.Contexts) > 0 {
+	if v.InMergeQueue {
+		if v.MergeQueue == nil || !v.MergeQueue.evaluable(item) {
+			return RequiredCIResult{Source: CIUnknownCommit, State: CIUnknown, Reason: CICommitUnverified, Requirements: []CIRequirementResult{}}
+		}
+		result.Source, result.EvaluatedSHA, contexts = CIMergeQueueCommit, v.MergeQueue.Entry.HeadSHA, v.MergeQueue.Rollup.Contexts
+	} else if v.NativeMergeability == "UNKNOWN" || v.NativeMergeability == "MERGEABLE" && v.TestMerge == nil {
+		return RequiredCIResult{Source: CIUnknownCommit, State: CIUnknown, Reason: CICommitUnverified, Requirements: []CIRequirementResult{}}
+	} else if v.TestMerge != nil && len(v.TestMerge.Contexts) > 0 {
 		result.Source, result.EvaluatedSHA, contexts = CITestMergeCommit, v.TestMerge.CommitSHA, v.TestMerge.Contexts
 	}
 	result.State, result.Reason = CINotRequired, CIObserved
@@ -267,11 +278,18 @@ func (v PullRequestCI) Evaluate(item RepositoryItem) RequiredCIResult {
 				result.State, result.Reason = CIUnknown, CIUnsupportedRule
 			}
 			for _, check := range rule.RequiredChecks.Checks {
-				required := ciRequirement(rule, check, contexts)
+				required := ciRequirement(rule, check, contexts, v.InMergeQueue)
+				if v.InMergeQueue && required.State == CIMissing {
+					required.State = CIUnknown
+				}
 				result.Requirements = append(result.Requirements, required)
 				if ciPriority(required.State) > ciPriority(result.State) {
 					result.State, result.Reason = required.State, required.Reason
 				}
+			}
+		case "merge_queue":
+			if result.Source != CIMergeQueueCommit {
+				result.State, result.Reason = CIUnknown, CIUnsupportedRule
 			}
 		case "creation", "update", "deletion", "required_linear_history", "required_deployments", "required_signatures", "pull_request", "non_fast_forward", "commit_message_pattern", "commit_author_email_pattern", "committer_email_pattern", "branch_name_pattern", "tag_name_pattern", "file_path_restriction", "max_file_path_length", "file_extension_restriction", "max_file_size":
 		case "workflows":
@@ -314,6 +332,9 @@ func (v PullRequestCI) Validate(item RepositoryItem) error {
 		}
 	}
 	if v.Rules.Validate(item) != nil || v.Head.Validate(item.HeadSHA) != nil || v.TestMerge != nil && (v.TestMerge.Validate(v.TestMerge.CommitSHA) != nil || v.TestMerge.CommitSHA == item.HeadSHA) {
+		return invalidPRObservation()
+	}
+	if v.MergeQueue != nil && (!v.InMergeQueue || v.MergeQueue.Validate(item) != nil) {
 		return invalidPRObservation()
 	}
 	switch v.NativeMergeability {

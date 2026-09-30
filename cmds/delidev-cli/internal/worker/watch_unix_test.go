@@ -27,6 +27,7 @@ type terminatingWorkStream struct {
 	delidevv1connect.UnimplementedWorkerServiceHandler
 	job     *pb.Resource
 	release <-chan struct{}
+	silence bool
 	problem error
 	reports atomic.Int32
 }
@@ -35,11 +36,26 @@ func (s *terminatingWorkStream) WatchWork(ctx context.Context, req *connect.Requ
 	if err := stream.Send(&pb.WatchWorkResponse{Job: s.job}); err != nil {
 		return err
 	}
-	select {
-	case <-s.release:
-		return s.problem
-	case <-ctx.Done():
-		return ctx.Err()
+	// Keep the connection live while the native supervisor starts. The silence
+	// case must begin only after the test observes the owned command, so startup
+	// latency cannot turn a running-work cancellation check into pre-cancellation.
+	heartbeats := time.NewTicker(500 * time.Millisecond)
+	defer heartbeats.Stop()
+	for {
+		select {
+		case <-s.release:
+			if !s.silence {
+				return s.problem
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		case <-heartbeats.C:
+			if err := stream.Send(&pb.WatchWorkResponse{Heartbeat: true}); err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 func (s *terminatingWorkStream) ReportWork(context.Context, *connect.Request[pb.ReportWorkRequest]) (*connect.Response[pb.ReportWorkResponse], error) {
@@ -67,7 +83,7 @@ func TestStreamTerminationCancelsRunningOwnedWork(t *testing.T) {
 			job := domain.Job{Type: domain.InspectRepositoryJob, State: domain.JobClaimed, MachineID: machine, InstanceID: instance, Input: input, AcceptedAt: time.Now().UTC()}
 			raw, _ := json.Marshal(job)
 			release := make(chan struct{})
-			service := &terminatingWorkStream{job: &pb.Resource{Id: string(jobID), Kind: pb.EntityKind_ENTITY_KIND_JOB, Revision: 2, SchemaVersion: 1, DocumentJson: raw}, release: release}
+			service := &terminatingWorkStream{job: &pb.Resource{Id: string(jobID), Kind: pb.EntityKind_ENTITY_KIND_JOB, Revision: 2, SchemaVersion: 1, DocumentJson: raw}, release: release, silence: code == connect.CodeDeadlineExceeded}
 			if code != 0 {
 				domainCode := domain.Unavailable
 				if code == connect.CodePermissionDenied {
@@ -79,17 +95,19 @@ func TestStreamTerminationCancelsRunningOwnedWork(t *testing.T) {
 			server := httptest.NewServer(handler)
 			defer server.Close()
 			client := delidevv1connect.NewWorkerServiceClient(server.Client(), server.URL)
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			done := make(chan error, 1)
+			joined := make(chan struct{})
+			defer func() { cancel(); <-joined }()
 			go func() {
+				defer close(joined)
 				timeout := domain.WorkerConnectionTimeout
 				if code == connect.CodeDeadlineExceeded {
 					timeout = 3 * time.Second
 				}
 				done <- watchWithTimeout(ctx, Config{Root: root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, client, Credential{MachineID: machine, Token: "private-fixture"}, instance, timeout)
 			}()
-			started := time.Now().Add(5 * time.Second)
+			started := time.Now().Add(20 * time.Second)
 			for {
 				if _, err := os.Stat(filepath.Join(repo, "native-started")); err == nil {
 					break
@@ -97,11 +115,18 @@ func TestStreamTerminationCancelsRunningOwnedWork(t *testing.T) {
 				if time.Now().After(started) {
 					t.Fatal("owned operation never started")
 				}
+				select {
+				case err := <-done:
+					actual := rpc.ClientError(err).Code
+					if typed, ok := err.(*domain.Error); ok {
+						actual = typed.Code
+					}
+					t.Fatalf("owned operation ended before native startup: %s", actual)
+				default:
+				}
 				time.Sleep(10 * time.Millisecond)
 			}
-			if code != connect.CodeDeadlineExceeded {
-				close(release)
-			}
+			close(release)
 			select {
 			case err := <-done:
 				want := domain.Unavailable
@@ -117,7 +142,10 @@ func TestStreamTerminationCancelsRunningOwnedWork(t *testing.T) {
 				if actual != want {
 					t.Fatalf("stream termination lost classification: %v", err)
 				}
-			case <-time.After(5 * time.Second):
+			// Heartbeat expiry precedes joined native cleanup, whose controller
+			// permits ten seconds on Unix, followed by durable journal publication.
+			// A five-second total limit can reject valid cleanup under CI load.
+			case <-time.After(30 * time.Second):
 				cancel()
 				<-done
 				t.Fatal("stream termination left native work running")
