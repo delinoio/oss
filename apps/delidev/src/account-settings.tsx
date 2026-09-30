@@ -451,31 +451,31 @@ function AccountCreationWizard({
     const validationState = text(object(data.validation).state) || "not yet observed";
     const validationLabel = text(data.health) === "unverified" ? "validation required" : `validation ${validationState}`;
     return <section className="account-wizard" aria-labelledby="api-account-created-title">
-      <header><div><p>API account · Account</p><h3 id="api-account-created-title">{resourceName(current)}</h3></div><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>Back to API accounts</button></header>
-      <p>Account saved. Credential connection is separate from validation and model discovery.</p>
-      {!accountTypeFilteringReady ? <p role="status">Connection is paused until this server reports the required provider inventory and account-type filtering capabilities. The saved account and any exact pending request are retained.</p> : null}
-      {create.busy ? <p role="status">Creating account…</p> : null}
-      {create.uncertain ? <p role="status">Result not confirmed. Retry the same account creation to inspect the original request outcome.</p> : null}
+      <header><div><p>AI API Keys · Entry</p><h3 id="api-account-created-title">{resourceName(current)}</h3></div><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>Back to AI API Keys</button></header>
+      <p>Entry saved. Credential connection is separate from validation and model discovery.</p>
+      {!accountTypeFilteringReady ? <p role="status">Connection is paused until this server reports the required provider inventory and account-type filtering capabilities. The saved entry and any exact pending request are retained.</p> : null}
+      {create.busy ? <p role="status">Creating entry…</p> : null}
+      {create.uncertain ? <p role="status">Result not confirmed. Retry the same entry creation to inspect the original request outcome.</p> : null}
       {hasCredentials ? <p role="status">Connected · health {text(data.health) || "unknown"} · {validationLabel}.</p> : <p>Connection: {text(data.health) || "disconnected"}</p>}
-      {connect.busy ? <p role="status">Connecting account…</p> : null}
+      {connect.busy ? <p role="status">Connecting entry…</p> : null}
       {connect.uncertain ? <p role="status">Result not confirmed. The original connection request is retained for exact retry.</p> : null}
-      {connect.error && !connect.uncertain ? <p role="status">Account created; connection failed. Re-enter the key and retry connection when ready.</p> : null}
+      {connect.error && !connect.uncertain ? <p role="status">{keyless ? "Entry created; connection failed. Retry the local endpoint connection when ready." : "Entry created; connection failed. Re-enter the key and retry connection when ready."}</p> : null}
       {!hasCredentials && selectedProvider && selectedProvider.enabled ? keyless ? <p>Connect to this local endpoint on the selected server.</p> : <label>API key<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} disabled={providerChecking} value={connectionKey} onChange={(event) => setConnectionKey(event.target.value)} /></label> : !hasCredentials && selectedProvider ? <p role="status">The selected provider is off. Enable it in API Providers before connecting.</p> : !hasCredentials ? <p role="status">The selected provider is unavailable. Refresh API Providers before connecting.</p> : null}
-      {!hasCredentials ? <div className="actions"><button className="primary" type="button" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !selectedProvider?.enabled || (!keyless && !/^[!-~]{1,8192}$/.test(connectionKey)) || connect.busy || connect.uncertain} onClick={connectExisting}>{providerChecking ? "Checking provider…" : keyless ? "Connect keyless account" : "Connect account"}</button>{connect.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || connect.busy} onClick={retryConnection}>Retry the same connection</button> : null}</div> : null}
-      {providerMismatch ? <p role="alert">This provider changed or is no longer available. The API key was cleared. Review the current API Providers entry before connecting.</p> : null}
+      {!hasCredentials ? <div className="actions"><button className="primary" type="button" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !selectedProvider?.enabled || (!keyless && !/^[!-~]{1,8192}$/.test(connectionKey)) || connect.busy || connect.uncertain} onClick={connectExisting}>{providerChecking ? "Checking provider…" : keyless ? "Connect local endpoint" : "Connect API key"}</button>{connect.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || connect.busy} onClick={retryConnection}>Retry the same connection</button> : null}</div> : null}
+      {providerMismatch ? <p role="alert">{keyless ? "This provider changed or is no longer available. Review the current API Providers entry before connecting." : "This provider changed or is no longer available. The API key was cleared. Review the current API Providers entry before connecting."}</p> : null}
       {providerChecking ? <p role="status">Checking the current provider settings…</p> : null}
       <Problem error={providerRead.error} />
-      {unknownResponse ? <p role="alert">The server acknowledged a request without a matching account result. Inspect the original request before starting another operation.</p> : null}
+      {unknownResponse ? <p role="alert">The server acknowledged a request without a matching entry result. Inspect the original request before starting another operation.</p> : null}
       <Problem error={connect.error} />
-      <div className="actions"><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>Manage account</button><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={close}>Done</button></div>
+      <div className="actions"><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>Manage connection</button><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={close}>Done</button></div>
     </section>;
   }
 
   return <section className="account-wizard" aria-labelledby="api-account-wizard-title">
-    <header><h3 id="api-account-wizard-title">Add API account</h3><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>Back to API accounts</button></header>
+    <header><h3 id="api-account-wizard-title">Add AI API key</h3><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>Back to AI API Keys</button></header>
     {step === WizardStep.Provider ? <>
       <h4 ref={heading} tabIndex={-1}>Choose an API provider</h4>
-      <p>Select a provider to connect your account.</p>
+      <p>Select a provider to connect your entry.</p>
       {picker.fetching ? <p role="status">Loading providers…</p> : null}
       <Problem error={picker.error} />
       {picker.error && clientFailure(picker.error).code === FailureCode.PermissionDenied ? <p role="status">Provider inventory access is denied. Check this device’s permission on the selected server.</p> : null}
@@ -486,41 +486,41 @@ function AccountCreationWizard({
         <div className="account-provider-choices">{options.map((provider) => <button type="button" className="account-provider-action" key={provider.providerId} ref={(button) => { if (button) providerButtons.current.set(provider.providerId, button); else providerButtons.current.delete(provider.providerId); }} onClick={() => pickProvider(provider)}>
           <span><strong>{provider.displayName}</strong><span className="account-provider-method">{document(provider.provider).authentication === Authentication.Keyless ? "Local endpoint" : "API key"}</span></span><span className="account-provider-chevron" aria-hidden="true">›</span>
         </button>)}</div>
-        {options.length === 0 && !picker.fetching && !picker.error ? !picker.pageToken && !picker.nextPageToken ? <div><p>Enable an API provider to add an account.</p><button type="button" onClick={openProviders}>Open API Providers</button></div> : <p>No enabled API providers on this page.</p> : null}
+        {options.length === 0 && !picker.fetching && !picker.error ? !picker.pageToken && !picker.nextPageToken ? <div><p>Enable an API provider to add an entry.</p><button type="button" onClick={openProviders}>Open API Providers</button></div> : <p>No enabled API providers on this page.</p> : null}
       </> : null}
       {picker.pageToken || picker.nextPageToken ? <nav className="actions" aria-label="Provider pages">
         {picker.pageToken ? <button type="button" disabled={picker.fetching} onClick={picker.first}>First page</button> : null}
         {picker.nextPageToken ? <button type="button" disabled={picker.fetching} onClick={picker.next}>Next page</button> : null}
       </nav> : null}
     </> : <>
-      <h4 ref={heading} tabIndex={-1}>Connect your account</h4>
+      <h4 ref={heading} tabIndex={-1}>Connect your entry</h4>
       <p>Provider: <strong>{selectedProvider?.displayName ?? "Unavailable"}</strong> <button type="button" disabled={providerChecking || create.busy || create.uncertain} onClick={returnToProviders}>Change</button></p>
       {!accountTypeFilteringReady ? <p role="status">This server no longer reports the provider inventory and account-type filtering capabilities required here. Update the server before submitting or retrying.</p> : null}
       <form onSubmit={(event) => { event.preventDefault(); createAccount(); }}>
         <fieldset disabled={providerChecking || create.busy || create.uncertain}>
-          <label>Account name<input autoComplete="off" maxLength={256} value={alias} aria-invalid={(attempted || alias.length > 0) && !aliasValid} onChange={(event) => setAlias(event.target.value)} /></label>
-          {(attempted || alias.length > 0) && !aliasValid ? <p role="alert">Enter a non-empty account name no longer than 256 UTF-8 bytes.</p> : null}
+          <label>Entry name<input autoComplete="off" maxLength={256} value={alias} aria-invalid={(attempted || alias.length > 0) && !aliasValid} onChange={(event) => setAlias(event.target.value)} /></label>
+          {(attempted || alias.length > 0) && !aliasValid ? <p role="alert">Enter a non-empty entry name no longer than 256 UTF-8 bytes.</p> : null}
           {keyless ? <p>Connect to this local endpoint on the selected server.</p> : <>
             <label>API key<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} value={apiKey} aria-invalid={(attempted || apiKey.length > 0) && !apiKeyValid} onChange={(event) => setApiKey(event.target.value)} /></label>
             {!providerChecking && !create.busy && !create.uncertain && (attempted || apiKey.length > 0) && !apiKeyValid ? <p role="alert">Enter 1–8192 printable ASCII bytes without whitespace.</p> : null}
             <details><summary>Where to get an API key</summary><p>{selectedProvider?.keyGuidance || "Use the provider's documented API key flow."}</p>{selectedProvider?.documentationUrl ? <p>Provider documentation: <code>{selectedProvider.documentationUrl}</code></p> : null}</details>
           </>}
-          <p>Use a separate account for each API key.</p><p>Stored securely on the selected server.</p>
+          <p>Use a separate entry for each API key.</p><p>Stored securely on the selected server.</p>
           <details open={advanced} onToggle={(event) => setAdvanced(event.currentTarget.open)}><summary>Advanced preferences</summary>
-            <label className="checkbox"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />Enable this account</label>
-            <label className="checkbox"><input type="checkbox" checked={excludeAutomatic} onChange={(event) => setExcludeAutomatic(event.target.checked)} />Exclude from automatic account selection</label>
-            <label className="checkbox"><input type="checkbox" checked={recoveryNotifications} onChange={(event) => setRecoveryNotifications(event.target.checked)} />Notify when account quota recovers</label>
+            <label className="checkbox"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />Enable this entry</label>
+            <label className="checkbox"><input type="checkbox" checked={excludeAutomatic} onChange={(event) => setExcludeAutomatic(event.target.checked)} />Exclude from automatic entry selection</label>
+            <label className="checkbox"><input type="checkbox" checked={recoveryNotifications} onChange={(event) => setRecoveryNotifications(event.target.checked)} />Notify when entry quota recovers</label>
           </details>
         </fieldset>
-        <p>New connections remain unverified until you explicitly validate the account.</p>
+        <p>New connections remain unverified until you explicitly validate the connection.</p>
         <Problem error={create.error} />
-        {create.busy ? <p role="status">Creating account…</p> : null}
-        {create.uncertain ? <p role="status">Result not confirmed. The account request remains retained for exact retry.</p> : null}
-        {create.error && !create.uncertain ? <p role="status">Account creation failed. Correct the details and submit again.</p> : null}
-        {providerMismatch ? <p role="alert">This provider changed or is no longer available. The API key was cleared. Review the current API Providers entry before submitting again.</p> : null}
+        {create.busy ? <p role="status">Creating entry…</p> : null}
+        {create.uncertain ? <p role="status">Result not confirmed. The entry request remains retained for exact retry.</p> : null}
+        {create.error && !create.uncertain ? <p role="status">Entry creation failed. Correct the details and submit again.</p> : null}
+        {providerMismatch ? <p role="alert">{keyless ? "This provider changed or is no longer available. Review the current API Providers entry before submitting again." : "This provider changed or is no longer available. The API key was cleared. Review the current API Providers entry before submitting again."}</p> : null}
         {providerChecking ? <p role="status">Checking the current provider settings…</p> : null}
         <Problem error={providerRead.error} />
-        <div className="actions"><button type="button" disabled={providerChecking || create.busy || create.uncertain || unknownResponse} onClick={returnToProviders}>Back to provider</button><button className="primary" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !aliasValid || !apiKeyValid || !selectedProvider?.enabled || create.busy || create.uncertain}>{providerChecking ? "Checking provider…" : "Add and connect"}</button>{create.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || providerChecking || create.busy} onClick={create.retry}>Retry the same account creation</button> : null}</div>
+        <div className="actions"><button type="button" disabled={providerChecking || create.busy || create.uncertain || unknownResponse} onClick={returnToProviders}>Back to provider</button><button className="primary" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !aliasValid || !apiKeyValid || !selectedProvider?.enabled || create.busy || create.uncertain}>{providerChecking ? "Checking provider…" : "Add and connect"}</button>{create.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || providerChecking || create.busy} onClick={create.retry}>Retry the same entry creation</button> : null}</div>
       </form>
     </>}
   </section>;
@@ -670,22 +670,23 @@ export function AccountSettings({
   if (createdSubscription) return <section><p role="status">Subscription configuration saved. Subscription login is not available yet; this account remains disconnected.</p><AccountConnection initial={createdSubscription} active={active} close={() => { setCreatedSubscription(undefined); void rows.refetch(); }} /></section>;
   if (wizard) return <AccountCreationWizard active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
 
-  return <section className="account-settings" aria-label={section === AccountSettingsSection.Api ? "API account settings" : "AI subscription account settings"}>
-    <header><div><p>Accounts are stored on the selected server. Connection, validation, and provider availability are separate states.</p></div>
+  const isApi = section === AccountSettingsSection.Api;
+  return <section className="account-settings" aria-label={section === AccountSettingsSection.Api ? "AI API Keys settings" : "AI subscription account settings"}>
+    <header><div><p>{isApi ? "Entries are stored on the selected server. Connection, validation, and provider availability are separate states." : "Accounts are stored on the selected server. Connection, validation, and provider availability are separate states."}</p></div>
       {providerIdFilter ? <button type="button" onClick={() => { setPage({ section, providerId: "", token: "" }); clearProviderFilter(); }}>Clear provider filter</button> : null}
-      {section === AccountSettingsSection.Api ? <button className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProvider(undefined); onWorkflowReadyChange?.(true); setWizard(true); }}>Add API account</button> : null}
+      {section === AccountSettingsSection.Api ? <button className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProvider(undefined); onWorkflowReadyChange?.(true); setWizard(true); }}>Add AI API key</button> : null}
     </header>
     {section === AccountSettingsSection.Subscription ? <p>Subscription login is not available yet. Existing subscription configuration can still be managed here.</p> : null}
-    {!accountTypeFilteringReady ? <div role="status"><p>Account lists require a server that supports account-type filtering. Update the selected server before opening this list or adding an account.</p><Problem error={accountTypeFilteringProblem} /></div> : <>
-      <div className="account-provider-filter"><label>Search providers<input type="search" value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} /></label><label>Filter accounts by provider<select value={providerIdFilter} onChange={(event) => {
+    {!accountTypeFilteringReady ? <div role="status"><p>{isApi ? "Entry lists require a server that supports account-type filtering. Update the selected server before opening this list or adding an entry." : "Account lists require a server that supports account-type filtering. Update the selected server before opening this list or adding an account."}</p><Problem error={accountTypeFilteringProblem} /></div> : <>
+      <div className="account-provider-filter"><label>Search providers<input type="search" value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} /></label><label>{isApi ? "Filter entries by provider" : "Filter accounts by provider"}<select value={providerIdFilter} onChange={(event) => {
         const provider = providerSummaries.find((candidate) => candidate.providerId === event.target.value);
         setPage({ section, providerId: event.target.value, token: "" });
         setProviderFilter(event.target.value, provider);
       }}><option value="">All providers</option>{providerSummaries.map((provider) => <option key={provider.providerId} value={provider.providerId}>{provider.displayName}{provider.enabled ? " · On" : " · Off"}</option>)}{providerIdFilter && !providerSummaries.some((provider) => provider.providerId === providerIdFilter) ? <option value={providerIdFilter}>Selected provider · {providerIdFilter}</option> : null}</select></label><button type="button" disabled={!providerFilterHasMore || providerSearchLoading} onClick={loadMoreProviderFilters}>More provider filters</button></div>
       <Problem error={providerSearchError} />
       <Problem error={rows.error} />
-      {rows.error && rows.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded accounts.</p> : null}
-      {rows.isFetching && !rows.data ? <p role="status">Loading accounts…</p> : null}
+      {rows.error && rows.data ? <p className="notice" role="status">{isApi ? "Refresh failed. Showing the last successfully loaded entries." : "Refresh failed. Showing the last successfully loaded accounts."}</p> : null}
+      {rows.isFetching && !rows.data ? <p role="status">{isApi ? "Loading entries…" : "Loading accounts…"}</p> : null}
       {rows.data?.resources.map((row) => {
         const data = document(row);
         const provider = providersById.get(text(data.provider_id));
@@ -698,15 +699,15 @@ export function AccountSettings({
             <div><dt>Provider</dt><dd>{provider?.displayName ?? "Provider unavailable · " + text(data.provider_id)}</dd></div>
             <div><dt>Connection</dt><dd>{text(removal.request_id) ? "Credential cleanup pending" : text(connection.id) ? "Credential connected" : "Disconnected"}</dd></div>
             <div><dt>Health</dt><dd>{text(data.health) || "Unknown"}</dd></div>
-            <div><dt>Account</dt><dd>{data.enabled === true ? "Enabled" : "Disabled"}</dd></div>
+            <div><dt>{isApi ? "Entry" : "Account"}</dt><dd>{data.enabled === true ? "Enabled" : "Disabled"}</dd></div>
             <div><dt>Provider status</dt><dd>{provider ? provider.enabled ? "Enabled" : "Off" : "Unavailable"}</dd></div>
             <div><dt>Quota</dt><dd>{data.confirmed_exhausted === true ? "Confirmed exhausted" : quotaCount ? `${quotaCount} observations` : "No quota observation"}</dd></div>
           </dl>
-          <div className="actions"><button type="button" disabled={row.schemaVersion !== 1} onClick={() => editAccount(row)}>Edit preferences</button><button type="button" disabled={row.schemaVersion !== 1} onClick={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }}>Manage connection</button><button type="button" disabled={row.schemaVersion !== 1} onClick={() => deleteAccount(row)}>Delete account</button></div>
+          <div className="actions"><button type="button" disabled={row.schemaVersion !== 1} onClick={() => editAccount(row)}>Edit preferences</button><button type="button" disabled={row.schemaVersion !== 1} onClick={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }}>Manage connection</button><button type="button" disabled={row.schemaVersion !== 1} onClick={() => deleteAccount(row)}>{isApi ? "Delete entry" : "Delete account"}</button></div>
         </article>;
       })}
-      {rows.data?.resources.length === 0 && !rows.error ? section === AccountSettingsSection.Api ? <p>No API accounts. Add an account for an enabled API provider.</p> : <p>No subscription accounts are configured.</p> : null}
-      <nav aria-label="Account pages"><button type="button" disabled={!pageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>First page</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>Next page</button></nav>
+      {rows.data?.resources.length === 0 && !rows.error ? section === AccountSettingsSection.Api ? <p>No AI API key entries. Add an entry for an enabled API provider. Keyless local providers do not require a key.</p> : <p>No subscription accounts are configured.</p> : null}
+      <nav aria-label={isApi ? "Entry pages" : "Account pages"}><button type="button" disabled={!pageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>First page</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>Next page</button></nav>
       {section === AccountSettingsSection.Subscription ? <section className="subscription-account-create"><h3>Add subscription configuration</h3><p>This saves disconnected metadata only. Subscription login and system credential reuse are not available.</p>
         {subscriptionProviders.length > 0 ? <fieldset disabled={!accountTypeFilteringReady || subscriptionCreate.busy || subscriptionCreate.uncertain}><label>Subscription provider<select value={subscriptionProviderId} onChange={(event) => setSubscriptionProviderId(event.target.value)}><option value="">Select a subscription provider</option>{subscriptionProviders.map((provider) => <option key={provider.id} value={provider.id}>{resourceName(provider)}</option>)}</select></label><label>Account name<input autoComplete="off" maxLength={256} value={subscriptionAlias} aria-invalid={subscriptionAlias.length > 0 && !subscriptionAliasValid} onChange={(event) => setSubscriptionAlias(event.target.value)} /></label>{subscriptionAlias.length > 0 && !subscriptionAliasValid ? <p role="alert">Enter a non-empty account name no longer than 256 UTF-8 bytes.</p> : null}<button type="button" disabled={!accountTypeFilteringReady || !subscriptionProvider || !subscriptionAliasValid} onClick={createSubscriptionConfiguration}>Add subscription configuration</button></fieldset> : <p>No subscription provider configuration is available. Expand Subscription provider configurations below to add one.</p>}
         <Problem error={subscriptionCreate.error} />{subscriptionCreate.uncertain ? <button type="button" disabled={subscriptionCreate.busy} onClick={subscriptionCreate.retry}>Retry the same subscription configuration</button> : null}{subscriptionCreateProblem ? <p role="alert">The server acknowledged the request without a matching subscription account. Inspect the original request before retrying.</p> : null}

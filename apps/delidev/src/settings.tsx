@@ -48,14 +48,15 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
     if (encode(value).byteLength > 1 << 20 || (kind === EntityKind.TEMPLATE && new TextEncoder().encode(text(value.contents)).byteLength > 128 << 10)) { setProblem("This configuration is too large. Shorten the text before adding more content."); return; }
     setData(value); setProblem("");
   };
-  if (job) return <section><h3>{kindNames[kind]} save accepted</h3>{job === "unknown" ? <p role="alert">The server acknowledged this request without a readable result. Inspect its receipt before starting another save.</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>Configuration saved after Worker validation.</p><button onClick={saved}>Done</button></> : state === JobState.Failed || state === JobState.Canceled ? <button onClick={() => setJob(undefined)}>Return to retained draft</button> : null}</TrackedJob>}</section>;
+  const kindLabel = kind === EntityKind.ACCOUNT && data.type === "api" ? "AI API key entry" : kindNames[kind];
+  if (job) return <section><h3>{kindLabel} save accepted</h3>{job === "unknown" ? <p role="alert">The server acknowledged this request without a readable result. Inspect its receipt before starting another save.</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>Configuration saved after Worker validation.</p><button onClick={saved}>Done</button></> : state === JobState.Failed || state === JobState.Canceled ? <button onClick={() => setJob(undefined)}>Return to retained draft</button> : null}</TrackedJob>}</section>;
   const validSubscriptionProvider = !subscriptionOnly || (kind === EntityKind.PROVIDER && data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "");
   return <form ref={form} onSubmit={(event) => { event.preventDefault(); if (blocked || childPending || stale || !validSubscriptionProvider || (initial && current.error)) return; void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: 1, documentJson: encode(data) }); }}>
-    <h3>{initial ? "Edit" : "New"} {kindNames[kind]}</h3>
+    <h3>{initial ? "Edit" : "New"} {kindLabel}</h3>
     <fieldset disabled={blocked}><ConfigurationFields kind={kind} data={data} change={change} active={active} existing={Boolean(initial)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} /></fieldset>
     {stale ? <p role="alert">This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving.</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error || mutation.error} />
     {subscriptionOnly && !validSubscriptionProvider ? <p role="alert">Subscription providers must use native-subscription protocol, subscription authentication and an empty endpoint.</p> : null}
-    <div className="actions"><button className="primary" disabled={blocked || childPending || stale || !validSubscriptionProvider || Boolean(initial && current.error)}>Save {kindNames[kind]}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button type="button" disabled={blocked || childPending} onClick={cancel}>Cancel edit</button></div>
+    <div className="actions"><button className="primary" disabled={blocked || childPending || stale || !validSubscriptionProvider || Boolean(initial && current.error)}>Save {kindLabel}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button type="button" disabled={blocked || childPending} onClick={cancel}>Cancel edit</button></div>
   </form>;
 }
 
@@ -72,7 +73,7 @@ enum SettingsGroup { AiAgents = "AI & agents", Workspace = "Workspace", System =
 const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
   [SettingsCategory.Backups]: { label: "Backups", description: "Inspect managed database images and follow durable creation and deletion jobs on the selected server.", area: SettingsArea.Backups },
   [SettingsCategory.SubscriptionAccounts]: { label: "AI Subscription", description: "Existing subscription account metadata is managed here; subscription login is not available.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
-  [SettingsCategory.ApiAccounts]: { label: "API Accounts", description: "API account settings, credential connections and health are managed separately.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
+  [SettingsCategory.ApiAccounts]: { label: "AI API Keys", description: "Manage AI API keys and keyless local connections. Connection and health are separate states.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.Providers]: { label: "API Providers", description: "Provider availability is saved on the selected server.", kind: EntityKind.PROVIDER, area: SettingsArea.Configuration },
   [SettingsCategory.Models]: { label: "Models", description: "Saved on the selected server.", kind: EntityKind.MODEL, area: SettingsArea.Configuration },
   [SettingsCategory.AgentWorkers]: { label: "Agent Workers", description: "Saved on the selected server.", kind: EntityKind.AGENT, area: SettingsArea.Configuration },
@@ -271,7 +272,7 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
             {settingsGroups.map((group) => <optgroup label={group.label} key={group.label}>{group.categories.map((category) => <option key={category} value={category}>{settingsCategories[category].label}</option>)}</optgroup>)}
           </select>
         </label>
-        <div className="settings-category-heading">
+        {area !== SettingsArea.Diagnostics ? <div className="settings-category-heading">
           <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1><p>{categoryDescription}</p></div>
           {configurationList ? <div className="settings-toolbar">
             <button type="button" onClick={() => void result.refetch()}>Refresh settings</button>
@@ -279,13 +280,13 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
               ? <button type="button" className="primary" disabled={kind === EntityKind.SETTINGS && (!result.data || Boolean(result.error || result.isFetching))} onClick={() => setEditing({ key: newRequestId() })}><span className="settings-action-icon" aria-hidden="true">+</span>New {kindNames[kind]}</button>
               : null}
           </div> : null}
-        </div>
+        </div> : null}
         <div className="settings-panels">
           <div hidden={area !== SettingsArea.Backups}><Backups active={visible && area === SettingsArea.Backups} /></div>
           <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} showCategoryIntro={false} onWorkflowReadyChange={reportIntegrationWorkflow} /></div>
           <div hidden={area !== SettingsArea.Transfer}><ConfigurationTransfer active={visible && area === SettingsArea.Transfer} showCategoryIntro={false} onWorkflowReadyChange={reportTransferWorkflow} /></div>
           <div hidden={area !== SettingsArea.Notifications}><NotificationSettings active={visible && area === SettingsArea.Notifications} showCategoryIntro={false} onWorkflowReadyChange={reportNotificationWorkflow} /></div>
-          <div hidden={area !== SettingsArea.Diagnostics}><Doctor active={visible && area === SettingsArea.Diagnostics} showCategoryIntro={false} /></div>
+          <div hidden={area !== SettingsArea.Diagnostics}><Doctor active={visible && area === SettingsArea.Diagnostics} visible={visible} /></div>
           <div hidden={area !== SettingsArea.Configuration}>
             {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority ? <div hidden={kind !== EntityKind.DEVICE || Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} /></div> : null}
