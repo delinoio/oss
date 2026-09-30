@@ -21,32 +21,45 @@ import (
 // This small receipt survives a crash after report acknowledgment. It carries
 // no workspace inventory and never grants another native removal operation.
 type storageRetirement struct {
-	Version  int                               `json:"version"`
-	JobID    domain.ID                         `json:"job_id"`
-	ReportID domain.ID                         `json:"report_id"`
-	Digest   string                            `json:"assignment_digest"`
-	Revision uint64                            `json:"assignment_revision"`
-	Removal  workspace.StorageRemovalReference `json:"removal"`
+	Version     int                               `json:"version"`
+	JobID       domain.ID                         `json:"job_id"`
+	ReportID    domain.ID                         `json:"report_id"`
+	Digest      string                            `json:"assignment_digest"`
+	Revision    uint64                            `json:"assignment_revision"`
+	ProblemCode domain.Code                       `json:"problem_code,omitempty"`
+	Removal     workspace.StorageRemovalReference `json:"removal"`
 }
 
 func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.Resource, job domain.Job, result journal, ack *pb.Resource) error {
-	if job.Type != domain.WorkspaceStorageJob || result.Problem != nil {
+	if job.Type != domain.WorkspaceStorageJob {
 		return nil
 	}
 	var accepted domain.Job
 	if ack == nil || ack.Id != assigned.Id || ack.SessionId != assigned.SessionId || ack.Kind != pb.EntityKind_ENTITY_KIND_JOB || ack.SchemaVersion != 1 || ack.Revision <= assigned.Revision || domain.Decode(ack.DocumentJson, &accepted) != nil || accepted.Type != job.Type || accepted.MachineID != job.MachineID || accepted.InstanceID != job.InstanceID || !bytes.Equal(accepted.Input, job.Input) {
 		return workspace.ResultUncertain()
 	}
-	// A server may accept the report as uncertain after rejecting its output.
-	// HTTP success alone must not retire the original recovery evidence.
-	if accepted.State != domain.JobSucceeded {
-		return nil
-	}
-	if result.State != journalReported || accepted.Problem != nil || !bytes.Equal(accepted.Output, result.Output) {
-		return workspace.ResultUncertain()
-	}
 	var input workspace.StorageRequest
 	if domain.Decode(job.Input, &input) != nil || input.OperationID != result.JobID {
+		return workspace.ResultUncertain()
+	}
+	// Acknowledged uncertainty still needs the original intent. Failed recovery
+	// also preserves its predecessor's ownership for a future explicit recovery.
+	switch accepted.State {
+	case domain.JobSucceeded:
+		if result.Problem != nil || accepted.Problem != nil || !bytes.Equal(accepted.Output, result.Output) {
+			return workspace.ResultUncertain()
+		}
+	case domain.JobFailed, domain.JobCanceled:
+		if input.Action == workspace.StorageRecover {
+			return nil
+		}
+		if result.Problem == nil || accepted.Problem == nil || result.Problem.Code != accepted.Problem.Code || len(result.Output) != 0 || len(accepted.Output) != 0 {
+			return workspace.ResultUncertain()
+		}
+	default:
+		return nil
+	}
+	if result.State != journalReported {
 		return workspace.ResultUncertain()
 	}
 	if input.Action == workspace.StorageRecover {
@@ -59,6 +72,9 @@ func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.
 		return nil
 	}
 	receipt := storageRetirement{Version: 1, JobID: result.JobID, ReportID: result.ReportID, Digest: result.Digest, Revision: result.Revision, Removal: workspace.StorageRemovalReference{OperationID: input.OperationID, SessionID: input.Preparation.SessionID, SnapshotID: input.SnapshotID, Action: input.Action}}
+	if result.Problem != nil {
+		receipt.ProblemCode = result.Problem.Code
+	}
 	root := filepath.Join(config.Root, "storage-removal-retirements")
 	if err := security.PrivateDir(root); err != nil {
 		return err
@@ -86,12 +102,28 @@ func retireStorageReport(ctx context.Context, config Config, path string, receip
 	}
 	raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(receipt.JobID)+".json"), 2<<20)
 	var reported journal
-	if err != nil || domain.Decode(raw, &reported) != nil || reported.Version != 1 || reported.State != journalReported || reported.JobID != receipt.JobID || reported.ReportID != receipt.ReportID || reported.Revision != receipt.Revision || reported.Digest != receipt.Digest || reported.Problem != nil {
+	if err != nil || domain.Decode(raw, &reported) != nil || reported.Version != 1 || reported.State != journalReported || reported.JobID != receipt.JobID || reported.ReportID != receipt.ReportID || reported.Revision != receipt.Revision || reported.Digest != receipt.Digest {
 		return workspace.ResultUncertain()
 	}
-	var output workspace.StorageResult
-	if domain.Decode(reported.Output, &output) != nil || !output.CleanupVerified || output.OperationID != receipt.JobID || output.SessionID != receipt.Removal.SessionID || output.Snapshot == nil || output.Snapshot.ID != receipt.Removal.SnapshotID || (output.Action != receipt.Removal.Action && (output.Action != workspace.StorageRecover || output.RecoveredJobID != receipt.Removal.OperationID)) {
-		return workspace.ResultUncertain()
+	if receipt.ProblemCode != "" {
+		if reported.Problem == nil || reported.Problem.Code != receipt.ProblemCode || receipt.ProblemCode == domain.RecoveryRequired || len(reported.Output) != 0 {
+			return workspace.ResultUncertain()
+		}
+	} else {
+		if reported.Problem != nil {
+			return workspace.ResultUncertain()
+		}
+		var output workspace.StorageResult
+		if domain.Decode(reported.Output, &output) != nil || !output.CleanupVerified || output.OperationID != receipt.JobID || output.SessionID != receipt.Removal.SessionID || (output.Action != receipt.Removal.Action && (output.Action != workspace.StorageRecover || output.RecoveredJobID != receipt.Removal.OperationID)) {
+			return workspace.ResultUncertain()
+		}
+		if output.Snapshot != nil {
+			if output.Snapshot.ID != receipt.Removal.SnapshotID {
+				return workspace.ResultUncertain()
+			}
+		} else if output.Action != workspace.StorageRecover || output.RecoveredJobState != domain.JobFailed || receipt.Removal.Action != workspace.StorageCleanup || output.WorkspaceState != domain.WorkspacePresent || output.RemovedSourceBytes != 0 {
+			return workspace.ResultUncertain()
+		}
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

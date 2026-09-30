@@ -319,6 +319,9 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if m.storageBeforeRemovalClaim != nil {
 				m.storageBeforeRemovalClaim()
 			}
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
 			if err := renameStorage(root, removal); err != nil {
 				return result, err
 			}
@@ -391,6 +394,9 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 				return result, err
 			}
 			if err := m.retainRemovalIntent(ctx, r, m.snapshotPath(r.SnapshotID)); err != nil {
+				return result, err
+			}
+			if err := ctx.Err(); err != nil {
 				return result, err
 			}
 			if err := renameStorage(m.snapshotPath(r.SnapshotID), removal); err != nil {

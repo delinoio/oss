@@ -476,4 +476,4 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Worker-local workspace snapshots follow docs/cmds-delidev-storage-contract.md and docs/cmds-delidev-workspace-contract.md. Verify every repository and an independent Git closure before whole-root removal, preserve sources on failure, publish restoration atomically into an unoccupied owned destination, and retain exact interrupted-operation ownership for explicit recovery.
 
-- Retire workspace removal inventories only after the matching successful server acknowledgment and durable reported Worker journal. Retain a bounded metadata-only retirement receipt for interrupted cleanup and retry it at startup without native replay.
+- Retire workspace removal inventories only after the matching terminal server acknowledgment and durable reported Worker journal; failed recovery and uncertain reports preserve predecessor intent. Retain a bounded metadata-only retirement receipt for interrupted cleanup and retry it at startup without native replay.

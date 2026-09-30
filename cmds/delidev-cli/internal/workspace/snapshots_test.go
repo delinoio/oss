@@ -705,3 +705,31 @@ func TestSnapshotMaximumInventoryRemainsDeletable(t *testing.T) {
 		t.Fatal("snapshot deletion removed the live source", err)
 	}
 }
+
+func TestSnapshotCancellationBeforeRemovalClaimPreservesBothCopies(t *testing.T) {
+	m := manager(t)
+	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := m.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StoragePreview, Preparation: prepare, Manifest: manifest}
+	preview := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.storageBeforeRemovalClaim = cancel
+	result, err := m.Storage(ctx, input)
+	if domain.SafeError(err).Code != domain.RecoveryRequired || result.Snapshot == nil || result.RemovedSourceBytes != 0 {
+		t.Fatal("cancellation crossed source claim", err)
+	}
+	if _, err := os.Stat(manifest.PrimaryPath); err != nil {
+		t.Fatal("cancellation removed source", err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Root, "workspace-removals", string(input.OperationID))); !os.IsNotExist(err) {
+		t.Fatal("cancellation claimed source", err)
+	}
+	if _, err := os.Stat(m.removalIntentPath(input.OperationID)); err != nil {
+		t.Fatal("unreported intent lost", err)
+	}
+}

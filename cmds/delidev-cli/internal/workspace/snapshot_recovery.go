@@ -328,6 +328,9 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 		return err
 	}
 	path := m.removalIntentPath(ref.OperationID)
+	if err := security.PrivateDir(filepath.Dir(path)); err != nil {
+		return err
+	}
 	raw, err := security.ReadPrivate(path, maxSnapshotManifest)
 	if err == nil {
 		var intent storageRemovalIntent

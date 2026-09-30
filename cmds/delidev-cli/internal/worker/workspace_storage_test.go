@@ -3,6 +3,8 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -156,6 +158,102 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 			entries, err := os.ReadDir(filepath.Join(manager.Root, "storage-removal-retirements"))
 			if err != nil || len(entries) != 0 {
 				t.Fatal("retirement receipt retained", err)
+			}
+		})
+	}
+}
+
+func TestStorageRetirementHandlesUnpublishedRecoveryAndTerminalFailure(t *testing.T) {
+	for _, unpublished := range []bool{false, true} {
+		t.Run(fmt.Sprint("unpublished=", unpublished), func(t *testing.T) {
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			manager := workspace.Manager{Root: filepath.Join(t.TempDir(), "worker"), Logger: logger}
+			prepare := workspace.PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+			manifest, err := manager.Prepare(context.Background(), prepare)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := workspace.StorageRequest{Version: 1, OperationID: domain.NewID(), PreviousState: domain.WorkspacePresent, Action: workspace.StoragePreview, Preparation: prepare, Manifest: manifest}
+			preview, err := manager.Storage(context.Background(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input.OperationID, input.Action, input.SnapshotID, input.PreviewDigest = domain.NewID(), workspace.StorageCleanup, domain.NewID(), preview.PreviewDigest
+			instance := domain.NewID()
+			config := Config{Root: manager.Root, Logger: logger}
+			if err := security.PrivateDir(filepath.Join(manager.Root, "jobs")); err != nil {
+				t.Fatal(err)
+			}
+			if unpublished {
+				raw, _ := json.Marshal(input)
+				original := domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobClaimed, MachineID: prepare.MachineID, InstanceID: instance, Input: raw, AcceptedAt: time.Now().UTC()}
+				document, _ := json.Marshal(original)
+				hash := sha256.Sum256(document)
+				digest := hex.EncodeToString(hash[:])
+				prior := journal{Version: 1, JobID: input.OperationID, InstanceID: instance, Revision: 2, Digest: digest, State: journalStarted, ReportID: domain.NewID()}
+				if err := writeJSON(filepath.Join(manager.Root, "jobs", string(input.OperationID)+".json"), prior); err != nil {
+					t.Fatal(err)
+				}
+				claim := workspace.StorageJournalClaim{JobID: input.OperationID, InstanceID: instance, Revision: 2, AssignmentDigest: digest}
+				input = workspace.StorageRequest{Version: 1, OperationID: domain.NewID(), Action: workspace.StorageRecover, Preparation: prepare, Manifest: manifest, SnapshotID: input.SnapshotID, Recovery: &workspace.StorageRecovery{Original: input, Claims: []workspace.StorageJournalClaim{claim}, InstanceID: instance, Revision: 2, AssignmentDigest: digest}}
+			} else {
+				input.Action = workspace.StorageCreate
+				created, err := manager.Storage(context.Background(), input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				input.Action, input.OperationID, input.SnapshotDigest = workspace.StorageDelete, domain.NewID(), created.Snapshot.SHA256
+				removal := filepath.Join(manager.Root, "workspace-removals", string(input.OperationID))
+				if err := os.Mkdir(removal, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(removal, "foreign"), []byte("preserve"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			raw, _ := json.Marshal(input)
+			job := domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobClaimed, MachineID: prepare.MachineID, InstanceID: instance, Input: raw, AcceptedAt: time.Now().UTC()}
+			document, _ := json.Marshal(job)
+			assigned := &pb.Resource{Id: string(input.OperationID), SchemaVersion: 1, Revision: 2, Kind: pb.EntityKind_ENTITY_KIND_JOB, SessionId: string(prepare.SessionID), DocumentJson: document}
+			result, err := runJob(context.Background(), config, instance, assigned, job)
+			if err != nil {
+				t.Fatal(err)
+			}
+			accepted := job
+			accepted.State, accepted.Output = domain.JobSucceeded, result.Output
+			if unpublished {
+				var output workspace.StorageResult
+				if domain.Decode(result.Output, &output) != nil || output.Snapshot != nil || output.RecoveredJobState != domain.JobFailed {
+					t.Fatal("fixture did not reconcile unpublished cleanup")
+				}
+			} else {
+				if result.Problem == nil || result.Problem.Code == domain.RecoveryRequired {
+					t.Fatal("fixture did not fail before claim", result.Problem)
+				}
+				accepted.State, accepted.Problem = domain.JobFailed, result.Problem
+			}
+			result.State = journalReported
+			if err := writeJSON(filepath.Join(manager.Root, "jobs", assigned.Id+".json"), result); err != nil {
+				t.Fatal(err)
+			}
+			ack := *assigned
+			ack.Revision++
+			ack.DocumentJson, _ = json.Marshal(accepted)
+			if err := acknowledgeStorageRemoval(context.Background(), config, assigned, job, result, &ack); err != nil {
+				t.Fatal("terminal report could not retire intent", err)
+			}
+			entries, err := os.ReadDir(filepath.Join(manager.Root, "storage-removal-retirements"))
+			if err != nil || len(entries) != 0 {
+				t.Fatal("terminal retirement blocked startup", err)
+			}
+			if !unpublished {
+				raw, err := os.ReadFile(filepath.Join(manager.Root, "workspace-removals", string(input.OperationID), "foreign"))
+				if err != nil || string(raw) != "preserve" {
+					t.Fatal("retirement claimed foreign removal data", err)
+				}
+				if _, err := os.Stat(filepath.Join(manager.Root, "storage-removal-intents", string(input.OperationID)+".json")); !os.IsNotExist(err) {
+					t.Fatal("failed original intent retained", err)
+				}
 			}
 		})
 	}

@@ -303,7 +303,8 @@ binds the complete source inventory already pinned in the verified published
 snapshot outside that root. A fresh mutable inventory never grants deletion
 authority. Claimed contents are compared against that pinned inventory; a mismatch
 restores the whole source name without replacement when possible, otherwise
-retains both the claim and recovery uncertainty. Verification precedes bounded anchored deletion and directory synchronization. A second
+retains both the claim and recovery uncertainty. Cancellation is rechecked after intent persistence immediately before the
+namespace claim. Verification precedes bounded anchored deletion and directory synchronization. A second
 repository copy failure or cancellation cannot remove either original repository.
 Failures after a namespace transition retain recovery uncertainty and private
 copies. Cancellation/failure after verified snapshot publication but before source
@@ -330,8 +331,12 @@ explicit owner/client request and cannot remove a stored workspace's only
 recoverable copy; restore it first. Deletion claims and verifies the snapshot via
 the same immutable removal-intent boundary and retains historical metadata with
 `deleted=true`. Removal inventories remain private through uncertain reporting.
-Only a matching successful server acknowledgment followed by the synchronized
-Worker reported journal permits retirement of that original intent. A bounded
+Only a matching terminal server acknowledgment followed by the synchronized
+Worker reported journal permits retirement of that original intent. Direct
+failed/canceled operations also retire their intent once acknowledged; uncertain
+reports and failed recovery attempts retain the predecessor intent. Successful
+explicit recovery can retire an interrupted cleanup before snapshot publication
+without requiring nonexistent snapshot metadata. A bounded
 metadata-only retirement receipt survives interruptions and retries intent
 retirement at Worker startup; it never grants further native removal.
 
