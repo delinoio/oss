@@ -101,7 +101,11 @@ func (s *Service) InspectBackup(ctx context.Context, req *connect.Request[pb.Ins
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "backup_inspected", "backup_id", value.ID, "schema_version", value.SchemaVersion, "correlation_id", correlation)
-	response := connect.NewResponse(&pb.InspectBackupResponse{Backup: backupMessage(value.Backup), Sha256: value.SHA256, SchemaVersion: value.SchemaVersion, ServerId: string(value.ServerID)})
+	revision, err := s.Store.RestoreRevision(ctx)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	response := connect.NewResponse(&pb.InspectBackupResponse{Backup: backupMessage(value.Backup), Sha256: value.SHA256, SchemaVersion: value.SchemaVersion, ServerId: string(value.ServerID), RestoreRevision: revision})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
