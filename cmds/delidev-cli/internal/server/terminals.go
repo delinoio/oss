@@ -304,6 +304,13 @@ func (s *Service) WatchTerminals(ctx context.Context, req *connect.Request[pb.Wa
 				if value.CloseRequestID == "" && (value.InstanceID != instance || value.Pending == nil) {
 					continue
 				}
+				// An accepted uncertain result gets a fresh close identity. Delay
+				// its assignment across streams so unchanged ownership failures do
+				// not create a receipt/native-reconciliation loop every 100 ms.
+				// Explicit claims remain possible; only close work is reissued.
+				if value.CloseRequestID != "" && value.State == domain.TerminalUncertain && time.Since(r.UpdatedAt) < 10*time.Second {
+					continue
+				}
 				assignment, err := terminalAssignment(tx, r, value)
 				if err != nil {
 					return err
@@ -495,7 +502,14 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 			if output.State != domain.TerminalClosed && output.State != domain.TerminalUncertain {
 				return nil, domain.TerminalUnavailable()
 			}
-			value.CloseRequestID = ""
+			if output.CleanupVerified {
+				value.CloseRequestID = ""
+			} else {
+				// Preserve the cleanup obligation with a new operation rather
+				// than replaying the Worker's immutable finished uncertain result.
+				// Exact report receipt retries do not run this mutation again.
+				value.CloseRequestID = domain.NewID()
+			}
 			value.Pending = nil
 		} else {
 			if value.Pending == nil || value.Pending.ID != op || !value.Pending.Claimed {

@@ -502,3 +502,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Terminal shutdown synchronizes original terminal/instance-bound output loss before cancellation and retains the joined outcome. Replacement close claims may carry that loss, but must independently reconcile original process ownership; shutdown observations grant no create/input/resize or spontaneous report authority.
 
 - Confirmed terminal reports synchronize a reported phase before local retirement. Only independently verified cleanup may retire completed scopes, the empty original owner index, its released recovery lock and shutdown observation. Retain original evidence for uncertainty or unacknowledged results; retry interrupted acknowledged retirement locally without replaying any RPC or native operation.
+
+- A fresh close assignment following an accepted uncertain close is a separate original-owner reconciliation attempt. Never rewrite or reuse the previous operation's immutable finished result; retain its exact acknowledgement retry and unconfirmed process evidence. Follow `docs/cmds-delidev-terminals-contract.md`.

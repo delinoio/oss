@@ -266,7 +266,9 @@ Deletion atomically requests close without replacing an existing close identity,
 withholds workspace-removal work until every terminal confirms cleanup, and
 rechecks cleanup before database purge. New terminal creation/input/resize cannot
 reopen a deleting session. Original cleanup reports and exact receipt retries
-remain admissible. Browser-profile/snapshot products remain separate. Uncontrolled filesystem snapshots and external copies are
+remain admissible. An accepted uncertain terminal close atomically retains the
+cleanup obligation under a fresh close identity; replaying its original report
+cannot change that identity or release workspace deletion. Browser-profile/snapshot products remain separate. Uncontrolled filesystem snapshots and external copies are
 outside the guarantee; platform/process fixtures do not establish native
 Windows/Linux or real-account acceptance.
 

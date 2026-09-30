@@ -101,8 +101,14 @@ retryable after repair. Permanent session deletion atomically requests original 
 keeps cleanup reports admissible. Its separate workspace-removal lane receives
 no work until all session terminals have independently joined their process
 trees; final database purge rechecks the same cleanup barrier. Exact deletion
-retries preserve the accepted close identities. Uncertain or offline terminal
-ownership keeps deletion pending. Direct terminal deletion refuses unconfirmed
+retries preserve the accepted close identities. An accepted uncertain close
+report atomically replaces its finished operation with a fresh close identity;
+exact report retries retain the same next identity without mutating original
+result facts. Worker assignment waits at least ten seconds after the latest
+uncertain terminal write, including across stream reconnects, while explicit
+current-Worker close claims remain available. Each fresh close reconciles only
+the original owned process evidence and can never replay creation, input or
+resize. Uncertain or offline terminal ownership keeps deletion pending. Direct terminal deletion refuses unconfirmed
 ownership. Close joins the original process tree and output machinery before
 reporting cleanup. Missing/changed ownership never authorizes PID termination.
 
