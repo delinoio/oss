@@ -829,6 +829,8 @@ cef::wrap_resource_request_handler! {struct ExternalResources{policy:Arc<Mutex<P
  fn on_before_resource_load(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,request:Option<&mut cef::Request>,_callback:Option<&mut Callback>)->ReturnValue{if request.is_some_and(|r|self.policy.lock().is_ok_and(|p|p.resource(&CefString::from(&r.url()).to_string()))){ReturnValue::CONTINUE}else{ReturnValue::CANCEL}}
 }}
 cef::wrap_display_handler! {struct ExternalDisplay{host:Arc<BrowserHost>,profile:String,request:ViewRequest,}impl DisplayHandler{
+ // External console content and source URLs must never enter Chromium's default log.
+ fn on_console_message(&self,_browser:Option<&mut Browser>,_level:LogSeverity,_message:Option<&CefString>,_source:Option<&CefString>,_line:i32)->i32{1}
  fn on_address_change(&self,_browser:Option<&mut Browser>,frame:Option<&mut Frame>,url:Option<&CefString>){if frame.is_none_or(|f|f.is_main()!=1){return};let Some(url)=url else{return};let url=url.to_string();let Ok(mut state)=self.host.state.lock()else{return};if state.views.get(&self.request.window).is_none_or(|v|v.generation!=self.request.generation){return};let Some(p)=state.profiles.get_mut(&self.profile)else{return};if p.removing||!p.policy.lock().is_ok_and(|policy|policy.navigation(&url)){return};let mut tabs=p.tabs.clone();if let Some(t)=tabs.tabs.iter_mut().find(|t|t.id==self.request.tab){t.url=url;if browser::write_private(&p.path.join("tabs.json"),&tabs).is_ok(){p.tabs=tabs}else{tracing::warn!(operation="browser_tabs",code="storage-unavailable")}}}
 }}
 cef::wrap_permission_handler! {struct DenyPermissions;impl PermissionHandler{

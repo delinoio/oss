@@ -6,7 +6,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { BrowserService, BrowserCapability, BrowserProfileSchema, BrowserProfileState, EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
-import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionBrowser, browserProfile } from "./session-browser";
 const native = vi.hoisted(() => vi.fn());

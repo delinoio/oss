@@ -21,6 +21,9 @@ func browserActor(ctx context.Context) (domain.Principal, error) {
 	return p, nil
 }
 func (s *Service) browserProfile(ctx context.Context, id domain.ID) (domain.BrowserProfileRecord, error) {
+	if err := id.Validate(); err != nil {
+		return domain.BrowserProfileRecord{}, err
+	}
 	actor, err := browserActor(ctx)
 	if err != nil {
 		return domain.BrowserProfileRecord{}, err
@@ -180,6 +183,9 @@ func (s *Service) ListBrowserProfiles(ctx context.Context, req *connect.Request[
 		p := r.Data
 		if err = p.Validate(); err != nil {
 			return nil, rpc.Error(err, correlation)
+		}
+		if p.ServerID != s.Identity.ServerID || p.DeviceID != actor.DeviceID {
+			return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "Browser profile inventory has foreign ownership.", "Preserve the original device metadata."), correlation)
 		}
 		response.Profiles = append(response.Profiles, browserResource(r))
 	}

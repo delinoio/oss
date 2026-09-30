@@ -124,7 +124,7 @@ counterparts), app/IPC origins, the fixed local API/development ports, file/cust
 schemes and URL credentials. Only trusted address actions add loopback browsing origins to a bounded 32-origin
 allowlist; restored local tabs retain their explicit origins. Redirects and resource
 requests cannot extend that list. Popups, downloads, file pickers and permission prompts are
-denied; native clipboard/paste access is disabled. Ordinary external HTTP(S) pages
+denied; script clipboard/paste access is disabled. Ordinary external HTTP(S) pages
 receive only their profile's web credentials, never product or platform credentials.
 The external CEF client has no app process-message handler or native capability.
 Product controls are accepted only from trusted main/saved app documents and
@@ -142,7 +142,8 @@ shutdown so late browser flushes cannot recreate its contents.
 Go logs structured operation/request/replay state. Native logs structured browser
 opening/closure/removal state and stable failures. Never log URLs, page titles,
 tabs, cookies, storage, history, browser credentials, product tokens, native cache
-paths or external content. The UI uses fixed native failure messages.
+paths or external content. External console messages and source URLs suppress Chromium's default console log.
+The UI uses fixed native failure messages.
 
 ## Build and Test
 

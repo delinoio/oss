@@ -199,6 +199,9 @@ func TestBrowserProfileSessionClosureRetainsDataAndAccountCleanupWaitsForEveryDe
 }
 func TestBrowserProfileRejectsWorkerOwnerRevokedDeviceAndStaleRevision(t *testing.T) {
 	f := newBrowserFixture(t)
+	if _, err := f.s.GetBrowserProfile(f.first, connect.NewRequest(&pb.GetBrowserProfileRequest{Id: "malformed"})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatal("malformed profile identity", err)
+	}
 	for _, kind := range []domain.DeviceType{domain.OwnerDevice, domain.WorkerDevice} {
 		ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: kind, DeviceID: domain.NewID()})
 		_, err := f.s.RegisterBrowserProfile(ctx, connect.NewRequest(&pb.RegisterBrowserProfileRequest{}))
