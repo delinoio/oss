@@ -1,0 +1,197 @@
+import { create } from "@bufbuild/protobuf";
+import { StrictMode, useState } from "react";
+import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
+import { TransportProvider, useQuery } from "@connectrpc/connect-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import { ConfigurationQuery, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceQuery, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
+import { Settings } from "./settings";
+import { SettingsOpening } from "./settings-lifetime";
+import { MutationIntents, useRetainedMutation } from "./mutation";
+import { encode } from "./documents";
+import { LocalWorkerAction, LocalWorkerState, type ControlLocalWorker, type LocalWorkerStatus } from "./local-worker-controls";
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function fixture() {
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
+  const resources = [create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Sibling project" }) })];
+  const save = vi.fn((request: { kind: EntityKind; documentJson: Uint8Array }) => {
+    const resource = create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson });
+    resources.push(resource);
+    return { resource };
+  });
+  const base = createRouterTransport((router) => {
+    router.service(ProviderService, { listProviderInventory: () => ({ entries: [], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }) });
+    router.service(ResourceService, { listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }) });
+    router.service(ConfigurationService, { saveConfiguration: save });
+  });
+  const waiting: { method: string; signal: AbortSignal; gate: ReturnType<typeof deferred> }[] = [];
+  let delay: string | undefined, failure: Code | undefined;
+  const transport: Transport = { ...base, unary: async (method, signal, ...args) => {
+    if (method.name !== delay) return base.unary(method, signal, ...args);
+    // The fixture deliberately commits before delaying acknowledgment, ignores
+    // abort, then delivers success/error. This is accepted-server-effect evidence.
+    const outcome = failure;
+    const result = await base.unary(method, undefined, ...args);
+    const gate = deferred();
+    waiting.push({ method: method.name, signal: signal!, gate });
+    await gate.promise;
+    if (outcome) throw new ConnectError("Delayed fixture response", outcome);
+    return result;
+  } };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
+  const view = (visible: boolean, upstream = transport, controlLocalWorker?: ControlLocalWorker) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents><Sibling /><Settings visible={visible} controlLocalWorker={controlLocalWorker} close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
+  return { client, save, waiting, transport, view, delay: (method?: string, code?: Code) => { delay = method; failure = code; } };
+}
+
+function Sibling() {
+  const query = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.PROJECT, pageSize: 50 } });
+  const mutation = useRetainedMutation("sibling", ConfigurationQuery.saveConfiguration);
+  return <section><span>{query.data ? "Sibling ready" : "Sibling loading"}</span><button onClick={() => void mutation.send({ kind: EntityKind.PROJECT, mutation: { requestId: newRequestId() }, documentJson: encode({ name: "Sibling write" }) })}>Sibling save</button>{mutation.uncertain ? <button onClick={mutation.retry}>Sibling retry</button> : null}</section>;
+}
+
+it.each(["button", "cancel"])("starts at the first category after closing an unsaved Instructions editor via %s", async (route) => {
+  const value = fixture();
+  function Harness() {
+    const [visible, setVisible] = useState(false);
+    return <TransportProvider transport={value.transport}><QueryClientProvider client={value.client}><button onClick={() => setVisible(true)}>Open fixture settings</button><Settings visible={visible} close={() => setVisible(false)} /></QueryClientProvider></TransportProvider>;
+  }
+  render(<StrictMode><Harness /></StrictMode>);
+  const opener = screen.getByRole("button", { name: "Open fixture settings" });
+  opener.focus();
+  fireEvent.click(opener);
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Abandoned draft" } });
+  if (route === "cancel") fireEvent(screen.getByRole("dialog"), new Event("cancel", { bubbles: true, cancelable: true }));
+  else fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  expect(document.activeElement).toBe(opener);
+  fireEvent.click(opener);
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  expect(await screen.findByRole("button", { name: "New Instructions" })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([undefined, Code.Unavailable, Code.Canceled])("aborts a Settings write and ignores its late outcome %s while retaining committed resources", async (code) => {
+  const value = fixture();
+  const view = render(value.view(true));
+  await screen.findByText("Sibling ready");
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Committed instructions" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Instructions" }), { target: { value: "Committed contents" } });
+  value.delay("SaveConfiguration", code);
+  fireEvent.click(screen.getByRole("button", { name: "Save Instructions" }));
+  await waitFor(() => expect(value.waiting).toHaveLength(1));
+  const pending = value.waiting[0];
+  view.rerender(value.view(false));
+  expect(pending.signal.aborted).toBe(true);
+  expect(value.client.getQueryCache().getAll()).toHaveLength(1);
+  expect(value.client.getMutationCache().getAll()).toHaveLength(0);
+  value.delay();
+  view.rerender(value.view(true));
+  fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+  const focus = screen.getByRole("button", { name: "Projects" });
+  focus.focus();
+  await act(async () => pending.gate.resolve());
+  expect(document.activeElement).toBe(focus);
+  expect(screen.getByRole("heading", { level: 1, name: "Projects" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  expect(await screen.findByRole("heading", { name: "Committed instructions" })).toBeTruthy();
+  expect(value.save).toHaveBeenCalledTimes(1);
+});
+
+it("aborts Settings reads without evicting sibling queries or accumulating opening caches under Strict Mode", async () => {
+  const value = fixture();
+  const view = render(value.view(false));
+  await screen.findByText("Sibling ready");
+  const sibling = value.client.getQueryCache().getAll()[0];
+  for (let cycle = 0; cycle < 4; cycle++) {
+    const before = value.waiting.length;
+    value.delay("ListProviderInventory");
+    view.rerender(value.view(true));
+    await waitFor(() => expect(value.waiting.length).toBeGreaterThan(before));
+    const reads = value.waiting.filter((entry) => !entry.signal.aborted);
+    view.rerender(value.view(false));
+    expect(reads.every((entry) => entry.signal.aborted)).toBe(true);
+    await act(async () => { for (const entry of value.waiting) entry.gate.resolve(); });
+    expect(value.client.getQueryCache().getAll()).toEqual([sibling]);
+    expect(value.client.getMutationCache().getAll()).toHaveLength(0);
+  }
+});
+
+it("keeps a sibling uncertain mutation when the Settings registry is discarded", async () => {
+  const value = fixture();
+  value.save.mockImplementationOnce(() => { throw new ConnectError("Sibling acknowledgment lost", Code.Unavailable); });
+  const view = render(value.view(false));
+  fireEvent.click(screen.getByRole("button", { name: "Sibling save" }));
+  await screen.findByRole("button", { name: "Sibling retry" });
+  view.rerender(value.view(true));
+  view.rerender(value.view(false));
+  fireEvent.click(screen.getByRole("button", { name: "Sibling retry" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[1][0]).toEqual(value.save.mock.calls[0][0]);
+});
+
+it("preserves an open editor and its transport identity through a same-identity transport replacement", async () => {
+  const value = fixture();
+  const view = render(value.view(true));
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
+  const name = screen.getByRole("textbox", { name: "Name" });
+  fireEvent.change(name, { target: { value: "Open draft" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Instructions" }), { target: { value: "Open contents" } });
+  const replacementCalls = vi.fn();
+  const replacement: Transport = { ...value.transport, unary: (...args) => { replacementCalls(); return value.transport.unary(...args); } };
+  view.rerender(value.view(true, replacement));
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect((name as HTMLInputElement).value).toBe("Open draft");
+  fireEvent.click(screen.getByRole("button", { name: "Save Instructions" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(replacementCalls).toHaveBeenCalled();
+});
+
+it("ignores a late native Worker completion without refreshing or replacing the new opening's status", async () => {
+  const value = fixture(), gate = deferred();
+  const initial: LocalWorkerStatus = { state: LocalWorkerState.NotStarted, machine_id: newRequestId(), controller_active: false };
+  let current = initial;
+  const control = vi.fn(async (action: LocalWorkerAction) => {
+    if (action === LocalWorkerAction.Start) { await gate.promise; return { ...initial, state: LocalWorkerState.Running, generation: newRequestId(), controller_active: true }; }
+    return current;
+  });
+  const view = render(value.view(true, value.transport, control));
+  fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
+  const start = await screen.findByRole("button", { name: "Start local Worker" });
+  await waitFor(() => expect((start as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(start);
+  await waitFor(() => expect(control.mock.calls.some(([action]) => action === LocalWorkerAction.Start)).toBe(true));
+  view.rerender(value.view(false, value.transport, control));
+  current = { ...initial, state: LocalWorkerState.Exited };
+  view.rerender(value.view(true, value.transport, control));
+  fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
+  await screen.findByText("Worker controller exited. Existing session cleanup and recovery remain separate.");
+  const reads = control.mock.calls.length;
+  await act(async () => gate.resolve());
+  expect(screen.queryByText("Worker controller running. Server connectivity and harness readiness are shown separately below.")).toBeNull();
+  expect(control).toHaveBeenCalledTimes(reads);
+});
+
+it("does not start follow-up RPC or native work from a disposed opening", async () => {
+  const value = fixture();
+  const opening = new SettingsOpening(() => value.transport);
+  const operation = vi.fn(async () => "native result");
+  opening.dispose(value.client);
+  await expect(opening.native(operation)).rejects.toMatchObject({ code: Code.Canceled });
+  await expect(opening.transport.unary(ResourceQuery.listResources, undefined, undefined, undefined, {})).rejects.toMatchObject({ code: Code.Canceled });
+  expect(operation).not.toHaveBeenCalled();
+});

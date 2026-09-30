@@ -3,6 +3,7 @@ import { create, fromBinary, toBinary, type DescMessage, type DescMethodUnary, t
 import { useMutation } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { clientFailure, FailureCode } from "@delinoio/delidev-api-client";
+import { useSettingsOpening } from "./settings-lifetime";
 
 interface Intent { input?: object; bytes?: number; busy: boolean; uncertain: boolean; error?: unknown }
 const empty: Intent = Object.freeze({ busy: false, uncertain: false });
@@ -43,18 +44,20 @@ export function MutationIntents({ children }: { children: ReactNode }) {
 }
 
 // Exact pending requests outlive session navigation. Only switching the whole
-// connection discards this registry; late results cannot reach its replacement.
+// connection discards that registry. Settings owns a nested opening registry;
+// closing it discards only its intents, and late results cannot reach a replacement.
 export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void) {
   const registry = useContext(Context);
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
-  const mutation = useMutation(method, { retry: false });
+  const opening = useSettingsOpening();
+  const mutation = useMutation(method, { retry: false, meta: opening?.mutationMeta });
   const [localError, setLocalError] = useState<{ key: string; error: unknown }>();
   const mounted = useRef(true);
   const state = useSyncExternalStore(registry.subscribe, () => registry.entries.get(key) ?? empty);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const send = async (input?: MessageInitShape<I>) => {
     const current = registry.entries.get(key) ?? empty;
-    if (current.busy || (current.input && input) || !registry.alive) return;
+    if (current.busy || (current.input && input) || !registry.alive || opening?.disposed) return;
     if (!current.input && !input) return;
     let retained: MessageShape<I>;
     let bytes: number;
@@ -74,13 +77,13 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       mutation.reset();
     } catch (error) {
       mutation.reset();
-      if (!registry.alive) return;
+      if (!registry.alive || opening?.disposed) return;
       const failure = clientFailure(error);
       const uncertain = [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);
       registry.put(key, { busy: false, uncertain, input: uncertain ? retained : undefined, bytes: uncertain ? bytes : undefined, error });
       return;
     }
-    if (!registry.alive) return;
+    if (!registry.alive || opening?.disposed) return;
     registry.put(key, empty);
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.

@@ -3643,3 +3643,61 @@ run used one package at a time and a twenty-minute per-package timeout. The
 parallel failures above remain part of the validation record. Ordinary Go tests
 and vet passed again on the repaired source, and all generated repository
 `dist` directories created for validation and commit prerequisites were removed.
+
+A later maintenance pass merged main revision `12b33a2ac` (PR #1150, issue
+#1138), preserving the new Settings opening-disposal contract and both evidence
+entries. Two incoming native-completion fixture selectors still expected
+`Execution Workers`, causing one initial merged-suite failure; both now select
+`Runner Devices` while retaining the original late-callback assertions. The
+complete package-local `pnpm test` rerun passed 75 files / 962 tests, eight
+package fixtures, sixteen launch/asset fixtures, native widget checks,
+TypeScript checking and the frontend build. This merge changes no Go or Rust
+source; the earlier backend validation remains applicable. `git lfs fsck` and
+`git diff --check` passed, and generated repository `dist` output was removed.
+
+### Settings opening disposal (issue #1138, 2026-09-30)
+
+- Ordinary Settings entry now starts at the first SubscriptionAccounts category.
+  Close, dialog cancel/Escape and navigation away discard the entire opening,
+  including editors, filters/pages, account wizard secrets, confirmations, local
+  job tracking and uncertain retry UI. Targeted New Project/Repositories entries
+  remain explicit; deferred destinations are cleared on close.
+- A fresh opening-owned transport and mutation registry abort supported client
+  waits, reject late outcomes and prevent follow-up requests. Tagged native/Connect
+  cache cleanup preserves the connection QueryClient and sibling exact retries.
+  Strict Mode replay creates a fresh generation; same-identity transport replacement
+  preserves an open editor and uses the latest authenticated transport.
+- Generated-router regressions deliberately ignore cancellation and settle reads
+  and writes late. A fixture commits before delaying acknowledgment; fresh reads
+  observe that resource without replay or rollback. Tests also cover late native
+  Worker/permission callbacks, repeated cache cleanup, sibling uncertain requests,
+  Close/cancel opener restoration, targeted entries, tray navigation and preserved
+  session/composer state.
+- Package-local `pnpm test` passed: 75 Vitest files / 960 tests, 8 package-verifier
+  fixtures, 16 launcher/asset fixtures, native Swift widget fixtures, TypeScript
+  checking and production frontend build. The first sandboxed attempt could not
+  access the Go build cache; the permitted unsandboxed run passed with temporary
+  server/Worker fixtures and no external account or inference. The source icon
+  was hydrated from its existing exact-path LFS cache and its SHA-256/size remained
+  identical. Generated frontend/client `dist` output is removed before delivery.
+- Native smoke ran the unchanged pinned CEF launcher on macOS 26.6.2 arm64 in a
+  separately built ad-hoc bundle, with private app/cache state and a paired
+  disposable loopback server. Ordinary entry selected AI Subscription. An unsaved
+  custom-provider name was discarded by Escape; focus returned to Settings and
+  reopening selected AI Subscription, with an empty new provider editor. Close
+  discarded a second draft and restored the same opener. New Project opened and
+  focused its targeted editor; Escape restored New Project, and the next ordinary
+  entry cleared that destination and selected AI Subscription. No Save was used.
+  Native Tab/Shift-Tab boundary traversal visited the dialog's last disclosure,
+  document focus and Close, without reaching background controls. The 3440×2168
+  2× native capture showed the full Settings surface and focused Close control.
+- The copied native build cache required removal of temporary relocated CMake
+  caches. The initial launch collided with the existing app's CEF cache; private
+  cache/home context resolved it. The disposable server initially rejected the
+  renderer origin; restarting that server with the exact `http://tauri.localhost`
+  allowlist established the saved connection. Existing app/server state was not
+  modified. The fixture received Quit, remaining CEF processes were terminated
+  by their exact temporary bundle path, and the temporary server was stopped.
+  Generated desktop/client `dist` directories were removed. Windows/X11 runtime,
+  responsive resizing/zoom, production signing and release acceptance remain
+  unverified for this revision; earlier copy-only geometry evidence is separate.
