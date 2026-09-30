@@ -126,7 +126,9 @@ func (c *Client) observeCollaboration(item json.RawMessage, sender domain.ID, tu
 			o.RequestedModel = v.Model
 		}
 		o.Source, o.SourceID = domain.CodexCollaborationSource, v.ID
-		o.Usage = nil
+		// This receipt owns only telemetry supplied by the collaboration item.
+		// childEvent retains last available facts separately after validation.
+		o.Usage, o.Output, o.ObservedModel = nil, nil, nil
 		if state, ok := v.States[id]; ok {
 			status, err := subagentStatus(state.Status)
 			if err != nil {
@@ -238,7 +240,7 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 			if o.ParentID != string(*t.ParentThreadID) {
 				return Event{}, incompatible()
 			}
-			o.Usage = nil
+			o.Usage, o.Output, o.ObservedModel = nil, nil, nil
 			o, err = c.readChildHistory(ctx, o, t.ID)
 			if err != nil {
 				return Event{}, err
@@ -283,7 +285,8 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			if o.ParentID != string(*t.ParentThreadID) {
 				return Event{}, true, incompatible()
 			}
-			o.Source, o.SourceID, o.Usage = domain.CodexHistorySource, string(t.ID), nil
+			o.Source, o.SourceID = domain.CodexHistorySource, string(t.ID)
+			o.Usage, o.Output, o.ObservedModel = nil, nil, nil
 			e, err := c.childEvent([]domain.SubagentObservation{o})
 			return e, true, err
 		}
@@ -299,7 +302,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 		return Event{}, false, nil
 	}
 	o.Source = domain.CodexHistorySource
-	o.Usage = nil
+	o.Usage, o.Output, o.ObservedModel = nil, nil, nil
 	switch native.Method {
 	case "thread/settings/updated":
 		var settings map[string]json.RawMessage

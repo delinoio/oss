@@ -55,3 +55,5 @@ Update this contract, project/catalog index, harness/session/process/usage/proto
 - [Repository defaults](repository-defaults.md)
 - [Codex canonical child items](https://github.com/openai/codex/blob/d8673cb68e349c208659b986697773d3145dbb14/codex-rs/app-server-protocol/src/protocol/v2/item.rs)
 - [Codex native thread ownership](https://github.com/openai/codex/blob/d8673cb68e349c208659b986697773d3145dbb14/codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs)
+
+Every Codex collaboration item, child metadata notification and read-only descendant-history snapshot clears prior output, observed model and usage before projecting its own native fields. Immutable current-source receipts preserve omissions; the adapter and retained resource keep last available facts separately for subsequent comparison and display. A source that supplies a fresh message or model replaces only that supplied field.
