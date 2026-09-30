@@ -3487,3 +3487,37 @@ the earlier failed attempts remain recorded above. No test deadline or product
 behavior changed during conflict resolution. Generated desktop/client `dist`
 output was removed. This verification does not add native application or
 release acceptance evidence.
+
+### App-icon 20% enlargement (2026-09-30)
+
+The owner approved a uniform 1.2× enlargement of the existing app icon, keeping
+its colored ribbon, gradient, proportions and transparent background/central
+cutout. The source was hydrated from the exact local LFS object
+`88a91d0ea8462b0b8d59d53d212a4f4030f99a2775eb733b38be8234b077364f`
+(585,665 bytes). One Lanczos SRT transform around `(627, 627)`, with scale 1.2,
+zero rotation and a transparent virtual canvas, preserves the 1254×1254 RGBA8
+canvas. The approved artwork is baked into the source rather than enlarged
+again during platform export. No frontend/Rust code, bundle configuration,
+public interface or in-app button size changed.
+
+The final source is 788,603 bytes with SHA-256
+`1100564e6a9a977c89aeb273c12297f5434850b0954f9e0e83e10ca0b2cf9d53`;
+its existing exact-path LFS attribute and `icon-source@2x.png` density marker
+remain intact. Its nonzero-alpha bounds change from `(257, 175, 1058, 1071)` to
+`(183, 84, 1145, 1160)`, remaining inside the canvas. Mean alpha coverage changes
+from 31.9858% to 46.0668%, consistent with the 1.44× area increase.
+
+Each final Windows ICO frame (16, 24, 32, 48, 64 and 256px) was exported from the
+enlarged source and decoded again after packaging. The 256px ICO pixels match
+the native PNG exactly. Every export retains near-opaque ribbon interiors,
+transparent background and central-cutout samples, and graded edge alpha;
+mean alpha coverage differs from the new source by at most 0.131 percentage
+points. Representative transformed interior colors differ by at most one
+8-bit channel value. Light, dark and checkerboard before/after composites and
+both-theme frame contact sheets were visually inspected without visible
+clipping or color/edge damage. These checks establish asset appearance, not
+Windows/Linux installed-shell acceptance.
+
+The existing asset-preparation and package-verifier suites pass all 18 tests.
+The two repository LFS asset contracts also pass. Real macOS packaging evidence
+is recorded below when the dry run completes.
