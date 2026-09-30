@@ -165,6 +165,61 @@ Provider, model, AI account, Agent Worker and instruction-template forms use gen
 
 Each edit captures its original resource revision and full document. Server-owned account observations and model discovery provenance are preserved. A peer revision change blocks a new save while retaining the draft; an uncertain save retries only its original request. Edits and exact uncertain requests remain available within the current Settings opening across category and responsive layout changes. Closing discards them, including when an accepted save may still complete on the server. Forms cap complete documents at 1 MiB and instruction content at 128 KiB UTF-8 before retention, and selectors retain one bounded page with an explicit selected identity outside that page.
 
+### Agent Worker core and optional presentation
+
+Issue #1158 owns only the shared Agent Worker create/edit form. The existing
+Settings shell, category copy, navigation and native geometry stay unchanged.
+The form follows the approved V1 text specification: left-aligned, at most 800
+CSS px wide, with a 20px-equivalent title, 16px section headings, 14px labels and
+13px explanations in scalable units. Core settings uses 24px padding, 16px field
+gaps, 44px controls, 8px control radii and a 12px panel radius with the existing
+system font and light-neutral/blue tokens. Name occupies a full row, Harness and
+Model share equal columns, and permissions remain below their divider. Only Name
+and Model show required markers, retaining their accessible names and validation.
+The creation subtitle is “Configure the essentials, then customize only what you
+need.” Default permission guidance is “Uses the harness default. Review permissions
+before execution.” Native permission/incompatibility explanations and explicit
+clearing remain authoritative.
+
+Four native `details` disclosures start closed for both create and edit, may open
+independently and retain mounted controls and queries throughout the opening:
+
+| Order | Section | Summary and retained fields |
+| --- | --- | --- |
+| 1 | Reasoning | Current `effort`, or Native default when absent/empty; no normalization |
+| 2 | Accounts & routing | Account count plus explicit routing or Server default when inherited; ordered weighted accounts and all add/move/remove operations |
+| 3 | Instructions | Template count; all ordered reference operations |
+| 4 | Native harness options | Defaults only for absent/empty known fields or concurrency 0 with no unknown keys; otherwise Customized, explicitly identifying unknown options as retained |
+
+When accounts are empty, “Can be saved without accounts; execution requires an
+eligible account.” stays visible outside the closed disclosure. This is information,
+not an error or readiness grant. Unsupported selections remain explicit, harness
+switches preserve values, and all unknown document/link/option fields survive save.
+Collapsed sections expose Needs attention for read or validation problems, while
+expanded selectors retain sanitized detailed diagnostics. Loading, successful
+empty current pages (including continuation), permission/authentication failure,
+connection failure and cached prior choices after failed refresh remain distinct;
+a failed read never becomes an empty inventory or a new verification.
+
+Disclosures use native keyboard semantics and remove closed contents from the tab
+order without unmounting them. Invalid hidden inputs open their section before
+focus, preserving unrelated fields. Below 640 CSS px of available **form width**,
+Harness and Model use one column. Text, identifiers and action buttons wrap, focus
+outlines stay visible, and the Cancel edit / Save Agent Worker footer follows normal
+scrolling with Cancel before Save. The exact uncertain retry remains explicit.
+Existing locks, revision conflicts, accepted jobs, bounded selectors/provider gating,
+complete-document limits and byte-identical request retries remain unchanged.
+
+Close, Escape/native cancel and navigation away still dispose the entire Settings
+opening under #1138/#1150, with no abandoned request restoration/replay or late
+updates to replacement openings. Same-identity reconnect retains the active editor.
+This ordinary UI rollout has no API, schema, default, dependency, migration, backend
+deployment, polling, execution, logging or feature-flag change. Component/browser
+checks and supported-platform native acceptance are recorded separately in the
+[issue #1158 evidence](evidence/delidev/issue-1158/agent-settings.md).
+
+### Settings shell and opening lifetime
+
 Settings is a full-window presentation inside the existing native modal and fills the webview content viewport below the native title bar. It covers the ordinary app sidebar without resizing, maximizing, or entering OS fullscreen; all other modal callers keep the standard dialog layout. Its fixed 64px header contains the Settings title and an accessible Close Settings action with an Esc hint. At desktop widths, the grouped 240px navigation pane and flexible content pane scroll independently. The groups and 16 categories appear once in this order: AI & agents (AI Subscription, API Accounts, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Execution Workers), and System (Paired devices, Server preferences, Integrations, Diagnostics, Notifications, Import / Export, Backups). Below 760 CSS pixels, the sidebar is visually removed and replaced by a labeled native select with the same groups and selection; category panels stay mounted across selection and responsive changes. Content padding is 40px, reduced to 24px below 1100px. The shell must reflow at 200% zoom without clipping controls or focus outlines.
 
 The shared AI Subscription category label is exactly the same in the sidebar, category heading and compact selector. Its category ID remains `subscription-accounts`; the selected English label fits on one line in the existing 240px sidebar at 100% zoom without changes to layout, font or icon styling.
