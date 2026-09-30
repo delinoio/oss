@@ -3768,3 +3768,60 @@ Merged the immutable fetched `main` revision `2e89b18f6c09c91e1ec052880dbfcbba3a
 All 14 LFS payloads match their committed pointer size and SHA-256. The enlarged 1254px source is 788,603 bytes with digest `1100564e6a9a977c89aeb273c12297f5434850b0954f9e0e83e10ca0b2cf9d53`, bounds `(183, 84, 1145, 1160)` and mean alpha 0.4606678. Compared with the prior independently hash-verified cached source, alpha area is 1.440227×, consistent with the baked-in 1.2× scale. Final native PNG and all six ICO frames retain opaque interior samples (minimum alpha 249), graded edges, clear corner/background and source-backed central-cutout samples. Export alpha coverage differs from the source by at most 0.001304, and the 256px ICO pixels exactly match the native PNG (`/tmp/delidev-1125-icon-enlargement-merge-validation.json`). The first diagnostic sampled integer index `(8, 8)` as the center of the 16px export and encountered alpha 5 (the independent canonical resize has alpha 4 there). Even-size raster centers lie between pixels; the corrected floor-side sample `(7, 7)` is clear in both the canonical resize and final export. Assets were not changed to satisfy this diagnostic. Final light/dark/checkerboard composites were visually inspected with the expected larger artwork, intact cutout/gradient and no visible clipping (`/tmp/delidev-1125-icon-enlargement-merge-composites.png`).
 
 The asset preflight passes. Normal Node `24.20.0` frontend `pnpm test` passes all 76 files/973 tests, generated-client build/type checking, eight packaging cases, 16 asset/launcher cases, native Swift widget fixtures and production build (`/tmp/delidev-1125-icon-enlargement-merge-frontend.log`). Public-docs build/content/routes and all 95 CI contract cases pass. No fresh native bundle, installed-shell or release acceptance is claimed; upstream icon/native proof retains its original scope. Generated repository-owned `dist` output is removed after verification. Fresh CI and review are required for the pushed head.
+
+### Issue #1134 shorter AI Subscription category (2026-09-30)
+
+The shared Settings category label is now exactly **AI Subscription** in the
+sidebar, heading and compact option. Its `subscription-accounts` value, all
+16 categories and their order, account filtering, help text, mutation locks and
+retained workflows remain unchanged. No CSS, font, icon, API, schema, backend or
+dependency change is included. Current naming is synchronized in the desktop
+rules, project index and desktop/account contracts; historical evidence above
+retains its original wording. The desktop category inventory also now records
+the existing sixteenth Backups category rather than the stale count of fifteen.
+
+The existing empty-Settings navigation test now checks all 16 compact option
+labels and values, every sidebar selection and heading, and compact selection
+back to `subscription-accounts` with its exact AI Subscription text/current
+state. The first validation attempt stopped at a new test query's unsupported
+TypeScript option; it was corrected before the full successful run. `pnpm test`
+from `apps/delidev` passes typed-client generation, type checking, all 74 Vitest
+files / 948 tests, all 8 package-verifier and 16 asset/launcher cases, native
+Swift widget fixtures and the production build. `git diff --check` and
+`git lfs fsck` pass.
+
+Native visual smoke used the unchanged pinned CEF development launcher on
+macOS 26.6.2 arm64, with a separately built ad-hoc bundle, temporary private app
+and server state, and a separately paired loopback server. The existing server
+on port 46310 was not changed. At 100% zoom, manually resized native content
+viewports of 960×640 and 1440×900 both show the selected label on one line in the
+unchanged 240px navigation pane, with the matching heading and unchanged API
+Accounts label. The 2× captures measure 1920×1344 and 2880×1864 including the
+32px native title bar. The first isolated build encountered a relocated CMake
+cache in the copied build output; removing that temporary generated cache
+allowed the normal launcher to build, sign and run successfully.
+
+A separate temporary browser fixture reused the real Settings component,
+production styles and the existing test's in-memory Connect fixture. At
+720×640 CSS pixels and 100% zoom, the compact selector displays the exact new
+label and retains its value and heading. Chrome's native zoom control confirms
+200%; a 1440×900 viewport override then measures 720×450 CSS pixels. Compact
+selection between API Accounts and AI Subscription updates the corresponding
+heading; the selector and Close control remain within the viewport, with no
+horizontal overflow or visibly clipped focus outline. These are browser
+responsive/zoom checks, distinct from the two native CEF checks: the native host
+has a 960px minimum width, and its keyboard shortcuts did not expose working
+page zoom. Windows/Linux runtime, production signing and release/publication
+acceptance are not established by this copy change.
+
+Temporary browser fixtures and generated desktop/client `dist` directories
+were removed after validation. The isolated app received Quit; its remaining
+CEF processes required task-scoped termination during cleanup. The temporary
+server was explicitly stopped. No user credentials or hosted inference were
+used.
+
+### PR #1125 subscription-label main conflict repair (2026-09-30)
+
+Merged the immutable fetched `main` revision `1399d131dcd5ef205f5be02b17073936b21f31c7` into the Grok branch from `edf77f79d1a03f0efc4d1834cbbe99e9924893fa`. Only this append-only evidence ledger conflicted; both histories and the existing implemented Grok status are retained. The upstream shared AI Subscription label, stable `subscription-accounts` identifier, exact sidebar/heading/compact-selector parity and complete 16-category contract remain intact. Grok interactions and the previously enlarged icon are unchanged.
+
+Normal Node `24.20.0` frontend `pnpm test` passes all 76 files/973 tests, generated-client build/type checking, eight package verifier cases, 16 asset/launcher cases, native Swift widget fixtures and production build (`/tmp/delidev-1125-label-merge-frontend.log`, 34.58 seconds for the pipeline). Public-docs build/content/routes and all 95 CI contract cases pass. All 14 LFS payloads are hydrated and match their committed sizes/digests. No Go, Rust, protocol or generated-client source changed, so the full passing Go race suite at `5f7f5bb0` and final icon inspection at `edf77f79` retain their original attribution and were not repeated. No additional native Settings/window, account, platform or release acceptance is claimed. Generated repository-owned `dist` output is removed after verification, and the pushed head requires fresh CI and review.
