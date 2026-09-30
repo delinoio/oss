@@ -176,3 +176,30 @@ it.each([1, 2, 3])("renders each of %i quota windows once when account details a
     for (const quota of first.windows) expect(screen.getAllByRole("progressbar", { name: `${quota.id} remaining` })).toHaveLength(1);
   }
 });
+
+
+it.each([Quota.Stale, Quota.Failed])("updates reset warnings for retained %s windows with one active-only timer", (state) => {
+  vi.useFakeTimers(); vi.setSystemTime(now);
+  const first = row("chatgpt", [
+    { ...window("first-reset", .68, state), resetAt: new Date(now + 60_000).toISOString() },
+    { ...window("second-reset", .82, state), resetAt: new Date(now + 120_000).toISOString() },
+  ]);
+  const rendered = render(view([first], { now: undefined }));
+  try {
+    expect(screen.queryByText(/Elapsed; recovery unconfirmed/)).toBeNull();
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(screen.getAllByText(/Elapsed; recovery unconfirmed/)).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(1);
+    rendered.rerender(view([first], { now: undefined, active: false }));
+    expect(vi.getTimerCount()).toBe(0);
+    rendered.rerender(view([first], { now: undefined }));
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(screen.getAllByText(/Elapsed; recovery unconfirmed/)).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(screen.getAllByText(state === Quota.Stale ? /Stale · Observed/ : /Observation failed · Observed/)).toHaveLength(2);
+    expect(first.refresh).not.toHaveBeenCalled();
+    expect(first.disconnect).not.toHaveBeenCalled();
+  } finally { rendered.unmount(); vi.useRealTimers(); }
+});

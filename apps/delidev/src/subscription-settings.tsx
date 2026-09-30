@@ -180,9 +180,10 @@ export function SubscriptionSettingsView({ accounts, state, problem, retryRead, 
     if (!active || now !== undefined) return;
     // Expire presentation at the next known boundary while this surface is
     // active. This makes no requests and stops when Settings is hidden/disposed.
-    const boundaries = accounts.flatMap((account) => account.windows.flatMap((window) => window.state === QuotaObservationState.Observed
-      ? [Date.parse(window.observedAt ?? "") + 5 * 60 * 1000 + 1, Date.parse(window.resetAt ?? "")]
-      : []));
+    const boundaries = accounts.flatMap((account) => account.windows.flatMap((window) => [
+      Date.parse(window.resetAt ?? ""),
+      ...(window.state === QuotaObservationState.Observed ? [Date.parse(window.observedAt ?? "") + 5 * 60 * 1000 + 1] : []),
+    ]));
     const next = Math.min(...boundaries.filter((boundary) => Number.isFinite(boundary) && boundary > presentationNow));
     if (!Number.isFinite(next)) return;
     const timer = setTimeout(expireObservation, Math.min(next - presentationNow, 2 ** 31 - 1));
