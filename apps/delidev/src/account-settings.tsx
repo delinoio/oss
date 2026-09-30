@@ -135,7 +135,7 @@ function AccountCreationWizard({
 }) {
   const [step, setStep] = useState(initialProvider ? WizardStep.Account : WizardStep.Provider);
   const [providerId, setProviderId] = useState(initialProvider?.providerId ?? "");
-  // Retain one exact clicked inventory entry when the account-filter page does not contain it.
+  // Keep the clicked contract authoritative when independent inventory pages retain different snapshots.
   const [selectedHint, setSelectedHint] = useState(initialProvider);
   const heading = useRef<HTMLHeadingElement>(null);
   const providerButtons = useRef(new Map<string, HTMLButtonElement>());
@@ -168,8 +168,8 @@ function AccountCreationWizard({
   const [autoConnect, setAutoConnect] = useState<number>();
   const options = useMemo(() => eligibleProviders.filter((provider) =>
     provider.providerId && provider.enabled && document(provider.provider).protocol !== "native-subscription"), [eligibleProviders]);
-  const selectedProvider = providers.find((provider) => provider.providerId === providerId) ??
-    eligibleProviders.find((provider) => provider.providerId === providerId) ?? selectedHint;
+  const selectedProvider = selectedHint?.providerId === providerId ? selectedHint :
+    providers.find((provider) => provider.providerId === providerId) ?? eligibleProviders.find((provider) => provider.providerId === providerId);
   useEffect(() => {
     if (!active) { setFocusTarget(WizardFocus.None); return; }
     if ((focusTarget === WizardFocus.Account && step === WizardStep.Account) ||

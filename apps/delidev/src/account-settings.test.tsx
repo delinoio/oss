@@ -8,6 +8,7 @@ import { expect, it, vi } from "vitest";
 import { AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { AccountSettings, AccountSettingsSection, type AccountProviderSummary } from "./account-settings";
 import { MutationIntents } from "./mutation";
+import { Authentication } from "./configuration-fields";
 import { encode, type Document } from "./documents";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) {
@@ -126,6 +127,36 @@ it("opens the exact inventory action once under Strict Mode and rerender without
   expect(value.other).not.toHaveBeenCalled();
   expect(value.save).not.toHaveBeenCalled();
   expect(value.connect).not.toHaveBeenCalled();
+});
+
+it.each([Authentication.Key, Authentication.Keyless])("keeps the clicked %s contract across stale independent inventory snapshots", async (authentication) => {
+  const providerId = newRequestId();
+  const keyless = authentication === Authentication.Keyless;
+  const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Clicked provider", protocol: "openai-chat", authentication, endpoint: "http://127.0.0.1:11434/v1", enabled: true }, 2n), id: providerId });
+  const staleProvider = create(ResourceSchema, { ...provider, revision: 1n, documentJson: encode({ name: "Stale provider", protocol: "openai-chat", authentication: keyless ? Authentication.Key : Authentication.Keyless, endpoint: "https://stale.example.test/v1", enabled: false }) });
+  const selected: AccountProviderSummary = { providerId, displayName: "Clicked provider", enabled: true, provider, keyGuidance: "", documentationUrl: "" };
+  const stale: AccountProviderSummary = { ...selected, displayName: "Stale provider", enabled: false, provider: staleProvider };
+  const account = resource(EntityKind.ACCOUNT, { alias: "Exact clicked provider", provider_id: providerId, type: "api", enabled: true, health: "disconnected" }, 2n);
+  const connected = create(ResourceSchema, { ...account, revision: 3n, documentJson: encode({ alias: "Exact clicked provider", provider_id: providerId, type: "api", enabled: true, health: "unverified", connection: { id: newRequestId(), authentication } }) });
+  const value = fixture({ providerId, currentProvider: provider, save: async (request) => ({ resource: account, requestId: requestId(request) }), connect: async (request) => ({ account: connected, requestId: requestId(request) }) });
+  const view = render(value.view(value.settings(AccountSettingsSection.Api, { providers: [stale], eligibleProviders: [selected] })));
+  fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
+  fireEvent.click(screen.getByRole("button", { name: `Clicked provider ${keyless ? "Local endpoint" : "API key"}` }));
+  expect(screen.getByText("Clicked provider")).toBeTruthy();
+  expect(screen.queryByLabelText("API key") === null).toBe(keyless);
+  fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Exact clicked provider" } });
+  if (!keyless) fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-only-key" } });
+  view.rerender(value.view(value.settings(AccountSettingsSection.Api, { providers: [stale], eligibleProviders: [stale] })));
+  expect(screen.getByText("Clicked provider")).toBeTruthy();
+  expect(screen.queryByLabelText("API key") === null).toBe(keyless);
+  expect(value.save).not.toHaveBeenCalled();
+  expect(value.connect).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
+  await waitFor(() => expect(value.connect).toHaveBeenCalledTimes(1));
+  expect(value.save).toHaveBeenCalledTimes(1);
+  expect(value.connect.mock.calls[0][0]).toMatchObject({ keyless });
+  expect(new TextDecoder().decode((value.connect.mock.calls[0][0] as { apiKey: Uint8Array }).apiKey)).toBe(keyless ? "" : "fixture-only-key");
+  expect(value.other).not.toHaveBeenCalled();
 });
 
 it("creates an API account once, clears the key at submit, connects without auto-validation, and retries the exact uncertain connection", async () => {
