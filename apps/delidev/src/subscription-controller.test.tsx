@@ -18,7 +18,7 @@ function fixture() {
   let failure: Code | undefined;
   let release: (() => void) | undefined;
   const list = vi.fn((request) => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? accounts : request.filter?.kind === EntityKind.PROVIDER ? [provider] : [] }));
-  const inventory = vi.fn(() => {
+  const inventory = vi.fn((_request: { query: string }) => {
     if (failure) throw new ConnectError("Capability fixture failure", failure);
     return { entries: [{ provider, providerId: provider.id, displayName: "Native metadata", enabled: true }], capabilities };
   });
@@ -90,4 +90,29 @@ it("discards metadata drafts, filters and late acknowledgments on close while ac
   expect((screen.getByLabelText("Account name") as HTMLInputElement).value).toBe("");
   expect((within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Filter accounts by provider") as HTMLSelectElement).value).toBe("");
   expect(screen.queryByRole("button", { name: "Retry the same subscription configuration" })).toBeNull();
+});
+
+
+it("applies provider search to bounded subscription creation choices without filtering account rows", async () => {
+  const value = fixture();
+  const other = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Other native provider", protocol: "native-subscription", authentication: "subscription", endpoint: "", enabled: true }) });
+  const accountPage = value.list.getMockImplementation()!;
+  value.list.mockImplementation((request) => request.filter?.kind === EntityKind.PROVIDER ? { resources: [value.provider, other] } : accountPage(request));
+  render(<value.Harness />);
+  await screen.findByRole("article", { name: "Existing subscription" });
+  screen.getByText("Advanced settings").closest("details")!.open = true;
+  const choices = screen.getByLabelText("Subscription provider");
+  expect(within(choices).getByRole("option", { name: "Native metadata" })).toBeTruthy();
+  expect(within(choices).getByRole("option", { name: "Other native provider" })).toBeTruthy();
+  const region = screen.getByRole("region", { name: "AI subscription account settings" });
+  fireEvent.change(within(region).getByLabelText("Search providers"), { target: { value: "OTHER" } });
+  expect(within(choices).queryByRole("option", { name: "Native metadata" })).toBeNull();
+  expect(within(choices).getByRole("option", { name: "Other native provider" })).toBeTruthy();
+  await waitFor(() => expect(value.inventory.mock.calls.at(-1)?.[0]).toMatchObject({ query: "OTHER" }));
+  expect(screen.getByRole("article", { name: "Existing subscription" })).toBeTruthy();
+  for (const [request] of value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.ACCOUNT)) {
+    expect(request).toMatchObject({ accountType: 2, providerId: "", filter: { pageToken: "" } });
+  }
+  expect(value.save).not.toHaveBeenCalled();
+  expect(value.lifecycle).not.toHaveBeenCalled();
 });

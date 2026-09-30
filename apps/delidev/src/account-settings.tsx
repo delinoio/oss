@@ -593,7 +593,7 @@ export function AccountSettings({
   }, [providerSummaries, subscriptionProviderResources]);
   const subscriptionProviders = useMemo(() => subscriptionProviderResources.filter((provider) =>
     document(provider).protocol === "native-subscription" && document(provider).authentication === Authentication.Subscription &&
-    text(document(provider).endpoint) === ""), [subscriptionProviderResources]);
+    text(document(provider).endpoint) === "" && resourceName(provider).toLowerCase().includes(providerSearch.toLowerCase())), [providerSearch, subscriptionProviderResources]);
   const subscriptionProvider = subscriptionProviders.find((provider) => provider.id === subscriptionProviderId);
   const subscriptionAliasValid = subscriptionAlias.trim().length > 0 && !subscriptionAlias.includes(String.fromCharCode(0)) && new TextEncoder().encode(subscriptionAlias).byteLength <= 256;
   const subscriptionCreate = useRetainedMutation("subscription-account-configuration:create", ConfigurationQuery.saveConfiguration, (result, request) => {
