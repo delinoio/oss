@@ -7,6 +7,7 @@ import { useRetainedMutation } from "./mutation";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
 import { Icon as SidebarIcon } from "./sidebar";
+import { ScheduleCreation, type ScheduleCreationProps } from "./schedule-creation";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 
 enum Overlap { Overlap = "overlap", Skip = "skip", Wait = "wait" }
@@ -32,11 +33,11 @@ export function ScheduleEditor({ initial, active, saved, cancel, readLocalWorker
   useEffect(() => protectedChange(true), [protectedChange]);
   const stale = Boolean(initial && current.data?.schedule && initial.revision !== current.data.schedule.revision);
   const local = definition.workspace === Workspace.Local;
-  const field = (key: string) => (value: unknown) => {
-    const next = { ...definition, [key]: value };
-    if (encode(next).byteLength > 1 << 20 || new TextEncoder().encode(text(next.prompt)).byteLength > 256 << 10) { setLimit("The schedule or prompt is too large. The previous draft is retained."); return; }
-    setDefinition(next); setLimit("");
+  const change = (next: Document) => {
+    if (encode(next).byteLength > 1 << 20 || new TextEncoder().encode(text(next.prompt)).byteLength > 256 << 10) { setLimit("The schedule or prompt is too large. The previous draft is retained."); return false; }
+    setDefinition(next); setLimit(""); return true;
   };
+  const field = (key: string) => (value: unknown) => change({ ...definition, [key]: value });
   const submit = async () => {
     if (blocked || stale || (initial && current.error)) return;
     const original = object(document(initial).definition);
@@ -46,6 +47,15 @@ export function ScheduleEditor({ initial, active, saved, cancel, readLocalWorker
     if (local && !retainedLocal && !proof) return;
     void mutation.send({ ...input, localWorkerToken: proof?.token });
   };
+  if (!initial) {
+    const props: ScheduleCreationProps = { definition, change, active, blocked, cancel, submit,
+      localAvailable: localProof.available,
+      selectLocal: () => { void localProof.load().then((proof) => { if (proof) change({ ...definition, workspace: Workspace.Local, machine_id: proof.machineId, starting: [] }); }); },
+      references: local ? null : <StartingReferences key={text(definition.project_id)} project={text(definition.project_id)} starting={items(definition.starting)} change={field("starting")} active={active} />,
+      errors: <>{limit ? <p role="alert">{limit}</p> : null}{localProof.problem ? <p role="alert">{localProof.problem}</p> : null}<Problem error={mutation.error} /></>,
+      retry: mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same schedule</button> : null };
+    return <ScheduleCreation {...props} />;
+  }
   return <section><h3>{initial ? "Edit schedule" : "New schedule"}</h3><form onSubmit={(event) => { event.preventDefault(); void submit(); }}><fieldset disabled={blocked}>
     <TextField label="Schedule name" value={definition.name} required change={field("name")} /><label className="checkbox"><input type="checkbox" checked={definition.enabled === true} onChange={(event) => field("enabled")(event.target.checked)} />Enable future scheduled runs</label><ResourceChoice label="Project" kind={EntityKind.PROJECT} value={text(definition.project_id)} active={active} required change={(project_id) => setDefinition({ ...definition, project_id, starting: [] })} /><ResourceChoice label="Agent Worker" kind={EntityKind.AGENT} value={text(definition.agent_id)} active={active} required change={field("agent_id")} /><ResourceChoice label="Execution Worker" kind={EntityKind.MACHINE} value={text(definition.machine_id)} active={active} disabled={local} required change={field("machine_id")} />
     <div className="actions"><button type="button" aria-pressed={!local} onClick={() => setDefinition({ ...definition, workspace: Workspace.Worktree })}>Use separate Worktrees</button><button type="button" disabled={!localProof.available} aria-pressed={local} onClick={() => { void localProof.load().then((proof) => { if (proof) setDefinition({ ...definition, workspace: Workspace.Local, machine_id: proof.machineId, starting: [] }); }); }}>Use this computer's Local checkouts</button></div><p>Workspace: {local ? "Local computer · originating Worker selected" : "Worktree · separate detached checkouts"}</p>{local ? <p>Existing Local schedules retain their authenticated Worker when unchanged. Selecting this computer explicitly supplies its private Worker proof. Existing checkouts are shared as-is without fetch or starting-reference overrides.</p> : <StartingReferences key={text(definition.project_id)} project={text(definition.project_id)} starting={items(definition.starting)} change={field("starting")} active={active} />}
