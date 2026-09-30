@@ -609,3 +609,64 @@ dialog.modal-full-window::backdrop { background: transparent; }
   .repository-folder-card, .repository-summary { padding: 16px; }
   .repository-registration .actions { flex-direction: column; align-items: stretch; }
 }
+
+/* GitHub profile presentation shares the existing Settings workflow owners. */
+.github-integrations { max-width: 1040px; font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
+.github-integrations button { border-radius: 8px; max-width: 100%; }
+.github-integrations fieldset { min-width: 0; }
+.github-integrations h3 { margin-bottom: 6px; font-size: 1.15rem; }
+.github-integrations h4 { margin: 0 0 12px; font-size: 1rem; }
+.integration-secondary { color: var(--muted); }
+.integration-panel, .integration-editor, .integration-manage { border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.integration-panel-header { flex-wrap: wrap; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.integration-provider { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.integration-provider h3 { margin: 0; font-size: 1rem; }
+.integration-provider p { margin: 2px 0 0; font-size: .875rem; }
+.integration-icon { width: 22px; height: 22px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.integration-provider-mark, .integration-empty-mark { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 10px; width: 40px; height: 40px; background: #f3f5f8; }
+.integration-panel-body { padding: 0 24px; }
+.integration-panel-body > p, .integration-panel-body > .problem { margin-block: 20px; }
+.integration-empty { padding: 40px 0; text-align: center; }
+.integration-empty-mark { width: 52px; height: 52px; margin-bottom: 16px; color: var(--accent); background: #e7efff; }
+.integration-empty h3 { margin-bottom: 12px; }
+.integration-empty p { margin: 0; color: var(--muted); }
+.integration-empty button { margin-top: 22px; }
+.integration-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: setup; list-style: none; margin: 0; padding: 20px 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: .875rem; }
+.integration-steps li { display: flex; align-items: center; gap: 10px; }
+.integration-steps li::before { counter-increment: setup; content: counter(setup); display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 50%; }
+.integration-access-note { margin: 0; padding: 14px 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: .875rem; }
+.integration-storage-note { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; color: var(--muted); font-size: .875rem; }
+.integration-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-block: 24px; border-bottom: 1px solid var(--border); }
+.integration-row:last-child { border-bottom: 0; }
+.integration-row > div:first-child { min-width: 0; flex: 1; }
+.integration-row > .actions { flex-shrink: 0; }
+.integration-row p { margin-bottom: 14px; }
+.integration-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; margin: 16px 0 0; }
+.integration-facts > div { min-width: 0; }
+.integration-facts dt { color: var(--muted); font-size: .875rem; }
+.integration-facts dd { margin: 4px 0 0; }
+.integration-editor { max-width: 760px; padding: 24px; }
+.integration-editor > .actions { margin-top: 20px; }
+.integration-editor fieldset p { color: var(--muted); font-size: .875rem; }
+.integration-manage { padding: 24px; }
+.integration-manage > header { align-items: flex-start; flex-wrap: wrap; }
+.integration-manage > .integration-facts { margin-bottom: 20px; }
+.integration-section { padding-top: 24px; margin-top: 24px; border-top: 1px solid var(--border); }
+.integration-token-guidance { padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: .875rem; }
+.integration-token-guidance summary { cursor: pointer; color: #202632; font-weight: 500; }
+.integration-token-guidance section { margin-top: 14px; }
+.integration-token-guidance section p:last-child { margin-bottom: 0; }
+.github-integrations button.primary:disabled { color: #5b6577; background: #eef1f5; border-color: var(--border); opacity: 1; }
+.github-integrations button.integration-danger { color: #b42332; border-color: #d9a5ab; }
+.github-integrations button.integration-danger:hover { background: #fff3f4; }
+@media (max-width: 1099px) {
+  .integration-row { flex-wrap: wrap; }
+  .integration-row > div:first-child { flex-basis: 100%; }
+  .integration-steps { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 759px) {
+  .integration-panel-header, .integration-editor, .integration-manage { padding: 16px; }
+  .integration-panel-body { padding-inline: 16px; }
+  .integration-steps, .integration-access-note { padding: 16px; }
+  .integration-facts { grid-template-columns: minmax(0, 1fr); }
+}
