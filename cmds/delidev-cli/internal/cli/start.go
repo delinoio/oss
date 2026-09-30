@@ -18,10 +18,28 @@ import (
 )
 
 func startDetached(ctx context.Context, o options, config server.Config, streams IO) (any, error) {
-	return ensureDetached(ctx, o, config, streams, false)
+	return detachedStartup(ctx, o, config, streams, startupExplicit)
 }
 
+type startupMode uint8
+
+const (
+	startupExplicit startupMode = iota
+	startupEnsure
+	startupDesktopLaunch
+	startupDesktopRetry
+	startupObservation
+)
+
 func ensureDetached(ctx context.Context, o options, config server.Config, streams IO, automatic bool) (any, error) {
+	mode := startupExplicit
+	if automatic {
+		mode = startupEnsure
+	}
+	return detachedStartup(ctx, o, config, streams, mode)
+}
+
+func detachedStartup(ctx context.Context, o options, config server.Config, streams IO, mode startupMode) (any, error) {
 	if _, err := worker.LoadCredential(o.dataDir); err == nil {
 		return nil, domain.Fail(domain.PermissionDenied, "Server startup requires an owner scope, not a paired device scope.", "Run the lifecycle command on the server machine with its original data directory.")
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -34,10 +52,27 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 	if err != nil {
 		return nil, err
 	}
-	if err := security.PrivateDir(o.dataDir); err != nil {
+	privateDir := security.PrivateDir
+	if mode == startupObservation {
+		privateDir = security.CheckPrivateDir
+	}
+	if err := privateDir(o.dataDir); err != nil {
 		return nil, domain.SafeError(err)
 	}
+	// Lock order is service admission, startup controller, lifecycle, then store.
+	// Service control owns the same admission lock through its native write.
+	var admission *userservice.LaunchAdmission
+	if mode == startupDesktopLaunch || mode == startupDesktopRetry || mode == startupEnsure {
+		admission, err = userservice.AdmitLaunch(ctx, o.dataDir)
+		if err != nil {
+			return nil, err
+		}
+		defer admission.Close()
+	}
 	lock, err := security.TryLock(filepath.Join(o.dataDir, "startup.lock"))
+	if (mode == startupDesktopLaunch || mode == startupDesktopRetry || mode == startupObservation) && err != nil && domain.SafeError(err).Code == domain.Conflict {
+		lock, err = waitStartupController(ctx, o.dataDir)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -56,11 +91,19 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 		return nil, err
 	}
 	serviceManaged, serviceStopped := false, false
-	if automatic {
-		serviceManaged, serviceStopped, err = userservice.ManagedIntent(o.dataDir, userservice.Server)
+	if admission != nil {
+		serviceManaged, serviceStopped, err = admission.Managed()
 		if err != nil {
 			return nil, err
 		}
+	}
+	if (mode == startupDesktopLaunch || mode == startupDesktopRetry) && intent.Version != 0 && !intent.Matches(config) {
+		return nil, domain.Fail(domain.Unsupported, "The retained server configuration is incompatible with desktop launch.", "Preserve the original server and inspect connection diagnostics.")
+	}
+	if mode == startupDesktopRetry && intent.State == server.DesiredStopped {
+		return map[string]any{"state": "stopped"}, nil
+	}
+	if mode == startupEnsure || mode == startupObservation {
 		if intent.State != server.DesiredRunning {
 			return map[string]any{"state": "stopped"}, nil
 		}
@@ -90,7 +133,7 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 	}
 	if status, err := probe(); err == nil {
 		// Adopt legacy foreground servers only after authenticated compatibility.
-		if intent.Version == 0 {
+		if intent.Version == 0 && mode != startupObservation && !serviceManaged {
 			if _, err := server.WriteRunning(o.dataDir, config); err != nil {
 				return nil, err
 			}
@@ -99,7 +142,13 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 	} else if code := domain.SafeError(err).Code; code != domain.ServerUnavailable && code != domain.Unavailable {
 		return nil, err
 	}
-	if automatic && serviceManaged {
+	if mode == startupObservation {
+		return nil, domain.Fail(domain.ServerUnavailable, "DeliDev is not connected.", "Inspect connection diagnostics before an explicit retry.")
+	}
+	if admission != nil && serviceManaged {
+		if mode == startupDesktopLaunch || mode == startupDesktopRetry {
+			return map[string]any{"state": "service-managed"}, nil
+		}
 		if serviceStopped {
 			return map[string]any{"state": "stopped"}, nil
 		}
@@ -117,7 +166,15 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 			ownership.Close()
 		}
 	}()
-	if !automatic {
+	if admission != nil {
+		if managed, _, err := admission.Managed(); err != nil || managed {
+			if err != nil {
+				return nil, err
+			}
+			return nil, domain.Fail(domain.RecoveryRequired, "Native service ownership changed.", "Inspect the original registration before retrying.")
+		}
+	}
+	if mode != startupEnsure {
 		intent, err = server.WriteRunning(o.dataDir, config)
 		if err != nil {
 			return nil, err
@@ -167,6 +224,17 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 	cmd.Stdout = log
 	cmd.Stderr = log
 	detach(cmd)
+	if admission != nil {
+		if managed, _, err := admission.Managed(); err != nil || managed {
+			if err != nil {
+				return nil, err
+			}
+			return nil, domain.Fail(domain.RecoveryRequired, "Native service ownership changed.", "Inspect the original registration before retrying.")
+		}
+	}
+	if config.Logger != nil {
+		config.Logger.InfoContext(ctx, "server_start_admitted", "mode", mode)
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, domain.Fail(domain.Unavailable, "The server process could not start.", "Inspect the executable and data directory permissions.")
 	}
@@ -230,6 +298,26 @@ func waitStartupOwnership(ctx context.Context, root string, config server.Config
 		waiting = true
 		select {
 		case <-deadline.Done():
+		case <-ticker.C:
+		}
+	}
+}
+
+// Concurrent fresh hosts join the original bounded startup rather than failing
+// with a controller conflict. This grants no termination or cleanup authority.
+func waitStartupController(ctx context.Context, root string) (*security.Lock, error) {
+	child, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		lock, err := security.TryLock(filepath.Join(root, "startup.lock"))
+		if err == nil || domain.SafeError(err).Code != domain.Conflict {
+			return lock, err
+		}
+		select {
+		case <-child.Done():
+			return nil, domain.SafeError(child.Err())
 		case <-ticker.C:
 		}
 	}

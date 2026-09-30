@@ -666,3 +666,206 @@ fn real_saved_connection_keeps_owner_local_and_remote_authority_separate() {
             .is_err()
     );
 }
+
+#[test]
+#[cfg(unix)]
+fn host_launch_is_once_joined_and_never_publishes_ready_after_stop() {
+    use std::{os::unix::fs::PermissionsExt, sync::Arc};
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("private");
+    fs::create_dir_all(root.join("desktop-client")).unwrap();
+    let value = metadata();
+    let body = serde_json::to_string(&serde_json::json!({"version":value.version,"type":value.kind,"endpoint":value.endpoint,"server_id":value.server_id,"device_id":value.device_id,"pairing_id":value.pairing_id,"machine_id":""})).unwrap();
+    fs::write(root.join("desktop-client/device.json"), document(&value)).unwrap();
+    let executable = temporary.path().join("sidecar");
+    let script = format!(
+        r#"#!/bin/sh
+printf '%s:%s\n' "$3" "$4" >> "$2/operations"
+if [ "$3:$4" = server:desktop-launch ]; then
+  while [ ! -f "$2/release" ]; do /bin/sleep .01; done
+fi
+if [ "$3" = server ]; then
+  if [ -f "$2/stopped" ]; then
+    printf '%s' '{{"version":1,"result":{{"state":"stopped"}}}}'
+  else
+    printf '%s' '{{"version":1,"result":{{"reused":true,"status":{{"version":"0.1.0","protocol_version":1,"listener":"http://127.0.0.1:46310"}}}}}}'
+  fi
+else
+  printf '%s' '{{"version":1,"result":{body}}}'
+fi
+"#
+    );
+    fs::write(&executable, script).unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let connector = Arc::new(Connector::new(executable, root.clone()).unwrap());
+    let runtime = Arc::new(Supervision::new(connector));
+    for _ in 0..20 {
+        assert!(runtime.launch_connection().unwrap().is_none());
+    }
+    fs::write(root.join("release"), "").unwrap();
+    let limit = Instant::now() + COMMAND_TIMEOUT + Duration::from_secs(5);
+    let first = loop {
+        if let Some(value) = runtime.launch_connection().unwrap() {
+            break value;
+        }
+        assert!(
+            Instant::now() < limit,
+            "bounded sidecar phases: {}",
+            fs::read_to_string(root.join("operations")).unwrap_or_default()
+        );
+        thread::sleep(Duration::from_millis(10));
+    };
+    let readers: Vec<_> = (0..8)
+        .map(|_| {
+            let runtime = Arc::clone(&runtime);
+            thread::spawn(move || runtime.launch_connection().unwrap().unwrap())
+        })
+        .collect();
+    for reader in readers {
+        let observed = reader.join().unwrap();
+        assert_eq!(observed.device_id, first.device_id);
+        assert_eq!(observed.token, first.token);
+    }
+    fs::write(root.join("stopped"), "").unwrap();
+    assert!(matches!(
+        runtime.launch_connection(),
+        Err(NativeFailure::Stopped)
+    ));
+    assert!(matches!(
+        runtime.retry_launch(),
+        Err(NativeFailure::Stopped)
+    ));
+    runtime.refresh();
+    runtime.stop();
+    let actions = fs::read_to_string(root.join("operations")).unwrap();
+    assert_eq!(
+        actions
+            .lines()
+            .filter(|v| *v == "server:desktop-launch")
+            .count(),
+        1
+    );
+    assert_eq!(
+        actions
+            .lines()
+            .filter(|v| *v == "device:pair-local")
+            .count(),
+        1
+    );
+    assert!(
+        !actions
+            .lines()
+            .any(|v| v == "server:start" || v == "server:stop" || v == "server:desktop-retry")
+    );
+}
+
+#[test]
+fn missing_bundled_sidecar_is_a_retained_launch_failure() {
+    use std::sync::Arc;
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("private");
+    let connector =
+        Arc::new(Connector::new(temporary.path().join("missing"), root.clone()).unwrap());
+    let runtime = Supervision::new(connector);
+    let limit = Instant::now() + Duration::from_secs(5);
+    loop {
+        match runtime.launch_connection() {
+            Err(NativeFailure::SidecarMissing) => break,
+            Ok(None) => {
+                assert!(Instant::now() < limit);
+                thread::sleep(Duration::from_millis(10));
+            }
+            _ => panic!("unexpected launch observation"),
+        }
+    }
+    for _ in 0..10 {
+        assert!(matches!(
+            runtime.launch_connection(),
+            Err(NativeFailure::SidecarMissing)
+        ));
+    }
+    runtime.stop();
+    assert!(!root.exists());
+}
+
+#[test]
+#[ignore = "requires an explicitly built Go sidecar; auto-launches only temporary private scopes"]
+fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetime() {
+    use std::sync::Arc;
+    let binary =
+        PathBuf::from(std::env::var_os("DELIDEV_TEST_SIDECAR").expect("explicit sidecar required"));
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("server");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    let mut first = Connector::new(binary.clone(), root.clone()).unwrap();
+    first.listen = address.clone();
+    let first = Arc::new(first);
+    let mut second = Connector::new(binary.clone(), root.clone()).unwrap();
+    second.listen = address.clone();
+    let second = Arc::new(second);
+    let cleanup = Connector::new(binary, root.clone()).unwrap();
+    struct Stop<'a>(&'a Connector);
+    impl Drop for Stop<'_> {
+        fn drop(&mut self) {
+            let _ = self.0.run(&["server".into(), "stop".into()]);
+        }
+    }
+    let _stop = Stop(&cleanup);
+    let first_host = Supervision::new(Arc::clone(&first));
+    let second_host = Supervision::new(second);
+    fn ready(runtime: &Supervision) -> Connection {
+        // Bootstrap owns three bounded commands; readers do not replay them.
+        let deadline = Instant::now() + COMMAND_TIMEOUT * 3 + Duration::from_secs(5);
+        loop {
+            match runtime.launch_connection() {
+                Ok(Some(value)) => return value,
+                Ok(None) => {}
+                Err(failure) => panic!("launch failure: {failure:?}"),
+            }
+            assert!(
+                Instant::now() < deadline,
+                "bounded native launch did not settle: {:?}",
+                runtime.status()
+            );
+            thread::sleep(Duration::from_millis(25));
+        }
+    }
+    let original = ready(&first_host);
+    eprintln!("fixture phase: first host authenticated");
+    let concurrent = ready(&second_host);
+    eprintln!("fixture phase: concurrent host authenticated");
+    assert_eq!(original.server_id, concurrent.server_id);
+    assert_eq!(original.device_id, concurrent.device_id);
+    assert_eq!(original.token, concurrent.token);
+    for _ in 0..4 {
+        assert_eq!(ready(&first_host).device_id, original.device_id);
+    }
+    second_host.stop();
+    eprintln!("fixture phase: second host joined");
+    assert!(cleanup.run(&["server".into(), "status".into()]).is_ok());
+    cleanup.run(&["server".into(), "stop".into()]).unwrap();
+    assert!(matches!(
+        first_host.launch_connection(),
+        Err(NativeFailure::Stopped)
+    ));
+    assert!(matches!(
+        first_host.retry_launch(),
+        Err(NativeFailure::Stopped)
+    ));
+    first_host.stop();
+    eprintln!("fixture phase: stopped host joined");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while root.join("server.json").exists() {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(25));
+    }
+    let mut fresh = Connector::new(first.executable.clone(), root).unwrap();
+    fresh.listen = address;
+    let fresh_host = Supervision::new(Arc::new(fresh));
+    assert_eq!(ready(&fresh_host).server_id, original.server_id);
+    eprintln!("fixture phase: fresh host reopened original server");
+    fresh_host.stop();
+    assert!(cleanup.run(&["server".into(), "status".into()]).is_ok());
+}

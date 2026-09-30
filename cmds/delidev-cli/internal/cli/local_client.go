@@ -34,6 +34,10 @@ type localPairingAttempt struct {
 // exact grant request before contacting the server. A retry cannot silently
 // replace a revoked, damaged or differently paired client.
 func pairLocalDevice(ctx context.Context, o options, root string, kind domain.DeviceType) (any, error) {
+	return pairLocalDeviceJoined(ctx, o, root, kind, false)
+}
+
+func pairLocalDeviceJoined(ctx context.Context, o options, root string, kind domain.DeviceType, join bool) (any, error) {
 	name := "DeliDev desktop"
 	if kind == domain.WorkerDevice {
 		name = "DeliDev local Worker"
@@ -51,7 +55,13 @@ func pairLocalDevice(ctx context.Context, o options, root string, kind domain.De
 	if err := security.CheckPrivateDir(o.dataDir); err != nil {
 		return nil, err
 	}
-	recoveryLock, err := lockDesktopClient(o.dataDir, root)
+	lockClient := lockDesktopClient
+	if join {
+		lockClient = func(owner, selected string) (*security.Lock, error) {
+			return joinDesktopClient(ctx, owner, selected)
+		}
+	}
+	recoveryLock, err := lockClient(o.dataDir, root)
 	if err != nil {
 		return nil, err
 	}

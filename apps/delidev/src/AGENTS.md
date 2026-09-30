@@ -513,3 +513,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
+
+- Issue #1137 observes native launch with cancellation-safe renderer callbacks and verifies authenticated non-stopping server identity before product entry. Routine startup/sidebar use product wording; Diagnostics retains its category ID and displays Connection & diagnostics. Connection lifecycle/recovery controllers and their exact uncertain requests stay mounted outside SettingsLifetime via the persistent advanced panel, including transport-independent Troubleshooting. Doctor remains read-only; saved windows retain only pinned verification/presentation controls.

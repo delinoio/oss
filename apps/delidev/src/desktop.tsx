@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { type Transport } from "@connectrpc/connect";
 import { createDeliDevTransport } from "@delinoio/delidev-api-client";
 import { App } from "./App";
-import { Problem } from "./ui";
+import { Modal, Problem } from "./ui";
 import { SavedConnections, SavedConnectionProblem, type SavedConnection, type SavedConnectionActions } from "./saved-connections";
 import { LocalServerControls, LocalServerState, LocalServerStatusText, type LocalServerStatus } from "./local-server";
 import type { ControlLocalWorker, LocalWorkerStatus } from "./local-worker-controls";
@@ -12,6 +12,7 @@ import { verifyLocalServer } from "./connection";
 
 import { LocalRegistrationRecovery, localPermissionProblem, type NativeConnection } from "./local-registration";
 const nativeProblems: Record<string, string> = {
+  "service-managed": "A native service owns this connection. Start or inspect its original registration through service management; DeliDev will not launch a competing server.",
   stopped: "The server was explicitly stopped. Start it only when you intend to resume its local lifecycle.",
   busy: "A local connection attempt is already running. Wait for it to finish.",
   "sidecar-missing": "The bundled DeliDev executable is missing. Repair the desktop installation.",
@@ -25,6 +26,8 @@ const nativeProblems: Record<string, string> = {
 };
 function LocalDesktop() {
   const [showSaved, setShowSaved] = useState(false);
+  const [showConnection, setShowConnection] = useState(false);
+  const [connectionTarget, setConnectionTarget] = useState<HTMLDivElement | null>(null);
   const previous = useRef<NativeConnection>(undefined);
   const [status, setStatus] = useState<LocalServerStatus>();
   const [connectionEpoch, setConnectionEpoch] = useState(0);
@@ -42,26 +45,45 @@ function LocalDesktop() {
   }, []);
   const [transport, setTransport] = useState<Transport>();
   const [error, setError] = useState<unknown>();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(isTauri());
   const connecting = useRef(false);
-  const acceptConnection = async (connection: NativeConnection) => {
+  const acceptConnection = async (connection: NativeConnection, current: () => boolean = () => true) => {
     const candidate = createDeliDevTransport({ origin: connection.endpoint, getToken: () => connection.token });
     await verifyLocalServer(candidate, connection.server_id);
+    if (!current()) return;
     const old = previous.current;
     if (!old || old.server_id !== connection.server_id || old.device_id !== connection.device_id || old.endpoint !== connection.endpoint || old.token !== connection.token) setTransport(candidate);
     previous.current = connection;
     setConnectionEpoch((epoch) => epoch + 1);
     setError(undefined);
   };
-  const connect = async () => {
+  const connect = async (action: "connect_local" | "retry_local" = "connect_local") => {
     if (busy || connecting.current) return;
     connecting.current = true;
     setBusy(true); setError(undefined);
     try {
-      const connection = await invoke<NativeConnection>("connect_local");
+      const connection = await invoke<NativeConnection>(action);
       await acceptConnection(connection);
     } catch (reason) { setError(reason); } finally { connecting.current = false; setBusy(false); }
   };
+  useEffect(() => {
+    if (!isTauri()) return;
+    let canceled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const observe = async () => {
+      try {
+        // Native owns the operation across every renderer lifecycle. A null
+        // observation is pending; reading it never starts another attempt.
+        const connection = await invoke<NativeConnection | null>("launch_local");
+        if (canceled) return;
+        if (!connection) { timer = setTimeout(() => void observe(), 250); return; }
+        await acceptConnection(connection, () => !canceled);
+        if (!canceled) setBusy(false);
+      } catch (reason) { if (!canceled) { setError(reason); setBusy(false); } }
+    };
+    void observe();
+    return () => { canceled = true; clearTimeout(timer); };
+  }, []);
   const readLocalWorker = async () => {
     const selected = previous.current;
     const proof = await invoke<{ endpoint: string; server_id: string; machine_id: string; token: string }>("local_worker_proof");
@@ -74,9 +96,19 @@ function LocalDesktop() {
     if (!selected || previous.current !== selected) throw new Error("Local Worker connection changed");
     return value;
   };
-  const registration = isTauri() ? <LocalRegistrationRecovery busy={busy} setBusy={setBusy} recovered={acceptConnection} /> : null;
   const problem = typeof error === "string" && Object.hasOwn(nativeProblems, error) ? <p role="alert">{nativeProblems[error]}</p> : <Problem error={error} />;
-  return <>{transport ? <App pairingAuthority={previous.current ? { endpoint: previous.current.endpoint, serverId: previous.current.server_id } : undefined} currentDeviceId={previous.current?.device_id} controlLocalWorker={controlLocalWorker} readLocalWorker={readLocalWorker} transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} localServer={<><LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} />{registration}<button onClick={() => setShowSaved(true)}>Saved servers</button></>} /> : <main className="connect-page"><h1>DeliDev</h1><h2>Connect to your local server</h2><p>The server and its sessions continue when you close DeliDev.</p>{isTauri() ? <><button className="primary" disabled={busy} onClick={() => void connect()}>{busy ? "Connecting…" : "Start or connect"}</button><button onClick={() => setShowSaved(true)}>Saved servers</button></> : <p>Open the DeliDev desktop app to connect. Browser clients are not supported.</p>}{isTauri() ? <LocalServerStatusText status={status} /> : null}{problem}{registration}</main>}<SavedConnections visible={showSaved} close={() => setShowSaved(false)} actions={savedActions} /></>;
+  const connectionSettings = <button onClick={() => setShowConnection(true)}>Connection controls</button>;
+  const controls = <LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} />;
+  return <>{transport ? <App pairingAuthority={previous.current ? { endpoint: previous.current.endpoint, serverId: previous.current.server_id } : undefined} currentDeviceId={previous.current?.device_id} controlLocalWorker={controlLocalWorker} readLocalWorker={readLocalWorker} transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} connectionSettings={connectionSettings} connectionTarget={connectionTarget ?? undefined} localServer={controls} /> : <main className="connect-page"><h1>DeliDev</h1>{isTauri() ? <><p role="status">{busy ? "Starting DeliDev…" : "DeliDev could not connect."}</p>{error ? <><p role="alert">{error === "stopped" ? "DeliDev is disconnected on this computer. Open Troubleshooting to start it when you are ready." : "DeliDev could not finish starting. Retry or open Troubleshooting for help."}</p><button className="primary" disabled={busy || error === "stopped"} onClick={() => void connect("retry_local")}>Retry</button></> : null}<button onClick={() => setShowConnection(true)}>Troubleshooting</button></> : <p>Open the DeliDev desktop app to connect. Browser clients are not supported.</p>}</main>}
+    <Modal title="Connection & diagnostics" visible={showConnection} close={() => setShowConnection(false)}>
+      <section aria-label="Connection"><h3>Connection on this computer</h3><div ref={setConnectionTarget} />{!transport ? <><LocalServerStatusText status={status} /><button disabled={busy} onClick={() => void connect()}>Start local server</button>{problem}</> : null}
+        <LocalRegistrationRecovery busy={busy} setBusy={setBusy} recovered={acceptConnection} active={showConnection} />
+        <button onClick={() => setShowSaved(true)}>Saved servers</button>
+      </section>
+    </Modal>
+    <SavedConnections visible={showSaved} close={() => setShowSaved(false)} actions={savedActions} />
+  </>;
+
 }
 const savedActions: SavedConnectionActions = {
   list: () => invoke<SavedConnection[]>("saved_connections"),
@@ -89,6 +121,7 @@ const savedActions: SavedConnectionActions = {
   open: (id) => invoke<void>("open_connection", { id }),
 };
 function SavedDesktop({ profile }: { profile: SavedConnection }) {
+  const [showConnection, setShowConnection] = useState(false);
   const [transport, setTransport] = useState<Transport>();
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
@@ -123,7 +156,10 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
     return value;
   };
   const controls = <><p>{profile.name}</p><small>{profile.endpoint}</small><button disabled={busy} onClick={() => void connect()}>Verify saved connection</button><button onClick={() => void invoke("show_connection_manager").catch(setError)}>Show local window</button><SavedConnectionProblem error={error} /></>;
-  return transport ? <App pairingAuthority={{ endpoint: profile.endpoint, serverId: profile.server_id }} transport={transport} readLocalWorker={readLocalWorker} controlLocalWorker={controlLocalWorker} currentDeviceId={profile.device_id} connectionEpoch={epoch} localServer={controls} /> : <main className="connect-page"><h1>DeliDev</h1><h2>{busy ? "Connecting to saved server…" : "Saved server connection"}</h2><p>This window is pinned to server {profile.server_id}. Remote sessions continue when it closes.</p>{controls}</main>;
+  return <>{transport ? <App pairingAuthority={{ endpoint: profile.endpoint, serverId: profile.server_id }} transport={transport} readLocalWorker={readLocalWorker} controlLocalWorker={controlLocalWorker} currentDeviceId={profile.device_id} connectionEpoch={epoch} connectionSettings={<button onClick={() => setShowConnection(true)}>Connection controls</button>} /> : <main className="connect-page"><h1>DeliDev</h1><p role="status">{busy ? "Connecting…" : "DeliDev could not connect."}</p>{error ? <p role="alert">DeliDev could not verify this connection. Retry or open Troubleshooting for help.</p> : null}<button disabled={busy} onClick={() => void connect()}>Retry</button><button onClick={() => setShowConnection(true)}>Troubleshooting</button></main>}
+    <Modal title="Connection & diagnostics" visible={showConnection} close={() => setShowConnection(false)}><section aria-label="Saved connection"><h3>Saved connection</h3>{controls}</section></Modal>
+  </>;
+
 }
 export function Desktop() {
   const [context, setContext] = useState<{ ready: boolean; profile?: SavedConnection; error?: unknown }>({ ready: !isTauri() });

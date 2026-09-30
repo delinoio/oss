@@ -1,4 +1,4 @@
 [[permission]]
 identifier = "local-bootstrap"
 description = "Start or reuse the same local Go server and load its separate paired desktop credential and same-server local Worker proof; explicitly register, start, inspect or stop that fixed Worker, and explicitly recover a verified revoked desktop registration."
-commands.allow = ["connect_local", "inspect_local_registration", "recover_local_registration", "local_server_status", "local_worker_proof", "local_worker_control"]
+commands.allow = ["launch_local", "retry_local", "connect_local", "inspect_local_registration", "recover_local_registration", "local_server_status", "local_worker_proof", "local_worker_control"]

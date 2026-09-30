@@ -33,3 +33,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Common parsing, authenticated clients, document input, and output envelopes belong to `arguments.go`, `client.go`, `document.go`, and `output.go`. Command-family dispatch belongs in `dispatch_<family>.go`; preserve request ID propagation and the generic resource fallback.
+
+- server desktop-launch is the fresh-main-host intentional Start boundary; desktop-retry cannot clear stopped intent and desktop-status is read-only readiness. Hold native-service control admission before startup/lifecycle/store locks through detached spawn, and recheck before intent publication and spawn. Registered scopes may provide compatible live reuse but cannot admit a detached competitor or service mutation. Preserve malformed/private evidence and prior cleanup barriers.
+
+- Native fixed desktop-client pairing/inspection may join the existing recovery lock under a bounded cancellable deadline. Validate original recovery evidence after acquisition, keep ordinary/remote/Worker pairing semantics, and never turn contention into another request, credential or recovery.
