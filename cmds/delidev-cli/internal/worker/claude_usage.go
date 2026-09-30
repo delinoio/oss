@@ -26,7 +26,10 @@ func (c *ClaudeContentPublisher) PublishUsageObservation(ctx context.Context, o 
 			return true, b.block()
 		}
 		native := o.Content[0]
-		if native.Usage == nil {
+		// Child usage was retained by the child-content publication. The runner
+		// also invokes this root adapter for content carrying usage; do not
+		// reattribute the report or latch the root publisher for an owned child.
+		if native.ParentToolID != "" || native.Usage == nil {
 			return false, nil
 		}
 		owner, ok := c.messages[native.MessageID]

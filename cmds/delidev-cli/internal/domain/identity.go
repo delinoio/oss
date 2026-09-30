@@ -38,6 +38,7 @@ const (
 	ScheduleKind    Kind = "schedule"
 	OccurrenceKind  Kind = "occurrence"
 	MessageKind     Kind = "message"
+	SubagentKind    Kind = "subagent"
 	QueueKind       Kind = "queue"
 	SteerKind       Kind = "steer"
 	InteractionKind Kind = "interaction"
@@ -56,7 +57,7 @@ const (
 
 func (k Kind) Valid() bool {
 	switch k {
-	case ForwardKind, PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind:
+	case SubagentKind, ForwardKind, PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind:
 		return true
 	default:
 		return false

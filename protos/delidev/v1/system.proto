@@ -54,6 +54,8 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 = 2;
   // Optional current-user registrations on the server computer, never remote Workers.
   SYSTEM_CAPABILITY_USER_SERVICES_V1 = 3;
+  // Read-only native Codex and Claude child-agent observations.
+  SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1 = 12;
 }
 
 message StopServerRequest {

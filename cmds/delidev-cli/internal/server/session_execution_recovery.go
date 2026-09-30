@@ -107,6 +107,9 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 	if progress == nil || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.PendingSteerID != "" || progress.Waiting != (domain.NativeWaiting{}) || progress.UnconfirmedResponses != 0 || (session.ActiveExecutionID != "" && session.ActiveExecutionID != progress.ExecutionID) || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) {
 		return result, domain.ExecutionRecoveryUncertain()
 	}
+	if len(progress.Subagents) != 0 {
+		return result, domain.ExecutionRecoveryUncertain()
+	}
 	if session.Outcome != domain.ExecutionSucceeded && session.Outcome != domain.ExecutionFailed && session.Outcome != domain.ExecutionStopped {
 		return result, domain.ExecutionRecoveryUncertain()
 	}

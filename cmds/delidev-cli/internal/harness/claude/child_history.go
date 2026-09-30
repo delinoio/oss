@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,6 +20,9 @@ type ChildHistoryBinding struct {
 }
 
 type ChildTranscriptObservation struct {
+	Output         *domain.SubagentOutput
+	ObservedModel  *string
+	Usage          *domain.SubagentUsage
 	Transcript     TranscriptObservation
 	MetadataSHA256 string
 	SpawnDepth     uint32
@@ -59,5 +63,61 @@ func VerifyChildTranscript(ctx context.Context, raw, metadata []byte, session do
 		return ChildTranscriptObservation{}, err
 	}
 	digest := sha256.Sum256(metadata)
-	return ChildTranscriptObservation{Transcript: transcript, MetadataSHA256: hex.EncodeToString(digest[:]), SpawnDepth: *value.SpawnDepth}, nil
+	observation := ChildTranscriptObservation{Transcript: transcript, MetadataSHA256: hex.EncodeToString(digest[:]), SpawnDepth: *value.SpawnDepth}
+	// Project text only after validating the complete original transcript and
+	// sidecar. This is stored history, never synthetic streamed child output.
+	for _, line := range bytes.Split(raw[:len(raw)-1], []byte{'\n'}) {
+		var record map[string]json.RawMessage
+		if domain.Decode(line, &record) != nil {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		var kind string
+		_ = json.Unmarshal(record["type"], &kind)
+		if kind != "assistant" {
+			continue
+		}
+		var message map[string]json.RawMessage
+		if domain.Decode(record["message"], &message) != nil {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		var id string
+		var model *string
+		_ = json.Unmarshal(message["id"], &id)
+		if native := message["model"]; len(native) != 0 && json.Unmarshal(native, &model) != nil {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		var blocks []map[string]json.RawMessage
+		if domain.Decode(message["content"], &blocks) != nil || len(blocks) > 128 {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		output := &domain.SubagentOutput{NativeMessageID: id, Partial: true}
+		for _, block := range blocks {
+			var blockKind string
+			_ = json.Unmarshal(block["type"], &blockKind)
+			var text *string
+			if blockKind == "text" {
+				_ = json.Unmarshal(block["text"], &text)
+			}
+			if blockKind == "thinking" {
+				_ = json.Unmarshal(block["thinking"], &text)
+			}
+			if text != nil && domain.Text(*text, "child history text", domain.MaxMessageText, false) != nil {
+				return ChildTranscriptObservation{}, historyUncertain()
+			}
+			output.Blocks = append(output.Blocks, domain.SubagentOutputBlock{Kind: blockKind, Text: text})
+		}
+		if domain.Text(id, "child history message", 1024, true) != nil || model != nil && domain.Text(*model, "child history model", 256, true) != nil {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		observation.Output, observation.ObservedModel = output, model
+		var usage *ProviderUsage
+		if native := message["usage"]; len(native) != 0 && json.Unmarshal(native, &usage) != nil {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		observation.Usage, err = SubagentProviderUsage(usage)
+		if err != nil {
+			return ChildTranscriptObservation{}, err
+		}
+	}
+	return observation, nil
 }
