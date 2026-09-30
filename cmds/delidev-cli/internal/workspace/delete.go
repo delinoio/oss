@@ -37,6 +37,11 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		return domain.SessionDeletionPending()
 	}
 	defer lock.Close()
+	observationLock, err := m.lockWorkspaceObservations(ctx, w.SessionID)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	defer observationLock.Close()
 	storedManifest, e := m.deletionSnapshotManifest(ctx, w)
 	if e != nil {
 		return e

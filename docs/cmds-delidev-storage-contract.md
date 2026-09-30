@@ -486,7 +486,8 @@ Archive still preserves files. Successful
 restoration and recovery remain paused and require explicit later Resume.
 
 The authenticated owning Worker performs five-minute cancellable operations
-under the existing session lock after independently reconciling process ownership
+under the existing session lock plus the independent per-session observation gate
+after joining original session-bound read owners and independently reconciling process ownership
 and rejecting active execution claims. One private manifest covers the complete
 ordered repository set or General Chat directory. Bounds are 8 GiB, 8,192 entries
 and an 8 MiB private manifest, with bounded 128 KiB copying. One shared remaining

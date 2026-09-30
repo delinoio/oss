@@ -104,6 +104,11 @@ func (m *Manager) Recover(ctx context.Context, input RecoveryRequest, completedC
 		return result, ResultUncertain()
 	}
 	defer lock.Close()
+	observationLock, err := m.lockWorkspaceObservations(ctx, input.Preparation.SessionID)
+	if err != nil {
+		return result, err
+	}
+	defer observationLock.Close()
 	if err := m.noActiveExecutionClaim(request.SessionID); err != nil {
 		return result, err
 	}

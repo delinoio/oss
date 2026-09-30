@@ -205,6 +205,11 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 		return uncertain(err)
 	}
 	defer lock.Close()
+	observationLock, err := m.lockWorkspaceObservations(ctx, request.SessionID)
+	if err != nil {
+		return uncertain(err)
+	}
+	defer observationLock.Close()
 	if _, e := os.Lstat(filepath.Join(m.Root, "session-deletions", string(request.SessionID)+".json")); !errors.Is(e, os.ErrNotExist) {
 		return Manifest{}, domain.SessionDeletionPending()
 	}

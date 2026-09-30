@@ -67,7 +67,7 @@ func TestPRWorkspaceMatchReadsCurrentHeadWithoutTakingExecutionOwnership(t *test
 			if strings.Contains(readPRStartupTestFile(t, f.log), "network:yes") {
 				t.Fatal("workspace matching fetched objects")
 			}
-			if _, err := os.Stat(filepath.Join(f.manager.Root, "workspace-read-processes", string(request.ID))); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(f.manager.readProcessRoot(request.Preparation.SessionID), string(request.ID))); !os.IsNotExist(err) {
 				t.Fatal("read process ownership was not independently cleaned", err)
 			}
 			for _, change := range []func(*PRWorkspaceMatch){

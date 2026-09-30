@@ -16,7 +16,7 @@ import (
 // Paths derive exclusively from the immutable deletion plan, including snapshots
 // reserved before native work. Missing output cannot hide an interrupted copy.
 func SessionStorageCopyPaths(root string, w domain.SessionDeletionWork) []string {
-	paths := []string{filepath.Join(root, "workspace-restores", string(w.SessionID)+".json")}
+	paths := []string{filepath.Join(root, "workspace-restores", string(w.SessionID)+".json"), filepath.Join(root, "workspace-read-processes-v2", string(w.SessionID))}
 	seen := map[domain.ID]bool{}
 	for _, copy := range w.Copies {
 		if copy.Type != domain.WorkspaceStorageJob {

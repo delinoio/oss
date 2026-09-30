@@ -209,6 +209,11 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		return result, err
 	}
 	defer lock.Close()
+	observationLock, err := m.lockWorkspaceObservations(ctx, r.Preparation.SessionID)
+	if err != nil {
+		return result, err
+	}
+	defer observationLock.Close()
 	var restoreStaging string
 	defer func() {
 		if returned != nil {
