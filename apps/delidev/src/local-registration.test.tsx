@@ -128,6 +128,22 @@ it("does not offer replacement for an authorized device or malformed evidence", 
   expect(screen.queryByRole("button", { name: "Re-register this desktop" })).toBeNull();
   expect(f.recovered).not.toHaveBeenCalled();
 });
+it.each([false, true])("preserves registration after permission denial with prior revoked inspection %s", async (previouslyRevoked) => {
+  const f = fixture(); render(<f.View />);
+  if (previouslyRevoked) {
+    fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
+    await screen.findByRole("button", { name: "Re-register this desktop" });
+  }
+  native.invoke.mockRejectedValueOnce("permission-denied");
+  fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
+  const problem = await screen.findByRole("alert");
+  expect(problem.textContent).toContain("accessible only to you");
+  expect(problem.textContent).toContain("0700 for private directories and 0600 for private files");
+  expect(screen.queryByRole("button", { name: "Re-register this desktop" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Continue desktop recovery" })).toBeNull();
+  expect(native.invoke.mock.calls).toEqual(Array.from({ length: previouslyRevoked ? 2 : 1 }, () => ["inspect_local_registration"]));
+  expect(f.recovered).not.toHaveBeenCalled();
+});
 it("rejects a foreign server before replacing the active transport", async () => {
   const f = fixture(); native.invoke.mockImplementation(async (command: string) => command === "inspect_local_registration" ? f.status : { ...f.connection, server_id: newRequestId() });
   render(<f.View />);
