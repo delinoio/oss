@@ -332,7 +332,7 @@ func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
 			if err := os.Remove(path); err != nil {
 				t.Fatal(err)
 			}
-			if filepath.Base(path) == "restored.json" || filepath.Base(path) == "content" || filepath.Base(path) == "outbox" {
+			if filepath.Base(path) == "restored.json" || filepath.Base(path) == "content" || filepath.Base(path) == "outbox" || filepath.Base(path) == "scope.json" {
 				if err := os.Remove(filepath.Dir(path)); err != nil {
 					t.Fatal(err)
 				}
