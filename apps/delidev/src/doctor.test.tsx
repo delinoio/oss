@@ -137,7 +137,9 @@ for (const exit of ["Close", "Escape", "navigation"]) it(`resets all details on 
   allClosed(view.container);
   expect(document.activeElement).toBe(opener);
   fireEvent.click(opener);
-  expect(screen.getByRole("heading", { level: 1, name: "Diagnostics" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
+  await screen.findByText("Read succeeded");
   allClosed(view.container);
   expect(value.save).not.toHaveBeenCalled();
 });

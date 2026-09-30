@@ -83,6 +83,7 @@ it("starts with hosted presets on without accounts or models and retains identit
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   const turnOff = await screen.findByRole("switch", { name: "Turn off OpenAI" });
   await waitFor(() => expect((turnOff as HTMLButtonElement).disabled).toBe(false));
   expect(screen.queryByText("Account required")).toBeNull();
@@ -127,6 +128,7 @@ it("configures a real Go server through the settings forms and explicitly valida
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   const create = await screen.findByRole("button", { name: "Custom provider" });
   await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(create);

@@ -17,11 +17,12 @@ import { LocalWorkerControls, type ControlLocalWorker } from "./local-worker-con
 import { MachineSettings } from "./machine-settings";
 import { DeviceDetails, DeviceRevocation, Doctor } from "./device-settings";
 import { AccountConnection } from "./account-connection";
-import { useRetainedMutation } from "./mutation";
+import { MutationIntents, useRetainedMutation } from "./mutation";
 import { Modal, ModalLayout, Problem } from "./ui";
 import { PairingGrant, type PairingAuthority } from "./pairing-grant";
 import { AccountSettings, AccountSettingsSection, type AccountProviderSummary } from "./account-settings";
 import { ActiveModelSettings, ApiProviderSettings, providerInventoryReady } from "./provider-model-settings";
+import { SettingsLifetime } from "./settings-lifetime";
 
 export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, active, saved, cancel, focusName = false, nameFocused }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; active: boolean; saved: () => void; cancel: () => void; focusName?: boolean; nameFocused?: () => void }) {
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
@@ -116,8 +117,14 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
   return <svg className="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={settingsIcons[category]} /></svg>;
 }
 
-export function Settings({ close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }) {
-  const [selectedCategory, setSelectedCategory] = useState(SettingsCategory.Providers);
+interface SettingsProps { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
+export function Settings({ visible = true, ...props }: SettingsProps) {
+  const client = useQueryClient();
+  return visible ? <SettingsLifetime>{(opening) => <MutationIntents><SettingsWorkspace {...props} close={() => { opening.dispose(client); props.close(); }} controlLocalWorker={props.controlLocalWorker ? (action, generation) => opening.native(() => props.controlLocalWorker!(action, generation)) : undefined} /></MutationIntents>}</SettingsLifetime> : null;
+}
+
+function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: SettingsProps) {
+  const [selectedCategory, setSelectedCategory] = useState(() => entryDestination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : entryDestination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts);
   const [device, setDevice] = useState<Resource>();
   const [page, setPage] = useState("");
   const [editing, setEditing] = useState<{ kind?: EntityKind; initial?: Resource; initialData?: Document; key: string; subscriptionOnly?: boolean }>();
