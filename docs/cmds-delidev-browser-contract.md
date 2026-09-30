@@ -90,6 +90,8 @@ before checking the exact reservation at publication. A separate worker fence
 serializes the final replacement with reservation acceptance on the UI loop;
 only the worker waits for that callback, and native state is released during I/O.
 Superseded staged writes are discarded without changing durable or live tabs.
+First-tab initialization uses that same staged publication boundary, so a
+superseded initial open cannot seed the replacement's profile with its address.
 Observed-address writes use the same fence and recheck exact profile, child
 generation and reservation after staging, so replacement opens retain the last
 accepted address rather than consuming a superseded callback.

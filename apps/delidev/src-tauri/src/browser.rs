@@ -392,6 +392,8 @@ pub fn stage_private(path: &Path, value: &impl Serialize) -> Result<PrivateWrite
         f.sync_all()?;
         Ok::<_, std::io::Error>(())
     })();
+    // Windows cannot remove an open staging file when preparation fails.
+    drop(f);
     if outcome.is_err() {
         return Err(NativeFailure::StorageUnavailable);
     };

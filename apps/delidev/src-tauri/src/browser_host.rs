@@ -436,21 +436,36 @@ impl BrowserHost {
         }
         policy = policy.with_explicit(url)?;
         tabs.validate(&policy)?;
-        if tabs.tabs.is_empty() {
+        let staged = if tabs.tabs.is_empty() {
             let id = uuid::Uuid::now_v7().to_string();
             tabs.tabs.push(Tab {
                 id: id.clone(),
                 url: url.into(),
             });
             tabs.selected = id;
-            browser::write_private(&path.join("tabs.json"), &tabs)?;
-        }
-        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+            Some(browser::stage_private(&path.join("tabs.json"), &tabs)?)
+        } else {
+            None
+        };
+        let _publication = self.publication.lock().map_err(|_| NativeFailure::Busy)?;
+        let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         if self.stopping.load(Ordering::Acquire)
             || state.reservations.get(window).map(String::as_str) != Some(view_id)
         {
             return Err(NativeFailure::Stopped);
         }
+        if state
+            .profiles
+            .get(&record.id)
+            .is_some_and(|profile| profile.removing)
+        {
+            return Err(NativeFailure::Stopped);
+        }
+        drop(state);
+        if let Some(staged) = staged {
+            staged.publish()?;
+        }
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         if let Some(profile) = state.profiles.get_mut(&record.id) {
             if profile.removing {
                 return Err(NativeFailure::Stopped);
@@ -1839,6 +1854,44 @@ mod tests {
                     .ends_with(".pending")
             }));
         }
+    }
+
+    #[test]
+    fn superseded_initial_open_discards_its_staged_first_tab() {
+        let (_temp, host, record) = storage_fixture();
+        let original = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &original).unwrap();
+        let path = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
+        let publication = host.publication.lock().unwrap();
+        let copy = Arc::clone(&host);
+        let prepared = record.clone();
+        let worker = thread::spawn(move || {
+            copy.prepare_open(
+                "fixture",
+                &original,
+                None,
+                prepared,
+                "https://fixture.test/stale",
+            )
+        });
+        wait_for_staged_tabs(&path);
+        assert!(host.state.try_lock().is_ok());
+        let replacement = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &replacement).unwrap();
+        drop(publication);
+        assert_eq!(worker.join().unwrap(), Err(NativeFailure::Stopped));
+        assert!(!path.join("tabs.json").exists());
+        assert!(host.state.lock().unwrap().profiles.is_empty());
+        host.prepare_open(
+            "fixture",
+            &replacement,
+            None,
+            record.clone(),
+            "https://fixture.test/current",
+        )
+        .unwrap();
+        let restored: Tabs = read_json(&path.join("tabs.json")).unwrap();
+        assert_eq!(restored.tabs[0].url, "https://fixture.test/current");
     }
 
     #[test]

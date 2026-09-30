@@ -32,6 +32,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Stage durable tab-control writes before exact reservation validation. Fence final publication against UI reservation acceptance from a blocking worker; the UI callback must never acquire that fence or wait for storage, and stale preparations must leave the prior tabs intact.
 
+- First-tab initialization must use the same staged publication fence and reservation check; a superseded initial open cannot publish its starting address into a replacement profile.
+
 - Observed-address writes must stage first and recheck the profile, child generation and current reservation under the same worker publication fence before replacing durable tabs.
 
 - Retain asynchronous raw-child creation failure only for its exact profile, generation and reservation. Native state polling and ordinary controls must surface the typed failure until explicit presentation retry; stale creation failures must not poison replacements or hide tracked removal.
