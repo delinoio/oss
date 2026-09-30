@@ -72,8 +72,11 @@ bounded failfast rerun completed with a CLI failure before remaining packages
 ran. Commands, observed results and coverage limits are recorded in
 [the follow-up validation record](full-race-validation.md). No complete local
 Go race pass is claimed.
-The full local frontend pipeline has not passed. Concurrent repository test load
-was observed; it is not proof that every failure is environmental or pre-existing.
+At initial implementation validation, the full local frontend pipeline had not
+passed. [Later review-repair validation](review-repair-validation.md) records a
+complete frontend pass while preserving these earlier failures. Concurrent
+repository test load was observed; it is not proof that every failure was
+environmental or pre-existing.
 No hosted account, installed Grok inference, native desktop visual inspection,
 other-platform execution or release/distribution acceptance was performed. These
 fixture/build results do not establish those acceptance boundaries.

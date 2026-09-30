@@ -58,5 +58,7 @@ native/account/platform/release acceptance are retained in
 [the implementation evidence](grok-accounting.md).
 
 These successful focused checks do not erase the broad-suite failures or
-establish a complete local Go race pass. The complete local frontend pipeline
-also remains failed as documented in the implementation evidence.
+establish a complete local Go race pass. The initial complete frontend run also
+failed as documented in the implementation evidence.
+[Later review-repair validation](review-repair-validation.md) records a complete
+frontend pass; these earlier broad Go outcomes and coverage limits remain.
