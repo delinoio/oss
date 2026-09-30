@@ -23,3 +23,26 @@ The contract and scoped domain instructions now state this boundary explicitly.
   Log: `/private/tmp/issue-1105-membership-after.log`.
 
 These are controlled fixture results, not live queued-account acceptance.
+
+## Replacement queue identity with an unchanged native result
+
+Review thread: `PRRT_kwDORRAKg86nbIcF`.
+
+CI storage identity now includes the evaluated source and original queue/entry
+nodes alongside the check node and unchanged native-result content version. A
+replacement queue or entry creates its own current unhandled problem and proof.
+The original remains historical with its dismissal and proof unchanged. Legacy
+plain-node indexes stay readable and deduplicate only within their original
+source/queue identity; existing non-queue proofs remain usable. No schema or wire
+migration is introduced.
+
+- Before the fix, `go test -race ./cmds/delidev-cli/internal/store -run '^TestQueueCIFailureSeparatesReplacementIdentityWithReusedNativeResult$' -count=1`
+  failed all four replacement entry/queue and legacy-index cases: history retained
+  only the old problem. Log: `/private/tmp/issue-1105-queue-identity-before.log`.
+- After the fix, `go test -race ./cmds/delidev-cli/internal/store -run 'TestQueueCI|TestPRCIRetains|TestPRConflictHistory|TestPRProblemV18Migration' -count=1`
+  passed in 9.338s. Cases cover repeated identical entries, removal, replacement
+  entry/queue with the same commit/check result, original proof/dismissal,
+  restart, legacy queue and non-queue indexes, and unchanged migration fixtures.
+  Log: `/private/tmp/issue-1105-queue-identity-after.log`.
+- `go vet ./cmds/delidev-cli/...`, `pnpm proto:lint` and `pnpm proto:fresh` passed.
+  Protobuf generation reproduced the committed sources without drift.

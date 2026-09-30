@@ -68,6 +68,24 @@ func (t *Tx) findPRProblemVersion(set domain.ID, kind domain.PRProblemKind, node
 	return row, value, true, err
 }
 
+func (t *Tx) findPRCIProblemVersion(set domain.ID, evidence domain.PRCIProblemEvidence) (Record, domain.PRProblem, bool, error) {
+	node, version := prCIProblemIndexNode(evidence), evidence.Context.Version()
+	row, value, found, err := t.findPRProblemVersion(set, domain.PRCIProblem, node, version)
+	if err != nil || found {
+		return row, value, found, err
+	}
+	// Preserve old records and decisions without rewriting their original proof.
+	// A plain-node index can be reused only for the same original source/queue.
+	row, value, found, err = t.findPRProblemVersion(set, domain.PRCIProblem, evidence.Context.NodeID, version)
+	if err != nil || !found {
+		return row, value, found, err
+	}
+	if prCIProblemIndexNode(*value.CI) != node {
+		return Record{}, domain.PRProblem{}, false, nil
+	}
+	return row, value, true, nil
+}
+
 func (t *Tx) reconcilePRProblemMembership(previous []domain.ID, seen map[domain.ID]bool) error {
 	for _, id := range previous {
 		if seen[id] {
@@ -116,7 +134,11 @@ func (t *Tx) ObservePRCI(expected uint64, observed domain.RepositoryQueryResult)
 	created := 0
 	for _, entry := range entries {
 		version := entry.Version()
-		record, value, found, err := t.findPRProblemVersion(row.ID, domain.PRCIProblem, entry.NodeID, version)
+		evidence := domain.PRCIProblemEvidence{Context: entry, Source: proof.CI.Result.Source, RulesDigest: proof.CI.Rules.Digest}
+		if evidence.Source == domain.CIMergeQueueCommit {
+			evidence.QueueNodeID, evidence.QueueEntryNodeID = proof.CI.MergeQueue.NodeID, proof.CI.MergeQueue.Entry.NodeID
+		}
+		record, value, found, err := t.findPRCIProblemVersion(row.ID, evidence)
 		if err != nil {
 			return Record{}, 0, err
 		}
@@ -132,10 +154,8 @@ func (t *Tx) ObservePRCI(expected uint64, observed domain.RepositoryQueryResult)
 					return Record{}, 0, err
 				}
 			}
-			value = domain.PRProblem{Version: 1, Type: domain.PRProblemEvidenceRecord, SetID: row.ID, Kind: domain.PRCIProblem, Target: set.Target, Observation: proof.Observation, ContentVersion: version, CI: &domain.PRCIProblemEvidence{ObservationID: proofRow.ID, Context: entry, Source: proof.CI.Result.Source, RulesDigest: proof.CI.Rules.Digest}, Current: true, State: domain.PRProblemUnhandled}
-			if proof.CI.Result.Source == domain.CIMergeQueueCommit {
-				value.CI.QueueNodeID, value.CI.QueueEntryNodeID = proof.CI.MergeQueue.NodeID, proof.CI.MergeQueue.Entry.NodeID
-			}
+			evidence.ObservationID = proofRow.ID
+			value = domain.PRProblem{Version: 1, Type: domain.PRProblemEvidenceRecord, SetID: row.ID, Kind: domain.PRCIProblem, Target: set.Target, Observation: proof.Observation, ContentVersion: version, CI: &evidence, Current: true, State: domain.PRProblemUnhandled}
 			record, err = t.putPRProblem(domain.NewID(), 0, value)
 			if err != nil {
 				return Record{}, 0, err

@@ -56,7 +56,15 @@ func TestPRCIRetainsOriginalProofAndDismissalAcrossCurrentEvaluationChanges(t *t
 	if original.CI == nil {
 		t.Fatal("missing original proof link")
 	}
-	_, err := s.Mutate(notificationOwner(), domain.NewID(), "fixture.dismiss-ci", nil, func(tx *Tx) (any, error) {
+	// Exercise the old plain-node index while preserving original proof bytes.
+	_, err := s.Mutate(notificationOwner(), domain.NewID(), "fixture.legacy-ci-index", nil, func(tx *Tx) (any, error) {
+		_, err := tx.tx.ExecContext(tx.ctx, "UPDATE pr_problem_records SET native_node=? WHERE id=?", original.NativeNode(), records[0].ID)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Mutate(notificationOwner(), domain.NewID(), "fixture.dismiss-ci", nil, func(tx *Tx) (any, error) {
 		return tx.DismissPRProblem(records[0].ID, records[0].Revision, original.ContentVersion)
 	})
 	if err != nil {
@@ -104,8 +112,7 @@ func TestPRCIRetainsOriginalProofAndDismissalAcrossCurrentEvaluationChanges(t *t
 	}
 }
 
-func TestQueueCIFailureRetainsOriginalEntryAndLosesCurrentAuthorityOnRemoval(t *testing.T) {
-	s, root := openTest(t)
+func queueCIStoreObservationFixture() domain.RepositoryQueryResult {
 	o := ciStoreObservationFixture()
 	ci := o.CI
 	entry := domain.CIMergeQueueEntry{NodeID: "ENTRY_E", PullRequestNodeID: o.Items[0].NodeID, PullRequestNumber: o.Items[0].Number, Position: "1", BaseSHA: o.Items[0].BaseSHA, HeadSHA: strings.Repeat("f", 40), State: "UNMERGEABLE"}
@@ -114,6 +121,13 @@ func TestQueueCIFailureRetainsOriginalEntryAndLosesCurrentAuthorityOnRemoval(t *
 	ci.InMergeQueue = true
 	ci.MergeQueue = &domain.CIMergeQueue{NodeID: "QUEUE_Q", RepositoryNodeID: o.Repository.NodeID, Strategy: domain.CIQueueAllGreen, Entry: entry, Entries: []domain.CIMergeQueueEntry{entry}, TotalCount: "1", Rollup: &domain.CIRollup{CommitSHA: entry.HeadSHA, TotalCount: "1", Contexts: []domain.CIContext{run}}}
 	ci.Result = ci.Evaluate(o.Items[0])
+	return o
+}
+
+func TestQueueCIFailureRetainsOriginalEntryAndLosesCurrentAuthorityOnRemoval(t *testing.T) {
+	s, root := openTest(t)
+	o := queueCIStoreObservationFixture()
+	ci := o.CI
 	set := collectCIStoreFixture(t, s, 0, o, false)
 	rows := readProblemFixture(t, s, set.ID)
 	if len(rows) != 1 {
@@ -146,6 +160,96 @@ func TestQueueCIFailureRetainsOriginalEntryAndLosesCurrentAuthorityOnRemoval(t *
 		return err
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestQueueCIFailureSeparatesReplacementIdentityWithReusedNativeResult(t *testing.T) {
+	for _, mode := range []string{"entry", "queue", "legacy-entry", "legacy-queue"} {
+		t.Run(mode, func(t *testing.T) {
+			s, root := openTest(t)
+			defer func() { s.Close() }()
+			o := queueCIStoreObservationFixture()
+			set := collectCIStoreFixture(t, s, 0, o, false)
+			rows := readProblemFixture(t, s, set.ID)
+			if len(rows) != 1 {
+				t.Fatal("missing original queue failure")
+			}
+			originalRow := rows[0]
+			original, err := Decode[domain.PRProblem](originalRow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.HasPrefix(mode, "legacy-") {
+				_, err = s.Mutate(notificationOwner(), domain.NewID(), "fixture.legacy-queue-index", nil, func(tx *Tx) (any, error) {
+					_, err := tx.tx.ExecContext(tx.ctx, "UPDATE pr_problem_records SET native_node=? WHERE id=?", original.NativeNode(), originalRow.ID)
+					return nil, err
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = s.Mutate(notificationOwner(), domain.NewID(), "fixture.dismiss-queue", nil, func(tx *Tx) (any, error) {
+				return tx.DismissPRProblem(originalRow.ID, originalRow.Revision, original.ContentVersion)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			set, err = s.Get(context.Background(), domain.ProblemKind, set.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			set = collectCIStoreFixture(t, s, set.Revision, o, false)
+			rows = readProblemFixture(t, s, set.ID)
+			if len(rows) != 1 || rows[0].ID != originalRow.ID {
+				t.Fatal("unchanged entry duplicated original history")
+			}
+			removed := ciStoreObservationFixture()
+			removed.CI.Head.Contexts, removed.CI.Head.TotalCount = []domain.CIContext{}, "0"
+			removed.CI.Result = removed.CI.Evaluate(removed.Items[0])
+			set = collectCIStoreFixture(t, s, set.Revision, removed, false)
+			if strings.HasSuffix(mode, "entry") {
+				o.CI.MergeQueue.Entry.NodeID = "ENTRY_REPLACEMENT"
+				o.CI.MergeQueue.Entries[0].NodeID = "ENTRY_REPLACEMENT"
+			} else {
+				o.CI.MergeQueue.NodeID = "QUEUE_REPLACEMENT"
+			}
+			o.CI.Result = o.CI.Evaluate(o.Items[0])
+			set = collectCIStoreFixture(t, s, set.Revision, o, false)
+			rows = readProblemFixture(t, s, set.ID)
+			if len(rows) != 2 {
+				t.Fatal("replacement queue identity reused original failure", len(rows))
+			}
+			s.Close()
+			s, err = Open(notificationOwner(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = s.Read(notificationOwner(), func(tx *Tx) error {
+				for _, row := range rows {
+					_, value, err := tx.GetPRProblem(row.ID)
+					if err != nil {
+						return err
+					}
+					if value.ContentVersion != original.ContentVersion {
+						t.Fatal("replacement altered the original native result version")
+					}
+					if row.ID == originalRow.ID {
+						if value.Current || value.State != domain.PRProblemDismissed || value.CI.ObservationID != original.CI.ObservationID || value.CI.QueueNodeID != original.CI.QueueNodeID || value.CI.QueueEntryNodeID != original.CI.QueueEntryNodeID {
+							t.Fatal("replacement changed original proof or handling", value)
+						}
+					} else if !value.Current || value.State != domain.PRProblemUnhandled || value.CI.ObservationID == original.CI.ObservationID || value.CI.QueueNodeID != o.CI.MergeQueue.NodeID || value.CI.QueueEntryNodeID != o.CI.MergeQueue.Entry.NodeID {
+						t.Fatal("replacement lacks its own current proof", value)
+					}
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			collectCIStoreFixture(t, s, set.Revision, o, false)
+			if len(readProblemFixture(t, s, set.ID)) != 2 {
+				t.Fatal("unchanged replacement duplicated history")
+			}
+		})
 	}
 }
 
