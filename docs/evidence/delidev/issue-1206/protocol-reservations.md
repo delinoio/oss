@@ -20,6 +20,11 @@ native observation/explicit-registration boundary, and leaves active schemas,
 capability advertisements and the executable migration registry unchanged. It does
 not complete or close #1206. No migration version is allocated by this change.
 
+The reservation ledger binds both entries to the original prerequisite
+[PR #1212](https://github.com/delinoio/oss/pull/1212) and issue #1206. PR #1212 is
+non-draft and targets main from `kdy1/issue-1206-native-model-reservations`; it
+references the still-open issue without a closing keyword.
+
 The official pinned `model.rs` was retrieved through `gh api` at
 `78c290807ce710180111df227df3b7a4fe845452`; its separate picker `id`, executable
 `model`, pagination and advisory metadata agree with the issue's boundary.

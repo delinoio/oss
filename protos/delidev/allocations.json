@@ -2765,14 +2765,16 @@
       "kind": "enum",
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
-      "number": 15
+      "number": 15,
+      "pr": 1212
     },
     {
       "issue": 1206,
       "kind": "enum",
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
-      "number": 5
+      "number": 5,
+      "pr": 1212
     }
   ]
 }
