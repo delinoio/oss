@@ -31,7 +31,12 @@ unsettled callback and unproved child/background histories remain excluded.
   one claim on Resume receipt replay, unchanged failed predecessor ownership,
   successful/failed recovery rejection at acceptance and result commit, and
   paused comparison-only recovery preserving the original failed problem.
-- Passed `git diff --check`.
+- Passed
+  `go test -race ./cmds/delidev-cli/internal/harness/claude -run TestFailedCheckpointRejectsChangedSettingsWithoutNativeReplay -count=1`.
+  A separately retained failed checkpoint rejects changed model, effort,
+  permission and instruction evidence in both restoration and comparison-only
+  inspection, with zero original native input/reply/interrupt operations.
+- Passed `git diff --check` and the root `go fmt ./...` commit hook.
 - Full `go test -race ./cmds/delidev-cli/... -timeout=30m` is in progress with
   `GOFLAGS=-p=1 GOMAXPROCS=2` to limit this run's package concurrency on a machine
   concurrently running other suites. Its result is not yet established.
