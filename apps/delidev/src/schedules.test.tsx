@@ -89,7 +89,7 @@ it("retains the original authenticated Local machine without inventing another o
   const value = fixture();
   value.schedule.documentJson = encode({ ...document(value.schedule), definition: { ...value.definition, workspace: "local" }, local_origin: { machine_id: value.machine.id, device_id: newRequestId() } });
   render(value.view(<ScheduleEditor initial={value.schedule} active saved={() => {}} cancel={() => {}} />));
-  expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const request = value.save.mock.calls[0][0] as { definitionJson: Uint8Array; localWorkerToken: string };
@@ -130,7 +130,7 @@ it("blocks stale executable path edits while retaining the staged path", async (
 async function fillCreation(value: ReturnType<typeof fixture>) {
   fireEvent.change(screen.getByLabelText("Schedule name"), { target: { value: "Morning review" } });
   fireEvent.change(screen.getByLabelText("Scheduled prompt"), { target: { value: "Review project changes" } });
-  for (const [label, resource] of [["Project", value.project], ["Agent Worker", value.agent], ["Execution Worker", value.machine]] as const) {
+  for (const [label, resource] of [["Project", value.project], ["Agent Worker", value.agent], ["Runner Device", value.machine]] as const) {
     const select = screen.getByLabelText(label);
     await within(select).findByRole("option", { name: JSON.parse(new TextDecoder().decode(resource.documentJson)).name });
     fireEvent.change(select, { target: { value: resource.id } });
@@ -234,7 +234,7 @@ it("locks creation during fresh Local proof and retains identical bytes/token on
   expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true); expect(screen.getByLabelText("Scheduled prompt").closest("fieldset")!.disabled).toBe(true);
   resolveProof({ machineId: value.machine.id, token: "a".repeat(42) + "A" });
   await waitFor(() => expect((screen.getByRole("radio", { name: "Local computer" }) as HTMLInputElement).checked).toBe(true));
-  expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true); expect((screen.getByLabelText("Agent Worker") as HTMLSelectElement).disabled).toBe(false);
+  expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true); expect((screen.getByLabelText("Agent Worker") as HTMLSelectElement).disabled).toBe(false);
   expect(screen.queryByRole("button", { name: /Starting reference overrides/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   await screen.findByRole("button", { name: "Retry the same schedule" });
@@ -253,7 +253,7 @@ it.each(["changed", "malformed", "rejected"])("refuses %s Local submission proof
   render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />)); await fillCreation(value);
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" })); await waitFor(() => expect((screen.getByRole("radio", { name: "Local computer" }) as HTMLInputElement).checked).toBe(true));
   fireEvent.click(screen.getByRole("button", { name: "Create schedule" })); await screen.findByText(/paired Worker could not be verified/);
-  expect(value.save).not.toHaveBeenCalled(); expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).value).toBe(value.machine.id);
+  expect(value.save).not.toHaveBeenCalled(); expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).value).toBe(value.machine.id);
 });
 
 it("retains creation UI state across inactivity without focus theft and Cancel returns to guidance", async () => {

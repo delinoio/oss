@@ -40,7 +40,10 @@ test('current wire numbers match immutable assignments and future reservations',
       assert.equal(new Set(item.sharedIssues).size, item.sharedIssues.length, 'shared issue consumers are unique');
       for (const issue of item.sharedIssues) assert.ok(Number.isSafeInteger(issue) && issue > 0 && issue !== item.issue, 'shared consumers identify other issues');
     }
-    const members = expected[item.declaration].members;
+    const declaration = expected[item.declaration];
+    assert.ok(declaration, `${item.declaration} must have a baseline declaration`);
+    assert.equal(item.kind, declaration.kind, `${item.declaration} reservation kind must match its declaration`);
+    const members = declaration.members;
     for (const [name, number] of Object.entries(members)) if (number === item.number) assert.equal(name, item.member, 'a number cannot acquire a second meaning');
     if (Object.hasOwn(members, item.member)) assert.equal(members[item.member], item.number);
     members[item.member] = item.number;

@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode } from "./documents";
@@ -22,14 +22,15 @@ function fixture() {
   const project = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Project", repositories: [newRequestId()], agents: { configured: false, ids: [] } }) });
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Later-page agent" }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Worker" }) });
+  const listResources = vi.fn(async (request: { filter?: { kind: EntityKind; pageToken: string } }) => request.filter?.kind === EntityKind.AGENT && !request.filter.pageToken ? { resources: [], nextPageToken: "later" } : { resources: [project, agent, machine].filter((row) => row.kind === request.filter?.kind), nextPageToken: "" });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1, capabilities: [SystemCapability.AUTOMATIC_TITLES_V1] }) });
     router.service(SessionService, { createSession, recoverSessionWorkspace: workspace, recoverSessionExecution: recover, prepareSessionWorkspace: prepare, renameSession: rename, controlSession: control });
-    router.service(ResourceService, { getResource: (request) => ({ resource: request.id === project.id ? project : undefined }), listResources: (request) => request.filter?.kind === EntityKind.AGENT && !request.filter.pageToken ? { resources: [], nextPageToken: "later" } : { resources: [project, agent, machine].filter((row) => row.kind === request.filter?.kind) } });
+    router.service(ResourceService, { getResource: (request) => ({ resource: request.id === project.id ? project : undefined }), listResources });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (children: React.ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider>;
-  return { view, session, execution, workspace, recover, prepare, rename, control, createSession, project, agent, machine };
+  return { view, session, execution, workspace, recover, prepare, rename, control, createSession, project, agent, machine, listResources, client };
 }
 
 it("requires explicit incomplete preparation cleanup and retains its original retry after a peer change", async () => {
@@ -104,7 +105,7 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   const choices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
   fireEvent.click(await choices.findByRole("button", { name: "More choices" }));
   fireEvent.change(screen.getByLabelText("Agent Worker"), { target: { value: (await screen.findByRole("option", { name: "Later-page agent" }) as HTMLOptionElement).value } });
-  fireEvent.change(screen.getByLabelText("Execution Worker"), { target: { value: value.machine.id } });
+  fireEvent.change(screen.getByLabelText("Runs on"), { target: { value: value.machine.id } });
   const repository = (document(value.project).repositories as string[])[0];
   fireEvent.change(screen.getByLabelText("Add repository override"), { target: { value: repository } });
   fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
@@ -134,8 +135,8 @@ it("reads fresh matching Local Worker proof for creation and retains that exact 
   fireEvent.change(screen.getByLabelText("Project"), { target: { value: value.project.id } });
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).value).toBe(value.machine.id));
-  expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true);
+  await waitFor(() => expect((screen.getByLabelText("Runs on") as HTMLSelectElement).value).toBe(value.machine.id));
+  expect((screen.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true);
   const choices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
   fireEvent.click(await choices.findByRole("button", { name: "More choices" }));
   await screen.findByRole("option", { name: "Later-page agent" });
@@ -195,4 +196,56 @@ it("locks Project selection while Local proof or session creation is pending or 
   expect(project.disabled).toBe(true);
   const retained = value.createSession.mock.calls[0][0] as { documentJson: Uint8Array };
   expect(JSON.parse(new TextDecoder().decode(retained.documentJson))).toMatchObject({ project_id: value.project.id, workspace: "local" });
+});
+
+it("names the New session selector Runs on while loading Runner Device choices", async () => {
+  const value = fixture();
+  const original = value.listResources.getMockImplementation()!;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  value.listResources.mockImplementation(async (request) => {
+    if (request.filter?.kind === EntityKind.MACHINE) await gate;
+    return original(request);
+  });
+  render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  const selector = screen.getByRole("combobox", { name: "Runs on" });
+  expect(within(selector).getByRole("option", { name: "Select runner device" })).toBeTruthy();
+  expect(await screen.findByText("Loading Runner Device choices…")).toBeTruthy();
+  release();
+  expect(await within(selector).findByRole("option", { name: "Worker" })).toBeTruthy();
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
+it("explains an empty Runner Device inventory without replacing the Runs on selector", async () => {
+  const value = fixture();
+  const original = value.listResources.getMockImplementation()!;
+  value.listResources.mockImplementation(async (request) => request.filter?.kind === EntityKind.MACHINE ? { resources: [], nextPageToken: "" } : original(request));
+  render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  expect(await screen.findByText("No selectable Runner Device choices are on this page.")).toBeTruthy();
+  const selector = screen.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement;
+  expect(selector.value).toBe("");
+  expect(within(selector).getByRole("option", { name: "Select runner device" })).toBeTruthy();
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
+it("retains an unavailable Runner Device's original identity through paginated inventory", async () => {
+  const value = fixture();
+  render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  const selector = screen.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement;
+  await within(selector).findByRole("option", { name: "Worker" });
+  fireEvent.change(selector, { target: { value: value.machine.id } });
+  const original = value.listResources.getMockImplementation()!;
+  const other = create(ResourceSchema, { ...value.machine, id: newRequestId(), documentJson: encode({ name: "Other device" }) });
+  value.listResources.mockImplementation(async (request) => request.filter?.kind === EntityKind.MACHINE ? { resources: [other], nextPageToken: request.filter.pageToken ? "" : "next-devices" } : original(request));
+  await act(() => value.client.invalidateQueries());
+  expect(await screen.findByText("The selected Runner Device is outside this page or unavailable. Its identity is retained; no other choice was selected.")).toBeTruthy();
+  expect(selector.value).toBe(value.machine.id);
+  expect(within(selector).getByRole("option", { name: `Selected Runner Device · ${value.machine.id}` }).getAttribute("disabled")).not.toBeNull();
+  const choices = within(selector.closest(".resource-choice")!);
+  const more = choices.getByRole("button", { name: "More choices" }) as HTMLButtonElement;
+  await waitFor(() => expect(more.disabled).toBe(false));
+  fireEvent.click(more);
+  await waitFor(() => expect(value.listResources.mock.calls.some(([request]) => request.filter?.kind === EntityKind.MACHINE && request.filter.pageToken === "next-devices")).toBe(true));
+  expect(selector.value).toBe(value.machine.id);
+  expect(value.createSession).not.toHaveBeenCalled();
 });

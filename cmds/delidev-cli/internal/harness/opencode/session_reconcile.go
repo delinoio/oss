@@ -71,7 +71,7 @@ func (s *sessionAPI) reconcileCreation(ctx context.Context) (receipt SessionRece
 		return receipt, sessionUncertain()
 	}
 	identity, err := validateSession(sessions[0], s.cwd, s.creation, true)
-	if err != nil || !unusedCreation(sessions[0]) {
+	if err != nil || !s.validRootProject(identity) || !unusedCreation(sessions[0]) {
 		return receipt, contradiction()
 	}
 	s.creationCandidate = identity.id

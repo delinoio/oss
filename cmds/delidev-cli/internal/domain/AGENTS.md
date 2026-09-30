@@ -30,6 +30,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Required CI contexts retain original suite/lifecycle/output and separately labeled workflow aggregate metadata. Independently validate complete bounded check/status proof and repeated observations. Per-result versions exclude required flags, App display names and workflow-wide attempt/update changes: partial reruns cannot make unchanged old CheckRuns eligible again. Keep original output inert and out of logs; follow the integration contract.
 
+- Pinned required workflows follow `docs/cmds-delidev-integrations-contract.md`: require explicit source SHA, original numeric repository/path identity, the current ordered-parent test merge, complete suite/current-attempt job inventories and native PR requiredness. Preserve Unknown for missing, competing, stale or unsupported evidence and retain historical status-check proof/version compatibility. Observation cannot authorize execution.
+
 - Permanent session deletion validates UUID uniqueness against its own 4,096-copy capacity; do not reuse the 1,000-link helper for that ownership plan.
 - Session terminal records and closed action/state enums follow `docs/cmds-delidev-terminals-contract.md`; keep native cleanup independent of observed exit and retain exact original operation identities.
 

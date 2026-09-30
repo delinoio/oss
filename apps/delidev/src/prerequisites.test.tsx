@@ -58,7 +58,7 @@ it("does not retain successful checks after a failed refresh or count disabled/d
   f.list.mockResolvedValueOnce({ resources: [create(ResourceSchema, { ...f.account, documentJson: encode({ provider_id: newRequestId(), enabled: false, health: "ready", connection: { id: newRequestId() } }) })], nextPageToken: "" });
   fireEvent.click(screen.getByRole("button", { name: "Refresh prerequisites" }));
   await screen.findByText("Server diagnostics: Check failed");
-  expect(screen.queryByText("Execution Worker and harness: Observed")).toBeNull();
+  expect(screen.queryByText("Runner Device and harness: Observed")).toBeNull();
   expect(screen.queryByText("private native failure")).toBeNull();
   await screen.findByText("AI account: Needs setup");
 });
@@ -74,7 +74,7 @@ it("keeps partial and malformed inventories unknown and rejects a foreign diagno
   expect(screen.getByText("AI account: Unknown")).toBeTruthy();
   expect(screen.getByText("Agent Worker configuration: Unknown")).toBeTruthy();
   expect(screen.getByText("Server diagnostics: Unknown")).toBeTruthy();
-  expect(screen.queryByText("Execution Worker and harness: Observed")).toBeNull();
+  expect(screen.queryByText("Runner Device and harness: Observed")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "View prerequisites in Settings" }));
   expect(f.settings).toHaveBeenCalledTimes(1);
   expect(f.mutation).not.toHaveBeenCalled();
@@ -85,13 +85,13 @@ it("does not mistake a verified but offline or disabled Worker for a connected h
   f.report.machines[0]!.active_stream = false;
   render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
-  await screen.findByText("Execution Worker and harness: Needs setup");
+  await screen.findByText("Runner Device and harness: Needs setup");
   expect(screen.getByText(/0 enabled Worker\(s\) had an active connection; 0 retained harness/)).toBeTruthy();
   f.report.machines[0]!.active_stream = true;
   f.report.machines[0]!.disabled = true;
   fireEvent.click(screen.getByRole("button", { name: "Refresh prerequisites" }));
   await waitFor(() => expect(f.doctor).toHaveBeenCalledTimes(2));
-  await screen.findByText("Execution Worker and harness: Needs setup");
+  await screen.findByText("Runner Device and harness: Needs setup");
 });
 
 it.each([
@@ -109,7 +109,7 @@ it.each([
   fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
   await screen.findByText(/not a successful execution test/);
   expect(screen.getByText("Server diagnostics: Unknown")).toBeTruthy();
-  expect(screen.getByText("Execution Worker and harness: Unknown")).toBeTruthy();
+  expect(screen.getByText("Runner Device and harness: Unknown")).toBeTruthy();
   expect(screen.queryByText(/retained harness handshake/)).toBeNull();
 });
 
@@ -124,7 +124,7 @@ it.each([
   f.doctor.mockImplementation(async () => ({ reportJson: encode({ ...f.report, machines: [{ ...f.report.machines[0], installations: [installation, ...f.report.machines[0]!.installations.slice(1)] }] }) }));
   render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
-  await screen.findByText("Execution Worker and harness: Needs setup");
+  await screen.findByText("Runner Device and harness: Needs setup");
   expect(screen.getByText("Server diagnostics: Observed")).toBeTruthy();
 });
 
@@ -146,7 +146,7 @@ it.each([
   render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
   await screen.findByText(/not a successful execution test/);
   expect(screen.getByText("Server diagnostics: Unknown")).toBeTruthy();
-  expect(screen.getByText("Execution Worker and harness: Unknown")).toBeTruthy();
+  expect(screen.getByText("Runner Device and harness: Unknown")).toBeTruthy();
 });
 it.each([
   { name: undefined }, { name: "" }, { os: undefined }, { os: "future" },
@@ -157,7 +157,7 @@ it.each([
   const f = fixture(); Object.assign(f.report.machines[0]!, changes);
   render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
   await screen.findByText(/not a successful execution test/);
-  expect(screen.getByText("Execution Worker and harness: Unknown")).toBeTruthy();
+  expect(screen.getByText("Runner Device and harness: Unknown")).toBeTruthy();
 });
 it.each([
   { result: { state: "future" } }, { result: { state: "observed", code: "unavailable" } },
@@ -169,12 +169,12 @@ it.each([
   const f = fixture(); Object.assign(f.report.storage, changes);
   render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
   await screen.findByText(/not a successful execution test/);
-  expect(screen.getByText("Execution Worker and harness: Unknown")).toBeTruthy();
+  expect(screen.getByText("Runner Device and harness: Unknown")).toBeTruthy();
 });
 it("retains valid failed storage separately from a complete Worker observation", async () => {
   const f = fixture();
   f.doctor.mockResolvedValue({ reportJson: encode({ ...f.report, database: "failed", storage: { result: { state: "failed", code: "permission_denied" }, resources: [] } }) });
   render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
-  await screen.findByText("Execution Worker and harness: Observed");
+  await screen.findByText("Runner Device and harness: Observed");
   expect(screen.getByText("Server diagnostics: Needs setup")).toBeTruthy();
 });
