@@ -195,19 +195,30 @@ test("SIGTERM joins the active asset child and prevents further preparation", { 
     const fs = require('node:fs');
     process.on('SIGTERM', () => { fs.writeFileSync(${JSON.stringify(receipt)}, 'terminated'); process.exit(0); });
     setInterval(() => {}, 1000);
-    process.stdout.write('ready\\n');
+    process.stdout.write('child-ready\\n');
   `;
   const wrapper = spawn(process.execPath, ["--input-type=module", "-e", `
     import { prepareAssets } from ${JSON.stringify(new URL("./prepare-assets.mjs", import.meta.url).href)};
     import { spawnDevServer, exitLikeChild } from ${JSON.stringify(new URL("../../../scripts/spawn-dev-server.mjs", import.meta.url).href)};
     exitLikeChild(await prepareAssets({
       root: ${JSON.stringify(f.root)}, log() {},
-      run: (_command, _args, _options, lifecycle) => spawnDevServer(process.execPath, ['-e', ${JSON.stringify(childCode)}], { stdio: 'inherit', shell: false }, lifecycle),
+      run: (_command, _args, _options, lifecycle) => {
+        const running = spawnDevServer(process.execPath, ['-e', ${JSON.stringify(childCode)}], { stdio: 'inherit', shell: false }, lifecycle);
+        process.stdout.write('wrapper-ready\\n');
+        return running;
+      },
     }));
   `], { stdio: ["ignore", "pipe", "pipe"] });
   t.after(() => { if (wrapper.exitCode === null && wrapper.signalCode === null) wrapper.kill("SIGTERM"); });
   const exited = once(wrapper, "exit");
-  await once(wrapper.stdout, "data");
+  // Child stdout can precede signal-handler installation in the wrapper under
+  // host load. Synchronize both processes before testing signal forwarding.
+  let output = "";
+  for await (const chunk of wrapper.stdout.iterator({ destroyOnReturn: false })) {
+    output += chunk;
+    if (output.includes("child-ready\n") && output.includes("wrapper-ready\n")) break;
+  }
+  assert.ok(output.includes("child-ready\n") && output.includes("wrapper-ready\n"));
   wrapper.kill("SIGTERM");
   assert.deepEqual(await exited, [null, "SIGTERM"]);
   assert.equal(readFileSync(receipt, "utf8"), "terminated");
