@@ -3488,3 +3488,99 @@ earlier successful CI applies only to its previously checked head.
 - Focused `go test ./cmds/delidev-cli/internal/store ./cmds/delidev-cli/internal/server -run 'TestBackupRestore(RequiresIndependentForwardCleanup|QuarantinesHistoricalForwards)$|TestStatusPreservesForwardingAndRestoreCapabilities$' -count=1` passed (store 1.198s, server 0.782s). `go vet ./cmds/delidev-cli/...` and schema lint/breaking checks passed. Node 24 package-local desktop `pnpm test` passed all 945 tests in 74 files, typecheck, bundle/launcher checks, native Swift widget fixtures and production build. Generated client Node 24 lint/typecheck, 41 tests and build passed. All 14 asset objects were hydrated; Git LFS object validation passed.
 - The focused command also passed with `-race` (store 18.886s, server 3.059s). Exact Node 24 root `pnpm proto:check` passed formatting/lint, breaking compatibility and generated freshness with no drift. Generated desktop/client `dist` directories were removed after verification.
 - The full `go test -race -timeout 20m ./cmds/delidev-cli/...` completed with exit 1. Every package passed except CLI: server 1040.488s, store 570.784s, Worker 551.423s, workspace 811.473s, Grok 1024.352s and nativewire 19.096s passed, as did the other harness, forwarding, provider and utility packages. CLI failed `TestCLISessionAcceptanceQueueAndArchive` during review creation with workspace-reader `Unavailable` (`sessions_test.go:258`, package 205.555s). The unchanged scenario passed when run alone with `go test -race -timeout 5m ./cmds/delidev-cli/internal/cli -run '^TestCLISessionAcceptanceQueueAndArchive$' -count=1` (118.072s). These separate results do not establish a complete full-suite pass or determine the full-run failure cause. No Rust source changed in this merge; the earlier root Rust and Go results remain historical evidence above. Temporary fixtures establish no real remote TLS, provider, native desktop installation or release acceptance.
+
+### Desktop source-icon LFS preparation (2026-09-30)
+
+The ordinary macOS development entry point reproduced `Invalid PNG signature`
+while bundling its app icon: the source icon was a 132-byte Git LFS pointer for
+a 1,514,329-byte PNG. Frontend, sidecar, widget and native host builds had passed.
+Providing the exact digest-verified original icon as a temporary diagnostic
+input allowed bundling and native architecture/CEF/widget/entitlement/ad-hoc
+signature checks to pass. That diagnostic invocation intentionally exited before
+application state initialization; it was not a native UI acceptance result.
+
+The shared `prepare:assets` step now precedes native development, ordinary
+build/bundle and dry-run packaging. It restores only the unchanged committed
+source-icon pointer from cache or an exact-path current-ref LFS fetch, verifies
+size/digest/PNG container integrity and preserves local image and pointer edits.
+Existing PNGs require neither Git nor networking. Stable structured failures
+include recovery guidance without raw Git output, and cancellation joins the
+active Git child through the existing process lifecycle.
+
+Ten focused asset cases pass with temporary repositories and a local LFS remote,
+covering offline restoration, scoped fetch under conflicting caller filters,
+local changes, unavailable tools/downloads, integrity, concurrent edits and real
+SIGTERM delivery. The existing six launcher cases pass in their standalone run,
+and eight package verifier cases plus the native-package CI contract pass.
+The first concurrent aggregate was interrupted after an existing launcher signal
+case stalled. The initial full frontend run was also interrupted after existing
+backup, desktop, tray and Settings cases exceeded their deadlines under concurrent
+native compilation and host load. No product test timeout was increased.
+Normal root `pnpm install --frozen-lockfile` passed, including linked-worktree
+Lefthook installation.
+
+The launcher signal fixture waited only for inherited child stdout, which could
+arrive before the wrapper returned from process creation and installed its
+signal handlers. Both signal fixtures now wait for explicit wrapper and child
+readiness before sending SIGTERM. The combined `pnpm test:desktop-launch` passes
+all 16 cases without serializing files or increasing timeouts. The eight bundle
+verifier cases and native Swift widget fixtures also pass separately.
+
+Starting with the real source icon still represented by its LFS pointer after
+installation, ordinary `pnpm dev:desktop` restored the cached PNG automatically
+and completed frontend, sidecar, widget, native host, CEF app bundling and ad-hoc
+signing. The generated arm64 debug app passed native architecture, CEF resources,
+macOS 13 metadata, both widget extensions/entitlements and deep strict signature
+verification. Its initial launch reported `SidecarFailed` and an existing CEF
+browser session while another checkout's DeliDev/server was already running.
+Launching that exact generated app with a temporary HOME/cache and data directory
+displayed the native DeliDev local-server connection screen. The occupied local
+server port still prevented a fresh connection; this establishes window/rendering
+evidence, not authenticated server or provisioned WidgetKit acceptance. Only this
+temporary app was stopped, with runtime return and process exit code 0 observed;
+the pre-existing app and server were left running.
+
+A complete single-worker `pnpm test` attempt passed client generation and type
+checking, then finished Vitest with 71 passing files / 933 passing tests and
+3 failing files / 12 failures. Those failures were in the unchanged App, Settings
+integration and tray presentation tests (5-second deadlines and asynchronous
+element/state waits); that attempt did not establish a green full frontend suite.
+An isolated rerun of those exact three files passed all 49 tests with the
+unchanged deadlines and product code. The production frontend build passed
+during the native launch. No Rust, Go,
+frontend product code, runtime pins or signing policies changed.
+
+The final single-worker `pnpm test` pipeline passed all 74 frontend files / 945
+tests, client generation/type checking, all 8 package-verifier and 16
+asset/launcher cases, native Swift widget fixtures and the production frontend
+build. Test deadlines were unchanged. Generated desktop/client `dist` directories
+and this task's temporary native smoke data were removed after verification.
+
+
+### PR #1114 icon-preparation merge reconciliation (2026-09-30)
+
+Merged main revision `da93cb9b9962acb100cb018e255e4ff0b2374e33`, preserving
+the complete restore/forwarding evidence and source-icon preparation evidence
+from both branches. The merge imports the transparent icon, scoped LFS asset
+preflight and launcher readiness fixture, plus the published `fast-uri` 3.1.8
+and `ip-address` 10.7.1 dependency updates. Restore/forwarding Go implementation,
+canonical schemas, generated bindings, frontend product source and Rust source
+are unchanged by this merge. The imported desktop policies and contracts remain
+together; no new policy boundary is introduced.
+
+Node.js 24 root `pnpm install --frozen-lockfile` passed, including linked-worktree
+Lefthook installation. Package-local `pnpm prepare:assets` accepted the hydrated
+source icon, and `git lfs fsck --objects` passed. Root `pnpm audit --json` reported
+zero vulnerabilities in its 621-dependency report; this is npm audit evidence,
+not a claim that the separately recorded native ecosystem advisories are fixed.
+The DeliDev native-package CI contract fixture passed.
+
+Package-local Node.js 24 `pnpm test` passed all 945 component tests across 74
+files, client generation/type checking, all eight package-verifier tests, all
+16 asset/launcher tests, native Swift widget fixtures and the production build.
+Generated desktop/client `dist` directories were removed after verification.
+No Go or Rust validation was repeated for this asset/dependency/documentation
+merge; the preceding complete race and root Rust outcomes remain recorded above.
+No native application was launched and no packaging, real-account or distribution
+acceptance is claimed. CI for the forthcoming merge head remains pending after
+publication; earlier CI and review evidence apply only to their checked head.

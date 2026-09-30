@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { dryRunEnvironment, verifyBundle } from "./bundle-macos-dry-run.mjs";
 import { targets, selectTarget, cefCredits, packageResources, verifyNotices, verifyNativePayload, findOneFile } from "./native-package.mjs";
+import { prepareAssets } from "./prepare-assets.mjs";
+import { exitLikeChild } from "../../../scripts/spawn-dev-server.mjs";
 
 // Windows needs the native MSVC/SDK and system lookup context. None of these
 // names carries product/signing credentials or arbitrary compiler/linker flags.
@@ -49,6 +51,8 @@ async function main() {
   const revision = run("git", ["rev-parse", "HEAD"]).trim();
   if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error("Source revision is unavailable.");
   if (run("git", ["status", "--porcelain", "--untracked-files=normal"]).trim()) throw new Error("Commit the complete source before producing revision-bound dry-run artifacts.");
+  const prepared = await prepareAssets({ root, environment: env });
+  if (prepared.code !== 0 || prepared.signal !== null) return exitLikeChild(prepared);
   const output = join(root, "target/delidev-dry-run", selected.target, revision);
   // A previous result is never silently replaced with different package bytes.
   mkdirSync(dirname(output), { recursive: true });
