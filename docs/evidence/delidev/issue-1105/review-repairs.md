@@ -46,3 +46,40 @@ migration is introduced.
   Log: `/private/tmp/issue-1105-queue-identity-after.log`.
 - `go vet ./cmds/delidev-cli/...`, `pnpm proto:lint` and `pnpm proto:fresh` passed.
   Protobuf generation reproduced the committed sources without drift.
+
+## Complete validation of the repaired source
+
+Source: `a1d486adcfa5ee5af27cd814c704218e8c3e8134`.
+
+`GOMAXPROCS=2 go test -race -p 2 -timeout=20m ./cmds/delidev-cli/...` completed
+with exit code 1. The complete domain (1.880s), GitHub adapter (2.474s), store
+(339.794s), Claude (197.193s), Codex (185.324s), Grok (1,154.982s), OpenCode
+(100.697s) and other reported packages passed. No package hit the twenty-minute
+budget in this run. Four packages failed:
+
+- CLI: `TestCLISessionAcceptanceQueueAndArchive` could not obtain the owning
+  Worker's workspace file reader. The package completed in 184.322s. The earlier
+  untouched-base control failed this test at a different preparation wait;
+  that control does not establish the cause of the current failure.
+- Server: `TestGrokFirstDispatchRetainsUnsupportedSelectionsWithoutClaiming/repository`
+  failed its preparation with `Unavailable` / an operation timeout. The package
+  completed in 1,145.966s.
+- Worker: `TestStreamTerminationCancelsRunningOwnedWork` failed the
+  `permission_denied` and `code_0` five-second termination waits. The test canceled
+  and joined its watcher before reporting these failures. The package completed
+  in 539.029s.
+- Workspace: `TestWorkspaceDiffUnbornAndBoundedResults` and
+  `TestPRWorkspaceMatchPreservesMismatchesAndDistinguishesUnknownAccess` rejected
+  accepted-preparation proof; `TestPRWorkspaceMatchReadsCurrentHeadWithoutTakingExecutionOwnership/local`
+  timed out. The package completed in 1,069.875s.
+
+The complete log is `/private/tmp/issue-1105-maintenance-go-race.log`. These
+failures remain unresolved; the full command is not reported as passing, and no
+unrelated native lifecycle or workspace implementation was changed to hide them.
+
+Repository hook preparation and required Go embed builds completed before
+commits. All fourteen LFS assets were hydrated from verified objects. Generated
+repository-owned `dist` output was removed after validation. No new frontend,
+Rust, protobuf or migration source changes were introduced by these repairs.
+Live queued-account, native product/platform and release acceptance remain
+unperformed.
