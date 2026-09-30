@@ -197,6 +197,16 @@ This barrier retains the active workspace claim and OS lock; final lease closure
 rechecks ownership before recording cleanup and releasing them. Missing or
 changed process evidence leaves push proof uncertain without observing Git.
 
+The shared bridge command lock covers validation and the actual local child,
+including commit, merge and rebase. A streamed fresh command grant keeps the
+Worker request and lock alive until the sandboxed launcher acknowledges child
+exit through its separately admitted authenticated completion endpoint. Parallel
+push cannot claim an intermediate HEAD. Unknown or duplicate grants cannot
+release an owner. Lost completion or cancellation makes the capability uncertain
+and refuses later commands and clean bridge closure; the grant is never retried.
+This private handshake provides ordering, not independent descendant cleanup or
+an executable/configuration isolation proof.
+
 The manual Git launcher's local capability connects only to a canonical
 `127.0.0.1` listener owned by the original Worker. It carries no reversible Git
 authentication context. The Worker keeps immutable scope/configuration and a

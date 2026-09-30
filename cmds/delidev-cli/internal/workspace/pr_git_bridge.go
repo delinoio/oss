@@ -22,15 +22,19 @@ import (
 )
 
 type prGitBridge struct {
-	endpoint string
-	token    string
-	server   *http.Server
-	cancel   context.CancelFunc
-	done     chan error
-	commands chan struct{}
-	requests chan struct{}
-	once     sync.Once
-	closeErr error
+	endpoint    string
+	token       string
+	server      *http.Server
+	cancel      context.CancelFunc
+	done        chan error
+	commands    chan struct{}
+	requests    chan struct{}
+	completions chan struct{}
+	mu          sync.Mutex
+	local       *prGitLocalCommand
+	uncertain   bool
+	once        sync.Once
+	closeErr    error
 }
 type prGitBridgeRequest struct {
 	Version uint32   `json:"version"`
@@ -39,6 +43,7 @@ type prGitBridgeRequest struct {
 type prGitBridgeResponse struct {
 	Output  []byte        `json:"output,omitempty"`
 	Problem *domain.Error `json:"problem,omitempty"`
+	Grant   string        `json:"grant,omitempty"`
 }
 
 // The Worker owns authentication and the command's original process scope.
@@ -57,10 +62,18 @@ func startPRGitBridge(parent context.Context, tool *PRGitTool) (*prGitBridge, er
 		return nil, toolFailure()
 	}
 	ctx, cancel := context.WithCancel(parent)
-	bridge := &prGitBridge{endpoint: "http://" + listener.Addr().String() + "/git", token: token, cancel: cancel, done: make(chan error, 1), commands: make(chan struct{}, 1), requests: make(chan struct{}, 32)}
+	bridge := &prGitBridge{endpoint: "http://" + listener.Addr().String() + "/git", token: token, cancel: cancel, done: make(chan error, 1), commands: make(chan struct{}, 1), requests: make(chan struct{}, 32), completions: make(chan struct{}, 1)}
 	bridge.server = &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 3 * time.Minute, IdleTimeout: 5 * time.Second, MaxHeaderBytes: 8 << 10, BaseContext: func(net.Listener) context.Context { return ctx }}
 	bridge.server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/git" || r.URL.RawQuery != "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
+		if r.Method != http.MethodPost || r.URL.RawQuery != "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
+			http.Error(w, "Unavailable PR Git capability.", http.StatusForbidden)
+			return
+		}
+		if r.URL.Path == "/git/complete" {
+			bridge.completeLocal(w, r)
+			return
+		}
+		if r.URL.Path != "/git" {
 			http.Error(w, "Unavailable PR Git capability.", http.StatusForbidden)
 			return
 		}
@@ -82,8 +95,15 @@ func startPRGitBridge(parent context.Context, tool *PRGitTool) (*prGitBridge, er
 		var output bytes.Buffer
 		select {
 		case bridge.commands <- struct{}{}:
-			err = tool.runOwned(bounded, request.Args, &output)
-			<-bridge.commands
+			defer func() { <-bridge.commands }()
+			bridge.mu.Lock()
+			uncertain := bridge.uncertain
+			bridge.mu.Unlock()
+			if uncertain {
+				err = toolFailure()
+			} else {
+				err = tool.runOwned(bounded, request.Args, &output)
+			}
 		case <-bounded.Done():
 			err = domain.SafeError(bounded.Err())
 		}
@@ -91,6 +111,14 @@ func startPRGitBridge(parent context.Context, tool *PRGitTool) (*prGitBridge, er
 			tool.manager.Logger.WarnContext(bounded, "manual_pr_git_command_failed", "attempt_id", tool.scope.Selection.AttemptID, "execution_id", tool.scope.Claim.ExecutionID, "action", request.Args[0], "code", domain.SafeError(err).Code)
 		}
 		response := prGitBridgeResponse{Output: output.Bytes()}
+		if err == nil && isPRLocalCommand(request.Args) {
+			// Flush the grant while retaining shared command ownership. Only
+			// the launcher's completion after child exit releases this request.
+			if err := bridge.waitLocal(bounded, w); err != nil {
+				tool.manager.Logger.WarnContext(bounded, "manual_pr_git_local_completion_uncertain", "attempt_id", tool.scope.Selection.AttemptID, "execution_id", tool.scope.Claim.ExecutionID, "code", domain.SafeError(err).Code)
+			}
+			return
+		}
 		if err != nil {
 			response.Output = nil
 			response.Problem = domain.SafeError(err)
@@ -121,6 +149,11 @@ func (b *prGitBridge) close() error {
 		case <-bounded.Done():
 			b.closeErr = toolFailure()
 		}
+		b.mu.Lock()
+		if b.uncertain {
+			b.closeErr = toolFailure()
+		}
+		b.mu.Unlock()
 	})
 	return b.closeErr
 }
@@ -164,7 +197,11 @@ func RunPRGit(ctx context.Context, path string, args []string, stdout io.Writer)
 		return domain.Fail(domain.Unavailable, "The original PR Git bridge did not respond.", "Preserve its attempt; no native push can be replayed.")
 	}
 	defer response.Body.Close()
-	raw, err = io.ReadAll(io.LimitReader(response.Body, (MaxGitOutput*2)+(64<<10)+1))
+	// A local grant arrives before the response ends: the Worker keeps the
+	// command lock until a separate authenticated completion is acknowledged.
+	var frame json.RawMessage
+	err = json.NewDecoder(io.LimitReader(response.Body, (MaxGitOutput*2)+(64<<10)+1)).Decode(&frame)
+	raw = frame
 	var result prGitBridgeResponse
 	if err != nil || len(raw) > MaxGitOutput*2+64<<10 || response.StatusCode != http.StatusOK || domain.Decode(raw, &result) != nil || len(result.Output) > MaxGitOutput || result.Problem != nil && len(result.Output) != 0 {
 		return toolFailure()
@@ -172,8 +209,18 @@ func RunPRGit(ctx context.Context, path string, args []string, stdout io.Writer)
 	if result.Problem != nil {
 		return domain.SafeError(result.Problem)
 	}
-	if args[0] != "push" && args[0] != "fetch" && args[0] != "delidev-target" {
-		return runPRLocalGit(bounded, scope, args, stdout)
+	if isPRLocalCommand(args) {
+		if len(result.Grant) < 32 || len(result.Grant) > 256 || len(result.Output) != 0 {
+			return toolFailure()
+		}
+		localErr := runPRLocalGit(bounded, scope, args, stdout)
+		if err := finishPRLocalCommand(ctx, client, endpoint, token, result.Grant); err != nil {
+			return err
+		}
+		return localErr
+	}
+	if result.Grant != "" {
+		return toolFailure()
 	}
 	_, err = stdout.Write(result.Output)
 	return err
