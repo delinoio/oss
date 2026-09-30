@@ -50,4 +50,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Forwarding and other late Archive completions must preserve unresolved `compaction_job_id` ownership; conversation cleanup or forwarding cleanup alone cannot release a manual action.
 
+- Manual-compaction mutation receipts bind the original owner/client principal as well as session/revision/request. Recheck authorization before replay; another authorized client cannot reuse the accepted receipt. Keep credentials outside its digest input under `docs/cmds-delidev-compaction-contract.md`.
+
 - Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.

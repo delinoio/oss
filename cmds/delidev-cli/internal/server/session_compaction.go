@@ -91,10 +91,12 @@ func (s *Service) CompactSession(ctx context.Context, req *connect.Request[pb.Co
 	if err := validateSessionMutation(m); err != nil {
 		return nil, rpc.Error(err, corr)
 	}
+	actor, _ := domain.PrincipalFrom(ctx)
 	identity := struct {
 		Session  domain.ID
 		Revision uint64
-	}{domain.ID(m.Id), m.ExpectedRevision}
+		Actor    domain.Principal
+	}{domain.ID(m.Id), m.ExpectedRevision, actor}
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "session.compact", identity, func(tx *store.Tx) (any, error) {
 		if err := tx.Authorize(); err != nil {
 			return nil, err

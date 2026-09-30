@@ -451,6 +451,45 @@ func TestCompactionSessionDeletionRetainsOriginalActionOwnership(t *testing.T) {
 	}
 }
 
+func TestCompactionReceiptIsBoundToOriginalActor(t *testing.T) {
+	ctx := context.Background()
+	f, _ := publicCompactionFixture(t)
+	devices := delidevv1connect.NewDeviceServiceClient(http.DefaultClient, f.endpoint.URL)
+	code, token := randomCode(), randomCode()
+	codeDigest, tokenDigest := sha256.Sum256([]byte(code)), sha256.Sum256([]byte(token))
+	grant, err := devices.CreatePairing(ctx, ownerRequest(f.identity, &pb.CreatePairingRequest{RequestId: string(domain.NewID()), Name: "compaction client", Type: pb.DeviceType_DEVICE_TYPE_CLIENT, CodeDigest: codeDigest[:]}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairedReply, err := devices.PairDevice(ctx, connect.NewRequest(&pb.PairDeviceRequest{RequestId: string(domain.NewID()), PairingId: grant.Msg.Pairing.Id, Code: code, DeviceId: string(domain.NewID()), CredentialDigest: tokenDigest[:]}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paired, device := security.Identity{Token: token}, pairedReply.Msg.Device
+	client := sessionClient(f.accountFixture)
+	before := f.refresh(t)
+	request := &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(before), domain.NewID())}
+	accepted, err := client.CompactSession(ctx, ownerRequest(f.identity, request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := f.refresh(t)
+	if _, err := client.CompactSession(ctx, ownerRequest(paired, request)); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("another actor replayed the original compaction receipt", err)
+	}
+	replay, err := client.CompactSession(ctx, ownerRequest(f.identity, request))
+	if err != nil || !replay.Msg.Replayed || replay.Msg.Job.Id != accepted.Msg.Job.Id || f.refresh(t).Revision != held.Revision {
+		t.Fatal("original actor replay changed the accepted action", err)
+	}
+	if _, err := devices.RevokeDevice(ctx, ownerRequest(f.identity, &pb.RevokeDeviceRequest{Mutation: acctMutation(device, domain.NewID())})); err != nil {
+		t.Fatal(err)
+	}
+	stale := domain.WithPrincipal(ctx, domain.Principal{Type: domain.ClientDevice, DeviceID: domain.ID(device.Id)})
+	if _, err := f.service.CompactSession(stale, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("revoked actor reached receipt replay", err)
+	}
+}
+
 func TestCompactionRejectsFailedConversationEligibleForExplicitResume(t *testing.T) {
 	f, _ := publicCompactionOutcomeFixture(t, domain.ExecutionFailed)
 	ctx := context.Background()

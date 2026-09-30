@@ -34,6 +34,9 @@ authority and report an action. A context observation never grants execution.
   also the distinct native action identity. Its receipt references one durable
   `compact-session` job; exact retry reads that job's current state and never
   creates another command.
+  The mutation digest includes the original owner/client principal; another
+  authorized client cannot borrow its receipt, and revocation is checked before
+  replay. No credential value enters this identity.
 - CLI parity is `delidev session context --id ID` and
   `delidev session compact --id ID --revision N [--request-id ID]`. Reads need no
   mutation ID. Preserve the accepted request ID on retry; inspect the returned
