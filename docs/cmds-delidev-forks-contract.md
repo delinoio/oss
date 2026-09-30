@@ -83,6 +83,9 @@ Source reads and destination writes use separate opened filesystem roots;
 canonical destination validation rejects linked targets before copying. Copied
 files and directories are synchronized before the ready manifest is published,
 and original permission modes are restored independently of the Worker umask.
+Git-reported index paths use the native Worker separator and path comparison
+rules before canonical ownership checks; Windows slash-separated Git output
+must not be compared as an unnormalized Unix path.
 
 Optional preparation/session/execution JSON fields and job kinds are additive.
 Existing records retain their omitted-field bytes. Fork uses the existing

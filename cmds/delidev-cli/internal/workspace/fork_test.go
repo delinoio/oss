@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -50,7 +51,7 @@ func TestForkCopiesTwoDirtyRepositoriesAndPreservesSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ValidateResult(childRequest, child, "darwin") != nil {
+	if ValidateResult(childRequest, child, runtime.GOOS) != nil {
 		t.Fatal("invalid published child")
 	}
 	for i, repo := range child.Repositories {

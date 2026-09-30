@@ -195,3 +195,17 @@ passed on macOS. The Windows amd64 test binary cross-compiled successfully with
 `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 GOMAXPROCS=4 go test -c ./cmds/delidev-cli/internal/harness/codex`.
 Cross-compilation does not execute Windows ACL validation; that result awaits
 native CI on the pushed repair head.
+
+## PR #1176 Windows CI repair: Git index path namespace
+
+The same Windows CI job failed the dirty two-repository fork while reading its
+index. Git emits slash-separated Windows paths; native canonicalization must
+compare normalized paths under the Worker's existing path rules. Index reads
+and writes now normalize Git separators, and the manifest regression validates
+against `runtime.GOOS` instead of hardcoding Darwin.
+
+`GOMAXPROCS=4 go test -race ./cmds/delidev-cli/internal/workspace -run '^TestFork' -count=1`
+passed, including complete dirty copies and the copy-drift/rollback regressions.
+The Windows amd64 workspace test binary cross-compiled successfully with
+`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 GOMAXPROCS=4 go test -c ./cmds/delidev-cli/internal/workspace`.
+Native Windows execution remains pending on the pushed head.

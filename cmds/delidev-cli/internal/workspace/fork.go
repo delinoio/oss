@@ -338,13 +338,13 @@ func forkIndex(ctx context.Context, git Git, checkout string) (string, []byte, e
 	if err != nil {
 		return "", nil, err
 	}
-	index := strings.TrimSpace(string(path))
+	index := filepath.FromSlash(strings.TrimSpace(string(path)))
 	info, err := os.Lstat(index)
 	if err != nil || !info.Mode().IsRegular() || info.Size() > maxForkBytes {
 		return "", nil, forkUnsupported()
 	}
 	canonical, err := filepath.EvalSymlinks(index)
-	if err != nil || canonical != index {
+	if err != nil || !sameNativePath(canonical, index) {
 		return "", nil, forkUnsupported()
 	}
 	f, err := os.OpenFile(index, os.O_RDONLY|forkNonblockFlag(), 0)
@@ -382,7 +382,7 @@ func copyForkRepository(ctx context.Context, git Git, source, target, commit str
 	if err != nil {
 		return copy, err
 	}
-	if err := security.WriteAtomic(strings.TrimSpace(string(path)), index); err != nil {
+	if err := security.WriteAtomic(filepath.FromSlash(strings.TrimSpace(string(path))), index); err != nil {
 		return copy, domain.SafeError(err)
 	}
 	digest := sha256.Sum256(index)
