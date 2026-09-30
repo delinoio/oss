@@ -402,12 +402,24 @@ for (const kind of ["client", "worker"] as const) it(`issues a real single-use $
 
 it("creates and edits singleton server preferences with the exact Go defaults", async () => {
   const defaults = JSON.parse(await runCLI(["settings", "defaults"])).result;
+  let acceptedSaves = 0;
+  // Delay accepted Go acknowledgments beyond the component library's default
+  // one-second wait. Keep this fixture's five-second observation budget until
+  // its real mutation/read sequence no longer relies on shared CI timing.
+  const preferencesTransport: Transport = { ...transport, async unary(method, signal, timeout, header, input, context) {
+    const response = await transport.unary(method, signal, timeout, header, input, context);
+    if (method.parent.typeName === ConfigurationService.typeName && method.name === "SaveConfiguration") {
+      acceptedSaves++;
+      await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+    }
+    return response;
+  } };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={preferencesTransport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }, { timeout: 5000 }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  const edit = await screen.findByRole("button", { name: "Edit Server preferences" });
+  const edit = await screen.findByRole("button", { name: "Edit Server preferences" }, { timeout: 5000 });
   const resources = createClient(ResourceService, transport);
   const first = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(first).toHaveLength(1);
@@ -417,8 +429,9 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
   fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  await screen.findByRole("button", { name: "Edit Server preferences" });
+  await screen.findByRole("button", { name: "Edit Server preferences" }, { timeout: 5000 });
   const latest = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
+  expect(acceptedSaves).toBe(2);
   expect(latest).toHaveLength(1);
   expect(latest[0].id).toBe(first[0].id);
   expect(latest[0].revision).toBe(first[0].revision + 1n);
