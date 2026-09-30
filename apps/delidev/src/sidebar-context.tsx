@@ -13,9 +13,9 @@ export function SidebarOutletProvider({ target, closeDrawer, drawerOpen, childre
   return <SidebarOutletContext.Provider value={{ target, closeDrawer, drawerOpen }}>{children}</SidebarOutletContext.Provider>;
 }
 
-export function SidebarSurface({ active, title, children }: { active: boolean; title: string; children: ReactNode }) {
+export function SidebarSurface({ active, title, children, className = "" }: { active: boolean; title: string; children: ReactNode; className?: string }) {
   const { target } = useContext(SidebarOutletContext);
-  const panel = <section className="sidebar-surface-content" aria-label={`${title} navigation and filters`} hidden={!active}>
+  const panel = <section className={className ? `sidebar-surface-content ${className}` : "sidebar-surface-content"} aria-label={`${title} navigation and filters`} hidden={!active}>
     <h2>{title}</h2>
     {children}
   </section>;

@@ -513,3 +513,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
+
+- Activity uses only scoped static presentation styles, native independent ResourceChoice pages with read statuses, and at most the selected Project/Session labels from existing callbacks with exact IDs and last-selected wording. Preserve draft/apply/reset semantics, connection-memory retention and the existing drawer without extra reads, cascading, persistence, assets or business mutations. Keep the shared rail/header/footer and other contexts untouched; follow the Activity treatment in `docs/apps-delidev-desktop-contract.md`.

@@ -4,7 +4,7 @@ import {
   ActivityKind, ActivityQuery, EntityKind, ResourceQuery,
   SearchArchiveState, SearchExecutionOutcome, SearchQuery,
 } from "@delinoio/delidev-api-client";
-import { document, text } from "./documents";
+import { document, resourceName, text } from "./documents";
 import { Problem } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
 import { SidebarSurface, useCloseSidebarDrawer, useSidebarDrawerOpen } from "./sidebar-context";
@@ -59,19 +59,41 @@ export function Search({ active, open }: { active: boolean; open: (id: string) =
 
 interface ActivityFilters { projectId: string; sessionId: string }
 const emptyActivity: ActivityFilters = { projectId: "", sessionId: "" };
+interface ActivityDraft extends ActivityFilters { projectLabel: string; sessionLabel: string }
+const emptyActivityDraft: ActivityDraft = { ...emptyActivity, projectLabel: "", sessionLabel: "" };
+
+// Native selects can clip names. Retain only the two selected labels from the
+// existing change callbacks, with exact IDs and explicit last-selected wording;
+// this text never claims a fresh/off-page read or adds a resource lookup.
+function ActivitySelectedLabel({ label, id, name }: { label: string; id: string; name: string }) {
+  return id ? <p className="activity-selected-label">{name ? <>Last selected {label.toLowerCase()} label: <span>{name}</span><br /></> : null}Selected {label.toLowerCase()} ID: <span>{id}</span></p> : null;
+}
 export function Activity({ active, open }: { active: boolean; open: (id: string) => void }) {
   const [page, setPage] = useState("");
-  const [draft, setDraft] = useState<ActivityFilters>(emptyActivity);
+  const [draft, setDraft] = useState<ActivityDraft>(emptyActivityDraft);
   const [selection, setSelection] = useState<ActivityFilters>(emptyActivity);
   const closeDrawer = useCloseSidebarDrawer();
   const result = useQuery(ActivityQuery.listActivity, { projectId: selection.projectId, sessionId: selection.sessionId, pageSize: 50, pageToken: page }, { enabled: active });
   const apply = (next: ActivityFilters) => { setSelection(next); setPage(""); closeDrawer(); };
   return <>
-  <SidebarSurface active={active} title="Activity">
-    <div className="sidebar-filter-options"><button type="button" aria-pressed={!selection.projectId && !selection.sessionId} onClick={() => { setDraft(emptyActivity); apply(emptyActivity); }}>All activity</button></div>
-    <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={draft.projectId} change={(projectId) => setDraft((current) => ({ ...current, projectId }))} active={active} />
-    <ResourceChoice label="Session" kind={EntityKind.SESSION} value={draft.sessionId} change={(sessionId) => setDraft((current) => ({ ...current, sessionId }))} active={active} />
-    <div className="actions"><button className="primary" onClick={() => apply(draft)}>Apply filters</button><button onClick={() => { setDraft(emptyActivity); apply(emptyActivity); }}>Reset</button></div>
+  <SidebarSurface active={active} title="Activity" className="activity-sidebar">
+    <button type="button" className="activity-all" aria-pressed={!selection.projectId && !selection.sessionId} onClick={() => { setDraft(emptyActivityDraft); apply(emptyActivity); }}>
+      <svg className="activity-filter-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M5 4h8M5 8h8M5 12h8M2 4h.01M2 8h.01M2 12h.01" /></svg>
+      <span>All activity</span>
+      {!selection.projectId && !selection.sessionId ? <svg className="activity-filter-icon activity-selected-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 8 3 3 7-7" /></svg> : null}
+    </button>
+    <div className="activity-filter-group" role="group" aria-label="Activity filters">
+      <h3>FILTERS</h3>
+      <div>
+        <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={draft.projectId} change={(projectId, _data, row) => setDraft((current) => ({ ...current, projectId, projectLabel: row ? resourceName(row) : "" }))} active={active} showStatus />
+        <ActivitySelectedLabel label="Project" id={draft.projectId} name={draft.projectLabel} />
+      </div>
+      <div>
+        <ResourceChoice label="Session" kind={EntityKind.SESSION} value={draft.sessionId} change={(sessionId, _data, row) => setDraft((current) => ({ ...current, sessionId, sessionLabel: row ? resourceName(row) : "" }))} active={active} showStatus />
+        <ActivitySelectedLabel label="Session" id={draft.sessionId} name={draft.sessionLabel} />
+      </div>
+      <div className="activity-filter-actions"><button type="button" className="activity-apply" onClick={() => apply({ projectId: draft.projectId, sessionId: draft.sessionId })}>Apply filters</button><button type="button" className="activity-reset" onClick={() => { setDraft(emptyActivityDraft); apply(emptyActivity); }}>Reset</button></div>
+    </div>
   </SidebarSurface>
   <section hidden={!active} className="page"><header><h2>Activity</h2><button disabled={result.isFetching} onClick={() => { setPage(""); void result.refetch(); }}>Refresh</button></header><Problem error={result.error} />{result.isFetching ? <p role="status">Loading activity…</p> : null}{result.error && result.data ? <p className="notice">The refresh failed. These are the last activity rows for this scope.</p> : null}
     {result.data?.entries.map((entry) => <article className="result" key={entry.id}><strong>{ActivityKind[entry.kind]?.toLowerCase().replaceAll("_", " ")}</strong><p><time dateTime={new Date(Number(entry.observedAtUnixMs)).toISOString()}>{new Date(Number(entry.observedAtUnixMs)).toLocaleString()}</time></p>{entry.sessionId ? <button onClick={() => open(entry.sessionId)}>Open session</button> : <p>Waiting or skipped occurrence</p>}{entry.accountId ? <small>Account {entry.accountId}</small> : null}</article>)}
