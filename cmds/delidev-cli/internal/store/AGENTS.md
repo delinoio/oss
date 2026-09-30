@@ -109,3 +109,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - `migration-reservations.json` allocates pending work separately from executable migrations. Establish changes to reservations on main before starting dependent branches. Version 25 from an unmerged branch is not proof of schema identity; preserve unidentified data and return recovery-required.
 
 - Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
+
+- Synchronize a newly created restore-root directory in the enclosing server scope before staging or closing SQLite. A parent-directory durability failure cannot accept an attempt or cross the live publication boundary.

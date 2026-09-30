@@ -332,6 +332,12 @@ func (s *Store) restoreBackupWithBarrier(ctx context.Context, request domain.ID,
 	if err := security.PrivateDir(root); err != nil {
 		return result, false, storageError(err)
 	}
+	// The journal's directory must be reachable after power loss before any
+	// live replacement. Syncing its contents alone does not persist a newly
+	// created directory entry in the enclosing server scope.
+	if err := security.SyncParent(root); err != nil {
+		return result, false, storageError(err)
+	}
 	d, err := os.Open(root)
 	if err != nil {
 		return result, false, storageError(err)

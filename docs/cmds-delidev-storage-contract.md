@@ -220,7 +220,10 @@ replaced by a quarantine marker that `Replay`/`Mutate` reject as recovery-requir
 Replacement resource revisions exceed both versions; the event high-water mark
 advances beyond both timelines and expires older cursors for a coherent resnapshot.
 
-`backup-restores/` retains at most 64 attempt directories, without eviction. Each
+`backup-restores/` is synchronized in its parent before staging or closing the
+live database, so a newly created journal root is durable before replacement.
+Failure preserves live state and the source without accepting an attempt.
+It retains at most 64 attempt directories, without eviction. Each
 contains the synchronized safety image, candidate/staging evidence and a versioned
 actor/server/request/image-bound receipt. `active.json` is the external publication
 barrier, binding original live, safety and candidate SHA-256 values. After a confirmed

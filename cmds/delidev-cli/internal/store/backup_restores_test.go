@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -775,5 +776,60 @@ func TestRestoreDisconnectsAccountsAndWorkersAndPausesSchedules(t *testing.T) {
 	}
 	if raw, err := os.ReadFile(secretPath); err != nil || string(raw) != "fixture protected bytes" {
 		t.Fatal("restore touched protected storage", err)
+	}
+}
+
+func TestBackupRestoreParentSyncFailurePreservesLive(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("requires an unprivileged POSIX directory permission fixture")
+	}
+	s, root, ctx, in, _ := restoreFixture(t)
+	later := domain.NewID()
+	create(t, s, later, "preserved on directory durability failure")
+	var err error
+	in.ExpectedRevision, err = s.RestoreRevision(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := domain.NewID()
+	t.Cleanup(func() {
+		if err := os.Chmod(root, 0700); err != nil {
+			t.Error(err)
+		}
+	})
+	// Search/write still permit staging and rename. Denying directory reads
+	// makes its fsync fail, exposing publication before parent durability.
+	if err := os.Chmod(root, 0300); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.Open(root); err == nil {
+		f.Close()
+		t.Fatal("permission fixture did not deny opening the directory")
+	}
+	_, _, err = s.RestoreBackup(ctx, request, in)
+	if err == nil {
+		t.Fatal("restore accepted a failed parent synchronization")
+	}
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if s.RestoreFrozen() {
+		t.Fatal("directory durability failure crossed the live close/publication boundary")
+	}
+	if _, err := s.Get(ctx, domain.ProjectKind, later); err != nil {
+		t.Fatal("directory durability failure lost current live state", err)
+	}
+	revision, err := s.RestoreRevision(ctx)
+	if err != nil || revision != in.ExpectedRevision {
+		t.Fatal("directory durability failure changed the live revision", revision, err)
+	}
+	for _, path := range []string{restoreDirectory(root, request), filepath.Join(restoreRoot(root), "active.json")} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("directory durability failure accepted a restore attempt", err)
+		}
+	}
+	observation, err := s.InspectBackup(ctx, in.Backup.ID, in.ServerID)
+	if err != nil || observation.SHA256 != in.SHA256 {
+		t.Fatal("directory durability failure changed the source image", err)
 	}
 }
