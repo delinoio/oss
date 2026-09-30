@@ -603,6 +603,12 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	if publication == nativeShellChangesPublication {
 		config.NativeRoot = workspace
+	} else {
+		config.Root, err = opencode.GlobalWorkspaceRoot(workspace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		config.NativeRoot = ""
 	}
 	api, err := opencode.OpenOwnedAPI(ctx, config)
 	if err != nil {

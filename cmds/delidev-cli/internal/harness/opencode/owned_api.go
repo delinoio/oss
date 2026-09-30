@@ -152,12 +152,22 @@ func (a *OwnedAPI) Next(ctx context.Context) (Observation, error) {
 	if a.completionAttempted {
 		return Observation{}, sessionConflict()
 	}
+	if observation, ok, err := a.session.nextRecovered(ctx); ok || err != nil {
+		return observation, err
+	}
 	observer, stream, err := a.observer(ctx)
 	if err != nil {
 		return Observation{}, err
 	}
 	event, err := stream.Next(ctx)
 	if err != nil {
+		if ctx.Err() == nil {
+			if err := a.session.reconcileEvents(ctx, stream, observer); err != nil {
+				return Observation{}, err
+			}
+			observation, _, err := a.session.nextRecovered(ctx)
+			return observation, err
+		}
 		// Only the original subscription's failure can invalidate its event
 		// evidence. Canceling a waiting consumer grants no reconnect/replay
 		// authority and does not turn a healthy original stream into a gap.
@@ -170,11 +180,17 @@ func (a *OwnedAPI) Next(ctx context.Context) (Observation, error) {
 }
 
 func (a *OwnedAPI) Progress(ctx context.Context) (Progress, error) {
-	observer, _, err := a.observer(ctx)
+	observer, stream, err := a.observer(ctx)
 	if err != nil {
 		return Progress{}, err
 	}
-	return observer.snapshot(), nil
+	progress := observer.snapshot()
+	if stream.status() != nil {
+		// A terminal prefix cannot hide a later transport gap. Next must drain
+		// original arrivals and either reconcile or retain the typed failure.
+		progress.SettledObserved = false
+	}
+	return progress, nil
 }
 
 func (a *OwnedAPI) InspectInput(ctx context.Context) (InputReceipt, error) {
@@ -205,7 +221,17 @@ func (a *OwnedAPI) InspectHistory(ctx context.Context) (HistoryObservation, erro
 		return HistoryObservation{}, err
 	}
 	defer a.session.leave()
-	return a.session.readHistory(ctx, observer)
+	if err := a.session.verifyRecoveredTail(ctx, observer); err != nil {
+		return HistoryObservation{}, err
+	}
+	history, err := a.session.readHistory(ctx, observer)
+	if err != nil {
+		return HistoryObservation{}, err
+	}
+	if err := a.session.verifyRecoveredTail(ctx, observer); err != nil {
+		return HistoryObservation{}, err
+	}
+	return history, nil
 }
 
 func (a *OwnedAPI) Reply(ctx context.Context, request domain.ID, interaction string, response InteractionResponse) (InteractionReceipt, error) {
@@ -227,6 +253,9 @@ func (a *OwnedAPI) InteractionReceipt(ctx context.Context, interaction string) (
 // Native interruption and owned-process cleanup intent stay separate explicit
 // actions. Failure of one does not silently claim or send the other.
 func (a *OwnedAPI) Interrupt(ctx context.Context, request domain.ID) (StopReceipt, error) {
+	if a.valid() {
+		a.session.cancelReconciliation()
+	}
 	observer, _, err := a.observer(ctx)
 	if err != nil {
 		return StopReceipt{}, err
@@ -235,6 +264,9 @@ func (a *OwnedAPI) Interrupt(ctx context.Context, request domain.ID) (StopReceip
 }
 
 func (a *OwnedAPI) ClaimOwnedStop(ctx context.Context, request domain.ID) (StopReceipt, error) {
+	if a.valid() {
+		a.session.cancelReconciliation()
+	}
 	observer, _, err := a.observer(ctx)
 	if err != nil {
 		return StopReceipt{}, err
@@ -274,6 +306,7 @@ func (a *OwnedAPI) Close(ctx context.Context) error {
 		return sessionInvalid()
 	}
 	s := a.session
+	s.cancelReconciliation()
 	if err := s.enter(ctx); err != nil {
 		return err
 	}
