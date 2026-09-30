@@ -121,7 +121,10 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 	if mode == startupDesktopRetry && intent.State == server.DesiredStopped {
 		return map[string]any{"state": "stopped"}, nil
 	}
-	if mode == startupEnsure || mode == startupObservation {
+	// Absent legacy intent is not explicit Stop. Read-only desktop observation
+	// may authenticate that live listener without inventing restart configuration;
+	// ensure still requires original running intent and cannot adopt this case.
+	if mode == startupEnsure || (mode == startupObservation && intent.Version != 0) {
 		if intent.State != server.DesiredRunning {
 			return map[string]any{"state": "stopped"}, nil
 		}
@@ -144,7 +147,7 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 		if status.Msg.ProtocolVersion != rpc.ProtocolVersion || status.Msg.Version != rpc.Version {
 			return nil, domain.Fail(domain.Unsupported, "A different server version already owns this scope.", "Use its compatible CLI or explicitly stop it after reviewing active sessions.")
 		}
-		if (mode == startupDesktopLaunch || mode == startupDesktopRetry) && (!desktopStartupListenerMatches(config, status.Msg.Listener) || status.Msg.Listener != c.endpoint) {
+		if (mode == startupDesktopLaunch || mode == startupDesktopRetry || mode == startupObservation) && (!desktopStartupListenerMatches(config, status.Msg.Listener) || status.Msg.Listener != c.endpoint) {
 			return nil, domain.Fail(domain.Unsupported, "The running server listener is incompatible with desktop launch.", "Preserve the original server and use its compatible client or inspect connection diagnostics.")
 		}
 		if status.Msg.Stopping || intent.State == server.DesiredStopped {

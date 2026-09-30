@@ -242,7 +242,7 @@ func TestDesktopLaunchPreservesLegacyListenerAndAbsentConfiguration(t *testing.T
 	streams := IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}
 	desktop := config
 	desktop.Listen = "127.0.0.1:46310"
-	for _, mode := range []startupMode{startupDesktopLaunch, startupDesktopRetry} {
+	for _, mode := range []startupMode{startupDesktopLaunch, startupDesktopRetry, startupObservation} {
 		if _, err := detachedStartup(ctx, o, desktop, streams, mode); domain.SafeError(err).Code != domain.Unsupported {
 			t.Fatal("desktop accepted a different legacy listener", mode, err)
 		}
@@ -261,12 +261,29 @@ func TestDesktopLaunchPreservesLegacyListenerAndAbsentConfiguration(t *testing.T
 	if retained, err := server.ReadLifecycle(root); err != nil || retained.Version != 0 {
 		t.Fatal("reuse invented unproved origin configuration", retained, err)
 	}
+	for range 3 {
+		if result, err := detachedStartup(ctx, o, desktop, streams, startupObservation); err != nil || result.(map[string]any)["reused"] != true {
+			t.Fatal("legacy readiness observation lost the live connection", result, err)
+		}
+		if retained, err := server.ReadLifecycle(root); err != nil || retained.Version != 0 {
+			t.Fatal("read-only observation invented legacy configuration", retained, err)
+		}
+		if retained, err := server.LoadEndpoint(root); err != nil || retained != endpoint {
+			t.Fatal("read-only observation replaced legacy authority", retained, err)
+		}
+	}
 	exit()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 	if result, err := ensureDetached(ctx, o, desktop, streams, true); err != nil || result.(map[string]any)["state"] != "stopped" {
 		t.Fatal("legacy exit acquired desktop restart intent", result, err)
+	}
+	if _, err := detachedStartup(ctx, o, desktop, streams, startupObservation); domain.SafeError(err).Code != domain.ServerUnavailable {
+		t.Fatal("read-only observation restarted an unavailable legacy server", err)
+	}
+	if retained, err := server.ReadLifecycle(root); err != nil || retained.Version != 0 {
+		t.Fatal("offline observation published restart intent", retained, err)
 	}
 }
 

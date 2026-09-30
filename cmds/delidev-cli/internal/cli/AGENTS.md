@@ -42,4 +42,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Native fixed desktop-client pairing/inspection may join the existing recovery lock under a bounded cancellable deadline. Validate original recovery evidence after acquisition, keep ordinary/remote/Worker pairing semantics, and never turn contention into another request, credential or recovery.
 
+- Read-only desktop status distinguishes absent legacy lifecycle evidence from explicit stopped intent. It may authenticate a compatible live legacy listener without publishing restart configuration, but never starts an unavailable legacy scope; ensure still requires original running intent. Validate exact configured listener and original endpoint authority on observation as well as launch/Retry.
+
 - `usage summary --accounting-profile native-units-v1` requires the server echo before exposing native units. Omission preserves the existing response-only profile; unknown values fail. Keep source kinds and exact decimal totals distinct.
