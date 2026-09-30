@@ -2,6 +2,10 @@
 
 - Use service-specific schema files and preserve the compatibility `delidev.proto` import. Shared numeric additions must match `allocations.json`; reservations do not advertise support. Run the normal generated-source pipeline and never hand-edit generated output. The exact declaration-relocation map preserves FILE compatibility checks without suppressing semantic changes.
 
+- Issues #1093, #1202 and #1203 share the native-compaction reservations and planned boundary in `docs/cmds-delidev-compaction-contract.md`. Establish the reservation change on main before activating it. Keep one `CompactSession` owner/client operation, separate action/job identity and profile-specific native proof; reserved capabilities cannot advertise an unimplemented endpoint or native profile.
+
+- Allocation provenance uses exactly one original `pr` or owning `issue` when an implementation PR does not yet exist; record other issue consumers in `sharedIssues`. Preserve immutable numbers and identities when the implementation PR is later created.
+
 - PR activity activates only #1118's existing main reservations in `activity.proto`: ActivityKind 7–10, ActivityEntry.pull_request 15 and ListActivityResponse.capabilities 3. Keep typed metadata/actor/mode/state separate from private source content and independently verified handling. Regenerate service-owned bindings and compatibility facades together.
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
@@ -119,3 +123,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Permanent deletion adds owner/client SessionService acceptance/status and independent owning-Worker cleanup RPCs. Shared job/state messages belong to common.proto; exclusive request/response types belong to their service file. Preserve `PERMANENT_SESSION_DELETION_V1 = 9` from allocations.json alongside merged capabilities, exact uint64 revisions, pending acknowledgements and unknown reclaimed bytes. Follow `docs/cmds-delidev-storage-contract.md` and regenerate bindings.
 
 - PullRequestFixService is an additive independently owned `pr_fix.proto` service with typed profile capability and original selection JSON. Existing wire numbers remain unchanged. Preserve generated service/facade/reflection compatibility and authenticated owner/client scope; Worker Git execution is not API publishing.
+
+- The reserved native accounting capability is 4, usage request/response accounting_profile fields are 11/12 and UsageTotals.accounting is 8. Use the service-specific usage/system schemas and generated compatibility views; preserve distinct CodexResponse/GrokClosedInput kinds and legacy omission. Unknown profiles fail; native source proofs remain private and Grok costs unavailable.

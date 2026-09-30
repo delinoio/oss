@@ -125,3 +125,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Manual fix completion must retain dedicated Activity verification in the same transaction as exact handled versions, after original native, cleanup and push proof. An outcome alone cannot create verification.
 
 - Manual push proof ordering uses original server-observed assignment/report and cleanup barriers. Worker wall time is metadata only; clock skew cannot override server handling timestamps or strand a matching verified push.
+
+- Schema 25 implements the reserved Grok accounting migration with an independent layout marker; reject unmarked unmerged v25 files without modification. Insert one GrokClosedInput only with the original verified completion receipt and independently confirmed cleanup. Preserve history, exact counters, original assignment attribution, atomic replay and future-only retention; no backfill, pricing or budget writes. Follow the usage/storage contracts.

@@ -147,3 +147,5 @@ BigInt revisions and pending/unknown removal state; no automatic mutation replay
 See the [storage contract](cmds-delidev-storage-contract.md).
 
 Generated `PullRequestFixQuery` provides typed manual-fix capability and acceptance operations. Callers preserve exact original version-1 selection/request bytes and validate original attempt/session/set acknowledgments. Uncertain responses permit only same-request receipt replay; server lookup credentials never become native Git authority. See the integration contract.
+
+Issue #1100 generates the native accounting profile and unit enums with the existing UsageQuery descriptor. Consumers must require the echoed NATIVE_UNITS_V1 profile before interpreting UsageTotals.accounting, preserve exact decimal totals and distinct CodexResponse/GrokClosedInput unit kinds, and retain response-only legacy fields. Grok cost and budget contribution remain unavailable; clients cannot normalize or price the separate response dimensions.
