@@ -28,32 +28,46 @@ const (
 	// Accepted dispatch is not proof that native input started.
 	ActivityKind_ACTIVITY_KIND_EXECUTION_ACCEPTED ActivityKind = 1
 	// Observed native outcomes do not assert process cleanup.
-	ActivityKind_ACTIVITY_KIND_EXECUTION_SUCCEEDED ActivityKind = 2
-	ActivityKind_ACTIVITY_KIND_EXECUTION_FAILED    ActivityKind = 3
-	ActivityKind_ACTIVITY_KIND_EXECUTION_STOPPED   ActivityKind = 4
-	ActivityKind_ACTIVITY_KIND_SCHEDULE_CRON       ActivityKind = 5
-	ActivityKind_ACTIVITY_KIND_SCHEDULE_RUN_NOW    ActivityKind = 6
+	ActivityKind_ACTIVITY_KIND_EXECUTION_SUCCEEDED  ActivityKind = 2
+	ActivityKind_ACTIVITY_KIND_EXECUTION_FAILED     ActivityKind = 3
+	ActivityKind_ACTIVITY_KIND_EXECUTION_STOPPED    ActivityKind = 4
+	ActivityKind_ACTIVITY_KIND_SCHEDULE_CRON        ActivityKind = 5
+	ActivityKind_ACTIVITY_KIND_SCHEDULE_RUN_NOW     ActivityKind = 6
+	ActivityKind_ACTIVITY_KIND_PR_PROBLEM_OBSERVED  ActivityKind = 7
+	ActivityKind_ACTIVITY_KIND_PR_PROBLEM_DISMISSED ActivityKind = 8
+	// Attempt success never establishes that the original problems were handled.
+	ActivityKind_ACTIVITY_KIND_PR_REMEDIATION_ATTEMPT ActivityKind = 9
+	// Requires its own immutable verification source, never attempt success.
+	ActivityKind_ACTIVITY_KIND_PR_VERIFIED_HANDLED ActivityKind = 10
 )
 
 // Enum value maps for ActivityKind.
 var (
 	ActivityKind_name = map[int32]string{
-		0: "ACTIVITY_KIND_UNSPECIFIED",
-		1: "ACTIVITY_KIND_EXECUTION_ACCEPTED",
-		2: "ACTIVITY_KIND_EXECUTION_SUCCEEDED",
-		3: "ACTIVITY_KIND_EXECUTION_FAILED",
-		4: "ACTIVITY_KIND_EXECUTION_STOPPED",
-		5: "ACTIVITY_KIND_SCHEDULE_CRON",
-		6: "ACTIVITY_KIND_SCHEDULE_RUN_NOW",
+		0:  "ACTIVITY_KIND_UNSPECIFIED",
+		1:  "ACTIVITY_KIND_EXECUTION_ACCEPTED",
+		2:  "ACTIVITY_KIND_EXECUTION_SUCCEEDED",
+		3:  "ACTIVITY_KIND_EXECUTION_FAILED",
+		4:  "ACTIVITY_KIND_EXECUTION_STOPPED",
+		5:  "ACTIVITY_KIND_SCHEDULE_CRON",
+		6:  "ACTIVITY_KIND_SCHEDULE_RUN_NOW",
+		7:  "ACTIVITY_KIND_PR_PROBLEM_OBSERVED",
+		8:  "ACTIVITY_KIND_PR_PROBLEM_DISMISSED",
+		9:  "ACTIVITY_KIND_PR_REMEDIATION_ATTEMPT",
+		10: "ACTIVITY_KIND_PR_VERIFIED_HANDLED",
 	}
 	ActivityKind_value = map[string]int32{
-		"ACTIVITY_KIND_UNSPECIFIED":         0,
-		"ACTIVITY_KIND_EXECUTION_ACCEPTED":  1,
-		"ACTIVITY_KIND_EXECUTION_SUCCEEDED": 2,
-		"ACTIVITY_KIND_EXECUTION_FAILED":    3,
-		"ACTIVITY_KIND_EXECUTION_STOPPED":   4,
-		"ACTIVITY_KIND_SCHEDULE_CRON":       5,
-		"ACTIVITY_KIND_SCHEDULE_RUN_NOW":    6,
+		"ACTIVITY_KIND_UNSPECIFIED":            0,
+		"ACTIVITY_KIND_EXECUTION_ACCEPTED":     1,
+		"ACTIVITY_KIND_EXECUTION_SUCCEEDED":    2,
+		"ACTIVITY_KIND_EXECUTION_FAILED":       3,
+		"ACTIVITY_KIND_EXECUTION_STOPPED":      4,
+		"ACTIVITY_KIND_SCHEDULE_CRON":          5,
+		"ACTIVITY_KIND_SCHEDULE_RUN_NOW":       6,
+		"ACTIVITY_KIND_PR_PROBLEM_OBSERVED":    7,
+		"ACTIVITY_KIND_PR_PROBLEM_DISMISSED":   8,
+		"ACTIVITY_KIND_PR_REMEDIATION_ATTEMPT": 9,
+		"ACTIVITY_KIND_PR_VERIFIED_HANDLED":    10,
 	}
 )
 
@@ -82,6 +96,220 @@ func (x ActivityKind) Number() protoreflect.EnumNumber {
 // Deprecated: Use ActivityKind.Descriptor instead.
 func (ActivityKind) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{0}
+}
+
+type ActivityPRAttemptState int32
+
+const (
+	ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED ActivityPRAttemptState = 0
+	ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_RESERVED    ActivityPRAttemptState = 1
+	ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_BOUND       ActivityPRAttemptState = 2
+	ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_RUNNING     ActivityPRAttemptState = 3
+	ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_UNCERTAIN   ActivityPRAttemptState = 4
+	ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_SUCCEEDED   ActivityPRAttemptState = 5
+	ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_FAILED      ActivityPRAttemptState = 6
+	ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_STOPPED     ActivityPRAttemptState = 7
+	ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_CANCELED    ActivityPRAttemptState = 8
+	ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_NOT_STARTED ActivityPRAttemptState = 9
+)
+
+// Enum value maps for ActivityPRAttemptState.
+var (
+	ActivityPRAttemptState_name = map[int32]string{
+		0: "ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED",
+		1: "ACTIVITY_PR_ATTEMPT_STATE_RESERVED",
+		2: "ACTIVITY_PR_ATTEMPT_STATE_BOUND",
+		3: "ACTIVITY_PR_ATTEMPT_STATE_RUNNING",
+		4: "ACTIVITY_PR_ATTEMPT_STATE_UNCERTAIN",
+		5: "ACTIVITY_PR_ATTEMPT_STATE_SUCCEEDED",
+		6: "ACTIVITY_PR_ATTEMPT_STATE_FAILED",
+		7: "ACTIVITY_PR_ATTEMPT_STATE_STOPPED",
+		8: "ACTIVITY_PR_ATTEMPT_STATE_CANCELED",
+		9: "ACTIVITY_PR_ATTEMPT_STATE_NOT_STARTED",
+	}
+	ActivityPRAttemptState_value = map[string]int32{
+		"ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED": 0,
+		"ACTIVITY_PR_ATTEMPT_STATE_RESERVED":    1,
+		"ACTIVITY_PR_ATTEMPT_STATE_BOUND":       2,
+		"ACTIVITY_PR_ATTEMPT_STATE_RUNNING":     3,
+		"ACTIVITY_PR_ATTEMPT_STATE_UNCERTAIN":   4,
+		"ACTIVITY_PR_ATTEMPT_STATE_SUCCEEDED":   5,
+		"ACTIVITY_PR_ATTEMPT_STATE_FAILED":      6,
+		"ACTIVITY_PR_ATTEMPT_STATE_STOPPED":     7,
+		"ACTIVITY_PR_ATTEMPT_STATE_CANCELED":    8,
+		"ACTIVITY_PR_ATTEMPT_STATE_NOT_STARTED": 9,
+	}
+)
+
+func (x ActivityPRAttemptState) Enum() *ActivityPRAttemptState {
+	p := new(ActivityPRAttemptState)
+	*p = x
+	return p
+}
+
+func (x ActivityPRAttemptState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ActivityPRAttemptState) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_activity_proto_enumTypes[1].Descriptor()
+}
+
+func (ActivityPRAttemptState) Type() protoreflect.EnumType {
+	return &file_delidev_v1_activity_proto_enumTypes[1]
+}
+
+func (x ActivityPRAttemptState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ActivityPRAttemptState.Descriptor instead.
+func (ActivityPRAttemptState) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{1}
+}
+
+type ActivityPRMode int32
+
+const (
+	ActivityPRMode_ACTIVITY_PR_MODE_UNSPECIFIED ActivityPRMode = 0
+	ActivityPRMode_ACTIVITY_PR_MODE_MANUAL      ActivityPRMode = 1
+	ActivityPRMode_ACTIVITY_PR_MODE_AUTOMATIC   ActivityPRMode = 2
+)
+
+// Enum value maps for ActivityPRMode.
+var (
+	ActivityPRMode_name = map[int32]string{
+		0: "ACTIVITY_PR_MODE_UNSPECIFIED",
+		1: "ACTIVITY_PR_MODE_MANUAL",
+		2: "ACTIVITY_PR_MODE_AUTOMATIC",
+	}
+	ActivityPRMode_value = map[string]int32{
+		"ACTIVITY_PR_MODE_UNSPECIFIED": 0,
+		"ACTIVITY_PR_MODE_MANUAL":      1,
+		"ACTIVITY_PR_MODE_AUTOMATIC":   2,
+	}
+)
+
+func (x ActivityPRMode) Enum() *ActivityPRMode {
+	p := new(ActivityPRMode)
+	*p = x
+	return p
+}
+
+func (x ActivityPRMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ActivityPRMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_activity_proto_enumTypes[2].Descriptor()
+}
+
+func (ActivityPRMode) Type() protoreflect.EnumType {
+	return &file_delidev_v1_activity_proto_enumTypes[2]
+}
+
+func (x ActivityPRMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ActivityPRMode.Descriptor instead.
+func (ActivityPRMode) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{2}
+}
+
+type ActivityPRActorType int32
+
+const (
+	ActivityPRActorType_ACTIVITY_PR_ACTOR_TYPE_UNSPECIFIED ActivityPRActorType = 0
+	ActivityPRActorType_ACTIVITY_PR_ACTOR_TYPE_OWNER       ActivityPRActorType = 1
+	ActivityPRActorType_ACTIVITY_PR_ACTOR_TYPE_CLIENT      ActivityPRActorType = 2
+)
+
+// Enum value maps for ActivityPRActorType.
+var (
+	ActivityPRActorType_name = map[int32]string{
+		0: "ACTIVITY_PR_ACTOR_TYPE_UNSPECIFIED",
+		1: "ACTIVITY_PR_ACTOR_TYPE_OWNER",
+		2: "ACTIVITY_PR_ACTOR_TYPE_CLIENT",
+	}
+	ActivityPRActorType_value = map[string]int32{
+		"ACTIVITY_PR_ACTOR_TYPE_UNSPECIFIED": 0,
+		"ACTIVITY_PR_ACTOR_TYPE_OWNER":       1,
+		"ACTIVITY_PR_ACTOR_TYPE_CLIENT":      2,
+	}
+)
+
+func (x ActivityPRActorType) Enum() *ActivityPRActorType {
+	p := new(ActivityPRActorType)
+	*p = x
+	return p
+}
+
+func (x ActivityPRActorType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ActivityPRActorType) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_activity_proto_enumTypes[3].Descriptor()
+}
+
+func (ActivityPRActorType) Type() protoreflect.EnumType {
+	return &file_delidev_v1_activity_proto_enumTypes[3]
+}
+
+func (x ActivityPRActorType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ActivityPRActorType.Descriptor instead.
+func (ActivityPRActorType) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{3}
+}
+
+type ActivityCapability int32
+
+const (
+	ActivityCapability_ACTIVITY_CAPABILITY_UNSPECIFIED    ActivityCapability = 0
+	ActivityCapability_ACTIVITY_CAPABILITY_PR_HANDLING_V1 ActivityCapability = 1
+)
+
+// Enum value maps for ActivityCapability.
+var (
+	ActivityCapability_name = map[int32]string{
+		0: "ACTIVITY_CAPABILITY_UNSPECIFIED",
+		1: "ACTIVITY_CAPABILITY_PR_HANDLING_V1",
+	}
+	ActivityCapability_value = map[string]int32{
+		"ACTIVITY_CAPABILITY_UNSPECIFIED":    0,
+		"ACTIVITY_CAPABILITY_PR_HANDLING_V1": 1,
+	}
+)
+
+func (x ActivityCapability) Enum() *ActivityCapability {
+	p := new(ActivityCapability)
+	*p = x
+	return p
+}
+
+func (x ActivityCapability) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ActivityCapability) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_activity_proto_enumTypes[4].Descriptor()
+}
+
+func (ActivityCapability) Type() protoreflect.EnumType {
+	return &file_delidev_v1_activity_proto_enumTypes[4]
+}
+
+func (x ActivityCapability) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ActivityCapability.Descriptor instead.
+func (ActivityCapability) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{4}
 }
 
 type ActivityOccurrenceState int32
@@ -129,11 +357,11 @@ func (x ActivityOccurrenceState) String() string {
 }
 
 func (ActivityOccurrenceState) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_activity_proto_enumTypes[1].Descriptor()
+	return file_delidev_v1_activity_proto_enumTypes[5].Descriptor()
 }
 
 func (ActivityOccurrenceState) Type() protoreflect.EnumType {
-	return &file_delidev_v1_activity_proto_enumTypes[1]
+	return &file_delidev_v1_activity_proto_enumTypes[5]
 }
 
 func (x ActivityOccurrenceState) Number() protoreflect.EnumNumber {
@@ -142,7 +370,7 @@ func (x ActivityOccurrenceState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ActivityOccurrenceState.Descriptor instead.
 func (ActivityOccurrenceState) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{1}
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{5}
 }
 
 type ActivityJobState int32
@@ -190,11 +418,11 @@ func (x ActivityJobState) String() string {
 }
 
 func (ActivityJobState) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_activity_proto_enumTypes[2].Descriptor()
+	return file_delidev_v1_activity_proto_enumTypes[6].Descriptor()
 }
 
 func (ActivityJobState) Type() protoreflect.EnumType {
-	return &file_delidev_v1_activity_proto_enumTypes[2]
+	return &file_delidev_v1_activity_proto_enumTypes[6]
 }
 
 func (x ActivityJobState) Number() protoreflect.EnumNumber {
@@ -203,7 +431,208 @@ func (x ActivityJobState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ActivityJobState.Descriptor instead.
 func (ActivityJobState) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{2}
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{6}
+}
+
+type ActivityPRProblemReference struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ContentVersion string                 `protobuf:"bytes,2,opt,name=content_version,json=contentVersion,proto3" json:"content_version,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ActivityPRProblemReference) Reset() {
+	*x = ActivityPRProblemReference{}
+	mi := &file_delidev_v1_activity_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActivityPRProblemReference) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActivityPRProblemReference) ProtoMessage() {}
+
+func (x *ActivityPRProblemReference) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_activity_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActivityPRProblemReference.ProtoReflect.Descriptor instead.
+func (*ActivityPRProblemReference) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ActivityPRProblemReference) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ActivityPRProblemReference) GetContentVersion() string {
+	if x != nil {
+		return x.ContentVersion
+	}
+	return ""
+}
+
+// Only metadata; no PR title, feedback, tool output or provider diagnostics.
+type ActivityPRMetadata struct {
+	state              protoimpl.MessageState        `protogen:"open.v1"`
+	ProblemSetId       string                        `protobuf:"bytes,1,opt,name=problem_set_id,json=problemSetId,proto3" json:"problem_set_id,omitempty"`
+	RemoteRepositoryId string                        `protobuf:"bytes,2,opt,name=remote_repository_id,json=remoteRepositoryId,proto3" json:"remote_repository_id,omitempty"`
+	PullRequestId      string                        `protobuf:"bytes,3,opt,name=pull_request_id,json=pullRequestId,proto3" json:"pull_request_id,omitempty"`
+	Number             string                        `protobuf:"bytes,4,opt,name=number,proto3" json:"number,omitempty"`
+	Owner              string                        `protobuf:"bytes,5,opt,name=owner,proto3" json:"owner,omitempty"`
+	Name               string                        `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
+	SourceId           string                        `protobuf:"bytes,7,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	Problems           []*ActivityPRProblemReference `protobuf:"bytes,8,rep,name=problems,proto3" json:"problems,omitempty"`
+	ActorType          ActivityPRActorType           `protobuf:"varint,9,opt,name=actor_type,json=actorType,proto3,enum=delidev.v1.ActivityPRActorType" json:"actor_type,omitempty"`
+	DeviceId           string                        `protobuf:"bytes,10,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	RequestId          string                        `protobuf:"bytes,11,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	AttemptState       ActivityPRAttemptState        `protobuf:"varint,12,opt,name=attempt_state,json=attemptState,proto3,enum=delidev.v1.ActivityPRAttemptState" json:"attempt_state,omitempty"`
+	Mode               ActivityPRMode                `protobuf:"varint,13,opt,name=mode,proto3,enum=delidev.v1.ActivityPRMode" json:"mode,omitempty"`
+	VerificationId     string                        `protobuf:"bytes,14,opt,name=verification_id,json=verificationId,proto3" json:"verification_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ActivityPRMetadata) Reset() {
+	*x = ActivityPRMetadata{}
+	mi := &file_delidev_v1_activity_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActivityPRMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActivityPRMetadata) ProtoMessage() {}
+
+func (x *ActivityPRMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_activity_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActivityPRMetadata.ProtoReflect.Descriptor instead.
+func (*ActivityPRMetadata) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ActivityPRMetadata) GetProblemSetId() string {
+	if x != nil {
+		return x.ProblemSetId
+	}
+	return ""
+}
+
+func (x *ActivityPRMetadata) GetRemoteRepositoryId() string {
+	if x != nil {
+		return x.RemoteRepositoryId
+	}
+	return ""
+}
+
+func (x *ActivityPRMetadata) GetPullRequestId() string {
+	if x != nil {
+		return x.PullRequestId
+	}
+	return ""
+}
+
+func (x *ActivityPRMetadata) GetNumber() string {
+	if x != nil {
+		return x.Number
+	}
+	return ""
+}
+
+func (x *ActivityPRMetadata) GetOwner() string {
+	if x != nil {
+		return x.Owner
+	}
+	return ""
+}
+
+func (x *ActivityPRMetadata) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ActivityPRMetadata) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+func (x *ActivityPRMetadata) GetProblems() []*ActivityPRProblemReference {
+	if x != nil {
+		return x.Problems
+	}
+	return nil
+}
+
+func (x *ActivityPRMetadata) GetActorType() ActivityPRActorType {
+	if x != nil {
+		return x.ActorType
+	}
+	return ActivityPRActorType_ACTIVITY_PR_ACTOR_TYPE_UNSPECIFIED
+}
+
+func (x *ActivityPRMetadata) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *ActivityPRMetadata) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ActivityPRMetadata) GetAttemptState() ActivityPRAttemptState {
+	if x != nil {
+		return x.AttemptState
+	}
+	return ActivityPRAttemptState_ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED
+}
+
+func (x *ActivityPRMetadata) GetMode() ActivityPRMode {
+	if x != nil {
+		return x.Mode
+	}
+	return ActivityPRMode_ACTIVITY_PR_MODE_UNSPECIFIED
+}
+
+func (x *ActivityPRMetadata) GetVerificationId() string {
+	if x != nil {
+		return x.VerificationId
+	}
+	return ""
 }
 
 type ListActivityRequest struct {
@@ -218,7 +647,7 @@ type ListActivityRequest struct {
 
 func (x *ListActivityRequest) Reset() {
 	*x = ListActivityRequest{}
-	mi := &file_delidev_v1_activity_proto_msgTypes[0]
+	mi := &file_delidev_v1_activity_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -230,7 +659,7 @@ func (x *ListActivityRequest) String() string {
 func (*ListActivityRequest) ProtoMessage() {}
 
 func (x *ListActivityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_activity_proto_msgTypes[0]
+	mi := &file_delidev_v1_activity_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -243,7 +672,7 @@ func (x *ListActivityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivityRequest.ProtoReflect.Descriptor instead.
 func (*ListActivityRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{0}
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ListActivityRequest) GetSessionId() string {
@@ -274,7 +703,7 @@ func (x *ListActivityRequest) GetPageToken() string {
 	return ""
 }
 
-// Metadata only. Original source identity is also the stable activity identity.
+// Metadata only. PR transitions have their own immutable activity identity.
 type ActivityEntry struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -292,14 +721,15 @@ type ActivityEntry struct {
 	// Current occurrence state, distinct from its original acceptance time.
 	OccurrenceState ActivityOccurrenceState `protobuf:"varint,13,opt,name=occurrence_state,json=occurrenceState,proto3,enum=delidev.v1.ActivityOccurrenceState" json:"occurrence_state,omitempty"`
 	// Current dispatch/cleanup job state, including pre-native failure.
-	JobState      ActivityJobState `protobuf:"varint,14,opt,name=job_state,json=jobState,proto3,enum=delidev.v1.ActivityJobState" json:"job_state,omitempty"`
+	JobState      ActivityJobState    `protobuf:"varint,14,opt,name=job_state,json=jobState,proto3,enum=delidev.v1.ActivityJobState" json:"job_state,omitempty"`
+	PullRequest   *ActivityPRMetadata `protobuf:"bytes,15,opt,name=pull_request,json=pullRequest,proto3" json:"pull_request,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ActivityEntry) Reset() {
 	*x = ActivityEntry{}
-	mi := &file_delidev_v1_activity_proto_msgTypes[1]
+	mi := &file_delidev_v1_activity_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -311,7 +741,7 @@ func (x *ActivityEntry) String() string {
 func (*ActivityEntry) ProtoMessage() {}
 
 func (x *ActivityEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_activity_proto_msgTypes[1]
+	mi := &file_delidev_v1_activity_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -324,7 +754,7 @@ func (x *ActivityEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivityEntry.ProtoReflect.Descriptor instead.
 func (*ActivityEntry) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{1}
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ActivityEntry) GetId() string {
@@ -425,17 +855,25 @@ func (x *ActivityEntry) GetJobState() ActivityJobState {
 	return ActivityJobState_ACTIVITY_JOB_STATE_UNSPECIFIED
 }
 
+func (x *ActivityEntry) GetPullRequest() *ActivityPRMetadata {
+	if x != nil {
+		return x.PullRequest
+	}
+	return nil
+}
+
 type ListActivityResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Entries       []*ActivityEntry       `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
 	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	Capabilities  []ActivityCapability   `protobuf:"varint,3,rep,packed,name=capabilities,proto3,enum=delidev.v1.ActivityCapability" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListActivityResponse) Reset() {
 	*x = ListActivityResponse{}
-	mi := &file_delidev_v1_activity_proto_msgTypes[2]
+	mi := &file_delidev_v1_activity_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -447,7 +885,7 @@ func (x *ListActivityResponse) String() string {
 func (*ListActivityResponse) ProtoMessage() {}
 
 func (x *ListActivityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_activity_proto_msgTypes[2]
+	mi := &file_delidev_v1_activity_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -460,7 +898,7 @@ func (x *ListActivityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivityResponse.ProtoReflect.Descriptor instead.
 func (*ListActivityResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{2}
+	return file_delidev_v1_activity_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListActivityResponse) GetEntries() []*ActivityEntry {
@@ -477,12 +915,40 @@ func (x *ListActivityResponse) GetNextPageToken() string {
 	return ""
 }
 
+func (x *ListActivityResponse) GetCapabilities() []ActivityCapability {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 var File_delidev_v1_activity_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_activity_proto_rawDesc = "" +
 	"\n" +
 	"\x19delidev/v1/activity.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\"\x8f\x01\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\"U\n" +
+	"\x1aActivityPRProblemReference\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
+	"\x0fcontent_version\x18\x02 \x01(\tR\x0econtentVersion\"\xd5\x04\n" +
+	"\x12ActivityPRMetadata\x12$\n" +
+	"\x0eproblem_set_id\x18\x01 \x01(\tR\fproblemSetId\x120\n" +
+	"\x14remote_repository_id\x18\x02 \x01(\tR\x12remoteRepositoryId\x12&\n" +
+	"\x0fpull_request_id\x18\x03 \x01(\tR\rpullRequestId\x12\x16\n" +
+	"\x06number\x18\x04 \x01(\tR\x06number\x12\x14\n" +
+	"\x05owner\x18\x05 \x01(\tR\x05owner\x12\x12\n" +
+	"\x04name\x18\x06 \x01(\tR\x04name\x12\x1b\n" +
+	"\tsource_id\x18\a \x01(\tR\bsourceId\x12B\n" +
+	"\bproblems\x18\b \x03(\v2&.delidev.v1.ActivityPRProblemReferenceR\bproblems\x12>\n" +
+	"\n" +
+	"actor_type\x18\t \x01(\x0e2\x1f.delidev.v1.ActivityPRActorTypeR\tactorType\x12\x1b\n" +
+	"\tdevice_id\x18\n" +
+	" \x01(\tR\bdeviceId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\v \x01(\tR\trequestId\x12G\n" +
+	"\rattempt_state\x18\f \x01(\x0e2\".delidev.v1.ActivityPRAttemptStateR\fattemptState\x12.\n" +
+	"\x04mode\x18\r \x01(\x0e2\x1a.delidev.v1.ActivityPRModeR\x04mode\x12'\n" +
+	"\x0fverification_id\x18\x0e \x01(\tR\x0everificationId\"\x8f\x01\n" +
 	"\x13ListActivityRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -490,7 +956,7 @@ const file_delidev_v1_activity_proto_rawDesc = "" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x1b\n" +
 	"\tpage_size\x18\x03 \x01(\rR\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x04 \x01(\tR\tpageToken\"\xc6\x04\n" +
+	"page_token\x18\x04 \x01(\tR\tpageToken\"\x89\x05\n" +
 	"\rActivityEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x127\n" +
 	"\vsource_kind\x18\x02 \x01(\x0e2\x16.delidev.v1.EntityKindR\n" +
@@ -511,10 +977,12 @@ const file_delidev_v1_activity_proto_rawDesc = "" +
 	"scheduleId\x12#\n" +
 	"\roccurrence_id\x18\f \x01(\tR\foccurrenceId\x12N\n" +
 	"\x10occurrence_state\x18\r \x01(\x0e2#.delidev.v1.ActivityOccurrenceStateR\x0foccurrenceState\x129\n" +
-	"\tjob_state\x18\x0e \x01(\x0e2\x1c.delidev.v1.ActivityJobStateR\bjobState\"s\n" +
+	"\tjob_state\x18\x0e \x01(\x0e2\x1c.delidev.v1.ActivityJobStateR\bjobState\x12A\n" +
+	"\fpull_request\x18\x0f \x01(\v2\x1e.delidev.v1.ActivityPRMetadataR\vpullRequest\"\xb7\x01\n" +
 	"\x14ListActivityResponse\x123\n" +
 	"\aentries\x18\x01 \x03(\v2\x19.delidev.v1.ActivityEntryR\aentries\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*\x88\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12B\n" +
+	"\fcapabilities\x18\x03 \x03(\x0e2\x1e.delidev.v1.ActivityCapabilityR\fcapabilities*\xa8\x03\n" +
 	"\fActivityKind\x12\x1d\n" +
 	"\x19ACTIVITY_KIND_UNSPECIFIED\x10\x00\x12$\n" +
 	" ACTIVITY_KIND_EXECUTION_ACCEPTED\x10\x01\x12%\n" +
@@ -522,7 +990,34 @@ const file_delidev_v1_activity_proto_rawDesc = "" +
 	"\x1eACTIVITY_KIND_EXECUTION_FAILED\x10\x03\x12#\n" +
 	"\x1fACTIVITY_KIND_EXECUTION_STOPPED\x10\x04\x12\x1f\n" +
 	"\x1bACTIVITY_KIND_SCHEDULE_CRON\x10\x05\x12\"\n" +
-	"\x1eACTIVITY_KIND_SCHEDULE_RUN_NOW\x10\x06*\xae\x02\n" +
+	"\x1eACTIVITY_KIND_SCHEDULE_RUN_NOW\x10\x06\x12%\n" +
+	"!ACTIVITY_KIND_PR_PROBLEM_OBSERVED\x10\a\x12&\n" +
+	"\"ACTIVITY_KIND_PR_PROBLEM_DISMISSED\x10\b\x12(\n" +
+	"$ACTIVITY_KIND_PR_REMEDIATION_ATTEMPT\x10\t\x12%\n" +
+	"!ACTIVITY_KIND_PR_VERIFIED_HANDLED\x10\n" +
+	"*\xa9\x03\n" +
+	"\x16ActivityPRAttemptState\x12)\n" +
+	"%ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"ACTIVITY_PR_ATTEMPT_STATE_RESERVED\x10\x01\x12#\n" +
+	"\x1fACTIVITY_PR_ATTEMPT_STATE_BOUND\x10\x02\x12%\n" +
+	"!ACTIVITY_PR_ATTEMPT_STATE_RUNNING\x10\x03\x12'\n" +
+	"#ACTIVITY_PR_ATTEMPT_STATE_UNCERTAIN\x10\x04\x12'\n" +
+	"#ACTIVITY_PR_ATTEMPT_STATE_SUCCEEDED\x10\x05\x12$\n" +
+	" ACTIVITY_PR_ATTEMPT_STATE_FAILED\x10\x06\x12%\n" +
+	"!ACTIVITY_PR_ATTEMPT_STATE_STOPPED\x10\a\x12&\n" +
+	"\"ACTIVITY_PR_ATTEMPT_STATE_CANCELED\x10\b\x12)\n" +
+	"%ACTIVITY_PR_ATTEMPT_STATE_NOT_STARTED\x10\t*o\n" +
+	"\x0eActivityPRMode\x12 \n" +
+	"\x1cACTIVITY_PR_MODE_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17ACTIVITY_PR_MODE_MANUAL\x10\x01\x12\x1e\n" +
+	"\x1aACTIVITY_PR_MODE_AUTOMATIC\x10\x02*\x82\x01\n" +
+	"\x13ActivityPRActorType\x12&\n" +
+	"\"ACTIVITY_PR_ACTOR_TYPE_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cACTIVITY_PR_ACTOR_TYPE_OWNER\x10\x01\x12!\n" +
+	"\x1dACTIVITY_PR_ACTOR_TYPE_CLIENT\x10\x02*a\n" +
+	"\x12ActivityCapability\x12#\n" +
+	"\x1fACTIVITY_CAPABILITY_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"ACTIVITY_CAPABILITY_PR_HANDLING_V1\x10\x01*\xae\x02\n" +
 	"\x17ActivityOccurrenceState\x12)\n" +
 	"%ACTIVITY_OCCURRENCE_STATE_UNSPECIFIED\x10\x00\x12%\n" +
 	"!ACTIVITY_OCCURRENCE_STATE_WAITING\x10\x01\x12$\n" +
@@ -554,30 +1049,42 @@ func file_delidev_v1_activity_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_activity_proto_rawDescData
 }
 
-var file_delidev_v1_activity_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_delidev_v1_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_delidev_v1_activity_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_delidev_v1_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_delidev_v1_activity_proto_goTypes = []any{
-	(ActivityKind)(0),            // 0: delidev.v1.ActivityKind
-	(ActivityOccurrenceState)(0), // 1: delidev.v1.ActivityOccurrenceState
-	(ActivityJobState)(0),        // 2: delidev.v1.ActivityJobState
-	(*ListActivityRequest)(nil),  // 3: delidev.v1.ListActivityRequest
-	(*ActivityEntry)(nil),        // 4: delidev.v1.ActivityEntry
-	(*ListActivityResponse)(nil), // 5: delidev.v1.ListActivityResponse
-	(EntityKind)(0),              // 6: delidev.v1.EntityKind
+	(ActivityKind)(0),                  // 0: delidev.v1.ActivityKind
+	(ActivityPRAttemptState)(0),        // 1: delidev.v1.ActivityPRAttemptState
+	(ActivityPRMode)(0),                // 2: delidev.v1.ActivityPRMode
+	(ActivityPRActorType)(0),           // 3: delidev.v1.ActivityPRActorType
+	(ActivityCapability)(0),            // 4: delidev.v1.ActivityCapability
+	(ActivityOccurrenceState)(0),       // 5: delidev.v1.ActivityOccurrenceState
+	(ActivityJobState)(0),              // 6: delidev.v1.ActivityJobState
+	(*ActivityPRProblemReference)(nil), // 7: delidev.v1.ActivityPRProblemReference
+	(*ActivityPRMetadata)(nil),         // 8: delidev.v1.ActivityPRMetadata
+	(*ListActivityRequest)(nil),        // 9: delidev.v1.ListActivityRequest
+	(*ActivityEntry)(nil),              // 10: delidev.v1.ActivityEntry
+	(*ListActivityResponse)(nil),       // 11: delidev.v1.ListActivityResponse
+	(EntityKind)(0),                    // 12: delidev.v1.EntityKind
 }
 var file_delidev_v1_activity_proto_depIdxs = []int32{
-	6, // 0: delidev.v1.ActivityEntry.source_kind:type_name -> delidev.v1.EntityKind
-	0, // 1: delidev.v1.ActivityEntry.kind:type_name -> delidev.v1.ActivityKind
-	1, // 2: delidev.v1.ActivityEntry.occurrence_state:type_name -> delidev.v1.ActivityOccurrenceState
-	2, // 3: delidev.v1.ActivityEntry.job_state:type_name -> delidev.v1.ActivityJobState
-	4, // 4: delidev.v1.ListActivityResponse.entries:type_name -> delidev.v1.ActivityEntry
-	3, // 5: delidev.v1.ActivityService.ListActivity:input_type -> delidev.v1.ListActivityRequest
-	5, // 6: delidev.v1.ActivityService.ListActivity:output_type -> delidev.v1.ListActivityResponse
-	6, // [6:7] is the sub-list for method output_type
-	5, // [5:6] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	7,  // 0: delidev.v1.ActivityPRMetadata.problems:type_name -> delidev.v1.ActivityPRProblemReference
+	3,  // 1: delidev.v1.ActivityPRMetadata.actor_type:type_name -> delidev.v1.ActivityPRActorType
+	1,  // 2: delidev.v1.ActivityPRMetadata.attempt_state:type_name -> delidev.v1.ActivityPRAttemptState
+	2,  // 3: delidev.v1.ActivityPRMetadata.mode:type_name -> delidev.v1.ActivityPRMode
+	12, // 4: delidev.v1.ActivityEntry.source_kind:type_name -> delidev.v1.EntityKind
+	0,  // 5: delidev.v1.ActivityEntry.kind:type_name -> delidev.v1.ActivityKind
+	5,  // 6: delidev.v1.ActivityEntry.occurrence_state:type_name -> delidev.v1.ActivityOccurrenceState
+	6,  // 7: delidev.v1.ActivityEntry.job_state:type_name -> delidev.v1.ActivityJobState
+	8,  // 8: delidev.v1.ActivityEntry.pull_request:type_name -> delidev.v1.ActivityPRMetadata
+	10, // 9: delidev.v1.ListActivityResponse.entries:type_name -> delidev.v1.ActivityEntry
+	4,  // 10: delidev.v1.ListActivityResponse.capabilities:type_name -> delidev.v1.ActivityCapability
+	9,  // 11: delidev.v1.ActivityService.ListActivity:input_type -> delidev.v1.ListActivityRequest
+	11, // 12: delidev.v1.ActivityService.ListActivity:output_type -> delidev.v1.ListActivityResponse
+	12, // [12:13] is the sub-list for method output_type
+	11, // [11:12] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_activity_proto_init() }
@@ -591,8 +1098,8 @@ func file_delidev_v1_activity_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_activity_proto_rawDesc), len(file_delidev_v1_activity_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   3,
+			NumEnums:      7,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

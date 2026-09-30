@@ -14,7 +14,7 @@ One server owner can connect multiple paired desktop clients. The initial prereq
 ## Interfaces and Contracts
 - Use `@delinoio/delidev-api-client` and generated service-specific `@connectrpc/connect-query` descriptors for direct authenticated Connect RPC. No Rust agent traffic proxy or duplicate eligibility/routing engine is permitted.
 - Preserve independent outcome, Archive, dispatch and recovery states. Actions use original resource revisions and stable request IDs; uncertain retries reuse the original immutable request, never another mutation identity. Restore cannot imply Resume.
-- Keep drafts mounted across settings and supporting-surface navigation. Settings is an accessible modal with Escape, contained focus and focus restoration. Workspace icons have explicit accessible names in addition to appearance.
+- Keep connection-owned drafts mounted across supporting-surface navigation. Settings-local drafts live only within their current opening, as specified below. Settings is an accessible modal with Escape, contained focus and focus restoration. Workspace icons have explicit accessible names in addition to appearance.
 - Conversation content is inert text. Never render native content as HTML, execute a returned command or open arbitrary links automatically. Transcript tools/artifacts remain distinguishable from user/assistant text.
 - Search, activity and inbox use bounded pages. Inbox reading and answering remain separate. Unknown/unsupported native capabilities are explicit and cannot enable an emulated action.
 - Native initialization, local server lifetime, protected pairing, tray, notification/widget, signed update and session-side-app requirements must each have implementation and actual platform evidence before desktop completion is claimed.
@@ -64,7 +64,11 @@ Schedules keeps New schedule, All schedules/Enabled/Paused, Project, bounded sch
 ### Standalone Pull requests
 The Pull requests rail item selects `Surface.PullRequests`; it does not open Settings. The sidebar shows one bounded 50-resource repository catalog page with independent First/Next pagination and exact local UUIDs. Selecting a row alone is a local authenticated catalog/resource read and must not query GitHub. The initial state has no selected repository. Load remains disabled for missing integration/profile mappings, GitHub owner/name or supported schema and shows configuration guidance.
 
-State (Open by default), bounded plain title/body terms and PR page size 20 are drafts until explicit **Load pull requests**. Retain capacity-recovery choices 1/5/10/20, First/Next, detail/back and deliberate refresh. Changed repository selection immediately clears previous content; changed filters leave the existing result labeled with its last applied conditions. Reuse validated PR detail, diff, Checks, statuses, rules, required CI, feedback, reviewer verification and retained problem/remediation history. Do not add cross-repository aggregation, GitHub query syntax, new writes or execution capabilities. Repository settings opens the existing mounted Settings instance at Repositories through its current readiness/deferred-entry workflow.
+State (Open by default), bounded plain title/body terms and PR page size 20 are drafts until explicit **Load pull requests**. Retain capacity-recovery choices 1/5/10/20, First/Next, detail/back and deliberate refresh. Changed repository selection immediately clears previous content; changed filters leave the existing result labeled with its last applied conditions. Reuse validated PR detail, diff, Checks, statuses, rules, required CI, feedback, reviewer verification and retained problem/remediation history. Do not add cross-repository aggregation, GitHub query syntax, new writes or execution capabilities. Repository settings targets Repositories in the current Settings opening through its existing readiness/deferred-entry workflow, creating a fresh opening when Settings was closed. Never restore abandoned Settings-local drafts.
+
+Issue #1155 scopes the approved sidebar presentation to `Surface.PullRequests` on the existing sidebar root. Keep the same rail, pane, portal, controller/query instances, drawer and independent middle/footer scrolling regions; the footer retains its 35% maximum. Order the content as Pull requests, Repositories with Refresh, glyph/name/full wrapping UUID rows or the decorative folder empty block, First/Next, a divided Query options section for the selected repository, and the full-width secondary Repository settings action. A successful empty catalog page says exactly **No repositories on this page.**, never that the entire catalog is empty. Preserve page-scoped loading/failure/cached-refresh states. Selected rows retain `aria-pressed` and pale blue `#e7efff`; decorative outline SVGs are accessibility-hidden. Explicit-load guidance remains visible with both empty and selected states.
+
+Use the existing system font, 17px semibold titles, 13px body/control text, 12px sentence-case headings and metadata, 16px horizontal pane insets, 8/12/16/24px spacing and 8px control corners. Primary text is `#202632`, muted text `#5b6577`, borders `#d8dee8`, primary accent `#2563d8` and selected fill `#e7efff` on the existing off-white pane. Inputs and Load remain at least 40px high; Load pull requests is the only solid blue primary sidebar action. Existing inline server/registration/saved-server controls use a 36px minimum action-row height and expand for wrapping labels, status, errors, confirmations and recovery guidance. New footer overrides exclude every nested dialog and its contents, including when the outer pane itself is the responsive dialog; standard modal typography, controls and geometry remain unchanged. Preserve each control's owning visibility, authorization and retry contract. This presentation does not implement adjacent header/control-relocation work or restore controls removed by those owning changes. Other contexts, main content/composer and native window behavior retain their existing styling.
 
 When Pull requests becomes inactive, cancel and remove its disposable GitHub observation/history reads. Returning restores control selections and shows Pending PR actions before any Load. Retain only target IDs and confirmation identity/revision in connection state; keep immutable mutation requests in the bounded existing registry. Exact receipt retries remain available without reconstructing payloads from a new result or forcing a GitHub read. Never keep full GitHub response documents solely to preserve a read. Unsent confirmations cannot authorize a new mutation without fresh matching evidence. Only unsent drafts/confirmations may be canceled; pending, in-flight or uncertain actions cannot be cleared by navigation or repository/PR replacement.
 
@@ -165,6 +169,61 @@ Provider, model, AI account, Agent Worker and instruction-template forms use gen
 
 Each edit captures its original resource revision and full document. Server-owned account observations and model discovery provenance are preserved. A peer revision change blocks a new save while retaining the draft; an uncertain save retries only its original request. Edits and exact uncertain requests remain available within the current Settings opening across category and responsive layout changes. Closing discards them, including when an accepted save may still complete on the server. Forms cap complete documents at 1 MiB and instruction content at 128 KiB UTF-8 before retention, and selectors retain one bounded page with an explicit selected identity outside that page.
 
+### Agent Worker core and optional presentation
+
+Issue #1158 owns only the shared Agent Worker create/edit form. The existing
+Settings shell, category copy, navigation and native geometry stay unchanged.
+The form follows the approved V1 text specification: left-aligned, at most 800
+CSS px wide, with a 20px-equivalent title, 16px section headings, 14px labels and
+13px explanations in scalable units. Core settings uses 24px padding, 16px field
+gaps, 44px controls, 8px control radii and a 12px panel radius with the existing
+system font and light-neutral/blue tokens. Name occupies a full row, Harness and
+Model share equal columns, and permissions remain below their divider. Only Name
+and Model show required markers, retaining their accessible names and validation.
+The creation subtitle is “Configure the essentials, then customize only what you
+need.” Default permission guidance is “Uses the harness default. Review permissions
+before execution.” Native permission/incompatibility explanations and explicit
+clearing remain authoritative.
+
+Four native `details` disclosures start closed for both create and edit, may open
+independently and retain mounted controls and queries throughout the opening:
+
+| Order | Section | Summary and retained fields |
+| --- | --- | --- |
+| 1 | Reasoning | Current `effort`, or Native default when absent/empty; no normalization |
+| 2 | Accounts & routing | Account count plus explicit routing or Server default when inherited; ordered weighted accounts and all add/move/remove operations |
+| 3 | Instructions | Template count; all ordered reference operations |
+| 4 | Native harness options | Defaults only for absent/empty known fields or concurrency 0 with no unknown keys; otherwise Customized, explicitly identifying unknown options as retained |
+
+When accounts are empty, “Can be saved without accounts; execution requires an
+eligible account.” stays visible outside the closed disclosure. This is information,
+not an error or readiness grant. Unsupported selections remain explicit, harness
+switches preserve values, and all unknown document/link/option fields survive save.
+Collapsed sections expose Needs attention for read or validation problems, while
+expanded selectors retain sanitized detailed diagnostics. Loading, successful
+empty current pages (including continuation), permission/authentication failure,
+connection failure and cached prior choices after failed refresh remain distinct;
+a failed read never becomes an empty inventory or a new verification.
+
+Disclosures use native keyboard semantics and remove closed contents from the tab
+order without unmounting them. Invalid hidden inputs open their section before
+focus, preserving unrelated fields. Below 640 CSS px of available **form width**,
+Harness and Model use one column. Text, identifiers and action buttons wrap, focus
+outlines stay visible, and the Cancel edit / Save Agent Worker footer follows normal
+scrolling with Cancel before Save. The exact uncertain retry remains explicit.
+Existing locks, revision conflicts, accepted jobs, bounded selectors/provider gating,
+complete-document limits and byte-identical request retries remain unchanged.
+
+Close, Escape/native cancel and navigation away still dispose the entire Settings
+opening under #1138/#1150, with no abandoned request restoration/replay or late
+updates to replacement openings. Same-identity reconnect retains the active editor.
+This ordinary UI rollout has no API, schema, default, dependency, migration, backend
+deployment, polling, execution, logging or feature-flag change. Component/browser
+checks and supported-platform native acceptance are recorded separately in the
+[issue #1158 evidence](evidence/delidev/issue-1158/agent-settings.md).
+
+### Settings shell and opening lifetime
+
 Settings is a full-window presentation inside the existing native modal and fills the webview content viewport below the native title bar. It covers the ordinary app sidebar without resizing, maximizing, or entering OS fullscreen; all other modal callers keep the standard dialog layout. Its fixed 64px header contains the Settings title and an accessible Close Settings action with an Esc hint. At desktop widths, the grouped 240px navigation pane and flexible content pane scroll independently. The groups and 16 categories appear once in this order: AI & agents (AI Subscription, AI API Keys, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Execution Workers), and System (Paired devices, Server preferences, Integrations, Diagnostics, Notifications, Import / Export, Backups). Below 760 CSS pixels, the sidebar is visually removed and replaced by a labeled native select with the same groups and selection; category panels stay mounted across selection and responsive changes. Content padding is 40px, reduced to 24px below 1100px. The shell must reflow at 200% zoom without clipping controls or focus outlines.
 
 The shared AI Subscription category label is exactly the same in the sidebar, category heading and compact selector. Its category ID remains `subscription-accounts`; the selected English label fits on one line in the existing 240px sidebar at 100% zoom without changes to layout, font or icon styling.
@@ -180,6 +239,10 @@ Agent Workers alone uses a centered `width: 100%`, `max-width: 1040px` column in
 After a successful empty first page without a continuation token, Agent Workers shows one `#fafbfc` panel with a `#d8dee8` 1px border, 12px corners and 360px minimum height (280px below 760 CSS pixels). Center a decorative, accessibility-hidden 56px outline-icon tile, the 20px heading **No agent workers yet**, and 14px copy **Define a harness, model, accounts, and instructions, then reuse them in new sessions.** No second creation action appears in this panel. Loading, initial permission/read errors and failed cached-empty refreshes never satisfy that success-only predicate. Empty continuation or later pages say **No agent workers on this page.** and retain the original First/Next controls, kind, page size and opaque server tokens.
 
 Loaded Agent configurations occupy one bordered panel with divided rows. Preserve exact inert names and full IDs, with optional existing Harness/Status text only; no health or readiness is inferred. Unsupported schemas expose only bounded inert name text and full identity, while all existing unsupported-schema action gates remain enforced. Visible actions appear in Edit, Preview routing, Delete order; each accessible action name includes the configuration name. Rows, long text and controls wrap without clipping. Reuse the existing editor, read-only routing and explicit revision-bound deletion confirmation, ordered account/template/options validation and exact uncertain requests. Reflow and same-identity reconnect retain these only within the same opening. The common #1138 disposal/default-category policy above remains authoritative for Close, Escape and navigation away, including late outcomes and already accepted server effects.
+
+GitHub Integrations uses the approved issue #1147 content hierarchy within this shell. Its description is “Manage GitHub profiles for repository access. AI accounts are configured separately.” One left-aligned GitHub panel, at most 1040 CSS pixels wide, contains the provider heading, Refresh, bounded profile rows and exactly one New GitHub profile action. Only a successful empty first page without a continuation or read failure moves that action into first-profile guidance with three static informational steps. Loading, initial failure, cached refresh/failure and empty continuation/later pages remain distinct; create keeps its original eligibility before read success and paging keeps its original opaque cursor and 50-resource size.
+
+Rows and Manage display Token storage and Identity validation separately, including pending denial, unsupported versions, unknown observations and original check time/identity when provided. Neither identity verification nor token storage claims repository capability. Create/rename forms are bounded to 760 CSS pixels, focus the name only on first visible entry, and keep token type/owner immutable after creation. Manage separates explicit token connection, identity validation and confirmed deletion. Its empty password field disables submission and never reveals stored tokens. Full official-form guidance remains mounted inside a native disclosure; toggling alone cannot query or open a form. New unconnected profiles explain token creation by default; connected profiles initially collapse it. Existing exact uncertain identities, decimal revisions, PAT clearing, operation/navigation guards and the common Settings opening lifecycle remain authoritative. Use scoped CSP-compatible CSS, decorative vectors, wrapping metadata/actions and stacked steps; preserve shell spacing, category selection and native modal focus/close behavior. See the [integration contract](cmds-delidev-integrations-contract.md) for authority and operation ordering.
 
 Settings-specific colors and system fonts are scoped to this modal and remain CSP-compatible: white content, pale-gray navigation, 8px control radii, a 12px empty-panel radius, 40px minimum controls, decorative outline icons and non-color selected-state semantics. Do not add a route, native window, dependency, external asset, inline-style exception, public API, persisted schema, storage, authorization, credential, polling or migration change. Component tests do not establish native geometry or keyboard containment; record native desktop smoke evidence separately, including platform and viewport, and report unsupported/unavailable platforms without claiming acceptance.
 
@@ -729,3 +792,7 @@ Managed backup creation, inventory, integrity inspection and durable permanent i
 Local desktop registration now has explicit owner-verified revoked-client recovery and a current-client revocation guard in the app. The CLI/native boundary retains the original revoked identity and private pairing history, uses a separate candidate and exact durable retry, and preserves server sessions/settings and independent Workers. It does not add automatic repair, remote saved-profile recovery, a new RPC or database migration; see the CLI and desktop contracts and evidence ledger.
 
 Local connection and registration permission guidance distinguishes device authorization, ownership and owner-only filesystem access, including macOS/Linux private modes. Permission failures never establish revocation or authorize automatic repair; existing data remains preserved under the desktop contract.
+
+### PR handling in Activity
+
+The existing Activity page displays immutable problem observation/dismissal, attempt-state and dedicated verified-handled metadata with the original PR, actor, version and source references. Failure, uncertainty and successful attempts remain distinct; success never implies handling. The original source disclosure uses two independent disposable authenticated ResourceQuery reads only after explicit inspection. It checks the retained set/source/version scope, labels recorded versus current revisions and exposes no collection, dismissal, resumption or execution control. Closing or leaving Activity disposes the reads; returning requires a new explicit inspection. Verification creation remains a separate production verifier requirement; timeline fixtures do not establish real-account/native remediation acceptance.
