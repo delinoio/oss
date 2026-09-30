@@ -254,14 +254,21 @@ remain explicitly unknown. Repeated scans retain completed obligations and
 reapply removal to stale restored managed data. Logs contain operation/UUID,
 revision and stable error codes only, never paths, prompts or credentials.
 
-Future session-owned native services, dependent Sidechats and workspace snapshots
+Workspace snapshots now join the original deletion plan through reserved snapshot
+UUIDs on immutable claimed storage jobs, including interrupted copies with no output.
+The Worker joins job/workspace owners and removes published snapshots, staging, removal
+claims/intents, retirement receipts and restoration bindings before acknowledging.
+A stored workspace supplies its validated original manifest before deleting its only
+copy; restored independent Git is removed solely within the managed root. Original
+Local/source checkouts remain protected. Completed-proof retries verify these exact
+paths remain absent. Future session-owned native services and dependent Sidechats
 must join this ownership graph and acknowledgement boundary before exposing them.
 The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
 forward; offline or uncertain peers keep both forwarding records and database
 removal pending. Original cleanup reports remain authorized during deletion,
 while new socket claims and traffic cannot reopen the session. Other unimplemented
-terminal/browser-profile/snapshot products are not invented by deletion. Uncontrolled filesystem snapshots and external copies are
+terminal/browser-profile products are not invented by deletion. Uncontrolled filesystem snapshots and external copies are
 outside the guarantee; platform/process fixtures do not establish native
 Windows/Linux or real-account acceptance.
 

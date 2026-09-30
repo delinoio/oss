@@ -16,6 +16,7 @@ type SessionDeletionCopy struct {
 	Digest      string  `json:"digest"`
 	InstanceID  ID      `json:"instance_id"`
 	ExecutionID ID      `json:"execution_id,omitempty"`
+	SnapshotID  ID      `json:"snapshot_id,omitempty"`
 }
 
 type SessionDeletionWork struct {
@@ -44,8 +45,11 @@ func (w SessionDeletionWork) Validate() error {
 			return SessionDeletionPending()
 		}
 		switch c.Type {
-		case PrepareWorkspaceJob, RecoverWorkspaceJob, ExecuteSessionJob, RecoverExecutionJob, GenerateSessionTitleJob:
+		case PrepareWorkspaceJob, RecoverWorkspaceJob, ExecuteSessionJob, RecoverExecutionJob, GenerateSessionTitleJob, WorkspaceStorageJob:
 		default:
+			return SessionDeletionPending()
+		}
+		if c.SnapshotID != "" && (c.Type != WorkspaceStorageJob || c.SnapshotID.Validate() != nil) {
 			return SessionDeletionPending()
 		}
 		// Deletion plans have their own 4,096-copy bound; the general linked-ID

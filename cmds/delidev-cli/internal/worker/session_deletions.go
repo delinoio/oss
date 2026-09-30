@@ -176,7 +176,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				}
 			} else if !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
-			} else if j.State == journalStarted || j.Problem != nil && j.Problem.Code == domain.RecoveryRequired {
+			} else if copy.Type != domain.WorkspaceStorageJob && (j.State == journalStarted || j.Problem != nil && j.Problem.Code == domain.RecoveryRequired) {
 				return proof, domain.SessionDeletionPending()
 			}
 		}
@@ -227,6 +227,7 @@ func removeSessionTree(ctx context.Context, root, path string) error {
 // never gains permission to delete it merely from the earlier completed proof.
 func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
 	paths := []string{filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock")}
+	paths = append(paths, workspace.SessionStorageCopyPaths(root, w)...)
 	titlePrefixes := map[string]bool{}
 	for _, copy := range w.Copies {
 		if e := ctx.Err(); e != nil {

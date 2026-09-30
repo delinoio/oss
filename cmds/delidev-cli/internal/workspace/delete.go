@@ -37,6 +37,10 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		return domain.SessionDeletionPending()
 	}
 	defer lock.Close()
+	storedManifest, e := m.deletionSnapshotManifest(ctx, w)
+	if e != nil {
+		return e
+	}
 	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
 	proofPath := filepath.Join(m.Root, "session-deletions", string(w.SessionID)+"-workspace.json")
 	proof := deletionWorkspaceProof{Version: 1, Digest: w.Digest()}
@@ -57,7 +61,11 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 				return domain.SessionDeletionPending()
 			}
 			proof.Manifest = &manifest
-		} else if !errors.Is(e, os.ErrNotExist) || !allowAbsent {
+		} else if !errors.Is(e, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		} else if storedManifest != nil {
+			proof.Manifest = storedManifest
+		} else if !allowAbsent {
 			return domain.SessionDeletionPending()
 		}
 		if e := writeDeletionWorkspaceProof(proofPath, proof); e != nil {
@@ -89,6 +97,13 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		} else if !errors.Is(e, os.ErrNotExist) {
 			return domain.SessionDeletionPending()
 		}
+		independent := false
+		if _, err := os.Lstat(root); err == nil {
+			independent, e = m.deletionRestoredWorkspace(ctx, w, manifest)
+			if e != nil {
+				return e
+			}
+		}
 		for i := len(manifest.Repositories) - 1; i >= 0; i-- {
 			repo := manifest.Repositories[i]
 			if manifest.Type == domain.Local {
@@ -99,6 +114,11 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 			}
 			if manifest.Type != domain.Worktree || !repo.Owned || repo.ID.Validate() != nil || repo.Path != filepath.Join(root, string(repo.ID)) || repo.Source == repo.Path {
 				return domain.SessionDeletionPending()
+			}
+			if independent {
+				// Independent restored Git belongs to the managed root. Do not run
+				// worktree removal against the user's separate source Git store.
+				continue
 			}
 			info, e := os.Lstat(repo.Path)
 			if e == nil {

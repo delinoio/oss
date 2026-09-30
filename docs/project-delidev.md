@@ -55,7 +55,7 @@ commands, durable intent outside SQLite, original Worker cleanup acknowledgement
 and managed-backup erasure. Forwarding peers independently confirm cleanup;
 offline or uncertain ownership remains pending. Original Local checkouts, other
 sessions and shared account profiles are preserved. The [storage contract](cmds-delidev-storage-contract.md)
-owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
+owns the lifecycle, snapshot-copy deletion integration and remaining database-restore/Sidechat limits.
 
 ## Cross-Domain Invariants
 - Go owns business logic; clients use authenticated Connect and preserve exact request/revision identities.

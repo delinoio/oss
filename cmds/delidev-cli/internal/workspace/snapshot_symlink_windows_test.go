@@ -3,9 +3,12 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestSnapshotWindowsPreservesForwardAndDanglingDirectoryLinks(t *testing.T) {
@@ -14,7 +17,10 @@ func TestSnapshotWindowsPreservesForwardAndDanglingDirectoryLinks(t *testing.T) 
 	// must also survive when the original target is absent throughout the copy.
 	for _, name := range []string{"a-forward", "b-dangling"} {
 		if err := createSnapshotSymlink("z-target", filepath.Join(source, name), snapshotDirectoryLink); err != nil {
-			t.Skip("symlink creation unavailable", err)
+			if errors.Is(err, windows.ERROR_PRIVILEGE_NOT_HELD) || errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+				t.Skip("symlink creation permission unavailable", err)
+			}
+			t.Fatal("directory symlink creation failed", err)
 		}
 	}
 	if err := os.Mkdir(filepath.Join(source, "z-target"), 0700); err != nil {
