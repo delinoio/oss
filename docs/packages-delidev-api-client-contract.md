@@ -136,3 +136,13 @@ Generated SystemQuery exports `getUserService` and `controlUserService` with the
 ## Authenticated development-server forwarding
 
 Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
+
+
+## Codex fork clients (#1092)
+
+Generated messages, the `ForkWorkspace`/server capability enums and the existing
+`SessionQuery` namespace now expose `forkSession` and `getSessionFork`. The
+[fork contract](cmds-delidev-forks-contract.md) keeps native paths and creation
+logic in Go. Preserve exact uncertain requests; observe accepted operations by
+job ID instead of issuing another mutation. Desktop connection memory retains
+its controller through navigation and separates acceptance from child publication.

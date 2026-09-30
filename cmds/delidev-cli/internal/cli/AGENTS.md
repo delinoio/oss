@@ -33,3 +33,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Common parsing, authenticated clients, document input, and output envelopes belong to `arguments.go`, `client.go`, `document.go`, and `output.go`. Command-family dispatch belongs in `dispatch_<family>.go`; preserve request ID propagation and the generic resource fallback.
+
+- `session fork` uses authenticated Fork/GetSessionFork and preserves accepted job/request identities on bounded wait failure. Keep dispatch in `dispatch_session.go`, retain the two-minute Worker bound with a 145-second command deadline, and never replay creation while observing a job. Follow `docs/cmds-delidev-forks-contract.md`.

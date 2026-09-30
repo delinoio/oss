@@ -236,6 +236,7 @@ type LocalOrigin struct {
 // Session separates visibility, outcome and recovery from dispatch eligibility.
 // Blocked or restored sessions must never be interpreted as completed execution.
 type Session struct {
+	Fork                   *ForkOrigin                `json:"fork,omitempty"`
 	EstimatedCostBudget    *EstimatedCostBudget       `json:"estimated_cost_budget,omitempty"`
 	ScheduleOrigin         *ScheduleOrigin            `json:"schedule_origin,omitempty"`
 	LocalOrigin            *LocalOrigin               `json:"local_origin,omitempty"`

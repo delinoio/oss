@@ -559,3 +559,15 @@ The following source-backed notes were relocated from the project index at `12b3
 Uncertain question/approval response delivery now automatically inspects the original native conversation and exact retained turn/input scope after retaining the original delivery observation. Already observed exact live proof uses its original queued durable publication; history/closure alone never manufactures acceptance or permits a resend. Native pause and earlier recovery remain independent. Lost-event historical reconstruction and safe surviving-process reattachment remain required.
 
 Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
+
+
+## Same-account Codex fork boundary (#1092)
+
+The [fork contract](cmds-delidev-forks-contract.md) adds a separate durable Worker
+operation for a completed source turn. A source reservation prevents concurrent
+continuation without rewriting source state. Atomic publication creates a new
+paused session with an immutable source/configuration link, a verified workspace
+and empty queue/interaction accounting. First child input uses a version-3
+fork-checkpoint assignment; later turns use ordinary version-2 predecessor
+completion on the child history. No fork acceptance, receipt, empty Resume or
+workspace result advances routing or authorizes provider inference.

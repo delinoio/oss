@@ -605,6 +605,12 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 	}
 }
 func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb.Resource, job domain.Job) (journal, error) {
+	if job.Type == domain.ForkSessionJob {
+		var input domain.ForkJobInput
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SourceSessionID) != resource.SessionId || input.SourceAssignment.MachineID != job.MachineID {
+			return journal{}, publicationUncertain()
+		}
+	}
 	if job.Type == domain.ExecuteSessionJob {
 		var input domain.ExecutionJobInput
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != resource.SessionId || input.MachineID != job.MachineID {
@@ -690,6 +696,8 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	root := config.Root
 	switch job.Type {
+	case domain.ForkSessionJob:
+		return forkSession(ctx, config, owner, job)
 	case domain.ExecuteSessionJob:
 		return executeSession(ctx, config, owner, job)
 	case domain.GenerateSessionTitleJob:

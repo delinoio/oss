@@ -719,3 +719,18 @@ Managed backup creation, inventory, integrity inspection and durable permanent i
 Local desktop registration now has explicit owner-verified revoked-client recovery and a current-client revocation guard in the app. The CLI/native boundary retains the original revoked identity and private pairing history, uses a separate candidate and exact durable retry, and preserves server sessions/settings and independent Workers. It does not add automatic repair, remote saved-profile recovery, a new RPC or database migration; see the CLI and desktop contracts and evidence ledger.
 
 Local connection and registration permission guidance distinguishes device authorization, ownership and owner-only filesystem access, including macOS/Linux private modes. Permission failures never establish revocation or authorize automatic repair; existing data remains preserved under the desktop contract.
+
+
+## Codex Fork presentation (#1092)
+
+The completed-session action is gated by `CODEX_SESSION_FORK_V1`. A mounted
+connection controller retains its name/workspace draft, exact uncertain request
+and accepted job through conversation navigation; Escape hides the modal without
+losing that operation. The name input receives focus. A changed source revision
+requires discarding the fresh draft and inspecting the new boundary. Default
+workspace copying is independent; explicit Local requires fresh same-machine
+Worker proof. Poll `GetSessionFork` only by the accepted job ID, stop automatic
+polling on terminal/uncertain state and offer explicit refresh. Open the child
+only after verified publication. The [fork contract](cmds-delidev-forks-contract.md)
+keeps Go ownership and current eligibility authoritative. Component tests do not
+establish native desktop or other-platform acceptance.

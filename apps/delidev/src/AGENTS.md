@@ -513,3 +513,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
+
+- Codex Fork presentation follows `docs/cmds-delidev-forks-contract.md`. Gate on the typed server capability and completed source turn, keep the controller mounted for the connection, retain exact uncertain requests and accepted job IDs across navigation, and expose a child only after `GetSessionFork` reports verified publication. Local sharing requires fresh same-machine proof. Presentation guards cannot replace Go authorization.

@@ -315,6 +315,18 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					if j.State != domain.JobQueued {
 						return r, nil
 					}
+					if j.Type == domain.ForkSessionJob {
+						var input domain.ForkJobInput
+						problem := domain.Decode(j.Input, &input)
+						if problem == nil {
+							problem = validateForkAuthority(tx, input)
+						}
+						if problem != nil {
+							now := time.Now().UTC()
+							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
+							return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
+						}
+					}
 					actor, _ := domain.PrincipalFrom(ctx)
 					j.State, j.InstanceID, j.AssignedDeviceID = domain.JobClaimed, instance, actor.DeviceID
 					return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
@@ -485,6 +497,9 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		}
 		if job.Type == domain.GenerateSessionTitleJob {
 			return finishSessionTitle(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
+		}
+		if job.Type == domain.ForkSessionJob {
+			return finishSessionFork(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
 		}
 		if problem == nil {
 			outputJSON := req.Msg.OutputJson
