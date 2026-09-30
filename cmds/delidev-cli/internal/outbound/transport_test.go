@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -176,5 +178,59 @@ func TestNetworkCancellationClosesBlockedProxyHandshake(t *testing.T) {
 				t.Fatal("proxy connection leaked")
 			}
 		})
+	}
+}
+
+func TestNetworkProxyHeaderNamesRejectCanonicalizedCredentialForms(t *testing.T) {
+	for _, name := range []string{outboundtest.Username, "X-" + outboundtest.Password, base64.RawStdEncoding.EncodeToString([]byte(outboundtest.Password))} {
+		t.Run(name, func(t *testing.T) {
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set(name, "unrelated")
+				io.WriteString(w, "safe")
+			}))
+			defer origin.Close()
+			fixture := outboundtest.Connect(t, outboundtest.Address(origin.URL), false)
+			client := &http.Client{Transport: &outbound.Transport{Base: &http.Transport{DialContext: outbound.DirectDial}, Resolve: fixture.Resolve}}
+			response, err := client.Get("http://provider.invalid/data")
+			if response != nil || err == nil || fixture.Calls.Load() != 1 || strings.Contains(err.Error(), outboundtest.Password) {
+				t.Fatal("credential field name was exposed or retried")
+			}
+		})
+	}
+}
+
+func TestNetworkProxyTrailersStayPrivateAfterEOF(t *testing.T) {
+	for _, declared := range []bool{false, true} {
+		for _, name := range []string{"X-Footer", outboundtest.Username} {
+			t.Run(name+"/declared="+strconv.FormatBool(declared), func(t *testing.T) {
+				origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("X-Allowed", "visible")
+					if declared {
+						w.Header().Set("Trailer", name)
+					}
+					io.WriteString(w, "safe body")
+					if declared {
+						w.Header().Set(name, outboundtest.Password)
+					} else {
+						w.Header().Set(http.TrailerPrefix+name, outboundtest.Password)
+					}
+				}))
+				defer origin.Close()
+				fixture := outboundtest.Connect(t, outboundtest.Address(origin.URL), false)
+				client := &http.Client{Transport: &outbound.Transport{Base: &http.Transport{DialContext: outbound.DirectDial}, Resolve: fixture.Resolve}}
+				response, err := client.Get("http://provider.invalid/data")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer response.Body.Close()
+				if len(response.Trailer) != 0 || response.Header.Get("Trailer") != "" {
+					t.Fatal("initial trailer metadata escaped")
+				}
+				raw, err := io.ReadAll(response.Body)
+				if err != nil || string(raw) != "safe body" || response.Header.Get("X-Allowed") != "visible" || len(response.Trailer) != 0 || fixture.Calls.Load() != 1 {
+					t.Fatal("trailers escaped after EOF or unrelated content changed")
+				}
+			})
+		}
 	}
 }

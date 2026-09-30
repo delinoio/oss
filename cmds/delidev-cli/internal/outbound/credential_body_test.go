@@ -116,6 +116,21 @@ func TestNetworkShortCredentialHeadersUseIndependentBoundaries(t *testing.T) {
 	}
 }
 
+func TestNetworkShortCredentialHeaderNameBoundaries(t *testing.T) {
+	guard := newCredentialBody(io.NopCloser(strings.NewReader("safe")), domain.ProxyCredential{Username: "x", Password: "pass123"})
+	defer guard.Close()
+	for _, name := range []string{"X", "PaSs123", "eA"} {
+		if !guard.containsHeaderName(name) {
+			t.Fatal("canonicalized credential field name accepted")
+		}
+	}
+	for _, name := range []string{"X-Allowed", "Extra", "Pass123more", "Prefixx"} {
+		if guard.containsHeaderName(name) {
+			t.Fatal("unrelated field name rejected")
+		}
+	}
+}
+
 func TestNetworkShortCredentialBoundaryReadClosesOnCancellation(t *testing.T) {
 	reader, writer := io.Pipe()
 	defer writer.Close()

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -58,12 +59,39 @@ func credentialTokenByte(b byte) bool {
 	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '_' || b == '-' || b >= 0x80
 }
 func (g *credentialBody) containsBounded(raw []byte, ended bool, previous byte, hasPrevious bool) bool {
-	for _, p := range g.patterns {
+	return containsCredentialForms(raw, ended, previous, hasPrevious, g.patterns, g.shortPatterns)
+}
+
+// HTTP field names are case-insensitive and net/http canonicalizes them before
+// this guard sees them. Match their finite protected forms independently of
+// case, while preserving the body's case-sensitive token boundary rules.
+func (g *credentialBody) containsHeaderName(name string) bool {
+	raw := []byte(strings.ToLower(name))
+	patterns, short := make([][]byte, len(g.patterns)), make([][]byte, len(g.shortPatterns))
+	defer func() {
+		clear(raw)
+		for _, forms := range [][][]byte{patterns, short} {
+			for _, form := range forms {
+				clear(form)
+			}
+		}
+	}()
+	for i, form := range g.patterns {
+		patterns[i] = bytes.ToLower(form)
+	}
+	for i, form := range g.shortPatterns {
+		short[i] = bytes.ToLower(form)
+	}
+	return containsCredentialForms(raw, true, 0, false, patterns, short)
+}
+
+func containsCredentialForms(raw []byte, ended bool, previous byte, hasPrevious bool, patterns, shortPatterns [][]byte) bool {
+	for _, p := range patterns {
 		if bytes.Contains(raw, p) {
 			return true
 		}
 	}
-	for _, pattern := range g.shortPatterns {
+	for _, pattern := range shortPatterns {
 		for offset := 0; offset < len(raw); {
 			index := bytes.Index(raw[offset:], pattern)
 			if index < 0 {

@@ -71,7 +71,11 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	response, err := transport.RoundTrip(req)
 	if err == nil && p.CredentialGeneration != "" {
 		guard := newCredentialBody(response.Body, credential)
-		for _, values := range response.Header {
+		for name, values := range response.Header {
+			if guard.containsHeaderName(name) {
+				guard.Close()
+				return nil, unavailable()
+			}
 			for _, value := range values {
 				if value == credential.Username || value == credential.Password || guard.contains([]byte(value)) {
 					guard.Close()
@@ -79,7 +83,16 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 				}
 			}
 		}
-		response.Body = guard
+		// net/http fills the original response's trailers when its body reaches
+		// EOF, including undeclared fields. Keep that response private: these
+		// outbound clients have no trailer contract, and exposing an empty map
+		// on the original response would let EOF repopulate it with credentials.
+		protected := *response
+		protected.Header = response.Header.Clone()
+		protected.Header.Del("Trailer")
+		protected.Trailer = nil
+		protected.Body = guard
+		response = &protected
 	}
 	return response, err
 }
