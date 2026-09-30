@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestStorageJournalDoesNotReplayCleanupAndRecoveryBindsOriginal(t *testing.T) {
@@ -120,10 +121,10 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 			intent := filepath.Join(manager.Root, "storage-removal-intents", string(original.OperationID)+".json")
 			accepted := job
 			accepted.State = domain.JobUncertain
-			ack := *resource
+			ack := proto.Clone(resource).(*pb.Resource)
 			ack.Revision++
 			ack.DocumentJson, _ = json.Marshal(accepted)
-			if err := acknowledgeStorageRemoval(context.Background(), config, resource, job, result, &ack); err != nil {
+			if err := acknowledgeStorageRemoval(context.Background(), config, resource, job, result, ack); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(intent); err != nil {
@@ -132,7 +133,7 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 			accepted.State, accepted.Output = domain.JobSucceeded, result.Output
 			ack.DocumentJson, _ = json.Marshal(accepted)
 			result.State = journalReported
-			if err := acknowledgeStorageRemoval(context.Background(), config, resource, job, result, &ack); err == nil {
+			if err := acknowledgeStorageRemoval(context.Background(), config, resource, job, result, ack); err == nil {
 				t.Fatal("unfinished journal granted retirement")
 			}
 			if _, err := os.Stat(intent); err != nil {
@@ -143,7 +144,7 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			if err := acknowledgeStorageRemoval(ctx, config, resource, job, result, &ack); err == nil {
+			if err := acknowledgeStorageRemoval(ctx, config, resource, job, result, ack); err == nil {
 				t.Fatal("canceled retirement unexpectedly finished")
 			}
 			if _, err := os.Stat(intent); err != nil {
@@ -236,10 +237,10 @@ func TestStorageRetirementHandlesUnpublishedRecoveryAndTerminalFailure(t *testin
 			if err := writeJSON(filepath.Join(manager.Root, "jobs", assigned.Id+".json"), result); err != nil {
 				t.Fatal(err)
 			}
-			ack := *assigned
+			ack := proto.Clone(assigned).(*pb.Resource)
 			ack.Revision++
 			ack.DocumentJson, _ = json.Marshal(accepted)
-			if err := acknowledgeStorageRemoval(context.Background(), config, assigned, job, result, &ack); err != nil {
+			if err := acknowledgeStorageRemoval(context.Background(), config, assigned, job, result, ack); err != nil {
 				t.Fatal("terminal report could not retire intent", err)
 			}
 			entries, err := os.ReadDir(filepath.Join(manager.Root, "storage-removal-retirements"))
