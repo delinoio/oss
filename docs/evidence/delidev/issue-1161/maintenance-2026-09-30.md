@@ -13,3 +13,5 @@ GOMAXPROCS=2 GOFLAGS=-p=2 GOCACHE=/private/tmp/delidev-home-1161-go-cache pnpm e
 ```
 
 This is component/merge evidence, not packaged CEF or native-platform acceptance. The prior browser and 5,050-row evidence remains qualified in `home-navigation.md`.
+
+Complete validation at merge revision `e5075955cecdfc6c9dc73ec1560078473b241949` also passed: `pnpm test` from `apps/delidev`, **89 files / 1116 tests**, API-client generation, typechecking, package/launcher checks, widget fixtures and production frontend build. As in the original issue evidence, this used the private Go cache, serial Vitest execution and temporary timeout/async-observation allowances to isolate host contention; repository test config/setup were restored afterward. Generated repository-owned `dist` directories were removed before the repair push.
