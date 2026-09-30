@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 func publicCompactionFixture(t *testing.T) (*firstDispatchFixture, *publicationFixture) {
@@ -278,5 +280,98 @@ func TestCompactionOwnershipBlocksOtherArchiveCompletion(t *testing.T) {
 	_, e = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.forward-cleanup", nil, func(tx *store.Tx) (any, error) { return nil, finishForwardArchive(tx, before.ID) })
 	if e != nil || f.refresh(t).Revision != held.Revision {
 		t.Fatal("forward cleanup released action workspace", e)
+	}
+}
+
+func TestWorkerRevocationPreservesCompactionDispatchBoundary(t *testing.T) {
+	for _, claimed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "queued", true: "claimed"}[claimed], func(t *testing.T) {
+			ctx := context.Background()
+			f, pf := publicCompactionFixture(t)
+			client := sessionClient(f.accountFixture)
+			before := f.refresh(t)
+			prior, err := store.Decode[domain.Session](before)
+			if err != nil {
+				t.Fatal(err)
+			}
+			accepted, err := client.CompactSession(ctx, ownerRequest(f.identity, &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(before), domain.NewID())}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := domain.ID(accepted.Msg.Job.Id)
+			raw, _ := json.Marshal(domain.SessionInput{Prompt: "Later queued input", Mode: domain.ExecuteMode})
+			if _, err := client.EnqueueInput(ctx, ownerRequest(f.identity, &pb.EnqueueInputRequest{RequestId: string(domain.NewID()), SessionId: string(before.ID), DocumentJson: raw})); err != nil {
+				t.Fatal(err)
+			}
+			if claimed {
+				_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.claim-compaction-for-revocation", id, func(tx *store.Tx) (any, error) {
+					r, err := tx.Get(domain.JobKind, id)
+					if err != nil {
+						return nil, err
+					}
+					job, err := store.Decode[domain.Job](r)
+					if err != nil {
+						return nil, err
+					}
+					job.State, job.InstanceID, job.AssignedDeviceID = domain.JobClaimed, pf.instance, pf.device
+					return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			device, err := f.service.Store.Get(ctx, domain.DeviceKind, pf.device)
+			if err != nil {
+				t.Fatal(err)
+			}
+			devices := delidevv1connect.NewDeviceServiceClient(http.DefaultClient, f.endpoint.URL)
+			revoke := &pb.RevokeDeviceRequest{Mutation: acctMutation(resourceForTest(device), domain.NewID())}
+			if _, err := devices.RevokeDevice(ctx, ownerRequest(f.identity, revoke)); err != nil {
+				t.Fatal(err)
+			}
+			replay, err := devices.RevokeDevice(ctx, ownerRequest(f.identity, revoke))
+			if err != nil || !replay.Msg.Replayed {
+				t.Fatal("revocation receipt did not replay", err)
+			}
+			row := f.refresh(t)
+			state, err := store.Decode[domain.Session](row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			jr, err := f.service.Store.Get(ctx, domain.JobKind, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, err := store.Decode[domain.Job](jr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state.Dispatch != domain.DispatchPaused || state.NextExecutionIntent != "" || state.LastCompactionJobID != id || state.Outcome != prior.Outcome || !reflect.DeepEqual(state.Execution, prior.Execution) || state.ExecutionSelection() != prior.ExecutionSelection() || state.PendingInputs != 1 {
+				t.Fatal("revocation changed the preceding execution, action history or FIFO")
+			}
+			if claimed {
+				if job.State != domain.JobUncertain || job.FinishedAt != nil || state.CompactionJobID != id || state.Recovery != domain.NeedsRecovery {
+					t.Fatal("claimed compaction lost native uncertainty")
+				}
+			} else if job.State != domain.JobCanceled || job.FinishedAt == nil || state.CompactionJobID != "" || state.Recovery != domain.NoRecovery {
+				t.Fatal("undispatched compaction retained native ownership")
+			}
+			for _, action := range []pb.SessionAction{pb.SessionAction_SESSION_ACTION_STOP, pb.SessionAction_SESSION_ACTION_ARCHIVE} {
+				if _, err := client.ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(resourceForTest(f.refresh(t)), domain.NewID()), Action: action})); err != nil {
+					t.Fatal("revoked action prevented explicit control", err)
+				}
+			}
+			final, err := store.Decode[domain.Session](f.refresh(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if claimed {
+				if final.Archive != domain.ArchivePending || final.CompactionJobID != id || final.Recovery != domain.NeedsRecovery {
+					t.Fatal("Stop/Archive released claimed compaction ownership")
+				}
+			} else if final.Archive != domain.Archived || final.CompactionJobID != "" || final.Recovery != domain.NoRecovery {
+				t.Fatal("undispatched compaction wedged Stop/Archive")
+			}
+		})
 	}
 }

@@ -205,7 +205,14 @@ func loseSessionCompaction(tx *store.Tx, r store.Record, j domain.Job) error {
 	if session.CompactionJobID != r.ID {
 		return domain.CompactionUncertain()
 	}
-	session.Recovery, session.Dispatch, session.NextExecutionIntent = domain.NeedsRecovery, domain.DispatchPaused, ""
+	// Revocation cancels queued jobs before any Worker claim. Release only that
+	// undispatched action; a lost claimed job still owns possible native effects.
+	if j.State == domain.JobCanceled {
+		session.CompactionJobID = ""
+	} else {
+		session.Recovery = domain.NeedsRecovery
+	}
+	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
 	_, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
 	return err
 }

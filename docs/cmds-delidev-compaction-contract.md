@@ -76,7 +76,10 @@ retains its checkpoint, preserves the preceding conversation outcome, pauses FIF
 and requires explicit Resume before later input. Queued Stop/Archive cancels the
 undispatched action without claiming native effects. Claimed cancellation, lost
 delivery, invalid output or cleanup uncertainty retains recovery and cannot resend.
-Account disconnect cancels both ordinary execution and manual-action jobs.
+Worker revocation releases canceled undispatched action ownership without inventing
+native recovery, preserves the preceding checkpoint and leaves FIFO paused. Claimed
+actions retain recovery-required ownership. Account disconnect cancels both ordinary
+execution and manual-action jobs.
 
 ## Storage
 

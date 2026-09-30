@@ -69,3 +69,20 @@ No real account credentials or user harness state were used. No hosted-account,
 subscription, other-OS, rich/stopped-history, release or complete issue-964 acceptance
 is claimed. Automatic compaction/history owners and frozen prior evidence are
 retained unchanged.
+
+## PR #1195 queued-revocation repair
+
+At reviewed head `2a0c04a45387771b9e9808c9df3d5350d82d1ef8`, the new
+`TestWorkerRevocationPreservesCompactionDispatchBoundary` failed its queued case:
+the canceled job retained compaction ownership and invented native recovery. Its
+claimed case retained the required uncertainty. The repair releases only canceled
+undispatched ownership, keeps FIFO paused and preserves the original execution,
+checkpoint, pending input and last-action history. Authenticated revocation replay
+and subsequent Stop/Archive are covered; claimed Stop/Archive cannot release
+uncertain action ownership.
+
+`go test -race -p 1 ./cmds/delidev-cli/internal/server -run
+'Test(WorkerRevocationPreservesCompactionDispatchBoundary|PublicCompactionAtomicReceiptAndFIFO)'
+-count=1` passed after the fix (16.735 s), using the same isolated Go 1.26.8
+toolchain/cache on macOS arm64. This regression check does not change the full-suite
+or installed-native acceptance limitations recorded above.
