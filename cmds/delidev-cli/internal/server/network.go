@@ -333,7 +333,10 @@ func (s *Service) DeleteNetworkProfile(ctx context.Context, req *connect.Request
 	if err == nil && !found && !completed {
 		err = s.Store.Read(ctx, func(tx *store.Tx) error { return networkDeleteAllowed(tx, input) })
 	}
-	if err == nil && !completed {
+	// A settled receipt with no pending intent has no cleanup obligation.
+	// Inspect existing recovery metadata above, but never recreate protected
+	// work merely because an accepted deletion is retried.
+	if err == nil && !found && !completed {
 		err = s.writeNetworkDeleteIntent(networkDeleteIntent{Version: 1, ServerID: s.Identity.ServerID, RequestID: requestID, Input: input})
 	}
 	if err == nil && !found {
@@ -352,7 +355,7 @@ func (s *Service) DeleteNetworkProfile(ctx context.Context, req *connect.Request
 			return networkReceipt{ID: input.ID, Deleted: true}, nil
 		})
 	}
-	if err == nil && !completed {
+	if err == nil && !found && !completed {
 		_, err = s.reconcileNetworkDeleteIntent(ctx)
 	}
 	if err != nil {
