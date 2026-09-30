@@ -118,4 +118,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Exact acknowledged Worker deletion-report retries with a matching actor/work-bound SQL receipt are read-only. Preserve original metadata and reject conflicting receipts; reconstruct a missing SQL receipt through the original synchronized-intent recovery path.
 
+- Manual-compaction deletion plans derive the original action UUID from its immutable claimed assignment. Include every original owning Worker before purge; ordinary execution IDs cannot identify action runtimes or checkpoints. Follow `docs/cmds-delidev-compaction-contract.md`.
+
 - Permanent session erasure removes PR activity through each original remediation attempt source, including reservation records without row-level session binding. Redact the validated shared attempt and its index without emitting a new business activity transition; preserve unrelated PR history, original reservation provenance and lifetime counters.
+
+- Manual compaction uses additive session/job JSON and existing atomic events/receipts under `docs/cmds-delidev-compaction-contract.md`. Preserve original execution history and schema versions. Account cancellation inventories must include action assignments by their exact original account; queued cancellation is distinct from claimed native cleanup. Every Archive completion remains pending while a distinct compaction claim owns cleanup.

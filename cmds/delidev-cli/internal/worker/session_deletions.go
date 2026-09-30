@@ -236,6 +236,11 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 		if copy.ExecutionID != "" {
 			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ExecutionID)))
 		}
+		if copy.Type == domain.CompactSessionJob {
+			// An action owns its replacement runtime and retained checkpoint;
+			// the original conversation execution keeps its separate identity.
+			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ActionID)), filepath.Join(root, "compaction-checkpoints", string(copy.ActionID)+".json"))
+		}
 		if copy.Type == domain.GenerateSessionTitleJob {
 			titlePrefixes[string(copy.JobID)+"-"] = true
 		}

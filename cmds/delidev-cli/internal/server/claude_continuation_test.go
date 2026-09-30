@@ -31,6 +31,17 @@ func claudeRootOutcomeCompletionFixture(t *testing.T, outcome domain.ExecutionOu
 	return f, completion
 }
 
+// Manual-action fixtures use an already selected successful predecessor. Reuse
+// the common content publisher without changing settled-failure fixture semantics.
+func publishClaudeRootCompletionFixture(t *testing.T, f *publicationFixture, terminal domain.ExecutionEvent) domain.ExecutionCompletion {
+	t.Helper()
+	terminal = publishClaudeRootContent(t, terminal, f.input.Configuration.NativeModel, func(e domain.ExecutionEvent) { f.publish(t, e) })
+	f.publish(t, terminal)
+	completion := f.completion()
+	completion.Version, completion.NativeCheckpointDigest, completion.LastSequence = 2, strings.Repeat("ab", 32), terminal.Sequence
+	return completion
+}
+
 func publishClaudeRootContent(t *testing.T, terminal domain.ExecutionEvent, model string, publish func(domain.ExecutionEvent)) domain.ExecutionEvent {
 	t.Helper()
 	u := domain.ClaudeMessageUpdate{ID: domain.NewID(), NativeID: "msg_original_completed", Model: model}

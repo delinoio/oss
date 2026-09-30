@@ -1575,3 +1575,12 @@ Schema v20 now provides an internal PR remediation coordination core: one durabl
 Internal remediation planning now lists original linked session candidates by recent activity and validates explicit new-session configuration without reserving accounts or advancing routing. PR-head preparation preserves companion repositories and primary cwd; current account/native/Worker checks reject unsupported selections before a preparation can be queued. The public controller and direct-harness Git writes remain unfinished; current native candidate matching is implemented separately below.
 
 The private Worker observation channel now verifies an existing Local/Worktree session's current PR head, branch, remote operands and clean state without changing files or native ownership. Original candidate revision/project/link checks invalidate stale observations after pause, Archive or unlink. This supplies candidate evidence; public Fix now/coalescing, fresh startup authorization and direct-harness Git writes remain unfinished.
+
+## Explicit native context and manual compaction composition
+
+The independent issue-1093 composition adds owner/client context reads and a
+durable manual action after a verified successful Claude 2.1.236 API boundary.
+Its action result, cleanup, history checkpoint and failure/Resume rules remain
+separate from conversation outcomes and the existing automatic observation family.
+See [the owning compaction contract](cmds-delidev-compaction-contract.md); earlier
+private/manual and automatic-only evidence scopes above retain their qualifications.

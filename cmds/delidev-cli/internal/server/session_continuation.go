@@ -24,6 +24,9 @@ func continuationDigest(raw []byte) string {
 // initial snapshot/route; the successor retains the exact preceding progress.
 // There is no native, credential or filesystem operation inside this transaction.
 func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, explicit bool) (store.Record, error) {
+	if session.CompactionJobID != "" {
+		return store.Record{}, domain.CompactionUncertain()
+	}
 	if session.InitialExecution == nil || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.Execution == nil || !session.Execution.CleanupVerified || (session.Dispatch != domain.DispatchReady && session.Dispatch != domain.DispatchBlocked && !(explicit && session.Dispatch == domain.DispatchPaused)) {
 		return store.Record{}, continuationConflict()
 	}
@@ -95,6 +98,9 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
 	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
 	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.InitialExecution.ID, HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: continuationDigest(job.Input), InputMode: assignment.Input.Mode, PromptDigest: continuationDigest([]byte(assignment.Input.Prompt)), Intent: intent}
+	if session.Compaction != nil && session.Compaction.ExecutionID == assignment.ExecutionID {
+		input.Continuation.Compaction = session.Compaction
+	}
 	if err := input.Validate(); err != nil {
 		return store.Record{}, err
 	}

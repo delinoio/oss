@@ -8,6 +8,39 @@ import (
 )
 
 func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session, action domain.SessionAction) error {
+	if session.CompactionJobID != "" {
+		if action != domain.StopSession && action != domain.ArchiveSession {
+			return domain.CompactionUncertain()
+		}
+		if err := tx.RequestJobCancellation(session.CompactionJobID); err != nil {
+			return err
+		}
+		r, err := tx.Get(domain.JobKind, session.CompactionJobID)
+		if err != nil {
+			return err
+		}
+		job, err := store.Decode[domain.Job](r)
+		if err != nil || job.Type != domain.CompactSessionJob {
+			return domain.CompactionUncertain()
+		}
+		if job.State == domain.JobQueued {
+			now := time.Now().UTC()
+			job.State, job.FinishedAt = domain.JobCanceled, &now
+			job.Problem = domain.Fail(domain.Canceled, "Compaction was canceled before Worker dispatch.", "The original conversation checkpoint remains available for explicit Resume.")
+			if _, err := tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job); err != nil {
+				return err
+			}
+			session.CompactionJobID = ""
+		}
+		session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+		if action == domain.ArchiveSession {
+			session.Archive = domain.ArchivePending
+			if job.State == domain.JobCanceled {
+				session.Archive = domain.Archived
+			}
+		}
+		return nil
+	}
 	if action == domain.RestoreSession {
 		if session.Archive != domain.Archived {
 			return domain.Fail(domain.Conflict, "The session is not archived.", "Inspect its current native cleanup and visibility state.")
@@ -88,6 +121,24 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 			job, err := store.Decode[domain.Job](r)
 			if err != nil {
 				return err
+			}
+			if job.Type == domain.CompactSessionJob {
+				var input domain.SessionCompactionInput
+				if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.AccountID != account {
+					return domain.CompactionUncertain()
+				}
+				sr, session, err := sessionRecord(tx, r.SessionID)
+				if err != nil {
+					return err
+				}
+				if err := controlNativeSession(tx, sr, &session, domain.StopSession); err != nil {
+					return err
+				}
+				if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
+					return err
+				}
+				after = r.ID
+				continue
 			}
 			input, sr, session, err := nativeExecutionScope(tx, r, job)
 			if err != nil {

@@ -39,6 +39,12 @@ const (
 	// SessionServiceGetSessionDeletionProcedure is the fully-qualified name of the SessionService's
 	// GetSessionDeletion RPC.
 	SessionServiceGetSessionDeletionProcedure = "/delidev.v1.SessionService/GetSessionDeletion"
+	// SessionServiceCompactSessionProcedure is the fully-qualified name of the SessionService's
+	// CompactSession RPC.
+	SessionServiceCompactSessionProcedure = "/delidev.v1.SessionService/CompactSession"
+	// SessionServiceGetSessionContextProcedure is the fully-qualified name of the SessionService's
+	// GetSessionContext RPC.
+	SessionServiceGetSessionContextProcedure = "/delidev.v1.SessionService/GetSessionContext"
 	// SessionServiceLinkSessionPullRequestProcedure is the fully-qualified name of the SessionService's
 	// LinkSessionPullRequest RPC.
 	SessionServiceLinkSessionPullRequestProcedure = "/delidev.v1.SessionService/LinkSessionPullRequest"
@@ -111,6 +117,8 @@ const (
 type SessionServiceClient interface {
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	GetSessionDeletion(context.Context, *connect.Request[v1.GetSessionDeletionRequest]) (*connect.Response[v1.GetSessionDeletionResponse], error)
+	CompactSession(context.Context, *connect.Request[v1.CompactSessionRequest]) (*connect.Response[v1.CompactSessionResponse], error)
+	GetSessionContext(context.Context, *connect.Request[v1.GetSessionContextRequest]) (*connect.Response[v1.GetSessionContextResponse], error)
 	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
 	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -156,6 +164,18 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+SessionServiceGetSessionDeletionProcedure,
 			connect.WithSchema(sessionServiceMethods.ByName("GetSessionDeletion")),
+			connect.WithClientOptions(opts...),
+		),
+		compactSession: connect.NewClient[v1.CompactSessionRequest, v1.CompactSessionResponse](
+			httpClient,
+			baseURL+SessionServiceCompactSessionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("CompactSession")),
+			connect.WithClientOptions(opts...),
+		),
+		getSessionContext: connect.NewClient[v1.GetSessionContextRequest, v1.GetSessionContextResponse](
+			httpClient,
+			baseURL+SessionServiceGetSessionContextProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("GetSessionContext")),
 			connect.WithClientOptions(opts...),
 		),
 		linkSessionPullRequest: connect.NewClient[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse](
@@ -297,6 +317,8 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type sessionServiceClient struct {
 	deleteSession            *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
 	getSessionDeletion       *connect.Client[v1.GetSessionDeletionRequest, v1.GetSessionDeletionResponse]
+	compactSession           *connect.Client[v1.CompactSessionRequest, v1.CompactSessionResponse]
+	getSessionContext        *connect.Client[v1.GetSessionContextRequest, v1.GetSessionContextResponse]
 	linkSessionPullRequest   *connect.Client[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse]
 	unlinkSessionPullRequest *connect.Client[v1.UnlinkSessionPullRequestRequest, v1.UnlinkSessionPullRequestResponse]
 	readSessionReviewContext *connect.Client[v1.ReadSessionReviewContextRequest, v1.ReadSessionReviewContextResponse]
@@ -329,6 +351,16 @@ func (c *sessionServiceClient) DeleteSession(ctx context.Context, req *connect.R
 // GetSessionDeletion calls delidev.v1.SessionService.GetSessionDeletion.
 func (c *sessionServiceClient) GetSessionDeletion(ctx context.Context, req *connect.Request[v1.GetSessionDeletionRequest]) (*connect.Response[v1.GetSessionDeletionResponse], error) {
 	return c.getSessionDeletion.CallUnary(ctx, req)
+}
+
+// CompactSession calls delidev.v1.SessionService.CompactSession.
+func (c *sessionServiceClient) CompactSession(ctx context.Context, req *connect.Request[v1.CompactSessionRequest]) (*connect.Response[v1.CompactSessionResponse], error) {
+	return c.compactSession.CallUnary(ctx, req)
+}
+
+// GetSessionContext calls delidev.v1.SessionService.GetSessionContext.
+func (c *sessionServiceClient) GetSessionContext(ctx context.Context, req *connect.Request[v1.GetSessionContextRequest]) (*connect.Response[v1.GetSessionContextResponse], error) {
+	return c.getSessionContext.CallUnary(ctx, req)
 }
 
 // LinkSessionPullRequest calls delidev.v1.SessionService.LinkSessionPullRequest.
@@ -445,6 +477,8 @@ func (c *sessionServiceClient) SubmitLocalReview(ctx context.Context, req *conne
 type SessionServiceHandler interface {
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	GetSessionDeletion(context.Context, *connect.Request[v1.GetSessionDeletionRequest]) (*connect.Response[v1.GetSessionDeletionResponse], error)
+	CompactSession(context.Context, *connect.Request[v1.CompactSessionRequest]) (*connect.Response[v1.CompactSessionResponse], error)
+	GetSessionContext(context.Context, *connect.Request[v1.GetSessionContextRequest]) (*connect.Response[v1.GetSessionContextResponse], error)
 	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
 	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -486,6 +520,18 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		SessionServiceGetSessionDeletionProcedure,
 		svc.GetSessionDeletion,
 		connect.WithSchema(sessionServiceMethods.ByName("GetSessionDeletion")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceCompactSessionHandler := connect.NewUnaryHandler(
+		SessionServiceCompactSessionProcedure,
+		svc.CompactSession,
+		connect.WithSchema(sessionServiceMethods.ByName("CompactSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceGetSessionContextHandler := connect.NewUnaryHandler(
+		SessionServiceGetSessionContextProcedure,
+		svc.GetSessionContext,
+		connect.WithSchema(sessionServiceMethods.ByName("GetSessionContext")),
 		connect.WithHandlerOptions(opts...),
 	)
 	sessionServiceLinkSessionPullRequestHandler := connect.NewUnaryHandler(
@@ -626,6 +672,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceDeleteSessionHandler.ServeHTTP(w, r)
 		case SessionServiceGetSessionDeletionProcedure:
 			sessionServiceGetSessionDeletionHandler.ServeHTTP(w, r)
+		case SessionServiceCompactSessionProcedure:
+			sessionServiceCompactSessionHandler.ServeHTTP(w, r)
+		case SessionServiceGetSessionContextProcedure:
+			sessionServiceGetSessionContextHandler.ServeHTTP(w, r)
 		case SessionServiceLinkSessionPullRequestProcedure:
 			sessionServiceLinkSessionPullRequestHandler.ServeHTTP(w, r)
 		case SessionServiceUnlinkSessionPullRequestProcedure:
@@ -685,6 +735,14 @@ func (UnimplementedSessionServiceHandler) DeleteSession(context.Context, *connec
 
 func (UnimplementedSessionServiceHandler) GetSessionDeletion(context.Context, *connect.Request[v1.GetSessionDeletionRequest]) (*connect.Response[v1.GetSessionDeletionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetSessionDeletion is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) CompactSession(context.Context, *connect.Request[v1.CompactSessionRequest]) (*connect.Response[v1.CompactSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.CompactSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) GetSessionContext(context.Context, *connect.Request[v1.GetSessionContextRequest]) (*connect.Response[v1.GetSessionContextResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetSessionContext is not implemented"))
 }
 
 func (UnimplementedSessionServiceHandler) LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error) {

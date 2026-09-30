@@ -129,6 +129,55 @@ func (BudgetState) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_session_proto_rawDescGZIP(), []int{1}
 }
 
+type SessionContextCapability int32
+
+const (
+	SessionContextCapability_SESSION_CONTEXT_CAPABILITY_UNSPECIFIED                   SessionContextCapability = 0
+	SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CLAUDE_NATIVE_OBSERVATIONS_V1 SessionContextCapability = 1
+	SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CLAUDE_MANUAL_COMPACTION_V1   SessionContextCapability = 2
+)
+
+// Enum value maps for SessionContextCapability.
+var (
+	SessionContextCapability_name = map[int32]string{
+		0: "SESSION_CONTEXT_CAPABILITY_UNSPECIFIED",
+		1: "SESSION_CONTEXT_CAPABILITY_CLAUDE_NATIVE_OBSERVATIONS_V1",
+		2: "SESSION_CONTEXT_CAPABILITY_CLAUDE_MANUAL_COMPACTION_V1",
+	}
+	SessionContextCapability_value = map[string]int32{
+		"SESSION_CONTEXT_CAPABILITY_UNSPECIFIED":                   0,
+		"SESSION_CONTEXT_CAPABILITY_CLAUDE_NATIVE_OBSERVATIONS_V1": 1,
+		"SESSION_CONTEXT_CAPABILITY_CLAUDE_MANUAL_COMPACTION_V1":   2,
+	}
+)
+
+func (x SessionContextCapability) Enum() *SessionContextCapability {
+	p := new(SessionContextCapability)
+	*p = x
+	return p
+}
+
+func (x SessionContextCapability) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SessionContextCapability) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_session_proto_enumTypes[2].Descriptor()
+}
+
+func (SessionContextCapability) Type() protoreflect.EnumType {
+	return &file_delidev_v1_session_proto_enumTypes[2]
+}
+
+func (x SessionContextCapability) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SessionContextCapability.Descriptor instead.
+func (SessionContextCapability) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_session_proto_rawDescGZIP(), []int{2}
+}
+
 type LinkSessionPullRequestRequest struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	RequestId    string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -3057,6 +3106,208 @@ func (x *GetSessionDeletionResponse) GetJob() *SessionDeletionJob {
 	return nil
 }
 
+// A distinct revision-bound native action. Receipt replay observes the same job.
+type CompactSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mutation      *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompactSessionRequest) Reset() {
+	*x = CompactSessionRequest{}
+	mi := &file_delidev_v1_session_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompactSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompactSessionRequest) ProtoMessage() {}
+
+func (x *CompactSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_session_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompactSessionRequest.ProtoReflect.Descriptor instead.
+func (*CompactSessionRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_session_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *CompactSessionRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+type CompactSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Job           *Resource              `protobuf:"bytes,1,opt,name=job,proto3" json:"job,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompactSessionResponse) Reset() {
+	*x = CompactSessionResponse{}
+	mi := &file_delidev_v1_session_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompactSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompactSessionResponse) ProtoMessage() {}
+
+func (x *CompactSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_session_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompactSessionResponse.ProtoReflect.Descriptor instead.
+func (*CompactSessionResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_session_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *CompactSessionResponse) GetJob() *Resource {
+	if x != nil {
+		return x.Job
+	}
+	return nil
+}
+
+func (x *CompactSessionResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *CompactSessionResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type GetSessionContextRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSessionContextRequest) Reset() {
+	*x = GetSessionContextRequest{}
+	mi := &file_delidev_v1_session_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSessionContextRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSessionContextRequest) ProtoMessage() {}
+
+func (x *GetSessionContextRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_session_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSessionContextRequest.ProtoReflect.Descriptor instead.
+func (*GetSessionContextRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_session_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *GetSessionContextRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type GetSessionContextResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Retained native observations; absent observations never become measured zero.
+	DocumentJson  []byte                     `protobuf:"bytes,1,opt,name=document_json,json=documentJson,proto3" json:"document_json,omitempty"`
+	Capabilities  []SessionContextCapability `protobuf:"varint,2,rep,packed,name=capabilities,proto3,enum=delidev.v1.SessionContextCapability" json:"capabilities,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSessionContextResponse) Reset() {
+	*x = GetSessionContextResponse{}
+	mi := &file_delidev_v1_session_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSessionContextResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSessionContextResponse) ProtoMessage() {}
+
+func (x *GetSessionContextResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_session_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSessionContextResponse.ProtoReflect.Descriptor instead.
+func (*GetSessionContextResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_session_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *GetSessionContextResponse) GetDocumentJson() []byte {
+	if x != nil {
+		return x.DocumentJson
+	}
+	return nil
+}
+
+func (x *GetSessionContextResponse) GetCapabilities() []SessionContextCapability {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 var File_delidev_v1_session_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_session_proto_rawDesc = "" +
@@ -3278,7 +3529,20 @@ const file_delidev_v1_session_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"N\n" +
 	"\x1aGetSessionDeletionResponse\x120\n" +
-	"\x03job\x18\x01 \x01(\v2\x1e.delidev.v1.SessionDeletionJobR\x03job*\x9b\x01\n" +
+	"\x03job\x18\x01 \x01(\v2\x1e.delidev.v1.SessionDeletionJobR\x03job\"I\n" +
+	"\x15CompactSessionRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\"{\n" +
+	"\x16CompactSessionResponse\x12&\n" +
+	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"9\n" +
+	"\x18GetSessionContextRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\x8a\x01\n" +
+	"\x19GetSessionContextResponse\x12#\n" +
+	"\rdocument_json\x18\x01 \x01(\fR\fdocumentJson\x12H\n" +
+	"\fcapabilities\x18\x02 \x03(\x0e2$.delidev.v1.SessionContextCapabilityR\fcapabilities*\x9b\x01\n" +
 	"\rSessionAction\x12\x1e\n" +
 	"\x1aSESSION_ACTION_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13SESSION_ACTION_STOP\x10\x01\x12\x1a\n" +
@@ -3289,10 +3553,16 @@ const file_delidev_v1_session_proto_rawDesc = "" +
 	"\x18BUDGET_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15BUDGET_STATE_DISABLED\x10\x01\x12!\n" +
 	"\x1dBUDGET_STATE_ALLOW_INCOMPLETE\x10\x02\x12\"\n" +
-	"\x1eBUDGET_STATE_THRESHOLD_REACHED\x10\x032\x82\x13\n" +
+	"\x1eBUDGET_STATE_THRESHOLD_REACHED\x10\x03*\xc0\x01\n" +
+	"\x18SessionContextCapability\x12*\n" +
+	"&SESSION_CONTEXT_CAPABILITY_UNSPECIFIED\x10\x00\x12<\n" +
+	"8SESSION_CONTEXT_CAPABILITY_CLAUDE_NATIVE_OBSERVATIONS_V1\x10\x01\x12:\n" +
+	"6SESSION_CONTEXT_CAPABILITY_CLAUDE_MANUAL_COMPACTION_V1\x10\x022\xbd\x14\n" +
 	"\x0eSessionService\x12T\n" +
 	"\rDeleteSession\x12 .delidev.v1.DeleteSessionRequest\x1a!.delidev.v1.DeleteSessionResponse\x12c\n" +
-	"\x12GetSessionDeletion\x12%.delidev.v1.GetSessionDeletionRequest\x1a&.delidev.v1.GetSessionDeletionResponse\x12o\n" +
+	"\x12GetSessionDeletion\x12%.delidev.v1.GetSessionDeletionRequest\x1a&.delidev.v1.GetSessionDeletionResponse\x12W\n" +
+	"\x0eCompactSession\x12!.delidev.v1.CompactSessionRequest\x1a\".delidev.v1.CompactSessionResponse\x12`\n" +
+	"\x11GetSessionContext\x12$.delidev.v1.GetSessionContextRequest\x1a%.delidev.v1.GetSessionContextResponse\x12o\n" +
 	"\x16LinkSessionPullRequest\x12).delidev.v1.LinkSessionPullRequestRequest\x1a*.delidev.v1.LinkSessionPullRequestResponse\x12u\n" +
 	"\x18UnlinkSessionPullRequest\x12+.delidev.v1.UnlinkSessionPullRequestRequest\x1a,.delidev.v1.UnlinkSessionPullRequestResponse\x12u\n" +
 	"\x18ReadSessionReviewContext\x12+.delidev.v1.ReadSessionReviewContextRequest\x1a,.delidev.v1.ReadSessionReviewContextResponse\x12i\n" +
@@ -3328,170 +3598,182 @@ func file_delidev_v1_session_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_session_proto_rawDescData
 }
 
-var file_delidev_v1_session_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_delidev_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
+var file_delidev_v1_session_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_delidev_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 56)
 var file_delidev_v1_session_proto_goTypes = []any{
 	(SessionAction)(0),                       // 0: delidev.v1.SessionAction
 	(BudgetState)(0),                         // 1: delidev.v1.BudgetState
-	(*LinkSessionPullRequestRequest)(nil),    // 2: delidev.v1.LinkSessionPullRequestRequest
-	(*LinkSessionPullRequestResponse)(nil),   // 3: delidev.v1.LinkSessionPullRequestResponse
-	(*UnlinkSessionPullRequestRequest)(nil),  // 4: delidev.v1.UnlinkSessionPullRequestRequest
-	(*UnlinkSessionPullRequestResponse)(nil), // 5: delidev.v1.UnlinkSessionPullRequestResponse
-	(*ReadSessionReviewContextRequest)(nil),  // 6: delidev.v1.ReadSessionReviewContextRequest
-	(*ReadSessionReviewContextResponse)(nil), // 7: delidev.v1.ReadSessionReviewContextResponse
-	(*SteerQueuedInputRequest)(nil),          // 8: delidev.v1.SteerQueuedInputRequest
-	(*SteerQueuedInputResponse)(nil),         // 9: delidev.v1.SteerQueuedInputResponse
-	(*SessionChange)(nil),                    // 10: delidev.v1.SessionChange
-	(*CreateSessionRequest)(nil),             // 11: delidev.v1.CreateSessionRequest
-	(*CreateSessionResponse)(nil),            // 12: delidev.v1.CreateSessionResponse
-	(*ListSessionsRequest)(nil),              // 13: delidev.v1.ListSessionsRequest
-	(*ListSessionsResponse)(nil),             // 14: delidev.v1.ListSessionsResponse
-	(*EnqueueInputRequest)(nil),              // 15: delidev.v1.EnqueueInputRequest
-	(*EnqueueInputResponse)(nil),             // 16: delidev.v1.EnqueueInputResponse
-	(*EditQueuedInputRequest)(nil),           // 17: delidev.v1.EditQueuedInputRequest
-	(*EditQueuedInputResponse)(nil),          // 18: delidev.v1.EditQueuedInputResponse
-	(*RemoveQueuedInputRequest)(nil),         // 19: delidev.v1.RemoveQueuedInputRequest
-	(*RemoveQueuedInputResponse)(nil),        // 20: delidev.v1.RemoveQueuedInputResponse
-	(*ListQueueRequest)(nil),                 // 21: delidev.v1.ListQueueRequest
-	(*ListQueueResponse)(nil),                // 22: delidev.v1.ListQueueResponse
-	(*ControlSessionRequest)(nil),            // 23: delidev.v1.ControlSessionRequest
-	(*ControlSessionResponse)(nil),           // 24: delidev.v1.ControlSessionResponse
-	(*RenameSessionRequest)(nil),             // 25: delidev.v1.RenameSessionRequest
-	(*RenameSessionResponse)(nil),            // 26: delidev.v1.RenameSessionResponse
-	(*PrepareSessionWorkspaceRequest)(nil),   // 27: delidev.v1.PrepareSessionWorkspaceRequest
-	(*PrepareSessionWorkspaceResponse)(nil),  // 28: delidev.v1.PrepareSessionWorkspaceResponse
-	(*RecoverSessionWorkspaceRequest)(nil),   // 29: delidev.v1.RecoverSessionWorkspaceRequest
-	(*RecoverSessionWorkspaceResponse)(nil),  // 30: delidev.v1.RecoverSessionWorkspaceResponse
-	(*RecoverSessionExecutionRequest)(nil),   // 31: delidev.v1.RecoverSessionExecutionRequest
-	(*RecoverSessionExecutionResponse)(nil),  // 32: delidev.v1.RecoverSessionExecutionResponse
-	(*EstimatedCostBudget)(nil),              // 33: delidev.v1.EstimatedCostBudget
-	(*BudgetEvidence)(nil),                   // 34: delidev.v1.BudgetEvidence
-	(*SessionBudgetView)(nil),                // 35: delidev.v1.SessionBudgetView
-	(*GetSessionBudgetRequest)(nil),          // 36: delidev.v1.GetSessionBudgetRequest
-	(*GetSessionBudgetResponse)(nil),         // 37: delidev.v1.GetSessionBudgetResponse
-	(*SetSessionBudgetRequest)(nil),          // 38: delidev.v1.SetSessionBudgetRequest
-	(*SetSessionBudgetResponse)(nil),         // 39: delidev.v1.SetSessionBudgetResponse
-	(*ReadSessionWorkspaceRequest)(nil),      // 40: delidev.v1.ReadSessionWorkspaceRequest
-	(*ReadSessionWorkspaceResponse)(nil),     // 41: delidev.v1.ReadSessionWorkspaceResponse
-	(*CreateLocalReviewCommentRequest)(nil),  // 42: delidev.v1.CreateLocalReviewCommentRequest
-	(*CreateLocalReviewCommentResponse)(nil), // 43: delidev.v1.CreateLocalReviewCommentResponse
-	(*EditLocalReviewCommentRequest)(nil),    // 44: delidev.v1.EditLocalReviewCommentRequest
-	(*EditLocalReviewCommentResponse)(nil),   // 45: delidev.v1.EditLocalReviewCommentResponse
-	(*DeleteLocalReviewCommentRequest)(nil),  // 46: delidev.v1.DeleteLocalReviewCommentRequest
-	(*DeleteLocalReviewCommentResponse)(nil), // 47: delidev.v1.DeleteLocalReviewCommentResponse
-	(*SubmitLocalReviewRequest)(nil),         // 48: delidev.v1.SubmitLocalReviewRequest
-	(*SubmitLocalReviewResponse)(nil),        // 49: delidev.v1.SubmitLocalReviewResponse
-	(*DeleteSessionRequest)(nil),             // 50: delidev.v1.DeleteSessionRequest
-	(*DeleteSessionResponse)(nil),            // 51: delidev.v1.DeleteSessionResponse
-	(*GetSessionDeletionRequest)(nil),        // 52: delidev.v1.GetSessionDeletionRequest
-	(*GetSessionDeletionResponse)(nil),       // 53: delidev.v1.GetSessionDeletionResponse
-	(*Resource)(nil),                         // 54: delidev.v1.Resource
-	(*Mutation)(nil),                         // 55: delidev.v1.Mutation
-	(UsageCoverage)(0),                       // 56: delidev.v1.UsageCoverage
-	(*SessionDeletionJob)(nil),               // 57: delidev.v1.SessionDeletionJob
+	(SessionContextCapability)(0),            // 2: delidev.v1.SessionContextCapability
+	(*LinkSessionPullRequestRequest)(nil),    // 3: delidev.v1.LinkSessionPullRequestRequest
+	(*LinkSessionPullRequestResponse)(nil),   // 4: delidev.v1.LinkSessionPullRequestResponse
+	(*UnlinkSessionPullRequestRequest)(nil),  // 5: delidev.v1.UnlinkSessionPullRequestRequest
+	(*UnlinkSessionPullRequestResponse)(nil), // 6: delidev.v1.UnlinkSessionPullRequestResponse
+	(*ReadSessionReviewContextRequest)(nil),  // 7: delidev.v1.ReadSessionReviewContextRequest
+	(*ReadSessionReviewContextResponse)(nil), // 8: delidev.v1.ReadSessionReviewContextResponse
+	(*SteerQueuedInputRequest)(nil),          // 9: delidev.v1.SteerQueuedInputRequest
+	(*SteerQueuedInputResponse)(nil),         // 10: delidev.v1.SteerQueuedInputResponse
+	(*SessionChange)(nil),                    // 11: delidev.v1.SessionChange
+	(*CreateSessionRequest)(nil),             // 12: delidev.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),            // 13: delidev.v1.CreateSessionResponse
+	(*ListSessionsRequest)(nil),              // 14: delidev.v1.ListSessionsRequest
+	(*ListSessionsResponse)(nil),             // 15: delidev.v1.ListSessionsResponse
+	(*EnqueueInputRequest)(nil),              // 16: delidev.v1.EnqueueInputRequest
+	(*EnqueueInputResponse)(nil),             // 17: delidev.v1.EnqueueInputResponse
+	(*EditQueuedInputRequest)(nil),           // 18: delidev.v1.EditQueuedInputRequest
+	(*EditQueuedInputResponse)(nil),          // 19: delidev.v1.EditQueuedInputResponse
+	(*RemoveQueuedInputRequest)(nil),         // 20: delidev.v1.RemoveQueuedInputRequest
+	(*RemoveQueuedInputResponse)(nil),        // 21: delidev.v1.RemoveQueuedInputResponse
+	(*ListQueueRequest)(nil),                 // 22: delidev.v1.ListQueueRequest
+	(*ListQueueResponse)(nil),                // 23: delidev.v1.ListQueueResponse
+	(*ControlSessionRequest)(nil),            // 24: delidev.v1.ControlSessionRequest
+	(*ControlSessionResponse)(nil),           // 25: delidev.v1.ControlSessionResponse
+	(*RenameSessionRequest)(nil),             // 26: delidev.v1.RenameSessionRequest
+	(*RenameSessionResponse)(nil),            // 27: delidev.v1.RenameSessionResponse
+	(*PrepareSessionWorkspaceRequest)(nil),   // 28: delidev.v1.PrepareSessionWorkspaceRequest
+	(*PrepareSessionWorkspaceResponse)(nil),  // 29: delidev.v1.PrepareSessionWorkspaceResponse
+	(*RecoverSessionWorkspaceRequest)(nil),   // 30: delidev.v1.RecoverSessionWorkspaceRequest
+	(*RecoverSessionWorkspaceResponse)(nil),  // 31: delidev.v1.RecoverSessionWorkspaceResponse
+	(*RecoverSessionExecutionRequest)(nil),   // 32: delidev.v1.RecoverSessionExecutionRequest
+	(*RecoverSessionExecutionResponse)(nil),  // 33: delidev.v1.RecoverSessionExecutionResponse
+	(*EstimatedCostBudget)(nil),              // 34: delidev.v1.EstimatedCostBudget
+	(*BudgetEvidence)(nil),                   // 35: delidev.v1.BudgetEvidence
+	(*SessionBudgetView)(nil),                // 36: delidev.v1.SessionBudgetView
+	(*GetSessionBudgetRequest)(nil),          // 37: delidev.v1.GetSessionBudgetRequest
+	(*GetSessionBudgetResponse)(nil),         // 38: delidev.v1.GetSessionBudgetResponse
+	(*SetSessionBudgetRequest)(nil),          // 39: delidev.v1.SetSessionBudgetRequest
+	(*SetSessionBudgetResponse)(nil),         // 40: delidev.v1.SetSessionBudgetResponse
+	(*ReadSessionWorkspaceRequest)(nil),      // 41: delidev.v1.ReadSessionWorkspaceRequest
+	(*ReadSessionWorkspaceResponse)(nil),     // 42: delidev.v1.ReadSessionWorkspaceResponse
+	(*CreateLocalReviewCommentRequest)(nil),  // 43: delidev.v1.CreateLocalReviewCommentRequest
+	(*CreateLocalReviewCommentResponse)(nil), // 44: delidev.v1.CreateLocalReviewCommentResponse
+	(*EditLocalReviewCommentRequest)(nil),    // 45: delidev.v1.EditLocalReviewCommentRequest
+	(*EditLocalReviewCommentResponse)(nil),   // 46: delidev.v1.EditLocalReviewCommentResponse
+	(*DeleteLocalReviewCommentRequest)(nil),  // 47: delidev.v1.DeleteLocalReviewCommentRequest
+	(*DeleteLocalReviewCommentResponse)(nil), // 48: delidev.v1.DeleteLocalReviewCommentResponse
+	(*SubmitLocalReviewRequest)(nil),         // 49: delidev.v1.SubmitLocalReviewRequest
+	(*SubmitLocalReviewResponse)(nil),        // 50: delidev.v1.SubmitLocalReviewResponse
+	(*DeleteSessionRequest)(nil),             // 51: delidev.v1.DeleteSessionRequest
+	(*DeleteSessionResponse)(nil),            // 52: delidev.v1.DeleteSessionResponse
+	(*GetSessionDeletionRequest)(nil),        // 53: delidev.v1.GetSessionDeletionRequest
+	(*GetSessionDeletionResponse)(nil),       // 54: delidev.v1.GetSessionDeletionResponse
+	(*CompactSessionRequest)(nil),            // 55: delidev.v1.CompactSessionRequest
+	(*CompactSessionResponse)(nil),           // 56: delidev.v1.CompactSessionResponse
+	(*GetSessionContextRequest)(nil),         // 57: delidev.v1.GetSessionContextRequest
+	(*GetSessionContextResponse)(nil),        // 58: delidev.v1.GetSessionContextResponse
+	(*Resource)(nil),                         // 59: delidev.v1.Resource
+	(*Mutation)(nil),                         // 60: delidev.v1.Mutation
+	(UsageCoverage)(0),                       // 61: delidev.v1.UsageCoverage
+	(*SessionDeletionJob)(nil),               // 62: delidev.v1.SessionDeletionJob
 }
 var file_delidev_v1_session_proto_depIdxs = []int32{
-	54, // 0: delidev.v1.LinkSessionPullRequestResponse.association:type_name -> delidev.v1.Resource
-	55, // 1: delidev.v1.UnlinkSessionPullRequestRequest.mutation:type_name -> delidev.v1.Mutation
-	55, // 2: delidev.v1.SteerQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
-	54, // 3: delidev.v1.SteerQueuedInputResponse.steer:type_name -> delidev.v1.Resource
-	10, // 4: delidev.v1.SteerQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
-	54, // 5: delidev.v1.SessionChange.session:type_name -> delidev.v1.Resource
-	54, // 6: delidev.v1.SessionChange.input:type_name -> delidev.v1.Resource
-	54, // 7: delidev.v1.SessionChange.workspace_job:type_name -> delidev.v1.Resource
-	54, // 8: delidev.v1.SessionChange.recovery_job:type_name -> delidev.v1.Resource
-	54, // 9: delidev.v1.SessionChange.execution_job:type_name -> delidev.v1.Resource
-	54, // 10: delidev.v1.SessionChange.execution_recovery_job:type_name -> delidev.v1.Resource
-	10, // 11: delidev.v1.CreateSessionResponse.change:type_name -> delidev.v1.SessionChange
-	54, // 12: delidev.v1.ListSessionsResponse.sessions:type_name -> delidev.v1.Resource
-	10, // 13: delidev.v1.EnqueueInputResponse.change:type_name -> delidev.v1.SessionChange
-	55, // 14: delidev.v1.EditQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
-	10, // 15: delidev.v1.EditQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
-	55, // 16: delidev.v1.RemoveQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
-	10, // 17: delidev.v1.RemoveQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
-	54, // 18: delidev.v1.ListQueueResponse.inputs:type_name -> delidev.v1.Resource
-	55, // 19: delidev.v1.ControlSessionRequest.mutation:type_name -> delidev.v1.Mutation
+	59, // 0: delidev.v1.LinkSessionPullRequestResponse.association:type_name -> delidev.v1.Resource
+	60, // 1: delidev.v1.UnlinkSessionPullRequestRequest.mutation:type_name -> delidev.v1.Mutation
+	60, // 2: delidev.v1.SteerQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
+	59, // 3: delidev.v1.SteerQueuedInputResponse.steer:type_name -> delidev.v1.Resource
+	11, // 4: delidev.v1.SteerQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
+	59, // 5: delidev.v1.SessionChange.session:type_name -> delidev.v1.Resource
+	59, // 6: delidev.v1.SessionChange.input:type_name -> delidev.v1.Resource
+	59, // 7: delidev.v1.SessionChange.workspace_job:type_name -> delidev.v1.Resource
+	59, // 8: delidev.v1.SessionChange.recovery_job:type_name -> delidev.v1.Resource
+	59, // 9: delidev.v1.SessionChange.execution_job:type_name -> delidev.v1.Resource
+	59, // 10: delidev.v1.SessionChange.execution_recovery_job:type_name -> delidev.v1.Resource
+	11, // 11: delidev.v1.CreateSessionResponse.change:type_name -> delidev.v1.SessionChange
+	59, // 12: delidev.v1.ListSessionsResponse.sessions:type_name -> delidev.v1.Resource
+	11, // 13: delidev.v1.EnqueueInputResponse.change:type_name -> delidev.v1.SessionChange
+	60, // 14: delidev.v1.EditQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
+	11, // 15: delidev.v1.EditQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
+	60, // 16: delidev.v1.RemoveQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
+	11, // 17: delidev.v1.RemoveQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
+	59, // 18: delidev.v1.ListQueueResponse.inputs:type_name -> delidev.v1.Resource
+	60, // 19: delidev.v1.ControlSessionRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 20: delidev.v1.ControlSessionRequest.action:type_name -> delidev.v1.SessionAction
-	10, // 21: delidev.v1.ControlSessionResponse.change:type_name -> delidev.v1.SessionChange
-	55, // 22: delidev.v1.RenameSessionRequest.mutation:type_name -> delidev.v1.Mutation
-	10, // 23: delidev.v1.RenameSessionResponse.change:type_name -> delidev.v1.SessionChange
-	55, // 24: delidev.v1.PrepareSessionWorkspaceRequest.mutation:type_name -> delidev.v1.Mutation
-	10, // 25: delidev.v1.PrepareSessionWorkspaceResponse.change:type_name -> delidev.v1.SessionChange
-	55, // 26: delidev.v1.RecoverSessionWorkspaceRequest.mutation:type_name -> delidev.v1.Mutation
-	10, // 27: delidev.v1.RecoverSessionWorkspaceResponse.change:type_name -> delidev.v1.SessionChange
-	55, // 28: delidev.v1.RecoverSessionExecutionRequest.mutation:type_name -> delidev.v1.Mutation
-	10, // 29: delidev.v1.RecoverSessionExecutionResponse.change:type_name -> delidev.v1.SessionChange
-	54, // 30: delidev.v1.SessionBudgetView.session:type_name -> delidev.v1.Resource
-	33, // 31: delidev.v1.SessionBudgetView.budget:type_name -> delidev.v1.EstimatedCostBudget
+	11, // 21: delidev.v1.ControlSessionResponse.change:type_name -> delidev.v1.SessionChange
+	60, // 22: delidev.v1.RenameSessionRequest.mutation:type_name -> delidev.v1.Mutation
+	11, // 23: delidev.v1.RenameSessionResponse.change:type_name -> delidev.v1.SessionChange
+	60, // 24: delidev.v1.PrepareSessionWorkspaceRequest.mutation:type_name -> delidev.v1.Mutation
+	11, // 25: delidev.v1.PrepareSessionWorkspaceResponse.change:type_name -> delidev.v1.SessionChange
+	60, // 26: delidev.v1.RecoverSessionWorkspaceRequest.mutation:type_name -> delidev.v1.Mutation
+	11, // 27: delidev.v1.RecoverSessionWorkspaceResponse.change:type_name -> delidev.v1.SessionChange
+	60, // 28: delidev.v1.RecoverSessionExecutionRequest.mutation:type_name -> delidev.v1.Mutation
+	11, // 29: delidev.v1.RecoverSessionExecutionResponse.change:type_name -> delidev.v1.SessionChange
+	59, // 30: delidev.v1.SessionBudgetView.session:type_name -> delidev.v1.Resource
+	34, // 31: delidev.v1.SessionBudgetView.budget:type_name -> delidev.v1.EstimatedCostBudget
 	1,  // 32: delidev.v1.SessionBudgetView.state:type_name -> delidev.v1.BudgetState
-	34, // 33: delidev.v1.SessionBudgetView.selected_currency:type_name -> delidev.v1.BudgetEvidence
-	56, // 34: delidev.v1.SessionBudgetView.coverage:type_name -> delidev.v1.UsageCoverage
-	35, // 35: delidev.v1.GetSessionBudgetResponse.view:type_name -> delidev.v1.SessionBudgetView
-	55, // 36: delidev.v1.SetSessionBudgetRequest.mutation:type_name -> delidev.v1.Mutation
-	33, // 37: delidev.v1.SetSessionBudgetRequest.budget:type_name -> delidev.v1.EstimatedCostBudget
-	35, // 38: delidev.v1.SetSessionBudgetResponse.view:type_name -> delidev.v1.SessionBudgetView
-	54, // 39: delidev.v1.CreateLocalReviewCommentResponse.comment:type_name -> delidev.v1.Resource
-	55, // 40: delidev.v1.EditLocalReviewCommentRequest.mutation:type_name -> delidev.v1.Mutation
-	54, // 41: delidev.v1.EditLocalReviewCommentResponse.comment:type_name -> delidev.v1.Resource
-	55, // 42: delidev.v1.DeleteLocalReviewCommentRequest.mutation:type_name -> delidev.v1.Mutation
-	54, // 43: delidev.v1.SubmitLocalReviewResponse.submission:type_name -> delidev.v1.Resource
-	10, // 44: delidev.v1.SubmitLocalReviewResponse.change:type_name -> delidev.v1.SessionChange
-	55, // 45: delidev.v1.DeleteSessionRequest.mutation:type_name -> delidev.v1.Mutation
-	57, // 46: delidev.v1.DeleteSessionResponse.job:type_name -> delidev.v1.SessionDeletionJob
-	57, // 47: delidev.v1.GetSessionDeletionResponse.job:type_name -> delidev.v1.SessionDeletionJob
-	50, // 48: delidev.v1.SessionService.DeleteSession:input_type -> delidev.v1.DeleteSessionRequest
-	52, // 49: delidev.v1.SessionService.GetSessionDeletion:input_type -> delidev.v1.GetSessionDeletionRequest
-	2,  // 50: delidev.v1.SessionService.LinkSessionPullRequest:input_type -> delidev.v1.LinkSessionPullRequestRequest
-	4,  // 51: delidev.v1.SessionService.UnlinkSessionPullRequest:input_type -> delidev.v1.UnlinkSessionPullRequestRequest
-	6,  // 52: delidev.v1.SessionService.ReadSessionReviewContext:input_type -> delidev.v1.ReadSessionReviewContextRequest
-	40, // 53: delidev.v1.SessionService.ReadSessionWorkspace:input_type -> delidev.v1.ReadSessionWorkspaceRequest
-	36, // 54: delidev.v1.SessionService.GetSessionBudget:input_type -> delidev.v1.GetSessionBudgetRequest
-	38, // 55: delidev.v1.SessionService.SetSessionBudget:input_type -> delidev.v1.SetSessionBudgetRequest
-	8,  // 56: delidev.v1.SessionService.SteerQueuedInput:input_type -> delidev.v1.SteerQueuedInputRequest
-	11, // 57: delidev.v1.SessionService.CreateSession:input_type -> delidev.v1.CreateSessionRequest
-	13, // 58: delidev.v1.SessionService.ListSessions:input_type -> delidev.v1.ListSessionsRequest
-	15, // 59: delidev.v1.SessionService.EnqueueInput:input_type -> delidev.v1.EnqueueInputRequest
-	17, // 60: delidev.v1.SessionService.EditQueuedInput:input_type -> delidev.v1.EditQueuedInputRequest
-	19, // 61: delidev.v1.SessionService.RemoveQueuedInput:input_type -> delidev.v1.RemoveQueuedInputRequest
-	21, // 62: delidev.v1.SessionService.ListQueue:input_type -> delidev.v1.ListQueueRequest
-	23, // 63: delidev.v1.SessionService.ControlSession:input_type -> delidev.v1.ControlSessionRequest
-	25, // 64: delidev.v1.SessionService.RenameSession:input_type -> delidev.v1.RenameSessionRequest
-	27, // 65: delidev.v1.SessionService.PrepareSessionWorkspace:input_type -> delidev.v1.PrepareSessionWorkspaceRequest
-	31, // 66: delidev.v1.SessionService.RecoverSessionExecution:input_type -> delidev.v1.RecoverSessionExecutionRequest
-	29, // 67: delidev.v1.SessionService.RecoverSessionWorkspace:input_type -> delidev.v1.RecoverSessionWorkspaceRequest
-	42, // 68: delidev.v1.SessionService.CreateLocalReviewComment:input_type -> delidev.v1.CreateLocalReviewCommentRequest
-	44, // 69: delidev.v1.SessionService.EditLocalReviewComment:input_type -> delidev.v1.EditLocalReviewCommentRequest
-	46, // 70: delidev.v1.SessionService.DeleteLocalReviewComment:input_type -> delidev.v1.DeleteLocalReviewCommentRequest
-	48, // 71: delidev.v1.SessionService.SubmitLocalReview:input_type -> delidev.v1.SubmitLocalReviewRequest
-	51, // 72: delidev.v1.SessionService.DeleteSession:output_type -> delidev.v1.DeleteSessionResponse
-	53, // 73: delidev.v1.SessionService.GetSessionDeletion:output_type -> delidev.v1.GetSessionDeletionResponse
-	3,  // 74: delidev.v1.SessionService.LinkSessionPullRequest:output_type -> delidev.v1.LinkSessionPullRequestResponse
-	5,  // 75: delidev.v1.SessionService.UnlinkSessionPullRequest:output_type -> delidev.v1.UnlinkSessionPullRequestResponse
-	7,  // 76: delidev.v1.SessionService.ReadSessionReviewContext:output_type -> delidev.v1.ReadSessionReviewContextResponse
-	41, // 77: delidev.v1.SessionService.ReadSessionWorkspace:output_type -> delidev.v1.ReadSessionWorkspaceResponse
-	37, // 78: delidev.v1.SessionService.GetSessionBudget:output_type -> delidev.v1.GetSessionBudgetResponse
-	39, // 79: delidev.v1.SessionService.SetSessionBudget:output_type -> delidev.v1.SetSessionBudgetResponse
-	9,  // 80: delidev.v1.SessionService.SteerQueuedInput:output_type -> delidev.v1.SteerQueuedInputResponse
-	12, // 81: delidev.v1.SessionService.CreateSession:output_type -> delidev.v1.CreateSessionResponse
-	14, // 82: delidev.v1.SessionService.ListSessions:output_type -> delidev.v1.ListSessionsResponse
-	16, // 83: delidev.v1.SessionService.EnqueueInput:output_type -> delidev.v1.EnqueueInputResponse
-	18, // 84: delidev.v1.SessionService.EditQueuedInput:output_type -> delidev.v1.EditQueuedInputResponse
-	20, // 85: delidev.v1.SessionService.RemoveQueuedInput:output_type -> delidev.v1.RemoveQueuedInputResponse
-	22, // 86: delidev.v1.SessionService.ListQueue:output_type -> delidev.v1.ListQueueResponse
-	24, // 87: delidev.v1.SessionService.ControlSession:output_type -> delidev.v1.ControlSessionResponse
-	26, // 88: delidev.v1.SessionService.RenameSession:output_type -> delidev.v1.RenameSessionResponse
-	28, // 89: delidev.v1.SessionService.PrepareSessionWorkspace:output_type -> delidev.v1.PrepareSessionWorkspaceResponse
-	32, // 90: delidev.v1.SessionService.RecoverSessionExecution:output_type -> delidev.v1.RecoverSessionExecutionResponse
-	30, // 91: delidev.v1.SessionService.RecoverSessionWorkspace:output_type -> delidev.v1.RecoverSessionWorkspaceResponse
-	43, // 92: delidev.v1.SessionService.CreateLocalReviewComment:output_type -> delidev.v1.CreateLocalReviewCommentResponse
-	45, // 93: delidev.v1.SessionService.EditLocalReviewComment:output_type -> delidev.v1.EditLocalReviewCommentResponse
-	47, // 94: delidev.v1.SessionService.DeleteLocalReviewComment:output_type -> delidev.v1.DeleteLocalReviewCommentResponse
-	49, // 95: delidev.v1.SessionService.SubmitLocalReview:output_type -> delidev.v1.SubmitLocalReviewResponse
-	72, // [72:96] is the sub-list for method output_type
-	48, // [48:72] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	35, // 33: delidev.v1.SessionBudgetView.selected_currency:type_name -> delidev.v1.BudgetEvidence
+	61, // 34: delidev.v1.SessionBudgetView.coverage:type_name -> delidev.v1.UsageCoverage
+	36, // 35: delidev.v1.GetSessionBudgetResponse.view:type_name -> delidev.v1.SessionBudgetView
+	60, // 36: delidev.v1.SetSessionBudgetRequest.mutation:type_name -> delidev.v1.Mutation
+	34, // 37: delidev.v1.SetSessionBudgetRequest.budget:type_name -> delidev.v1.EstimatedCostBudget
+	36, // 38: delidev.v1.SetSessionBudgetResponse.view:type_name -> delidev.v1.SessionBudgetView
+	59, // 39: delidev.v1.CreateLocalReviewCommentResponse.comment:type_name -> delidev.v1.Resource
+	60, // 40: delidev.v1.EditLocalReviewCommentRequest.mutation:type_name -> delidev.v1.Mutation
+	59, // 41: delidev.v1.EditLocalReviewCommentResponse.comment:type_name -> delidev.v1.Resource
+	60, // 42: delidev.v1.DeleteLocalReviewCommentRequest.mutation:type_name -> delidev.v1.Mutation
+	59, // 43: delidev.v1.SubmitLocalReviewResponse.submission:type_name -> delidev.v1.Resource
+	11, // 44: delidev.v1.SubmitLocalReviewResponse.change:type_name -> delidev.v1.SessionChange
+	60, // 45: delidev.v1.DeleteSessionRequest.mutation:type_name -> delidev.v1.Mutation
+	62, // 46: delidev.v1.DeleteSessionResponse.job:type_name -> delidev.v1.SessionDeletionJob
+	62, // 47: delidev.v1.GetSessionDeletionResponse.job:type_name -> delidev.v1.SessionDeletionJob
+	60, // 48: delidev.v1.CompactSessionRequest.mutation:type_name -> delidev.v1.Mutation
+	59, // 49: delidev.v1.CompactSessionResponse.job:type_name -> delidev.v1.Resource
+	2,  // 50: delidev.v1.GetSessionContextResponse.capabilities:type_name -> delidev.v1.SessionContextCapability
+	51, // 51: delidev.v1.SessionService.DeleteSession:input_type -> delidev.v1.DeleteSessionRequest
+	53, // 52: delidev.v1.SessionService.GetSessionDeletion:input_type -> delidev.v1.GetSessionDeletionRequest
+	55, // 53: delidev.v1.SessionService.CompactSession:input_type -> delidev.v1.CompactSessionRequest
+	57, // 54: delidev.v1.SessionService.GetSessionContext:input_type -> delidev.v1.GetSessionContextRequest
+	3,  // 55: delidev.v1.SessionService.LinkSessionPullRequest:input_type -> delidev.v1.LinkSessionPullRequestRequest
+	5,  // 56: delidev.v1.SessionService.UnlinkSessionPullRequest:input_type -> delidev.v1.UnlinkSessionPullRequestRequest
+	7,  // 57: delidev.v1.SessionService.ReadSessionReviewContext:input_type -> delidev.v1.ReadSessionReviewContextRequest
+	41, // 58: delidev.v1.SessionService.ReadSessionWorkspace:input_type -> delidev.v1.ReadSessionWorkspaceRequest
+	37, // 59: delidev.v1.SessionService.GetSessionBudget:input_type -> delidev.v1.GetSessionBudgetRequest
+	39, // 60: delidev.v1.SessionService.SetSessionBudget:input_type -> delidev.v1.SetSessionBudgetRequest
+	9,  // 61: delidev.v1.SessionService.SteerQueuedInput:input_type -> delidev.v1.SteerQueuedInputRequest
+	12, // 62: delidev.v1.SessionService.CreateSession:input_type -> delidev.v1.CreateSessionRequest
+	14, // 63: delidev.v1.SessionService.ListSessions:input_type -> delidev.v1.ListSessionsRequest
+	16, // 64: delidev.v1.SessionService.EnqueueInput:input_type -> delidev.v1.EnqueueInputRequest
+	18, // 65: delidev.v1.SessionService.EditQueuedInput:input_type -> delidev.v1.EditQueuedInputRequest
+	20, // 66: delidev.v1.SessionService.RemoveQueuedInput:input_type -> delidev.v1.RemoveQueuedInputRequest
+	22, // 67: delidev.v1.SessionService.ListQueue:input_type -> delidev.v1.ListQueueRequest
+	24, // 68: delidev.v1.SessionService.ControlSession:input_type -> delidev.v1.ControlSessionRequest
+	26, // 69: delidev.v1.SessionService.RenameSession:input_type -> delidev.v1.RenameSessionRequest
+	28, // 70: delidev.v1.SessionService.PrepareSessionWorkspace:input_type -> delidev.v1.PrepareSessionWorkspaceRequest
+	32, // 71: delidev.v1.SessionService.RecoverSessionExecution:input_type -> delidev.v1.RecoverSessionExecutionRequest
+	30, // 72: delidev.v1.SessionService.RecoverSessionWorkspace:input_type -> delidev.v1.RecoverSessionWorkspaceRequest
+	43, // 73: delidev.v1.SessionService.CreateLocalReviewComment:input_type -> delidev.v1.CreateLocalReviewCommentRequest
+	45, // 74: delidev.v1.SessionService.EditLocalReviewComment:input_type -> delidev.v1.EditLocalReviewCommentRequest
+	47, // 75: delidev.v1.SessionService.DeleteLocalReviewComment:input_type -> delidev.v1.DeleteLocalReviewCommentRequest
+	49, // 76: delidev.v1.SessionService.SubmitLocalReview:input_type -> delidev.v1.SubmitLocalReviewRequest
+	52, // 77: delidev.v1.SessionService.DeleteSession:output_type -> delidev.v1.DeleteSessionResponse
+	54, // 78: delidev.v1.SessionService.GetSessionDeletion:output_type -> delidev.v1.GetSessionDeletionResponse
+	56, // 79: delidev.v1.SessionService.CompactSession:output_type -> delidev.v1.CompactSessionResponse
+	58, // 80: delidev.v1.SessionService.GetSessionContext:output_type -> delidev.v1.GetSessionContextResponse
+	4,  // 81: delidev.v1.SessionService.LinkSessionPullRequest:output_type -> delidev.v1.LinkSessionPullRequestResponse
+	6,  // 82: delidev.v1.SessionService.UnlinkSessionPullRequest:output_type -> delidev.v1.UnlinkSessionPullRequestResponse
+	8,  // 83: delidev.v1.SessionService.ReadSessionReviewContext:output_type -> delidev.v1.ReadSessionReviewContextResponse
+	42, // 84: delidev.v1.SessionService.ReadSessionWorkspace:output_type -> delidev.v1.ReadSessionWorkspaceResponse
+	38, // 85: delidev.v1.SessionService.GetSessionBudget:output_type -> delidev.v1.GetSessionBudgetResponse
+	40, // 86: delidev.v1.SessionService.SetSessionBudget:output_type -> delidev.v1.SetSessionBudgetResponse
+	10, // 87: delidev.v1.SessionService.SteerQueuedInput:output_type -> delidev.v1.SteerQueuedInputResponse
+	13, // 88: delidev.v1.SessionService.CreateSession:output_type -> delidev.v1.CreateSessionResponse
+	15, // 89: delidev.v1.SessionService.ListSessions:output_type -> delidev.v1.ListSessionsResponse
+	17, // 90: delidev.v1.SessionService.EnqueueInput:output_type -> delidev.v1.EnqueueInputResponse
+	19, // 91: delidev.v1.SessionService.EditQueuedInput:output_type -> delidev.v1.EditQueuedInputResponse
+	21, // 92: delidev.v1.SessionService.RemoveQueuedInput:output_type -> delidev.v1.RemoveQueuedInputResponse
+	23, // 93: delidev.v1.SessionService.ListQueue:output_type -> delidev.v1.ListQueueResponse
+	25, // 94: delidev.v1.SessionService.ControlSession:output_type -> delidev.v1.ControlSessionResponse
+	27, // 95: delidev.v1.SessionService.RenameSession:output_type -> delidev.v1.RenameSessionResponse
+	29, // 96: delidev.v1.SessionService.PrepareSessionWorkspace:output_type -> delidev.v1.PrepareSessionWorkspaceResponse
+	33, // 97: delidev.v1.SessionService.RecoverSessionExecution:output_type -> delidev.v1.RecoverSessionExecutionResponse
+	31, // 98: delidev.v1.SessionService.RecoverSessionWorkspace:output_type -> delidev.v1.RecoverSessionWorkspaceResponse
+	44, // 99: delidev.v1.SessionService.CreateLocalReviewComment:output_type -> delidev.v1.CreateLocalReviewCommentResponse
+	46, // 100: delidev.v1.SessionService.EditLocalReviewComment:output_type -> delidev.v1.EditLocalReviewCommentResponse
+	48, // 101: delidev.v1.SessionService.DeleteLocalReviewComment:output_type -> delidev.v1.DeleteLocalReviewCommentResponse
+	50, // 102: delidev.v1.SessionService.SubmitLocalReview:output_type -> delidev.v1.SubmitLocalReviewResponse
+	77, // [77:103] is the sub-list for method output_type
+	51, // [51:77] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_session_proto_init() }
@@ -3509,8 +3791,8 @@ func file_delidev_v1_session_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_session_proto_rawDesc), len(file_delidev_v1_session_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   52,
+			NumEnums:      3,
+			NumMessages:   56,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

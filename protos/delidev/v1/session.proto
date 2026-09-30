@@ -10,6 +10,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 service SessionService {
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
   rpc GetSessionDeletion(GetSessionDeletionRequest) returns (GetSessionDeletionResponse);
+  rpc CompactSession(CompactSessionRequest) returns (CompactSessionResponse);
+  rpc GetSessionContext(GetSessionContextRequest) returns (GetSessionContextResponse);
   rpc LinkSessionPullRequest(LinkSessionPullRequestRequest) returns (LinkSessionPullRequestResponse);
   rpc UnlinkSessionPullRequest(UnlinkSessionPullRequestRequest) returns (UnlinkSessionPullRequestResponse);
   rpc ReadSessionReviewContext(ReadSessionReviewContextRequest) returns (ReadSessionReviewContextResponse);
@@ -347,4 +349,27 @@ message GetSessionDeletionRequest {
 }
 message GetSessionDeletionResponse {
   SessionDeletionJob job = 1;
+}
+
+// A distinct revision-bound native action. Receipt replay observes the same job.
+message CompactSessionRequest {
+  Mutation mutation = 1;
+}
+message CompactSessionResponse {
+  Resource job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetSessionContextRequest {
+  string session_id = 1;
+}
+enum SessionContextCapability {
+  SESSION_CONTEXT_CAPABILITY_UNSPECIFIED = 0;
+  SESSION_CONTEXT_CAPABILITY_CLAUDE_NATIVE_OBSERVATIONS_V1 = 1;
+  SESSION_CONTEXT_CAPABILITY_CLAUDE_MANUAL_COMPACTION_V1 = 2;
+}
+message GetSessionContextResponse {
+  // Retained native observations; absent observations never become measured zero.
+  bytes document_json = 1;
+  repeated SessionContextCapability capabilities = 2;
 }

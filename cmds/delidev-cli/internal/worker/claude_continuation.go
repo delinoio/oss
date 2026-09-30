@@ -28,6 +28,12 @@ func readClaudeContinuation(ctx context.Context, root string, credential Credent
 	config.Process.OwnerID = c.Previous.JobID
 	config.Process.Cwd = filepath.Join(root, "runtimes", string(c.HistoryExecutionID))
 	config.Home = filepath.Join(config.Process.Cwd, "claude")
+	if c.Compaction != nil {
+		if _, err := readClaudeExecutionCheckpoint(root, ref); err != nil {
+			return nil, err
+		}
+		return readSessionCompactionCheckpoint(ctx, root, credential, input, *c.Compaction, config)
+	}
 	return ReadClaudeExecutionCheckpoint(ctx, root, ref, config)
 }
 

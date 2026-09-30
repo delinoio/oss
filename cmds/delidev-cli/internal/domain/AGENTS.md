@@ -32,4 +32,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Permanent session deletion validates UUID uniqueness against its own 4,096-copy capacity; do not reuse the 1,000-link helper for that ownership plan.
 
+- Manual compaction follows `docs/cmds-delidev-compaction-contract.md`. Keep its distinct action/job/reference and original compact status separate from conversation input/outcome and usage; validate exact immutable restore assignments, native provenance, missing versus zero measurements and explicit Resume after failure.
+
 - Claude continuation candidates require a correlated non-aborted successful or failed root outcome, unchanged permission and settled original input/callback/task/compaction facts. A `background_requested` terminal is ineligible even without a tracked background-task event. Failed predecessors require explicit Resume intent; a candidate never substitutes for independently verified native history and cleanup.
+
+- Permanent-deletion copies for manual compaction retain a distinct original action UUID, never a replacement conversation execution ID. Reject missing, malformed or mixed action ownership; existing deletion plans retain their exact bytes and digest. Follow `docs/cmds-delidev-compaction-contract.md`.
