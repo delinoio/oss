@@ -63,6 +63,7 @@ owns the lifecycle, snapshot-copy deletion integration and remaining database-re
 - Local and remote operation preserve original native ownership, explicit authorization, credential isolation and uncertainty.
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.
+- Workspace storage and session forwarding share transactional ownership exclusion: storage requires both original peer cleanup confirmations; new forwarding and live socket authority require present storage, while original cleanup remains authorized.
 - PR activity preserves immutable source/version/actor metadata across Go, generated clients, CLI and desktop. Attempt success cannot establish verified handling; only a dedicated original verification source can project that outcome.
 - Negotiated native usage keeps Codex responses and verified Grok closed inputs as distinct accounting units across Go, CLI and desktop. Grok retention requires original input/history/closure and independently confirmed cleanup; its totals never imply pricing, actual cost or estimated-budget contribution. See the [usage contract](cmds-delidev-usage-contract.md).
 

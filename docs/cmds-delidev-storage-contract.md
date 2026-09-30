@@ -358,12 +358,15 @@ TypeScript and Connect Query clients expose the additive service.
 
 Only inactive prepared DeliDev-owned Worktree and General Chat workspaces are
 eligible. Local checkouts, active executions, unresolved native ownership,
-unconfirmed cleanup, pending titles and dependent queued/claimed/uncertain jobs
-block storage. The server examines the complete bounded session-job inventory,
+unconfirmed cleanup, pending titles, dependent queued/claimed/uncertain jobs and
+any forward without both original peer cleanup confirmations block storage.
+Stopping a forward or labeling it stopped alone cannot release ownership. The server examines the complete bounded session-job inventory,
 not only its first page. Extra resources in the managed root also block parent
 cleanup. Acceptance pauses dispatch and clears continuation intent atomically;
 first dispatch, Resume, continuation, preparation and initial execution claims
-independently require present storage. Archive still preserves files. Successful
+independently require present storage. New forwards and retained live socket
+authority also require present storage; original cleanup reports remain usable.
+Archive still preserves files. Successful
 restoration and recovery remain paused and require explicit later Resume.
 
 The authenticated owning Worker performs five-minute cancellable operations

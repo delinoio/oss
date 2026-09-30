@@ -49,6 +49,15 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 	if s.Storage != nil && (s.Storage.State == domain.WorkspaceStoragePending || s.Storage.State == domain.WorkspaceStorageUncertain) && ignored != s.Storage.JobID {
 		return domain.Fail(domain.RecoveryRequired, "A storage operation retains ownership.", "Inspect the original accepted operation and its Worker recovery evidence.")
 	}
+	// Forward sockets have independent owners and cleanup reports, rather than
+	// job records. Stop acceptance alone cannot release parent storage ownership.
+	pending, err := tx.SessionForwardsPending(id)
+	if err != nil {
+		return err
+	}
+	if pending {
+		return domain.Fail(domain.Conflict, "Session forwards have not confirmed cleanup.", "Stop every forward and wait for both original peers before workspace storage.")
+	}
 	var after domain.ID
 	for inspected := 0; inspected < 4096; {
 		jobs, err := tx.List(store.Filter{Kind: domain.JobKind, SessionID: id, After: after, Limit: store.MaxPage})
