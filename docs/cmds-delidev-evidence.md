@@ -3347,3 +3347,70 @@ checking, packaging/launcher checks, native Swift fixtures and the production
 build. Generated desktop/client `dist` output was removed after verification.
 No new Rust, Go, protocol or platform acceptance changes were made; the repaired
 hosted CI result remains pending after the push.
+
+### Desktop source-icon LFS preparation (2026-09-30)
+
+The ordinary macOS development entry point reproduced `Invalid PNG signature`
+while bundling its app icon: the source icon was a 132-byte Git LFS pointer for
+a 1,514,329-byte PNG. Frontend, sidecar, widget and native host builds had passed.
+Providing the exact digest-verified original icon as a temporary diagnostic
+input allowed bundling and native architecture/CEF/widget/entitlement/ad-hoc
+signature checks to pass. That diagnostic invocation intentionally exited before
+application state initialization; it was not a native UI acceptance result.
+
+The shared `prepare:assets` step now precedes native development, ordinary
+build/bundle and dry-run packaging. It restores only the unchanged committed
+source-icon pointer from cache or an exact-path current-ref LFS fetch, verifies
+size/digest/PNG container integrity and preserves local image and pointer edits.
+Existing PNGs require neither Git nor networking. Stable structured failures
+include recovery guidance without raw Git output, and cancellation joins the
+active Git child through the existing process lifecycle.
+
+Ten focused asset cases pass with temporary repositories and a local LFS remote,
+covering offline restoration, scoped fetch under conflicting caller filters,
+local changes, unavailable tools/downloads, integrity, concurrent edits and real
+SIGTERM delivery. The existing six launcher cases pass in their standalone run,
+and eight package verifier cases plus the native-package CI contract pass.
+The first concurrent aggregate was interrupted after an existing launcher signal
+case stalled. The initial full frontend run was also interrupted after existing
+backup, desktop, tray and Settings cases exceeded their deadlines under concurrent
+native compilation and host load. No product test timeout was increased.
+Normal root `pnpm install --frozen-lockfile` passed, including linked-worktree
+Lefthook installation.
+
+The launcher signal fixture waited only for inherited child stdout, which could
+arrive before the wrapper returned from process creation and installed its
+signal handlers. Both signal fixtures now wait for explicit wrapper and child
+readiness before sending SIGTERM. The combined `pnpm test:desktop-launch` passes
+all 16 cases without serializing files or increasing timeouts. The eight bundle
+verifier cases and native Swift widget fixtures also pass separately.
+
+Starting with the real source icon still represented by its LFS pointer after
+installation, ordinary `pnpm dev:desktop` restored the cached PNG automatically
+and completed frontend, sidecar, widget, native host, CEF app bundling and ad-hoc
+signing. The generated arm64 debug app passed native architecture, CEF resources,
+macOS 13 metadata, both widget extensions/entitlements and deep strict signature
+verification. Its initial launch reported `SidecarFailed` and an existing CEF
+browser session while another checkout's DeliDev/server was already running.
+Launching that exact generated app with a temporary HOME/cache and data directory
+displayed the native DeliDev local-server connection screen. The occupied local
+server port still prevented a fresh connection; this establishes window/rendering
+evidence, not authenticated server or provisioned WidgetKit acceptance. Only this
+temporary app was stopped, with runtime return and process exit code 0 observed;
+the pre-existing app and server were left running.
+
+A complete single-worker `pnpm test` attempt passed client generation and type
+checking, then finished Vitest with 71 passing files / 933 passing tests and
+3 failing files / 12 failures. Those failures were in the unchanged App, Settings
+integration and tray presentation tests (5-second deadlines and asynchronous
+element/state waits); that attempt did not establish a green full frontend suite.
+An isolated rerun of those exact three files passed all 49 tests with the
+unchanged deadlines and product code. The production frontend build passed
+during the native launch. No Rust, Go,
+frontend product code, runtime pins or signing policies changed.
+
+The final single-worker `pnpm test` pipeline passed all 74 frontend files / 945
+tests, client generation/type checking, all 8 package-verifier and 16
+asset/launcher cases, native Swift widget fixtures and the production frontend
+build. Test deadlines were unchanged. Generated desktop/client `dist` directories
+and this task's temporary native smoke data were removed after verification.

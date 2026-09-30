@@ -24,6 +24,8 @@ The workflow has no automatic push, tag, release or pull-request trigger.
 
 ## Interfaces and Contracts
 
+Both native dry-run entry points use the desktop's shared `prepare:assets` preflight before compilation. Existing PNGs require no Git/network access; an unchanged DeliDev source-icon pointer is restored from cache or an exact-path current-ref LFS fetch, then checked against its original size/digest and PNG container. Local edits are preserved, unrelated assets are excluded, and preparation failure or cancellation prevents packaging. The same preflight is used by ordinary native build/development/bundle commands; see the [desktop contract](apps-delidev-desktop-contract.md).
+
 `pnpm --dir apps/delidev bundle:dry-run --target <triple>` requires a clean committed
 checkout, matching native Node architecture and matching `rustc` host. Recheck the
 unchanged commit and clean working tree before publishing verified output. The command
