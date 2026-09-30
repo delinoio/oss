@@ -154,3 +154,45 @@ or complete native acceptance, and it does not alter the earlier qualifications.
 
 `GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/internal/server
 ./cmds/delidev-cli/internal/domain` also passed with that private toolchain/cache.
+
+## PR #1177 history-observation receipt review repair
+
+Before this repair, `TestHistoryObservationSkipsUnchangedReceiptsAndNotifications`
+reproduced store-change notifications for unchanged requests, and
+`TestHistoryObservationRejectsAccountBoundRequestsAfterSwitch` reproduced a
+receipt for a repeated full-history observation after switching.
+
+Unchanged retained modes now revalidate live authority through a read-only
+transaction. A pending transition repeats authorization and sticky-mode checks
+at commit. A concurrent request that already recorded the mode causes the
+redundant mutation to roll back without a receipt or notification. Only the
+private unchanged-observation signal is consumed; other failures remain errors.
+The concurrent regression verifies one or two real transitions from unknown
+to sticky account-bound history with exactly the corresponding receipt count.
+
+Using the same isolated Go 1.26.8 toolchain/cache, these checks passed after the
+final concurrent-transition guard:
+
+- `GOMAXPROCS=2 go test -race -p 2 -timeout 5m
+  ./cmds/delidev-cli/internal/server ./cmds/delidev-cli/internal/apiproxy
+  ./cmds/delidev-cli/internal/domain -run
+  'Test(HistoryObservation|AccountSwitch|StoppedAccountSwitch|Continuation|ExecutionAuthority|ExecutionProxy|Switched|FullNativeHistory|ExecutionConfiguration|ExecutionInstructions)'
+  -count=1`: passed (server 85.360 seconds, relay 1.307 seconds, domain 1.458 seconds).
+- `GOMAXPROCS=2 go test -race -p 1 -timeout 5m
+  ./cmds/delidev-cli/internal/server -run
+  '^Test(ExecutionGrant|ExecutionAccountRevocation|ProviderDisable)' -count=1`:
+  passed (20.832 seconds), including mutable ownership, epoch replacement,
+  provider disablement and cancellation/join during revocation.
+- `GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/...`: passed.
+
+These focused repairs do not establish a complete native A-to-B acceptance
+pass or erase the original broader race-suite failures.
+
+A later read-only completion check confirmed that the original scoped race
+command exited with status 1. Its final log includes CLI/discovery failures,
+Claude protocol/cleanup failures, 20-minute Codex/Grok/server package timeouts,
+OpenCode failures and Worker/workspace build failures. Other packages, including
+the store, completed successfully. This supersedes only the earlier running
+status; it preserves every earlier failure and native-acceptance limitation.
+The broad command began before these review repairs and is not final-head
+validation of them. No full scoped race pass is claimed.
