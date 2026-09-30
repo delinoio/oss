@@ -301,6 +301,14 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	if c.thread != "" {
 		return result, domain.Fail(domain.Conflict, "This native connection already owns a root thread.", "Use the retained native thread; do not start or resume another one on this connection.")
 	}
+	if c.managedHome != "" {
+		if settings.Provider != "openai" {
+			return result, incompatible()
+		}
+		if err := c.verifyManagedConfig(ctx, settings.Cwd); err != nil {
+			return result, err
+		}
+	}
 	if c.api != nil {
 		if settings.Provider != APIProvider {
 			return result, incompatible()

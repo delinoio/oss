@@ -62,6 +62,8 @@ Remote transport retains authenticated TLS; loopback development retains the exi
 
 The merged native configuration must retain file storage, ChatGPT login and the built-in OpenAI provider without inherited endpoint, command authentication, bearer, query or header overrides. Native execution never inherits unrelated system logins. Private files do not promise an OS sandbox against unrestricted same-user access. All tests use isolated temporary state and synthetic credentials.
 
+Both native thread start and resume recheck the merged configuration for the actual execution workspace before sending the mutation. A successful startup-directory handshake cannot authorize a workspace-specific provider or authentication override.
+
 Credential cleanup scans retained native files for raw token material and padded or unpadded standard/URL Base64 copies under the existing file/count/byte bounds. Finding a remnant leaves cleanup unconfirmed and retains recovery ownership without erasing the original native history.
 
 ## Logging

@@ -27,14 +27,22 @@ func managedFixtureBundle(rotation string) []byte {
 }
 
 func managedFixtureHandle(mode string, id json.RawMessage, method string, params json.RawMessage, write func(json.RawMessage, any)) bool {
-	if !strings.HasPrefix(mode, "managed-") {
+	if !strings.HasPrefix(mode, "managed-") && !strings.HasPrefix(mode, "thread-managed-") {
 		return false
 	}
 	home := os.Getenv("CODEX_HOME")
 	const login = "11111111-1111-4111-8111-111111111111"
 	switch method {
 	case "config/read":
-		write(id, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}}, "origins": nil, "layers": nil})
+		providers := map[string]any{}
+		var input struct {
+			Cwd string `json:"cwd"`
+		}
+		_ = json.Unmarshal(params, &input)
+		if mode == "thread-managed-workspace-override" && input.Cwd == os.Getenv("DELIDEV_CODEX_MANAGED_WORKSPACE") {
+			providers["openai"] = map[string]any{"requires_openai_auth": true, "base_url": "https://foreign.invalid"}
+		}
+		write(id, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers}, "origins": nil, "layers": nil})
 	case "account/login/start":
 		var input struct {
 			Type string `json:"type"`
@@ -81,6 +89,47 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		return false
 	}
 	return true
+}
+
+func TestManagedCodexThreadRechecksWorkspaceProviderAuthority(t *testing.T) {
+	for _, resume := range []bool{false, true} {
+		for _, mode := range []string{"thread-managed-ready", "thread-managed-workspace-override"} {
+			operation := "start"
+			if resume {
+				operation = "resume"
+			}
+			t.Run(operation+"/"+mode, func(t *testing.T) {
+				settings := threadSettings(t)
+				settings.Provider = "openai"
+				config := fixtureConfig(t, mode)
+				config.Mode, config.ManagedAuthentication = ThreadProtocol, true
+				capture := filepath.Join(config.Process.Cwd, "thread-operations.jsonl")
+				config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_MANAGED_WORKSPACE="+settings.Cwd, "DELIDEV_CODEX_CAPTURE="+capture)
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				client, err := Open(ctx, config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer client.Close()
+				if resume {
+					_, err = client.ResumeThread(ctx, domain.NewID(), domain.NewID(), settings)
+				} else {
+					_, err = client.StartThread(ctx, domain.NewID(), settings)
+				}
+				if mode == "thread-managed-workspace-override" {
+					if domain.SafeError(err).Code != domain.Unsupported {
+						t.Fatal("workspace provider override was accepted", err)
+					}
+					if _, err := os.Lstat(capture); !os.IsNotExist(err) {
+						t.Fatal("rejected workspace launched a native thread mutation", err)
+					}
+				} else if err != nil {
+					t.Fatal("official managed provider was rejected", err)
+				}
+			})
+		}
+	}
 }
 
 func TestManagedCodexDeviceLoginRefreshAndLocalLogout(t *testing.T) {
