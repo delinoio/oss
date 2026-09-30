@@ -36,8 +36,9 @@ protocol allocation changes were made.
 
 - `go test -race ./cmds/delidev-cli/internal/domain ./cmds/delidev-cli/internal/integrations/github ./cmds/delidev-cli/internal/store -run 'ALLGREEN|QueueCI|CIQuery|RequiredCI|HistoricalQueue|CIProblem|PRCI|Remediation'`: passed all three packages (1.813s, 2.101s and 18.036s).
 - `go test -race ./cmds/delidev-cli/internal/integrations/github`: passed the full adapter suite, including unequal entry/check pagination (3.302s).
+- `go test -race ./cmds/delidev-cli/internal/server ./cmds/delidev-cli/internal/cli -run 'RepositoryQuery|PRProblemsRPC|PRProblemCollectionFamilies|CLIPRProblem|CLIRemediation'`: passed authenticated RPC/CLI regressions (27.322s and 8.688s).
 - `go vet ./cmds/delidev-cli/...`: passed.
-- `pnpm test` in `apps/delidev`: passed, including API-client generation, type checking, 95 files / 1,240 component tests, eight package fixtures, sixteen launcher/LFS fixtures, Swift widget fixtures and the production build.
+- `pnpm test` in `apps/delidev`: passed, including the API-client build, type checking, 95 files / 1,240 component tests, eight package fixtures, sixteen launcher/LFS fixtures, Swift widget fixtures and the production build.
 - `node scripts/delidev/verify-independent-changes.mjs`: passed with reproducible generated bindings and no shared changed files in its structural fixture.
 - `git diff --check`: passed; `go fmt ./...` passed. The DeliDev icon was explicitly hydrated with Git LFS before consuming packaging output. Generated repository-owned `dist` output is removed from the final worktree.
 - Executed the exact fixed GraphQL document through `gh api graphql` on public PR #1110: GitHub returned no schema errors, PR 1110, `isInMergeQueue: false`, and no entry. This checks query compatibility only.
