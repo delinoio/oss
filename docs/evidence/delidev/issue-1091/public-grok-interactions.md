@@ -10,7 +10,7 @@ Existing first-text successful history and original Stop remain separately teste
 
 ## Executed validation
 
-All checks below ran in the isolated issue worktree on macOS arm64. Focused native tests use temporary private state and controlled fixture processes. No real provider credential or account was used.
+All checks below ran in the isolated issue worktree on macOS arm64. Current main `126641a6dcf274420c8c5800a6e88079f0e19990` was integrated through merge `bab9dd536b1dad9ef6bab9c4f81a74d6ab6bd22a`, retaining both independent desktop-contract sections. After integration, the regenerated API client, frontend typecheck/build, all 101 Grok frontend tests, complete domain race suite, focused server/Worker/CLI/original-projection race regressions and Go vet passed. Focused native tests use temporary private state and controlled fixture processes. No real provider credential or account was used.
 
 | Check | Result |
 | --- | --- |
@@ -27,9 +27,11 @@ All checks below ran in the isolated issue worktree on macOS arm64. Focused nati
 | `go build -p 1 -o /private/tmp/delidev-1091-validation-cli ./cmds/delidev-cli` | Passed with task-private build/module caches. |
 | Focused desktop original-interaction and existing native Grok tests | Passed all 101 tests after exact option and aggregate display validation. |
 | Desktop bundle dry-run, desktop launch, widget and production build checks | Passed independently: 8 bundle tests, 16 launch tests, widget check and production build. |
-| Required root `GOMAXPROCS=2 go test -race -p 1 ./cmds/delidev-cli/... -timeout=30m` | Still running at this evidence update; existing CLI workspace, discovery, Claude cleanup and Codex steer fixtures have failed their deadlines/reconciliation checks. This is not a passing full-suite result. |
+| Required root `GOMAXPROCS=2 go test -race -p 1 ./cmds/delidev-cli/... -timeout=30m` | Executed on the pre-integration head and reported existing CLI workspace, discovery, Claude cleanup and Codex steer deadline/reconciliation failures. The obsolete run was interrupted after main integration, with the Grok package still executing. It is incomplete and is not a passing full-suite result; final integrated-head validation is the focused race checks above. |
 | Required desktop `pnpm test` | Executed repeatedly. The run with a private build cache passed 969/970 unit tests and failed the existing tray test's five-second timeout; that test passed separately with a 20-second budget. The final run with both private Go caches passed 84 files/969 tests and failed the existing settings-preferences integration assertion waiting for its create button. That scenario passed in the earlier focused settings rerun. Packaging phases passed independently. Neither run is a passing full-script result. |
 
 The first full frontend run found a question cancellation defect, which was corrected. A subsequent default run passed 80 files/961 tests and failed 5 files/8 tests. Serial unit validation passed 83 files/967 tests with two existing settings integration hook timeouts; both settings tests passed separately with a 60-second hook budget. No test source timeout was weakened. A later complete attempt passed 957 tests but lost fixture initialization when shared Go build-cache objects and the pinned toolchain compiler disappeared during concurrent work. Task-private `GOCACHE` and `GOMODCACHE` were then used for stable subsequent compilation. Process inspection showed multiple concurrent native suites and compilers; host contention is an inference for deadline failures, not proof that every failure is unrelated to this change.
 
 The full-suite failures remain visible. No unperformed native/account/platform/release acceptance, unsupported richer Stop terminal, continuation, or broader issue #964 completion is inferred from parser, transactional or controlled-process results.
+
+Generated API-client and desktop `dist` directories were removed after validation; none are tracked.
