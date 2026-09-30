@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -20,21 +23,35 @@ import (
 
 type earlyExecutionSubscriptionRPC struct {
 	delidevv1connect.UnimplementedSubscriptionServiceHandler
-	bundle   []byte
-	finished chan *pb.FinishSubscriptionRequest
+	bundle     []byte
+	finished   chan *pb.FinishSubscriptionRequest
+	failFinish bool
+	failTake   bool
 }
 
 func (f *earlyExecutionSubscriptionRPC) TakeSubscription(_ context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (*connect.Response[pb.TakeSubscriptionResponse], error) {
+	if f.failTake {
+		return nil, connect.NewError(connect.CodeUnavailable, nil)
+	}
 	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: req.Msg.Mutation.RequestId, LeaseRevision: 3, GenerationId: string(domain.NewID()), Bundle: bytes.Clone(f.bundle)}), nil
 }
 func (f *earlyExecutionSubscriptionRPC) FinishSubscription(_ context.Context, req *connect.Request[pb.FinishSubscriptionRequest]) (*connect.Response[pb.FinishSubscriptionResponse], error) {
 	f.finished <- req.Msg
+	if f.failFinish {
+		return nil, connect.NewError(connect.CodeUnavailable, nil)
+	}
 	return connect.NewResponse(&pb.FinishSubscriptionResponse{}), nil
 }
 
 type earlyExecutionRegistrationRPC struct {
 	delidevv1connect.WorkerServiceClient
-	mode string
+	mode     string
+	reported bool
+}
+
+func (f *earlyExecutionRegistrationRPC) ReportWork(context.Context, *connect.Request[pb.ReportWorkRequest]) (*connect.Response[pb.ReportWorkResponse], error) {
+	f.reported = true
+	return connect.NewResponse(&pb.ReportWorkResponse{}), nil
 }
 
 func (f *earlyExecutionRegistrationRPC) RegisterExecution(context.Context, *connect.Request[pb.RegisterExecutionRequest]) (*connect.Response[pb.RegisterExecutionResponse], error) {
@@ -48,7 +65,7 @@ func (f *earlyExecutionRegistrationRPC) RegisterExecution(context.Context, *conn
 }
 
 func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
-	for _, mode := range []string{"publisher", "registration", "response", "native-open"} {
+	for _, mode := range []string{"publisher", "registration", "response", "native-open", "finish", "take"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newCheckpointFixture(t)
 			// Use a fresh execution while preserving the helper's unrelated empty runtime.
@@ -88,7 +105,7 @@ func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
 			f.job.Input, _ = json.Marshal(f.input)
 			f.job.InstanceID = domain.NewID()
 			document, _ := json.Marshal(f.job)
-			assignment := &pb.Resource{Id: string(f.jobID), Kind: pb.EntityKind_ENTITY_KIND_JOB, SchemaVersion: 1, Revision: 9, SessionId: string(f.input.SessionID), DocumentJson: document}
+			resource := &pb.Resource{Id: string(f.jobID), Kind: pb.EntityKind_ENTITY_KIND_JOB, SchemaVersion: 1, Revision: 9, SessionId: string(f.input.SessionID), DocumentJson: document}
 			bundle := workerSubscriptionBundle("first")
 			defer clear(bundle)
 			subscriptions := &earlyExecutionSubscriptionRPC{bundle: bundle, finished: make(chan *pb.FinishSubscriptionRequest, 1)}
@@ -100,12 +117,34 @@ func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
 				t.Fatal(err)
 			}
 			credential := Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: server.URL, ServerID: domain.NewID(), DeviceID: domain.NewID(), PairingID: domain.NewID(), MachineID: f.input.MachineID, Token: token}
-			publication := &PublicationConfig{Credential: credential, Instance: f.job.InstanceID, Assignment: assignment, Client: &earlyExecutionRegistrationRPC{mode: mode}}
+			publication := &PublicationConfig{Credential: credential, Instance: f.job.InstanceID, Assignment: resource, Client: &earlyExecutionRegistrationRPC{mode: mode}}
 			if mode == "publisher" {
 				publication.Client = nil
 			}
 
-			output, err := executeSession(context.Background(), Config{Root: f.root, execution: publication, executionContext: context.Background()}, f.jobID, f.job)
+			var output json.RawMessage
+			if mode == "finish" || mode == "take" {
+				subscriptions.failFinish = mode == "finish"
+				subscriptions.failTake = mode == "take"
+				client := &earlyExecutionRegistrationRPC{mode: "registration"}
+				if err := security.PrivateDir(filepath.Join(f.root, "jobs")); err != nil {
+					t.Fatal(err)
+				}
+				config := Config{Root: f.root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
+				work := assignment{context: context.Background(), cancel: func() {}}
+				err = runAndReportJob(context.Background(), config, client, credential, f.job.InstanceID, work, resource, f.job)
+				var uncertain *managedExecutionUncertain
+				if !errors.As(err, &uncertain) || client.reported {
+					t.Fatal("uncertain protected completion did not stop the work lane", err)
+				}
+				raw, readErr := security.ReadPrivate(filepath.Join(f.root, "jobs", string(f.jobID)+".json"), 2<<20)
+				var j journal
+				if readErr != nil || domain.Decode(raw, &j) != nil || j.State != journalStarted {
+					t.Fatal("uncertain completion replaced the original claim journal", readErr)
+				}
+			} else {
+				output, err = executeSession(context.Background(), Config{Root: f.root, execution: publication, executionContext: context.Background()}, f.jobID, f.job)
+			}
 			if err == nil || len(output) != 0 {
 				t.Fatal("pre-native failure was reported as completed execution", err)
 			}
@@ -115,11 +154,16 @@ func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
 			}
 			select {
 			case finish := <-subscriptions.finished:
+				if mode == "take" {
+					t.Fatal("uncertain delivery invented a completion")
+				}
 				if !finish.CleanupConfirmed || finish.Succeeded {
 					t.Fatal("pre-native cleanup outcome was not independently reported")
 				}
 			default:
-				t.Fatal("protected execution completion was not reported")
+				if mode != "take" {
+					t.Fatal("protected execution completion was not reported")
+				}
 			}
 			assertManagedWorkerFilesRedacted(t, f.root, bundle)
 		})

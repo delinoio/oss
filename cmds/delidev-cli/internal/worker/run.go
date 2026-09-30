@@ -736,6 +736,10 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 		} else {
 			output, err := execute(ctx, config, domain.ID(resource.Id), job)
 			if err != nil {
+				var managed *managedExecutionUncertain
+				if errors.As(err, &managed) {
+					return journal{}, err
+				}
 				result.Problem = domain.SafeError(err)
 			} else {
 				result.Output = output

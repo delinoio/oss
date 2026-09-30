@@ -77,6 +77,10 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 		}
 		problem := rpc.ClientError(err)
 		if action != pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE || domain.SafeError(problem).Code != domain.ResourceExhausted {
+			code := domain.SafeError(problem).Code
+			if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE && (code == domain.ServerUnavailable || code == domain.Unavailable || code == domain.Canceled || code == domain.Internal || code == domain.RecoveryRequired) {
+				return nil, &managedExecutionUncertain{problem}
+			}
 			return nil, problem
 		}
 		// A definite busy refusal has no delivery or native side effect. Wait on
@@ -92,12 +96,12 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 	}
 	if response.Msg.LeaseId != string(leaseID) || response.Msg.LeaseRevision == 0 {
 		clear(response.Msg.Bundle)
-		return nil, subscription.Invalid()
+		return nil, &managedExecutionUncertain{subscription.Invalid()}
 	}
 	claim.Generation = domain.ID(response.Msg.GenerationId)
 	if err := writeJSON(journalPath, claim); err != nil {
 		clear(response.Msg.Bundle)
-		return nil, subscription.Invalid()
+		return nil, &managedExecutionUncertain{subscription.Invalid()}
 	}
 	return &managedSubscriptionLease{client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, nil
 }
@@ -129,6 +133,12 @@ func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, succe
 type managedReportedFailure struct{ error }
 
 func (e *managedReportedFailure) Unwrap() error { return e.error }
+
+// Protected execution completion cannot become an ordinary reported job error:
+// losing its acknowledgment must close the primary lane and fence the lease.
+type managedExecutionUncertain struct{ error }
+
+func (e *managedExecutionUncertain) Unwrap() error { return e.error }
 
 func watchSubscriptions(ctx context.Context, config Config, credential Credential, instance domain.ID) (returned error) {
 	// The stream and child operations share cancellation so uncertain delivery

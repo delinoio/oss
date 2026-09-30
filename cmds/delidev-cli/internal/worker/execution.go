@@ -92,7 +92,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, errors.Join(err, returned)
 		}
 	}()
 	// The private runtime is retained for native resume/reconciliation. Never
@@ -139,12 +139,16 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	settings.WorkspaceRoots = nativeWorkspaceRoots(manifest)
 	var managed *managedSubscriptionLease
 	var managedLatest []byte
+	var closeManagedRPC func()
 	managedCleanup, managedSuccess := false, false
 	managedPreNativeCleanup := false
 	defer func() {
+		if closeManagedRPC != nil {
+			defer closeManagedRPC()
+		}
 		if managed != nil {
 			if err := managed.finish(managedLatest, managedCleanup, false, managedSuccess); err != nil {
-				output, returned = nil, err
+				output, returned = nil, &managedExecutionUncertain{err}
 			}
 			clear(managed.response.Bundle)
 		}
@@ -154,7 +158,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if input.Configuration.Subscription {
 		settings.Provider = "openai"
 		client, closeRPC := subscriptionRPC(connection.Credential)
-		defer closeRPC()
+		closeManagedRPC = closeRPC
 		managed, err = takeManagedSubscription(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
 		if err != nil {
 			return nil, err
