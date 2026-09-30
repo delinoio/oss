@@ -10,7 +10,7 @@ import { LocalServerControls, LocalServerState, LocalServerStatusText, type Loca
 import type { ControlLocalWorker, LocalWorkerStatus } from "./local-worker-controls";
 import { verifyLocalServer } from "./connection";
 
-import { LocalRegistrationRecovery, type NativeConnection } from "./local-registration";
+import { LocalRegistrationRecovery, localPermissionProblem, type NativeConnection } from "./local-registration";
 const nativeProblems: Record<string, string> = {
   stopped: "The server was explicitly stopped. Start it only when you intend to resume its local lifecycle.",
   busy: "A local connection attempt is already running. Wait for it to finish.",
@@ -19,7 +19,7 @@ const nativeProblems: Record<string, string> = {
   "timed-out": "Local startup has not completed. Check server status before retrying; accepted work may continue.",
   incompatible: "The running server uses a different version or listener. Preserve its sessions and use a compatible client or explicitly stop it before changing the server.",
   "credential-unavailable": "This desktop credential is unavailable or revoked. Use Check desktop registration to inspect it and explicitly recover a revoked local registration.",
-  "permission-denied": "The local connection is not authorized. Check the selected device and private-directory permissions.",
+  "permission-denied": localPermissionProblem,
   "invalid-evidence": "The retained local connection requires inspection. Preserve its original pairing and server data.",
   "storage-unavailable": "The private DeliDev configuration directory is unavailable. Check this computer's user configuration.",
 };
