@@ -126,12 +126,16 @@ function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: (
   const data = document(row);
   let name = resourceName(row);
   // Unsupported schemas stay non-actionable. Only bounded inert name text is
-  // projected for identifying the row; it never enters an editor or request.
+  // projected within the Agent name's 256-byte UTF-8 limit for identifying the
+  // row; it never enters an editor or request.
   // Remove this projection once the shared document parser supports that schema.
   if (row.schemaVersion !== 1 && row.documentJson.byteLength <= 1 << 20) {
     try {
       const display = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(row.documentJson)));
-      name = text(display.name) || text(display.alias) || name;
+      const projectedName = text(display.name) || text(display.alias);
+      // Check code units first so malformed large values never allocate an
+      // equally large UTF-8 buffer merely to validate display text.
+      if (projectedName.length <= 256 && new TextEncoder().encode(projectedName).byteLength <= 256) name = projectedName || name;
     } catch { /* Malformed display text keeps the existing unnamed fallback. */ }
   }
   return <article className="settings-agent-row">

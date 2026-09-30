@@ -155,6 +155,29 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   expect(value.remove).not.toHaveBeenCalled();
 });
 
+it.each([
+  { field: "name", projected: "a".repeat(256), valid: true },
+  { field: "name", projected: "a".repeat(257), valid: false },
+  { field: "alias", projected: "😀".repeat(64), valid: true },
+  { field: "alias", projected: "😀".repeat(65), valid: false },
+  { field: "name", projected: "a".repeat(512 << 10), valid: false },
+  { field: "alias", projected: "a".repeat(512 << 10), valid: false },
+] as const)("bounds an unsupported Agent's $field display text before duplicating labels, valid: $valid", async ({ field, projected, valid }) => {
+  const future = create(ResourceSchema, { ...resource(EntityKind.AGENT, { [field]: projected }), schemaVersion: 2 });
+  const value = fixture([future]);
+  render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  const name = valid ? projected : "Unnamed";
+  const heading = await screen.findByRole("heading", { name });
+  expect(heading.textContent).toBe(name);
+  const row = within(heading.closest("article")!);
+  expect(row.getByText(future.id)).toBeTruthy();
+  for (const label of [`Edit ${name}`, `Preview routing for ${name}`, `Delete ${name}`]) {
+    expect((row.getByRole("button", { name: label }) as HTMLButtonElement).disabled).toBe(true);
+  }
+  expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled(); expect(value.preview).not.toHaveBeenCalled();
+});
+
 it("keeps the original Agent deletion revision and retry request within its opening", async () => {
   const agent = resource(EntityKind.AGENT, { name: "Retained Agent" }, 7n), value = fixture([agent]);
   value.remove.mockRejectedValueOnce(new ConnectError("Acknowledgment lost", Code.Unavailable));
