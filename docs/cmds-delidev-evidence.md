@@ -3519,5 +3519,14 @@ clipping or color/edge damage. These checks establish asset appearance, not
 Windows/Linux installed-shell acceptance.
 
 The existing asset-preparation and package-verifier suites pass all 18 tests.
-The two repository LFS asset contracts also pass. Real macOS packaging evidence
-is recorded below when the dry run completes.
+The two repository LFS asset contracts also pass, including after the new source
+pointer was committed. The first macOS dry run stopped at sandbox denial of the
+Go build cache; the same existing command was retried with the required access.
+`pnpm bundle:macos-dry-run` then passed on macOS arm64: native executable and Go
+sidecar, CEF resources/helpers, widget extensions, macOS 13 metadata, notices and
+ad-hoc signatures were verified. The generated `DeliDev.icns` contains the
+required 512-point Retina entry (1024×1024 pixels) and a 256×256 entry; their mean
+alpha coverage differs from the enlarged source by at most 0.008 percentage
+points. No production signing, notarization, publication or installed Dock
+appearance is claimed. Generated desktop/client `dist` directories were removed
+after verification.
