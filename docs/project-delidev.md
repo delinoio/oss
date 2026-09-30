@@ -14,6 +14,8 @@ Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows Con
 - `protos/delidev/v1`: versioned Connect schema; `protos/gen/go/delidev/v1`: generated Go bindings.
 - `packages/delidev-api-client`: generated TypeScript client and bounded transport/synchronization helpers.
 
+New schedule creation adds frequency presets and a creation-only three-section layout under the [desktop contract](apps-delidev-desktop-contract.md#new-schedule-creation-issue-1152), while strict schedule definitions and server recurrence authority remain unchanged.
+
 ## Domain Contract Documents
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
@@ -23,6 +25,7 @@ Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows Con
 - [Protocol contract](protos-delidev-v1-contract.md)
 - [TypeScript client contract](packages-delidev-api-client-contract.md)
 - [Desktop client contract](apps-delidev-desktop-contract.md), including [Agent Worker core/optional presentation](apps-delidev-desktop-contract.md#agent-worker-core-and-optional-presentation) and its [issue #1158 evidence](evidence/delidev/issue-1158/agent-settings.md)
+- [AI Subscription settings](apps-delidev-subscription-settings-contract.md)
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Session file explorer and Git comparisons](cmds-delidev-files-contract.md)
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)
@@ -67,3 +70,7 @@ Update the owning domain contract when behavior changes. Update this index only 
 - [Project template](project-template.md)
 - [Structure and compatibility](cmds-delidev-structure-contract.md)
 - [Relocation inventory](evidence/delidev/pr-conflict-structure/document-relocations.json)
+
+## Home navigation invariant
+
+Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md) and [issue #1161 evidence](evidence/delidev/issue-1161/home-navigation.md).

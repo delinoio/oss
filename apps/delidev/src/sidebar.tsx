@@ -1,12 +1,14 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Code, ConnectError } from "@connectrpc/connect";
+
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ResourceQuery, SessionQuery, SystemQuery, type Resource } from "@delinoio/delidev-api-client";
-import { document, resourceName, text, Workspace, workspaceNames } from "./documents";
+import { FailureCode, SystemQuery } from "@delinoio/delidev-api-client";
+import { Workspace, workspaceNames } from "./documents";
 import { Surface } from "./views";
 import { SettingsEntryDestination } from "./settings";
-import { sessionTitlePresentation } from "./session-title";
+import { HomeNavigation, ReadStage, type NavigationRow } from "./home-navigation";
+import { HomeScope, useNavigationQuery } from "./home-navigation-query";
+import { ServerPresentationKind, type ServerPresentation } from "./server-presentation";
 
 enum ExecutionStatus {
   NotStarted = "not-started",
@@ -41,6 +43,8 @@ function Icon({ name, className = "" }: { name: string; className?: string }) {
     case "computer": return <svg {...common}><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/></svg>;
     case "chat": return <svg {...common}><path d="M4 5h16v12H9l-5 4z"/><path d="M8 9h8M8 13h5"/></svg>;
     case "unknown": return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 4.3 1.2c-.9 1.1-2.1 1.2-2.1 3M12 17h.01"/></svg>;
+    case "options": return <svg {...common}><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>;
+    case "server": return <svg {...common}><rect x="3" y="3" width="18" height="8" rx="2"/><rect x="3" y="13" width="18" height="8" rx="2"/><path d="M7 7h.01M7 17h.01M12 7h5M12 17h5"/></svg>;
     case "plus": return <svg {...common}><path d="M12 5v14M5 12h14"/></svg>;
     case "chevron": return <svg {...common}><path d="m8 10 4 4 4-4"/></svg>;
     default: return null;
@@ -53,26 +57,38 @@ function SidebarButton({ label, icon, current, onClick, className = "" }: { labe
   </button>;
 }
 
-function QueryProblem({ error, hasData, label, retryLabel, fetching, retry }: { error: unknown; hasData: boolean; label: string; retryLabel: string; fetching: boolean; retry: () => void }) {
-  if (!error) return null;
-  const permissionDenied = error instanceof ConnectError && error.code === Code.PermissionDenied;
+type NavigationQuery = ReturnType<typeof useNavigationQuery>;
+function QueryProblem({ query, label, retryLabel }: { query: NavigationQuery; label: string; retryLabel: string }) {
+  if (!query.error) return null;
+  const { failure, stalled } = query.error;
+  const reload = failure.code === FailureCode.CursorExpired || stalled;
+  const message = reload ? `${label}: ${stalled ? "The list continuation did not advance." : "The list cursor expired."}` : query.loaded ? `Could not ${query.error.stage === ReadStage.Additional ? "load more" : "refresh"} ${label}. Previous data is shown.` : failure.code === FailureCode.PermissionDenied ? `You do not have permission to view ${label}.` : `Could not connect to load ${label}.`;
   return <div className="sidebar-query-problem">
-    <span role="status">{hasData ? `Could not refresh ${label}. Previous data is shown.` : permissionDenied ? `You do not have permission to view ${label}.` : `Could not connect to load ${label}.`}</span>
-    <button type="button" aria-label={retryLabel} disabled={fetching} onClick={retry}>Retry</button>
+    <span role="status">{message}{failure.correlationId ? ` Correlation: ${failure.correlationId}` : ""}</span>
+    <button type="button" aria-label={reload ? `Reload ${label} list` : retryLabel} disabled={Boolean(query.loading)} onClick={reload ? query.reload : query.retry}>{reload ? "Reload list" : "Retry"}</button>
   </div>;
 }
 
-function projectName(resource: Resource): string {
-  return resourceName(resource);
-}
-
-function uniqueSessions(rows: Resource[]): Resource[] {
-  const seen = new Set<string>();
-  return rows.filter((row) => {
-    if (!row.id || seen.has(row.id)) return false;
-    seen.add(row.id);
-    return true;
-  });
+function Continuation({ query, label, root, active }: { query: NavigationQuery; label: string; root: RefObject<HTMLDivElement | null>; active: boolean }) {
+  const anchor = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const container = root.current, element = anchor.current;
+    if (!container || !element || !active || !query.nextPageToken || query.error || query.loading) return;
+    const check = () => {
+      if (container.clientHeight <= 0 || window.document.visibilityState === "hidden") return;
+      const bounds = container.getBoundingClientRect(), position = element.getBoundingClientRect();
+      if (position.top <= bounds.bottom + 96 && position.bottom >= bounds.top) query.append();
+    };
+    const observer = typeof IntersectionObserver === "function" ? new IntersectionObserver(check, { root: container, rootMargin: "0px 0px 96px 0px" }) : undefined;
+    observer?.observe(element);
+    const resize = typeof ResizeObserver === "function" ? new ResizeObserver(check) : undefined;
+    resize?.observe(container);
+    container.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    check();
+    return () => { observer?.disconnect(); resize?.disconnect(); container.removeEventListener("scroll", check); window.removeEventListener("resize", check); };
+  }, [query, root, active]);
+  return <div ref={anchor} className="sidebar-continuation" data-continuation={label}>{query.loading === ReadStage.Additional ? <span role="status">Loading more {label}…</span> : null}</div>;
 }
 
 function workspaceLabel(raw: string): string {
@@ -105,16 +121,15 @@ function StatusGlyph({ outcome, archive }: { outcome: string; archive: string })
   return <span className="sidebar-statuses" aria-hidden="true">{execution}{archiveGlyph}</span>;
 }
 
-function SessionRow({ row, selected, open }: { row: Resource; selected: boolean; open: (id: string) => void }) {
+function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boolean; open: (id: string) => void }) {
   const tooltipId = useId();
   const element = useRef<HTMLButtonElement>(null);
   const [tooltip, setTooltip] = useState<TooltipPosition>();
-  const data = document(row);
-  const title = resourceName(row);
-  const outcome = text(data.outcome);
-  const archive = text(data.archive);
-  const workspace = workspaceLabel(text(data.workspace));
-  const titlePresentation = sessionTitlePresentation(data);
+  const title = row.name;
+  const outcome = row.outcome;
+  const archive = row.archive;
+  const workspace = workspaceLabel(row.workspace);
+  const titlePresentation = row.title;
   const titleState = titlePresentation?.label;
   const titleStateDescription = titlePresentation ? [titleState, titlePresentation.detail].filter(Boolean).join(". ") : "";
   const titleStateSummary = titlePresentation ? [titleState?.replace(/^Title /, "").replace(/^[a-z]/, (letter) => letter.toUpperCase()), titlePresentation.shortDetail].filter(Boolean).join(" · ") : "";
@@ -134,7 +149,7 @@ function SessionRow({ row, selected, open }: { row: Resource; selected: boolean;
     window.addEventListener("resize", dismiss);
     return () => { window.document.removeEventListener("scroll", dismiss, true); window.removeEventListener("resize", dismiss); };
   }, [tooltip]);
-  const workspaceIcon = text(data.workspace) === Workspace.Worktree ? "branch" : text(data.workspace) === Workspace.Local ? "computer" : text(data.workspace) === Workspace.GeneralChat ? "chat" : "unknown";
+  const workspaceIcon = row.workspace === Workspace.Worktree ? "branch" : row.workspace === Workspace.Local ? "computer" : row.workspace === Workspace.GeneralChat ? "chat" : "unknown";
   return <>
     <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={showTooltip} onPointerLeave={() => setTooltip(undefined)} onFocus={showTooltip} onBlur={() => setTooltip(undefined)} onClick={() => open(row.id)}>
       <Icon name={workspaceIcon} className="sidebar-workspace-icon" />
@@ -147,33 +162,34 @@ function SessionRow({ row, selected, open }: { row: Resource; selected: boolean;
   </>;
 }
 
-function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, page, setPage, includeArchived, selected, open, active }: {
-  projectId: string; label: string; fallback?: boolean; fallbackRows?: Resource[]; expanded: boolean; toggle: () => void; page: string; setPage: (page: string) => void; includeArchived: boolean; selected: string; open: (id: string) => void; active: boolean;
+function ProjectSessions({ projectId, label, fallback = false, fallbackRows, home, includeArchived, selected, open, active, root }: {
+  projectId: string; label: string; fallback?: boolean; fallbackRows: NavigationRow[]; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
 }) {
-  const id = projectId;
-  const sessions = useQuery(SessionQuery.listSessions, { projectId: id, includeArchived, pageSize: 50, pageToken: page }, { enabled: active && expanded && !fallback, refetchInterval: active && expanded && !fallback ? 15000 : false, refetchIntervalInBackground: false });
-  const rows = fallback ? uniqueSessions(fallbackRows) : uniqueSessions(sessions.data?.sessions ?? []);
-  const loaded = fallback || sessions.data !== undefined;
-  return <section className="sidebar-project-group" data-project-id={id}>
-    <button type="button" className="sidebar-project-row" aria-label={`${label}. Project ID: ${id}`} aria-expanded={expanded} onClick={toggle}>
-      <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><Icon name="chevron" className={`sidebar-disclosure ${expanded ? "is-expanded" : ""}`} />
+  const sessions = useNavigationQuery(home.project(projectId), HomeScope.Sessions, projectId, includeArchived, active && !fallback);
+  const rows = fallback || !sessions.loaded ? fallbackRows : sessions.rows;
+  return <div className="sidebar-project-sessions">
+    {!fallback ? <QueryProblem query={sessions} label={`${label} sessions`} retryLabel={`Retry ${label} sessions`} /> : null}
+    {fallback ? <p className="sidebar-fallback-explanation">Project details are not in the loaded project catalog.</p> : null}
+    {!fallback && !sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status">Loading {label} sessions…</p> : null}
+    {rows.map((row) => <SessionRow key={row.id} row={row} selected={selected === row.id} open={open} />)}
+    {!fallback && sessions.loaded && !sessions.error && rows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">No conversations loaded.</p> : null}
+    <Continuation query={sessions} label={`${label} sessions`} root={root} active={active && !fallback} />
+  </div>;
+}
+
+function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, home, includeArchived, selected, open, active, root }: {
+  projectId: string; label: string; fallback?: boolean; fallbackRows?: NavigationRow[]; expanded: boolean; toggle: () => void; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
+}) {
+  return <section className="sidebar-project-group" data-project-id={projectId}>
+    <button type="button" className="sidebar-project-row" title={label} aria-label={`${label}. Project ID: ${projectId}`} aria-expanded={expanded} onClick={toggle}>
+      <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><span className="sidebar-project-tooltip" aria-hidden="true">{label}</span><Icon name="chevron" className={`sidebar-disclosure ${expanded ? "is-expanded" : ""}`} />
     </button>
-    {fallback && expanded ? <p className="sidebar-fallback-explanation">Project details are not in the loaded project page.</p> : null}
-    {expanded ? <div className="sidebar-project-sessions">
-      {!fallback ? <QueryProblem error={sessions.error} hasData={loaded} label={`${label} sessions`} retryLabel={`Retry ${label} sessions`} fetching={sessions.isFetching} retry={() => { void sessions.refetch(); }} /> : null}
-      {!fallback && sessions.isPending ? <p className="sidebar-query-state" role="status">Loading {label} sessions…</p> : null}
-      {rows.map((row) => <SessionRow key={row.id} row={row} selected={selected === row.id} open={open} />)}
-      {!fallback && sessions.data && !sessions.error && rows.length === 0 ? <p className="sidebar-empty">No sessions on this project page.</p> : null}
-      {!fallback && !sessions.error && sessions.data?.nextPageToken ? <div className="sidebar-group-pager">
-        <button type="button" disabled={!page || sessions.isFetching} onClick={() => setPage("")}>First page of {label} sessions</button>
-        <button type="button" disabled={sessions.isFetching} onClick={() => setPage(sessions.data!.nextPageToken)}>Next page of {label} sessions</button>
-      </div> : !fallback && !sessions.error && page ? <button type="button" disabled={sessions.isFetching} onClick={() => setPage("")}>First page of {label} sessions</button> : null}
-    </div> : null}
+    {expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} open={open} active={active} root={root} /> : null}
   </section>;
 }
 
-export function Sidebar({ surface, selectedSessionId, localServer, navigate, openSession, newSession, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  surface: Surface; selectedSessionId: string; localServer?: ReactNode; navigate: (surface: Surface) => void; openSession: (id: string) => void; newSession: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
+export function Sidebar({ surface, selectedSessionId, localServer, serverPresentation, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  surface: Surface; selectedSessionId: string; localServer?: ReactNode; serverPresentation?: ServerPresentation; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const [compact, setCompact] = useState(false);
@@ -183,21 +199,41 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
   const modalDrawer = useRef(false);
   const scrollSurface = useRef(surface);
   const surfaceScroll = useRef(new Map<Surface, number>());
-  const [projectsPage, setProjectsPage] = useState("");
-  const [globalPage, setGlobalPage] = useState("");
+  const [home] = useState(() => new HomeNavigation());
+  const [visible, setVisible] = useState(() => window.document.visibilityState !== "hidden");
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsButton = useRef<HTMLButtonElement>(null);
+  const optionsPopup = useRef<HTMLDivElement>(null);
+  const [serverExpanded, setServerExpanded] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(() => new Set());
   const [collapsedFallbacks, setCollapsedFallbacks] = useState<ReadonlySet<string>>(() => new Set());
   const [generalExpanded, setGeneralExpanded] = useState(true);
-  const [projectPages, setProjectPages] = useState<ReadonlyMap<string, string>>(() => new Map());
   const [newProjectTooltip, setNewProjectTooltip] = useState<TooltipPosition>();
   const newProjectButton = useRef<HTMLButtonElement>(null);
   const newProjectPointerInside = useRef(false);
   const newProjectFocused = useRef(false);
   const sessionNavigation = surface === Surface.Sessions || surface === Surface.NewSession;
-  const projects = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.PROJECT, pageSize: 50, pageToken: projectsPage } }, { enabled: sessionNavigation });
-  const sessions = useQuery(SessionQuery.listSessions, { projectId: "", includeArchived, pageSize: 50, pageToken: globalPage }, { enabled: sessionNavigation, refetchInterval: sessionNavigation ? 15000 : false, refetchIntervalInBackground: false });
+  const active = sessionNavigation && homeActive && visible && (!compact || drawerOpen);
+  const projects = useNavigationQuery(home.catalog, HomeScope.Catalog, "", false, active);
+  const sessions = useNavigationQuery(home.global, HomeScope.Sessions, "", includeArchived, active);
+  useEffect(() => {
+    const update = () => setVisible(window.document.visibilityState !== "hidden");
+    window.document.addEventListener("visibilitychange", update);
+    return () => window.document.removeEventListener("visibilitychange", update);
+  }, []);
+  useEffect(() => {
+    if (!optionsOpen) return;
+    optionsPopup.current?.querySelector<HTMLInputElement>("input")?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!optionsPopup.current?.contains(event.target as Node) && !optionsButton.current?.contains(event.target as Node)) setOptionsOpen(false);
+    };
+    window.document.addEventListener("pointerdown", outside);
+    return () => window.document.removeEventListener("pointerdown", outside);
+  }, [optionsOpen]);
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
+  const serverName = serverPresentation?.kind === ServerPresentationKind.Saved ? serverPresentation.name : "Local server";
+  const serverStatus = status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable";
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const media = window.matchMedia("(max-width: 759px)");
@@ -234,24 +270,25 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
   }, [compact, drawerOpen, setDrawerOpen]);
   useLayoutEffect(() => {
     const container = list.current;
-    if (!container || scrollSurface.current === surface) return;
+    const target = sessionNavigation ? Surface.Sessions : surface;
+    if (!container || scrollSurface.current === target) return;
     surfaceScroll.current.set(scrollSurface.current, container.scrollTop);
-    container.scrollTop = surfaceScroll.current.get(surface) ?? 0;
-    scrollSurface.current = surface;
+    container.scrollTop = surfaceScroll.current.get(target) ?? 0;
+    scrollSurface.current = target;
   }, [surface]);
-  const projectRows = projects.data?.resources ?? [];
+  const projectRows = projects.rows;
   const knownProjectIds = useMemo(() => new Set(projectRows.map((row) => row.id)), [projectRows]);
-  const fallbackGroups = useMemo(() => {
-    const groups = new Map<string, Resource[]>();
-    for (const row of sessions.data?.sessions ?? []) {
-      if (!row.projectId || knownProjectIds.has(row.projectId)) continue;
+  const globalGroups = useMemo(() => {
+    const groups = new Map<string, NavigationRow[]>();
+    for (const row of sessions.rows) {
       const group = groups.get(row.projectId) ?? [];
       group.push(row);
       groups.set(row.projectId, group);
     }
     return groups;
-  }, [knownProjectIds, sessions.data?.sessions]);
-  const generalRows = useMemo(() => uniqueSessions((sessions.data?.sessions ?? []).filter((row) => !row.projectId)), [sessions.data?.sessions]);
+  }, [sessions.rows]);
+  const fallbackGroups = useMemo(() => new Map([...globalGroups].filter(([id]) => id && !knownProjectIds.has(id))), [knownProjectIds, globalGroups]);
+  const generalRows = useMemo(() => sessions.rows.filter((row) => !row.projectId), [sessions.rows]);
   const showNewProjectTooltip = () => {
     const rect = newProjectButton.current?.getBoundingClientRect();
     if (!rect) return;
@@ -270,12 +307,17 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
     window.addEventListener("resize", dismiss);
     return () => { window.document.removeEventListener("scroll", dismiss, true); window.removeEventListener("resize", dismiss); };
   }, [newProjectTooltip]);
-  const setProjectPage = (id: string, page: string) => setProjectPages((current) => {
-    const next = new Map(current);
-    if (page) next.set(id, page); else next.delete(id);
-    while (next.size > 50) next.delete(next.keys().next().value!);
-    return next;
-  });
+  const previousFallbacks = useRef(new Set<string>());
+  useLayoutEffect(() => {
+    const migrated = [...previousFallbacks.current].filter((id) => knownProjectIds.has(id) && !collapsedFallbacks.has(id));
+    if (migrated.length) setExpandedProjects((current) => {
+      const next = new Set(current);
+      for (const id of migrated) next.add(id);
+      while (next.size > 100) next.delete(next.values().next().value!);
+      return next;
+    });
+    previousFallbacks.current = new Set(fallbackGroups.keys());
+  }, [knownProjectIds, fallbackGroups, collapsedFallbacks]);
   const toggleProject = (id: string) => setExpandedProjects((current) => {
     const next = new Set(current);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -290,8 +332,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
   });
   const archiveChanged = (value: boolean) => {
     setIncludeArchived(value);
-    setGlobalPage("");
-    setProjectPages(new Map());
+    home.resetSessions();
   };
 
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
@@ -306,49 +347,43 @@ export function Sidebar({ surface, selectedSessionId, localServer, navigate, ope
       <SidebarButton label="Settings" icon="settings" onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
     </nav>
     <dialog ref={drawer} role={compact ? "dialog" : "region"} className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`} aria-label={compact ? "DeliDev navigation" : undefined} onCancel={(event) => { event.preventDefault(); setDrawerOpen(false); }} onClose={() => { modalDrawer.current = false; }}>
-    <div className="sidebar-pane">
+    <div className={`sidebar-pane${sessionNavigation ? " is-home" : ""}`}>
       <header className="sidebar-header">
         <h1>DeliDev</h1>
-        <div className="sidebar-header-actions">
-          <button type="button" className="sidebar-header-button" aria-label="Inbox" aria-current={surface === Surface.Inbox ? "page" : undefined} onClick={() => navigate(Surface.Inbox)}><Icon name="inbox" /></button>
-          <button type="button" className="sidebar-header-button" aria-label="Search" aria-current={surface === Surface.Search ? "page" : undefined} onClick={() => navigate(Surface.Search)}><Icon name="search" /></button>
-        </div>
+        {sessionNavigation ? <div className="sidebar-header-actions">
+          <button type="button" className="sidebar-header-button" aria-label="Inbox" onClick={() => navigateHeader(Surface.Inbox)}><Icon name="inbox" /></button>
+          <button type="button" className="sidebar-header-button" aria-label="Search" onClick={() => navigateHeader(Surface.Search)}><Icon name="search" /></button>
+        </div> : null}
       </header>
       <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>Close navigation</button>
       {sessionNavigation ? <button type="button" className="sidebar-new-session" aria-current={surface === Surface.NewSession ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newSession(); setDrawerOpen(false); }}><Icon name="plus" />New session</button> : null}
-      <div ref={list} className="sidebar-list" aria-label={sessionNavigation ? "Project and session navigation" : "Menu navigation and filters"}>
-        {sessionNavigation ? <>
-        <header className="sidebar-projects-heading"><h2>Projects</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label="New project" onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button></header>
+      <div ref={list} className="sidebar-list" onScroll={(event) => surfaceScroll.current.set(sessionNavigation ? Surface.Sessions : surface, event.currentTarget.scrollTop)} aria-label={sessionNavigation ? "Project and session navigation" : "Menu navigation and filters"}>
+        <div hidden={!sessionNavigation}>
+        <header className="sidebar-projects-heading"><h2>Projects</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label="New project" onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button><button ref={optionsButton} type="button" className="sidebar-options-button" aria-label="Project and conversation options" aria-haspopup="dialog" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((current) => !current)}><Icon name="options" /></button>{optionsOpen ? <div ref={optionsPopup} role="dialog" aria-label="Project and conversation options" className="sidebar-options-popup" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsButton.current?.focus(); } }}><label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />Include archived</label></div> : null}</header>
         {newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>New project</div>, window.document.body) : null}
-        <label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />Include archived</label>
-        <QueryProblem error={projects.error} hasData={Boolean(projects.data)} label="projects" retryLabel="Retry project catalog" fetching={projects.isFetching} retry={() => { void projects.refetch(); }} />
-        {projects.isPending ? <p className="sidebar-query-state" role="status">Loading projects…</p> : null}
-        {!projects.error && projects.data?.resources.length === 0 ? <p className="sidebar-empty">No projects on this page.</p> : null}
-        {projectRows.map((project) => <ProjectGroup key={project.id} projectId={project.id} label={projectName(project)} expanded={expandedProjects.has(project.id)} toggle={() => toggleProject(project.id)} page={projectPages.get(project.id) ?? ""} setPage={(page) => setProjectPage(project.id, page)} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={sessionNavigation} />)}
-        {[...fallbackGroups].map(([id, rows]) => {
-          return <ProjectGroup key={id} projectId={id} label={`Project · ${id}`} fallback fallbackRows={rows} expanded={!collapsedFallbacks.has(id)} toggle={() => toggleFallback(id)} page="" setPage={() => undefined} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={sessionNavigation} />;
-        })}
+        {includeArchived ? <p className="sidebar-archive-indicator">Archived included</p> : null}
+        <QueryProblem query={projects} label="projects" retryLabel="Retry project catalog" />
+        <QueryProblem query={sessions} label="sessions" retryLabel="Retry global sessions" />
+        {!projects.loaded && !projects.error ? <p className="sidebar-query-state" role="status">Loading projects…</p> : null}
+        {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>No projects loaded.</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}>Create a project</button></div> : null}
+        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: `Project · ${id}`, fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
+        <Continuation query={projects} label="projects" root={list} active={active} />
         <section className="sidebar-project-group sidebar-general-chat">
           <button type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">General Chat</span><Icon name="chevron" className={`sidebar-disclosure ${generalExpanded ? "is-expanded" : ""}`} /></button>
-          {generalExpanded ? generalRows.map((row) => <SessionRow key={row.id} row={row} selected={selectedSessionId === row.id} open={chooseSession} />) : null}
-          {generalExpanded && sessions.data && !sessions.error && generalRows.length === 0 ? <p className="sidebar-empty">No General Chat sessions on this page.</p> : null}
+          {generalExpanded ? <>
+            {!sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status">Loading sessions…</p> : null}
+            {generalRows.map((row) => <SessionRow key={row.id} row={row} selected={selectedSessionId === row.id} open={chooseSession} />)}
+            {sessions.loaded && !sessions.error && generalRows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">No conversations loaded.</p> : null}
+            <Continuation query={sessions} label="sessions" root={list} active={active && generalExpanded} />
+          </> : null}
         </section>
-        <QueryProblem error={sessions.error} hasData={Boolean(sessions.data)} label="sessions" retryLabel="Retry global sessions" fetching={sessions.isFetching} retry={() => { void sessions.refetch(); }} />
-        {sessions.isPending ? <p className="sidebar-query-state" role="status">Loading sessions…</p> : null}
-        <nav className="sidebar-global-pager" aria-label="All sessions pages">
-          <button type="button" disabled={!globalPage || sessions.isFetching} onClick={() => setGlobalPage("")}>First session page</button>
-          <button type="button" disabled={!sessions.data?.nextPageToken || sessions.isFetching} onClick={() => setGlobalPage(sessions.data!.nextPageToken)}>Next session page</button>
-        </nav>
-        <nav className="sidebar-project-pager" aria-label="Project pages">
-          <button type="button" disabled={!projectsPage || projects.isFetching} onClick={() => setProjectsPage("")}>First project page</button>
-          <button type="button" disabled={!projects.data?.nextPageToken || projects.isFetching} onClick={() => setProjectsPage(projects.data!.nextPageToken)}>Next project page</button>
-        </nav>
-        </> : null}
+        </div>
         <div className="sidebar-surface-outlet" ref={setContextTarget} />
       </div>
       <footer className="sidebar-footer">
-        <p role="status">{status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable"}</p>
-        {localServer}
+        <button type="button" hidden={!sessionNavigation} className="sidebar-server-summary" aria-label={`${serverName} ${serverStatus}`} aria-expanded={serverExpanded} aria-controls="sidebar-server-management" onClick={() => setServerExpanded((current) => !current)}><Icon name="server" /><span className="sidebar-server-label"><span>{serverPresentation?.kind === ServerPresentationKind.Saved ? serverPresentation.name : "Local server"}</span><span role="status">{status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable"}</span></span><Icon name="chevron" className={`sidebar-disclosure ${serverExpanded ? "is-expanded" : ""}`} /></button>
+        {!sessionNavigation ? <p role="status">{status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable"}</p> : null}
+        <div id="sidebar-server-management" className="sidebar-server-management" hidden={sessionNavigation && !serverExpanded}>{localServer}</div>
       </footer>
     </div>
     </dialog>

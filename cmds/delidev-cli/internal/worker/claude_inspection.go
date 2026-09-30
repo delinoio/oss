@@ -17,7 +17,7 @@ import (
 // instruction body reaches the native inspector and no process is launched.
 func inspectCompletedClaudeCheckpoint(ctx context.Context, root string, ref CompletedExecutionRef, completion domain.ExecutionCompletion, cwd string) error {
 	c, native := ref.Checkpoint, ref.Claude
-	if ref.Harness != domain.ClaudeCode || native == nil || native.Validate() != nil || completion.Outcome != domain.ExecutionSucceeded || string(completion.NativeThreadID) != string(c.SessionID) || (native.ClaimVersion == 1) != (c.HistoryExecutionID == completion.ExecutionID) || ref.Preparation.Type != ref.Manifest.Type || len(c.WorkspaceRoots) != 0 {
+	if ref.Harness != domain.ClaudeCode || native == nil || native.Validate() != nil || (completion.Outcome != domain.ExecutionSucceeded && completion.Outcome != domain.ExecutionFailed) || string(completion.NativeThreadID) != string(c.SessionID) || (native.ClaimVersion == 1) != (c.HistoryExecutionID == completion.ExecutionID) || ref.Preparation.Type != ref.Manifest.Type || len(c.WorkspaceRoots) != 0 {
 		return executionCheckpointUncertain()
 	}
 	bindings, err := domain.CheckedExecutionInputs(c.Completion.InputID, hex.EncodeToString(c.PromptDigest[:]), c.AcceptedInputs)
@@ -40,7 +40,7 @@ func inspectCompletedClaudeCheckpoint(ctx context.Context, root string, ref Comp
 	c.Completion = completion
 	c.WorkspaceRoots = nativeWorkspaceRoots(ref.Manifest)
 	saved, err := readClaudeExecutionCheckpoint(root, c)
-	if err != nil || saved.NativeReference.RequiresResume {
+	if err != nil || saved.NativeReference.RequiresResume != (completion.Outcome == domain.ExecutionFailed) {
 		return executionCheckpointUncertain()
 	}
 	history := filepath.Join(root, "runtimes", string(c.HistoryExecutionID))
