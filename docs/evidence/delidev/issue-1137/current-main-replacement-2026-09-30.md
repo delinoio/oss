@@ -86,3 +86,78 @@ reservations (#1215). Both changes are merged intact. Instruction conflicts reta
 the new accounting/reservation rules alongside desktop startup rules; the prior
 Home lifecycle disclosure remains explicitly superseded by issue #1137. No
 protocol numbers or migration versions are reallocated by this change.
+
+## Broad-suite observations before the final main merge
+
+- Root `cargo test -j 2 -- --test-threads=1` ran with the hydrated assets, prepared
+  embedded bundles and CEF SDK. It exits 101 in the unrelated binpm CLI suite:
+  133 pass and five fail. All five compare or retain macOS temporary paths with
+  `/var` versus canonical `/private/var`: manifest-only output, both declared-only
+  Doctor cases, orphan-cleanup managed paths and source-install scope output.
+  No binpm source changed here. Later workspace suites are not established by
+  this stopped Cargo invocation.
+- The broad `GOMAXPROCS=2 go test -race -p 1 -timeout 20m
+  ./cmds/delidev-cli/...` attempt fails the existing
+  `TestCLISessionAcceptanceQueueAndArchive` workspace-read assertion with
+  `recovery_required` (also recorded in the earlier launch evidence). It also
+  fails Claude stream late-acknowledgment, cancellation-before-reply and
+  array-response owned-scope shutdown cases. After these failures, the remaining
+  broad run was terminated before main reconciliation; it is incomplete, not a
+  passing full-suite result. Relevant startup/service-arbitration checks are run
+  independently against the merged source below.
+- A second full frontend attempt with one worker and a temporary 15-second
+  default test timeout passes 1,235 tests in 94 files and fails five App aggregate
+  deadlines, including one 60-second case. Its 2,709.67-second wall time and the
+  successful isolated checks do not establish that all failures are environmental.
+  The final merged-source pipeline uses a temporary 60-second default budget;
+  the checked-in runner configuration is restored afterward.
+- macOS arm64 library validation with the real packaged sidecar and
+  `--include-ignored --test-threads=1` passes all 21 tests in 22.77 seconds. This
+  includes concurrent fresh hosts, stable server/client reuse, same-process Stop,
+  fresh-host restart, revocation, saved authority, supervision and detached
+  lifetime. The CEF host `cargo check -p delidev-desktop --features
+  desktop-host,custom-protocol --bin delidev-desktop` also passes. The final rebuilt
+  sidecar is checked again after merging the independent Go changes.
+
+## Final merged-source validation
+
+- `pnpm proto:check` passes lint, main-baseline breaking checks and regenerated
+  Go/TypeScript reproduction. The independent-change verifier passes again;
+  structure, protocol allocation and LFS policy tests pass all eight cases.
+  Generated bindings have no worktree drift.
+- The final `pnpm test` frontend invocation runs with one worker and a temporary
+  60-second default test budget, restored afterward. It passes 1,241 assertions
+  in 88 files, with six skipped tests, but exits 1 because eight integration
+  files fail setup/cleanup: subscriptions/pairing/workspace binary builds hit
+  their existing 120-second timeout, Claude/provider temporary servers exit
+  before readiness, and Claude/devices/preferences/pricing cleanup hooks exceed
+  15 seconds. All App, desktop, sidebar and Doctor cases pass. This is not a
+  passing full frontend pipeline, and the skipped cases are not acceptance.
+- Since the full pipeline stops at integration-hook failure, its remaining
+  stages are run separately: bundle dry-run tests pass 8/8, desktop launcher and
+  asset-preparation tests pass 16/16, widget fixtures pass, and the merged frontend
+  production build passes.
+- Final-source Go vet passes. The focused race sweep passes all desktop launch,
+  pairing/recovery and user-service admission cases (user-service package 4.124
+  seconds), but its existing
+  `TestAutomaticStartupRecoversOnlyRunningOriginalConfiguration` fails after
+  exhausting the fixture's shared 15-second context during abnormal-exit recovery,
+  followed by incomplete temporary-directory cleanup. The CLI sweep takes
+  253.730 seconds and exits failed; an isolated recovery rerun is recorded below.
+- The rebuilt macOS arm64 sidecar passes the fresh-host regression, but its first
+  complete native run passes 17 and fails four existing fixtures: Worker, saved
+  connection and reuse/revocation return `SidecarFailed`; supervision exceeds its
+  initial ten-second foreground readiness bound. Reuse/revocation passes alone
+  in 10.32 seconds. The subsequent complete native rerun passes all 21 tests in
+  50.30 seconds with the same rebuilt sidecar and unchanged product deadlines.
+  These observations do not establish the cause of the earlier failures.
+
+The temporary-scope native checks and CEF compilation do not establish rendered
+CEF launch/focus/reopen/Quit, packaged installation, supported native service
+managers, remote TLS, Windows, Linux or macOS x64 acceptance. The occupied product
+listener and those platform gaps remain as described above.
+
+The isolated race-enabled abnormal-exit recovery rerun passes in 5.543 seconds
+with unchanged source and deadline. The earlier sweep failure remains recorded.
+All temporary runner edits are restored. Repository-owned generated `dist`
+directories are removed before commit and publication.
