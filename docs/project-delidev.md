@@ -45,6 +45,8 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Explicit outbound networking](cmds-delidev-network-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
+- [Same-account Codex session forks](cmds-delidev-forks-contract.md)
+
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
@@ -69,6 +71,8 @@ owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
 - Network profile deletion retains one private server-bound cleanup obligation before public removal. Current authorized owner/client mutations recover it after cancellation, revocation or restart without impersonating the original actor; accepted deletion and absent-profile proof precede native cleanup.
 - Managed database restore preserves current network profile/generation/selection authority and refuses pending private network credential intents under the shared credential gate. Historical database routing cannot reactivate old proxy credentials.
 - Network profile publication retains one private server-bound credential intent across vault/SQLite failure. Exact retries and replacement cleanup preserve original actor/input/receipt ownership; uncertainty cannot admit another unpublished native generation.
+
+- Codex fork children survive parent deletion. Explicit Local sharing is limited to user-owned Local source checkouts; managed Worktree sources require independent copies. Go rechecks ownership at acceptance, preparation and publication, and the desktop offers only the supported choice. See the [fork contract](cmds-delidev-forks-contract.md).
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.
 - Managed database restore preserves current revocations and external permanent deletion obligations, quarantines historical execution and ends the original server epoch. Temporary recovery images participate in permanent erasure; the storage contract owns their lifecycle.

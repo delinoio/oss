@@ -69,6 +69,9 @@ func (s Session) OwnsExecution(i ExecutionJobInput) bool {
 		return false
 	}
 	if i.Continuation == nil {
+		if i.Fork != nil {
+			return s.Fork != nil && s.CurrentExecution != nil && initial.ID == i.Fork.RuntimeID && s.Fork.JobID == i.Fork.JobID && s.Fork.CheckpointDigest == i.Fork.CheckpointDigest && initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID
+		}
 		return s.CurrentExecution == nil && initial.ID == i.ExecutionID && initial.InputID == i.InputID
 	}
 	authorized := initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID || slices.ContainsFunc(s.AccountChanges, func(change SessionAccountChange) bool {

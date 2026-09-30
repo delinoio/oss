@@ -171,3 +171,12 @@ See the [storage contract](cmds-delidev-storage-contract.md).
 Generated `NetworkQuery` exposes authenticated configuration operations and typed capability/resources. Consumers retain exact decimal revisions and treat credentials as write-only request input, never query-cache data. Signed Worker metadata proves only the server export scope, not native installation or encrypted credential transfer. Follow [the network contract](cmds-delidev-network-contract.md).
 
 Issue #1100 generates the native accounting profile and unit enums with the existing UsageQuery descriptor. Consumers must require the echoed NATIVE_UNITS_V1 profile before interpreting UsageTotals.accounting, preserve exact decimal totals and distinct CodexResponse/GrokClosedInput unit kinds, and retain response-only legacy fields. Grok cost and budget contribution remain unavailable; clients cannot normalize or price the separate response dimensions.
+
+## Codex fork clients (#1092)
+
+Generated messages, the `ForkWorkspace`/server capability enums and the existing
+`SessionQuery` namespace now expose `forkSession` and `getSessionFork`. The
+[fork contract](cmds-delidev-forks-contract.md) keeps native paths and creation
+logic in Go. Preserve exact uncertain requests; observe accepted operations by
+job ID instead of issuing another mutation. Desktop connection memory retains
+its controller through navigation and separates acceptance from child publication.
