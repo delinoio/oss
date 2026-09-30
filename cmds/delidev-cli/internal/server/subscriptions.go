@@ -246,6 +246,9 @@ func (s *Service) GetSubscriptionProgress(ctx context.Context, req *connect.Requ
 			return domain.Fail(domain.NotFound, "The original login presentation is unavailable.", "Read account status without starting another login.")
 		}
 		op = a.Subscription.Pending
+		if a.Subscription.RecoveryRequired || (a.Subscription.Lease != nil && a.Subscription.Lease.Epoch != s.subscriptionServerEpoch()) {
+			return subscriptionDenied()
+		}
 		return subscriptionActorValid(tx, op.Actor)
 	})
 	if err != nil {
@@ -534,7 +537,7 @@ func (s *Service) PublishSubscriptionProgress(ctx context.Context, req *connect.
 			return err
 		}
 		op = a.Subscription.Pending
-		if op == nil || op.Action != domain.SubscriptionLogin {
+		if a.Subscription.RecoveryRequired || op == nil || op.Action != domain.SubscriptionLogin {
 			return subscriptionDenied()
 		}
 		return subscriptionActorValid(tx, op.Actor)
@@ -727,16 +730,16 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 		if err != nil {
 			return nil, rpc.Error(err, c)
 		}
+		if original.Subscription.Pending != nil {
+			delete(s.subscriptionProgress, original.Subscription.Pending.ID)
+		}
 		// Cancellation can win during vault staging. Take remains blocked by the
 		// account gate until the unpublished new generation is tombstoned too.
 		if !usable && input.Cleanup {
 			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, ""); err != nil {
-				_ = s.markSubscriptionRecovery(input.Account)
+				// The owned-error defer records recovery after releasing accountGate.
 				return nil, rpc.Error(err, c)
 			}
-		}
-		if original.Subscription.Pending != nil {
-			delete(s.subscriptionProgress, original.Subscription.Pending.ID)
 		}
 	}
 	r, err := s.accountRecord(ctx, input.Account)
@@ -790,7 +793,13 @@ func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, ow
 func (s *Service) markSubscriptionRecovery(id domain.ID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.recovery-required", id, func(tx *store.Tx) (any, error) {
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	var pending domain.ID
+	_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.recovery-required", id, func(tx *store.Tx) (any, error) {
 		r, a, err := accountFromTx(tx, id, 0)
 		if err != nil {
 			return nil, err
@@ -798,11 +807,17 @@ func (s *Service) markSubscriptionRecovery(id domain.ID) error {
 		if a.Subscription == nil {
 			return nil, subscriptionDenied()
 		}
+		if a.Subscription.Pending != nil {
+			pending = a.Subscription.Pending.ID
+		}
 		a.Subscription.RecoveryRequired = true
 		a.Health = domain.AccountFailed
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return accountReceipt{ID: r.ID}, err
 	})
+	if err == nil {
+		delete(s.subscriptionProgress, pending)
+	}
 	return err
 }
 
@@ -811,7 +826,14 @@ func (s *Service) markSubscriptionRecovery(id domain.ID) error {
 func (s *Service) retainLostSubscriptionLeases(machine, instance domain.ID, executionOnly bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.lost-owner", struct {
+	// Serialize recovery publication and cache invalidation with progress reads.
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	var presentations []domain.ID
+	_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.lost-owner", struct {
 		Machine, Instance domain.ID
 		ExecutionOnly     bool
 		Epoch             domain.ID
@@ -827,7 +849,7 @@ func (s *Service) retainLostSubscriptionLeases(machine, instance domain.ID, exec
 				return nil, err
 			}
 			state := a.Subscription
-			if state == nil || state.Lease == nil || state.RecoveryRequired {
+			if state == nil || state.Lease == nil {
 				continue
 			}
 			lease := state.Lease
@@ -836,6 +858,12 @@ func (s *Service) retainLostSubscriptionLeases(machine, instance domain.ID, exec
 					continue
 				}
 			} else if lease.MachineID != machine || lease.InstanceID != instance || (lease.Action == domain.SubscriptionExecute) != executionOnly {
+				continue
+			}
+			if state.Pending != nil {
+				presentations = append(presentations, state.Pending.ID)
+			}
+			if state.RecoveryRequired {
 				continue
 			}
 			state.RecoveryRequired = true
@@ -850,5 +878,10 @@ func (s *Service) retainLostSubscriptionLeases(machine, instance domain.ID, exec
 		}
 		return struct{ Count int }{count}, nil
 	})
+	if err == nil {
+		for _, operation := range presentations {
+			delete(s.subscriptionProgress, operation)
+		}
+	}
 	return err
 }
