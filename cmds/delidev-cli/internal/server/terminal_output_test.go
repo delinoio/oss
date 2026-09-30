@@ -4,11 +4,17 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/terminal"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -91,6 +97,72 @@ func TestTerminalOutputLossPreservesAcknowledgedCursor(t *testing.T) {
 			}
 			if view.Err() != nil || !sawGap {
 				t.Fatal("missing final output-loss gap", view.Err())
+			}
+		})
+	}
+}
+
+func TestTerminalOutputDiscardedRingExposesFreshAttachmentGap(t *testing.T) {
+	for _, discard := range []string{"retained", "evicted", "restarted"} {
+		t.Run(discard, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			db, err := store.Open(ctx, filepath.Join(t.TempDir(), "state"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			id := domain.NewID()
+			_, err = db.Mutate(ctx, domain.NewID(), "fixture.closed-terminal", id, func(tx *store.Tx) (any, error) {
+				return tx.Put(domain.TerminalKind, id, 0, domain.NewID(), "", domain.Terminal{State: domain.TerminalClosed, CleanupVerified: true, Rows: 24, Columns: 80})
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			identity := security.Identity{ServerID: domain.NewID(), Token: "fixture-output-owner"}
+			logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+			service := &Service{Store: db, Identity: identity, logger: logger}
+			ring := service.terminalRing(id)
+			ring.sequence, ring.bytes = 1, len("retained")
+			ring.chunks = []terminalOutputChunk{{sequence: 1, data: []byte("retained")}}
+			switch discard {
+			case "evicted":
+				for i := 0; i < 128; i++ {
+					service.terminalRing(domain.NewID())
+				}
+				if service.terminalOutputs[id] != nil || len(service.terminalOutputs) != 128 {
+					t.Fatal("fixture did not evict the oldest bounded ring")
+				}
+			case "restarted":
+				// A new service retains the database, but no ephemeral rings.
+				service = &Service{Store: db, Identity: identity, logger: logger}
+			}
+			endpoint := httptest.NewServer(service.Handler(nil, true))
+			defer func() { service.executionAuthority.cancel(); endpoint.Close(); service.executionAuthority.close() }()
+			client := delidevv1connect.NewTerminalServiceClient(http.DefaultClient, endpoint.URL)
+			view, err := client.WatchTerminalOutput(ctx, ownerRequest(identity, &pb.WatchTerminalOutputRequest{TerminalId: string(id)}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if !view.Receive() {
+				t.Fatal("missing initial observation", view.Err())
+			}
+			if view.Msg().Gap != (discard != "retained") {
+				t.Fatal("fresh attachment misrepresented retained output completeness")
+			}
+			var data []byte
+			for view.Receive() {
+				data = append(data, view.Msg().Data...)
+			}
+			if view.Err() != nil {
+				t.Fatal(view.Err())
+			}
+			if discard == "retained" && string(data) != "retained" {
+				t.Fatal("complete retained output was lost")
+			}
+			if discard != "retained" && len(data) != 0 {
+				t.Fatal("discarded output was reconstructed")
 			}
 		})
 	}

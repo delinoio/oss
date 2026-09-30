@@ -37,7 +37,8 @@ type terminalOutputRing struct {
 }
 
 // A service-wide 128-ring limit bounds all retained output to 64 MiB. Eviction
-// and server restart change the epoch; clients must display an explicit gap.
+// and server restart change the epoch; even a cursorless client must see a
+// gap when the empty ring cannot prove that earlier output was retained.
 func (s *Service) terminalRing(id domain.ID) *terminalOutputRing {
 	if s.terminalOutputs == nil {
 		s.terminalOutputs = map[domain.ID]*terminalOutputRing{}
@@ -172,7 +173,11 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 			first = ring.chunks[0].sequence
 		}
 		cursorGap := (epoch != "" && epoch != ring.epoch) || after > ring.sequence || (first > 1 && after < first-1)
-		gap := (value.OutputLost && revision != record.Revision) || cursorGap
+		// An empty ephemeral ring cannot distinguish no output from discarded
+		// output after eviction/restart. A fresh observer must see that unknown
+		// prefix even without a prior cursor or a durable Worker loss report.
+		unknownRetention := epoch == "" && ring.sequence == 0
+		gap := (value.OutputLost && revision != record.Revision) || cursorGap || unknownRetention
 		// Losing unpublished bytes changes completeness, not acknowledgment of
 		// retained bytes. Only an invalid cursor may replay the retained suffix.
 		if epoch != ring.epoch || cursorGap {
