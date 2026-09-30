@@ -4,6 +4,7 @@ package outbound_test
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"net"
@@ -57,9 +58,26 @@ func TestNetworkProxyFixturesDenyDirectAndPreserveTLS(t *testing.T) {
 				t.Fatal(target)
 			}
 			// A valid proxy must not weaken the destination's independent TLS trust.
-			base.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+			untrustedDestination := x509.NewCertPool()
+			if fixture.ProxyCertificate != nil {
+				// Keep the HTTPS proxy trusted so this attempt independently
+				// reaches and refuses the untrusted destination certificate.
+				untrustedDestination.AddCert(fixture.ProxyCertificate)
+			}
+			base.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: untrustedDestination}
 			if _, err := client.Get("https://provider.invalid/models"); err == nil {
 				t.Fatal("untrusted TLS accepted")
+			}
+			if fixture.Calls.Load() != 2 {
+				t.Fatal("destination verification did not reach the selected proxy")
+			}
+			if fixture.ProxyCertificate != nil {
+				trustedDestination := x509.NewCertPool()
+				trustedDestination.AddCert(origin.Certificate())
+				base.TLSClientConfig.RootCAs = trustedDestination
+				if _, err := client.Get("https://provider.invalid/models"); err == nil || fixture.Calls.Load() != 2 {
+					t.Fatal("untrusted HTTPS proxy accepted")
+				}
 			}
 			if direct.Load() != 0 {
 				t.Fatal("TLS failure fell back")

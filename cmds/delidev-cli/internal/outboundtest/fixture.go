@@ -35,10 +35,11 @@ const Password = "fixture-proxy-password"
 const Credential = `{"username":"fixture-proxy-user","password":"fixture-proxy-password"}`
 
 type Fixture struct {
-	Profile domain.NetworkProfile
-	Calls   atomic.Int32
-	Targets chan string
-	Roots   *x509.CertPool
+	Profile          domain.NetworkProfile
+	Calls            atomic.Int32
+	Targets          chan string
+	Roots            *x509.CertPool
+	ProxyCertificate *x509.Certificate
 }
 
 func (f *Fixture) Resolve(context.Context) (domain.NetworkProfile, []byte, error) {
@@ -87,6 +88,7 @@ func Connect(t *testing.T, target string, secure bool) *Fixture {
 		mode = domain.ProxyHTTPS
 		f.Roots = x509.NewCertPool()
 		f.Roots.AddCert(server.Certificate())
+		f.ProxyCertificate = server.Certificate()
 	} else {
 		server.Start()
 	}
