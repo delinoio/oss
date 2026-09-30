@@ -3532,3 +3532,167 @@ extended package limit. Full server (458.683s), store (91.541s), Worker
 (112.010s) and workspace (326.122s) race packages passed; every other package
 passed or had no tests. This does not establish a complete Go race-suite pass
 or a cause for the workspace-read failure.
+
+### Local desktop permission guidance and recovery (2026-09-30)
+
+The real macOS desktop showed local connection and registration permission
+errors. Its bundled CLI reproduced `permission_denied` because the existing
+user-owned, non-symlink default data directory had mode 0755. The privacy check
+requires owner-only access; the earlier UI incorrectly described this as files
+being inaccessible to their owner.
+
+With explicit user authorization, only that directory was changed to 0700 after
+checking its opened identity and owner. The retained legacy `delidev.db` was
+preserved byte-for-byte and kept its original file mode; its read-only schema
+inspection showed only `auth_states`, separate from the current server's
+`state.sqlite`. Start or connect then opened the actual desktop session surface,
+and Check desktop registration reported authorized. No database reset, legacy
+conversion or revoked-client recovery was performed.
+
+Local connection and registration now share accurate device/ownership/privacy
+guidance, including macOS/Linux directory 0700 and file 0600 modes and explicit
+data preservation. Native error codes, RPCs and Go security enforcement remain
+unchanged. Component regressions cover denied startup and denied registration
+inspection with or without a prior revoked observation, rejecting automatic
+startup/recovery and stale replacement actions.
+
+The existing Go security suite passed, including rejection of shared directory
+permissions and symlinks without changing their permissions. Focused desktop
+and registration component checks passed 2 files / 16 tests, including all
+three new permission-denial cases. Type checking, native packaging/launcher
+fixtures, Swift widget fixtures and the production frontend build also passed.
+
+The first full `pnpm test` overlapped other local test/build activity and showed
+existing backup, tray and settings timeout failures; only its identified
+process group was stopped before rerunning with one Vitest worker. That full
+sequential run completed 74 files / 948 tests: 72 files / 939 tests passed,
+while unchanged `App.test.tsx` had seven five-second timeouts and unchanged
+`settings.integration.test.tsx` had two missing-control waits. These failed
+runs are retained as failures, not full-suite acceptance; no production
+behavior or test time limit was changed to conceal them.
+
+A separate retry of those two unchanged files with the original time limits
+passed 46 of 48 tests. The notification/import draft test still hit its
+five-second limit, and the singleton server-preferences fixture still missed
+`Edit Server preferences`. The focused permission checks remain fully passing;
+the two unrelated failures remain explicit validation limitations. Detailed
+outputs are in `/tmp/delidev-permissions-frontend-serial.log`,
+`/tmp/delidev-permissions-retry.log` and
+`/tmp/delidev-permissions-focused.log` on the validation host.
+
+The native host build passed, and `pnpm dev:desktop` built and ad-hoc signed its
+CEF app bundle in this worktree. Its own log recorded local-server supervision
+as Ready and a clean runtime/controller exit. No separately attributable
+`local_connect` completion appeared in that bundle's log; the connected and
+authorized UI observations therefore do not establish rebuilt-bundle full
+connection acceptance when other DeliDev bundles share the same app identity.
+The user then explicitly requested no further execution. No additional app or
+test was launched, and process inspection confirmed this worktree's desktop
+and launcher had exited. Final read-only checks confirmed the legacy database
+hash and file mode were unchanged and the data directory remained 0700.
+Generated desktop/client `dist` outputs were removed. This records macOS local
+recovery and build evidence only, not Windows/Linux or release acceptance.
+
+### Desktop source-icon LFS preparation (2026-09-30)
+
+The ordinary macOS development entry point reproduced `Invalid PNG signature`
+while bundling its app icon: the source icon was a 132-byte Git LFS pointer for
+a 1,514,329-byte PNG. Frontend, sidecar, widget and native host builds had passed.
+Providing the exact digest-verified original icon as a temporary diagnostic
+input allowed bundling and native architecture/CEF/widget/entitlement/ad-hoc
+signature checks to pass. That diagnostic invocation intentionally exited before
+application state initialization; it was not a native UI acceptance result.
+
+The shared `prepare:assets` step now precedes native development, ordinary
+build/bundle and dry-run packaging. It restores only the unchanged committed
+source-icon pointer from cache or an exact-path current-ref LFS fetch, verifies
+size/digest/PNG container integrity and preserves local image and pointer edits.
+Existing PNGs require neither Git nor networking. Stable structured failures
+include recovery guidance without raw Git output, and cancellation joins the
+active Git child through the existing process lifecycle.
+
+Ten focused asset cases pass with temporary repositories and a local LFS remote,
+covering offline restoration, scoped fetch under conflicting caller filters,
+local changes, unavailable tools/downloads, integrity, concurrent edits and real
+SIGTERM delivery. The existing six launcher cases pass in their standalone run,
+and eight package verifier cases plus the native-package CI contract pass.
+The first concurrent aggregate was interrupted after an existing launcher signal
+case stalled. The initial full frontend run was also interrupted after existing
+backup, desktop, tray and Settings cases exceeded their deadlines under concurrent
+native compilation and host load. No product test timeout was increased.
+Normal root `pnpm install --frozen-lockfile` passed, including linked-worktree
+Lefthook installation.
+
+The launcher signal fixture waited only for inherited child stdout, which could
+arrive before the wrapper returned from process creation and installed its
+signal handlers. Both signal fixtures now wait for explicit wrapper and child
+readiness before sending SIGTERM. The combined `pnpm test:desktop-launch` passes
+all 16 cases without serializing files or increasing timeouts. The eight bundle
+verifier cases and native Swift widget fixtures also pass separately.
+
+Starting with the real source icon still represented by its LFS pointer after
+installation, ordinary `pnpm dev:desktop` restored the cached PNG automatically
+and completed frontend, sidecar, widget, native host, CEF app bundling and ad-hoc
+signing. The generated arm64 debug app passed native architecture, CEF resources,
+macOS 13 metadata, both widget extensions/entitlements and deep strict signature
+verification. Its initial launch reported `SidecarFailed` and an existing CEF
+browser session while another checkout's DeliDev/server was already running.
+Launching that exact generated app with a temporary HOME/cache and data directory
+displayed the native DeliDev local-server connection screen. The occupied local
+server port still prevented a fresh connection; this establishes window/rendering
+evidence, not authenticated server or provisioned WidgetKit acceptance. Only this
+temporary app was stopped, with runtime return and process exit code 0 observed;
+the pre-existing app and server were left running.
+
+A complete single-worker `pnpm test` attempt passed client generation and type
+checking, then finished Vitest with 71 passing files / 933 passing tests and
+3 failing files / 12 failures. Those failures were in the unchanged App, Settings
+integration and tray presentation tests (5-second deadlines and asynchronous
+element/state waits); that attempt did not establish a green full frontend suite.
+An isolated rerun of those exact three files passed all 49 tests with the
+unchanged deadlines and product code. The production frontend build passed
+during the native launch. No Rust, Go,
+frontend product code, runtime pins or signing policies changed.
+
+The final single-worker `pnpm test` pipeline passed all 74 frontend files / 945
+tests, client generation/type checking, all 8 package-verifier and 16
+asset/launcher cases, native Swift widget fixtures and the production frontend
+build. Test deadlines were unchanged. Generated desktop/client `dist` directories
+and this task's temporary native smoke data were removed after verification.
+
+### Permission-guidance PR merge verification (2026-09-30)
+
+PR #1132 merged main at `da93cb9b9`, retaining both the permission-guidance and
+source-icon preparation policies and their complete evidence records. The
+merged tree passed package-local `pnpm test`: all 74 frontend files / 948 tests,
+typed-client generation and type checking, all 8 package-verifier and 16
+asset/launcher cases, native Swift widget fixtures and the production frontend
+build. The permission-denial regressions are included in that successful run;
+the earlier failed attempts remain recorded above. No test deadline or product
+behavior changed during conflict resolution. Generated desktop/client `dist`
+output was removed. This verification does not add native application or
+release acceptance evidence.
+
+
+### PR #1118 merge of desktop permissions and icon preparation (2026-09-30)
+
+Merged main revision `66206911`, retaining the PR activity/forwarding project
+index entries and complete evidence histories alongside the desktop permission,
+icon and asset-preparation records. The two documentation conflicts kept both
+source-backed additions. Root `pnpm install --frozen-lockfile` passed with the
+incoming `fast-uri` 3.1.8 and `ip-address` 10.7.1 resolutions. The shared desktop
+`prepare:assets` preflight accepted the hydrated canonical PNG, and Git LFS
+integrity checking passed.
+
+Full desktop `pnpm test` on Node 24 passed all 951 tests across 75 files
+(21.08s Vitest duration), typed-client generation and type checking, all eight
+package-verifier and sixteen asset/launcher cases, native Swift widget fixtures
+and the production frontend build. Repository contract checks passed all 95
+tests, and workflow validation passed. Root `pnpm audit` reported zero Node
+vulnerabilities across its 621-dependency audit graph; this does not establish
+new Cargo or other ecosystem audit evidence.
+
+This merge changes no Go, protobuf or Rust source. The preceding full Go
+workspace-reader failure and all earlier negative observations remain recorded
+with their original revisions and results. These checks do not add native
+application, provider or release acceptance evidence.
