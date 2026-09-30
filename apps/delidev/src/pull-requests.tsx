@@ -110,10 +110,11 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
       <Problem error={repositories.error} />
       {repositories.isPending && active ? <p role="status">Loading repositories…</p> : null}
       {repositories.error && repositories.data ? <p className="sidebar-help">Refresh failed. Showing the previous repository page.</p> : null}
-      {repositories.data?.resources.map((row) => <button key={row.id} type="button" className="sidebar-repository-row" aria-label={`${resourceName(row)}. Repository ID: ${row.id}`} aria-pressed={repositoryId === row.id} onClick={() => chooseRepository(row)}><span>{resourceName(row)}</span><small>{row.id}</small></button>)}
-      {repositories.data?.resources.length === 0 ? <p className="sidebar-help">No repositories on this page.</p> : null}
-      <nav aria-label="Repository pages"><button disabled={!repositoryPage || repositories.isFetching} onClick={() => setRepositoryPage("")}>First</button><button disabled={!repositories.data?.nextPageToken || repositories.isFetching} onClick={() => setRepositoryPage(repositories.data!.nextPageToken)}>Next</button></nav>
+      {repositories.data?.resources.map((row) => <button key={row.id} type="button" className="sidebar-repository-row" aria-label={`${resourceName(row)}. Repository ID: ${row.id}`} aria-pressed={repositoryId === row.id} onClick={() => chooseRepository(row)}><svg className="sidebar-icon sidebar-repository-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18H5zM9 3v18M13 7h3M13 11h3" /></svg><span className="sidebar-repository-info"><span>{resourceName(row)}</span><small>{row.id}</small></span></button>)}
+      {!repositories.error && repositories.data?.resources.length === 0 ? <div className="sidebar-repository-empty"><svg className="sidebar-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h7l2 2h9v11H3z" /></svg><p>No repositories on this page.</p></div> : null}
+      <nav className="sidebar-repository-pages" aria-label="Repository pages"><button disabled={!repositoryPage || repositories.isFetching} onClick={() => setRepositoryPage("")}>First</button><button disabled={!repositories.data?.nextPageToken || repositories.isFetching} onClick={() => setRepositoryPage(repositories.data!.nextPageToken)}>Next</button></nav>
       {repositoryId ? <>
+        <section className="sidebar-query-options" aria-label="Query options"><h3>Query options</h3>
         <form className="sidebar-form" onSubmit={load}>
           <label>State<select value={state} onChange={(event) => setState(event.target.value as ItemState)}><option value={ItemState.Open}>Open</option><option value={ItemState.Closed}>Closed</option><option value={ItemState.All}>All</option></select></label>
           <label>Search title and body<input value={search} maxLength={120} onChange={(event) => setSearch(event.target.value)} /></label>
@@ -122,9 +123,11 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
           {selected && !configured ? <p className="sidebar-help">Set a supported GitHub profile, owner and repository name in repository settings before loading.</p> : null}
           {repositoryId && !selectedOnPage && selectedQuery.isPending ? <p role="status">Loading repository settings…</p> : null}
           <label>PR page size<select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>{[1, 5, 10, 20].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+          <p className="sidebar-help">No GitHub request is made until you load pull requests.</p>
           <button className="primary" disabled={!canLoad}>Load pull requests</button>
           {loaded && filtersChanged ? <p className="sidebar-help">The displayed results belong to the last loaded state and search. Load again to apply these edits.</p> : null}
         </form>
+        </section>
       </> : <p className="sidebar-help">Select a repository. No GitHub request is made until you load pull requests.</p>}
       <button type="button" className="sidebar-action" onClick={() => { closeDrawer(); openSettings(SettingsEntryDestination.Repositories); }}>Repository settings</button>
     </SidebarSurface>

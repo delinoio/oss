@@ -12,7 +12,113 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/activity.proto.
  */
 export const file_delidev_v1_activity: GenFile = /*@__PURE__*/
-  fileDesc("ChlkZWxpZGV2L3YxL2FjdGl2aXR5LnByb3RvEgpkZWxpZGV2LnYxImQKE0xpc3RBY3Rpdml0eVJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEhEKCXBhZ2Vfc2l6ZRgDIAEoDRISCgpwYWdlX3Rva2VuGAQgASgJIqQDCg1BY3Rpdml0eUVudHJ5EgoKAmlkGAEgASgJEisKC3NvdXJjZV9raW5kGAIgASgOMhYuZGVsaWRldi52MS5FbnRpdHlLaW5kEhcKD3NvdXJjZV9yZXZpc2lvbhgDIAEoBBIbChNvYnNlcnZlZF9hdF91bml4X21zGAQgASgDEiYKBGtpbmQYBSABKA4yGC5kZWxpZGV2LnYxLkFjdGl2aXR5S2luZBISCgpzZXNzaW9uX2lkGAYgASgJEhIKCnByb2plY3RfaWQYByABKAkSFAoMZXhlY3V0aW9uX2lkGAggASgJEhIKCmFjY291bnRfaWQYCSABKAkSDgoGam9iX2lkGAogASgJEhMKC3NjaGVkdWxlX2lkGAsgASgJEhUKDW9jY3VycmVuY2VfaWQYDCABKAkSPQoQb2NjdXJyZW5jZV9zdGF0ZRgNIAEoDjIjLmRlbGlkZXYudjEuQWN0aXZpdHlPY2N1cnJlbmNlU3RhdGUSLwoJam9iX3N0YXRlGA4gASgOMhwuZGVsaWRldi52MS5BY3Rpdml0eUpvYlN0YXRlIlsKFExpc3RBY3Rpdml0eVJlc3BvbnNlEioKB2VudHJpZXMYASADKAsyGS5kZWxpZGV2LnYxLkFjdGl2aXR5RW50cnkSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJKogCCgxBY3Rpdml0eUtpbmQSHQoZQUNUSVZJVFlfS0lORF9VTlNQRUNJRklFRBAAEiQKIEFDVElWSVRZX0tJTkRfRVhFQ1VUSU9OX0FDQ0VQVEVEEAESJQohQUNUSVZJVFlfS0lORF9FWEVDVVRJT05fU1VDQ0VFREVEEAISIgoeQUNUSVZJVFlfS0lORF9FWEVDVVRJT05fRkFJTEVEEAMSIwofQUNUSVZJVFlfS0lORF9FWEVDVVRJT05fU1RPUFBFRBAEEh8KG0FDVElWSVRZX0tJTkRfU0NIRURVTEVfQ1JPThAFEiIKHkFDVElWSVRZX0tJTkRfU0NIRURVTEVfUlVOX05PVxAGKq4CChdBY3Rpdml0eU9jY3VycmVuY2VTdGF0ZRIpCiVBQ1RJVklUWV9PQ0NVUlJFTkNFX1NUQVRFX1VOU1BFQ0lGSUVEEAASJQohQUNUSVZJVFlfT0NDVVJSRU5DRV9TVEFURV9XQUlUSU5HEAESJAogQUNUSVZJVFlfT0NDVVJSRU5DRV9TVEFURV9BQ1RJVkUQAhInCiNBQ1RJVklUWV9PQ0NVUlJFTkNFX1NUQVRFX1NVQ0NFRURFRBADEiQKIEFDVElWSVRZX09DQ1VSUkVOQ0VfU1RBVEVfRkFJTEVEEAQSJQohQUNUSVZJVFlfT0NDVVJSRU5DRV9TVEFURV9TVE9QUEVEEAUSJQohQUNUSVZJVFlfT0NDVVJSRU5DRV9TVEFURV9TS0lQUEVEEAYq+QEKEEFjdGl2aXR5Sm9iU3RhdGUSIgoeQUNUSVZJVFlfSk9CX1NUQVRFX1VOU1BFQ0lGSUVEEAASHQoZQUNUSVZJVFlfSk9CX1NUQVRFX1FVRVVFRBABEh4KGkFDVElWSVRZX0pPQl9TVEFURV9DTEFJTUVEEAISIAocQUNUSVZJVFlfSk9CX1NUQVRFX1NVQ0NFRURFRBADEh0KGUFDVElWSVRZX0pPQl9TVEFURV9GQUlMRUQQBBIgChxBQ1RJVklUWV9KT0JfU1RBVEVfVU5DRVJUQUlOEAUSHwobQUNUSVZJVFlfSk9CX1NUQVRFX0NBTkNFTEVEEAYyZAoPQWN0aXZpdHlTZXJ2aWNlElEKDExpc3RBY3Rpdml0eRIfLmRlbGlkZXYudjEuTGlzdEFjdGl2aXR5UmVxdWVzdBogLmRlbGlkZXYudjEuTGlzdEFjdGl2aXR5UmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z", [file_delidev_v1_common]);
+  fileDesc("ChlkZWxpZGV2L3YxL2FjdGl2aXR5LnByb3RvEgpkZWxpZGV2LnYxIkEKGkFjdGl2aXR5UFJQcm9ibGVtUmVmZXJlbmNlEgoKAmlkGAEgASgJEhcKD2NvbnRlbnRfdmVyc2lvbhgCIAEoCSK3AwoSQWN0aXZpdHlQUk1ldGFkYXRhEhYKDnByb2JsZW1fc2V0X2lkGAEgASgJEhwKFHJlbW90ZV9yZXBvc2l0b3J5X2lkGAIgASgJEhcKD3B1bGxfcmVxdWVzdF9pZBgDIAEoCRIOCgZudW1iZXIYBCABKAkSDQoFb3duZXIYBSABKAkSDAoEbmFtZRgGIAEoCRIRCglzb3VyY2VfaWQYByABKAkSOAoIcHJvYmxlbXMYCCADKAsyJi5kZWxpZGV2LnYxLkFjdGl2aXR5UFJQcm9ibGVtUmVmZXJlbmNlEjMKCmFjdG9yX3R5cGUYCSABKA4yHy5kZWxpZGV2LnYxLkFjdGl2aXR5UFJBY3RvclR5cGUSEQoJZGV2aWNlX2lkGAogASgJEhIKCnJlcXVlc3RfaWQYCyABKAkSOQoNYXR0ZW1wdF9zdGF0ZRgMIAEoDjIiLmRlbGlkZXYudjEuQWN0aXZpdHlQUkF0dGVtcHRTdGF0ZRIoCgRtb2RlGA0gASgOMhouZGVsaWRldi52MS5BY3Rpdml0eVBSTW9kZRIXCg92ZXJpZmljYXRpb25faWQYDiABKAkiZAoTTGlzdEFjdGl2aXR5UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhIKCnByb2plY3RfaWQYAiABKAkSEQoJcGFnZV9zaXplGAMgASgNEhIKCnBhZ2VfdG9rZW4YBCABKAki2gMKDUFjdGl2aXR5RW50cnkSCgoCaWQYASABKAkSKwoLc291cmNlX2tpbmQYAiABKA4yFi5kZWxpZGV2LnYxLkVudGl0eUtpbmQSFwoPc291cmNlX3JldmlzaW9uGAMgASgEEhsKE29ic2VydmVkX2F0X3VuaXhfbXMYBCABKAMSJgoEa2luZBgFIAEoDjIYLmRlbGlkZXYudjEuQWN0aXZpdHlLaW5kEhIKCnNlc3Npb25faWQYBiABKAkSEgoKcHJvamVjdF9pZBgHIAEoCRIUCgxleGVjdXRpb25faWQYCCABKAkSEgoKYWNjb3VudF9pZBgJIAEoCRIOCgZqb2JfaWQYCiABKAkSEwoLc2NoZWR1bGVfaWQYCyABKAkSFQoNb2NjdXJyZW5jZV9pZBgMIAEoCRI9ChBvY2N1cnJlbmNlX3N0YXRlGA0gASgOMiMuZGVsaWRldi52MS5BY3Rpdml0eU9jY3VycmVuY2VTdGF0ZRIvCglqb2Jfc3RhdGUYDiABKA4yHC5kZWxpZGV2LnYxLkFjdGl2aXR5Sm9iU3RhdGUSNAoMcHVsbF9yZXF1ZXN0GA8gASgLMh4uZGVsaWRldi52MS5BY3Rpdml0eVBSTWV0YWRhdGEikQEKFExpc3RBY3Rpdml0eVJlc3BvbnNlEioKB2VudHJpZXMYASADKAsyGS5kZWxpZGV2LnYxLkFjdGl2aXR5RW50cnkSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEjQKDGNhcGFiaWxpdGllcxgDIAMoDjIeLmRlbGlkZXYudjEuQWN0aXZpdHlDYXBhYmlsaXR5KqgDCgxBY3Rpdml0eUtpbmQSHQoZQUNUSVZJVFlfS0lORF9VTlNQRUNJRklFRBAAEiQKIEFDVElWSVRZX0tJTkRfRVhFQ1VUSU9OX0FDQ0VQVEVEEAESJQohQUNUSVZJVFlfS0lORF9FWEVDVVRJT05fU1VDQ0VFREVEEAISIgoeQUNUSVZJVFlfS0lORF9FWEVDVVRJT05fRkFJTEVEEAMSIwofQUNUSVZJVFlfS0lORF9FWEVDVVRJT05fU1RPUFBFRBAEEh8KG0FDVElWSVRZX0tJTkRfU0NIRURVTEVfQ1JPThAFEiIKHkFDVElWSVRZX0tJTkRfU0NIRURVTEVfUlVOX05PVxAGEiUKIUFDVElWSVRZX0tJTkRfUFJfUFJPQkxFTV9PQlNFUlZFRBAHEiYKIkFDVElWSVRZX0tJTkRfUFJfUFJPQkxFTV9ESVNNSVNTRUQQCBIoCiRBQ1RJVklUWV9LSU5EX1BSX1JFTUVESUFUSU9OX0FUVEVNUFQQCRIlCiFBQ1RJVklUWV9LSU5EX1BSX1ZFUklGSUVEX0hBTkRMRUQQCiqpAwoWQWN0aXZpdHlQUkF0dGVtcHRTdGF0ZRIpCiVBQ1RJVklUWV9QUl9BVFRFTVBUX1NUQVRFX1VOU1BFQ0lGSUVEEAASJgoiQUNUSVZJVFlfUFJfQVRURU1QVF9TVEFURV9SRVNFUlZFRBABEiMKH0FDVElWSVRZX1BSX0FUVEVNUFRfU1RBVEVfQk9VTkQQAhIlCiFBQ1RJVklUWV9QUl9BVFRFTVBUX1NUQVRFX1JVTk5JTkcQAxInCiNBQ1RJVklUWV9QUl9BVFRFTVBUX1NUQVRFX1VOQ0VSVEFJThAEEicKI0FDVElWSVRZX1BSX0FUVEVNUFRfU1RBVEVfU1VDQ0VFREVEEAUSJAogQUNUSVZJVFlfUFJfQVRURU1QVF9TVEFURV9GQUlMRUQQBhIlCiFBQ1RJVklUWV9QUl9BVFRFTVBUX1NUQVRFX1NUT1BQRUQQBxImCiJBQ1RJVklUWV9QUl9BVFRFTVBUX1NUQVRFX0NBTkNFTEVEEAgSKQolQUNUSVZJVFlfUFJfQVRURU1QVF9TVEFURV9OT1RfU1RBUlRFRBAJKm8KDkFjdGl2aXR5UFJNb2RlEiAKHEFDVElWSVRZX1BSX01PREVfVU5TUEVDSUZJRUQQABIbChdBQ1RJVklUWV9QUl9NT0RFX01BTlVBTBABEh4KGkFDVElWSVRZX1BSX01PREVfQVVUT01BVElDEAIqggEKE0FjdGl2aXR5UFJBY3RvclR5cGUSJgoiQUNUSVZJVFlfUFJfQUNUT1JfVFlQRV9VTlNQRUNJRklFRBAAEiAKHEFDVElWSVRZX1BSX0FDVE9SX1RZUEVfT1dORVIQARIhCh1BQ1RJVklUWV9QUl9BQ1RPUl9UWVBFX0NMSUVOVBACKmEKEkFjdGl2aXR5Q2FwYWJpbGl0eRIjCh9BQ1RJVklUWV9DQVBBQklMSVRZX1VOU1BFQ0lGSUVEEAASJgoiQUNUSVZJVFlfQ0FQQUJJTElUWV9QUl9IQU5ETElOR19WMRABKq4CChdBY3Rpdml0eU9jY3VycmVuY2VTdGF0ZRIpCiVBQ1RJVklUWV9PQ0NVUlJFTkNFX1NUQVRFX1VOU1BFQ0lGSUVEEAASJQohQUNUSVZJVFlfT0NDVVJSRU5DRV9TVEFURV9XQUlUSU5HEAESJAogQUNUSVZJVFlfT0NDVVJSRU5DRV9TVEFURV9BQ1RJVkUQAhInCiNBQ1RJVklUWV9PQ0NVUlJFTkNFX1NUQVRFX1NVQ0NFRURFRBADEiQKIEFDVElWSVRZX09DQ1VSUkVOQ0VfU1RBVEVfRkFJTEVEEAQSJQohQUNUSVZJVFlfT0NDVVJSRU5DRV9TVEFURV9TVE9QUEVEEAUSJQohQUNUSVZJVFlfT0NDVVJSRU5DRV9TVEFURV9TS0lQUEVEEAYq+QEKEEFjdGl2aXR5Sm9iU3RhdGUSIgoeQUNUSVZJVFlfSk9CX1NUQVRFX1VOU1BFQ0lGSUVEEAASHQoZQUNUSVZJVFlfSk9CX1NUQVRFX1FVRVVFRBABEh4KGkFDVElWSVRZX0pPQl9TVEFURV9DTEFJTUVEEAISIAocQUNUSVZJVFlfSk9CX1NUQVRFX1NVQ0NFRURFRBADEh0KGUFDVElWSVRZX0pPQl9TVEFURV9GQUlMRUQQBBIgChxBQ1RJVklUWV9KT0JfU1RBVEVfVU5DRVJUQUlOEAUSHwobQUNUSVZJVFlfSk9CX1NUQVRFX0NBTkNFTEVEEAYyZAoPQWN0aXZpdHlTZXJ2aWNlElEKDExpc3RBY3Rpdml0eRIfLmRlbGlkZXYudjEuTGlzdEFjdGl2aXR5UmVxdWVzdBogLmRlbGlkZXYudjEuTGlzdEFjdGl2aXR5UmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z", [file_delidev_v1_common]);
+
+/**
+ * @generated from message delidev.v1.ActivityPRProblemReference
+ */
+export type ActivityPRProblemReference = Message<"delidev.v1.ActivityPRProblemReference"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string content_version = 2;
+   */
+  contentVersion: string;
+};
+
+/**
+ * Describes the message delidev.v1.ActivityPRProblemReference.
+ * Use `create(ActivityPRProblemReferenceSchema)` to create a new message.
+ */
+export const ActivityPRProblemReferenceSchema: GenMessage<ActivityPRProblemReference> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_activity, 0);
+
+/**
+ * Only metadata; no PR title, feedback, tool output or provider diagnostics.
+ *
+ * @generated from message delidev.v1.ActivityPRMetadata
+ */
+export type ActivityPRMetadata = Message<"delidev.v1.ActivityPRMetadata"> & {
+  /**
+   * @generated from field: string problem_set_id = 1;
+   */
+  problemSetId: string;
+
+  /**
+   * @generated from field: string remote_repository_id = 2;
+   */
+  remoteRepositoryId: string;
+
+  /**
+   * @generated from field: string pull_request_id = 3;
+   */
+  pullRequestId: string;
+
+  /**
+   * @generated from field: string number = 4;
+   */
+  number: string;
+
+  /**
+   * @generated from field: string owner = 5;
+   */
+  owner: string;
+
+  /**
+   * @generated from field: string name = 6;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string source_id = 7;
+   */
+  sourceId: string;
+
+  /**
+   * @generated from field: repeated delidev.v1.ActivityPRProblemReference problems = 8;
+   */
+  problems: ActivityPRProblemReference[];
+
+  /**
+   * @generated from field: delidev.v1.ActivityPRActorType actor_type = 9;
+   */
+  actorType: ActivityPRActorType;
+
+  /**
+   * @generated from field: string device_id = 10;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string request_id = 11;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: delidev.v1.ActivityPRAttemptState attempt_state = 12;
+   */
+  attemptState: ActivityPRAttemptState;
+
+  /**
+   * @generated from field: delidev.v1.ActivityPRMode mode = 13;
+   */
+  mode: ActivityPRMode;
+
+  /**
+   * @generated from field: string verification_id = 14;
+   */
+  verificationId: string;
+};
+
+/**
+ * Describes the message delidev.v1.ActivityPRMetadata.
+ * Use `create(ActivityPRMetadataSchema)` to create a new message.
+ */
+export const ActivityPRMetadataSchema: GenMessage<ActivityPRMetadata> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_activity, 1);
 
 /**
  * @generated from message delidev.v1.ListActivityRequest
@@ -44,10 +150,10 @@ export type ListActivityRequest = Message<"delidev.v1.ListActivityRequest"> & {
  * Use `create(ListActivityRequestSchema)` to create a new message.
  */
 export const ListActivityRequestSchema: GenMessage<ListActivityRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_activity, 0);
+  messageDesc(file_delidev_v1_activity, 2);
 
 /**
- * Metadata only. Original source identity is also the stable activity identity.
+ * Metadata only. PR transitions have their own immutable activity identity.
  *
  * @generated from message delidev.v1.ActivityEntry
  */
@@ -125,6 +231,11 @@ export type ActivityEntry = Message<"delidev.v1.ActivityEntry"> & {
    * @generated from field: delidev.v1.ActivityJobState job_state = 14;
    */
   jobState: ActivityJobState;
+
+  /**
+   * @generated from field: delidev.v1.ActivityPRMetadata pull_request = 15;
+   */
+  pullRequest?: ActivityPRMetadata | undefined;
 };
 
 /**
@@ -132,7 +243,7 @@ export type ActivityEntry = Message<"delidev.v1.ActivityEntry"> & {
  * Use `create(ActivityEntrySchema)` to create a new message.
  */
 export const ActivityEntrySchema: GenMessage<ActivityEntry> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_activity, 1);
+  messageDesc(file_delidev_v1_activity, 3);
 
 /**
  * @generated from message delidev.v1.ListActivityResponse
@@ -147,6 +258,11 @@ export type ListActivityResponse = Message<"delidev.v1.ListActivityResponse"> & 
    * @generated from field: string next_page_token = 2;
    */
   nextPageToken: string;
+
+  /**
+   * @generated from field: repeated delidev.v1.ActivityCapability capabilities = 3;
+   */
+  capabilities: ActivityCapability[];
 };
 
 /**
@@ -154,7 +270,7 @@ export type ListActivityResponse = Message<"delidev.v1.ListActivityResponse"> & 
  * Use `create(ListActivityResponseSchema)` to create a new message.
  */
 export const ListActivityResponseSchema: GenMessage<ListActivityResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_activity, 2);
+  messageDesc(file_delidev_v1_activity, 4);
 
 /**
  * @generated from enum delidev.v1.ActivityKind
@@ -198,6 +314,30 @@ export enum ActivityKind {
    * @generated from enum value: ACTIVITY_KIND_SCHEDULE_RUN_NOW = 6;
    */
   SCHEDULE_RUN_NOW = 6,
+
+  /**
+   * @generated from enum value: ACTIVITY_KIND_PR_PROBLEM_OBSERVED = 7;
+   */
+  PR_PROBLEM_OBSERVED = 7,
+
+  /**
+   * @generated from enum value: ACTIVITY_KIND_PR_PROBLEM_DISMISSED = 8;
+   */
+  PR_PROBLEM_DISMISSED = 8,
+
+  /**
+   * Attempt success never establishes that the original problems were handled.
+   *
+   * @generated from enum value: ACTIVITY_KIND_PR_REMEDIATION_ATTEMPT = 9;
+   */
+  PR_REMEDIATION_ATTEMPT = 9,
+
+  /**
+   * Requires its own immutable verification source, never attempt success.
+   *
+   * @generated from enum value: ACTIVITY_KIND_PR_VERIFIED_HANDLED = 10;
+   */
+  PR_VERIFIED_HANDLED = 10,
 }
 
 /**
@@ -205,6 +345,140 @@ export enum ActivityKind {
  */
 export const ActivityKindSchema: GenEnum<ActivityKind> = /*@__PURE__*/
   enumDesc(file_delidev_v1_activity, 0);
+
+/**
+ * @generated from enum delidev.v1.ActivityPRAttemptState
+ */
+export enum ActivityPRAttemptState {
+  /**
+   * @generated from enum value: ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED = 0;
+   */
+  ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ATTEMPT_STATE_RESERVED = 1;
+   */
+  ACTIVITY_PR_ATTEMPT_STATE_RESERVED = 1,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ATTEMPT_STATE_BOUND = 2;
+   */
+  ACTIVITY_PR_ATTEMPT_STATE_BOUND = 2,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ATTEMPT_STATE_RUNNING = 3;
+   */
+  ACTIVITY_PR_ATTEMPT_STATE_RUNNING = 3,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ATTEMPT_STATE_UNCERTAIN = 4;
+   */
+  ACTIVITY_PR_ATTEMPT_STATE_UNCERTAIN = 4,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ATTEMPT_STATE_SUCCEEDED = 5;
+   */
+  ACTIVITY_PR_ATTEMPT_STATE_SUCCEEDED = 5,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ATTEMPT_STATE_FAILED = 6;
+   */
+  ACTIVITY_PR_ATTEMPT_STATE_FAILED = 6,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ATTEMPT_STATE_STOPPED = 7;
+   */
+  ACTIVITY_PR_ATTEMPT_STATE_STOPPED = 7,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ATTEMPT_STATE_CANCELED = 8;
+   */
+  ACTIVITY_PR_ATTEMPT_STATE_CANCELED = 8,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ATTEMPT_STATE_NOT_STARTED = 9;
+   */
+  ACTIVITY_PR_ATTEMPT_STATE_NOT_STARTED = 9,
+}
+
+/**
+ * Describes the enum delidev.v1.ActivityPRAttemptState.
+ */
+export const ActivityPRAttemptStateSchema: GenEnum<ActivityPRAttemptState> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_activity, 1);
+
+/**
+ * @generated from enum delidev.v1.ActivityPRMode
+ */
+export enum ActivityPRMode {
+  /**
+   * @generated from enum value: ACTIVITY_PR_MODE_UNSPECIFIED = 0;
+   */
+  ACTIVITY_PR_MODE_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_MODE_MANUAL = 1;
+   */
+  ACTIVITY_PR_MODE_MANUAL = 1,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_MODE_AUTOMATIC = 2;
+   */
+  ACTIVITY_PR_MODE_AUTOMATIC = 2,
+}
+
+/**
+ * Describes the enum delidev.v1.ActivityPRMode.
+ */
+export const ActivityPRModeSchema: GenEnum<ActivityPRMode> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_activity, 2);
+
+/**
+ * @generated from enum delidev.v1.ActivityPRActorType
+ */
+export enum ActivityPRActorType {
+  /**
+   * @generated from enum value: ACTIVITY_PR_ACTOR_TYPE_UNSPECIFIED = 0;
+   */
+  ACTIVITY_PR_ACTOR_TYPE_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ACTOR_TYPE_OWNER = 1;
+   */
+  ACTIVITY_PR_ACTOR_TYPE_OWNER = 1,
+
+  /**
+   * @generated from enum value: ACTIVITY_PR_ACTOR_TYPE_CLIENT = 2;
+   */
+  ACTIVITY_PR_ACTOR_TYPE_CLIENT = 2,
+}
+
+/**
+ * Describes the enum delidev.v1.ActivityPRActorType.
+ */
+export const ActivityPRActorTypeSchema: GenEnum<ActivityPRActorType> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_activity, 3);
+
+/**
+ * @generated from enum delidev.v1.ActivityCapability
+ */
+export enum ActivityCapability {
+  /**
+   * @generated from enum value: ACTIVITY_CAPABILITY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ACTIVITY_CAPABILITY_PR_HANDLING_V1 = 1;
+   */
+  PR_HANDLING_V1 = 1,
+}
+
+/**
+ * Describes the enum delidev.v1.ActivityCapability.
+ */
+export const ActivityCapabilitySchema: GenEnum<ActivityCapability> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_activity, 4);
 
 /**
  * @generated from enum delidev.v1.ActivityOccurrenceState
@@ -250,7 +524,7 @@ export enum ActivityOccurrenceState {
  * Describes the enum delidev.v1.ActivityOccurrenceState.
  */
 export const ActivityOccurrenceStateSchema: GenEnum<ActivityOccurrenceState> = /*@__PURE__*/
-  enumDesc(file_delidev_v1_activity, 1);
+  enumDesc(file_delidev_v1_activity, 5);
 
 /**
  * @generated from enum delidev.v1.ActivityJobState
@@ -296,7 +570,7 @@ export enum ActivityJobState {
  * Describes the enum delidev.v1.ActivityJobState.
  */
 export const ActivityJobStateSchema: GenEnum<ActivityJobState> = /*@__PURE__*/
-  enumDesc(file_delidev_v1_activity, 2);
+  enumDesc(file_delidev_v1_activity, 6);
 
 /**
  * @generated from service delidev.v1.ActivityService
