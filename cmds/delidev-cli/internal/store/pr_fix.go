@@ -58,7 +58,10 @@ func (t *Tx) finishPRFixPush(id domain.ID, v domain.PRRemediationAttempt, input 
 	if err != nil {
 		return false, err
 	}
-	if input.Remediation == nil || input.Remediation.Digest() != selection.Digest() || done.PRPush == nil || !done.PRPush.Matches(selection, v.ExecutionID) || done.PRPush.ObservedAt.Before(*v.StartedAt) || done.PRPush.ObservedAt.After(t.now) {
+	// FinishPRRemediation already proves server-observed original assignment,
+	// report ordering and native cleanup. Worker wall time is audit metadata,
+	// not a cross-machine ordering gate; clock skew cannot strand a valid push.
+	if input.Remediation == nil || input.Remediation.Digest() != selection.Digest() || done.PRPush == nil || !done.PRPush.Matches(selection, v.ExecutionID) {
 		return false, nil
 	}
 	if done.PRPush.State == domain.PRPushUncertain {

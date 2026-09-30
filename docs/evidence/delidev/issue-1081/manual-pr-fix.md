@@ -181,3 +181,18 @@ The initial broad race command has now completed unsuccessfully. Alongside the
 previously recorded native fixture failures and Grok timeout, its workspace
 compile also crossed the bridge-source edit. Both later compile failures are
 mixed-source limitations; this run cannot establish a full merged-source result.
+
+## Review repair: Worker clock skew
+
+Manual completion now uses the retained server-observed assignment/report
+ordering and independent cleanup barriers, without comparing Worker wall time
+to server attempt time. Proof identity, exact selection and outcome validation
+remain mandatory; handling audit uses server transaction time. Verified proof
+with Worker clocks 24 hours ahead or behind handles exactly once and releases
+its original owner, while foreign/missing/uncertain proof remains gated.
+
+`go test -race -p 1 ./cmds/delidev-cli/internal/store
+-run 'TestPRFix|TestPRRemediation.*Finish|TestPRRemediation.*Completion'
+-count=3` passed, including the unchanged existing server-report time and
+original assignment contradiction cases. These synthetic retained-state
+fixtures establish ordering policy, not live remote publication.

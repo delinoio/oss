@@ -6,12 +6,13 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Synthetic assignment/checkpoint fixtures verify durable handling rules.
 // They do not claim native or real-account push acceptance.
 func TestPRFixOnlyVerifiedOriginalPushHandlesEvidence(t *testing.T) {
-	for _, scenario := range []string{"verified", "unchanged", "missing", "uncertain", "foreign-attempt", "foreign-selection", "failed-native", "dismissed"} {
+	for _, scenario := range []string{"verified", "worker-clock-slow", "worker-clock-fast", "unchanged", "missing", "uncertain", "foreign-attempt", "foreign-selection", "failed-native", "dismissed"} {
 		t.Run(scenario, func(t *testing.T) {
 			s, _ := openTest(t)
 			f := newRemediationStoreFixture(t, s)
@@ -48,6 +49,7 @@ func TestPRFixOnlyVerifiedOriginalPushHandlesEvidence(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			var workerObservedAt time.Time
 			finished := f.finish(t, a, true, func(j *domain.Job) {
 				var input domain.ExecutionJobInput
 				var done domain.ExecutionCompletion
@@ -57,6 +59,10 @@ func TestPRFixOnlyVerifiedOriginalPushHandlesEvidence(t *testing.T) {
 				input.Remediation = &selection
 				proof := domain.PRPushProof{Version: 1, AttemptID: a.ID, ExecutionID: done.ExecutionID, SelectionDigest: selection.Digest(), State: domain.PRPushVerified, PreviousHead: target.HeadSHA, ResultHead: strings.Repeat("c", 40), ObservedAt: *j.FinishedAt}
 				switch scenario {
+				case "worker-clock-slow":
+					proof.ObservedAt = proof.ObservedAt.Add(-24 * time.Hour)
+				case "worker-clock-fast":
+					proof.ObservedAt = proof.ObservedAt.Add(24 * time.Hour)
 				case "unchanged":
 					proof.State, proof.ResultHead = domain.PRPushUnchanged, target.HeadSHA
 				case "uncertain":
@@ -70,6 +76,7 @@ func TestPRFixOnlyVerifiedOriginalPushHandlesEvidence(t *testing.T) {
 					j.State = domain.JobFailed
 					j.Problem = domain.Fail(domain.Unavailable, "Fixture native failure.", "")
 				}
+				workerObservedAt = proof.ObservedAt
 				if scenario != "missing" {
 					done.PRPush = &proof
 				}
@@ -98,12 +105,16 @@ func TestPRFixOnlyVerifiedOriginalPushHandlesEvidence(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if scenario == "verified" && verifications != 1 || scenario != "verified" && verifications != 0 {
+			verifiedPush := scenario == "verified" || strings.HasPrefix(scenario, "worker-clock-")
+			if verifiedPush && verifications != 1 || !verifiedPush && verifications != 0 {
 				t.Fatal("outcome fabricated or omitted Activity proof", scenario, verifications)
 			}
-			if scenario == "verified" {
+			if verifiedPush {
 				if p.State != domain.PRProblemHandled || p.Handling == nil || p.Handling.AttemptID != a.ID || v.State != domain.PRRemediationFinished {
 					t.Fatal("verified push lost handling", v.State, p.State)
+				}
+				if strings.HasPrefix(scenario, "worker-clock-") && (p.Handling.At.Equal(workerObservedAt) || v.FinishedAt == nil || !p.Handling.At.Equal(*v.FinishedAt)) {
+					t.Fatal("Worker clock replaced server handling audit")
 				}
 			} else {
 				if p.State == domain.PRProblemHandled || p.Handling != nil {
