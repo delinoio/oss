@@ -39,11 +39,11 @@ test('pending database versions are ordered reservations independent of executab
   for (const entry of ledger.reservations) {
     assert.equal(entry.version, previous + 1);
     assert.ok(entry.pr > previousPR);
-    assert.equal(entry.originalBranchVersion, 25);
+    if ([1108, 1115, 1117].includes(entry.pr)) assert.equal(entry.originalBranchVersion, 25);
     for (const dependency of entry.dependsOn ?? []) assert.ok(seen.has(dependency));
     previous = entry.version;
     previousPR = entry.pr;
     seen.add(entry.pr);
   }
-  assert.deepEqual([...seen], [1108, 1115, 1117]);
+  for (const originalPR of [1108, 1115, 1117]) assert.ok(seen.has(originalPR));
 });

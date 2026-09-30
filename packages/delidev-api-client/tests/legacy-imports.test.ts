@@ -28,6 +28,9 @@ it("retains the legacy aggregate descriptor for reflection registries", () => {
   const layout = JSON.parse(readFileSync(new URL("../../../scripts/delidev/proto-layout.json", import.meta.url), "utf8"));
   for (const [kind, actual] of [["message", file_delidev_v1_delidev.messages], ["enum", file_delidev_v1_delidev.enums], ["service", file_delidev_v1_delidev.services]] as const) {
     const expected = Object.entries(layout.declarations).filter(([, value]) => (value as { kind: string }).kind === kind).map(([name]) => name);
-    expect(actual.map(value => value.name)).toEqual(expected);
+    // New service-owned declarations append after the historical order without
+    // requiring this compatibility test or the relocation manifest to change.
+    expect(actual.slice(0, expected.length).map(value => value.name)).toEqual(expected);
+    expect(new Set(actual.map(value => value.name)).size).toBe(actual.length);
   }
 });
