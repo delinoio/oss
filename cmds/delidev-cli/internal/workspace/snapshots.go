@@ -352,6 +352,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			return result, ResultUncertain()
 		}
 		result.Snapshot = &metadata
+		result.SourceBytes = snap.SourceBytes
 		switch r.Action {
 		case StorageRestore:
 			result.WorkspaceState = domain.WorkspacePresent
@@ -426,6 +427,13 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			metadata.Deleted = true
 			result.Snapshot = &metadata
 		}
+		retained, err := m.snapshotBytes(ctx, r.Preparation.SessionID)
+		if err != nil {
+			// Delete or restore may already have committed native effects. A
+			// missing inventory cannot become a successful zero-cost result.
+			return result, ResultUncertain()
+		}
+		result.RetainedSnapshotBytes = retained
 		result.CleanupVerified = true
 	}
 	result.CapacityBytes, result.FreeBytesAfter = storageCapacity(m.Root)

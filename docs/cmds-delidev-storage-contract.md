@@ -480,7 +480,10 @@ retirement at Worker startup; it never grants further native removal.
 
 Usage results separate exact logical source bytes, all retained published snapshot
 bytes, confirmed logical removed source bytes and optional measured filesystem
-capacity/free bytes before/after. All byte counts use canonical decimal strings.
+capacity/free bytes before/after. Successful inspect, restore and delete results
+use the inspected snapshot's pinned source bytes and the session's post-action
+retained inventory, excluding other sessions. Deleting a snapshot contributes no
+confirmed live-source removal. All byte counts use canonical decimal strings.
 The independent Git stores can cost more than the removed linked worktree. These
 logical counts never imply positive physical reclamation: compression, shared
 blocks and concurrent allocations prevent attribution from byte subtraction.
