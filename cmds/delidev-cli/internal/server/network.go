@@ -115,6 +115,9 @@ func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[p
 	requestID := domain.ID(req.Msg.Mutation.RequestId)
 	result, found, err := s.Store.Replay(ctx, requestID, "network.save", bound)
 	if err == nil {
+		_, err = s.reconcileNetworkDeleteIntent(ctx)
+	}
+	if err == nil {
 		err = s.reconcileNetworkSaveIntent(ctx, requestID, bound)
 	}
 	var prior domain.NetworkProfile
@@ -242,6 +245,12 @@ func (s *Service) SelectNetworkProfile(ctx context.Context, req *connect.Request
 		return nil, rpc.Error(err, correlation)
 	}
 	defer unlock()
+	if _, _, err := s.Store.Replay(ctx, domain.ID(req.Msg.Mutation.RequestId), "network.select", bound); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	if _, err := s.reconcileNetworkDeleteIntent(ctx); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.Mutation.RequestId), "network.select", bound, func(tx *store.Tx) (any, error) {
 		if err := tx.Authorize(); err != nil {
 			return nil, err
@@ -308,35 +317,39 @@ func (s *Service) DeleteNetworkProfile(ctx context.Context, req *connect.Request
 		return nil, rpc.Error(err, correlation)
 	}
 	defer unlock()
-	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.Mutation.RequestId), "network.delete", input, func(tx *store.Tx) (any, error) {
-		if err := tx.Authorize(); err != nil {
-			return nil, err
-		}
-		selected, err := tx.NetworkProfileSelected(input.ID)
-		if err != nil {
-			return nil, err
-		}
-		if selected {
-			return nil, domain.Fail(domain.Conflict, "The profile is selected by a server or Worker route.", "Explicitly change every selection before deletion.")
-		}
-		err = tx.Delete(domain.NetworkProfileKind, input.ID, input.Revision)
-		return networkReceipt{ID: input.ID, Deleted: true}, err
-	})
+	requestID := domain.ID(req.Msg.Mutation.RequestId)
+	result, found, err := s.Store.Replay(ctx, requestID, "network.delete", input)
+	var recovered *networkDeleteIntent
 	if err == nil {
-		var vault accountSecrets
-		vault, err = s.secrets()
-		if err == nil {
-			var refs []credentials.Ref
-			refs, err = vault.UnremovedReferences(ctx, input.ID)
-			for _, ref := range refs {
-				if err != nil {
-					break
+		recovered, err = s.reconcileNetworkDeleteIntent(ctx)
+	}
+	// A newly authorized actor can complete an accepted pending deletion with
+	// its own receipt; it cannot replay or take over the historical actor's ID.
+	completed := recovered != nil && recovered.Input.ID == input.ID && recovered.Input.Revision == input.Revision
+	if err == nil && !found && !completed {
+		err = s.Store.Read(ctx, func(tx *store.Tx) error { return networkDeleteAllowed(tx, input) })
+	}
+	if err == nil && !completed {
+		err = s.writeNetworkDeleteIntent(networkDeleteIntent{Version: 1, ServerID: s.Identity.ServerID, RequestID: requestID, Input: input})
+	}
+	if err == nil && !found {
+		result, err = s.Store.Mutate(ctx, requestID, "network.delete", input, func(tx *store.Tx) (any, error) {
+			if err := tx.Authorize(); err != nil {
+				return nil, err
+			}
+			if !completed {
+				if err := networkDeleteAllowed(tx, input); err != nil {
+					return nil, err
 				}
-				if ref.Purpose == credentials.NetworkProxy {
-					err = vault.Delete(ctx, ref)
+				if err := tx.Delete(domain.NetworkProfileKind, input.ID, input.Revision); err != nil {
+					return nil, err
 				}
 			}
-		}
+			return networkReceipt{ID: input.ID, Deleted: true}, nil
+		})
+	}
+	if err == nil && !completed {
+		_, err = s.reconcileNetworkDeleteIntent(ctx)
 	}
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
@@ -347,6 +360,27 @@ func (s *Service) DeleteNetworkProfile(ctx context.Context, req *connect.Request
 		return nil, rpc.Error(err, correlation)
 	}
 	return connect.NewResponse(&pb.DeleteNetworkProfileResponse{Resource: reply.Resource, RequestId: reply.RequestId, Replayed: reply.Replayed, Deleted: reply.Deleted}), nil
+}
+
+func networkDeleteAllowed(tx *store.Tx, input integrationInput) error {
+	if err := tx.Authorize(); err != nil {
+		return err
+	}
+	record, err := tx.Get(domain.NetworkProfileKind, input.ID)
+	if err != nil {
+		return err
+	}
+	if record.Revision != input.Revision {
+		return networkConflict()
+	}
+	selected, err := tx.NetworkProfileSelected(input.ID)
+	if err != nil {
+		return err
+	}
+	if selected {
+		return domain.Fail(domain.Conflict, "The profile is selected by a server or Worker route.", "Explicitly change every selection before deletion.")
+	}
+	return nil
 }
 
 func (s *Service) readNetworkRoute(ctx context.Context, machine domain.ID) (store.Record, domain.NetworkRoute, error) {
