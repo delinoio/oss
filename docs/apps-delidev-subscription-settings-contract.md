@@ -8,6 +8,10 @@ Issue #1143 owns the UI-first AI Subscription redesign in `apps/delidev/src/acco
 
 React/TypeScript presentation uses the existing system font, Settings colors, 40px/24px shell padding and controls at least 40px high. Content is capped at 1120px. One thin-bordered list with 12px corners contains flat rows with a 40px mark, provider/alias, separate connection state, up to two ordered quota windows and Refresh/Disconnect/ellipsis controls. Your subscriptions precedes Connect a subscription and the initially collapsed Advanced settings disclosure. Container queries wrap identity/actions and quotas below 1050px content width. Provider cards use three columns at 900px+, two at 600px+ and one below 600px; the existing compact navigation remains intact.
 
+## Users and Operators
+
+DeliDev users manage saved subscription account metadata on their selected server. Server operators own account authorization and supported lifecycle capabilities. Future native-provider adapters must establish that authority before the frontend exposes live operations.
+
 ## Interfaces and Contracts
 
 The frontend catalog uses typed ChatGPT / For Codex, Claude / For Claude Code and Grok / For Grok Build descriptors in that order. All are currently planned with disabled Coming soon controls; Grok has no schedule or waitlist. Local SVG marks come from the pinned MIT LobeHub source recorded beside the assets. Existing accounts have no explicit native brand or masked identity fields in the generated server contract: production rows use generic marks and omit masked identity, regardless of editable names. Presentation fixtures may supply explicit branded/masked example identities independently of wire resources.
@@ -20,17 +24,34 @@ Production supplies no subscription lifecycle callbacks because the generated se
 
 Each window preserves its ID, order, remaining fraction, observation time and reset time. Finite fractions within [0, 1] become percentages and native progress elements with text equivalents; zero is observed zero rather than unknown. Missing/invalid values and future observation times have no valid bar. Observations older than five minutes, future observation times or elapsed resets are stale. Unknown, stale, failed and unsupported remain distinct; retained last-success values can remain visible with stale/failed text. An elapsed reset never implies recovery. No provider/window values are pooled. Refresh failure presentation retains the original successful windows/time supplied by its owner. An active surface schedules one presentation-only expiry at the next known freshness/reset boundary, without network requests; hidden/disposed surfaces clear it.
 
-## Storage and Security
+## Storage
 
-All state belongs to the current Settings opening. Filters, details, Advanced state, drafts, confirmations and retry presentation survive category changes within that opening and are discarded on close/Escape/navigation away under #1138. Accepted server/Worker effects continue; opening disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact. No credentials, identity fixtures or quota values enter query keys, logs, browser storage, analytics or background polling. The existing native dialog owns focus containment, Escape and opener restoration. Ellipsis/confirmation Escape is handled locally before reaching the parent dialog; icon actions have accessible labels.
+All state belongs to the current Settings opening. Filters, details, Advanced state, drafts, confirmations and retry presentation survive category changes within that opening and are discarded on close/Escape/navigation away under #1138. Accepted server/Worker effects continue; opening disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact.
+
+## Security
+
+No credentials, identity fixtures or quota values enter query keys, logs, browser storage, analytics or background polling. The existing native dialog owns focus containment, Escape and opener restoration. Ellipsis/confirmation Escape is handled locally before reaching the parent dialog; icon actions have accessible labels.
+
+## Logging
+
+Read and mutation failures use the existing typed, redacted transport diagnostics and Problem presentation. This UI stage adds no provider telemetry or log stream. Operational troubleshooting must retain stable action/error classifications without recording credentials, masked identities, quota values or original request payloads.
 
 ## Build and Test
 
 Run `pnpm test` from `apps/delidev`, after generating required client inputs and hydrating consumed LFS assets. Presentation quota/callback/state fixtures, generated router/account regression fixtures, Settings disposal checks and the feature-specific temporary Go-server integration cover the UI boundary. Bundle original mark notices with frontend output; remove generated `dist` directories from the final worktree. Record browser and native visual/keyboard evidence separately under `docs/evidence/delidev/issue-1143/`. Component/browser fixture success establishes no real-provider login, native quota collection or native platform acceptance.
 
+## Dependencies and Integrations
+
+Use the existing React/TypeScript, Rsbuild, React Query and generated Connect Query workspace dependencies without adding packages. Integrate with the existing Account resource, provider inventory, bounded provider metadata reads and Settings-local mutation registry. Native provider lifecycle/quota follow-ups remain separate from presentation fixtures and require generated capabilities/operations.
+
+## Change Triggers
+
+Update this contract, the desktop contract, project index and owning frontend AGENTS rules when hierarchy, lifetime, identity, quota or action-authority boundaries change. Keep the docs catalog current for ownership changes. Imported mark changes require pinned source/modification notices and the repository license contract to stay synchronized. A future wire change must update its protocol and API-client contracts alongside generated sources.
+
 ## References
 
 - [Project index](project-delidev.md)
+- [Repository defaults](repository-defaults.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Credentials](cmds-delidev-credentials-contract.md)
 - [Protocol](protos-delidev-v1-contract.md)

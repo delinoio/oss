@@ -2,7 +2,7 @@
 
 ## Revision and scope
 
-Issue #1143 implementation starts from main revision `74701b8948694e2bf8f8ba6d07e596c2d2f358a7` on 2026-09-30. This record travels with the implementation commit. It covers the frontend UI stage: compact independent account/quota rows, ordered provider catalog, collapsed Advanced metadata workflows, generated-contract gating and Settings-opening disposal. Native Codex lifecycle and quota collection remain #1095/#1096 work; no Claude/Grok native support is asserted.
+Issue #1143 implementation starts from main revision `74701b8948694e2bf8f8ba6d07e596c2d2f358a7` on 2026-09-30. Source implementation is commit `9c1cff4d1784258df1f3d4528480fc4bfacf66ab`; test-only correction `5b8ce7bcd38f9fbeab9859be6beb8d844eeef808` scopes provider selectors to the subscription panel. This record travels with the change. It covers the frontend UI stage: compact independent account/quota rows, ordered provider catalog, collapsed Advanced metadata workflows, generated-contract gating and Settings-opening disposal. Native Codex lifecycle and quota collection remain #1095/#1096 work; no Claude/Grok native support is asserted.
 
 The inspected current generated account contract has no server-owned native brand, masked identity or friendly quota label fields. Production retains generic account marks, window IDs and absent masked identities; branded/masked examples occur only in presentation fixtures. Imported catalog marks retain their pinned MIT license/source notices.
 
@@ -19,6 +19,11 @@ The inspected current generated account contract has no server-owned native bran
 - A two-worker run with temporary 5-second async query waits and 15-second test budgets passed 971 tests; seven real-server suites failed setup (eight skipped cases). Go reported missing shared toolchain sources and build-cache files. An issue-owned module/build cache and bounded Go parallelism isolate the subsequent run; assertions and committed runner configuration remain unchanged.
 
 - Remaining pipeline stages executed independently: bundle dry-run tests 8/8 passed; desktop launch/asset-preparation tests 16/16 passed; widget fixture checks passed; `pnpm build` passed. The production output contains byte-identical original mark license/source notices. These checks exercise fixtures/builds and do not launch the packaged native application.
+
+- With isolated Go caches and one worker, all seven server suites started successfully and the suite passed 978/979 tests. The added search assertion failed because it matched retained hidden API controls; precise subscription-panel/filter scoping fixed the selector. Its full real-server workflow subsequently passed with the committed default async wait budget.
+
+- Final complete `pnpm test` from `apps/delidev`, at source/test revision `5b8ce7bcd38f9fbeab9859be6beb8d844eeef808`: **passed**, exit 0. All 87 Vitest files / 979 tests passed, followed by 8 bundle tests, 16 desktop launch/asset tests, widget checks and the production build. The run used `GOMAXPROCS=2`, `GOFLAGS=-p=2`, issue-owned temporary `GOMODCACHE`/`GOCACHE`, and temporary Vitest two-worker / 15-second test settings plus a five-second Testing Library async wait budget. Assertions and explicit test budgets were preserved; the committed runner/setup files were restored afterward. This is not a passing unrestricted/default-timing run.
+- Removed generated `apps/delidev/dist` and `packages/delidev-api-client/dist` after validation. No generated distribution is tracked or retained in the final worktree.
 
 ## Browser presentation evidence
 
