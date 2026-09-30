@@ -3,6 +3,7 @@ package server
 
 import (
 	"bytes"
+	"container/list"
 	"context"
 	"math"
 	"net/http"
@@ -33,7 +34,7 @@ type terminalOutputRing struct {
 	sequence       uint64
 	bytes          int
 	chunks         []terminalOutputChunk
-	touched        time.Time
+	order          *list.Element
 }
 
 // A service-wide 128-ring limit bounds all retained output to 64 MiB. Eviction
@@ -44,19 +45,17 @@ func (s *Service) terminalRing(id domain.ID) *terminalOutputRing {
 		s.terminalOutputs = map[domain.ID]*terminalOutputRing{}
 	}
 	if ring := s.terminalOutputs[id]; ring != nil {
-		ring.touched = time.Now()
+		s.terminalOutputOrder.MoveToBack(ring.order)
 		return ring
 	}
 	if len(s.terminalOutputs) >= 128 {
-		var oldest domain.ID
-		for key, ring := range s.terminalOutputs {
-			if oldest == "" || ring.touched.Before(s.terminalOutputs[oldest].touched) {
-				oldest = key
-			}
-		}
-		delete(s.terminalOutputs, oldest)
+		oldest := s.terminalOutputOrder.Front()
+		delete(s.terminalOutputs, oldest.Value.(domain.ID))
+		s.terminalOutputOrder.Remove(oldest)
 	}
-	ring := &terminalOutputRing{epoch: domain.NewID(), touched: time.Now()}
+	// Clock resolution varies across hosts. Keep exact access order rather than
+	// letting equal timestamps and map iteration choose an arbitrary live ring.
+	ring := &terminalOutputRing{epoch: domain.NewID(), order: s.terminalOutputOrder.PushBack(id)}
 	s.terminalOutputs[id] = ring
 	return ring
 }

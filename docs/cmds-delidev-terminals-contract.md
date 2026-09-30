@@ -132,8 +132,10 @@ claim acknowledgement without inventing a process.
 Native process journals retain the existing independent ownership/cleanup proof.
 
 Output is ephemeral: each server ring retains at most 512 KiB and 1,024 frames, with 128 rings
-and LRU eviction bounding retention to 64 MiB. Frames are at most 32 KiB. Worker
-output uses a bounded 64-frame queue and backpressure. Identical most-recent
+and LRU eviction bounding retention to 64 MiB. Ring eviction uses exact
+serialized access order, independent of host clock resolution and timestamp
+ties. Frames are at most 32 KiB. Worker output uses a bounded 64-frame queue
+and backpressure. Identical most-recent
 frame retries are acknowledged; changed bytes or reordered frames fail.
 Eviction, server restart, missing prefixes, forward cursors and abandoned exit
 output expose a gap. A fresh cursorless attachment to an empty ring also exposes

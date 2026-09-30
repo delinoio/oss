@@ -167,3 +167,20 @@ func TestTerminalOutputDiscardedRingExposesFreshAttachmentGap(t *testing.T) {
 		})
 	}
 }
+
+func TestTerminalOutputEvictionPreservesExactAccessOrder(t *testing.T) {
+	service := &Service{}
+	first, second := domain.NewID(), domain.NewID()
+	retained := service.terminalRing(first)
+	service.terminalRing(second)
+	for i := 0; i < 126; i++ {
+		service.terminalRing(domain.NewID())
+	}
+	if service.terminalRing(first) != retained {
+		t.Fatal("touch replaced original output ownership")
+	}
+	service.terminalRing(domain.NewID())
+	if service.terminalOutputs[first] != retained || service.terminalOutputs[second] != nil || len(service.terminalOutputs) != 128 || service.terminalOutputOrder.Len() != 128 {
+		t.Fatal("bounded eviction did not preserve the most recently observed ring")
+	}
+}
