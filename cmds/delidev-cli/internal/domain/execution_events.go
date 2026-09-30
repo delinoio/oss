@@ -456,6 +456,7 @@ func (e ExecutionEvent) Validate() error {
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
 	Subagents              SubagentState               `json:"subagents,omitempty"`
+	NativeHistory          NativeHistoryMode           `json:"native_history,omitempty"`
 	GrokUserMessageID      ID                          `json:"grok_user_message_id,omitempty"`
 	GrokStop               *GrokStopObservation        `json:"grok_stop,omitempty"`
 	GrokTerminal           *GrokTextTerminal           `json:"grok_terminal,omitempty"`

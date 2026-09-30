@@ -47,5 +47,5 @@ func inspectCompletedOpenCodeCheckpoint(ctx context.Context, root string, ref Co
 		return err
 	}
 	home := filepath.Join(root, "runtimes", string(completion.ExecutionID))
-	return opencode.InspectReplacementWorkspace(ctx, home, saved.Native, saved.NativeReference, cwd, nativeRoot, openCodeWorkspaceReferences(ref.Manifest)...)
+	return opencode.InspectReplacementRoot(ctx, home, saved.Native, saved.NativeReference, cwd, nativeRoot, openCodeWorkspaceReferences(ref.Manifest)...)
 }

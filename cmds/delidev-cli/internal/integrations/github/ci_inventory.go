@@ -117,13 +117,21 @@ func (c *Client) readCIInventory(ctx context.Context, token []byte, repository d
 	var result domain.PullRequestCI
 	var binding ciBinding
 	head, merge := ciAccumulator{}, ciAccumulator{}
+	queue := ciQueueAccumulator{}
 	for page := 0; page < 5; page++ {
-		node, err := c.readCIPage(ctx, token, item.NodeID, head.after, merge.after)
+		node, err := c.readCIPage(ctx, token, item.NodeID, head.after, merge.after, queue.after, queue.checks.after)
 		if err != nil {
 			return result, err
 		}
 		current, headPage, mergePage, err := parseCINode(node, repository, item)
 		if err != nil {
+			return result, err
+		}
+		queuePage, err := parseCIQueue(node, repository, item, current.inMergeQueue)
+		if err != nil {
+			return result, err
+		}
+		if err := queue.append(queuePage, item); err != nil {
 			return result, err
 		}
 		if page == 0 {
@@ -139,12 +147,13 @@ func (c *Client) readCIInventory(ctx context.Context, token []byte, repository d
 				return result, err
 			}
 		}
-		if head.done && (mergePage == nil || merge.done) {
+		if head.done && (mergePage == nil || merge.done) && queue.complete() {
 			result.Head = head.rollup
 			if mergePage != nil {
 				result.TestMerge = &merge.rollup
 			}
 			result.NativeMergeability, result.InMergeQueue = binding.mergeability, binding.inMergeQueue
+			result.MergeQueue = queue.queue
 			return result, nil
 		}
 	}

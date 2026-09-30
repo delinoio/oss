@@ -27,6 +27,7 @@ func workflowClientFixture(t *testing.T, mode string) *Client {
 		contexts := node["statusCheckRollup"].(map[string]any)["contexts"].(map[string]any)
 		row := contexts["nodes"].([]any)[0].(map[string]any)
 		row["checkSuite"].(map[string]any)["commit"].(map[string]any)["oid"] = strings.Repeat("c", 40)
+		row["checkSuite"].(map[string]any)["workflowRun"].(map[string]any)["checkSuite"].(map[string]any)["commit"].(map[string]any)["oid"] = strings.Repeat("c", 40)
 		row["id"] = "CHECK_merge"
 		if mode == "success" || mode == "rerun-success" {
 			row["conclusion"] = "SUCCESS"
@@ -90,7 +91,7 @@ func workflowClientFixture(t *testing.T, mode string) *Client {
 				file["path"] = ".github/workflows/reusable.yml"
 				file["repositoryFileUrl"] = "https://github.com/renamed/source/blob/" + sha + "/.github/workflows/reusable.yml"
 			}
-			if mode == "wrong-sha" || mode == "source-drift" && suiteReads > 1 {
+			if mode == "wrong-sha" || mode == "source-drift" && suiteReads > 1 || mode == "final-source-drift" && suiteReads == 3 {
 				file["repositoryFileUrl"] = "https://github.com/renamed/source/blob/" + strings.Repeat("e", 40) + "/.github/workflows/required.yml"
 			}
 			if mode == "wrong-source" {
@@ -159,7 +160,7 @@ func workflowClientFixture(t *testing.T, mode string) *Client {
 			}
 		case "/repos/renamed/source/contents/.github/workflows/required.yml", "/repos/renamed/source/contents/.github/workflows/reusable.yml", "/repos/other/source/contents/.github/workflows/required.yml":
 			contentReads++
-			if r.URL.Query().Get("ref") != strings.Repeat("d", 40) && mode != "wrong-sha" && mode != "source-drift" {
+			if r.URL.Query().Get("ref") != strings.Repeat("d", 40) && mode != "wrong-sha" && mode != "source-drift" && mode != "final-source-drift" {
 				t.Fatal("mutable source ref")
 			}
 			body = map[string]any{"type": "file", "path": strings.TrimPrefix(r.URL.Path, "/repos/"+strings.Split(r.URL.Path, "/")[2]+"/source/contents/"), "sha": strings.Repeat("f", 40)}
@@ -245,6 +246,14 @@ func TestPinnedWorkflowProviderProvesRenamedNumericSourceAndCurrentOutcomes(t *t
 				t.Fatal("immutable identity lost")
 			}
 		})
+	}
+}
+
+func TestPinnedWorkflowFinalBracketRejectsSourceDrift(t *testing.T) {
+	c := workflowClientFixture(t, "final-source-drift")
+	v, err := c.QueryRepository(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryCI, Number: "17"})
+	if domain.SafeError(err).Code != domain.Conflict || v.CI != nil {
+		t.Fatal("final workflow drift published earlier test-merge proof", err, v.CI)
 	}
 }
 
@@ -468,7 +477,7 @@ func TestOversizedOptionalWorkflowProofPreservesOrdinaryCI(t *testing.T) {
 }
 
 func TestOptionalWorkflowDeadlinePreservesRepeatedOrdinaryCIAndJoinsReads(t *testing.T) {
-	for _, mode := range []string{"source", "run", "jobs", "second-pass"} {
+	for _, mode := range []string{"source", "run", "jobs", "second-pass", "final-pass"} {
 		t.Run(mode, func(t *testing.T) {
 			c := workflowAndOrdinaryClientFixture(t)
 			original := c.http.Transport
@@ -480,7 +489,7 @@ func TestOptionalWorkflowDeadlinePreservesRepeatedOrdinaryCIAndJoinsReads(t *tes
 				if r.URL.Path == "/repositories/11" {
 					sourceReads++
 				}
-				block := mode == "source" && r.URL.Path == "/repositories/11" || mode == "run" && r.URL.Path == "/repos/fixture-owner/repo/actions/runs/91" || mode == "jobs" && r.URL.Path == "/repos/fixture-owner/repo/actions/runs/91/attempts/1/jobs" || mode == "second-pass" && r.URL.Path == "/repositories/11" && sourceReads > 2
+				block := mode == "source" && r.URL.Path == "/repositories/11" || mode == "run" && r.URL.Path == "/repos/fixture-owner/repo/actions/runs/91" || mode == "jobs" && r.URL.Path == "/repos/fixture-owner/repo/actions/runs/91/attempts/1/jobs" || mode == "second-pass" && r.URL.Path == "/repositories/11" && sourceReads > 2 || mode == "final-pass" && r.URL.Path == "/repositories/11" && sourceReads > 4
 				if !block {
 					return original.RoundTrip(r)
 				}

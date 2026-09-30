@@ -68,6 +68,7 @@ Each project must have one project index document and one or more domain contrac
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
+- [Native Codex model observations (pending)](cmds-delidev-native-models-contract.md)
 - [API provider activation and new-work admission](cmds-delidev-provider-activation-contract.md)
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)

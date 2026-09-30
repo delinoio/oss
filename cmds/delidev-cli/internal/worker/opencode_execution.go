@@ -130,7 +130,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	defer cancelBeforeAcceptance()
 	nativeConfig := opencode.APIExecutionConfig{
 		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "opencode")},
-		Workspace: lease.WorkingDirectory(), NativeRoot: nativeRoot, ServerOrigin: connection.Credential.Endpoint, Token: token,
+		Workspace: lease.WorkingDirectory(), Root: nativeRoot, ServerOrigin: connection.Credential.Endpoint, Token: token,
 		References: openCodeWorkspaceReferences(manifest),
 		Settings:   requested.Session, Instructions: requested.Instructions, Rejection: requested.Rejection,
 	}
@@ -295,28 +295,16 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}
 }
 
-// The lease has independently verified project Git ownership. General Chat
-// must also exclude enclosing Git metadata; a native message cannot nominate
-// its own root. Additional repositories use separately verified native local
-// references; Windows global project spelling still needs its own profile.
-func openCodeWorkspaceRoot(manifest workspace.Manifest, cwd string) (string, error) {
+// The accepted manifest and owned lease select the closed root profile. Native
+// metadata cannot nominate filesystem authority or replace enclosing Git roots.
+func openCodeWorkspaceRoot(manifest workspace.Manifest, cwd string) (opencode.WorkspaceRoot, error) {
 	if cwd != manifest.PrimaryPath || !filepath.IsAbs(cwd) || manifest.Type == domain.GeneralChat && len(manifest.Repositories) != 0 {
-		return "", workspace.ResultUncertain()
+		return opencode.WorkspaceRoot{}, workspace.ResultUncertain()
 	}
-	if manifest.Type != domain.GeneralChat {
-		return cwd, nil
+	if manifest.Type == domain.GeneralChat {
+		return opencode.GlobalWorkspaceRoot(cwd)
 	}
-	if runtime.GOOS == "windows" {
-		return "", domain.Fail(domain.Unsupported, "OpenCode General Chat requires verified native Windows root identity.", "Preserve the prepared workspace; do not infer native path ownership.")
-	}
-	for directory := cwd; ; directory = filepath.Dir(directory) {
-		if _, err := os.Lstat(filepath.Join(directory, ".git")); !errors.Is(err, os.ErrNotExist) {
-			return "", workspace.ResultUncertain()
-		}
-		if filepath.Dir(directory) == directory {
-			return directory, nil
-		}
-	}
+	return opencode.GitWorkspaceRoot(cwd, cwd)
 }
 
 // Call only after the complete manifest and original workspace lease agree.
