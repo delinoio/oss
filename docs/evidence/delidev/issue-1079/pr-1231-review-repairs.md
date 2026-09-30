@@ -114,6 +114,19 @@ The completed source-`46452512` run is recorded independently in
 
 ## Limits
 
+The final pre-push repair inventory found three additional Codex findings posted
+while local validation was running: aggregate copy budgets, accounting for
+inspect/restore/delete, and admission at the 4,096-snapshot capacity. Their threads
+remain unhandled for the next scheduled one-shot repair pass:
+
+- [Aggregate copy budget](https://github.com/delinoio/oss/pull/1231#discussion_r4144674918).
+- [Read/removal accounting](https://github.com/delinoio/oss/pull/1231#discussion_r4144674931).
+- [Snapshot capacity admission](https://github.com/delinoio/oss/pull/1231#discussion_r4144674940).
+
+The previous head's Windows Worker check and aggregate CI Result remain failed;
+a new push requires new CI and review evidence. This pass does not claim merge
+readiness or that the additional findings are resolved.
+
 No frontend or protocol source changed in this pass. Their prior full validation
 belongs to the source revisions in the preceding records. New tests use isolated
 temporary repositories/state and controlled local children. No real account,
