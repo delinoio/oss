@@ -119,6 +119,12 @@ claim creation grants at most one writer.
 After native and workspace cleanup join, an exclusive atomic
 `compaction-checkpoints/<action-id>.json` file binds server/device/instance/job and exact assignment revision, canonical
 assignment digest, original assignment/completion and native checkpoint/reference.
+Checkpoint v2 also pins canonical registration and command claim digests. The
+original private claims must survive with the same action, original execution,
+registration request and credential digest before native restoration. Neither the
+outer completed journal nor native snapshot can manufacture missing claim proof.
+Unproven v1 checkpoints remain preserved and recovery-required; no automatic file
+upgrade, claim regeneration or native resend adopts them.
 It is bounded to 10 MiB. A successor requires independent server-pinned digests,
 the exact original finished/reported Worker journal and original binding/publication
 journals; reading or filename discovery cannot create authority. Include these

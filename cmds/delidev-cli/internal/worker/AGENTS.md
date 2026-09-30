@@ -484,4 +484,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Compaction registration and send claims are create-once private files. Existing complete or partial claims always require recovery, including when the outer job journal is missing; no identical retry, replacement write or concurrent loser may gain another native send.
 
+- Compaction checkpoint v2 pins the canonical registration and command claim digests. Before native restoration, require both private original claims and their exact action, execution, registration-request and credential-digest join. Preserve unproven v1 files for recovery; never synthesize or upgrade missing claims.
+
 - Verified settled Claude failures may retain v2 checkpoints only with correlated original input, eligible inline history, unchanged permission, acknowledged settled callbacks, clean original EOF and independently confirmed native/workspace cleanup. Preserve failure and paused dispatch; only explicit Resume may claim a fresh execution for the oldest new input. Never resend the failed input, tools or replies. Lost-report recovery compares original immutable journals/checkpoint/history without native work, preserves the failed outcome and remains paused. Aborted/Stop, changed-permission and unproved child/background histories stay excluded; never upgrade accepted v1 history.

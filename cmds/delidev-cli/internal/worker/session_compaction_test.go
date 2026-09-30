@@ -283,3 +283,110 @@ func TestCompactionCommandClaimHasOneConcurrentWriter(t *testing.T) {
 		t.Fatal("native send claim had multiple writers", successes.Load())
 	}
 }
+
+func TestCompactionCheckpointRequiresOriginalRegistrationAndCommandClaims(t *testing.T) {
+	for _, scenario := range []string{"original", "missing-registration", "missing-command", "changed-registration", "changed-command", "partial-registration", "partial-command", "foreign-action", "foreign-execution", "foreign-command-action", "foreign-command-execution", "missing-request", "foreign-request", "duplicate-request", "foreign-credential", "invalid-credential", "legacy-checkpoint", "missing-digest", "symlink-command"} {
+		t.Run(scenario, func(t *testing.T) {
+			root, input := workerCompactionInput(t)
+			p := sessionCompactionCheckpoint{Version: compactionCheckpointVersion, JobID: domain.NewID(), Input: input}
+			registration := sessionCompactionRegistration{ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, RequestID: domain.NewID(), CredentialDigest: strings.Repeat("ab", 32)}
+			command := sessionCompactionCommand{ActionID: registration.ActionID, ExecutionID: registration.ExecutionID, RegistrationRequestID: registration.RequestID, CredentialDigest: registration.CredentialDigest}
+			p.RegistrationDigest, p.CommandDigest = compactionClaimDigest(registration), compactionClaimDigest(command)
+			if err := writeCompactionClaim(root, p.JobID, compactionRegistrationClaim, registration); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeCompactionClaim(root, p.JobID, compactionCommandClaim, command); err != nil {
+				t.Fatal(err)
+			}
+			directory := filepath.Join(root, "jobs", string(p.JobID))
+			registrationPath, commandPath := filepath.Join(directory, string(compactionRegistrationClaim)), filepath.Join(directory, string(compactionCommandClaim))
+			mutated := false
+			switch scenario {
+			case "missing-registration", "missing-command":
+				path := registrationPath
+				if scenario == "missing-command" {
+					path = commandPath
+				}
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			case "changed-registration", "changed-command":
+				path := registrationPath
+				if scenario == "changed-command" {
+					path = commandPath
+				}
+				if err := security.WriteAtomic(path, []byte(`{}`)); err != nil {
+					t.Fatal(err)
+				}
+			case "partial-registration", "partial-command":
+				path := registrationPath
+				if scenario == "partial-command" {
+					path = commandPath
+				}
+				if err := security.WriteAtomic(path, []byte(`{"action_id":`)); err != nil {
+					t.Fatal(err)
+				}
+			case "foreign-action":
+				registration.ActionID, command.ActionID = domain.NewID(), domain.NewID()
+				mutated = true
+			case "foreign-execution":
+				registration.ExecutionID = domain.NewID()
+				command.ExecutionID = registration.ExecutionID
+				mutated = true
+			case "foreign-command-action":
+				command.ActionID = domain.NewID()
+				mutated = true
+			case "foreign-command-execution":
+				command.ExecutionID = domain.NewID()
+				mutated = true
+			case "missing-request":
+				registration.RequestID, command.RegistrationRequestID = "", ""
+				mutated = true
+			case "foreign-request":
+				command.RegistrationRequestID = domain.NewID()
+				mutated = true
+			case "duplicate-request":
+				registration.RequestID, command.RegistrationRequestID = input.ActionID, input.ActionID
+				mutated = true
+			case "foreign-credential":
+				command.CredentialDigest = strings.Repeat("cd", 32)
+				mutated = true
+			case "invalid-credential":
+				registration.CredentialDigest, command.CredentialDigest = strings.Repeat("AB", 32), strings.Repeat("AB", 32)
+				mutated = true
+			case "legacy-checkpoint":
+				p.Version = 1
+			case "missing-digest":
+				p.CommandDigest = ""
+			case "symlink-command":
+				if err := os.Remove(commandPath); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(registrationPath, commandPath); err != nil {
+					t.Skip("fixture cannot create a symlink", err)
+				}
+			}
+			if mutated {
+				// Re-pin fixture hashes to exercise identity joins independently of
+				// byte hashes. Production also checks the server's checkpoint pin.
+				if err := writeJSON(registrationPath, registration); err != nil {
+					t.Fatal(err)
+				}
+				if err := writeJSON(commandPath, command); err != nil {
+					t.Fatal(err)
+				}
+				p.RegistrationDigest, p.CommandDigest = compactionClaimDigest(registration), compactionClaimDigest(command)
+			}
+			err := readSessionCompactionClaims(root, p)
+			if scenario == "original" {
+				if err != nil {
+					t.Fatal("original retained claims lost their metadata proof", err)
+				}
+			} else if domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("incomplete or foreign claims gained checkpoint authority", err)
+			}
+			// These are metadata-only fixtures; they contain no native checkpoint
+			// and cannot establish native restoration or process-replacement proof.
+		})
+	}
+}

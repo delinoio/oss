@@ -35,12 +35,17 @@ type sessionCompactionCheckpoint struct {
 	AssignmentRevision uint64                        `json:"assignment_revision"`
 	InstanceID         domain.ID                     `json:"instance_id"`
 	AssignmentDigest   string                        `json:"assignment_digest"`
+	RegistrationDigest string                        `json:"registration_digest"`
+	CommandDigest      string                        `json:"command_digest"`
 	Input              domain.SessionCompactionInput `json:"input"`
 	NativeRef          claude.CheckpointReference    `json:"native_reference"`
 	Native             json.RawMessage               `json:"native"`
 }
 
-const maxCompactionCheckpoint = 10 << 20
+const (
+	maxCompactionCheckpoint            = 10 << 20
+	compactionCheckpointVersion uint32 = 2
+)
 
 // Claims use a closed filename set inside the original action's private scope.
 type compactionClaimName string
@@ -49,6 +54,63 @@ const (
 	compactionRegistrationClaim compactionClaimName = "compaction-registration.json"
 	compactionCommandClaim      compactionClaimName = "compaction-command.json"
 )
+
+type sessionCompactionRegistration struct {
+	ActionID         domain.ID `json:"action_id"`
+	ExecutionID      domain.ID `json:"execution_id"`
+	RequestID        domain.ID `json:"request_id"`
+	CredentialDigest string    `json:"credential_digest"`
+}
+
+type sessionCompactionCommand struct {
+	ActionID              domain.ID `json:"action_id"`
+	ExecutionID           domain.ID `json:"execution_id"`
+	RegistrationRequestID domain.ID `json:"registration_request_id"`
+	CredentialDigest      string    `json:"credential_digest"`
+}
+
+func compactionClaimDigest(value any) string {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return executionInputDigest(raw)
+}
+
+// Checkpoint bytes are pinned by the server, but their original private claims
+// must independently survive. Neither a completed outer journal nor a native
+// snapshot can manufacture missing registration/send authority after replacement.
+func readSessionCompactionClaims(root string, p sessionCompactionCheckpoint) error {
+	if p.Version != compactionCheckpointVersion || p.JobID.Validate() != nil || !canonicalDigest(p.RegistrationDigest) || !canonicalDigest(p.CommandDigest) {
+		return domain.CompactionUncertain()
+	}
+	directory := filepath.Join(root, "jobs", string(p.JobID))
+	for _, path := range []string{root, filepath.Join(root, "jobs"), directory} {
+		if security.CheckPrivateDir(path) != nil {
+			return domain.CompactionUncertain()
+		}
+	}
+	read := func(name compactionClaimName, digest string, target any) error {
+		raw, err := security.ReadPrivate(filepath.Join(directory, string(name)), 4<<10)
+		if err != nil || executionInputDigest(raw) != digest || domain.Decode(raw, target) != nil {
+			return domain.CompactionUncertain()
+		}
+		canonical, err := json.Marshal(target)
+		if err != nil || !bytes.Equal(raw, canonical) {
+			return domain.CompactionUncertain()
+		}
+		return nil
+	}
+	var registration sessionCompactionRegistration
+	var command sessionCompactionCommand
+	if read(compactionRegistrationClaim, p.RegistrationDigest, &registration) != nil || read(compactionCommandClaim, p.CommandDigest, &command) != nil ||
+		registration.ActionID != p.Input.ActionID || registration.ExecutionID != p.Input.Assignment.ExecutionID ||
+		domain.UniqueIDs([]domain.ID{p.JobID, registration.ActionID, registration.ExecutionID, registration.RequestID}) != nil || !canonicalDigest(registration.CredentialDigest) ||
+		command.ActionID != registration.ActionID || command.ExecutionID != registration.ExecutionID || command.RegistrationRequestID != registration.RequestID || command.CredentialDigest != registration.CredentialDigest {
+		return domain.CompactionUncertain()
+	}
+	return nil
+}
 
 func writeCompactionClaim(root string, job domain.ID, name compactionClaimName, value any) error {
 	if job.Validate() != nil || name != compactionRegistrationClaim && name != compactionCommandClaim {
@@ -187,11 +249,7 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	token = apiproxy.TokenPrefix + token
 	digest := sha256.Sum256([]byte(token))
 	registration := domain.NewID()
-	intent := struct {
-		ActionID  domain.ID `json:"action_id"`
-		RequestID domain.ID `json:"request_id"`
-		Digest    string    `json:"credential_digest"`
-	}{i.ActionID, registration, hex.EncodeToString(digest[:])}
+	intent := sessionCompactionRegistration{ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, RequestID: registration, CredentialDigest: hex.EncodeToString(digest[:])}
 	if err := writeCompactionClaim(config.Root, owner, compactionRegistrationClaim, intent); err != nil {
 		return nil, domain.CompactionUncertain()
 	}
@@ -221,10 +279,8 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	}()
 	// Synchronize the original command claim before its one native send. The
 	// outer Worker journal refuses all interrupted starts, including pre-ack loss.
-	if err := writeCompactionClaim(config.Root, owner, compactionCommandClaim, struct {
-		ActionID    domain.ID `json:"action_id"`
-		ExecutionID domain.ID `json:"execution_id"`
-	}{i.ActionID, i.Assignment.ExecutionID}); err != nil {
+	commandClaim := sessionCompactionCommand{ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, RegistrationRequestID: registration, CredentialDigest: intent.CredentialDigest}
+	if err := writeCompactionClaim(config.Root, owner, compactionCommandClaim, commandClaim); err != nil {
 		return nil, domain.CompactionUncertain()
 	}
 	phase = compactionCommand
@@ -249,7 +305,10 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	if err != nil {
 		return nil, err
 	}
-	p := sessionCompactionCheckpoint{Version: 1, ServerID: c.Credential.ServerID, DeviceID: c.Credential.DeviceID, JobID: owner, AssignmentRevision: c.Assignment.Revision, InstanceID: c.Instance, AssignmentDigest: executionInputDigest(c.Assignment.DocumentJson), Input: i, NativeRef: ref, Native: raw}
+	p := sessionCompactionCheckpoint{Version: compactionCheckpointVersion, ServerID: c.Credential.ServerID, DeviceID: c.Credential.DeviceID, JobID: owner, AssignmentRevision: c.Assignment.Revision, InstanceID: c.Instance, AssignmentDigest: executionInputDigest(c.Assignment.DocumentJson), RegistrationDigest: compactionClaimDigest(intent), CommandDigest: compactionClaimDigest(commandClaim), Input: i, NativeRef: ref, Native: raw}
+	if err := readSessionCompactionClaims(config.Root, p); err != nil {
+		return nil, err
+	}
 	data, err := json.Marshal(p)
 	if err != nil || len(data) > maxCompactionCheckpoint {
 		return nil, domain.CompactionUncertain()
@@ -359,7 +418,7 @@ func readSessionCompactionCheckpoint(ctx context.Context, root string, credentia
 	}
 	originalRaw, originalErr := json.Marshal(p.Input.Assignment)
 	canonical, err := json.Marshal(p)
-	if err != nil || originalErr != nil || !bytes.Equal(data, canonical) || p.Version != 1 || p.Input.Validate() != nil || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.SourceJobID != input.Continuation.Previous.JobID || executionInputDigest(originalRaw) != input.Continuation.AssignmentInputDigest {
+	if err != nil || originalErr != nil || !bytes.Equal(data, canonical) || p.Version != compactionCheckpointVersion || p.Input.Validate() != nil || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.SourceJobID != input.Continuation.Previous.JobID || executionInputDigest(originalRaw) != input.Continuation.AssignmentInputDigest {
 		return nil, domain.CompactionUncertain()
 	}
 	var journal journal
@@ -367,6 +426,9 @@ func readSessionCompactionCheckpoint(ctx context.Context, root string, credentia
 	var result domain.SessionCompactionResult
 	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.InstanceID.Validate() != nil || journal.ReportID.Validate() != nil || journal.Revision != p.AssignmentRevision || p.AssignmentRevision == 0 || journal.InstanceID != p.InstanceID || journal.JobID != ref.JobID || journal.Digest != p.AssignmentDigest || (journal.State != journalFinished && journal.State != journalReported) || journal.Problem != nil || domain.Decode(journal.Output, &result) != nil || result.Validate() != nil || result.Checkpoint != ref {
 		return nil, domain.CompactionUncertain()
+	}
+	if err := readSessionCompactionClaims(root, p); err != nil {
+		return nil, err
 	}
 	original := p.Input.Assignment
 	expected := claude.CheckpointReference{SHA256: ref.NativeDigest, SessionID: input.SessionID, OwnerID: ref.JobID, InputID: original.InputID, InputSHA256: executionInputDigest([]byte(original.Input.Prompt)), NativeTurnID: string(p.Input.Completion.NativeTurnID), RequiresResume: ref.RequiresResume}
