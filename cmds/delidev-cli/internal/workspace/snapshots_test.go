@@ -4,6 +4,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -483,5 +484,56 @@ func TestSnapshotCancellationAfterPublicationRetainsRecoveryOwnership(t *testing
 	recovered := storageDo(t, m, recoveryRequest(input))
 	if recovered.WorkspaceState != domain.WorkspacePresent || recovered.RecoveredJobState != domain.JobFailed || recovered.Snapshot == nil || recovered.Snapshot.SHA256 != result.Snapshot.SHA256 {
 		t.Fatal("recovery omitted retained published snapshot", recovered)
+	}
+}
+
+func TestSnapshotFailedRestoreCleansOwnedStaging(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(fmt.Sprint("canceled=", canceled), func(t *testing.T) {
+			m := manager(t)
+			prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+			manifest, err := m.Prepare(context.Background(), prepare)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StoragePreview, Preparation: prepare, Manifest: manifest}
+			preview := storageDo(t, m, input)
+			input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest
+			cleaned := storageDo(t, m, input)
+			input.Action, input.OperationID, input.PreviousState, input.SnapshotDigest = StorageRestore, domain.NewID(), domain.WorkspaceStored, cleaned.Snapshot.SHA256
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			m.storageRestoreCopyFault = func(staging string) error {
+				if err := os.WriteFile(filepath.Join(staging, "partial"), []byte("partial copied data"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if canceled {
+					cancel()
+					return context.Canceled
+				}
+				return snapshotDiskFullError()
+			}
+			_, err = m.Storage(ctx, input)
+			want := domain.ResourceExhausted
+			if canceled {
+				want = domain.Canceled
+			}
+			if domain.SafeError(err).Code != want {
+				t.Fatal("wrong failure classification", err)
+			}
+			staging := filepath.Join(m.Root, "snapshot-staging", string(input.OperationID))
+			if _, err := os.Lstat(staging); !os.IsNotExist(err) {
+				t.Fatal("failed restore leaked scratch", err)
+			}
+			if _, err := os.Lstat(filepath.Join(m.Root, "workspaces", string(prepare.SessionID))); !os.IsNotExist(err) {
+				t.Fatal("failed restore published a workspace", err)
+			}
+			if _, _, err := m.inspectSnapshot(context.Background(), input.SnapshotID); err != nil {
+				t.Fatal("only recoverable copy changed", err)
+			}
+			m.storageRestoreCopyFault = nil
+			input.OperationID = domain.NewID()
+			storageDo(t, m, input)
+		})
 	}
 }

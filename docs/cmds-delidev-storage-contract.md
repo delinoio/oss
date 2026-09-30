@@ -310,7 +310,10 @@ Restore is available only from the exact current cleanup snapshot of a stored
 session. Its complete private manifest/hash/Git stores are revalidated, the entire
 workspace is copied and verified in owned scratch, then one atomic no-replace
 rename publishes it at the original canonical owned destination. Existing files
-are never replaced and no per-repository partial restore is reported. A private
+are never replaced and no per-repository partial restore is reported. Failed
+unpublished restoration removes only its operation-owned staging with an
+independent bounded cleanup context; unconfirmed scratch cleanup retains
+recovery-required ownership instead of settling a terminal failure. A private
 restore binding preserves the original logical workspace identity while allowing
 self-contained Git stores at that same path. This comparison does not manufacture
 native harness checkpoint or continuation support. Snapshot deletion requires an

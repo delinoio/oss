@@ -76,13 +76,14 @@ type Manifest struct {
 	CreatedAt    time.Time            `json:"created_at"`
 }
 type Manager struct {
-	mu                   sync.Mutex
-	initialized          bool
-	storageCopyFault     func(string) error
-	storageAfterSnapshot func()
-	Root                 string
-	Git                  Git
-	Logger               *slog.Logger
+	mu                      sync.Mutex
+	initialized             bool
+	storageCopyFault        func(string) error
+	storageRestoreCopyFault func(string) error
+	storageAfterSnapshot    func()
+	Root                    string
+	Git                     Git
+	Logger                  *slog.Logger
 }
 
 func (m *Manager) initialize() error {

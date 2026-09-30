@@ -204,8 +204,20 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		return result, err
 	}
 	defer lock.Close()
+	var restoreStaging string
 	defer func() {
 		if returned != nil {
+			if restoreStaging != "" {
+				// The operation created this private scratch namespace. Cleanup must
+				// outlive caller cancellation; retained bytes keep recovery ownership.
+				cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
+				err := removeSnapshotTree(cleanup, restoreStaging)
+				stop()
+				if err != nil {
+					m.Logger.Warn("restore_scratch_cleanup_pending", "operation_id", r.OperationID, "code", domain.SafeError(err).Code)
+					returned = ResultUncertain()
+				}
+			}
 			// Publication is already a native side effect, even before source
 			// removal. Preserve recovery ownership so cancellation/failure cannot
 			// orphan the verified snapshot outside server metadata.
@@ -332,7 +344,16 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 				return result, domain.Fail(domain.Conflict, "The owned restoration destination is occupied.", "Preserve existing files; restore only after confirmed cleanup.")
 			}
 			staging := filepath.Join(m.Root, "snapshot-staging", string(r.OperationID))
-			if _, err := walkSnapshot(ctx, filepath.Join(m.snapshotPath(r.SnapshotID), "workspace"), staging, nil); err != nil {
+			if err := os.Mkdir(staging, 0700); err != nil {
+				return result, ResultUncertain()
+			}
+			restoreStaging = staging
+			if m.storageRestoreCopyFault != nil {
+				if err := m.storageRestoreCopyFault(staging); err != nil {
+					return result, err
+				}
+			}
+			if _, err := walkSnapshot(ctx, filepath.Join(m.snapshotPath(r.SnapshotID), "workspace"), staging, nil, true); err != nil {
 				return result, err
 			}
 			inventory, err := walkSnapshot(ctx, staging, "", nil)
