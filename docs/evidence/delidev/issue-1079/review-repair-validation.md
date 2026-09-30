@@ -64,6 +64,65 @@ GitHub CI was successful for the previous published head `e40de0ad`, including
 Go Quality and Go Test on Ubuntu, macOS and Windows. That result does not validate
 the new repair commits. Newly pushed CI and review remain separate observations.
 
+## Full-run limitations
+
+The separate fixed-source `GOMAXPROCS=2 go test -race -timeout=15m
+./cmds/delidev-cli/internal/workspace` run used the implementation at `7e165239`
+and exited 1 (902.749s). It reports these existing read/match failures:
+
+- `TestWorkspaceDiffUnbornAndBoundedResults`: `diff_test.go:163` reports
+  `recovery_required` during the working-tree comparison (24.41s).
+- `TestPRWorkspaceMatchReadsCurrentHeadWithoutTakingExecutionOwnership/local`:
+  `pr_match_test.go:62` reports a timed-out native head observation (29.57s;
+  parent test 54.30s).
+- `TestPRWorkspaceMatchPreservesMismatchesAndDistinguishesUnknownAccess`:
+  `pr_match_test.go:152` reports `recovery_required` (45.77s).
+
+The package then reaches its cumulative 15-minute limit while
+`TestPRPreparationRejectsChangedRemoteWithoutAlteringOriginalCheckout/fail` is
+running (parent 32s; subtest 1s). The read/match implementation and tests have no
+diff from main `74701b89`; `prepare.go` differs only by the snapshot test-injection
+fields on Manager. These failures have not been independently reproduced on
+main. The full package is not claimed as passing.
+
+The three named tests were then rerun together with
+`GOMAXPROCS=2 go test -race -timeout=5m ./cmds/delidev-cli/internal/workspace
+-run '^(TestWorkspaceDiffUnbornAndBoundedResults|TestPRWorkspaceMatchReadsCurrentHeadWithoutTakingExecutionOwnership|TestPRWorkspaceMatchPreservesMismatchesAndDistinguishesUnknownAccess)$'
+-count=1`: the package exited 1 after 129.895s, with the diff test again failing
+at line 163 (27.42s); both PR-match tests passed. The exact diff test alone,
+`GOMAXPROCS=2 go test -race -timeout=3m ./cmds/delidev-cli/internal/workspace
+-run '^TestWorkspaceDiffUnbornAndBoundedResults$' -count=1`, passed on both
+the source-only main archive (38.355s) and the current implementation (37.135s).
+The baseline's go.mod, go.sum, diff.go, diff_test.go and prepare.go bytes were
+independently matched to `74701b8948694e2bf8f8ba6d07e596c2d2f358a7`. These
+isolated passes do not erase the earlier broader failures or establish their
+cause.
+
+A broader `GOMAXPROCS=2 go test -race -p 2 -timeout=15m
+./cmds/delidev-cli/...` run began at `38a91fbc` while later repairs were made in
+the same checkout. Its build is not attributable to one fixed revision, so it
+cannot validate the final implementation. The retained diagnostic log observes
+CLI `TestCLISessionAcceptanceQueueAndArchive` failure at `sessions_test.go:239`
+(244.555s package time), Grok's cumulative timeout while
+`TestReadInputOwnsToolsResponsesAndNoPlainTextHistory/read-missing-response`
+is running (901.099s), and the server's cumulative timeout while
+`TestScheduleRPCCursorScopeEpochAndRetainedOrder` has just started (901.089s).
+It also reports missing verified-claim files in both subcases of
+`TestStorageRemovalRetiresOnlyAfterDurableReport` (Worker package 474.292s).
+No failure cause is inferred from this non-isolated build.
+At 2026-09-30 08:56 UTC the overall command was still running; no final exit
+status is claimed. Its diagnostic log is outside the repository. It also
+contains successful package outcomes, including Claude, Codex, native-wire,
+OpenCode, process, store and user services, which do not validate a single final
+revision either.
+
+The exact latter Worker regression was rerun against the fixed implementation
+at `7e165239` with `GOMAXPROCS=2 go test -race -timeout=3m
+./cmds/delidev-cli/internal/worker -run '^TestStorageRemovalRetiresOnlyAfterDurableReport$'
+-count=1` and passed (2.643s), matching its earlier fixed-source focused result.
+Neither the broader diagnostic run nor the failed full workspace run is a
+complete race-suite success.
+
 ## Limits
 
 All new fixtures use isolated temporary state and controlled local files/Git
