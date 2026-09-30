@@ -86,7 +86,14 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 		if !validPreparedPR(expected, repo, input.Type) {
 			return ResultUncertain()
 		}
-		if repo.ID != expected.ID || repo.ID.Validate() != nil || seen[repo.ID] || !absolute(repo.Source) || !absolute(repo.Path) || repo.Source != expected.Checkout || repo.Owned != (input.Type == domain.Worktree) {
+		registration := expected.Checkout
+		if expected.ForkRegistrationSource != "" {
+			if input.ForkSourceID == "" || input.Type != domain.Worktree || !absolute(expected.Checkout) || !absolute(expected.ForkRegistrationSource) {
+				return ResultUncertain()
+			}
+			registration = expected.ForkRegistrationSource
+		}
+		if repo.ID != expected.ID || repo.ID.Validate() != nil || seen[repo.ID] || !absolute(repo.Source) || !absolute(repo.Path) || repo.Source != registration || repo.Owned != (input.Type == domain.Worktree) {
 			return ResultUncertain()
 		}
 		seen[repo.ID] = true
