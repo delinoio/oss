@@ -111,3 +111,21 @@ renderer shutdown/flush, provider login, supported-platform, native package or
 release acceptance. Those outstanding limits remain in the prior browser
 records. The preceding pushed head's CI success does not verify this repaired
 head; fresh CI and Codex review must be assessed on later maintenance runs.
+
+## Final review snapshot
+
+The final one-shot repair inventory had no failing checks on the preceding
+pushed head, but included five new findings posted during this repair. They
+remain unresolved for the next scheduled maintenance pass: [tab-control atomic
+publication](https://github.com/delinoio/oss/pull/1232#discussion_r4145686254),
+[address callback publication](https://github.com/delinoio/oss/pull/1232#discussion_r4145686265),
+[completed connection tombstone restaging](https://github.com/delinoio/oss/pull/1232#discussion_r4145686279),
+[failed native geometry retries](https://github.com/delinoio/oss/pull/1232#discussion_r4145686295),
+and [asynchronous child-creation failure presentation](https://github.com/delinoio/oss/pull/1232#discussion_r4145686316).
+Only the three original handled threads are eligible for resolution after this
+pass's single push. No accepted review or merge-ready outcome is claimed.
+
+The initial generated-output cleanup scan also reached the ignored Go cache's
+source `cmd/dist` directory; permissions rejected deletion. Comparing its complete
+contents against the same installed Go toolchain confirmed no difference.
+Cleanup was narrowed to repository-owned project roots and completed there.
