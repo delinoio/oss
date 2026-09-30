@@ -126,6 +126,9 @@ pub struct BrowserHost {
     // Disk serialization is independent of the short native-state lock. No UI
     // callback waits for directory reads, atomic replacement or fsync.
     storage: Mutex<()>,
+    // Workers fence the final replacement against UI reservation publication.
+    // The UI callback never acquires this gate or waits for filesystem work.
+    publication: Mutex<()>,
     addresses: Mutex<BTreeMap<String, (String, ViewRequest, String)>>,
     address_running: AtomicBool,
     address_join: Mutex<Option<thread::JoinHandle<()>>>,
@@ -144,6 +147,7 @@ impl BrowserHost {
             stopping: AtomicBool::new(false),
             join: Mutex::new(None),
             storage: Mutex::new(()),
+            publication: Mutex::new(()),
             addresses: Mutex::new(BTreeMap::new()),
             address_running: AtomicBool::new(false),
             address_join: Mutex::new(None),
@@ -152,7 +156,7 @@ impl BrowserHost {
 
     // UI loop only: release the superseded child before asynchronous authority
     // reads can fail. Removing its view also rejects late creation callbacks.
-    pub fn reserve(&self, window: &str, view_id: &str) -> Result<()> {
+    fn reserve(&self, window: &str, view_id: &str) -> Result<()> {
         canonical_id(view_id)?;
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         if self.stopping.load(Ordering::Acquire) {
@@ -167,6 +171,24 @@ impl BrowserHost {
             host.close_browser(1);
         }
         Ok(())
+    }
+
+    // Blocking worker only. Hold the publication fence until the UI callback
+    // accepts the reservation, before starting asynchronous authority reads.
+    pub fn reserve_on_worker(
+        self: &Arc<Self>,
+        app: AppHandle<Cef>,
+        window: String,
+        view_id: String,
+    ) -> Result<()> {
+        let _publication = self.publication.lock().map_err(|_| NativeFailure::Busy)?;
+        let host = Arc::clone(self);
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let _ = send.send(host.reserve(&window, &view_id));
+        })
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+        receive.recv().map_err(|_| NativeFailure::SidecarFailed)?
     }
 
     pub fn begin_exit(&self, code: i32) -> bool {
@@ -626,12 +648,15 @@ impl BrowserHost {
             }
             _ => {}
         }
-        if matches!(
+        let staged = if matches!(
             action,
             Action::NewTab | Action::SelectTab | Action::CloseTab
         ) {
-            browser::write_private(&path.join("tabs.json"), &tabs)?;
-        }
+            Some(browser::stage_private(&path.join("tabs.json"), &tabs)?)
+        } else {
+            None
+        };
+        let _publication = self.publication.lock().map_err(|_| NativeFailure::Busy)?;
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         if state
             .views
@@ -649,12 +674,22 @@ impl BrowserHost {
         if p.removing {
             return Err(NativeFailure::Stopped);
         }
-        p.tabs = tabs;
-        *p.policy.lock().map_err(|_| NativeFailure::Busy)? = policy;
-        p.storage_revision = p
+        let revision = p
             .storage_revision
             .checked_add(1)
             .ok_or(NativeFailure::Stopped)?;
+        drop(state);
+        if let Some(staged) = staged {
+            staged.publish()?;
+        }
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        let p = state
+            .profiles
+            .get_mut(profile)
+            .ok_or(NativeFailure::Stopped)?;
+        p.tabs = tabs;
+        *p.policy.lock().map_err(|_| NativeFailure::Busy)? = policy;
+        p.storage_revision = revision;
         Ok(p.storage_revision)
     }
 
@@ -1626,6 +1661,117 @@ mod tests {
             },
         };
         (temp, host, record)
+    }
+
+    fn active_storage_fixture() -> (
+        tempfile::TempDir,
+        Arc<BrowserHost>,
+        ProfileRecord,
+        String,
+        ViewRequest,
+    ) {
+        let (temp, host, record) = storage_fixture();
+        let view_id = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &view_id).unwrap();
+        host.prepare_open(
+            "fixture",
+            &view_id,
+            None,
+            record.clone(),
+            "https://fixture.test/original",
+        )
+        .unwrap();
+        let mut state = host.state.lock().unwrap();
+        let request = ViewRequest {
+            window: "fixture".into(),
+            parent: 0,
+            bounds: Bounds {
+                x: 0.0,
+                y: 0.0,
+                width: 100.0,
+                height: 100.0,
+            },
+            scale: 1.0,
+            tab: state.profiles[&record.id].tabs.selected.clone(),
+            generation: 1,
+        };
+        state.views.insert(
+            "fixture".into(),
+            View {
+                profile: record.id.clone(),
+                generation: 1,
+                request: request.clone(),
+                browser: None,
+                view_id: view_id.clone(),
+            },
+        );
+        drop(state);
+        (temp, host, record, view_id, request)
+    }
+
+    fn wait_for_staged_tabs(path: &std::path::Path) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !fs::read_dir(path).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".pending")
+        }) {
+            assert!(Instant::now() < deadline, "worker did not stage tabs");
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn superseded_tab_controls_discard_staged_files_before_publication() {
+        for action in [Action::NewTab, Action::SelectTab, Action::CloseTab] {
+            let (_temp, host, record, view_id, request) = active_storage_fixture();
+            host.prepare_control(
+                "fixture",
+                &record.id,
+                &view_id,
+                Action::NewTab,
+                Some("https://fixture.test/second"),
+                None,
+            )
+            .unwrap();
+            let path = host.state.lock().unwrap().profiles[&record.id].path.clone();
+            let before = fs::read(path.join("tabs.json")).unwrap();
+            // The reservation callback owns the publication fence while a
+            // worker completes slow staging. UI state remains available.
+            let publication = host.publication.lock().unwrap();
+            let copy = Arc::clone(&host);
+            let profile = record.id.clone();
+            let worker = thread::spawn(move || {
+                copy.prepare_control(
+                    "fixture",
+                    &profile,
+                    &view_id,
+                    action,
+                    Some("https://fixture.test/stale"),
+                    Some(&request.tab),
+                )
+            });
+            wait_for_staged_tabs(&path);
+            assert!(host.state.try_lock().is_ok());
+            host.reserve("fixture", &uuid::Uuid::now_v7().to_string())
+                .unwrap();
+            drop(publication);
+            assert_eq!(worker.join().unwrap(), Err(NativeFailure::Stopped));
+            assert_eq!(fs::read(path.join("tabs.json")).unwrap(), before);
+            assert_eq!(
+                serde_json::to_vec(&host.state.lock().unwrap().profiles[&record.id].tabs).unwrap(),
+                before
+            );
+            assert!(!fs::read_dir(path).unwrap().any(|entry| {
+                entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".pending")
+            }));
+        }
     }
 
     #[test]

@@ -343,6 +343,31 @@ pub fn profile_path(root: &Path, p: &ProfileRecord) -> Result<PathBuf> {
     Ok(path)
 }
 pub fn write_private(path: &Path, value: &impl Serialize) -> Result<()> {
+    stage_private(path, value)?.publish()
+}
+
+// Keep slow serialization/write/fsync separate from the ownership-checked
+// replacement. Dropping an obsolete preparation leaves the prior file intact.
+pub struct PrivateWrite {
+    path: PathBuf,
+    pending: PathBuf,
+}
+impl PrivateWrite {
+    pub fn publish(self) -> Result<()> {
+        replace_file(&self.pending, &self.path).map_err(|_| NativeFailure::StorageUnavailable)?;
+        #[cfg(unix)]
+        File::open(self.path.parent().unwrap())
+            .and_then(|parent| parent.sync_all())
+            .map_err(|_| NativeFailure::StorageUnavailable)?;
+        Ok(())
+    }
+}
+impl Drop for PrivateWrite {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.pending);
+    }
+}
+pub fn stage_private(path: &Path, value: &impl Serialize) -> Result<PrivateWrite> {
     let bytes = serde_json::to_vec(value).map_err(|_| NativeFailure::InvalidEvidence)?;
     if bytes.len() > 256 << 10 {
         return Err(NativeFailure::InvalidEvidence);
@@ -358,19 +383,19 @@ pub fn write_private(path: &Path, value: &impl Serialize) -> Result<()> {
     let mut f = options
         .open(&pending)
         .map_err(|_| NativeFailure::StorageUnavailable)?;
+    let staged = PrivateWrite {
+        path: path.into(),
+        pending,
+    };
     let outcome = (|| {
         f.write_all(&bytes)?;
         f.sync_all()?;
-        replace_file(&pending, path)?;
-        #[cfg(unix)]
-        File::open(path.parent().unwrap())?.sync_all()?;
         Ok::<_, std::io::Error>(())
     })();
     if outcome.is_err() {
-        let _ = fs::remove_file(&pending);
         return Err(NativeFailure::StorageUnavailable);
     };
-    Ok(())
+    Ok(staged)
 }
 
 #[cfg(not(windows))]

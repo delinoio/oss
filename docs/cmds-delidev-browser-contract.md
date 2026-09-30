@@ -78,7 +78,12 @@ Closing the panel releases its view, retaining its request context/profile.
 Profile directory traversal, tab reads, URL policy preparation and durable writes
 run on serialized storage workers without holding the native state lock during
 I/O. Trusted documents and presentation/control generations are rechecked before
-UI-affine CEF publication. Address callbacks coalesce at most one latest update
+UI-affine CEF publication. Tab controls stage and fsync private replacement files
+before checking the exact reservation at publication. A separate worker fence
+serializes the final replacement with reservation acceptance on the UI loop;
+only the worker waits for that callback, and native state is released during I/O.
+Superseded staged writes are discarded without changing durable or live tabs.
+Address callbacks coalesce at most one latest update
 per tab (64 profiles × 16 tabs) into one tracked worker; callbacks perform no disk
 work. Hide/Resize remain independent of pending storage. The worker joins after
 runtime return and before any directory purge.
