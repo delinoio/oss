@@ -99,14 +99,10 @@ func TestDesktopLaunchCanceledControllersCannotAcquireUncontendedLocks(t *testin
 
 func TestDesktopLaunchAdmissionPreservesRelativeEnsureScope(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private")
-	working, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	relative, err := filepath.Rel(working, root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Windows CI can place the checkout and temporary scope on different drives.
+	// Use the fixture's parent so the scope has a relative spelling on every host.
+	t.Chdir(filepath.Dir(root))
+	relative := filepath.Base(root)
 	if code := Run(context.Background(), []string{"--data-dir", relative, "server", "ensure"}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}); code != 0 {
 		t.Fatal("relative ensure scope rejected", code)
 	}

@@ -3,7 +3,6 @@ package userservice
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -15,14 +14,10 @@ func TestLaunchAdmissionCanonicalizesRelativeScope(t *testing.T) {
 	m, _ := fixture(t)
 	m.Kind = Server
 	control(t, m, Install, 0)
-	working, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	relative, err := filepath.Rel(working, m.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Windows CI can place the checkout and temporary scope on different drives.
+	// Use the fixture's parent so the scope has a relative spelling on every host.
+	t.Chdir(filepath.Dir(m.Root))
+	relative := filepath.Base(m.Root)
 	admission, err := AdmitLaunch(context.Background(), relative)
 	if err != nil {
 		t.Fatal("relative admission", err)
