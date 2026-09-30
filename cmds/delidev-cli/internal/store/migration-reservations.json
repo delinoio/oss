@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "baselineVersion": 24,
+  "reservations": [
+    {
+      "version": 25,
+      "pr": 1108,
+      "feature": "Grok native accounting",
+      "originalBranchVersion": 25
+    },
+    {
+      "version": 26,
+      "pr": 1115,
+      "feature": "Claude native accounting",
+      "originalBranchVersion": 25,
+      "dependsOn": [
+        1108
+      ],
+      "composition": "Compose the shared native accounting tables and usage semantics; do not create a second conflicting native_accounting schema."
+    },
+    {
+      "version": 27,
+      "pr": 1117,
+      "feature": "Request diagnostics",
+      "originalBranchVersion": 25,
+      "dependsOn": [
+        1108,
+        1115
+      ]
+    }
+  ],
+  "policy": "Reservations are not executable. Implement in order, or revise the reservation sequence on main before starting replacements; never fill a gap with a no-op migration. An unmerged version-25 database is an unknown layout and requires preservation and explicit recovery."
+}

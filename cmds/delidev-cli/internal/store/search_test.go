@@ -10,8 +10,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const dropSearchFixtureSchema = dropPricingFixtureSchema + `DROP TABLE response_usage; DROP TRIGGER transcript_search_insert; DROP TRIGGER transcript_search_delete; DROP TRIGGER transcript_search_update; DROP TABLE transcript_fts; DROP TABLE transcript_search; DROP INDEX search_execution_job; DROP INDEX search_epoch; `
-
 type searchFixture struct{ session, message, account, agent, project, execution domain.ID }
 
 func seedSearch(t *testing.T, s *Store, text string, archive domain.ArchiveState) searchFixture {
@@ -174,7 +172,7 @@ func TestSearchMigrationBackfillsAndBacksUpWithoutRewritingMessages(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = s.db.Exec(dropSearchFixtureSchema + "PRAGMA user_version=12;"); err != nil {
+			if _, err = historicalSchema(s.db, "012"); err != nil {
 				t.Fatal(err)
 			}
 			if conflict {

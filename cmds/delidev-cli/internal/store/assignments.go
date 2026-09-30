@@ -8,14 +8,6 @@ import (
 
 // Keep the exact first claimed envelope for journal proof after the mutable
 // job result changes. Deleting the job also deletes this retained copy.
-const assignmentSchema = `
-CREATE TABLE job_assignments (
- job_id TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
- revision INTEGER NOT NULL, session_id TEXT NOT NULL, project_id TEXT NOT NULL,
- body BLOB NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-);
-PRAGMA user_version=6;
-`
 
 func (t *Tx) rememberAssignment(record Record) error {
 	_, err := t.tx.ExecContext(t.ctx, "INSERT INTO job_assignments(job_id,revision,session_id,project_id,body,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(job_id) DO NOTHING", record.ID, record.Revision, record.SessionID, record.ProjectID, record.Data, record.CreatedAt.UnixMilli(), record.UpdatedAt.UnixMilli())

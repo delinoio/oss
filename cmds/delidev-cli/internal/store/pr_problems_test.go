@@ -176,7 +176,7 @@ func TestPRProblemMigrationPreservesV17BackupAndRejectsUnknownLegacyOwnership(t 
 		t.Run(mode, func(t *testing.T) {
 			s, root := openTest(t)
 			if mode != "collision" {
-				if _, err := s.db.Exec(dropPRProblemFixtureSchema); err != nil {
+				if _, err := historicalSchema(s.db, "017"); err != nil {
 					t.Fatal(err)
 				}
 			}

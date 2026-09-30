@@ -175,8 +175,7 @@ func TestPRProblemV18MigrationPreservesOriginalBytesAndDismissal(t *testing.T) {
 	}
 	before := readProblemFixture(t, s, set.ID)
 	// Recreate the exact v18 typed index around otherwise unchanged resources.
-	old := prProblemSchema[strings.Index(prProblemSchema, "CREATE TABLE pr_problem_records"):]
-	_, err = s.db.Exec(`DROP INDEX provider_preset_unique; DROP TABLE backup_deletions; DROP TABLE pr_remediation_attempts; ALTER TABLE pr_problem_records RENAME TO retained_v19; DROP INDEX pr_problem_current; DROP INDEX pr_problem_history;` + old + `INSERT INTO pr_problem_records(id,set_id,kind,native_node,content_version,current) SELECT id,set_id,kind,native_node,content_version,current FROM retained_v19; DROP TABLE retained_v19; DROP TABLE pr_problem_ci_observations; PRAGMA user_version=18;`)
+	_, err = historicalSchema(s.db, "018")
 	if err != nil {
 		t.Fatal(err)
 	}

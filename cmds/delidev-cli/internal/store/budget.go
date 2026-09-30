@@ -7,19 +7,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const budgetSchema = `
-CREATE TABLE session_estimate_totals (
- session_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
- currency TEXT NOT NULL,
- known_amount TEXT NOT NULL CHECK(length(known_amount)<=144),
- complete_responses INTEGER NOT NULL CHECK(complete_responses>=0),
- partial_responses INTEGER NOT NULL CHECK(partial_responses>=0),
- unavailable_responses INTEGER NOT NULL CHECK(unavailable_responses>=0),
- PRIMARY KEY(session_id,currency)
-);
-PRAGMA user_version=16;
-`
-
 func (t *Tx) SessionEstimate(session domain.ID, currency domain.Currency) (domain.BudgetEvidence, error) {
 	value := domain.BudgetEvidence{Currency: currency}
 	if err := session.Validate(); err != nil {

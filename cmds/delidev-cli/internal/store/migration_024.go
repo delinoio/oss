@@ -1,9 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
 package store
 
 import (
 	"context"
 	"database/sql"
 )
+
+func migration024(ctx context.Context, tx *sql.Tx, original int) error {
+	// Main and the known backup branch both used version 23. Inspect the column
+	// and preserve existing usage attribution and one-time inference claims.
+	return applySessionTitleSchema(ctx, tx)
+}
 
 // Session titles are additive usage observations. Existing response rows are
 // conversation usage by definition; the default preserves their attribution.

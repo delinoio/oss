@@ -169,14 +169,8 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema+providerActivationSchema+backupDeletionSchema); err == nil {
-			err = seedHostedProviders(ctx, tx)
-		}
-		if err == nil {
-			err = applySessionTitleSchema(ctx, tx)
-		}
-		if err == nil {
-			_, err = tx.ExecContext(ctx, "PRAGMA user_version=24")
+		if _, err = tx.ExecContext(ctx, schema); err == nil {
+			err = applyMigrations(ctx, tx, 1)
 		}
 		if err == nil {
 			err = tx.Commit()
@@ -418,31 +412,6 @@ func storageError(err error) error {
 	}
 	return &domain.Error{Code: domain.Internal, Message: "State storage failed.", Guidance: "Check disk health and the correlated diagnostic; preserve the data scope.", Cause: cause}
 }
-
-const schema = `
-CREATE TABLE entities (
- id TEXT PRIMARY KEY, kind TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0),
- session_id TEXT NOT NULL DEFAULT '', project_id TEXT NOT NULL DEFAULT '', body BLOB NOT NULL,
- created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-);
-CREATE INDEX entity_kind_page ON entities(kind,id);
-CREATE INDEX entity_session_page ON entities(session_id,kind,id);
-CREATE INDEX entity_project_page ON entities(project_id,kind,id);
-CREATE TABLE events (
- sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
- entity_id TEXT NOT NULL, kind TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '',
- revision INTEGER NOT NULL, action TEXT NOT NULL, created_at INTEGER NOT NULL
-);
-CREATE INDEX event_session_cursor ON events(session_id,sequence);
-CREATE TABLE receipts(id TEXT PRIMARY KEY,digest TEXT NOT NULL,result BLOB NOT NULL,created_at INTEGER NOT NULL);
-CREATE TABLE receipt_entities(request_id TEXT NOT NULL REFERENCES receipts(id) ON DELETE CASCADE,entity_id TEXT NOT NULL,PRIMARY KEY(request_id,entity_id));
-CREATE INDEX receipt_entity ON receipt_entities(entity_id);
-CREATE TABLE tombstones(id TEXT PRIMARY KEY,kind TEXT NOT NULL,created_at INTEGER NOT NULL);
-CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-INSERT INTO metadata(key,value) VALUES('event_floor','0');
-PRAGMA application_id=1145848918;
-PRAGMA user_version=1;
-`
 
 func (t *Tx) Get(kind domain.Kind, id domain.ID) (Record, error) { return get(t.ctx, t.tx, kind, id) }
 func (s *Store) Get(ctx context.Context, kind domain.Kind, id domain.ID) (Record, error) {

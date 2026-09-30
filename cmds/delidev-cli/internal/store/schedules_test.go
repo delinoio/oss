@@ -12,8 +12,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const dropScheduleFixtureSchema = dropSearchFixtureSchema + "DROP TABLE deleted_project_policies; DROP INDEX schedule_due; DROP INDEX occurrence_position; DROP INDEX occurrence_cron_due; DROP INDEX occurrence_pending; DROP INDEX session_schedule; ALTER TABLE worker_instances DROP COLUMN available_since; "
-
 func scheduleFixture(t *testing.T, s *Store) (Record, domain.Schedule) {
 	t.Helper()
 	definition := domain.ScheduleDefinition{Name: "Periodic checks", Enabled: true, Prompt: "Inspect project", ProjectID: domain.NewID(), AgentID: domain.NewID(), MachineID: domain.NewID(), Workspace: domain.Worktree, Mode: domain.ExecuteMode, Overlap: domain.ScheduleWaitOverlap, Cron: "* * * * *", Timezone: "UTC"}
@@ -191,7 +189,7 @@ func TestScheduleMigrationPreservesV10InboxAndRefusesUnknownScheduleState(t *tes
 					t.Fatal(err)
 				}
 			}
-			if _, err := s.db.Exec(dropScheduleFixtureSchema + "PRAGMA user_version=10"); err != nil {
+			if _, err := historicalSchema(s.db, "010"); err != nil {
 				t.Fatal(err)
 			}
 			s.Close()

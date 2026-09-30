@@ -7,13 +7,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const inboxSchema = `
-CREATE UNIQUE INDEX inbox_source ON entities(json_extract(body,'$.source'),json_extract(body,'$.source_id')) WHERE kind='inbox';
-CREATE INDEX inbox_read ON entities(json_extract(body,'$.read_state'),id) WHERE kind='inbox';
-CREATE INDEX inbox_session_read ON entities(session_id,json_extract(body,'$.read_state'),id) WHERE kind='inbox';
-PRAGMA user_version=10;
-`
-
 func (t *Tx) InboxBySource(source domain.InboxSource, id domain.ID) (Record, error) {
 	if id.Validate() != nil || (source != domain.InteractionInbox && source != domain.ExecutionTerminalInbox) {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid inbox source.", "Use the retained interaction or execution identity.")

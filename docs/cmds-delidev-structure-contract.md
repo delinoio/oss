@@ -66,3 +66,24 @@ The relocation inventory is an audit of this change, not a permanent prohibition
 on editing live contracts. Set `DELIDEV_VERIFY_RELOCATION=1` to repeat the verbatim
 migration audit; ordinary CI checks the destinations and inventory without freezing
 future authorized policy edits.
+
+## Migration sequence and replacement dependencies
+
+`cmds/delidev-cli/internal/store/migration-reservations.json` reserves 25 for the
+replacement of #1108, 26 for #1115, and 27 for #1117. Each originally used 25.
+These are plans, not runtime support: the executable registry ends at 24.
+Claude accounting must compose with the Grok accounting schema and shared usage
+meaning established by the preceding change. Request diagnostics follows both
+implemented versions. If that product order changes, revise the ledger on main
+before branching; do not insert empty migrations to skip unfinished work.
+
+The storage suite covers every fixed schema from 1 through 24 and the recognized
+21/22 backup and 23 title variants. It compares upgraded DDL with a fresh database,
+retains existing seeded record/backfill/rollback tests, and verifies that three
+unidentified version-25 layouts return recovery-required without modifying bytes.
+
+Independent files prevent incidental textual conflicts, not semantic dependencies.
+Shared authentication, Worker permissions, account selection, title/usage attribution,
+resource deletion and subagent/session lifecycle changes require explicit review
+against the latest main contract. Regenerate bindings after composing schema changes;
+never accept one PR's generated file or migration number merely to resolve a conflict.
