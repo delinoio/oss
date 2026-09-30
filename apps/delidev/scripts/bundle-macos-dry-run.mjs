@@ -3,6 +3,8 @@ import { accessSync, constants, lstatSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, join } from "node:path";
 import { targets, cefCredits, packageResources, verifyNotices } from "./native-package.mjs";
+import { prepareAssets } from "./prepare-assets.mjs";
+import { exitLikeChild } from "../../../scripts/spawn-dev-server.mjs";
 
 // Dry runs must not discover imported certificates, notarization credentials,
 // updater keys or executable injection flags through the caller's environment.
@@ -71,11 +73,13 @@ export function verifyWidgetBundle(bundle, run, nativeArch) {
   }
 }
 
-function main() {
+async function main() {
   if (process.platform !== "darwin" || !["arm64", "x64"].includes(process.arch) || process.argv.length !== 2) throw new Error("Run this macOS-only dry run on a native x64 or arm64 host without extra arguments.");
   const app = fileURLToPath(new URL("..", import.meta.url));
   const root = resolve(app, "../..");
   const env = dryRunEnvironment(process.env);
+  const prepared = await prepareAssets({ root, environment: env });
+  if (prepared.code !== 0 || prepared.signal !== null) return exitLikeChild(prepared);
   const build = (command, args) => execFileSync(command, args, { cwd: app, env, stdio: "inherit" });
   build("pnpm", ["--filter", "@delinoio/delidev-api-client", "build"]);
   build("pnpm", ["build"]);
@@ -99,4 +103,4 @@ function main() {
   process.stdout.write("DeliDev macOS dry run passed: native sidecar, CEF resources, macOS 13 metadata and ad-hoc signature verified. No publication or notarization occurred.\n");
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
