@@ -208,3 +208,7 @@ Unix output-pipe setup failures persist pre-launch completion so an exited super
 Process controller setup now creates each scope exclusively and synchronizes removal of its original empty scope after a proven pre-launch failure, preserving replaced/nonempty evidence and all native-started ownership requirements.
 
 Streamed JSON numeric spellings and key names now share bounded reflection protection at their original parent paths and across the key sequence, before escaped field names reach a Worker.
+
+### Explicit outbound networking
+
+Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. See [the network contract](cmds-delidev-network-contract.md); Worker bootstrap/native proxy application remains separate.

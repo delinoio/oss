@@ -98,3 +98,5 @@ without registering duplicate global symbols. Physical descriptor ownership foll
 the explicit split-file layout; canonical runtime type registration remains unique.
 These views are generated from service descriptors at runtime so an independent
 service addition does not rewrite a shared serialized descriptor blob.
+
+New Buf-generated service files participate in legacy reflection and query facades through output discovery; the declaration relocation inventory remains limited to historical declarations and their original order. Issue #1084 activates its already reserved wire allocations without changing that historical map.

@@ -121,6 +121,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	defer c.transport.CloseIdleConnections()
 	if command != "events" && !(command == "session" && len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start") {
 		limit := 30 * time.Second
+		if command == "network" {
+			// Credential-store work can own the full server-side 30-second
+			// deadline. Keep the response wait beyond that cleanup boundary.
+			limit = 35 * time.Second
+			c.transport.ResponseHeaderTimeout = limit
+		}
 		if command == "github" {
 			limit = 40 * time.Second
 			c.transport.ResponseHeaderTimeout = limit
@@ -205,6 +211,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 	case "github":
 		if code, handled := dispatchGithub(ctx, c, o, rest, streams); handled {
+			return code
+		}
+	case "network":
+		if code, handled := dispatchNetwork(ctx, c, o, rest, streams); handled {
 			return code
 		}
 	case "integration":

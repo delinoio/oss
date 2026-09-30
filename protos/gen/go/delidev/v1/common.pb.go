@@ -24,34 +24,36 @@ const (
 type EntityKind int32
 
 const (
-	EntityKind_ENTITY_KIND_UNSPECIFIED  EntityKind = 0
-	EntityKind_ENTITY_KIND_PROJECT      EntityKind = 1
-	EntityKind_ENTITY_KIND_REPOSITORY   EntityKind = 2
-	EntityKind_ENTITY_KIND_AGENT        EntityKind = 3
-	EntityKind_ENTITY_KIND_ACCOUNT      EntityKind = 4
-	EntityKind_ENTITY_KIND_PROVIDER     EntityKind = 5
-	EntityKind_ENTITY_KIND_MODEL        EntityKind = 6
-	EntityKind_ENTITY_KIND_MACHINE      EntityKind = 7
-	EntityKind_ENTITY_KIND_SESSION      EntityKind = 8
-	EntityKind_ENTITY_KIND_TEMPLATE     EntityKind = 9
-	EntityKind_ENTITY_KIND_SETTINGS     EntityKind = 10
-	EntityKind_ENTITY_KIND_SCHEDULE     EntityKind = 11
-	EntityKind_ENTITY_KIND_OCCURRENCE   EntityKind = 12
-	EntityKind_ENTITY_KIND_MESSAGE      EntityKind = 13
-	EntityKind_ENTITY_KIND_QUEUE        EntityKind = 14
-	EntityKind_ENTITY_KIND_INTERACTION  EntityKind = 15
-	EntityKind_ENTITY_KIND_REVIEW       EntityKind = 16
-	EntityKind_ENTITY_KIND_SNAPSHOT     EntityKind = 17
-	EntityKind_ENTITY_KIND_DEVICE       EntityKind = 18
-	EntityKind_ENTITY_KIND_INTEGRATION  EntityKind = 19
-	EntityKind_ENTITY_KIND_PULL_REQUEST EntityKind = 20
-	EntityKind_ENTITY_KIND_PROBLEM      EntityKind = 21
-	EntityKind_ENTITY_KIND_INBOX        EntityKind = 22
-	EntityKind_ENTITY_KIND_USAGE        EntityKind = 23
-	EntityKind_ENTITY_KIND_JOB          EntityKind = 24
-	EntityKind_ENTITY_KIND_PAIRING      EntityKind = 25
-	EntityKind_ENTITY_KIND_STEER        EntityKind = 26
-	EntityKind_ENTITY_KIND_FORWARD      EntityKind = 27
+	EntityKind_ENTITY_KIND_UNSPECIFIED     EntityKind = 0
+	EntityKind_ENTITY_KIND_PROJECT         EntityKind = 1
+	EntityKind_ENTITY_KIND_REPOSITORY      EntityKind = 2
+	EntityKind_ENTITY_KIND_AGENT           EntityKind = 3
+	EntityKind_ENTITY_KIND_ACCOUNT         EntityKind = 4
+	EntityKind_ENTITY_KIND_PROVIDER        EntityKind = 5
+	EntityKind_ENTITY_KIND_MODEL           EntityKind = 6
+	EntityKind_ENTITY_KIND_MACHINE         EntityKind = 7
+	EntityKind_ENTITY_KIND_SESSION         EntityKind = 8
+	EntityKind_ENTITY_KIND_TEMPLATE        EntityKind = 9
+	EntityKind_ENTITY_KIND_SETTINGS        EntityKind = 10
+	EntityKind_ENTITY_KIND_SCHEDULE        EntityKind = 11
+	EntityKind_ENTITY_KIND_OCCURRENCE      EntityKind = 12
+	EntityKind_ENTITY_KIND_MESSAGE         EntityKind = 13
+	EntityKind_ENTITY_KIND_QUEUE           EntityKind = 14
+	EntityKind_ENTITY_KIND_INTERACTION     EntityKind = 15
+	EntityKind_ENTITY_KIND_REVIEW          EntityKind = 16
+	EntityKind_ENTITY_KIND_SNAPSHOT        EntityKind = 17
+	EntityKind_ENTITY_KIND_DEVICE          EntityKind = 18
+	EntityKind_ENTITY_KIND_INTEGRATION     EntityKind = 19
+	EntityKind_ENTITY_KIND_PULL_REQUEST    EntityKind = 20
+	EntityKind_ENTITY_KIND_PROBLEM         EntityKind = 21
+	EntityKind_ENTITY_KIND_INBOX           EntityKind = 22
+	EntityKind_ENTITY_KIND_USAGE           EntityKind = 23
+	EntityKind_ENTITY_KIND_JOB             EntityKind = 24
+	EntityKind_ENTITY_KIND_PAIRING         EntityKind = 25
+	EntityKind_ENTITY_KIND_STEER           EntityKind = 26
+	EntityKind_ENTITY_KIND_FORWARD         EntityKind = 27
+	EntityKind_ENTITY_KIND_NETWORK_PROFILE EntityKind = 28
+	EntityKind_ENTITY_KIND_NETWORK_ROUTE   EntityKind = 29
 )
 
 // Enum value maps for EntityKind.
@@ -85,36 +87,40 @@ var (
 		25: "ENTITY_KIND_PAIRING",
 		26: "ENTITY_KIND_STEER",
 		27: "ENTITY_KIND_FORWARD",
+		28: "ENTITY_KIND_NETWORK_PROFILE",
+		29: "ENTITY_KIND_NETWORK_ROUTE",
 	}
 	EntityKind_value = map[string]int32{
-		"ENTITY_KIND_UNSPECIFIED":  0,
-		"ENTITY_KIND_PROJECT":      1,
-		"ENTITY_KIND_REPOSITORY":   2,
-		"ENTITY_KIND_AGENT":        3,
-		"ENTITY_KIND_ACCOUNT":      4,
-		"ENTITY_KIND_PROVIDER":     5,
-		"ENTITY_KIND_MODEL":        6,
-		"ENTITY_KIND_MACHINE":      7,
-		"ENTITY_KIND_SESSION":      8,
-		"ENTITY_KIND_TEMPLATE":     9,
-		"ENTITY_KIND_SETTINGS":     10,
-		"ENTITY_KIND_SCHEDULE":     11,
-		"ENTITY_KIND_OCCURRENCE":   12,
-		"ENTITY_KIND_MESSAGE":      13,
-		"ENTITY_KIND_QUEUE":        14,
-		"ENTITY_KIND_INTERACTION":  15,
-		"ENTITY_KIND_REVIEW":       16,
-		"ENTITY_KIND_SNAPSHOT":     17,
-		"ENTITY_KIND_DEVICE":       18,
-		"ENTITY_KIND_INTEGRATION":  19,
-		"ENTITY_KIND_PULL_REQUEST": 20,
-		"ENTITY_KIND_PROBLEM":      21,
-		"ENTITY_KIND_INBOX":        22,
-		"ENTITY_KIND_USAGE":        23,
-		"ENTITY_KIND_JOB":          24,
-		"ENTITY_KIND_PAIRING":      25,
-		"ENTITY_KIND_STEER":        26,
-		"ENTITY_KIND_FORWARD":      27,
+		"ENTITY_KIND_UNSPECIFIED":     0,
+		"ENTITY_KIND_PROJECT":         1,
+		"ENTITY_KIND_REPOSITORY":      2,
+		"ENTITY_KIND_AGENT":           3,
+		"ENTITY_KIND_ACCOUNT":         4,
+		"ENTITY_KIND_PROVIDER":        5,
+		"ENTITY_KIND_MODEL":           6,
+		"ENTITY_KIND_MACHINE":         7,
+		"ENTITY_KIND_SESSION":         8,
+		"ENTITY_KIND_TEMPLATE":        9,
+		"ENTITY_KIND_SETTINGS":        10,
+		"ENTITY_KIND_SCHEDULE":        11,
+		"ENTITY_KIND_OCCURRENCE":      12,
+		"ENTITY_KIND_MESSAGE":         13,
+		"ENTITY_KIND_QUEUE":           14,
+		"ENTITY_KIND_INTERACTION":     15,
+		"ENTITY_KIND_REVIEW":          16,
+		"ENTITY_KIND_SNAPSHOT":        17,
+		"ENTITY_KIND_DEVICE":          18,
+		"ENTITY_KIND_INTEGRATION":     19,
+		"ENTITY_KIND_PULL_REQUEST":    20,
+		"ENTITY_KIND_PROBLEM":         21,
+		"ENTITY_KIND_INBOX":           22,
+		"ENTITY_KIND_USAGE":           23,
+		"ENTITY_KIND_JOB":             24,
+		"ENTITY_KIND_PAIRING":         25,
+		"ENTITY_KIND_STEER":           26,
+		"ENTITY_KIND_FORWARD":         27,
+		"ENTITY_KIND_NETWORK_PROFILE": 28,
+		"ENTITY_KIND_NETWORK_ROUTE":   29,
 	}
 )
 
@@ -443,7 +449,7 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x11expected_revision\x18\x03 \x01(\x04R\x10expectedRevision\"[\n" +
 	"\rForwardChange\x12.\n" +
 	"\aforward\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aforward\x12\x1a\n" +
-	"\breplayed\x18\x02 \x01(\bR\breplayed*\xd2\x05\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed*\x92\x06\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -474,7 +480,9 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x0fENTITY_KIND_JOB\x10\x18\x12\x17\n" +
 	"\x13ENTITY_KIND_PAIRING\x10\x19\x12\x15\n" +
 	"\x11ENTITY_KIND_STEER\x10\x1a\x12\x17\n" +
-	"\x13ENTITY_KIND_FORWARD\x10\x1b*[\n" +
+	"\x13ENTITY_KIND_FORWARD\x10\x1b\x12\x1f\n" +
+	"\x1bENTITY_KIND_NETWORK_PROFILE\x10\x1c\x12\x1d\n" +
+	"\x19ENTITY_KIND_NETWORK_ROUTE\x10\x1d*[\n" +
 	"\rUsageCoverage\x12\x1e\n" +
 	"\x1aUSAGE_COVERAGE_UNSPECIFIED\x10\x00\x12*\n" +
 	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01B<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"

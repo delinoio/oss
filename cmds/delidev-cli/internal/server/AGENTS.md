@@ -41,3 +41,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Keep process startup/shutdown in `server_startup.go`, HTTP authorization in `server_http.go`, Connect registration in `server_routes.go`, and system status/capability responses in `server_status.go`. New service behavior belongs in its service file; preserve middleware and registration order.
+
+- NetworkService is owner/paired-client-only under `docs/cmds-delidev-network-contract.md`. Preserve actor/request/revision receipts, immutable server and independent Worker selections, bounded vault generations and denial-before-cleanup deletion. All server provider, inference and GitHub clients use only the explicit server route without ambient settings or fallback. Exported Worker metadata is signed, non-secret desired-generation evidence, not native application or credential-transfer proof.

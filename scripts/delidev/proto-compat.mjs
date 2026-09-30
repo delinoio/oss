@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve, basename } from 'node:path';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -14,7 +14,9 @@ export function generateCompatibility() {
   const target = resolve(directory, 'delidev_pb.ts');
   const marker = '// @generated DeliDev compatibility re-exports';
   const original = readFileSync(target, 'utf8').split(marker)[0].trimEnd().replace('const legacyBase:', 'export const file_delidev_v1_delidev:');
-  const files = [...new Set(Object.values(layout.declarations).map(item => basename(item.file, '.proto'))) ].sort();
+  // Buf cleans this tool-owned directory. Include new service files while the
+  // relocation inventory keeps only the historical declarations and order.
+  const files = readdirSync(directory).filter(file => file.endsWith('_pb.ts') && file !== 'delidev_pb.ts').map(file => file.slice(0, -6)).sort();
   const order = Object.keys(layout.declarations);
   const modules = files.map(file => `file_delidev_v1_${file}`);
   // Aggregate at runtime so adding to one service does not rewrite a central
@@ -44,10 +46,9 @@ ${files.map(file => `export * from "./${file}_pb.js";`).join('\n')}
 `;
   writeFileSync(target, facade);
   generateGoCompatibility(files, order);
-  for (const [name, item] of Object.entries(layout.declarations)) {
-    if (item.kind !== 'service') continue;
-    const file = basename(item.file, '.proto');
-    writeFileSync(resolve(directory, `delidev-${name}_connectquery.ts`), `// @generated DeliDev compatibility facade; do not edit.\nexport * from "./${file}-${name}_connectquery.js";\n`);
+  for (const filename of readdirSync(directory).filter(file => file.endsWith('_connectquery.ts') && !file.startsWith('delidev-'))) {
+    const name = filename.slice(filename.indexOf('-') + 1, -16);
+    writeFileSync(resolve(directory, `delidev-${name}_connectquery.ts`), `// @generated DeliDev compatibility facade; do not edit.\nexport * from "./${filename.slice(0, -3)}.js";\n`);
   }
 }
 

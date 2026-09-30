@@ -32,6 +32,8 @@ enum EntityKind {
   ENTITY_KIND_PAIRING = 25;
   ENTITY_KIND_STEER = 26;
   ENTITY_KIND_FORWARD = 27;
+  ENTITY_KIND_NETWORK_PROFILE = 28;
+  ENTITY_KIND_NETWORK_ROUTE = 29;
 }
 
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed

@@ -38,6 +38,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [API provider activation](cmds-delidev-provider-activation-contract.md)
 - [Native API relay](cmds-delidev-proxy-contract.md)
+- [Explicit outbound networking](cmds-delidev-network-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
