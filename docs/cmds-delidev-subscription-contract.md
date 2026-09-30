@@ -76,6 +76,8 @@ Run `go test -race ./cmds/delidev-cli/...`, `go vet ./cmds/delidev-cli/...`, `pn
 
 These fixtures do not authenticate real accounts, execute hosted inference or establish installed-Codex/desktop/Windows/Linux/release acceptance. Record actual executed checks and their limits in the [issue #1095 evidence](evidence/delidev/issue-1095/validation.md).
 
+The [current-main replacement record](evidence/delidev/issue-1095/replacement-2026-09-30.md) records subsequent integration and regression checks independently of that preserved historical evidence.
+
 ## Dependencies and Integrations
 
 Reuse authenticated Connect, the server vault, current Worker discovery, owned process supervision and existing Codex session/history publication. No provider brokerage, native retry emulation, account/model failover or new dependency is added.
