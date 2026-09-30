@@ -3625,6 +3625,24 @@ used.
   server/Worker fixtures and no external account or inference. The source icon
   was hydrated from its existing exact-path LFS cache and its SHA-256/size remained
   identical. Generated frontend/client `dist` output is removed before delivery.
-- Native desktop Escape, focus containment/restoration and responsive geometry
-  were not exercised for this revision. The dialog cancel/focus checks are jsdom
-  component evidence; they do not establish native macOS/Windows/X11 acceptance.
+- Native smoke ran the unchanged pinned CEF launcher on macOS 26.6.2 arm64 in a
+  separately built ad-hoc bundle, with private app/cache state and a paired
+  disposable loopback server. Ordinary entry selected AI Subscription. An unsaved
+  custom-provider name was discarded by Escape; focus returned to Settings and
+  reopening selected AI Subscription, with an empty new provider editor. Close
+  discarded a second draft and restored the same opener. New Project opened and
+  focused its targeted editor; Escape restored New Project, and the next ordinary
+  entry cleared that destination and selected AI Subscription. No Save was used.
+  Native Tab/Shift-Tab boundary traversal visited the dialog's last disclosure,
+  document focus and Close, without reaching background controls. The 3440×2168
+  2× native capture showed the full Settings surface and focused Close control.
+- The copied native build cache required removal of temporary relocated CMake
+  caches. The initial launch collided with the existing app's CEF cache; private
+  cache/home context resolved it. The disposable server initially rejected the
+  renderer origin; restarting that server with the exact `http://tauri.localhost`
+  allowlist established the saved connection. Existing app/server state was not
+  modified. The fixture received Quit, remaining CEF processes were terminated
+  by their exact temporary bundle path, and the temporary server was stopped.
+  Generated desktop/client `dist` directories were removed. Windows/X11 runtime,
+  responsive resizing/zoom, production signing and release acceptance remain
+  unverified for this revision; earlier copy-only geometry evidence is separate.
