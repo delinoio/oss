@@ -2,6 +2,7 @@
 
 mod notification_host;
 mod tray_host;
+mod widget_host;
 use std::{
     collections::{BTreeMap, HashMap},
     path::PathBuf,
@@ -355,6 +356,21 @@ async fn remove_connection(
             && binding.instance == instance
         {
             binding.profile = observed;
+        }
+    }
+    if result
+        .as_ref()
+        .is_ok_and(|profile| profile.state == SavedConnectionState::Removed)
+    {
+        // Credential removal remains authoritative even if presentation cleanup
+        // fails. The stale metadata grants no connection or execution authority.
+        let id = result.as_ref().unwrap().id.clone();
+        let cleanup = tauri::async_runtime::spawn_blocking(move || {
+            tray_host::remove_widget(&app, &id);
+        })
+        .await;
+        if cleanup.is_err() {
+            tracing::warn!(operation = "widget_snapshot", code = "storage-unavailable");
         }
     }
     result

@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,13 +14,49 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 func catalogClient(f *accountFixture) delidevv1connect.ProviderServiceClient {
 	return delidevv1connect.NewProviderServiceClient(http.DefaultClient, f.endpoint.URL)
+}
+
+func TestProviderInventoryRejectsLegacyOrderingCursor(t *testing.T) {
+	f := newAccountFixture(t)
+	ctx := context.Background()
+	filter, err := json.Marshal(struct {
+		Query       string `json:"query"`
+		EnabledOnly bool   `json:"enabled_only"`
+		Limit       int    `json:"limit"`
+	}{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	filterHash := sha256.Sum256(filter)
+	filterDigest := hex.EncodeToString(filterHash[:])
+	client := catalogClient(f)
+	first, err := client.ListProviderInventory(ctx, ownerRequest(f.identity, &pb.ListProviderInventoryRequest{PageSize: 1}))
+	if err != nil || first.Msg.NextPageToken == "" {
+		t.Fatalf("read first provider inventory page: response=%+v error=%v", first, err)
+	}
+	currentCursor, err := f.identity.DecodeCursor(first.Msg.NextPageToken, providerInventoryCursorScopeVersion+":"+filterDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := f.identity.EncodeCursor(security.Cursor{
+		Scope:    "provider-inventory:" + filterDigest,
+		After:    domain.ID("custom:alpha:" + string(domain.NewID())),
+		Sequence: currentCursor.Sequence,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.ListProviderInventory(ctx, ownerRequest(f.identity, &pb.ListProviderInventoryRequest{PageSize: 1, PageToken: token}))
+	wantAccountCode(t, err, domain.CursorExpired)
 }
 
 func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) {
@@ -51,12 +89,26 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	if err != nil || domain.Decode(listed.Msg.PresetsJson, &presets) != nil {
 		t.Fatalf("read provider presets: %v", err)
 	}
-	var ollama domain.Provider
-	for _, preset := range presets {
+	var ollama, canonicalOllama domain.Provider
+	for _, preset := range providers.Presets() {
 		if preset.ID == domain.PresetOllama {
-			ollama = preset.Provider
+			canonicalOllama = preset.Provider
 		}
 	}
+	for _, preset := range presets {
+		if preset.Provider.PresetID != nil {
+			t.Fatalf("legacy editable preset payload included activation provenance: %+v", preset.Provider.PresetID)
+		}
+		if preset.ID == domain.PresetOllama {
+			ollama = preset.Provider
+			if canonicalOllama.Name != preset.Provider.Name || canonicalOllama.Endpoint != preset.Provider.Endpoint {
+				t.Fatal("legacy preset defaults do not match canonical activation defaults")
+			}
+		}
+	}
+	// Legacy preset reads omit nested provenance; activation fixtures use the
+	// canonical server preset so they exercise managed activation, not a custom copy.
+	ollama = canonicalOllama
 	ollama.SetEnabled(true)
 	raw, _ := json.Marshal(ollama)
 	save := func(request domain.ID) (*connect.Response[pb.SaveConfigurationResponse], error) {
