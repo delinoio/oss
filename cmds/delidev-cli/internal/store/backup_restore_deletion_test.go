@@ -4,12 +4,68 @@ package store
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
+
+func TestBackupRestoreRejectsSQLDeletionBeforeExternalIntent(t *testing.T) {
+	s, root, ctx, input, _ := restoreFixture(t)
+	source := filepath.Join(root, "backups", string(input.Backup.ID)+".sqlite")
+	original, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fail only the external intent write, after the real acceptance path has
+	// committed its job, receipt and SQL obligation. Recreate the private intent
+	// directory so its absence cannot mask the SQL-only window during restore.
+	intentRoot := filepath.Dir(s.deletionPath(input.Backup.ID))
+	if err := os.Remove(intentRoot); err != nil {
+		t.Fatal(err)
+	}
+	deletionRequest := domain.NewID()
+	deletionInput := BackupDeletionInput{Actor: input.Actor, ServerID: input.ServerID, Backup: input.Backup, SHA256: input.SHA256, ExpectedRevision: 1}
+	job, _, err := s.DeleteBackup(ctx, deletionRequest, deletionInput)
+	if domain.SafeError(err).Code != domain.Unavailable || job.ID.Validate() != nil {
+		t.Fatal("fixture did not retain SQL acceptance before intent failure", err)
+	}
+	if err := security.PrivateDir(intentRoot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.readDeletionIntent(input.Backup.ID); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("fixture has an external intent", err)
+	}
+	var obligated bool
+	if err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM backup_deletions WHERE backup_id=?)", input.Backup.ID).Scan(&obligated); err != nil || !obligated {
+		t.Fatal("fixture lost its durable SQL obligation", err)
+	}
+	input.ExpectedRevision, err = s.RestoreRevision(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoreRequest := domain.NewID()
+	if _, _, err := s.RestoreBackup(ctx, restoreRequest, input); err == nil || domain.SafeError(err).Code != domain.Conflict || s.RestoreFrozen() {
+		t.Fatal("restore published a deletion-owned image", err)
+	}
+	revision, err := s.RestoreRevision(ctx)
+	if err != nil || revision != input.ExpectedRevision || s.restoreReservations[restoreRequest] {
+		t.Fatal("rejected restore changed live state or accepted a request", err)
+	}
+	current, err := os.ReadFile(source)
+	if err != nil || !bytes.Equal(current, original) {
+		t.Fatal("rejected restore changed the selected source", err)
+	}
+	// Recovery retains the original deletion UUID/job rather than accepting a
+	// replacement after the failed restore.
+	replayed, replay, err := s.DeleteBackup(ctx, deletionRequest, deletionInput)
+	if err != nil || !replay || replayed.ID != job.ID {
+		t.Fatal("original deletion could not finish intent persistence", err)
+	}
+}
 
 func TestBackupRestoreRejectsPendingSessionDeletion(t *testing.T) {
 	s, root, ctx, in, _ := restoreFixture(t)

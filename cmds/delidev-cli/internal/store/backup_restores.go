@@ -333,6 +333,15 @@ func (s *Store) restoreBackupWithBarrier(ctx context.Context, request domain.ID,
 	if used {
 		return result, false, restoreConflict()
 	}
+	// Deletion commits its SQL obligation before writing the external intent.
+	// A failed intent write cannot release ownership of the selected image.
+	var deleting bool
+	if err := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM backup_deletions WHERE backup_id=?)", in.Backup.ID).Scan(&deleting); err != nil {
+		return result, false, storageError(err)
+	}
+	if deleting {
+		return result, false, restoreConflict()
+	}
 	// This shared file gate excludes managed deletion too. Check the external
 	// obligation directly: a rolled-back database can never revive this image.
 	if _, err := s.readDeletionIntent(in.Backup.ID); !errors.Is(err, os.ErrNotExist) {
