@@ -1,7 +1,7 @@
 # Pinned required workflows: replacement implementation
 
 Validation date: 2026-09-30. Freshly fetched target `origin/main` was
-`ad0e3e9a2` (`ad0e3e9a2` is the inspected base, not issue completion evidence).
+`ad0e3e9a29cb3d8375ab5d168bb160c35a023250`.
 Implementation commit: `910d33b73d6d02552fe63061a94768ff4fabd090`.
 
 Issue #1106 remains open. Closed, unmerged PRs #1111 and #1167 do not establish
@@ -41,8 +41,8 @@ Executed checks:
   that PR has no potential merge commit, so this validates the document schema,
   not real-account required-workflow outcomes.
 
-The full root Go race suite and desktop `VITEST_MAX_WORKERS=2 pnpm test` are
-recorded separately when they finish. The full desktop run has encountered failures
+The completed full root Go race suite and desktop `VITEST_MAX_WORKERS=2 pnpm test`
+are recorded in [full validation](replacement-full-validation.md). The full desktop run encountered failures
 in unchanged Settings/App fixtures; the two Agent opaque-page cases pass in an
 isolated one-worker retry (2 passed / 47 skipped, 19.24s). This does not attribute
 every full-suite failure or establish a full-suite pass.
