@@ -31,10 +31,44 @@ export function verifyBundle(bundle, run, nativeArch) {
   const plist = join(bundle, "Contents/Info.plist");
   if (run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleIdentifier", plist]).trim() !== "io.delino.delidev") throw new Error("The bundle identifier changed.");
   if (run("/usr/libexec/PlistBuddy", ["-c", "Print :LSMinimumSystemVersion", plist]).trim() !== "13.0") throw new Error("The bundle no longer targets macOS 13.");
+  verifyWidgetBundle(bundle, run, nativeArch);
   run("codesign", ["--verify", "--deep", "--strict", bundle]);
   // codesign writes display metadata to stderr. The wrapper returns both streams;
   // its caller never publishes identities from a production signing environment.
   if (!/^Signature=adhoc$/m.test(run("codesign", ["--display", "--verbose=4", bundle]))) throw new Error("The dry-run bundle is not explicitly ad-hoc signed.");
+}
+
+export function verifyWidgetBundle(bundle, run, nativeArch) {
+  const checkEntitlements = (path, sandboxed) => {
+    // Newer codesign prints human-readable dictionaries for '-'. Keep the
+    // explicit XML form across macOS 13+ toolchains until a replacement offers
+    // one structured output format on every supported verification host.
+    const value = run("codesign", ["--display", "--entitlements", ":-", path]);
+    const keys = [...value.matchAll(/<key>([^<]+)<\/key>/g)].map(match => match[1]).sort();
+    const cef = ["com.apple.security.cs.allow-jit", "com.apple.security.cs.allow-unsigned-executable-memory", "com.apple.security.cs.disable-library-validation"];
+    const expected = ["com.apple.security.application-groups", ...(sandboxed ? ["com.apple.security.app-sandbox"] : cef)].sort();
+    if (JSON.stringify(keys) !== JSON.stringify(expected)
+      || !/<key>com\.apple\.security\.application-groups<\/key>\s*<array>\s*<string>group\.io\.delino\.delidev<\/string>\s*<\/array>/.test(value)
+      || (sandboxed && !/<key>com\.apple\.security\.app-sandbox<\/key>\s*<true\s*\/>/.test(value))
+      || (!sandboxed && cef.some(key => !value.includes(`<key>${key}</key><true/>`)))) throw new Error("The widget App Group or sandbox entitlements changed.");
+  };
+  checkEntitlements(bundle, false);
+  for (const [name, id, point] of [
+    ["DeliDevWidget", "io.delino.delidev.widget", "com.apple.widgetkit-extension"],
+    ["DeliDevWidgetSelection", "io.delino.delidev.widget.selection", "com.apple.intents-service"],
+  ]) {
+    const extension = join(bundle, "Contents/PlugIns", `${name}.appex`);
+    const binary = join(extension, "Contents/MacOS", name);
+    if (!lstatSync(binary).isFile()) throw new Error("A widget executable is not a regular file.");
+    accessSync(binary, constants.X_OK);
+    if (run("lipo", ["-archs", binary]).trim() !== nativeArch) throw new Error("A widget executable has the wrong architecture.");
+    const plist = join(extension, "Contents/Info.plist");
+    for (const [key, expected] of [["CFBundleIdentifier", id], ["LSMinimumSystemVersion", "13.0"], ["NSExtension:NSExtensionPointIdentifier", point]]) {
+      if (run("/usr/libexec/PlistBuddy", ["-c", `Print :${key}`, plist]).trim() !== expected) throw new Error("A widget bundle identifier, extension point or minimum OS changed.");
+    }
+    run("codesign", ["--verify", "--strict", extension]);
+    checkEntitlements(extension, true);
+  }
 }
 
 function main() {
@@ -46,6 +80,7 @@ function main() {
   build("pnpm", ["--filter", "@delinoio/delidev-api-client", "build"]);
   build("pnpm", ["build"]);
   build("pnpm", ["prepare:sidecar"]);
+  build("pnpm", ["prepare:widget"]);
   build("cargo", ["build", "--locked", "--release", "--manifest-path", "src-tauri/Cargo.toml", "--features", "desktop-host,custom-protocol", "--bin", "delidev-desktop"]);
   const selected = targets.find(item => item.platform === process.platform && item.arch === process.arch);
   const credits = cefCredits(selected, env);

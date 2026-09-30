@@ -63,15 +63,23 @@ func (s *Store) ListAccountsByProviderPage(ctx context.Context, filter Filter, p
 		if _, err := tx.Get(domain.ProviderKind, provider); err != nil {
 			return err
 		}
+		var err error
 		query := "SELECT " + recordColumns + " FROM entities WHERE kind='account' AND json_extract(body,'$.provider_id')=?"
 		args := []any{provider}
 		if filter.AccountType != "" {
 			query += " AND json_extract(body,'$.type')=?"
 			args = append(args, filter.AccountType)
 		}
+		if filter.SessionID != "" {
+			query += " AND session_id=?"
+			args = append(args, filter.SessionID)
+		}
+		if filter.ProjectID != "" {
+			query += " AND project_id=?"
+			args = append(args, filter.ProjectID)
+		}
 		query += " AND id>? ORDER BY id LIMIT ?"
 		args = append(args, filter.After, filter.Limit+1)
-		var err error
 		result, err = tx.modelRecords(query, args...)
 		if err == nil && len(result) > filter.Limit {
 			more = true
@@ -157,10 +165,10 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 			if !ok {
 				return domain.Fail(domain.CursorExpired, "The provider inventory cursor is invalid.", "Restart provider inventory pagination.")
 			}
-			customQuery += " AND (lower(json_extract(body,'$.name'))>lower(?) OR (lower(json_extract(body,'$.name'))=lower(?) AND id>?))"
+			customQuery += " AND (json_extract(body,'$.name')>? OR (json_extract(body,'$.name')=? AND id>?))"
 			args = append(args, name, name, id)
 		}
-		customQuery += " ORDER BY lower(json_extract(body,'$.name')),id LIMIT ?"
+		customQuery += " ORDER BY json_extract(body,'$.name'),id LIMIT ?"
 		args = append(args, f.Limit+1)
 		custom, err := tx.modelRecords(customQuery, args...)
 		if err != nil {
@@ -175,7 +183,7 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 			if err != nil {
 				return err
 			}
-			entry := ProviderInventoryItem{Provider: &record, ProviderID: record.ID, DisplayName: provider.Name, Enabled: provider.EnabledValue(), key: "custom:" + strings.ToLower(provider.Name) + ":" + string(record.ID)}
+			entry := ProviderInventoryItem{Provider: &record, ProviderID: record.ID, DisplayName: provider.Name, Enabled: provider.EnabledValue(), key: "custom:" + provider.Name + ":" + string(record.ID)}
 			candidates = append(candidates, entry)
 		}
 		sortProviderInventory(candidates)
