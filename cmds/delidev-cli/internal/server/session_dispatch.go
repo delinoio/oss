@@ -331,26 +331,43 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 // Worker revalidates native settings and filesystem/process ownership, executes
 // the harness and verifies its push. No native publication runs on the server.
 func (s *Service) runExecutionDispatch(parent context.Context) {
-	ctx := domain.WithPrincipal(parent, domain.Principal{Type: domain.OwnerDevice})
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	s.runExecutionDispatchTicks(parent, ticker.C)
+}
+
+func (s *Service) runExecutionDispatchTicks(parent context.Context, ticks <-chan time.Time) {
+	ctx := domain.WithPrincipal(parent, domain.Principal{Type: domain.OwnerDevice})
 	var after domain.ID
 	var fixAfter domain.ID
 	// Slow provider reads occupy a separate bounded lane, never the ordinary
 	// serial queue scan. Keep each original session unique and join on shutdown.
 	active := map[domain.ID]bool{}
-	completed := make(chan domain.ID, 4)
+	completed := make(chan struct {
+		record store.Record
+		failed bool
+	}, 4)
+	retries := prFixDispatchRetries{}
 	var fixes sync.WaitGroup
 	defer fixes.Wait()
 	for {
+		var now time.Time
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case now = <-ticks:
 		}
 		for len(completed) > 0 {
-			delete(active, <-completed)
+			result := <-completed
+			delete(active, result.record.ID)
+			if result.failed {
+				delay := retries.failed(result.record, now)
+				s.logger.InfoContext(ctx, "manual_pr_fix_retry_scheduled", "session_id", result.record.ID, "delay_ms", delay.Milliseconds())
+			} else {
+				delete(retries, result.record.ID)
+			}
 		}
+		retries.expire(now)
 		fixAfter = s.reconcilePRFixes(ctx, fixAfter)
 		page, more, err := s.Store.ExecutionCandidates(ctx, after, 50)
 		if err != nil {
@@ -373,19 +390,23 @@ func (s *Service) runExecutionDispatch(parent context.Context) {
 				continue
 			}
 			if manual {
-				if len(active) >= cap(completed) {
+				if len(active) >= cap(completed) || !retries.ready(record, now) {
 					continue
 				}
 				active[record.ID] = true
 				fixes.Add(1)
 				go func() {
 					defer fixes.Done()
-					defer func() { completed <- record.ID }()
 					bounded, cancel := context.WithTimeout(ctx, 75*time.Second)
 					defer cancel()
-					if err := s.dispatchExecution(bounded, record); err != nil && ctx.Err() == nil {
+					err := s.dispatchExecution(bounded, record)
+					if err != nil && ctx.Err() == nil {
 						s.logger.WarnContext(ctx, "manual_pr_fix_dispatch_failed", "session_id", record.ID, "code", domain.SafeError(err).Code)
 					}
+					completed <- struct {
+						record store.Record
+						failed bool
+					}{record, err != nil}
 				}()
 				continue
 			}

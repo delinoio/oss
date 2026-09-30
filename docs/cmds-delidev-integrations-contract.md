@@ -367,6 +367,15 @@ Manual fix selection requires the exact local repository in the original retaine
 set before reading policy/profile authority; a same-remote repository alias cannot
 substitute. Up to four independent provider preflights run outside the ordinary
 execution scan and are canceled and joined at shutdown. The ordinary five-second
-claim bound is preserved. Post-push cleanliness excludes ignored validation output
+claim bound is preserved. Failed unaccepted manual-fix dispatch attempts retain a
+server-epoch scheduling deadline: 30 seconds initially, doubling to a five-minute
+maximum after consecutive failures. The retained failure block and unrelated
+blocked-session edits cannot reset that deadline. Explicit Stop/Resume or a fresh
+accepted ready input may clear scheduling delay, while all original input, remote,
+configuration and atomic claim checks still apply. Successful dispatch clears the
+entry; abandoned entries expire after a further five minutes. A fresh server epoch
+may inspect the original candidate again. This bounds automatic preflight reads
+and scheduler memory without authorizing native input or push replay.
+Post-push cleanliness excludes ignored validation output
 while retaining tracked and ordinary untracked source checks. Typed capability
 consumers accept their known profile alongside additive unknown entries.

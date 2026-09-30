@@ -245,6 +245,9 @@ func TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion(t *testing.T) {
 			if _, err := f.service.RequestPullRequestFix(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
 				t.Fatal("Worker business mutation", err)
 			}
+			if kind == "ci" {
+				assertManualPRFixDispatchBackoff(t, f, attempt.SessionID)
+			}
 		})
 	}
 }
