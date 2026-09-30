@@ -74,6 +74,47 @@ function workflowState(row: Document): CIState {
   return ["FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE"].includes(text(row.native_conclusion)) ? CIState.TerminalFailure : CIState.Unknown;
 }
 const ciPriority = new Map([[CIState.Unknown, 5], [CIState.TerminalFailure, 4], [CIState.Missing, 3], [CIState.Pending, 2], [CIState.NonFailing, 1], [CIState.NotRequired, 0]]);
+enum QueueCIReason {
+  Observed = "observed",
+  NoMatchingResult = "no-matching-result",
+  AppUnverified = "app-unverified",
+  WorkflowUnverified = "workflow-unverified",
+  UnknownNativeResult = "unknown-native-result",
+}
+function queuedStatusAssessment(ref: Document, contexts: Map<string, Document>): { state: CIState; reason: QueueCIReason; ids: string[] } {
+  const result = { state: CIState.Missing, reason: QueueCIReason.NoMatchingResult, ids: [] as string[] };
+  if (ref.integration_id === "0") return { state: CIState.Unknown, reason: QueueCIReason.AppUnverified, ids: [] };
+  const checkSources = new Map<string, number>();
+  // Match the domain's complete ordered assessment, including unknown App or
+  // workflow provenance and duplicate same-App runs. Referenced IDs alone cannot
+  // prove a headline or hide another matching required result.
+  for (const context of contexts.values()) {
+    if (context.name !== ref.context || context.required !== true) continue;
+    let state = context.kind === "commit-status"
+      ? context.native_status === "SUCCESS" ? CIState.NonFailing : ["FAILURE", "ERROR"].includes(text(context.native_status)) ? CIState.TerminalFailure : ["PENDING", "EXPECTED"].includes(text(context.native_status)) ? CIState.Pending : CIState.Unknown
+      : workflowState(context);
+    let reason = QueueCIReason.Observed;
+    const app = object(context.application);
+    if (context.kind === "check-run") {
+      if (context.application == null) { state = CIState.Unknown; reason = QueueCIReason.AppUnverified; }
+      else if (app.id === "15368" && !queueResultProvenance(context)) { state = CIState.Unknown; reason = QueueCIReason.WorkflowUnverified; }
+    }
+    if (ref.integration_id != null) {
+      if (context.application == null) { state = CIState.Unknown; reason = QueueCIReason.AppUnverified; }
+      else if (app.id !== ref.integration_id) continue;
+    }
+    if (state === CIState.Unknown && reason === QueueCIReason.Observed) reason = QueueCIReason.UnknownNativeResult;
+    if (context.kind === "check-run" && context.application != null) {
+      const count = (checkSources.get(text(app.id)) ?? 0) + 1;
+      checkSources.set(text(app.id), count);
+      if (count > 1) { state = CIState.Unknown; reason = QueueCIReason.UnknownNativeResult; }
+    }
+    result.ids.push(text(context.node_id));
+    if (result.state === CIState.Missing || ciPriority.get(state)! > ciPriority.get(result.state)!) { result.state = state; result.reason = reason; }
+  }
+  if (result.state === CIState.Missing) result.state = CIState.Unknown;
+  return result;
+}
 function workflowAssessment(ref: Document, runs: Document[], contexts: Map<string, Document>, source: unknown, unsupported: boolean): { state: CIState; reason: string; ids: string[] } {
   const unknown = { state: CIState.Unknown, reason: "workflow-unverified", ids: [] as string[] };
   if (!sha(ref.sha) || unsupported || source !== "test-merge" || runs.some((run) => run.source == null)) return unknown;
@@ -173,6 +214,9 @@ export function validPRCI(raw: unknown, item: Document): boolean {
       if (!validWorkflowReference(row.workflow)) return false;
       for (const key of ["repository_id", "path", "sha", "ref"]) if (object(row.workflow)[key] !== object(requirement.workflow)[key]) return false;
       const expected = workflowAssessment(object(row.workflow), workflowRuns, contexts, result.source, requirement.unsupported === true);
+      if (row.state !== expected.state || row.reason !== expected.reason || row.result_node_ids.length !== expected.ids.length || row.result_node_ids.some((id, index) => id !== expected.ids[index])) return false;
+    } else if (result.source === "merge-queue") {
+      const expected = queuedStatusAssessment(requirement, contexts);
       if (row.state !== expected.state || row.reason !== expected.reason || row.result_node_ids.length !== expected.ids.length || row.result_node_ids.some((id, index) => id !== expected.ids[index])) return false;
     }
     const used = new Set<string>();
