@@ -259,3 +259,35 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 	result.CleanupVerified = true
 	return result, nil
 }
+
+// StorageRemovalReference names only the immutable intent to retire after its
+// matching server report and Worker reported journal are durable.
+type StorageRemovalReference struct {
+	OperationID domain.ID     `json:"operation_id"`
+	SessionID   domain.ID     `json:"session_id"`
+	SnapshotID  domain.ID     `json:"snapshot_id"`
+	Action      StorageAction `json:"action"`
+}
+
+func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalReference) error {
+	if ref.OperationID.Validate() != nil || ref.SessionID.Validate() != nil || ref.SnapshotID.Validate() != nil || (ref.Action != StorageCleanup && ref.Action != StorageDelete) {
+		return ResultUncertain()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	path := m.removalIntentPath(ref.OperationID)
+	raw, err := security.ReadPrivate(path, maxSnapshotManifest)
+	if err == nil {
+		var intent storageRemovalIntent
+		if domain.Decode(raw, &intent) != nil || intent.Version != 1 || intent.OperationID != ref.OperationID || intent.SessionID != ref.SessionID || intent.SnapshotID != ref.SnapshotID || intent.Action != ref.Action {
+			return ResultUncertain()
+		}
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ResultUncertain()
+	}
+	return security.SyncParent(path)
+}

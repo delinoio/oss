@@ -320,7 +320,11 @@ native harness checkpoint or continuation support. Snapshot deletion requires an
 explicit owner/client request and cannot remove a stored workspace's only
 recoverable copy; restore it first. Deletion claims and verifies the snapshot via
 the same immutable removal-intent boundary and retains historical metadata with
-`deleted=true`.
+`deleted=true`. Removal inventories remain private through uncertain reporting.
+Only a matching successful server acknowledgment followed by the synchronized
+Worker reported journal permits retirement of that original intent. A bounded
+metadata-only retirement receipt survives interruptions and retries intent
+retirement at Worker startup; it never grants further native removal.
 
 Usage results separate exact logical source bytes, all retained published snapshot
 bytes, confirmed logical removed source bytes and optional measured filesystem

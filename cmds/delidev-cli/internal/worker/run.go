@@ -170,6 +170,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	httpClient, transport := rpc.HTTPClient()
 	defer transport.CloseIdleConnections()
 	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
+	if err := retireStorageReports(ctx, config); err != nil {
+		return err
+	}
 	instance, attachID := domain.NewID(), domain.NewID()
 	var capabilityAttachID domain.ID
 	var capabilityProfile string
@@ -589,7 +592,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			report.Problem = &pb.ErrorDetail{Code: string(result.Problem.Code)}
 		}
 		attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
-		_, err = client.ReportWork(attempt, authenticated(credential, report))
+		acknowledged, err := client.ReportWork(attempt, authenticated(credential, report))
 		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
@@ -599,6 +602,10 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		}
 		result.State = journalReported
 		if err := writeJSON(filepath.Join(config.Root, "jobs", string(id)+".json"), result); err != nil {
+			return err
+		}
+		if err := acknowledgeStorageRemoval(ctx, config, resource, job, result, acknowledged.Msg.Job); err != nil {
+			config.Logger.Warn("storage_intent_retirement_pending", "job_id", id, "code", domain.SafeError(err).Code)
 			return err
 		}
 		config.Logger.InfoContext(ctx, "worker job reported", "machine_id", credential.MachineID, "job_id", id, "type", job.Type, "reported_problem", result.Problem != nil)
