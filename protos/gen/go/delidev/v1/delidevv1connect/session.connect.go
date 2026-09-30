@@ -33,9 +33,6 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// SessionServiceSwitchSessionAccountProcedure is the fully-qualified name of the SessionService's
-	// SwitchSessionAccount RPC.
-	SessionServiceSwitchSessionAccountProcedure = "/delidev.v1.SessionService/SwitchSessionAccount"
 	// SessionServiceLinkSessionPullRequestProcedure is the fully-qualified name of the SessionService's
 	// LinkSessionPullRequest RPC.
 	SessionServiceLinkSessionPullRequestProcedure = "/delidev.v1.SessionService/LinkSessionPullRequest"
@@ -102,11 +99,13 @@ const (
 	// SessionServiceSubmitLocalReviewProcedure is the fully-qualified name of the SessionService's
 	// SubmitLocalReview RPC.
 	SessionServiceSubmitLocalReviewProcedure = "/delidev.v1.SessionService/SubmitLocalReview"
+	// SessionServiceSwitchSessionAccountProcedure is the fully-qualified name of the SessionService's
+	// SwitchSessionAccount RPC.
+	SessionServiceSwitchSessionAccountProcedure = "/delidev.v1.SessionService/SwitchSessionAccount"
 )
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
-	SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error)
 	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
 	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -129,6 +128,7 @@ type SessionServiceClient interface {
 	EditLocalReviewComment(context.Context, *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error)
 	DeleteLocalReviewComment(context.Context, *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error)
 	SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error)
+	SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error)
 }
 
 // NewSessionServiceClient constructs a client for the delidev.v1.SessionService service. By
@@ -142,12 +142,6 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
-		switchSessionAccount: connect.NewClient[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse](
-			httpClient,
-			baseURL+SessionServiceSwitchSessionAccountProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("SwitchSessionAccount")),
-			connect.WithClientOptions(opts...),
-		),
 		linkSessionPullRequest: connect.NewClient[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse](
 			httpClient,
 			baseURL+SessionServiceLinkSessionPullRequestProcedure,
@@ -280,12 +274,17 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("SubmitLocalReview")),
 			connect.WithClientOptions(opts...),
 		),
+		switchSessionAccount: connect.NewClient[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse](
+			httpClient,
+			baseURL+SessionServiceSwitchSessionAccountProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("SwitchSessionAccount")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
-	switchSessionAccount     *connect.Client[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse]
 	linkSessionPullRequest   *connect.Client[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse]
 	unlinkSessionPullRequest *connect.Client[v1.UnlinkSessionPullRequestRequest, v1.UnlinkSessionPullRequestResponse]
 	readSessionReviewContext *connect.Client[v1.ReadSessionReviewContextRequest, v1.ReadSessionReviewContextResponse]
@@ -308,11 +307,7 @@ type sessionServiceClient struct {
 	editLocalReviewComment   *connect.Client[v1.EditLocalReviewCommentRequest, v1.EditLocalReviewCommentResponse]
 	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
 	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
-}
-
-// SwitchSessionAccount calls delidev.v1.SessionService.SwitchSessionAccount.
-func (c *sessionServiceClient) SwitchSessionAccount(ctx context.Context, req *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error) {
-	return c.switchSessionAccount.CallUnary(ctx, req)
+	switchSessionAccount     *connect.Client[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse]
 }
 
 // LinkSessionPullRequest calls delidev.v1.SessionService.LinkSessionPullRequest.
@@ -425,9 +420,13 @@ func (c *sessionServiceClient) SubmitLocalReview(ctx context.Context, req *conne
 	return c.submitLocalReview.CallUnary(ctx, req)
 }
 
+// SwitchSessionAccount calls delidev.v1.SessionService.SwitchSessionAccount.
+func (c *sessionServiceClient) SwitchSessionAccount(ctx context.Context, req *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error) {
+	return c.switchSessionAccount.CallUnary(ctx, req)
+}
+
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
-	SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error)
 	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
 	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -450,6 +449,7 @@ type SessionServiceHandler interface {
 	EditLocalReviewComment(context.Context, *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error)
 	DeleteLocalReviewComment(context.Context, *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error)
 	SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error)
+	SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -459,12 +459,6 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
-	sessionServiceSwitchSessionAccountHandler := connect.NewUnaryHandler(
-		SessionServiceSwitchSessionAccountProcedure,
-		svc.SwitchSessionAccount,
-		connect.WithSchema(sessionServiceMethods.ByName("SwitchSessionAccount")),
-		connect.WithHandlerOptions(opts...),
-	)
 	sessionServiceLinkSessionPullRequestHandler := connect.NewUnaryHandler(
 		SessionServiceLinkSessionPullRequestProcedure,
 		svc.LinkSessionPullRequest,
@@ -597,10 +591,14 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("SubmitLocalReview")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceSwitchSessionAccountHandler := connect.NewUnaryHandler(
+		SessionServiceSwitchSessionAccountProcedure,
+		svc.SwitchSessionAccount,
+		connect.WithSchema(sessionServiceMethods.ByName("SwitchSessionAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case SessionServiceSwitchSessionAccountProcedure:
-			sessionServiceSwitchSessionAccountHandler.ServeHTTP(w, r)
 		case SessionServiceLinkSessionPullRequestProcedure:
 			sessionServiceLinkSessionPullRequestHandler.ServeHTTP(w, r)
 		case SessionServiceUnlinkSessionPullRequestProcedure:
@@ -645,6 +643,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceDeleteLocalReviewCommentHandler.ServeHTTP(w, r)
 		case SessionServiceSubmitLocalReviewProcedure:
 			sessionServiceSubmitLocalReviewHandler.ServeHTTP(w, r)
+		case SessionServiceSwitchSessionAccountProcedure:
+			sessionServiceSwitchSessionAccountHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -653,10 +653,6 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
-
-func (UnimplementedSessionServiceHandler) SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SwitchSessionAccount is not implemented"))
-}
 
 func (UnimplementedSessionServiceHandler) LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.LinkSessionPullRequest is not implemented"))
@@ -744,4 +740,8 @@ func (UnimplementedSessionServiceHandler) DeleteLocalReviewComment(context.Conte
 
 func (UnimplementedSessionServiceHandler) SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SubmitLocalReview is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SwitchSessionAccount is not implemented"))
 }

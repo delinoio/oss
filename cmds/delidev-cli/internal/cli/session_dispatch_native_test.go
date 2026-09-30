@@ -115,7 +115,13 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 		mode := scenario.mode
 		multipleRepositories := scenario.repositories > 1
 		t.Run(string(scenario.workspace)+"/"+string(mode), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			deadline := 120 * time.Second
+			if profile == nativeAccountSwitchWorkspaces {
+				// Two independently owned native startups and account validations may
+				// run on a busy host. Keep product probe/operation bounds unchanged.
+				deadline = 3 * time.Minute
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), deadline)
 			defer cancel()
 			root := filepath.Join(t.TempDir(), "server")
 			ready := make(chan struct{})
@@ -741,7 +747,30 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				if replay["replayed"] != true || len(replay["session"].(map[string]any)["data"].(map[string]any)["account_changes"].([]any)) != 1 {
 					t.Fatal("lost switch acknowledgement duplicated selection history")
 				}
-				run([]string{"session", "resume", "--id", id, "--revision", revision(selected["session"].(map[string]any))}, nil)
+				// This profile proves only the explicit A-to-B boundary. The original
+				// fixture below separately exercises longer FIFO and interrupt chains.
+				second := enqueue("Public second prompt", domain.PlanMode)
+				select {
+				case <-time.After(1200 * time.Millisecond):
+				case <-ctx.Done():
+					t.Fatal("account-switch fixture deadline")
+				}
+				if calls.Load() != 1 || selected["session"].(map[string]any)["data"].(map[string]any)["dispatch"] != string(domain.DispatchPaused) {
+					t.Fatal("account selection automatically dispatched queued input")
+				}
+				current = run([]string{"session", "get", "--id", id}, nil)
+				run([]string{"session", "resume", "--id", id, "--revision", revision(current)}, nil)
+				waitTurn(2, second)
+				replay = run(args, nil)
+				if replay["replayed"] != true || len(replay["session"].(map[string]any)["data"].(map[string]any)["account_changes"].([]any)) != 1 || calls.Load() != 2 || validations.Load() != 2 {
+					t.Fatal("completed A-to-B receipt replay changed history or repeated provider work")
+				}
+				messages = run([]string{"message", "list", "--session-id", id}, nil)["resources"].([]any)
+				if len(messages) != 4 {
+					t.Fatal("account switching lost the original native transcript")
+				}
+				t.Log("public CLI A-to-B switch retained complete ordered native history, rejected A-bound remote identifiers, remained paused until Resume, used fresh B ownership and replayed one selection; keyless loopback only")
+				return
 			}
 			// Complete two FIFO turns in fresh native processes on the original history.
 			second := enqueue("Public second prompt", domain.PlanMode)
