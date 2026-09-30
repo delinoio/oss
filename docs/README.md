@@ -51,6 +51,7 @@ Each project must have one project index document and one or more domain contrac
 - [Connect protocol](protos-delidev-v1-contract.md)
 - [TypeScript client and synchronization](packages-delidev-api-client-contract.md)
 - [Desktop client](apps-delidev-desktop-contract.md)
+- [AI Subscription settings](apps-delidev-subscription-settings-contract.md)
 - [Worker workspace preparation](cmds-delidev-workspace-contract.md)
 - [Session file explorer](cmds-delidev-files-contract.md)
 - [Portable configuration](cmds-delidev-configuration-transfer-contract.md)

@@ -21,6 +21,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Protocol contract](protos-delidev-v1-contract.md)
 - [TypeScript client contract](packages-delidev-api-client-contract.md)
 - [Desktop client contract](apps-delidev-desktop-contract.md)
+- [AI Subscription settings](apps-delidev-subscription-settings-contract.md)
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Session file explorer and Git comparisons](cmds-delidev-files-contract.md)
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)

@@ -4,6 +4,8 @@ import {
   AccountQuery,
   AccountTypeFilter,
   ConfigurationQuery,
+  clientFailure,
+  FailureCode,
   EntityKind,
   ResourceQuery,
   newRequestId,
@@ -14,6 +16,7 @@ import { Authentication } from "./configuration-fields";
 import { document, object, resourceName, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import { QuotaObservationState, SubscriptionConnectionState, SubscriptionReadState, SubscriptionSettingsView, type SubscriptionAccountRow } from "./subscription-settings";
 
 export enum AccountSettingsSection {
   Api = "api",
@@ -34,6 +37,8 @@ export interface AccountSettingsProps {
   active: boolean;
   accountTypeFilteringReady: boolean;
   accountTypeFilteringProblem?: unknown;
+  accountTypeFilteringLoading?: boolean;
+  retryAccountCapabilities?: () => void;
   providerIdFilter?: string;
   clearProviderFilter: () => void;
   providers: readonly AccountProviderSummary[];
@@ -491,6 +496,8 @@ export function AccountSettings({
   active,
   accountTypeFilteringReady,
   accountTypeFilteringProblem,
+  accountTypeFilteringLoading = false,
+  retryAccountCapabilities,
   providerIdFilter = "",
   clearProviderFilter,
   providers,
@@ -625,16 +632,68 @@ export function AccountSettings({
     openApiProviders();
   };
 
-  if (selectedAccount) return <AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} />;
-  if (createdSubscription) return <section><p role="status">Subscription configuration saved. Subscription login is not available yet; this account remains disconnected.</p><AccountConnection initial={createdSubscription} active={active} close={() => { setCreatedSubscription(undefined); void rows.refetch(); }} /></section>;
+  if (selectedAccount && section === AccountSettingsSection.Api) return <AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} />;
+
   if (wizard) return <AccountCreationWizard active={active} accountTypeFilteringReady={accountTypeFilteringReady} initialProviderId={wizardProviderId || providerIdFilter} providers={providerSummaries} eligibleProviders={eligibleProviders} search={providerSearch} setSearch={setProviderSearch} searchLoading={providerSearchLoading} searchError={providerSearchError} searchHasMore={providerSearchHasMore} loadMore={loadMoreProviders} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProviderId(""); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
 
-  return <section className="account-settings" aria-label={section === AccountSettingsSection.Api ? "API account settings" : "AI subscription account settings"}>
+  if (section === AccountSettingsSection.Subscription) {
+    const readProblem = accountTypeFilteringProblem || rows.error;
+    const failure = readProblem ? clientFailure(readProblem).code : undefined;
+    const state = failure === FailureCode.PermissionDenied ? SubscriptionReadState.PermissionDenied
+      : failure === FailureCode.Unauthenticated ? SubscriptionReadState.AuthenticationExpired
+      : readProblem ? SubscriptionReadState.Failed
+      : accountTypeFilteringLoading || (accountTypeFilteringReady && !rows.data) ? SubscriptionReadState.Loading
+      : !accountTypeFilteringReady ? SubscriptionReadState.Unsupported : SubscriptionReadState.Ready;
+    const accounts: SubscriptionAccountRow[] = (rows.data?.resources ?? []).map((row) => {
+      const data = document(row), provider = providersById.get(text(data.provider_id));
+      const quota = Array.isArray(data.quota) ? data.quota : [];
+      return {
+        id: row.id, alias: resourceName(row), providerName: provider?.displayName ?? "Provider unavailable · " + text(data.provider_id),
+        // The current generated account contract has no native brand or masked
+        // identity. Never derive either from an editable alias/provider name.
+        connection: text(object(data.removal).request_id) ? SubscriptionConnectionState.CleanupPending
+          : text(object(data.connection).id) ? SubscriptionConnectionState.Connected : SubscriptionConnectionState.Disconnected,
+        health: text(data.health), enabled: data.enabled === true,
+        providerState: provider ? provider.enabled ? "Enabled" : "Off" : "Unavailable",
+        confirmedExhausted: data.confirmed_exhausted === true,
+        windows: quota.map((entry) => {
+          const window = object(entry);
+          const state = Object.values(QuotaObservationState).find((value) => value === window.state) ?? QuotaObservationState.Unknown;
+          return { id: text(window.id), state, remaining: typeof window.remaining === "number" ? window.remaining : undefined, observedAt: text(window.observed_at), resetAt: text(window.reset_at) };
+        }),
+        metadataAvailable: row.schemaVersion === 1,
+        details: () => { onWorkflowReadyChange?.(true); setSelectedAccount(row); },
+        edit: () => editAccount(row), delete: () => deleteAccount(row),
+      };
+    });
+    return <><div hidden={Boolean(selectedAccount || createdSubscription)}><SubscriptionSettingsView accounts={accounts} active={active && !selectedAccount && !createdSubscription} state={state} problem={<Problem error={readProblem} />}
+      retryRead={() => { if (accountTypeFilteringProblem || !accountTypeFilteringReady) retryAccountCapabilities?.(); else void rows.refetch(); }}
+      activeFilter={providerIdFilter ? providersById.get(providerIdFilter)?.displayName || providerIdFilter : undefined}
+      clearFilter={() => { setPage({ section, providerId: "", token: "" }); clearProviderFilter(); }}
+      pagination={pageToken || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label="Account pages"><button type="button" disabled={!pageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>First page</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>Next page</button></nav> : null}
+      advanced={<>
+      <div className="account-provider-filter"><label>Search providers<input type="search" value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} /></label><label>Filter accounts by provider<select value={providerIdFilter} onChange={(event) => {
+        const provider = providerSummaries.find((candidate) => candidate.providerId === event.target.value);
+        setPage({ section, providerId: event.target.value, token: "" });
+        setProviderFilter(event.target.value, provider);
+      }}><option value="">All providers</option>{providerSummaries.map((provider) => <option key={provider.providerId} value={provider.providerId}>{provider.displayName}{provider.enabled ? " · On" : " · Off"}</option>)}{providerIdFilter && !providerSummaries.some((provider) => provider.providerId === providerIdFilter) ? <option value={providerIdFilter}>Selected provider · {providerIdFilter}</option> : null}</select></label><button type="button" disabled={!providerFilterHasMore || providerSearchLoading} onClick={loadMoreProviderFilters}>More provider filters</button></div>
+        <Problem error={providerSearchError} />
+      <section className="subscription-account-create"><h3>Add subscription configuration</h3><p>This saves disconnected metadata only. Subscription login and system credential reuse are not available.</p>
+        {subscriptionProviders.length > 0 ? <fieldset disabled={!accountTypeFilteringReady || subscriptionCreate.busy || subscriptionCreate.uncertain}><label>Subscription provider<select value={subscriptionProviderId} onChange={(event) => setSubscriptionProviderId(event.target.value)}><option value="">Select a subscription provider</option>{subscriptionProviders.map((provider) => <option key={provider.id} value={provider.id}>{resourceName(provider)}</option>)}</select></label><label>Account name<input autoComplete="off" maxLength={256} value={subscriptionAlias} aria-invalid={subscriptionAlias.length > 0 && !subscriptionAliasValid} onChange={(event) => setSubscriptionAlias(event.target.value)} /></label>{subscriptionAlias.length > 0 && !subscriptionAliasValid ? <p role="alert">Enter a non-empty account name no longer than 256 UTF-8 bytes.</p> : null}<button type="button" disabled={!accountTypeFilteringReady || !subscriptionProvider || !subscriptionAliasValid} onClick={createSubscriptionConfiguration}>Add subscription configuration</button></fieldset> : <p>No subscription provider configuration is available. Expand Subscription provider configurations below to add one.</p>}
+        <Problem error={subscriptionCreate.error} />{subscriptionCreate.uncertain ? <button type="button" disabled={subscriptionCreate.busy} onClick={subscriptionCreate.retry}>Retry the same subscription configuration</button> : null}{subscriptionCreateProblem ? <p role="alert">The server acknowledged the request without a matching subscription account. Inspect the original request before retrying.</p> : null}
+      </section>
+        <details><summary>Subscription provider configurations</summary>{subscriptionProviderManagement}</details>
+      </>} /></div>
+      {selectedAccount ? <AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} />
+        : createdSubscription ? <section><p role="status">Subscription configuration saved. Subscription login is not available yet; this account remains disconnected.</p><AccountConnection initial={createdSubscription} active={active} close={() => { setCreatedSubscription(undefined); void rows.refetch(); }} /></section> : null}
+    </>;
+  }
+
+  return <section className="account-settings" aria-label="API account settings">
     <header><div><p>Accounts are stored on the selected server. Connection, validation, and provider availability are separate states.</p></div>
       {providerIdFilter ? <button type="button" onClick={() => { setPage({ section, providerId: "", token: "" }); clearProviderFilter(); }}>Clear provider filter</button> : null}
-      {section === AccountSettingsSection.Api ? <button className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProviderId(providerIdFilter); onWorkflowReadyChange?.(true); setWizard(true); }}>Add API account</button> : null}
+      <button className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProviderId(providerIdFilter); onWorkflowReadyChange?.(true); setWizard(true); }}>Add API account</button>
     </header>
-    {section === AccountSettingsSection.Subscription ? <p>Subscription login is not available yet. Existing subscription configuration can still be managed here.</p> : null}
     {!accountTypeFilteringReady ? <div role="status"><p>Account lists require a server that supports account-type filtering. Update the selected server before opening this list or adding an account.</p><Problem error={accountTypeFilteringProblem} /></div> : <>
       <div className="account-provider-filter"><label>Search providers<input type="search" value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} /></label><label>Filter accounts by provider<select value={providerIdFilter} onChange={(event) => {
         const provider = providerSummaries.find((candidate) => candidate.providerId === event.target.value);
@@ -663,13 +722,9 @@ export function AccountSettings({
           <div className="actions"><button type="button" disabled={row.schemaVersion !== 1} onClick={() => editAccount(row)}>Edit preferences</button><button type="button" disabled={row.schemaVersion !== 1} onClick={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }}>Manage connection</button><button type="button" disabled={row.schemaVersion !== 1} onClick={() => deleteAccount(row)}>Delete account</button></div>
         </article>;
       })}
-      {rows.data?.resources.length === 0 && !rows.error ? section === AccountSettingsSection.Api ? <p>No API accounts. Add an account for an enabled API provider.</p> : <p>No subscription accounts are configured.</p> : null}
+      {rows.data?.resources.length === 0 && !rows.error ? <p>No API accounts. Add an account for an enabled API provider.</p> : null}
       <nav aria-label="Account pages"><button type="button" disabled={!pageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>First page</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>Next page</button></nav>
-      {section === AccountSettingsSection.Subscription ? <section className="subscription-account-create"><h3>Add subscription configuration</h3><p>This saves disconnected metadata only. Subscription login and system credential reuse are not available.</p>
-        {subscriptionProviders.length > 0 ? <fieldset disabled={!accountTypeFilteringReady || subscriptionCreate.busy || subscriptionCreate.uncertain}><label>Subscription provider<select value={subscriptionProviderId} onChange={(event) => setSubscriptionProviderId(event.target.value)}><option value="">Select a subscription provider</option>{subscriptionProviders.map((provider) => <option key={provider.id} value={provider.id}>{resourceName(provider)}</option>)}</select></label><label>Account name<input autoComplete="off" maxLength={256} value={subscriptionAlias} aria-invalid={subscriptionAlias.length > 0 && !subscriptionAliasValid} onChange={(event) => setSubscriptionAlias(event.target.value)} /></label>{subscriptionAlias.length > 0 && !subscriptionAliasValid ? <p role="alert">Enter a non-empty account name no longer than 256 UTF-8 bytes.</p> : null}<button type="button" disabled={!accountTypeFilteringReady || !subscriptionProvider || !subscriptionAliasValid} onClick={createSubscriptionConfiguration}>Add subscription configuration</button></fieldset> : <p>No subscription provider configuration is available. Expand Subscription provider configurations below to add one.</p>}
-        <Problem error={subscriptionCreate.error} />{subscriptionCreate.uncertain ? <button type="button" disabled={subscriptionCreate.busy} onClick={subscriptionCreate.retry}>Retry the same subscription configuration</button> : null}{subscriptionCreateProblem ? <p role="alert">The server acknowledged the request without a matching subscription account. Inspect the original request before retrying.</p> : null}
-      </section> : null}
+
     </>}
-    {section === AccountSettingsSection.Subscription ? <details><summary>Subscription provider configurations</summary>{subscriptionProviderManagement}</details> : null}
   </section>;
 }
