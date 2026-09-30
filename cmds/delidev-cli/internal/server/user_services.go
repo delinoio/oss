@@ -116,6 +116,14 @@ func (s *Service) ControlUserService(ctx context.Context, req *connect.Request[p
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	// Native registration intent lives outside SQLite. Keep its original
+	// authorization and side effects within the same lifecycle barrier as restore,
+	// so replacement cannot pass a service control that is still in flight.
+	lifecycle, err := LockLifecycle(s.Store.Root())
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	defer lifecycle.Close()
 	if a == userservice.Install && k == userservice.Server {
 		m.Options = s.userServiceOptions
 	}

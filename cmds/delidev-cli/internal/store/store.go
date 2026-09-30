@@ -27,16 +27,18 @@ const applicationID = 0x444c4456
 const MaxPage = 200
 
 type Store struct {
-	db                 *sql.DB
-	root               string
-	lock               *security.Lock
-	gate               sync.RWMutex
-	backupGate         sync.Mutex
-	backupCreationGate sync.Mutex
-	notifyMu           sync.Mutex
-	notify             chan struct{}
-	deletionFault      bool
-	closed             bool
+	db                  *sql.DB
+	root                string
+	lock                *security.Lock
+	gate                sync.RWMutex
+	backupGate          sync.Mutex
+	backupCreationGate  sync.Mutex
+	notifyMu            sync.Mutex
+	notify              chan struct{}
+	closed              bool
+	restoreFrozen       bool
+	restoreReservations map[domain.ID]bool
+	deletionFault       bool
 }
 
 type Record struct {
@@ -108,6 +110,15 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			return nil, storageError(err)
 		}
 	}
+	// Reconcile replacement before SQLite can read a WAL or migrate either
+	// image. server.lock remains owned for the entire recovery/publication.
+	if err := recoverBackupRestore(ctx, root); err != nil {
+		return nil, err
+	}
+	reservations, err := loadRestoreReservations(root)
+	if err != nil {
+		return nil, err
+	}
 	path := filepath.Join(root, "state.sqlite")
 	created := false
 	var db *sql.DB
@@ -162,6 +173,12 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 	if err := inspect(ctx, db, created); err != nil {
 		return fail(err)
 	}
+	if err := verifyRestoreHistory(ctx, db, root, reservations); err != nil {
+		return fail(err)
+	}
+	if err := cleanupSettledRestoreImages(ctx, root, reservations); err != nil {
+		return fail(err)
+	}
 	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA secure_delete=ON;"); err != nil {
 		return fail(err)
 	}
@@ -193,7 +210,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 	if _, err := db.ExecContext(ctx, "UPDATE worker_instances SET available_since=0"); err != nil {
 		return fail(err)
 	}
-	s := &Store{db: db, root: root, lock: lock, notify: make(chan struct{})}
+	s := &Store{db: db, root: root, lock: lock, notify: make(chan struct{}), restoreReservations: reservations}
 	success = true
 	return s, nil
 }
@@ -310,6 +327,9 @@ func (s *Store) Replay(ctx context.Context, id domain.ID, operation string, inpu
 	var result Result
 	found := false
 	err = s.Read(ctx, func(tx *Tx) error {
+		if err := s.checkRestoreRequestReservation(id); err != nil {
+			return err
+		}
 		if err := tx.Authorize(); err != nil {
 			return err
 		}
@@ -324,6 +344,9 @@ func (s *Store) Replay(ctx context.Context, id domain.ID, operation string, inpu
 		}
 		if savedHash != digest {
 			return domain.Fail(domain.Conflict, "The request ID was already used for different input.", "Retry the original command unchanged or use a new request ID.")
+		}
+		if string(saved) == quarantinedReceipt {
+			return restoreQuarantined()
 		}
 		found = true
 		result = Result{RequestID: id, Data: saved, Replayed: true}
@@ -346,6 +369,9 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 		return Result{}, domain.SessionDeletionPending()
 	}
 
+	if err := s.checkRestoreRequestReservation(id); err != nil {
+		return Result{}, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Result{}, storageError(err)
@@ -361,6 +387,9 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 	if err == nil {
 		if digest != savedHash {
 			return Result{}, domain.Fail(domain.Conflict, "The request ID was already used for different input.", "Retry the original command unchanged or use a new request ID.")
+		}
+		if string(saved) == quarantinedReceipt {
+			return Result{}, restoreQuarantined()
 		}
 		return Result{RequestID: id, Data: saved, Replayed: true}, nil
 	}
