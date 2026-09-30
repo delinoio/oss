@@ -100,6 +100,32 @@ The original checkout's pre-existing parent AGENTS modification and deleted icon
 were preserved. No Rust production source changed, so the repository's
 Rust-change-triggered root `cargo test` requirement did not apply.
 
+## Initial PR conflict repair
+
+PR #1187 initially reported conflicts after main advanced to
+`7f356266fc195b1880ffac66a93dadab5c5a2df7`. The branch merged that exact main
+revision without rebasing. Main's AI API Keys/entry terminology remains in its
+owned account/provider surfaces; the issue-approved neutral Models guidance
+remains intact. The shared-title condition now respects both the Models list's
+own title and Diagnostics' independently owned title. Other upstream changes
+were preserved.
+
+The resolved frontend reran the complete `pnpm test` pipeline with the same
+explicitly temporary local timing allowances: all 86 Vitest files / 1,020 tests,
+8 package fixtures, 16 launcher/asset fixtures, widget fixtures, TypeScript and
+production build passed. The configuration/setup were explicitly restored with
+no diff. Temporary preview sources and both generated `dist` directories were
+removed again.
+
+A rebuilt production-CSP browser fixture at 1840×1196 showed the current AI API
+Keys sidebar label, one visible Models heading and one visible Diagnostics
+heading after category navigation. The Models column measured 1040px with no
+horizontal overflow; browser warnings/errors were empty. An inactive mounted
+Diagnostics heading is hidden and absent from the accessibility tree. This is
+browser presentation evidence, not native desktop acceptance. The earlier
+static server was no longer running; an owned, loopback-only server on the same
+fixed port served only the temporary Models artifact and was stopped afterward.
+
 ## Remaining acceptance limits
 
 Browser/component/build results do not establish packaged CEF desktop behavior,
