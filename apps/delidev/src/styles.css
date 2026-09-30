@@ -665,6 +665,81 @@ dialog.modal-full-window::backdrop { background: transparent; }
   .settings-agent-empty { min-height: 280px; padding: 24px; }
 }
 
+/* AI Subscription responds to its own content width, including native chrome
+   and zoom. Keep every presentation rule scoped to this Settings surface. */
+.subscription-settings { width: 100%; max-width: 1120px; container-type: inline-size; color: #202632; }
+.subscription-settings section + section { margin-top: 32px; }
+.subscription-settings button, .subscription-settings input, .subscription-settings select, .subscription-advanced summary { min-height: 40px; }
+.subscription-settings button { white-space: normal; }
+.subscription-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; }
+.subscription-section-heading h2 { margin: 0; font-size: 1.1rem; font-weight: 650; }
+.subscription-list, .subscription-empty { border: 1px solid #d8dee8; border-radius: 12px; background: #fff; }
+.subscription-empty { padding: 24px; }
+.subscription-empty h3 { margin: 0 0 8px; }
+.subscription-empty p { margin: 0; color: #5b6577; }
+.subscription-row { min-width: 0; padding: 20px; }
+.subscription-row + .subscription-row { border-top: 1px solid #d8dee8; }
+.subscription-row-main { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(300px, 1.6fr) auto; gap: 20px; align-items: center; }
+.subscription-identity { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.subscription-identity > div { min-width: 0; }
+.subscription-identity h3 { margin: 0 0 4px; font-size: 1rem; font-weight: 600; overflow-wrap: anywhere; }
+.subscription-identity p { margin: 0 0 6px; color: #5b6577; font-size: .82rem; overflow-wrap: anywhere; }
+.subscription-mark { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: 0 0 40px; border: 1px solid #d8dee8; border-radius: 10px; background: #f3f5f8; }
+.subscription-mark-claude { background: #f5eee8; }
+.subscription-mark img { display: block; width: 24px; height: 24px; }
+.subscription-connection, .subscription-health { font-size: .8rem; }
+.subscription-connection { color: #5b6577; }
+.subscription-connection[data-state=connected] { color: #246547; }
+.subscription-connection[data-state=cleanup-pending], .subscription-health { color: #7f5716; }
+.subscription-quota-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }
+.subscription-quota { display: grid; gap: 6px; min-width: 0; }
+.subscription-quota-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; font-size: .8rem; }
+.subscription-quota-heading strong { font-weight: 500; overflow-wrap: anywhere; }
+.subscription-quota small { display: block; color: #5b6577; font-size: .72rem; line-height: 1.5; overflow-wrap: anywhere; }
+.subscription-quota progress { display: block; width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; appearance: none; accent-color: #246547; }
+.subscription-quota progress::-webkit-progress-bar { border-radius: 3px; background: #e9edf3; }
+.subscription-quota progress::-webkit-progress-value { border-radius: 3px; background: #246547; }
+.subscription-quota progress::-moz-progress-bar { border-radius: 3px; background: #246547; }
+.subscription-quota[data-state=stale] progress::-webkit-progress-value, .subscription-quota[data-state=failed] progress::-webkit-progress-value { background: #7f5716; }
+.subscription-no-quota { grid-column: 1 / -1; margin: 0; color: #5b6577; font-size: .85rem; }
+.subscription-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.subscription-more { position: relative; }
+.subscription-more > button { width: 40px; font-size: 1.4rem; }
+.subscription-more-panel { position: absolute; top: 100%; right: 0; z-index: 2; display: grid; min-width: 180px; max-width: 240px; padding: 6px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; box-shadow: 0 4px 12px #20263220; }
+.subscription-more-panel button { text-align: left; border: 0; }
+.subscription-extra-windows { margin-top: 12px; }
+.subscription-details, .subscription-confirmation, .subscription-operation { margin-top: 16px; }
+.subscription-details { padding-top: 16px; border-top: 1px solid #d8dee8; }
+.subscription-details h4 { margin-top: 0; }
+.subscription-details dl { display: flex; flex-wrap: wrap; gap: 16px; }
+.subscription-details dd { margin: 4px 0 0; }
+.subscription-details dt { color: #5b6577; font-size: .85rem; }
+.subscription-confirmation { padding: 16px; border: 1px solid #d8dee8; border-radius: 8px; }
+.subscription-confirmation p { margin-top: 0; }
+.subscription-unavailable { margin: -4px 0 20px; color: #5b6577; line-height: 1.5; }
+.subscription-provider-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.subscription-provider-card { display: grid; justify-items: start; padding: 20px; border: 1px solid #d8dee8; border-radius: 12px; background: #fff; }
+.subscription-provider-card h3 { margin: 16px 0 4px; font-size: 1rem; font-weight: 600; }
+.subscription-provider-card p { margin: 0 0 20px; color: #5b6577; font-size: .85rem; }
+.subscription-provider-card button { width: 100%; }
+.subscription-advanced { margin-top: 28px; border-top: 1px solid #d8dee8; padding-top: 12px; }
+.subscription-advanced > summary { cursor: pointer; padding-block: 10px; font-weight: 500; }
+.subscription-advanced > div { padding-top: 12px; }
+.subscription-active-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
+@container (max-width: 1049px) {
+  .subscription-row-main { grid-template-columns: minmax(0, 1fr) auto; gap: 16px; }
+  .subscription-row-main > .subscription-quota-grid { grid-column: 1 / -1; grid-row: 2; }
+}
+@container (max-width: 899px) { .subscription-provider-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 599px) {
+  .subscription-row { padding: 16px; }
+  .subscription-row-main { grid-template-columns: minmax(0, 1fr); }
+  .subscription-row-actions { grid-row: 2; }
+  .subscription-row-main > .subscription-quota-grid { grid-row: 3; }
+  .subscription-provider-cards, .subscription-quota-grid { grid-template-columns: minmax(0, 1fr); }
+  .subscription-provider-card { padding: 16px; }
+}
+
 /* GitHub profile presentation shares the existing Settings workflow owners. */
 .github-integrations { max-width: 1040px; font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
 .github-integrations button { border-radius: 8px; max-width: 100%; }
