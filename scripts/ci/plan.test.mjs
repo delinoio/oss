@@ -11,6 +11,14 @@ const native = Object.entries(jobPaths).filter(([, rule]) => rule.native).map(([
 const devhudNative = ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"];
 const selected = (event, paths) => Object.entries(planJobs(event, paths).jobs).filter(([, run]) => run).map(([id]) => id);
 
+test("Go runner changes exercise all native Go shards without selecting unrelated jobs", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["scripts/ci/go-test.mjs", "scripts/ci/go-test.test.mjs"]) {
+      assert.deepEqual(selected(event, [path]), ["go-test"]);
+    }
+  }
+});
+
 test("root Rust toolchain changes select Forge validation and rendering", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of ["rust-toolchain", "rust-toolchain.toml"]) {
