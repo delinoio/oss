@@ -130,6 +130,9 @@ func (t *Tx) RequireBrowserProfileRemoval(account domain.ID) error {
 			changed := false
 			for i, p := range d.BrowserProfiles {
 				if p.Data.AccountID == account && p.Data.State == domain.BrowserProfileActive {
+					if p.Revision == ^uint64(0) {
+						return domain.Fail(domain.RecoveryRequired, "Browser profile revision cannot advance.", "Preserve the original cleanup metadata.")
+					}
 					p.Data.State = domain.BrowserProfileRemovalPending
 					p.Data.DeletionRequestID = t.requestID
 					p.Revision++

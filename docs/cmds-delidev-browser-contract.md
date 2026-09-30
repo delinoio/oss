@@ -82,7 +82,9 @@ than consuming a reserved migration for an index.
 Native cache paths are constructed solely from canonical server/device/account
 UUIDs beneath the prepared owner-private `browser-data/profiles` root. The
 actual initialized CEF request-context path must equal that exact path. A live
-process shares one context for each profile, including multiple session windows.
+process shares one context for each profile, including multiple session windows. At most 64 request contexts are retained per
+native process; reopening the desktop releases that runtime capacity without
+deleting profiles.
 Tabs are bounded to 16 and 256 KiB, atomically saved locally with private files;
 cookies, storage, history and browser credentials belong to that context. They
 never enter SQLite, RPC bodies, configuration transfers or Worker workspaces.
@@ -110,14 +112,18 @@ uncertain response. Each independent scope is handled separately. Once native
 shutdown is independently complete, local directory deletion can proceed offline;
 the server remains pending until a fresh exact ownership/status read and original
 confirmation succeeds. A retry does not reopen the profile or infer completion.
-Generated cache data and native fixtures remain untracked.
+Each exit handles at most 64 intents within a 45-second loop budget, with the
+existing 40-second sidecar command bound; remaining or uncertain intents stay
+pending for a later process cleanup. Generated cache data and native fixtures
+remain untracked.
 
 ## Security
 
 External navigation and resources deny product origins (including WebSocket
 counterparts), app/IPC origins, the fixed local API/development ports, file/custom
-schemes and URL credentials. An explicitly selected loopback browsing origin is
-bounded to that origin. Popups, downloads, file pickers and permission prompts are
+schemes and URL credentials. Only trusted address actions add loopback browsing origins to a bounded 32-origin
+allowlist; restored local tabs retain their explicit origins. Redirects and resource
+requests cannot extend that list. Popups, downloads, file pickers and permission prompts are
 denied; native clipboard/paste access is disabled. Ordinary external HTTP(S) pages
 receive only their profile's web credentials, never product or platform credentials.
 The external CEF client has no app process-message handler or native capability.

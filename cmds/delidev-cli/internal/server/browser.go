@@ -278,6 +278,8 @@ func browserResource(r domain.BrowserProfileRecord) *pb.BrowserProfile {
 	return &pb.BrowserProfile{Id: string(r.ID), Revision: r.Revision, ServerId: string(r.Data.ServerID), DeviceId: string(r.Data.DeviceID), AccountId: string(r.Data.AccountID), State: state, DeletionRequestId: string(r.Data.DeletionRequestID)}
 }
 func (s *Service) GetBrowserCapabilities(ctx context.Context, req *connect.Request[pb.GetBrowserCapabilitiesRequest]) (*connect.Response[pb.GetBrowserCapabilitiesResponse], error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 	actor, ok := domain.PrincipalFrom(ctx)
 	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
 		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Browser capabilities require a client.", "Use an authorized product client."), req.Header().Get(rpc.CorrelationHeader))

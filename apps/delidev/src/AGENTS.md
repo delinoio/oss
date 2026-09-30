@@ -519,3 +519,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
+
+### Protected browser panel
+
+- Session browser UI follows `docs/cmds-delidev-browser-contract.md`. Require the generated browser capability and exact currently selected account, retain immutable uncertain registration requests, and bind every native open/control/cleanup to its presentation UUID. Keep the composer mounted and restore focus when the panel closes. Browser URLs and tabs remain native/device-local; never include them in RPC, query keys, logs, session messages, or workspace context. Hide native content while a modal or inert ancestor covers it, and require explicit retry after a native open failure. Account deletion displays tracked cleanup progress separately from the accepted configuration deletion.

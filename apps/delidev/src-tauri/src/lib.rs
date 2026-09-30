@@ -21,6 +21,7 @@ const OUTPUT_LIMIT: u64 = 128 << 10;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
 
+pub mod browser;
 mod connections;
 pub use connections::{
     RemovedConnections, SavedConnection, SavedConnectionState, canonical_id, connection_origin,

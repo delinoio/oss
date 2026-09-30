@@ -4,13 +4,17 @@ package server
 import (
 	"connectrpc.com/connect"
 	"context"
+	"crypto/sha256"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"io"
 	"log/slog"
+	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -211,5 +215,79 @@ func TestBrowserProfileRejectsWorkerOwnerRevokedDeviceAndStaleRevision(t *testin
 	_, err = f.s.ListBrowserProfiles(f.first, connect.NewRequest(&pb.ListBrowserProfilesRequest{}))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("revoked client", err)
+	}
+}
+
+func TestBrowserConnectRejectsUnauthenticatedAndHostileOrigins(t *testing.T) {
+	f := newBrowserFixture(t)
+	actor, _ := domain.PrincipalFrom(f.first)
+	token := string(domain.NewID())
+	digest := sha256.Sum256([]byte(token))
+	_, err := f.s.Store.Mutate(context.Background(), domain.NewID(), "browser.fixture.credential", nil, func(tx *store.Tx) (any, error) { return nil, tx.PutCredential(actor.DeviceID, digest[:]) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := httptest.NewServer(f.s.Handler([]string{"http://tauri.localhost"}, true))
+	defer host.Close()
+	client := delidevv1connect.NewBrowserServiceClient(host.Client(), host.URL)
+	if _, err = client.GetBrowserCapabilities(context.Background(), connect.NewRequest(&pb.GetBrowserCapabilitiesRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("anonymous capability", err)
+	}
+	req := connect.NewRequest(&pb.GetBrowserCapabilitiesRequest{})
+	req.Header().Set("Authorization", "Bearer "+token)
+	req.Header().Set("Origin", "https://hostile.test")
+	if _, err = client.GetBrowserCapabilities(context.Background(), req); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal("external origin used product authorization", err)
+	}
+	req.Header().Set("Origin", "http://tauri.localhost")
+	capabilities, err := client.GetBrowserCapabilities(context.Background(), req)
+	if err != nil || len(capabilities.Msg.Capabilities) != 1 {
+		t.Fatal(capabilities, err)
+	}
+	registration := connect.NewRequest(&pb.RegisterBrowserProfileRequest{Session: &pb.Mutation{Id: string(f.session), ExpectedRevision: 1, RequestId: string(domain.NewID())}, AccountId: string(f.account)})
+	registration.Header().Set("Authorization", "Bearer "+token)
+	response, err := client.RegisterBrowserProfile(context.Background(), registration)
+	if err != nil || response.Msg.Profile.DeviceId != string(actor.DeviceID) || response.Msg.Profile.State != pb.BrowserProfileState_BROWSER_PROFILE_STATE_ACTIVE {
+		t.Fatal(response, err)
+	}
+}
+func TestBrowserConcurrentRegistrationPublishesOneDeviceProfile(t *testing.T) {
+	f := newBrowserFixture(t)
+	var wait sync.WaitGroup
+	ids := make(chan string, 8)
+	failures := make(chan error, 8)
+	for range 8 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			response, err := f.s.RegisterBrowserProfile(f.first, connect.NewRequest(&pb.RegisterBrowserProfileRequest{Session: &pb.Mutation{Id: string(f.session), ExpectedRevision: 1, RequestId: string(domain.NewID())}, AccountId: string(f.account)}))
+			if err != nil {
+				failures <- err
+				return
+			}
+			ids <- response.Msg.Profile.Id
+		}()
+	}
+	wait.Wait()
+	close(ids)
+	close(failures)
+	for err := range failures {
+		t.Fatal(err)
+	}
+	unique := map[string]bool{}
+	for id := range ids {
+		unique[id] = true
+	}
+	if len(unique) != 1 {
+		t.Fatal("concurrent registrations duplicated profile identities", unique)
+	}
+	actor, _ := domain.PrincipalFrom(f.first)
+	r, err := f.s.Store.Get(context.Background(), domain.DeviceKind, actor.DeviceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := store.Decode[domain.Device](r)
+	if err != nil || len(device.BrowserProfiles) != 1 || r.Revision != 2 {
+		t.Fatal("duplicate profile publication", r.Revision, device, err)
 	}
 }
