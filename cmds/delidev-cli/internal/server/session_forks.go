@@ -184,7 +184,11 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 
 func (s *Service) readSessionFork(ctx context.Context, id domain.ID) (*pb.ForkSessionResponse, error) {
 	response := &pb.ForkSessionResponse{}
+	actor, _ := domain.PrincipalFrom(ctx)
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := tx.RequireForkActor(actor); err != nil {
+			return err
+		}
 		r, err := tx.Get(domain.JobKind, id)
 		if err != nil {
 			return err

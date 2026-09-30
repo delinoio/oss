@@ -34,6 +34,11 @@ the child is published only after both native history and every workspace are
 verified and native process cleanup is independently confirmed. Exact receipt
 replay observes the original job/child without repeating native side effects.
 
+Status observation and acceptance-receipt reads require current owner/client
+authority in the same read transaction before reading any job or child document.
+Worker credentials and missing principals cannot use this client-only observation
+RPC. A stale paired-client principal cannot bypass device revocation.
+
 The initial profile preserves the original Worker, account, connection,
 provider, model and exact immutable configuration. Current eligibility is checked
 at acceptance, Worker claim, publication and later continuation. Source queued
