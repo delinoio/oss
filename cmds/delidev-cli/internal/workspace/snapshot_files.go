@@ -24,12 +24,20 @@ const MaxSnapshotEntries = 8192
 const maxSnapshotRemovalEntries = MaxSnapshotEntries + 2
 const maxSnapshotManifest = 8 << 20
 
+type snapshotLinkKind string
+
+const (
+	snapshotFileLink      snapshotLinkKind = "file"
+	snapshotDirectoryLink snapshotLinkKind = "directory"
+)
+
 type snapshotEntry struct {
-	Path   string `json:"path"`
-	Mode   uint32 `json:"mode"`
-	Size   uint64 `json:"size,omitempty"`
-	SHA256 string `json:"sha256,omitempty"`
-	Link   string `json:"link,omitempty"`
+	LinkKind snapshotLinkKind `json:"link_kind,omitempty"`
+	Path     string           `json:"path"`
+	Mode     uint32           `json:"mode"`
+	Size     uint64           `json:"size,omitempty"`
+	SHA256   string           `json:"sha256,omitempty"`
+	Link     string           `json:"link,omitempty"`
 }
 type snapshotInventory struct {
 	Entries []snapshotEntry `json:"entries"`
@@ -139,8 +147,12 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 					return snapshotUnsupported()
 				}
 				entry.Link = link
+				entry.LinkKind, err = snapshotSymlinkKind(before)
+				if err != nil {
+					return err
+				}
 				if target != "" {
-					if err := os.Symlink(link, target); err != nil {
+					if err := createSnapshotSymlink(link, target, entry.LinkKind); err != nil {
 						return err
 					}
 				}
@@ -223,6 +235,12 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 				return snapshotUnsupported()
 			}
 			after, err := parent.Lstat(name)
+			if err == nil && before.Mode()&os.ModeSymlink != 0 {
+				kind, kindErr := snapshotSymlinkKind(after)
+				if kindErr != nil || kind != entry.LinkKind {
+					return ResultUncertain()
+				}
+			}
 			if err != nil || !sameSnapshotFile(before, after) {
 				return ResultUncertain()
 			}

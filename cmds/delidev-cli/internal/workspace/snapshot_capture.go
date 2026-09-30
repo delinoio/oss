@@ -18,7 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity string, sources snapshotInventory, expectedDigest string) (SnapshotMetadata, error) {
+func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity string, sources snapshotInventory, expectedDigest string) (metadata SnapshotMetadata, returned error) {
 	var empty SnapshotMetadata
 	staging := filepath.Join(m.Root, "snapshot-staging", string(r.OperationID))
 	if err := os.Mkdir(staging, 0700); err != nil {
@@ -29,7 +29,14 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 		// rather than letting it acquire another request's creation authority.
 		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := removeSnapshotTree(cleanup, staging); err != nil {
+		err := error(nil)
+		if m.storageScratchCleanupFault != nil {
+			err = m.storageScratchCleanupFault(staging)
+		} else {
+			err = removeSnapshotTree(cleanup, staging)
+		}
+		if err != nil {
+			returned = ResultUncertain()
 			m.Logger.Warn("snapshot_scratch_cleanup_pending", "operation_id", r.OperationID, "code", domain.SafeError(err).Code)
 		}
 	}()
@@ -90,7 +97,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	if err := renameStorage(staging, m.snapshotPath(r.SnapshotID)); err != nil {
 		return empty, ResultUncertain()
 	}
-	_, metadata, err := m.inspectSnapshot(ctx, r.SnapshotID)
+	_, metadata, err = m.inspectSnapshot(ctx, r.SnapshotID)
 	if err != nil {
 		return empty, ResultUncertain()
 	}

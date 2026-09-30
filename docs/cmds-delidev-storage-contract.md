@@ -371,7 +371,7 @@ the workspace bound. Private manifests and removal intents use their explicit
 8 MiB strict JSON decoding budget; public command documents retain 1 MiB limits. Files are copied through opened anchored
 parents with exclusive destinations, identity checks, full SHA-256 inventories,
 mode preservation and synchronization. Ordinary symlinks, including escaping
-links, remain links and are never opened. Sockets, devices, FIFOs and other
+links, remain links and are never opened. Windows inventories additionally retain the native file/directory symlink type and recreate it explicitly, including forward and dangling directory targets. Sockets, devices, FIFOs and other
 unsupported special files block cleanup. Snapshot bytes are sensitive private
 Worker data, never server data or diagnostic content.
 
@@ -459,7 +459,7 @@ report confirmed removal. Native disk-full/quota failures before publication hav
 a redacted `resource_exhausted` classification; uncertain transitions retain their
 separate recovery-required ownership. Owned scratch/retained removal data may still occupy
 space during recovery and is reflected in filesystem free observations, not
-misrepresented as a published snapshot.
+misrepresented as a published snapshot. A failed capture whose independent scratch removal is unconfirmed remains recovery-required; explicit recovery removes the original complete staging tree before settling the failure.
 
 Reconnect never repeats a started native operation. Explicit `recover` binds the
 original immutable assignment(s), Worker instance/revision/digest and durable
