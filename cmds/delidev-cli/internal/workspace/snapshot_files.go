@@ -19,6 +19,9 @@ import (
 
 const MaxSnapshotBytes uint64 = 8 << 30
 const MaxSnapshotEntries = 8192
+
+// Snapshot deletion additionally inventories the workspace directory and manifest.
+const maxSnapshotRemovalEntries = MaxSnapshotEntries + 2
 const maxSnapshotManifest = 8 << 20
 
 type snapshotEntry struct {
@@ -41,6 +44,10 @@ func snapshotUnsupported() error {
 // as links, including escaping links; they are never opened. Compare identities
 // around every read and the complete inventory again before source removal.
 func walkSnapshot(ctx context.Context, source, destination string, skip func(string) bool, merge ...bool) (snapshotInventory, error) {
+	return walkSnapshotEntries(ctx, source, destination, skip, MaxSnapshotEntries, merge...)
+}
+
+func walkSnapshotEntries(ctx context.Context, source, destination string, skip func(string) bool, entryLimit int, merge ...bool) (snapshotInventory, error) {
 	var inventory snapshotInventory
 	rootInfo, err := os.Lstat(source)
 	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
@@ -69,7 +76,7 @@ func walkSnapshot(ctx context.Context, source, destination string, skip func(str
 		if err != nil {
 			return err
 		}
-		names, readErr := dir.Readdirnames(MaxSnapshotEntries + 1)
+		names, readErr := dir.Readdirnames(entryLimit + 1)
 		dir.Close()
 		if readErr != nil && readErr != io.EOF {
 			return readErr
@@ -83,7 +90,7 @@ func walkSnapshot(ctx context.Context, source, destination string, skip func(str
 			if skip != nil && skip(filepath.ToSlash(path)) {
 				continue
 			}
-			if len(inventory.Entries) >= MaxSnapshotEntries || !utf8.ValidString(path) || len(path) > 4096 {
+			if len(inventory.Entries) >= entryLimit || !utf8.ValidString(path) || len(path) > 4096 {
 				return domain.Fail(domain.ResourceExhausted, "Workspace inventory exceeds its bound.", "Reduce the workspace; no files were removed.")
 			}
 			before, err := parent.Lstat(name)

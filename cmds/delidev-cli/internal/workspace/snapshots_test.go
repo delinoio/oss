@@ -667,3 +667,41 @@ func TestSnapshotCleanupNeverAdoptsRacedSourceWrites(t *testing.T) {
 		t.Fatal("raced cleanup did not preserve both copies", recovered)
 	}
 }
+
+func TestSnapshotMaximumInventoryRemainsDeletable(t *testing.T) {
+	m := manager(t)
+	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := m.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The workspace already contains manifest.json and the chat directory.
+	for i := 0; i < MaxSnapshotEntries-2; i++ {
+		if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, fmt.Sprintf("entry-%04d", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StorageCreate, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
+	created := storageDo(t, m, input)
+	pinned, _, err := m.inspectSnapshot(context.Background(), input.SnapshotID)
+	if err != nil || len(pinned.Inventory.Entries) != MaxSnapshotEntries {
+		t.Fatal("fixture did not publish maximum valid inventory", err)
+	}
+	input.Action, input.OperationID, input.SnapshotDigest, input.SnapshotMetadata = StorageDelete, domain.NewID(), created.Snapshot.SHA256, created.Snapshot
+	deleted := storageDo(t, m, input)
+	if !deleted.Snapshot.Deleted {
+		t.Fatal("maximum valid snapshot was not deletable")
+	}
+	raw, err := os.ReadFile(m.removalIntentPath(input.OperationID))
+	var intent storageRemovalIntent
+	if err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || len(intent.Inventory.Entries) != MaxSnapshotEntries+2 {
+		t.Fatal("wrapper capacity missing from immutable intent", err)
+	}
+	recovered := storageDo(t, m, recoveryRequest(input))
+	if recovered.RecoveredJobState != domain.JobSucceeded || !recovered.Snapshot.Deleted {
+		t.Fatal("maximum deletion lost completion could not recover")
+	}
+	if _, err := os.Stat(filepath.Join(manifest.PrimaryPath, "entry-0000")); err != nil {
+		t.Fatal("snapshot deletion removed the live source", err)
+	}
+}

@@ -274,7 +274,7 @@ func (m *Manager) inspectSnapshot(ctx context.Context, id domain.ID) (snapshotMa
 	if err != nil {
 		return snapshot, metadata, err
 	}
-	if domain.Decode(raw, &snapshot) != nil || snapshot.Version != 1 || snapshot.ID != id || snapshot.OperationID.Validate() != nil || snapshot.Preparation.Type == domain.Local || ValidateResult(snapshot.Preparation, snapshot.Workspace, runtime.GOOS) != nil || !digestValid(snapshot.OriginalIdentity) || snapshot.CreatedAt.IsZero() {
+	if domain.DecodeBounded(raw, &snapshot, maxSnapshotManifest) != nil || snapshot.Version != 1 || snapshot.ID != id || snapshot.OperationID.Validate() != nil || snapshot.Preparation.Type == domain.Local || ValidateResult(snapshot.Preparation, snapshot.Workspace, runtime.GOOS) != nil || !digestValid(snapshot.OriginalIdentity) || snapshot.CreatedAt.IsZero() {
 		return snapshot, metadata, ResultUncertain()
 	}
 	inventory, err := walkSnapshot(ctx, filepath.Join(root, "workspace"), "", nil)
@@ -318,7 +318,7 @@ func (m *Manager) snapshotBytes(ctx context.Context, session domain.ID) (uint64,
 			return 0, err
 		}
 		var manifest snapshotManifest
-		if domain.Decode(raw, &manifest) != nil || manifest.ID != id {
+		if domain.DecodeBounded(raw, &manifest, maxSnapshotManifest) != nil || manifest.ID != id {
 			return 0, ResultUncertain()
 		}
 		if manifest.Workspace.SessionID == session {

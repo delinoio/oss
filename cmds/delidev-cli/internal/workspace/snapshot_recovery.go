@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -40,12 +41,15 @@ func (m *Manager) retainRemovalIntent(ctx context.Context, r StorageRequest, pat
 			return ResultUncertain()
 		}
 		inventory, snapshotDigest = pinned, digest
-	} else {
+	} else if r.Action == StorageDelete {
 		var err error
-		inventory, err = walkSnapshot(ctx, path, "", nil)
+		inventory, err = snapshotRemovalInventory(ctx, r, path)
 		if err != nil {
 			return err
 		}
+		snapshotDigest = r.SnapshotDigest
+	} else {
+		return ResultUncertain()
 	}
 	intent := storageRemovalIntent{Version: 1, OperationID: r.OperationID, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, Action: r.Action, Inventory: inventory, SnapshotDigest: snapshotDigest}
 	raw, err := json.Marshal(intent)
@@ -68,7 +72,7 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 		return ResultUncertain()
 	}
 	var intent storageRemovalIntent
-	if domain.Decode(raw, &intent) != nil || intent.Version != 1 || intent.OperationID != r.OperationID || intent.SessionID != r.Preparation.SessionID || intent.SnapshotID != r.SnapshotID || intent.Action != r.Action {
+	if domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != r.OperationID || intent.SessionID != r.Preparation.SessionID || intent.SnapshotID != r.SnapshotID || intent.Action != r.Action {
 		return ResultUncertain()
 	}
 	if r.Action == StorageCleanup {
@@ -76,6 +80,9 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 		if err != nil || digest != intent.SnapshotDigest || inventoryDigest(pinned) != inventoryDigest(intent.Inventory) {
 			return ResultUncertain()
 		}
+	}
+	if r.Action == StorageDelete && intent.SnapshotDigest != r.SnapshotDigest {
+		return ResultUncertain()
 	}
 	if partial {
 		exists, err := storageExists(path)
@@ -86,7 +93,11 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 			return nil
 		}
 	}
-	current, err := walkSnapshot(ctx, path, "", nil)
+	entryLimit := MaxSnapshotEntries
+	if r.Action == StorageDelete {
+		entryLimit = maxSnapshotRemovalEntries
+	}
+	current, err := walkSnapshotEntries(ctx, path, "", nil, entryLimit)
 	if err != nil {
 		return err
 	}
@@ -320,7 +331,7 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 	raw, err := security.ReadPrivate(path, maxSnapshotManifest)
 	if err == nil {
 		var intent storageRemovalIntent
-		if domain.Decode(raw, &intent) != nil || intent.Version != 1 || intent.OperationID != ref.OperationID || intent.SessionID != ref.SessionID || intent.SnapshotID != ref.SnapshotID || intent.Action != ref.Action {
+		if domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != ref.OperationID || intent.SessionID != ref.SessionID || intent.SnapshotID != ref.SnapshotID || intent.Action != ref.Action {
 			return ResultUncertain()
 		}
 		if err := os.Remove(path); err != nil {
@@ -337,9 +348,50 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 func (m *Manager) cleanupRemovalInventory(r StorageRequest) (snapshotInventory, string, error) {
 	raw, err := security.ReadPrivate(filepath.Join(m.snapshotPath(r.SnapshotID), "snapshot.json"), maxSnapshotManifest)
 	var pinned snapshotManifest
-	if err != nil || domain.Decode(raw, &pinned) != nil || pinned.Version != 1 || pinned.ID != r.SnapshotID || pinned.OperationID != r.OperationID || pinned.SourceDigest != r.PreviewDigest || manifestDigest(pinned.Workspace) != manifestDigest(r.Manifest) || pinned.SourceInventory.Bytes != pinned.SourceBytes || len(pinned.SourceInventory.Entries) == 0 || len(pinned.SourceInventory.Entries) > MaxSnapshotEntries || pinned.SourceBytes > MaxSnapshotBytes {
+	if err != nil || domain.DecodeBounded(raw, &pinned, maxSnapshotManifest) != nil || pinned.Version != 1 || pinned.ID != r.SnapshotID || pinned.OperationID != r.OperationID || pinned.SourceDigest != r.PreviewDigest || manifestDigest(pinned.Workspace) != manifestDigest(r.Manifest) || pinned.SourceInventory.Bytes != pinned.SourceBytes || len(pinned.SourceInventory.Entries) == 0 || len(pinned.SourceInventory.Entries) > MaxSnapshotEntries || pinned.SourceBytes > MaxSnapshotBytes {
 		return snapshotInventory{}, "", ResultUncertain()
 	}
 	sum := sha256.Sum256(raw)
 	return pinned.SourceInventory, hex.EncodeToString(sum[:]), nil
+}
+
+// Wrapper entries have a separate bound. They do not enlarge the valid workspace
+// inventory, and unexpected snapshot-root content never enters removal authority.
+func snapshotRemovalInventory(ctx context.Context, r StorageRequest, path string) (snapshotInventory, error) {
+	raw, err := security.ReadPrivate(filepath.Join(path, "snapshot.json"), maxSnapshotManifest)
+	var pinned snapshotManifest
+	sum := sha256.Sum256(raw)
+	if err != nil || hex.EncodeToString(sum[:]) != r.SnapshotDigest || domain.DecodeBounded(raw, &pinned, maxSnapshotManifest) != nil || pinned.ID != r.SnapshotID || manifestDigest(pinned.Workspace) != manifestDigest(r.Manifest) {
+		return snapshotInventory{}, ResultUncertain()
+	}
+	inventory, err := walkSnapshotEntries(ctx, path, "", nil, maxSnapshotRemovalEntries)
+	if err != nil {
+		return snapshotInventory{}, err
+	}
+	var contents snapshotInventory
+	wrappers := 0
+	for _, entry := range inventory.Entries {
+		switch {
+		case entry.Path == "snapshot.json":
+			if !os.FileMode(entry.Mode).IsRegular() || entry.SHA256 != r.SnapshotDigest {
+				return snapshotInventory{}, ResultUncertain()
+			}
+			wrappers++
+		case entry.Path == "workspace":
+			if !os.FileMode(entry.Mode).IsDir() {
+				return snapshotInventory{}, ResultUncertain()
+			}
+			wrappers++
+		case strings.HasPrefix(entry.Path, "workspace/"):
+			entry.Path = strings.TrimPrefix(entry.Path, "workspace/")
+			contents.Entries = append(contents.Entries, entry)
+			contents.Bytes += entry.Size
+		default:
+			return snapshotInventory{}, ResultUncertain()
+		}
+	}
+	if wrappers != 2 || len(contents.Entries) > MaxSnapshotEntries || inventoryDigest(contents) != inventoryDigest(pinned.Inventory) {
+		return snapshotInventory{}, ResultUncertain()
+	}
+	return inventory, nil
 }

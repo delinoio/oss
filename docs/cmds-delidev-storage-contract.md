@@ -262,7 +262,11 @@ under the existing session lock after independently reconciling process ownershi
 and rejecting active execution claims. One private manifest covers the complete
 ordered repository set or General Chat directory. Bounds are 8 GiB, 8,192 entries
 and an 8 MiB private manifest, with bounded 128 KiB copying. Published snapshot
-inventory is capped at 4,096 entries. Files are copied through opened anchored
+inventory is capped at 4,096 entries. Removal intents separately allow the two
+snapshot wrapper entries (`workspace` and `snapshot.json`) beyond a complete
+8,192-entry workspace, without admitting unexpected root content or increasing
+the workspace bound. Private manifests and removal intents use their explicit
+8 MiB strict JSON decoding budget; public command documents retain 1 MiB limits. Files are copied through opened anchored
 parents with exclusive destinations, identity checks, full SHA-256 inventories,
 mode preservation and synchronization. Ordinary symlinks, including escaping
 links, remain links and are never opened. Sockets, devices, FIFOs and other

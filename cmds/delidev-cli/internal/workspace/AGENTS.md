@@ -11,3 +11,5 @@ Follow the root and parent instructions and docs/cmds-delidev-workspace-contract
 - Cleanup/deletion recovery requires the original synchronized removal intent even after both namespace names are absent; absence alone is never verified removal.
 
 - Bind cleanup removal authority to the verified snapshot source inventory, never a later mutable observation. Compare the claimed namespace to that inventory and restore the source name without replacement on mismatch before any unlink.
+
+- Snapshot deletion reserves two inventory entries for its workspace/manifest wrappers beyond the 8,192-entry workspace bound; reject unexpected snapshot-root content.
