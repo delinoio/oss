@@ -10,15 +10,26 @@ import (
 
 // A fixed read-only document is the entire GraphQL capability. There is no
 // arbitrary document, mutation, endpoint, credential fallback or URL following.
-const ciGraphQL = `query DeliDevRequiredCI($id: ID!, $headAfter: String, $mergeAfter: String) {
+const ciGraphQL = `query DeliDevRequiredCI($id: ID!, $headAfter: String, $mergeAfter: String, $queueAfter: String, $queueChecksAfter: String) {
   node(id: $id) { ... on PullRequest {
     id number state merged baseRefName baseRefOid headRefName headRefOid mergeable isInMergeQueue
     repository { id }
+    mergeQueueEntry {
+      ...DeliDevQueueEntry
+      headCommit { oid repository { id } statusCheckRollup { commit { oid } contexts(first: 100, after: $queueChecksAfter) { ...DeliDevContexts } } }
+      mergeQueue { id repository { id } configuration { mergingStrategy }
+        entries(first: 100, after: $queueAfter) { totalCount pageInfo { hasNextPage endCursor } nodes { ...DeliDevQueueEntry } }
+      }
+    }
     statusCheckRollup { commit { oid } contexts(first: 100, after: $headAfter) { ...DeliDevContexts } }
     potentialMergeCommit { oid parents(first: 3) { totalCount nodes { oid } }
       statusCheckRollup { commit { oid } contexts(first: 100, after: $mergeAfter) { ...DeliDevContexts } }
     }
   } }
+}
+fragment DeliDevQueueEntry on MergeQueueEntry {
+  id position state baseCommit { oid } headCommit { oid }
+  pullRequest { id number }
 }
 fragment DeliDevContexts on StatusCheckRollupContextConnection {
   totalCount pageInfo { hasNextPage endCursor }
@@ -26,14 +37,14 @@ fragment DeliDevContexts on StatusCheckRollupContextConnection {
     __typename
     ... on CheckRun { id name status conclusion startedAt completedAt title summary text isRequired(pullRequestId: $id)
       repository { id }
-      checkSuite { id commit { oid } app { databaseId id slug } workflowRun { id event runNumber runAttempt createdAt updatedAt } }
+      checkSuite { id commit { oid } app { databaseId id slug } workflowRun { id event runNumber runAttempt createdAt updatedAt checkSuite { id commit { oid } } } }
     }
     ... on StatusContext { id context state createdAt updatedAt description isRequired(pullRequestId: $id) commit { oid } }
   }
 }`
 
-func (c *Client) readCIPage(ctx context.Context, token []byte, id string, headAfter, mergeAfter *string) (map[string]json.RawMessage, error) {
-	return c.readGraphQLNode(ctx, token, graphQLCI, map[string]any{"id": id, "headAfter": headAfter, "mergeAfter": mergeAfter})
+func (c *Client) readCIPage(ctx context.Context, token []byte, id string, headAfter, mergeAfter, queueAfter, queueChecksAfter *string) (map[string]json.RawMessage, error) {
+	return c.readGraphQLNode(ctx, token, graphQLCI, map[string]any{"id": id, "headAfter": headAfter, "mergeAfter": mergeAfter, "queueAfter": queueAfter, "queueChecksAfter": queueChecksAfter})
 }
 
 type ciPage struct {
@@ -111,6 +122,12 @@ func parseCIContext(raw []byte, repository domain.RemoteRepository, sha string) 
 				return v, queryUnavailable()
 			}
 			e.Workflow = &domain.CIWorkflowEvidence{NodeID: stringField(workflow, "id"), RunNumber: strconv.FormatUint(number, 10), ObservedAttempt: strconv.FormatUint(attempt, 10), CreatedAt: *created, UpdatedAt: *updated}
+			workflowSuite, suiteOK := jsonObject(workflow["checkSuite"])
+			workflowCommit, commitOK := jsonObject(workflowSuite["commit"])
+			if !suiteOK || !commitOK || stringField(workflowSuite, "id") != e.SuiteNodeID || stringField(workflowCommit, "oid") != sha {
+				return v, queryUnavailable()
+			}
+			e.Workflow.SuiteNodeID, e.Workflow.CommitSHA = e.SuiteNodeID, sha
 		}
 	case "StatusContext":
 		e.CreatedAt, ok = nullableTime(f, "createdAt")

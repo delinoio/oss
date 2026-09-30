@@ -11,6 +11,8 @@ import (
 const MaxCIEvidenceBytes = 512 << 10
 
 type CIWorkflowEvidence struct {
+	SuiteNodeID     string    `json:"suite_node_id,omitempty"`
+	CommitSHA       string    `json:"commit_sha,omitempty"`
 	NodeID          string    `json:"node_id"`
 	RunNumber       string    `json:"run_number"`
 	ObservedAttempt string    `json:"observed_attempt"`
@@ -58,6 +60,9 @@ func (v CIContextEvidence) validate(kind CIContextKind, event *string) error {
 			return invalidPRObservation()
 		}
 		if w := v.Workflow; w != nil {
+			if (w.SuiteNodeID == "") != (w.CommitSHA == "") || w.SuiteNodeID != "" && (w.SuiteNodeID != v.SuiteNodeID || !repositorySHA(w.CommitSHA)) {
+				return invalidPRObservation()
+			}
 			if Text(w.NodeID, "workflow identity", 256, true) != nil || !ciWorkflowCount(w.RunNumber) || !ciWorkflowCount(w.ObservedAttempt) || !ciEvidenceTime(w.CreatedAt) || !ciEvidenceTime(w.UpdatedAt) || w.UpdatedAt.Before(w.CreatedAt) {
 				return invalidPRObservation()
 			}

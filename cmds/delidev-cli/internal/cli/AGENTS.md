@@ -40,4 +40,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - The `network` command family uses authenticated NetworkService under `docs/cmds-delidev-network-contract.md`. Keep exact decimal revisions and request IDs; definition files, server authentication and proxy credential stdin must be independent. CLI response deadlines exceed bounded server credential work. Read status/export metadata never claims native Worker application.
 
+- `session switch-account --id ID --revision N --account-id ID` invokes only the explicit owner/client Connect operation. Gate support with the typed status capability, preserve exact request identities, and leave the selected session paused until explicit Resume.
+
 - `usage summary --accounting-profile native-units-v1` requires the server echo before exposing native units. Omission preserves the existing response-only profile; unknown values fail. Keep source kinds and exact decimal totals distinct.

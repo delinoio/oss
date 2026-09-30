@@ -441,6 +441,7 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
+	NativeHistory          NativeHistoryMode           `json:"native_history,omitempty"`
 	GrokUserMessageID      ID                          `json:"grok_user_message_id,omitempty"`
 	GrokStop               *GrokStopObservation        `json:"grok_stop,omitempty"`
 	GrokTerminal           *GrokTextTerminal           `json:"grok_terminal,omitempty"`
