@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { EntityKind } from "@delinoio/delidev-api-client";
+import "./schedule-creation.css";
 import { ResourceChoice, TextField } from "./configuration-fields";
 import { items, Mode, text, Workspace, type Document } from "./documents";
 

@@ -591,56 +591,63 @@ dialog.modal-full-window::backdrop { background: transparent; }
   .settings-toolbar { justify-content: flex-start; width: 100%; }
 }
 
-/* Creation owns its scroll region and a separate footer row. The footer's
-   actual wrapped height reserves space without overlays or inline geometry.
-   Bound creation to the viewport even when zoom makes it shorter than the
-   shared shell's CSS minimum; the native minimum remains unchanged. */
-main:has(> .schedule-page:not([hidden]) > .schedule-creation) { display: flex; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; }
-main:has(> .schedule-page:not([hidden]) > .schedule-creation) > .sidebar-context-trigger { flex-shrink: 0; }
-.schedule-page:has(.schedule-creation) { flex: 1; width: 100%; max-width: none; min-height: 0; height: 100%; padding: 0; margin-inline: 0; }
-.schedule-creation, .schedule-creation > form { height: 100%; min-height: 0; }
-.schedule-creation > form { display: flex; flex-direction: column; }
-.schedule-creation-scroll { flex: 1; min-height: 0; overflow: auto; padding: 32px; scrollbar-gutter: stable; }
-.schedule-creation-header, .schedule-creation-grid, .schedule-creation-errors, .schedule-creation-footer-inner { width: 100%; max-width: 1080px; margin-inline: auto; }
-.schedule-creation-header { display: block; margin-bottom: 12px; }
-.schedule-creation-header h2 { margin-bottom: 8px; font-size: 28px; }
-.schedule-creation-header p { font-size: 14px; }
-.schedule-creation-grid { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 24px; }
-.schedule-creation-card { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: white; overflow-wrap: anywhere; }
-.schedule-creation-card h3 { margin-bottom: 10px; font-size: 18px; }
-.schedule-creation-card p { margin-bottom: 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
-.schedule-creation-card label { min-width: 0; margin-block: 8px; font-size: 14px; }
-.schedule-creation-card input, .schedule-creation-card select, .schedule-creation-card textarea { min-width: 0; min-height: 40px; }
-.schedule-creation-selectors { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0 16px; }
-.schedule-creation-card .resource-choice { min-width: 0; }
-.schedule-creation-radio-group { margin-block: 8px; }
-.schedule-creation-radio-group legend { font-size: 14px; font-weight: 500; }
-.schedule-creation-radio-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 8px; }
-.schedule-creation-radio-cards label { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-block: 6px 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
-.schedule-creation-radio-cards label:has(:checked) { color: #17499f; background: #e7efff; border-color: var(--accent); }
-.schedule-creation-radio-cards input[type=radio] { width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: var(--accent); flex-shrink: 0; }
-.schedule-creation-disclosure { margin-top: 8px; }
-.schedule-creation-disclosure > button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; text-align: left; }
-.schedule-creation-disclosure > button[aria-expanded=true] { margin-bottom: 16px; }
-.schedule-creation-disclosure fieldset { min-width: 0; }
-.schedule-creation-disclosure legend { max-width: 100%; overflow-wrap: anywhere; }
-.schedule-creation-preview { padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: #f8f9fb; }
-.schedule-creation-preview code { display: block; margin-bottom: 12px; font-size: 13px; overflow-wrap: anywhere; white-space: pre-wrap; }
-.schedule-creation-preview p:last-child { margin-bottom: 0; }
-.schedule-creation-errors:not(:empty) { margin-top: 24px; }
-.schedule-creation-card .actions { gap: 8px; }
-.schedule-creation-footer { flex-shrink: 0; padding: 16px 32px; border-top: 1px solid var(--border); background: white; }
-.schedule-creation-footer-inner { display: flex; justify-content: space-between; align-items: center; gap: 12px 24px; flex-wrap: wrap; }
-.schedule-creation-footer p { margin: 0; font-size: 14px; }
-.schedule-creation-footer small { display: block; margin-top: 5px; font-size: 13px; }
-@media (min-width: 1280px) {
-  .schedule-creation-grid { grid-template-columns: minmax(0, 1fr) 320px; }
-  .schedule-creation-task { grid-column: 1; grid-row: 1; }
-  .schedule-creation-execution { grid-column: 1; grid-row: 2; }
-  .schedule-creation-repeat { grid-column: 2; grid-row: 1 / span 2; }
+/* GitHub profile presentation shares the existing Settings workflow owners. */
+.github-integrations { max-width: 1040px; font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
+.github-integrations button { border-radius: 8px; max-width: 100%; }
+.github-integrations fieldset { min-width: 0; }
+.github-integrations h3 { margin-bottom: 6px; font-size: 1.15rem; }
+.github-integrations h4 { margin: 0 0 12px; font-size: 1rem; }
+.integration-secondary { color: var(--muted); }
+.integration-panel, .integration-editor, .integration-manage { border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.integration-panel-header { flex-wrap: wrap; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.integration-provider { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.integration-provider h3 { margin: 0; font-size: 1rem; }
+.integration-provider p { margin: 2px 0 0; font-size: .875rem; }
+.integration-icon { width: 22px; height: 22px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.integration-provider-mark, .integration-empty-mark { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 10px; width: 40px; height: 40px; background: #f3f5f8; }
+.integration-panel-body { padding: 0 24px; }
+.integration-panel-body > p, .integration-panel-body > .problem { margin-block: 20px; }
+.integration-empty { padding: 40px 0; text-align: center; }
+.integration-empty-mark { width: 52px; height: 52px; margin-bottom: 16px; color: var(--accent); background: #e7efff; }
+.integration-empty h3 { margin-bottom: 12px; }
+.integration-empty p { margin: 0; color: var(--muted); }
+.integration-empty button { margin-top: 22px; }
+.integration-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: setup; list-style: none; margin: 0; padding: 20px 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: .875rem; }
+.integration-steps li { display: flex; align-items: center; gap: 10px; }
+.integration-steps li::before { counter-increment: setup; content: counter(setup); display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 50%; }
+.integration-access-note { margin: 0; padding: 14px 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: .875rem; }
+.integration-storage-note { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; color: var(--muted); font-size: .875rem; }
+.integration-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-block: 24px; border-bottom: 1px solid var(--border); }
+.integration-row:last-child { border-bottom: 0; }
+.integration-row > div:first-child { min-width: 0; flex: 1; }
+.integration-row > .actions { flex-shrink: 0; }
+.integration-row p { margin-bottom: 14px; }
+.integration-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; margin: 16px 0 0; }
+.integration-facts > div { min-width: 0; }
+.integration-facts dt { color: var(--muted); font-size: .875rem; }
+.integration-facts dd { margin: 4px 0 0; }
+.integration-editor { max-width: 760px; padding: 24px; }
+.integration-editor > .actions { margin-top: 20px; }
+.integration-editor fieldset p { color: var(--muted); font-size: .875rem; }
+.integration-manage { padding: 24px; }
+.integration-manage > header { align-items: flex-start; flex-wrap: wrap; }
+.integration-manage > .integration-facts { margin-bottom: 20px; }
+.integration-section { padding-top: 24px; margin-top: 24px; border-top: 1px solid var(--border); }
+.integration-token-guidance { padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: .875rem; }
+.integration-token-guidance summary { cursor: pointer; color: #202632; font-weight: 500; }
+.integration-token-guidance section { margin-top: 14px; }
+.integration-token-guidance section p:last-child { margin-bottom: 0; }
+.github-integrations button.primary:disabled { color: #5b6577; background: #eef1f5; border-color: var(--border); opacity: 1; }
+.github-integrations button.integration-danger { color: #b42332; border-color: #d9a5ab; }
+.github-integrations button.integration-danger:hover { background: #fff3f4; }
+@media (max-width: 1099px) {
+  .integration-row { flex-wrap: wrap; }
+  .integration-row > div:first-child { flex-basis: 100%; }
+  .integration-steps { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 759px) {
-  .schedule-creation-scroll { padding: 20px 16px; }
-  .schedule-creation-card { padding: 24px; }
-  .schedule-creation-footer { padding: 12px 16px; }
+  .integration-panel-header, .integration-editor, .integration-manage { padding: 16px; }
+  .integration-panel-body { padding-inline: 16px; }
+  .integration-steps, .integration-access-note { padding: 16px; }
+  .integration-facts { grid-template-columns: minmax(0, 1fr); }
 }
