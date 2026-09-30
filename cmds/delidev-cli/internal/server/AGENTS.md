@@ -54,6 +54,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - NetworkService is owner/paired-client-only under `docs/cmds-delidev-network-contract.md`. Preserve actor/request/revision receipts, immutable server and independent Worker selections, bounded vault generations and denial-before-cleanup deletion. All server provider, inference and GitHub clients use only the explicit server route without ambient settings or fallback. Exported Worker metadata is signed, non-secret desired-generation evidence, not native application or credential-transfer proof.
 
+- Retain an omitted proxy credential only when mode, canonical host and port are unchanged. An authority edit clears the new profile's credential association unless fresh write-only input explicitly replaces it; preserve independently pinned old routes and their immutable generations until profile deletion. Name/bypass edits alone retain the same authority.
+
 - Accepted NetworkService receipt replay retains the original request and replay classification after later resource deletion, returning `deleted` with no resource or new protected work. Only an authoritative NotFound read denotes deletion; authorization, cancellation and storage failures remain errors.
 
 - Before a network credential write, synchronize one server-bound private publication intent with original actor/input and immutable reference. Exact retry preserves that generation. A new request requires authoritative receipt comparison and, for a proved unpublished generation, durable cleanup denial plus confirmed native removal before another write. Unknown receipt/cleanup proof blocks replacement; clearing an accepted intent must never delete its published credential.

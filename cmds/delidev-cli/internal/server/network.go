@@ -148,7 +148,11 @@ func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[p
 			return prior.Validate()
 		})
 		value := domain.NetworkProfile{ProxyDefinition: definition, CredentialGeneration: prior.CredentialGeneration}
-		if req.Msg.ClearCredential {
+		// Write-only credentials belong to this exact authentication authority.
+		// Metadata edits may retain them, but a different protocol or peer must
+		// receive an explicit new credential rather than the owner's old secret.
+		// Keep old generations for independently pinned routes until deletion.
+		if req.Msg.ClearCredential || prior.Mode != definition.Mode || prior.Host != definition.Host || prior.Port != definition.Port {
 			value.CredentialGeneration = ""
 		}
 		if len(raw) > 0 {

@@ -17,6 +17,13 @@ accepted receipt permits clearing only the publication intent, preserving the
 credential for its published profile and pinned routes. The private intent is
 not a credential backup or a public profile.
 
+A network credential association belongs to the profile's exact mode, canonical
+host and port. Omitted write-only input retains it only while that authority is
+unchanged; authority edits clear the new association unless explicit input creates
+a fresh generation. Name/bypass edits may retain it. Already pinned routes keep
+their original authority and immutable generation until coordinated profile
+deletion; an authority edit alone cannot delete a credential needed by them.
+
 The vault holds an exclusive private directory lock and pins its server UUID-v7 identity. A missing identity pin cannot rebind a populated vault. Under the exclusive lock, first-open recovery may discard only bounded private regular `.pending-<decimal>` atomic-write scratch files at an otherwise empty vault root; it validates every entry before removal and synchronizes cleanup. Owner directories, links, unknown names or oversized files retain recovery-required state. References comprise an owner UUID-v7, mutation request UUID-v7 and closed purpose (`account-api`, `account-login`, `network-proxy`, `worker-ssh`). Aliases, emails, provider URLs and user-selected filesystem paths are not native credential names. A replacement receives a fresh mutation ID. Private directory/file ownership, permissions and non-symlink checks apply to every access. Running independent copies of the same server identity against the same native references is outside the single-authority contract.
 
 GitHub PATs now have the separate direct native storage primitive below. The account envelope primitive does not store PAT payloads. Public PAT configuration/validation, credential import, platform unlock UI, backup restoration and provider login require their separate lifecycle composition.
