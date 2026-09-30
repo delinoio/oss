@@ -281,7 +281,7 @@ checkouts, shared Git registrations and source refs are preserved. Git checks
 are read-only/offline with hooks, fsmonitor, maintenance, lazy fetching and ambient
 Git/SSH configuration disabled. No remote push is used. External object alternates,
 local/worktree config includes, Git administration symlinks and undeclared nested
-Git administration (both pointer files and directories) are unsupported and block faithful publication. Full `git fsck` and
+Git administration (pointer files, directories and filesystem case aliases) are unsupported and block faithful publication. Full `git fsck` and
 inventory comparisons verify every recoverable copy. Whole source data and Git
 state are compared again before publication and before any source removal; an
 index-only change invalidates the exact cleanup preview.

@@ -270,8 +270,8 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		}
 		for _, entry := range observation.Data.Entries {
 			// Only declared repositories receive independent Git closure validation.
-			// Nested administration, including directories, may hide external stores.
-			if strings.HasSuffix(entry.Path, "/.git") {
+			// Nested administration, including filesystem case aliases, may hide external stores.
+			if strings.EqualFold(filepath.Base(entry.Path), ".git") {
 				return result, snapshotUnsupported()
 			}
 		}
