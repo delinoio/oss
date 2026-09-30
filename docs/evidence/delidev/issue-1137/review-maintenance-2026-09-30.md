@@ -81,3 +81,34 @@ for 18 seconds and then continues to hold the startup controller. It returns
 within the shared 35-second budget instead of adding a fresh 20-second wait,
 with neither lifecycle publication nor a detached process log. Separate canceled
 uncontended-lock checks prove cancellation cannot acquire fresh admission.
+
+## Final combined validation
+
+The completed repair source is `e9b8db108` (with main merge `03b03b9eb` and
+independent Stop, legacy-listener and relative-scope commits). Final evidence:
+
+- `VITEST_MAX_WORKERS=1 pnpm test` in `apps/delidev` passed API-client generation,
+  type checking, all 1,110 tests across 88 files, eight packaging checks,
+  sixteen launcher/assets checks, widget fixture/build checks and the production
+  Rsbuild build. The merged presentation source is unchanged by the Go repairs.
+- `go test -race -p 2 ./cmds/delidev-cli/internal/cli
+  ./cmds/delidev-cli/internal/userservice -run
+  'TestDesktopLaunch|TestDesktopPairing|TestLaunchAdmission|TestAutomaticStartup|TestStartup|TestDetachedStartupReadiness|TestCLILocalClientPairing|TestDesktopRecovery'
+  -count=1` passed both packages (78.498s and 1.800s). This includes retained
+  automatic recovery/Stop, original ownership, TLS readiness, fixed local pairing
+  and registration-recovery behavior alongside every new review regression.
+- `go vet -p 2 ./cmds/delidev-cli/...` passed.
+- A newly built temporary `delidev` sidecar from the completed repair source was
+  supplied via `DELIDEV_TEST_SIDECAR` to `cargo test -j 2 -p delidev-desktop real_
+  -- --ignored --test-threads=1`, with temporary fixture state, the existing
+  shared target directory and offline dependency resolution. All five real
+  native connector/sidecar fixtures passed, including concurrent fresh hosts,
+  Stop, detached lifetime, original authority/revocation and supervision.
+- Generated repository-owned `dist` output was removed after validation.
+
+This pass changes Go startup and merges frontend presentation; it changes no
+Rust source. It does not rerun the previously failing unrelated root Cargo or
+broad Go checks or the blocked actual native user-service acceptance. Their
+failures and native CEF/UI/platform evidence limits remain visible in the two
+prior issue #1137 records. Five native connector fixtures prove Go/native
+boundary behavior, not rendered CEF/focus/Quit acceptance or platform services.
