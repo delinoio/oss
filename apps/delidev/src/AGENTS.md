@@ -513,3 +513,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
+
+- ALLGREEN queue CI uses the existing generated query and validates complete queue/entry/repository identities, ordered membership, selected entry commit and original Actions `merge_group` suite provenance. Display source/strategy/entry/base inertly; retain HEADGREEN/missing proof as unknown and historical failures as original evidence. Reads, collection and presentation never grant execution authority. Follow the integration contract.

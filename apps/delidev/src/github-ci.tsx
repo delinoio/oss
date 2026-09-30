@@ -1,6 +1,7 @@
 import { items, object, text, type Document } from "./documents";
 import { bounded, positive, sha } from "./github-query-model";
 import { validPRRules } from "./github-rules";
+import { evaluableCIQueue, queueResultProvenance, selectedCIRollup, validCIQueue } from "./github-ci-queue";
 
 const states = new Set(["unknown", "missing", "pending", "non-failing", "terminal-failure", "not-required"]);
 const reasons = new Set(["observed", "no-matching-result", "app-unverified", "unknown-native-result", "unsupported-rule", "commit-unverified", "closed-pr", "workflow-unverified"]);
@@ -16,6 +17,7 @@ function validEvidence(row: Document): boolean {
     if (!bounded(value.suite_node_id, 256) || value.created_at != null || value.updated_at != null || value.description != null || (value.workflow == null) !== (row.workflow_event == null)) return false;
     if (ciTime(value.started_at) && ciTime(value.completed_at) && Date.parse(value.completed_at) < Date.parse(value.started_at)) return false;
     if (value.workflow != null && (!bounded(workflow.node_id, 256) || !positive(workflow.run_number) || BigInt(text(workflow.run_number)) > 2147483647n || !positive(workflow.observed_attempt) || BigInt(text(workflow.observed_attempt)) > 2147483647n || !ciTime(workflow.created_at) || !ciTime(workflow.updated_at) || Date.parse(workflow.updated_at) < Date.parse(workflow.created_at))) return false;
+    if ((workflow.suite_node_id == null) !== (workflow.commit_sha == null) || (workflow.suite_node_id != null && (workflow.suite_node_id !== value.suite_node_id || workflow.commit_sha !== row.commit_sha))) return false;
     return true;
   }
   return row.kind === "commit-status" && value.suite_node_id == null && value.started_at == null && value.completed_at == null && value.workflow == null && value.title == null && value.summary == null && value.text == null && ciTime(value.created_at) && ciTime(value.updated_at) && Date.parse(value.updated_at) >= Date.parse(value.created_at);
@@ -41,6 +43,8 @@ export function validPRCI(raw: unknown, item: Document): boolean {
   const seen = new Set<string>();
   if (raw == null || !validPRRules(value.rules, item) || !validRollup(value.head, item.head_sha, seen) || !["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(text(value.native_mergeability)) || typeof value.in_merge_queue !== "boolean") return false;
   const merge = object(value.test_merge);
+  const queue = object(value.merge_queue);
+  if (value.merge_queue != null && (value.in_merge_queue !== true || !validCIQueue(queue, item) || (queue.rollup != null && !validRollup(queue.rollup, object(queue.entry).head_sha, new Set())))) return false;
   if (value.test_merge != null && (merge.commit_sha === item.head_sha || value.native_mergeability === "CONFLICTING" || !validRollup(value.test_merge, merge.commit_sha, seen))) return false;
   if (!states.has(text(result.state)) || !reasons.has(text(result.reason)) || !Array.isArray(result.requirements)) return false;
   let selected: Document;
@@ -50,10 +54,13 @@ export function validPRCI(raw: unknown, item: Document): boolean {
   } else if (result.source === "test-merge") {
     selected = merge;
     if (result.evaluated_sha !== merge.commit_sha || items(merge.contexts).length === 0) return false;
+  } else if (result.source === "merge-queue") {
+    selected = object(queue.rollup);
+    if (value.in_merge_queue !== true || !evaluableCIQueue(queue, item) || result.evaluated_sha !== object(queue.entry).head_sha) return false;
   } else if (result.source === "unknown") {
     return result.evaluated_sha == null && result.state === "unknown" && result.requirements.length === 0;
   } else return false;
-  if (value.in_merge_queue || value.native_mergeability === "UNKNOWN" || (value.native_mergeability === "MERGEABLE" && value.test_merge == null) || item.state !== "open" || item.merged) return false;
+  if ((result.source !== "merge-queue" && (value.in_merge_queue || value.native_mergeability === "UNKNOWN" || (value.native_mergeability === "MERGEABLE" && value.test_merge == null))) || item.state !== "open" || item.merged) return false;
   const expected: Document[] = items(object(value.rules).rules).flatMap((raw) => {
     const rule = object(raw);
     return rule.type === "required_status_checks" ? items(object(rule.required_checks).checks).map((raw) => ({ ...object(raw), ruleset_id: rule.ruleset_id })) : [];
@@ -68,6 +75,8 @@ export function validPRCI(raw: unknown, item: Document): boolean {
       if (typeof id !== "string" || used.has(id)) return false;
       const context = contexts.get(id);
       if (!context || context.name !== row.context || context.required !== true) return false;
+      if (result.source === "merge-queue" && row.state !== "unknown" && !queueResultProvenance(context)) return false;
+      if (result.source === "merge-queue" && row.state !== "unknown" && row.integration_id != null && (row.integration_id === "0" || object(context.application).id !== row.integration_id)) return false;
       used.add(id);
     }
   }
@@ -95,10 +104,11 @@ const reasonLabels = new Map([
   ["no-matching-result", "No matching required result was observed."],
 ]);
 export function PRCI({ value, historical = false }: { value: Document; historical?: boolean }) {
-  const result = object(value.result), selected = result.source === "test-merge" ? object(value.test_merge) : object(value.head);
+  const result = object(value.result), selected = selectedCIRollup(value), queue = object(value.merge_queue), entry = object(queue.entry);
   return <section aria-label="Required CI evaluation">
     <p role="status">{stateLabels.get(text(result.state))}</p>
-    {result.evaluated_sha ? <p>Evaluated {result.source === "test-merge" ? "test merge" : "head"} commit: <code>{text(result.evaluated_sha)}</code></p> : null}
+    {result.evaluated_sha ? <p>Evaluated {result.source === "merge-queue" ? "merge queue entry" : result.source === "test-merge" ? "test merge" : "head"} commit: <code>{text(result.evaluated_sha)}</code></p> : null}
+    {value.merge_queue ? <p>Queue {text(queue.node_id)} · entry {text(entry.node_id)} · position {text(entry.position)} · strategy {text(queue.strategy)} · base <code>{text(entry.base_sha) || "Unavailable"}</code>. Entry state {text(entry.state)} does not establish a failed check.</p> : null}
     {reasonLabels.has(text(result.reason)) ? <p>{reasonLabels.get(text(result.reason))}</p> : null}
     <p>{historical ? "This is the original retained evaluation of active rulesets." : "This is a current observation of active rulesets."} Missing, pending and unknown results do not establish passing CI. A later action requires fresh evidence.</p>
     {items(result.requirements).length ? <table><caption>Active ruleset CI requirements</caption><thead><tr><th scope="col">Requirement</th><th scope="col">App</th><th scope="col">Result</th></tr></thead><tbody>{items(result.requirements).map((raw, index) => { const row = object(raw); return <tr key={index}><th scope="row">{text(row.context)}<small> · ruleset {text(row.ruleset_id)}</small></th><td>{text(row.integration_id) || "No restriction reported"}</td><td>{stateLabels.get(text(row.state))}{reasonLabels.has(text(row.reason)) ? <small> · {reasonLabels.get(text(row.reason))}</small> : null}</td></tr>; })}</tbody></table> : null}

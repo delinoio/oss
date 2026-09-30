@@ -104,6 +104,51 @@ func TestPRCIRetainsOriginalProofAndDismissalAcrossCurrentEvaluationChanges(t *t
 	}
 }
 
+func TestQueueCIFailureRetainsOriginalEntryAndLosesCurrentAuthorityOnRemoval(t *testing.T) {
+	s, root := openTest(t)
+	o := ciStoreObservationFixture()
+	ci := o.CI
+	entry := domain.CIMergeQueueEntry{NodeID: "ENTRY_E", PullRequestNodeID: o.Items[0].NodeID, PullRequestNumber: o.Items[0].Number, Position: "1", BaseSHA: o.Items[0].BaseSHA, HeadSHA: strings.Repeat("f", 40), State: "UNMERGEABLE"}
+	run := ci.Head.Contexts[0]
+	run.NodeID, run.CommitSHA = "QUEUE_CHECK", entry.HeadSHA
+	ci.InMergeQueue = true
+	ci.MergeQueue = &domain.CIMergeQueue{NodeID: "QUEUE_Q", RepositoryNodeID: o.Repository.NodeID, Strategy: domain.CIQueueAllGreen, Entry: entry, Entries: []domain.CIMergeQueueEntry{entry}, TotalCount: "1", Rollup: &domain.CIRollup{CommitSHA: entry.HeadSHA, TotalCount: "1", Contexts: []domain.CIContext{run}}}
+	ci.Result = ci.Evaluate(o.Items[0])
+	set := collectCIStoreFixture(t, s, 0, o, false)
+	rows := readProblemFixture(t, s, set.ID)
+	if len(rows) != 1 {
+		t.Fatal("missing queue failure")
+	}
+	problem, err := Decode[domain.PRProblem](rows[0])
+	if err != nil || problem.CI.Source != domain.CIMergeQueueCommit || problem.CI.QueueNodeID != "QUEUE_Q" || problem.CI.QueueEntryNodeID != "ENTRY_E" {
+		t.Fatal(problem, err)
+	}
+	ci.InMergeQueue, ci.MergeQueue = false, nil
+	ci.Head.Contexts, ci.Head.TotalCount = []domain.CIContext{}, "0"
+	ci.Result = ci.Evaluate(o.Items[0])
+	collectCIStoreFixture(t, s, set.Revision, o, false)
+	rows = readProblemFixture(t, s, set.ID)
+	retained, err := Decode[domain.PRProblem](rows[0])
+	if err != nil || retained.Current || retained.State != domain.PRProblemUnhandled || retained.CI.ObservationID != problem.CI.ObservationID {
+		t.Fatal("removed queue failure retained current authority", retained, err)
+	}
+	s.Close()
+	s, err = Open(notificationOwner(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.Read(notificationOwner(), func(tx *Tx) error {
+		_, proof, err := tx.GetPRCIObservation(problem.CI.ObservationID)
+		if err == nil && !problem.CI.Matches(proof) {
+			t.Error("historical queue proof changed across restart")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPRConflictHistoryIsIndependentOfFeedbackAndCIEvaluation(t *testing.T) {
 	s, _ := openTest(t)
 	defer s.Close()
