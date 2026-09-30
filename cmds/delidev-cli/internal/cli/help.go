@@ -44,6 +44,10 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account disconnect --id ID --revision N
   account validate --id ID --revision N
   account status --id ID
+  browser-profile capabilities | status --id PROFILE | account-status --account-id ACCOUNT
+  browser-profile list [--page-size N --page-token TOKEN]
+  browser-profile register --id SESSION --revision N --account-id ACCOUNT
+  browser-profile confirm-removal --id PROFILE --revision N --deletion-request-id REQUEST
   account list [--provider-id ID] [--account-type api|subscription] [--limit N] [--page-token TOKEN]
   integration create --input FILE|-
   integration edit --id ID --revision N --input FILE|-

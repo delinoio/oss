@@ -42,6 +42,7 @@ Each project must have one project index document and one or more domain contrac
 ### delidev
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
+- [Protected account browser](cmds-delidev-browser-contract.md)
 - [Storage operations](cmds-delidev-storage-contract.md)
 - [Project index](project-delidev.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)

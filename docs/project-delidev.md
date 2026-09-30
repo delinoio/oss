@@ -15,6 +15,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 ## Domain Contract Documents
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
+- [Protected account browser](cmds-delidev-browser-contract.md)
 - [Storage operations](cmds-delidev-storage-contract.md)
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
