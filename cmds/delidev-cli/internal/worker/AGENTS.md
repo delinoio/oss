@@ -488,6 +488,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Close and join the managed subscription lane after uncertain delivery/completion so the server retains lost leases as recovery-required. A durably acknowledged operation failure must not interrupt unrelated accounts on that lane.
 
+- A definite busy Take refusal waits with the unchanged protected claim for lifecycle actions as well as execution. It cannot close the shared Worker or primary lane and fence the execution that won the lease. Cancellation joins that wait; unknown delivery never enters its retry path.
+
 - Uncertain protected execution completion must also escape ordinary job-error reporting, retain its started claim journal and close/join the primary work lane. Independent workspace cleanup failures cannot erase that uncertainty; server stream loss fences the original execution lease before another account grant.
 
 - An acknowledged protected Finish may retain a fenced account. Keep execution uncertain unless final bundle capture and independent cleanup both succeeded, or the separately verified pre-native cleanup returned the unused original bundle. RPC acknowledgment alone cannot authorize ordinary job reporting or overwrite the started claim journal.

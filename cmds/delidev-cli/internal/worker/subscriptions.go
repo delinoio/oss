@@ -71,13 +71,14 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 	}
 	var response *connect.Response[pb.TakeSubscriptionResponse]
 	var err error
+	waitingLogged := false
 	for {
 		response, err = client.TakeSubscription(ctx, authenticated(credential, &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(leaseID), Id: string(account), ExpectedRevision: revision}, MachineId: string(credential.MachineID), InstanceId: string(instance), OperationId: string(operation), Action: action}))
 		if err == nil {
 			break
 		}
 		problem := rpc.ClientError(err)
-		if action != pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE || domain.SafeError(problem).Code != domain.ResourceExhausted {
+		if domain.SafeError(problem).Code != domain.ResourceExhausted {
 			code := domain.SafeError(problem).Code
 			if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE && (code == domain.ServerUnavailable || code == domain.Unavailable || code == domain.Canceled || code == domain.Internal || code == domain.RecoveryRequired) {
 				return nil, &managedExecutionUncertain{problem}
@@ -87,6 +88,10 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 		// A definite busy refusal has no delivery or native side effect. Wait on
 		// the exact selected account using the unchanged claim; unknown delivery
 		// never enters this retry path.
+		if !waitingLogged && config.Logger != nil {
+			config.Logger.InfoContext(ctx, "subscription_lease_waiting", "account_id", account, "operation_id", operation, "action", action)
+			waitingLogged = true
+		}
 		timer := time.NewTimer(time.Second)
 		select {
 		case <-ctx.Done():
