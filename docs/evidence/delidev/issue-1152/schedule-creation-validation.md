@@ -1,7 +1,7 @@
 # New schedule creation validation
 
 Source implementation: `a7537fccc`; final CSS viewport bound is included in that commit.
-Merge validation base: `9d110ced7` (merged by `eb4a6d2cb`).
+Package validation source: `0aa8adb3`; merge base `9d110ced7` (merged by `eb4a6d2cb`).
 
 The creation-only frontend now separates Task, Execution and Repeat schedule,
 adds bounded Daily/Weekdays/Weekly/Custom authoring, keeps mounted reference
@@ -31,8 +31,16 @@ skipped assertions, with eight additional suite setup failures caused by Go
 build-cache files disappearing during compilation. The remaining failures are
 the workspace repository observation and the tray fixture's five-second
 deadline. These results do not establish a complete package pass or prove every
-failed check is a baseline failure. A private Go-cache rerun is pending; no
-product or committed test timeout/worker setting has been changed.
+failed check is a baseline failure.
+
+The later complete package run on the merged base passes all 87 files / 1,037
+assertions, generated-client build, type checking, eight bundle-verifier checks,
+16 asset/launcher checks, native Swift widget fixtures and production frontend
+build. It runs `pnpm test` from `apps/delidev` with an isolated temporary
+`GOCACHE` and the temporary one-worker setting restored afterward. No product
+or committed test timeout/worker setting has been changed. This passing run
+resolves the local package-validation gap while retaining the earlier failed
+observations above.
 
 A disposable in-memory Connect fixture using the actual App, creation component
 and shared stylesheet was inspected separately in the browser. It grants no
