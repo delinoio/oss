@@ -280,6 +280,8 @@ Managed backup creation, inventory, integrity inspection and durable permanent i
 
 Local desktop registration now has explicit owner-verified revoked-client recovery and a current-client revocation guard in the app. The CLI/native boundary retains the original revoked identity and private pairing history, uses a separate candidate and exact durable retry, and preserves server sessions/settings and independent Workers. It does not add automatic repair, remote saved-profile recovery, a new RPC or database migration; see the CLI and desktop contracts and evidence ledger.
 
+Local connection and registration permission guidance distinguishes device authorization, ownership and owner-only filesystem access, including macOS/Linux private modes. Permission failures never establish revocation or authorize automatic repair; existing data remains preserved under the desktop contract.
+
 ### Managed backup restoration
 
 Issue #1080 adds owner/client Connect and CLI restoration bound to exact image

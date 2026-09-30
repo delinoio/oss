@@ -7,6 +7,7 @@ export interface NativeConnection { endpoint: string; token: string; server_id: 
 export enum RegistrationState { Authorized = "authorized", Revoked = "revoked", Recovering = "recovering" }
 export interface DesktopRegistration { state: RegistrationState; server_id: string; device_id: string; revision: string; request_id?: string }
 interface RecoveryRequest { serverId: string; deviceId: string; revision: string; requestId: string }
+export const localPermissionProblem = "Access was denied. Check that the selected device is authorized and that DeliDev's private data directory and registration files are owned by your account and accessible only to you. On macOS/Linux, use 0700 for private directories and 0600 for private files, then retry. Preserve existing data.";
 const id = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function registration(value: DesktopRegistration): DesktopRegistration {
   if (!value || !Object.values(RegistrationState).includes(value.state) || !id.test(value.server_id) || !id.test(value.device_id)
@@ -16,7 +17,7 @@ function registration(value: DesktopRegistration): DesktopRegistration {
 }
 function recoveryProblem(error: unknown) {
   if (error === "credential-unavailable") return "The original owner or replacement credential is unavailable. Restore the original owner access before retrying; no automatic registration will occur.";
-  if (error === "permission-denied") return "The private registration files are not accessible to their owner. Check their permissions before retrying.";
+  if (error === "permission-denied") return localPermissionProblem;
   if (error === "invalid-evidence") return "The original registration or recovery files changed or are incomplete. Preserve them for inspection; recovery cannot safely continue.";
   if (error === "busy") return "Another operation or a changed registration prevents this request. Check desktop registration and retain any original recovery request.";
   if (error === "incompatible") return "Use a desktop version compatible with the original local server.";
