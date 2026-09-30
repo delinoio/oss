@@ -101,6 +101,12 @@ absent original view without touching a replacement and returns no browsing
 data, including for unrelated-window requests. Old cleanup cannot clear the
 replacement's frontend identity. Closure acceptance does not replace
 the independent native close/shutdown proofs required for profile deletion.
+Native window closure does not depend on React unmount: actual close and explicit
+saved-window destruction invalidate that window's reservation and pending creation
+and request raw-child closure on the UI loop before destroying the parent. The
+saved-window Destroyed fallback checks the original binding instance before closing
+the view and dropping its binding. Tray hiding retains presentation; window closure
+retains profiles and the native callback counts needed for independent shutdown.
 Profile directory traversal, tab reads, URL policy preparation and durable writes
 run on serialized storage workers without holding the native state lock during
 I/O. Trusted documents and presentation/control generations are rechecked before

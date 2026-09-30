@@ -328,9 +328,25 @@ async fn remove_connection(
     };
     // The explicit UI confirmation includes losing this window's unsent drafts.
     // Block reopen and late token delivery before beginning private cleanup.
-    if let Some(saved) = app.get_webview_window(&label)
-        && saved.destroy().is_err()
-    {
+    let destroyed = if let Some(saved) = app.get_webview_window(&label) {
+        let host = Arc::clone(browser.inner());
+        let (send, receive) = tokio::sync::oneshot::channel();
+        match app.run_on_main_thread(move || {
+            let result = host
+                .close_window(saved.label())
+                .and_then(|()| saved.destroy().map_err(|_| NativeFailure::SidecarFailed));
+            let _ = send.send(result);
+        }) {
+            Ok(()) => receive
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)
+                .and_then(|result| result),
+            Err(_) => Err(NativeFailure::SidecarFailed),
+        }
+    } else {
+        Ok(())
+    };
+    if destroyed.is_err() {
         let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
         if let Some(original) = original {
             values.insert(label, original);
@@ -747,6 +763,7 @@ async fn open_connection(
     match created {
         Ok(window) => {
             let windows = Arc::clone(windows.inner());
+            let browser = Arc::clone(app.state::<Arc<browser_host::BrowserHost>>().inner());
             window.on_window_event(move |event| {
                 if matches!(event, WindowEvent::Destroyed)
                     && let Ok(mut values) = windows.0.lock()
@@ -754,7 +771,14 @@ async fn open_connection(
                         .get(&label)
                         .is_some_and(|binding| binding.instance == instance && !binding.closing)
                 {
-                    values.remove(&label);
+                    // Instance ownership is checked before invalidating the raw
+                    // child; an old window event cannot close its replacement.
+                    match browser.close_window(&label) {
+                        Ok(()) => {
+                            values.remove(&label);
+                        }
+                        Err(code) => tracing::warn!(operation = "browser_window_close", ?code),
+                    }
                 }
             });
             tracing::info!(operation = "saved_window", state = "opened");
@@ -1049,9 +1073,25 @@ fn run() -> Result<(), NativeFailure> {
                 {
                     if window.hide().is_ok() {
                         api.prevent_close();
+                        return;
                     } else {
                         tracing::warn!(operation = "window_hide", code = "window-unavailable");
                     }
+                }
+                // A real native close must release external children before the
+                // pinned runtime destroys their parent. Tray hiding preserves them.
+                if let Err(code) = window
+                    .state::<Arc<browser_host::BrowserHost>>()
+                    .close_window(window.label())
+                {
+                    api.prevent_close();
+                    tracing::warn!(operation = "browser_window_close", ?code);
+                } else if let Ok(mut values) = window.state::<Arc<SavedWindows>>().0.lock()
+                    && values
+                        .get(window.label())
+                        .is_some_and(|binding| !binding.closing)
+                {
+                    values.remove(window.label());
                 }
             } else if matches!(event, WindowEvent::Destroyed) {
                 window

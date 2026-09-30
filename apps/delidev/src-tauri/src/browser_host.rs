@@ -1313,6 +1313,25 @@ impl BrowserHost {
         Ok(())
     }
 
+    // Native UI loop only. Window destruction cannot rely on renderer cleanup.
+    // Invalidate pending preparation/creation before requesting raw-child close;
+    // retain profiles and callback accounting until actual CEF teardown.
+    pub fn close_window(&self, window: &str) -> Result<()> {
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        state.reservations.remove(window);
+        for profile in state.profiles.values_mut() {
+            profile.pending.retain(|request| request.window != window);
+        }
+        let view = state.views.remove(window);
+        drop(state);
+        if let Some(browser) = view.and_then(|view| view.browser)
+            && let Some(host) = browser.host()
+        {
+            host.close_browser(1);
+        }
+        Ok(())
+    }
+
     pub fn close_all(&self) {
         if let Ok(mut state) = self.state.lock() {
             for v in state.views.values_mut() {
@@ -2618,6 +2637,62 @@ esac
         host.state.lock().unwrap().live = 0;
         assert_eq!(host.state.lock().unwrap().exit_when_ready(), Some(0));
         assert!(!host.begin_exit(0));
+    }
+
+    #[test]
+    fn destroyed_window_cancels_its_view_and_pending_creation_without_purging_profile() {
+        let (_temp, host, record, view_id, request) = active_storage_fixture();
+        let mut sibling = request.clone();
+        sibling.window = "sibling".into();
+        {
+            let mut state = host.state.lock().unwrap();
+            state.profiles.get_mut(&record.id).unwrap().pending =
+                vec![request.clone(), sibling.clone()];
+            state.reservations.insert("sibling".into(), view_id.clone());
+            state.views.insert(
+                "sibling".into(),
+                View {
+                    profile: record.id.clone(),
+                    generation: sibling.generation,
+                    request: sibling,
+                    browser: None,
+                    failure: None,
+                    creation_pending: false,
+                    closing: false,
+                    view_id: view_id.clone(),
+                },
+            );
+            state.views.get_mut("fixture").unwrap().creation_pending = true;
+            state.live = 1;
+        }
+        let storage = host.storage.lock().unwrap();
+        host.close_window("fixture").unwrap();
+        host.close_window("fixture").unwrap();
+        {
+            let state = host.state.lock().unwrap();
+            assert!(!state.views.contains_key("fixture"));
+            assert!(!state.reservations.contains_key("fixture"));
+            assert!(state.views.contains_key("sibling"));
+            assert_eq!(state.profiles[&record.id].pending.len(), 1);
+            assert_eq!(state.profiles[&record.id].pending[0].window, "sibling");
+            assert!(state.profiles[&record.id].path.join("tabs.json").exists());
+            assert!(!state.profiles[&record.id].removing);
+            assert_eq!(state.live, 1);
+        }
+        drop(storage);
+        assert_eq!(
+            host.prepare_open(
+                "fixture",
+                &view_id,
+                None,
+                record.clone(),
+                "https://fixture.test/late"
+            ),
+            Err(NativeFailure::Stopped)
+        );
+        assert!(host.begin_exit(0));
+        assert_eq!(host.child_closed(&request), Some(0));
+        assert_eq!(host.state.lock().unwrap().live, 0);
     }
 
     #[test]
