@@ -5,7 +5,8 @@ import { Integrations } from "./integrations";
 import { ConfigurationTransfer } from "./configuration-transfer";
 import { ModelPricing } from "./pricing";
 import { NotificationSettings } from "./notification-settings";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { ConfigurationQuery, EntityKind, ProviderInventoryCapability, ProviderPresetId, ProviderQuery, ResourceQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
@@ -17,11 +18,12 @@ import { LocalWorkerControls, type ControlLocalWorker } from "./local-worker-con
 import { MachineSettings } from "./machine-settings";
 import { DeviceDetails, DeviceRevocation, Doctor } from "./device-settings";
 import { AccountConnection } from "./account-connection";
-import { useRetainedMutation } from "./mutation";
+import { MutationIntents, useRetainedMutation } from "./mutation";
 import { Modal, ModalLayout, Problem } from "./ui";
 import { PairingGrant, type PairingAuthority } from "./pairing-grant";
 import { AccountSettings, AccountSettingsSection, type AccountProviderSummary } from "./account-settings";
 import { ActiveModelSettings, ApiProviderSettings, providerInventoryReady } from "./provider-model-settings";
+import { SettingsLifetime } from "./settings-lifetime";
 
 export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, active, saved, cancel, focusName = false, nameFocused }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; active: boolean; saved: () => void; cancel: () => void; focusName?: boolean; nameFocused?: () => void }) {
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
@@ -116,8 +118,29 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
   return <svg className="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={settingsIcons[category]} /></svg>;
 }
 
-export function Settings({ connectionControls, close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: { connectionControls?: ReactNode; pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }) {
-  const [selectedCategory, setSelectedCategory] = useState(SettingsCategory.Providers);
+interface SettingsProps { connectionControls?: ReactNode; pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
+export function Settings({ visible = true, connectionControls, ...props }: SettingsProps) {
+  const client = useQueryClient();
+  const [connectionTarget, setConnectionTarget] = useState<HTMLDivElement | null>(null);
+  return <>{connectionControls ? <RetainedConnectionControls target={connectionTarget}>{connectionControls}</RetainedConnectionControls> : null}{visible ? <SettingsLifetime>{(opening) => <MutationIntents><SettingsWorkspace {...props} connectionTarget={setConnectionTarget} close={() => { opening.dispose(client); props.close(); }} controlLocalWorker={props.controlLocalWorker ? (action, generation) => opening.native(() => props.controlLocalWorker!(action, generation)) : undefined} /></MutationIntents>}</SettingsLifetime> : null}</>;
+}
+
+// Connection controllers belong to the client lifetime, outside disposable
+// Settings openings. Move one stable portal container so Close/Strict Mode
+// cannot discard an uncertain Stop or registration recovery request.
+function RetainedConnectionControls({ target, children }: { target: HTMLElement | null; children: ReactNode }) {
+  const [container] = useState(() => window.document.createElement("div"));
+  const parking = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const destination = target ?? parking.current;
+    destination?.appendChild(container);
+    return () => { container.remove(); };
+  }, [container, target]);
+  return <><div hidden ref={parking} />{createPortal(children, container)}</>;
+}
+
+function SettingsWorkspace({ connectionTarget, close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: SettingsProps & { connectionTarget: (target: HTMLDivElement | null) => void }) {
+  const [selectedCategory, setSelectedCategory] = useState(() => entryDestination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : entryDestination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts);
   const [device, setDevice] = useState<Resource>();
   const [page, setPage] = useState("");
   const [editing, setEditing] = useState<{ kind?: EntityKind; initial?: Resource; initialData?: Document; key: string; subscriptionOnly?: boolean }>();
@@ -278,7 +301,7 @@ export function Settings({ connectionControls, close, visible = true, controlLoc
           <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} showCategoryIntro={false} onWorkflowReadyChange={reportIntegrationWorkflow} /></div>
           <div hidden={area !== SettingsArea.Transfer}><ConfigurationTransfer active={visible && area === SettingsArea.Transfer} showCategoryIntro={false} onWorkflowReadyChange={reportTransferWorkflow} /></div>
           <div hidden={area !== SettingsArea.Notifications}><NotificationSettings active={visible && area === SettingsArea.Notifications} showCategoryIntro={false} onWorkflowReadyChange={reportNotificationWorkflow} /></div>
-          <div hidden={area !== SettingsArea.Diagnostics}>{connectionControls}<Doctor active={visible && area === SettingsArea.Diagnostics} showCategoryIntro={false} /></div>
+          <div hidden={area !== SettingsArea.Diagnostics}><div ref={connectionTarget} /><Doctor active={visible && area === SettingsArea.Diagnostics} showCategoryIntro={false} /></div>
           <div hidden={area !== SettingsArea.Configuration}>
             {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority ? <div hidden={kind !== EntityKind.DEVICE || Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} /></div> : null}

@@ -3600,6 +3600,53 @@ CEF processes required task-scoped termination during cleanup. The temporary
 server was explicitly stopped. No user credentials or hosted inference were
 used.
 
+### Settings opening disposal (issue #1138, 2026-09-30)
+
+- Ordinary Settings entry now starts at the first SubscriptionAccounts category.
+  Close, dialog cancel/Escape and navigation away discard the entire opening,
+  including editors, filters/pages, account wizard secrets, confirmations, local
+  job tracking and uncertain retry UI. Targeted New Project/Repositories entries
+  remain explicit; deferred destinations are cleared on close.
+- A fresh opening-owned transport and mutation registry abort supported client
+  waits, reject late outcomes and prevent follow-up requests. Tagged native/Connect
+  cache cleanup preserves the connection QueryClient and sibling exact retries.
+  Strict Mode replay creates a fresh generation; same-identity transport replacement
+  preserves an open editor and uses the latest authenticated transport.
+- Generated-router regressions deliberately ignore cancellation and settle reads
+  and writes late. A fixture commits before delaying acknowledgment; fresh reads
+  observe that resource without replay or rollback. Tests also cover late native
+  Worker/permission callbacks, repeated cache cleanup, sibling uncertain requests,
+  Close/cancel opener restoration, targeted entries, tray navigation and preserved
+  session/composer state.
+- Package-local `pnpm test` passed: 75 Vitest files / 960 tests, 8 package-verifier
+  fixtures, 16 launcher/asset fixtures, native Swift widget fixtures, TypeScript
+  checking and production frontend build. The first sandboxed attempt could not
+  access the Go build cache; the permitted unsandboxed run passed with temporary
+  server/Worker fixtures and no external account or inference. The source icon
+  was hydrated from its existing exact-path LFS cache and its SHA-256/size remained
+  identical. Generated frontend/client `dist` output is removed before delivery.
+- Native smoke ran the unchanged pinned CEF launcher on macOS 26.6.2 arm64 in a
+  separately built ad-hoc bundle, with private app/cache state and a paired
+  disposable loopback server. Ordinary entry selected AI Subscription. An unsaved
+  custom-provider name was discarded by Escape; focus returned to Settings and
+  reopening selected AI Subscription, with an empty new provider editor. Close
+  discarded a second draft and restored the same opener. New Project opened and
+  focused its targeted editor; Escape restored New Project, and the next ordinary
+  entry cleared that destination and selected AI Subscription. No Save was used.
+  Native Tab/Shift-Tab boundary traversal visited the dialog's last disclosure,
+  document focus and Close, without reaching background controls. The 3440×2168
+  2× native capture showed the full Settings surface and focused Close control.
+- The copied native build cache required removal of temporary relocated CMake
+  caches. The initial launch collided with the existing app's CEF cache; private
+  cache/home context resolved it. The disposable server initially rejected the
+  renderer origin; restarting that server with the exact `http://tauri.localhost`
+  allowlist established the saved connection. Existing app/server state was not
+  modified. The fixture received Quit, remaining CEF processes were terminated
+  by their exact temporary bundle path, and the temporary server was stopped.
+  Generated desktop/client `dist` directories were removed. Windows/X11 runtime,
+  responsive resizing/zoom, production signing and release acceptance remain
+  unverified for this revision; earlier copy-only geometry evidence is separate.
+
 ### Issue #1137 native-owned automatic desktop launch (2026-09-30)
 
 Inspected freshly fetched `origin/main` at `2e89b18f6c09c91e1ec052880dbfcbba3a4dd120`; the manual-start source/test and ordinary infrastructure exposure remained unresolved. This owner amendment implements one background native main-host launch before supervision. Go's desktop launch/retry modes pin native-service admission through startup and retain startup plus separate-client pairing under one cross-process bootstrap gate. Joined observations never pair again; retained success checks current lifecycle intent, same-process Retry cannot reopen Stop, and explicit advanced Start or a fresh host may reopen only after original ownership joins. Settings retains all 16 categories and relocates connection controls to System > Connection & diagnostics. Transport-independent Troubleshooting and generic startup/sidebar/tray wording preserve original recovery/Stop requests, saved authority and truthful freshness.
@@ -3624,3 +3671,9 @@ Final verification outcomes:
 - Generated repository-owned `apps/delidev/dist` and `packages/delidev-api-client/dist` are removed after verification. Imported Go toolchain source under the ignored module cache is preserved. No generated output, credentials or native temporary scope is committed. Native/platform acceptance limits recorded above remain open.
 
 The post-merge repository contract suite (`pnpm ci:contracts`) also passes all 95 tests.
+
+### Issue #1137 first PR maintenance conflict repair (2026-09-30)
+
+The first `$repair-pr` pass merges `origin/main` at `12b33a2accafe55b39da9bae2fba1acf310b265b`, including issue #1138's disposable Settings openings. Both amendments are preserved: form drafts, opening-local waits/caches and selected categories reset on close, while local/saved connection controls are connection-owned siblings retained outside that opening. One stable portal container is presented in Connection & diagnostics and parked hidden on close, preserving native registration state and the exact original Stop confirmation/uncertain mutation without replay. Generic sidebar presentation and all historical evidence sections are retained.
+
+Both full repair frontend runs pass 75 files / 968 tests, type checking, packaging/launcher/widget fixtures and production compilation. The final run additionally exercises actual unconfirmed Stop delivery followed by Settings Close/reopen and an explicit retry, proving identical request IDs and no hidden resubmission. The new main Settings-disposal fixtures also pass. All 95 repository contract tests pass. This repair changes no Rust/Go source; the root/native/Go outcomes and native UI/platform limits recorded above remain the applicable evidence. Generated desktop/client `dist` output is removed after the final run. Native focus/geometry with the integrated opening-disposal revision has not been rerun; component evidence does not claim that gate.

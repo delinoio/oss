@@ -1,4 +1,4 @@
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { SessionService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
@@ -40,7 +40,7 @@ it("starts from the joined native launch and keeps permission guidance in transp
 function localFixture() {
   const connection = { endpoint: "http://127.0.0.1:46310", server_id: newRequestId(), device_id: newRequestId(), token: "private-local-fixture-token" };
   const getStatus = vi.fn(() => ({ version: "0.1.0", protocolVersion: 1, serverId: connection.server_id }));
-  const stop = vi.fn(async () => ({}));
+  const stop = vi.fn(async (_request: { requestId: string }) => ({}));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus, stopServer: stop });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
@@ -76,6 +76,23 @@ it("enters the verified product automatically under Strict Mode and confines con
   fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
   expect(screen.getByRole("button", { name: "Confirm server stop" })).toBeTruthy();
   expect(fixture.stop).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  expect(screen.queryByRole("button", { name: "Confirm server stop" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
+  expect(screen.getByRole("button", { name: "Confirm server stop" })).toBeTruthy();
+  expect(fixture.stop).not.toHaveBeenCalled();
+  fixture.stop.mockRejectedValueOnce(new ConnectError("Delivery was not confirmed", Code.Unavailable));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm server stop" }));
+  await screen.findByRole("button", { name: "Retry the same server stop" });
+  const originalRequest = fixture.stop.mock.calls[0][0].requestId;
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
+  expect(fixture.stop).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same server stop" }));
+  await screen.findByText(/Stop accepted/);
+  expect(fixture.stop.mock.calls.map(([request]) => request.requestId)).toEqual([originalRequest, originalRequest]);
 });
 it("joins pending observations across remounts and submits only an explicit serialized retry", async () => {
   const fixture = localFixture();

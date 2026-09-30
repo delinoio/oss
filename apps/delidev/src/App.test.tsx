@@ -120,7 +120,7 @@ it("shows selector loading while the current page has not returned", async () =>
   expect(await screen.findByRole("option", { name: "Agent One" })).toBeTruthy();
 });
 
-it("opens the existing New Project form from the plus button, retains its draft, and restores opener focus", async () => {
+it("opens a fresh New Project form from the plus button and restores opener focus", async () => {
   const value = fixture();
   render(<StrictMode><App transport={value.transport} /></StrictMode>);
   const opener = await screen.findByRole("button", { name: "New project" });
@@ -138,13 +138,13 @@ it("opens the existing New Project form from the plus button, retains its draft,
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   expect(window.document.activeElement).toBe(opener);
   fireEvent.click(opener);
-  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
-  expect((name as HTMLInputElement).value).toBe("Retained project");
+  expect(screen.getByRole("textbox", { name: "Name" })).not.toBe(name);
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
   expect(screen.getAllByRole("heading", { name: "New Project" })).toHaveLength(1);
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
 
-it("defers a New Project entry behind a retained parent editor", async () => {
+it("defers a targeted entry within an opening and clears it when that opening closes", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -152,18 +152,18 @@ it("defers a New Project entry behind a retained parent editor", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
   const providerName = screen.getByRole("textbox", { name: "Name" });
   fireEvent.change(providerName, { target: { value: "Retained instructions draft" } });
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "New project" }));
   expect(screen.getByRole("textbox", { name: "Name" })).toBe(providerName);
   expect((providerName as HTMLInputElement).value).toBe("Retained instructions draft");
   expect(screen.getByRole("button", { name: "Save Instructions" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
-  expect(await screen.findByRole("heading", { name: "New Project" })).toBeTruthy();
-  await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
 
-it("resumes an uncertain New Project save with the same editor and immutable request", async () => {
+it("abandons an uncertain New Project save without replay when reopening", async () => {
   const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository" }) });
   const value = fixture([], [repository]);
   value.saveConfiguration.mockRejectedValueOnce(new ConnectError("The save response was lost.", Code.Unavailable));
@@ -176,17 +176,13 @@ it("resumes an uncertain New Project save with the same editor and immutable req
   fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
-  const retry = await screen.findByRole("button", { name: "Retry the same configuration" });
+  await screen.findByRole("button", { name: "Retry the same configuration" });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(opener);
-  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
-  expect((name as HTMLInputElement).value).toBe("Sidebar project");
-  expect(screen.getByRole("button", { name: "Retry the same configuration" })).toBe(retry);
-  fireEvent.click(retry);
-  await waitFor(() => expect(value.saveConfiguration).toHaveBeenCalledTimes(2));
-  expect(value.saveConfiguration.mock.calls[0][0]).toEqual(value.saveConfiguration.mock.calls[1][0]);
-  expect(await screen.findByRole("button", { name: "New Project" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Projects" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("textbox", { name: "Name" })).not.toBe(name);
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
+  expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
+  expect(value.saveConfiguration).toHaveBeenCalledTimes(1);
   expect(value.enqueues).not.toHaveBeenCalled();
   expect(value.controls).not.toHaveBeenCalled();
 });
@@ -497,7 +493,7 @@ it("opens a dedicated PR workspace and reads GitHub only after Load", async () =
   expect(request).toMatchObject({ kind: "pull-request", operation: "list", state: "open", page: 1, page_size: 20 });
 });
 
-it("navigates to standalone PRs while retaining an Instructions draft", async () => {
+it("discards an Instructions draft when navigating away and preserves targeted repository entry", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -510,15 +506,13 @@ it("navigates to standalone PRs while retaining an Instructions draft", async ()
   expect(await within(screen.getByRole("main")).findByRole("heading", { name: "Pull requests" })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
-  expect((await screen.findByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained instructions draft");
-  expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
   expect(value.enqueues).not.toHaveBeenCalled();
   expect(value.controls).not.toHaveBeenCalled();
 });
 
-it("defers the PR entry until a nested integration profile draft is canceled", async () => {
+it("discards a nested integration profile draft on close before targeted repository entry", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -529,14 +523,12 @@ it("defers the PR entry until a nested integration profile draft is canceled", a
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
-  expect((screen.getByRole("textbox", { name: "Profile name" }) as HTMLInputElement).value).toBe("Retained GitHub profile draft");
-  expect(screen.getByRole("button", { name: "Integrations" }).getAttribute("aria-pressed")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  expect(screen.queryByRole("textbox", { name: "Profile name" })).toBeNull();
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
   expect(value.githubQuery).not.toHaveBeenCalled();
 });
 
-it("retains and defers around notification and import drafts until their explicit cancel path", async () => {
+it("discards notification and import drafts on close without saving", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -546,9 +538,10 @@ it("retains and defers around notification and import drafts until their explici
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
-  expect((screen.getByRole("checkbox", { name: "Questions and approval requests" }) as HTMLInputElement).checked).toBe(false);
-  expect(screen.getByRole("button", { name: "Notifications" }).getAttribute("aria-pressed")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
+  expect(screen.queryByRole("button", { name: "Cancel notification edit" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+  expect((await screen.findByRole("checkbox", { name: "Questions and approval requests" }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
 
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
@@ -559,8 +552,8 @@ it("retains and defers around notification and import drafts until their explici
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
-  expect((screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement).value).toBe("{\"version\":1");
-  expect(screen.getByRole("button", { name: "Import / Export" }).getAttribute("aria-pressed")).toBe("true");
-  fireEvent.change(importDraft, { target: { value: "" } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
+  expect((screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement).value).toBe("");
+  expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
