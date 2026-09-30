@@ -519,7 +519,9 @@ Worker data, never server data or diagnostic content.
 Each repository receives an independent Git object/ref/index store preserving
 base/starting/HEAD and unpushed history, staged/unstaged state and tracked,
 untracked and Git-ignored regular files. Linked worktree administration is merged
-into that independent store with relative worktree configuration; original Local
+into that independent store with relative worktree configuration. Preserve shared
+branch reflogs, including references to reset unpushed commits; overlay only
+colliding selected-worktree administration files such as its own HEAD log. Original Local
 checkouts, shared Git registrations and source refs are preserved. Git checks
 are read-only/offline with hooks, fsmonitor, maintenance, lazy fetching and ambient
 Git/SSH configuration disabled. No remote push is used. External object alternates,

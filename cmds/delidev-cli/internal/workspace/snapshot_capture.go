@@ -175,8 +175,12 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 			}
 		}
 	}
+	// Overlay only this worktree's colliding administration files (including
+	// logs/HEAD). Shared branch reflogs must survive: they may be the only
+	// retained reference to an unpushed commit after reset. Other worktrees'
+	// private administration is unrelated to this independent Git store.
 	skipCommon := func(path string) bool {
-		return path == "worktrees" || strings.HasPrefix(path, "worktrees/") || (!sameNativePath(common, admin) && (path == "logs" || strings.HasPrefix(path, "logs/") || adminFiles[path]))
+		return path == "worktrees" || strings.HasPrefix(path, "worktrees/") || adminFiles[path]
 	}
 	// The copied Git root appears in the final workspace inventory although
 	// walking its contents excludes the root itself.
