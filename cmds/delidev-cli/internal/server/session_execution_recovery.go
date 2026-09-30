@@ -273,13 +273,14 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 			return err
 		}
 		previous.State = domain.JobSucceeded
+		previous.Problem = nil
 		if evidence.Completion.Outcome == domain.ExecutionFailed {
 			previous.State = domain.JobFailed
+			previous.Problem = session.Problem
 		}
 		if evidence.Completion.Outcome == domain.ExecutionStopped {
 			previous.State = domain.JobCanceled
 		}
-		previous.Problem = nil
 		previous.Output, err = json.Marshal(evidence.Completion)
 		if err != nil {
 			return err
