@@ -21,11 +21,22 @@ type catalogReceipt struct {
 	Observation domain.CatalogObservation `json:"observation"`
 }
 
+// Bump this version when provider inventory cursor keys or ordering change so
+// unexpired cursors from older binaries are rejected instead of reinterpreted.
+const providerInventoryCursorScopeVersion = "provider-inventory-v2"
+
 func (s *Service) ListProviderPresets(ctx context.Context, req *connect.Request[pb.ListProviderPresetsRequest]) (*connect.Response[pb.ListProviderPresetsResponse], error) {
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error { return tx.Authorize() }); err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
-	raw, _ := json.Marshal(providers.Presets())
+	// Keep the legacy editable preset payload compatible with older desktop
+	// clients. Preset provenance is carried by provider inventory activation,
+	// while the provider defaults remain plain editable configuration here.
+	legacyPresets := providers.Presets()
+	for i := range legacyPresets {
+		legacyPresets[i].Provider.PresetID = nil
+	}
+	raw, _ := json.Marshal(legacyPresets)
 	response := connect.NewResponse(&pb.ListProviderPresetsResponse{PresetsJson: raw})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
@@ -42,7 +53,7 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 	}
 	raw, _ := json.Marshal(f)
 	hash := sha256.Sum256(raw)
-	scope := "provider-inventory:" + hex.EncodeToString(hash[:])
+	scope := providerInventoryCursorScopeVersion + ":" + hex.EncodeToString(hash[:])
 	if req.Msg.PageToken != "" {
 		cursor, err := s.Identity.DecodeCursor(req.Msg.PageToken, scope)
 		if err != nil {
