@@ -46,6 +46,8 @@
 
 ### clibox Rules
 
+- clibox macOS archives reuse verified npm binary bytes, retain full Apache-2.0/NOTICE and imported MIT notices, and feed the macOS-only Homebrew Formula. Verify public source, all asset digests/signatures and both native tested Formulae before tap-only bot publication; preserve GNU archive format and npm-independent release guards. See the clibox distribution contract.
+
 - Keep the npm README and `apps/public-docs/docs/clibox` aligned with user-facing command and installation behavior; link to `https://oss.delino.io/clibox`. The shared documentation selector uses clean same-origin paths on production and the consolidated development server, including clibox and pnport as destinations.
 
 - Native and installed npm commands must share the canonical `run env`, `port list`, and `hash compute` names, quiet/PID output separation, stdout dash selector, force validation, and numeric owned-operation cancellation (130/143); validate the migration in installed consumer smoke tests without launcher-side argument rewriting.

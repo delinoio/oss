@@ -114,6 +114,8 @@
 
 ### clibox-docs Rules
 
+- clibox Homebrew guidance is macOS x64/arm64 only through `delinoio/tap/clibox`. Keep the next-release availability notice until first public installation is verified; document install, version, upgrade and uninstall without exposing release internals.
+
 - `apps/public-docs/docs/clibox` owns the thirteen English public guide routes in `docs/apps-clibox-docs-foundation.md`, including `/clibox/fspy`, with `https://oss.delino.io/clibox` as the canonical destination. Use the existing public-docs build, deployment, theme, and fixed development port.
 - Expose clibox as a peer of Runmoor in the shared project selector, with every clibox route in its desktop/mobile sidebar and visible repository social/footer links. Keep the root top navbar empty.
 - Explain the dotenv `export` prefix separately from the ordinary `export` assignment key, including the immediate ASCII-space boundary.

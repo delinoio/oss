@@ -190,6 +190,7 @@ jobs:
           node packages/clibox/scripts/package.mjs main
           node packages/clibox/scripts/publish.mjs
           node packages/clibox/scripts/github-release.mjs
+          node packages/clibox/scripts/homebrew.mjs render --archives packages/clibox/dist/github --output packages/clibox/dist/clibox.rb
       - uses: actions/upload-artifact@v7
         with:
           name: clibox-npm-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
@@ -252,10 +253,131 @@ jobs:
           name: clibox-npm-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
           path: packages/clibox/dist/tarballs
       - uses: sigstore/cosign-installer@v4.1.1
-      - name: Publish verified GNU archives and Sigstore bundles
+      - name: Publish verified GNU and macOS archives and Sigstore bundles
         env:
           GH_TOKEN: ${{ github.token }}
         run: node packages/clibox/scripts/github-release.mjs --publish
+
+  homebrew-test:
+    needs: [prepare, publish-release]
+    if: ${{ needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/clibox@v') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: amd64
+            machine: x86_64
+          - runner: macos-14
+            arch: arm64
+            machine: arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_ANALYTICS: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: sigstore/cosign-installer@v4.1.1
+      - name: Verify public release and render Formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node packages/clibox/scripts/homebrew.mjs prepare --output "$RUNNER_TEMP/clibox.rb"
+      - name: Test native Homebrew installation
+        env:
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          test "$(uname -m)" = "$EXPECTED_MACHINE"
+          brew tap-new --no-git delinoio/clibox-validation
+          cp "$RUNNER_TEMP/clibox.rb" "$(brew --repository delinoio/clibox-validation)/Formula/clibox.rb"
+          brew install --formula delinoio/clibox-validation/clibox
+          brew test delinoio/clibox-validation/clibox
+          brew audit --strict delinoio/clibox-validation/clibox
+          test "$(clibox --version)" = "clibox $RELEASE_VERSION"
+          brew uninstall delinoio/clibox-validation/clibox
+          brew untap delinoio/clibox-validation
+      - uses: actions/upload-artifact@v7
+        with:
+          name: clibox-homebrew-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: ${{ runner.temp }}/clibox.rb
+          if-no-files-found: error
+          retention-days: 30
+
+  homebrew:
+    needs: [prepare, homebrew-test]
+    if: ${{ needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/clibox@v') }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: sigstore/cosign-installer@v4.1.1
+      - uses: actions/download-artifact@v8
+        with:
+          name: clibox-homebrew-amd64-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: ${{ runner.temp }}/clibox-homebrew/amd64
+      - uses: actions/download-artifact@v8
+        with:
+          name: clibox-homebrew-arm64-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: ${{ runner.temp }}/clibox-homebrew/arm64
+      - name: Reverify both tested Formulae before credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node packages/clibox/scripts/homebrew.mjs prepare --validated "$RUNNER_TEMP/clibox-homebrew" --output "$RUNNER_TEMP/clibox.rb"
+      - name: Create Homebrew repository token
+        id: tap-bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: homebrew-tap
+          permission-contents: write
+      - name: Resolve Homebrew bot identity
+        id: tap-identity
+        env:
+          GH_TOKEN: ${{ steps.tap-bot.outputs.token }}
+        run: node scripts/release/project.mjs bot-identity
+      - name: Publish the exact tested Formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOMEBREW_TAP_GH_TOKEN: ${{ steps.tap-bot.outputs.token }}
+          RELEASE_BOT_NAME: ${{ steps.tap-identity.outputs.name }}
+          RELEASE_BOT_EMAIL: ${{ steps.tap-identity.outputs.email }}
+        run: node packages/clibox/scripts/homebrew.mjs publish --validated "$RUNNER_TEMP/clibox-homebrew"
+
+  homebrew-readback:
+    needs: [prepare, homebrew]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15-intel, macos-14]
+    runs-on: ${{ matrix.runner }}
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_ANALYTICS: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - name: Verify installation from the public tap
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          brew install delinoio/tap/clibox
+          brew test delinoio/tap/clibox
+          test "$(clibox --version)" = "clibox $RELEASE_VERSION"
 
   linux-packages:
     name: Publish native Linux packages
@@ -274,7 +396,7 @@ jobs:
       mode: publish
 
   summary:
-    needs: [prepare, build, package, publish, publish-release, linux-packages]
+    needs: [prepare, build, package, publish, publish-release, linux-packages, homebrew-test, homebrew, homebrew-readback]
     if: always()
     runs-on: ubuntu-22.04
     steps:
@@ -288,15 +410,21 @@ jobs:
           NPM_ENABLED: ${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}
           GITHUB_RELEASE_RESULT: ${{ needs.publish-release.result }}
           LINUX_PACKAGES_RESULT: ${{ needs.linux-packages.result }}
+          HOMEBREW_TEST_RESULT: ${{ needs.homebrew-test.result }}
+          HOMEBREW_RESULT: ${{ needs.homebrew.result }}
+          HOMEBREW_READBACK_RESULT: ${{ needs.homebrew-readback.result }}
         run: |
-          if [ "$PACKAGE_RESULT" != success ]; then
-            echo 'clibox packaging failed; no complete release artifact is ready.' >> "$GITHUB_STEP_SUMMARY"
-          elif [ "$DRY_RUN" = true ]; then
-            echo 'Dry run complete: no publication was attempted.' >> "$GITHUB_STEP_SUMMARY"
-          elif [ "$NPM_ENABLED" != true ]; then
-            echo 'npm publication disabled: verified artifacts are available. Publication requires CLIBOX_NPM_PUBLISH_ENABLED=true and the configured Trusted Publishers. See docs/packages-clibox-distribution-contract.md.' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "npm publication result: $PUBLISH_RESULT" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          echo "GitHub Release: $GITHUB_RELEASE_RESULT; Linux packages: $LINUX_PACKAGES_RESULT" >> "$GITHUB_STEP_SUMMARY"
-          echo "Source: $RELEASE_VERSION at $RELEASE_REVISION" >> "$GITHUB_STEP_SUMMARY"
+          {
+            if [ "$PACKAGE_RESULT" != success ]; then
+              echo 'clibox packaging failed; no complete release artifact is ready.'
+            elif [ "$DRY_RUN" = true ]; then
+              echo 'Dry run complete: no publication was attempted.'
+            elif [ "$NPM_ENABLED" != true ]; then
+              echo 'npm publication disabled: verified artifacts are available. Publication requires CLIBOX_NPM_PUBLISH_ENABLED=true and the configured Trusted Publishers. See docs/packages-clibox-distribution-contract.md.'
+            else
+              echo "npm publication result: $PUBLISH_RESULT"
+            fi
+            echo "GitHub Release: $GITHUB_RELEASE_RESULT; Linux packages: $LINUX_PACKAGES_RESULT"
+            echo "Homebrew native tests: $HOMEBREW_TEST_RESULT; tap: $HOMEBREW_RESULT; public installation: $HOMEBREW_READBACK_RESULT"
+            echo "Source: $RELEASE_VERSION at $RELEASE_REVISION"
+          } >> "$GITHUB_STEP_SUMMARY"

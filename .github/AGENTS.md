@@ -2,3 +2,5 @@
 
 - DeliDev native packaging follows `docs/apps-delidev-packaging-contract.md` and the repository workflow contract. Keep its dry run manually dispatched, limited to `contents: read`, LFS-hydrated and free of production signing, notarization, publication credentials and stored checkout tokens.
 - DeliDev uses the one six-target native matrix exported by its package tool. Verify packages before uploading revision-bound workflow artifacts; never count static package inspection as native runtime, production-signing or release acceptance. Update the workflow contract tests and evidence ledger with boundary changes.
+
+- clibox Homebrew follows its exact-tag GitHub Release independently of npm enablement. Both native macOS installation/audit gates and signed public-source verification must precede tap-only app-token creation. Publish only the identical tested Formula, then verify public-tap installation on both architectures. Dry runs never enter Homebrew publication; keep the release summary and workflow contracts synchronized.

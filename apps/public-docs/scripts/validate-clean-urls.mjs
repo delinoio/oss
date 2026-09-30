@@ -36,6 +36,7 @@ const cliboxHeadings = {
     "Pin with pnpm",
     "Pin with npm",
     "Requirements",
+    "macOS Homebrew",
     "Linux release archives",
     "Linux APT and DNF",
     "Desktop prerequisites"

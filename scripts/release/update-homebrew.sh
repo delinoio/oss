@@ -8,7 +8,7 @@ Render and optionally push Homebrew formula/cask updates.
 
 Usage:
   ./scripts/release/update-homebrew.sh \
-    --project <binpm|nodeup|with-watch|derun|pnport|runmoor> \
+    --project <binpm|nodeup|with-watch|derun|pnport|runmoor|clibox> \
     --version <semver> \
     [--darwin-amd64-url <url>] [--darwin-amd64-sha256 <sha>] \
     [--darwin-arm64-url <url>] [--darwin-arm64-sha256 <sha>] \
@@ -152,6 +152,32 @@ rendered_file=""
 destination_path=""
 
 case "$project" in
+  clibox)
+    if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+      log "clibox requires an exact stable version"
+      exit 1
+    fi
+    release_url="https://github.com/delinoio/oss/releases/download/clibox@v${version}"
+    if [ "$darwin_amd64_url" != "$release_url/clibox-darwin-amd64.tar.gz" ] || [ "$darwin_arm64_url" != "$release_url/clibox-darwin-arm64.tar.gz" ] || [[ ! "$darwin_amd64_sha256" =~ ^[a-f0-9]{64}$ ]] || [[ ! "$darwin_arm64_sha256" =~ ^[a-f0-9]{64}$ ]]; then
+      log "clibox requires exact versioned macOS x64/arm64 URLs and SHA256"
+      exit 1
+    fi
+    if [ -n "$linux_amd64_url$linux_amd64_sha256$linux_arm64_url$linux_arm64_sha256" ]; then
+      log "clibox Homebrew supports macOS only"
+      exit 1
+    fi
+    destination_path="Formula/clibox.rb"
+    rendered_file="$(mktemp)"
+    # Keep verification runnable with Node built-ins before installing publication tooling.
+    node --input-type=module - "$repo_root/packaging/homebrew/templates/clibox.rb.tmpl" "$version" "$darwin_amd64_url" "$darwin_amd64_sha256" "$darwin_arm64_url" "$darwin_arm64_sha256" >"$rendered_file" <<'JS'
+import { readFileSync } from 'node:fs';
+const [template, ...values] = process.argv.slice(2);
+const keys = ['VERSION', 'DARWIN_AMD64_URL', 'DARWIN_AMD64_SHA256', 'DARWIN_ARM64_URL', 'DARWIN_ARM64_SHA256'];
+let rendered = readFileSync(template, 'utf8');
+for (const [index, key] of keys.entries()) rendered = rendered.replaceAll(`__${key}__`, values[index]);
+process.stdout.write(rendered);
+JS
+    ;;
   runmoor)
     if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
       log "runmoor requires an exact stable version"
@@ -266,7 +292,7 @@ else
 fi
 
 mkdir -p "$(dirname -- "$destination_path")"
-if { [ "$project" = "pnport" ] || [ "$project" = "runmoor" ]; } && [ -f "$destination_path" ]; then
+if { [ "$project" = "pnport" ] || [ "$project" = "runmoor" ] || [ "$project" = "clibox" ]; } && [ -f "$destination_path" ]; then
   existing_version="$(sed -nE 's/^  version "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' "$destination_path")"
   if [[ ! "$existing_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
     log "existing $project formula has no single exact version"

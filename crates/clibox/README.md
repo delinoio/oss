@@ -16,6 +16,25 @@ pnpm exec clibox --version
 
 The npm launcher requires Node.js 22 or newer. Prebuilt binaries cover macOS and Windows x64/arm64, and Linux x64/arm64 with glibc or musl. npm installation does not require Rust or installation scripts.
 
+## macOS Homebrew
+
+Homebrew support is planned for the next clibox release and is not available for existing releases. After that release is published, install on an Intel or Apple Silicon Mac with:
+
+```sh
+brew install delinoio/tap/clibox
+clibox --version
+```
+
+Homebrew installs the prebuilt native executable without requiring Node.js or Rust. This channel supports macOS only. For a project-specific version pinned in a JavaScript lockfile, keep using npm or pnpm.
+
+Update or remove the Homebrew installation with:
+
+```sh
+brew update
+brew upgrade delinoio/tap/clibox
+brew uninstall clibox
+```
+
 ## Migrating older command syntax
 
 Published version **0.2.0** includes `system cpus`, `run env`, and the five `run with-*` wrappers. The seven `fspy` workflows are implemented in source for a future release and are absent from 0.2.0.

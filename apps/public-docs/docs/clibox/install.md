@@ -29,6 +29,25 @@ Use `clibox` commands in `package.json` scripts, for example `clibox port list 3
 
 The package manager installs the matching prebuilt executable. Rust, postinstall scripts, and separate binary downloads are not required. You can install with `--ignore-scripts`.
 
+## macOS Homebrew
+
+Homebrew support is planned for the next clibox release and is not available for existing releases. After that release is published, install on an Intel or Apple Silicon Mac with:
+
+```sh
+brew install delinoio/tap/clibox
+clibox --version
+```
+
+Homebrew installs the prebuilt native executable without requiring Node.js or Rust. This channel supports macOS only. For a project-specific version pinned in a JavaScript lockfile, keep using npm or pnpm.
+
+Update or remove the Homebrew installation with:
+
+```sh
+brew update
+brew upgrade delinoio/tap/clibox
+brew uninstall clibox
+```
+
 ## Linux release archives
 
 Signed GNU Linux archives for x64 and arm64 are available from [clibox releases](https://github.com/delinoio/oss/releases?q=clibox). Select `clibox-linux-amd64.tar.gz` or `clibox-linux-arm64.tar.gz` for your machine. Verify the archive before extracting and running its `clibox` executable; follow [Releases and verification](/clibox/releases). These binaries require glibc 2.34+ and do not require Node.js. Alpine users should use the npm musl package instead of a GNU archive.
