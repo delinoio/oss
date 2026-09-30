@@ -38,6 +38,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Observed-address writes must stage first and recheck the profile, child generation and current reservation under the same worker publication fence before replacing durable tabs.
 
+- Quit closes address-callback acceptance under the bounded queue gate and drains previously accepted updates on the tracked worker. Shutdown alone cannot discard them; exact generation, reservation and removal checks still reject invalid writes. Join that worker before profile purge without making the UI wait for storage.
+
 - Retain asynchronous raw-child creation failure only for its exact profile, generation and reservation. Native state polling and ordinary controls must surface the typed failure until explicit presentation retry; stale creation failures must not poison replacements or hide tracked removal.
 
 - Shared-profile tab replacement must attempt every affected child even when an earlier creation fails. Retain each exact view's failure and return the first failure only after all replacements have been attempted.

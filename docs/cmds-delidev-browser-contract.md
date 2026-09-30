@@ -118,7 +118,9 @@ generation and reservation after staging, so replacement opens retain the last
 accepted address rather than consuming a superseded callback.
 Address callbacks coalesce at most one latest update
 per tab (64 profiles × 16 tabs) into one tracked worker; callbacks perform no disk
-work. Hide/Resize remain independent of pending storage. The worker joins after
+work. Quit closes callback acceptance under the queue gate and drains previously
+accepted addresses, retaining the exact generation/reservation/removal checks.
+Hide/Resize remain independent of pending storage. The worker joins after
 runtime return and before any directory purge.
 
 ## Storage

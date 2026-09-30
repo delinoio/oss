@@ -262,7 +262,12 @@ impl BrowserHost {
     }
 
     pub fn begin_exit(&self, code: i32) -> bool {
-        self.stopping.store(true, Ordering::Release);
+        // Close address acceptance under its short queue gate. Already accepted
+        // callbacks remain owned by the tracked worker; the UI never waits for I/O.
+        {
+            let _acceptance = self.addresses.lock();
+            self.stopping.store(true, Ordering::Release);
+        }
         if let Ok(mut state) = self.state.lock() {
             state.exit_code = Some(code);
         }
@@ -1331,6 +1336,9 @@ impl BrowserHost {
         let Ok(mut pending) = self.addresses.lock() else {
             return;
         };
+        if self.stopping.load(Ordering::Acquire) {
+            return;
+        }
         // At most one latest address per tab, bounded by 64 profiles x 16 tabs.
         let key = format!("{}:{}", profile, request.tab);
         if pending.len() >= 1024 && !pending.contains_key(&key) {
@@ -1347,17 +1355,13 @@ impl BrowserHost {
                     let Ok(mut pending) = host.addresses.lock() else {
                         break;
                     };
-                    if pending.is_empty() || host.stopping.load(Ordering::Acquire) {
-                        pending.clear();
+                    if pending.is_empty() {
                         host.address_running.store(false, Ordering::Release);
                         break;
                     }
                     std::mem::take(&mut *pending)
                 };
                 for (_, (profile, request, url)) in batch {
-                    if host.stopping.load(Ordering::Acquire) {
-                        break;
-                    }
                     if let Err(code) = host.persist_address(&profile, &request, &url)
                         && code != NativeFailure::Stopped
                     {
@@ -1372,16 +1376,17 @@ impl BrowserHost {
     }
 
     fn persist_address(&self, profile: &str, request: &ViewRequest, url: &str) -> Result<()> {
+        // Only pre-stop accepted callbacks reach this worker during exit. Drain
+        // them with the same generation/reservation/removal publication checks;
+        // stopping rejects new callbacks, not these already owned writes.
         let _storage = self.storage.lock().map_err(|_| NativeFailure::Busy)?;
         let (path, mut tabs) = {
             let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
-            if self.stopping.load(Ordering::Acquire)
-                || state.views.get(&request.window).is_none_or(|v| {
-                    v.profile != profile
-                        || v.generation != request.generation
-                        || state.reservations.get(&request.window) != Some(&v.view_id)
-                })
-            {
+            if state.views.get(&request.window).is_none_or(|v| {
+                v.profile != profile
+                    || v.generation != request.generation
+                    || state.reservations.get(&request.window) != Some(&v.view_id)
+            }) {
                 return Err(NativeFailure::Stopped);
             }
             let p = state.profiles.get(profile).ok_or(NativeFailure::Stopped)?;
@@ -1399,13 +1404,11 @@ impl BrowserHost {
         let staged = browser::stage_private(&path.join("tabs.json"), &tabs)?;
         let _publication = self.publication.lock().map_err(|_| NativeFailure::Busy)?;
         let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
-        if self.stopping.load(Ordering::Acquire)
-            || state.views.get(&request.window).is_none_or(|v| {
-                v.profile != profile
-                    || v.generation != request.generation
-                    || state.reservations.get(&request.window) != Some(&v.view_id)
-            })
-            || state.profiles.get(profile).is_none_or(|p| p.removing)
+        if state.views.get(&request.window).is_none_or(|v| {
+            v.profile != profile
+                || v.generation != request.generation
+                || state.reservations.get(&request.window) != Some(&v.view_id)
+        }) || state.profiles.get(profile).is_none_or(|p| p.removing)
         {
             return Err(NativeFailure::Stopped);
         }
@@ -1416,7 +1419,7 @@ impl BrowserHost {
             .profiles
             .get_mut(profile)
             .ok_or(NativeFailure::Stopped)?;
-        if p.removing || self.stopping.load(Ordering::Acquire) {
+        if p.removing {
             return Err(NativeFailure::Stopped);
         }
         p.tabs = tabs;
@@ -2615,6 +2618,43 @@ esac
         host.state.lock().unwrap().live = 0;
         assert_eq!(host.state.lock().unwrap().exit_when_ready(), Some(0));
         assert!(!host.begin_exit(0));
+    }
+
+    #[test]
+    fn graceful_exit_drains_accepted_addresses_and_rejects_new_callbacks() {
+        let (_temp, host, record, _, request) = active_storage_fixture();
+        let path = host.state.lock().unwrap().profiles[&record.id]
+            .path
+            .join("tabs.json");
+        let storage = host.storage.lock().unwrap();
+        host.queue_address(
+            record.id.clone(),
+            request.clone(),
+            "https://fixture.test/accepted".into(),
+        );
+        host.queue_address(
+            record.id.clone(),
+            request.clone(),
+            "https://fixture.test/latest".into(),
+        );
+        assert!(host.address_running.load(Ordering::Acquire));
+        assert!(!host.begin_exit(0));
+        host.queue_address(
+            record.id.clone(),
+            request,
+            "https://fixture.test/after-stop".into(),
+        );
+        drop(storage);
+        host.finish_removals().unwrap();
+        let persisted: Tabs = read_json(&path).unwrap();
+        assert_eq!(persisted.tabs[0].url, "https://fixture.test/latest");
+        assert_eq!(
+            host.state.lock().unwrap().profiles[&record.id].tabs.tabs[0].url,
+            "https://fixture.test/latest"
+        );
+        assert!(host.addresses.lock().unwrap().is_empty());
+        assert!(!host.address_running.load(Ordering::Acquire));
+        assert!(host.address_join.lock().unwrap().is_none());
     }
 
     #[test]
