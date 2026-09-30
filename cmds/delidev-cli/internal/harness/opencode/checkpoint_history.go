@@ -35,6 +35,9 @@ func (s *sessionAPI) inspectCheckpointHistory(ctx context.Context, checkpoint na
 			s.logger.WarnContext(ctx, "opencode_retained_history_comparison_failed", "owner_id", s.owner, "phase", phase, "code", domain.SafeError(returned).Code)
 		}
 	}()
+	if s.apiProfile != nil && s.apiProfile.WorkspaceRoot != nil && !checkpointMatchesRoot(checkpoint, *s.apiProfile.WorkspaceRoot) {
+		return sessionUncertain()
+	}
 	if s.problem != nil || s.creation == nil || s.input != nil || s.events != nil || s.observer != nil || s.historyRead != nil || s.checkpointRead || !s.apiVerified || s.apiProfile == nil || s.creation.request != checkpoint.Reference.CreationRequestID || s.creation.identity != s.checkpointIdentity(checkpoint) || s.cwd != checkpoint.Workspace || s.runtimeRoot != checkpoint.NativeRoot || !validCheckpointHistory(checkpoint.History) {
 		return sessionUncertain()
 	}

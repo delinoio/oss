@@ -66,12 +66,13 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 	if _, err := b.readClaims(); err != nil {
 		return false, err
 	}
-	if domain.NativeIdentity(o.EventID).Validate(domain.OpenCode, domain.NativeEventIdentity) != nil || c.seen[o.EventID] || len(c.seen) >= 65536 {
+	publicationKey, keyErr := o.PublicationKey()
+	if keyErr != nil || c.seen[publicationKey] || len(c.seen) >= 65536 {
 		return false, publicationUncertain()
 	}
 	defer func() {
 		if returned == nil && handled {
-			c.seen[o.EventID] = true
+			c.seen[publicationKey] = true
 		}
 	}()
 	var value domain.OpenCodeUsageObservation
@@ -111,7 +112,7 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		counts = *p.Step.Usage
 	case o.Kind == opencode.MessageUpdatedEvent && o.MessageFinalized:
 		m := o.Message
-		if m == nil || !t.seen[o.EventID] || m.SessionID != b.thread || m.Assistant == nil || m.User != nil || m.Assistant.ParentID != b.turn || m.Assistant.Completed == nil {
+		if m == nil || !t.seen[publicationKey] || m.SessionID != b.thread || m.Assistant == nil || m.User != nil || m.Assistant.ParentID != b.turn || m.Assistant.Completed == nil {
 			return true, publicationUncertain()
 		}
 		owner := t.messages[m.ID]
