@@ -92,7 +92,8 @@ The additive terminal entity, typed system/Worker capabilities and
 use existing authenticated mutations/resources plus bounded original-byte
 streaming. Worker-only watch/claim/report/publication messages bind the current
 machine, instance and original paired device; claim and report receipt retries
-revalidate that authority. Output carries epoch UUIDs, exact uint64 sequences,
+revalidate that authority. Terminal result JSON is capped at 64 KiB to retain
+both accepted 4,096-byte native paths under worst-case JSON escaping. Output carries epoch UUIDs, exact uint64 sequences,
 raw bytes, explicit gaps and metadata heartbeats. Terminal mutations return
 current referenced records. Regenerate Go, TypeScript and Connect Query bindings
 together; no output bytes enter durable events or mutation receipts.

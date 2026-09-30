@@ -25,9 +25,9 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
-// The 16 KiB report is nested inside ownership metadata. All journal readers
-// and synchronized writes share a larger bound so valid results remain retryable.
-const terminalOperationJournalMaxBytes = 32 << 10
+// A maximum-sized report is nested inside bounded UUID/digest/phase metadata.
+// All journal readers and synchronized writes reserve the same additional room.
+const terminalOperationJournalMaxBytes = terminal.MaxResultBytes + (4 << 10)
 
 type terminalOperationPhase string
 
@@ -134,8 +134,14 @@ func (m *terminalManager) loadJournal(a terminal.Assignment) (terminalOperationJ
 }
 
 func (m *terminalManager) report(ctx context.Context, id, operation, requestID domain.ID, result terminal.Result) error {
-	raw, _ := json.Marshal(result)
-	_, err := m.client.ReportTerminal(ctx, authenticated(m.credential, &pb.ReportTerminalRequest{RequestId: string(requestID), MachineId: string(m.credential.MachineID), InstanceId: string(m.instance), TerminalId: string(id), OperationId: string(operation), ResultJson: raw}))
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return domain.SafeError(err)
+	}
+	if len(raw) > terminal.MaxResultBytes {
+		return domain.Fail(domain.ResourceExhausted, "The terminal report exceeds its size limit.", "Preserve the original result and reconcile its ownership before retrying.")
+	}
+	_, err = m.client.ReportTerminal(ctx, authenticated(m.credential, &pb.ReportTerminalRequest{RequestId: string(requestID), MachineId: string(m.credential.MachineID), InstanceId: string(m.instance), TerminalId: string(id), OperationId: string(operation), ResultJson: raw}))
 	if err != nil {
 		return rpc.ClientError(err)
 	}

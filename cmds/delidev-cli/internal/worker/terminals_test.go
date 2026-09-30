@@ -29,7 +29,7 @@ type terminalJournalReportFixture struct {
 
 func (f *terminalJournalReportFixture) ReportTerminal(_ context.Context, request *connect.Request[pb.ReportTerminalRequest]) (*connect.Response[pb.ReportTerminalResponse], error) {
 	var result terminal.Result
-	if len(request.Msg.ResultJson) > 16<<10 || domain.Decode(request.Msg.ResultJson, &result) != nil || result.Validate() != nil {
+	if len(request.Msg.ResultJson) > terminal.MaxResultBytes || domain.Decode(request.Msg.ResultJson, &result) != nil || result.Validate() != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
 	}
 	f.Lock()
@@ -42,6 +42,12 @@ func (f *terminalJournalReportFixture) ReportTerminal(_ context.Context, request
 }
 
 func TestTerminalJournalLargeValidResultRetriesExactFinishedReport(t *testing.T) {
+	t.Run("escaped-paths", func(t *testing.T) { terminalJournalReportRetry(t, false) })
+	t.Run("maximum-report", func(t *testing.T) { terminalJournalReportRetry(t, true) })
+}
+
+func terminalJournalReportRetry(t *testing.T, maximum bool) {
+	t.Helper()
 	ctx := context.Background()
 	fixture := &terminalJournalReportFixture{}
 	_, handler := delidevv1connect.NewWorkerServiceHandler(fixture)
@@ -53,11 +59,22 @@ func TestTerminalJournalLargeValidResultRetriesExactFinishedReport(t *testing.T)
 		t.Fatal(err)
 	}
 	assignment := terminal.Assignment{ID: domain.NewID(), SessionID: domain.NewID(), Terminal: domain.Terminal{MachineID: machine}, Operation: domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalClose}}
-	result := terminal.Result{State: domain.TerminalClosed, CleanupVerified: true, Rows: 24, Columns: 80, Shell: "/" + strings.Repeat("<", 1350), Cwd: "/" + strings.Repeat("&", 1350)}
+	result := terminal.Result{State: domain.TerminalClosed, CleanupVerified: true, Rows: 24, Columns: 80, Shell: "/" + strings.Repeat("<", 4095), Cwd: "/" + strings.Repeat("&", 4095)}
+	if maximum {
+		result.Problem = domain.Fail(domain.Internal, "", "Inspect the original terminal.")
+		base, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result.Problem.Message = strings.Repeat("x", terminal.MaxResultBytes-len(base))
+	}
 	journal := terminalOperationJournal{TerminalID: assignment.ID, OperationID: assignment.Operation.ID, InstanceID: instance, Digest: terminalOperationDigest(assignment), ClaimID: domain.NewID(), ReportID: domain.NewID(), Phase: terminalFinished, Result: &result}
 	resultJSON, err := json.Marshal(result)
-	if err != nil || result.Validate() != nil || len(resultJSON) > 16<<10 {
-		t.Fatal("fixture must satisfy the server's terminal report bound", err)
+	if err != nil || result.Validate() != nil || len(resultJSON) <= 16<<10 || len(resultJSON) > terminal.MaxResultBytes {
+		t.Fatal("fixture must exceed the old report limit with valid escaped paths", err)
+	}
+	if maximum && len(resultJSON) != terminal.MaxResultBytes {
+		t.Fatal("fixture must fill the report envelope")
 	}
 	journalJSON, err := json.Marshal(journal)
 	if err != nil || len(journalJSON) <= 16<<10 {
@@ -107,7 +124,7 @@ func TestTerminalJournalOversizedWritePreservesOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 	journal.Phase = terminalFinished
-	journal.Result = &terminal.Result{State: domain.TerminalUncertain, Rows: 24, Columns: 80, Problem: domain.Fail(domain.RecoveryRequired, strings.Repeat("x", 32<<10), "Preserve the original operation.")}
+	journal.Result = &terminal.Result{State: domain.TerminalUncertain, Rows: 24, Columns: 80, Problem: domain.Fail(domain.RecoveryRequired, strings.Repeat("x", terminalOperationJournalMaxBytes), "Preserve the original operation.")}
 	if err := manager.saveJournal(journal); err == nil || domain.SafeError(err).Code != domain.ResourceExhausted {
 		t.Fatal("oversized journal write was accepted", err)
 	}

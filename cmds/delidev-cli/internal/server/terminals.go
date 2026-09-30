@@ -452,7 +452,7 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 		}
 	}
 	var output terminal.Result
-	if len(req.Msg.ResultJson) > 16384 || domain.Decode(req.Msg.ResultJson, &output) != nil || output.Validate() != nil {
+	if len(req.Msg.ResultJson) > terminal.MaxResultBytes || domain.Decode(req.Msg.ResultJson, &output) != nil || output.Validate() != nil {
 		return fail(domain.Fail(domain.InvalidArgument, "Invalid terminal report.", "Report bounded original native facts."))
 	}
 	actor, _ := domain.PrincipalFrom(ctx)

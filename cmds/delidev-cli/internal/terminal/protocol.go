@@ -8,6 +8,10 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
+// MaxResultBytes covers two 4,096-byte paths even when JSON escapes each byte
+// to six bytes, with remaining room for bounded native state and safe errors.
+const MaxResultBytes = 64 << 10
+
 type Assignment struct {
 	ID          domain.ID                 `json:"id"`
 	SessionID   domain.ID                 `json:"session_id"`

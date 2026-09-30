@@ -110,9 +110,11 @@ digests, claim/report IDs, phase and bounded native results; they never contain
 input/output bytes. Native-start intent is synchronized before side effects.
 An interrupted started operation is reported uncertain instead of repeating
 input, resize or shell creation. Finished results retry their exact report;
-confirmed reports retire the journal. Journal reads and writes share a 32 KiB
-envelope bound that reserves room for ownership metadata around a valid 16 KiB
-report, including JSON escaping; oversized writes fail before replacing retained
+confirmed reports retire the journal. Terminal reports share a 64 KiB JSON limit
+between Worker and server, covering both accepted 4,096-byte paths even under
+worst-case six-byte JSON escaping. Journal reads and writes share a 68 KiB
+envelope bound that reserves room for ownership metadata around a maximum-sized
+report; oversized writes fail before replacing retained
 ownership. A proven pre-native original creation journal can reconcile a lost
 claim acknowledgement without inventing a process.
 Native process journals retain the existing independent ownership/cleanup proof.

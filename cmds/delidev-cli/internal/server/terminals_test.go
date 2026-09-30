@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -237,5 +238,70 @@ func TestTerminalCloseBeforeCreateReportAndExitRacingQueuedInput(t *testing.T) {
 	domain.Decode(replayed.Msg.Terminal.DocumentJson, &value)
 	if value.Pending != nil || value.State != domain.TerminalExited || !value.CleanupVerified {
 		t.Fatal("receipt replay redispatched input after original shell exit")
+	}
+}
+
+func TestTerminalReportEscapedPathBoundsRemainRetryableThroughArchive(t *testing.T) {
+	f, session, worker, client, instance, _ := terminalFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	product := delidevv1connect.NewTerminalServiceClient(http.DefaultClient, f.endpoint.URL)
+	shell, cwd := "/"+strings.Repeat("<", 4095), "/"+strings.Repeat("&", 4095)
+	accepted, err := product.CreateTerminal(ctx, ownerRequest(f.identity, &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80, ShellOverride: shell}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value domain.Terminal
+	if domain.Decode(accepted.Msg.Terminal.DocumentJson, &value) != nil {
+		t.Fatal("invalid terminal")
+	}
+	claim := &pb.ClaimTerminalRequest{RequestId: string(domain.NewID()), MachineId: string(value.MachineID), InstanceId: instance, TerminalId: accepted.Msg.Terminal.Id, OperationId: string(value.Pending.ID)}
+	if _, err := client.ClaimTerminal(ctx, ownerRequest(worker, claim)); err != nil {
+		t.Fatal(err)
+	}
+	result := terminal.Result{State: domain.TerminalRunning, Shell: shell, Cwd: cwd, Rows: 24, Columns: 80}
+	raw, _ := json.Marshal(result)
+	if result.Validate() != nil || len(raw) <= 16<<10 {
+		t.Fatal("fixture must contain valid paths beyond the old encoded report limit")
+	}
+	report := &pb.ReportTerminalRequest{RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: instance, TerminalId: claim.TerminalId, OperationId: claim.OperationId, ResultJson: raw}
+	running, err := client.ReportTerminal(ctx, ownerRequest(worker, report))
+	if err != nil {
+		t.Fatal("valid escaped paths were rejected", err)
+	}
+	replayed, err := client.ReportTerminal(ctx, ownerRequest(worker, report))
+	if err != nil || replayed.Msg.Terminal.Revision != running.Msg.Terminal.Revision {
+		t.Fatal("running report retry changed its outcome", err)
+	}
+	archived, err := sessionClient(f).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(currentCatalogResource(t, f, session), domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_ARCHIVE}))
+	if err != nil || sessionBody(t, archived.Msg.Change.Session).Archive != domain.ArchivePending {
+		t.Fatal("Archive did not await the terminal", err)
+	}
+	current := currentCatalogResource(t, f, running.Msg.Terminal)
+	if domain.Decode(current.DocumentJson, &value) != nil {
+		t.Fatal("invalid closing terminal")
+	}
+	claim.RequestId, claim.OperationId = string(domain.NewID()), string(value.CloseRequestID)
+	if _, err := client.ClaimTerminal(ctx, ownerRequest(worker, claim)); err != nil {
+		t.Fatal(err)
+	}
+	result.State, result.CleanupVerified = domain.TerminalClosed, true
+	raw, _ = json.Marshal(result)
+	report.RequestId, report.OperationId, report.ResultJson = string(domain.NewID()), claim.OperationId, raw
+	closed, err := client.ReportTerminal(ctx, ownerRequest(worker, report))
+	if err != nil {
+		t.Fatal("valid escaped cleanup paths were rejected", err)
+	}
+	replayed, err = client.ReportTerminal(ctx, ownerRequest(worker, report))
+	if err != nil || replayed.Msg.Terminal.Revision != closed.Msg.Terminal.Revision {
+		t.Fatal("cleanup report retry changed its outcome", err)
+	}
+	if sessionBody(t, currentCatalogResource(t, f, session)).Archive != domain.Archived {
+		t.Fatal("accepted paths prevented confirmed Archive cleanup")
+	}
+	report.RequestId = string(domain.NewID())
+	report.ResultJson = append(bytes.Clone(raw), bytes.Repeat([]byte{' '}, terminal.MaxResultBytes-len(raw)+1)...)
+	if _, err := client.ReportTerminal(ctx, ownerRequest(worker, report)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatal("oversized result envelope was accepted", err)
 	}
 }
