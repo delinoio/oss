@@ -13,14 +13,14 @@ pub enum TrayDestination {
     Settings,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TraySummary {
     pub overview: Option<TrayOverview>,
     pub usage: Option<TrayUsage>,
     pub accounts: Option<TrayAccounts>,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrayOverview {
     pub observed_at: String,
@@ -30,26 +30,34 @@ pub struct TrayOverview {
     pub registered_workers: String,
     pub connected_workers: String,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrayUsage {
     pub known_tokens: Option<String>,
     pub incomplete: bool,
+    #[serde(default)]
+    pub estimates: Vec<TrayEstimate>,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrayEstimate {
+    pub currency: String,
+    pub known_amount: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrayAccounts {
     pub entries: Vec<TrayAccount>,
     pub more: bool,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrayAccount {
     pub alias: String,
     pub windows: Vec<TrayQuota>,
     pub more: bool,
 }
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum QuotaState {
     Observed,
@@ -58,7 +66,7 @@ pub enum QuotaState {
     Failed,
     Unsupported,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrayQuota {
     pub state: QuotaState,
@@ -97,10 +105,27 @@ impl TraySummary {
         {
             return Err(NativeFailure::InvalidEvidence);
         }
-        if let Some(v) = &self.usage
-            && v.known_tokens.as_deref().is_some_and(|v| !decimal(v, 80))
-        {
-            return Err(NativeFailure::InvalidEvidence);
+        if let Some(v) = &self.usage {
+            let mut currencies = std::collections::BTreeSet::new();
+            if v.known_tokens.as_deref().is_some_and(|v| !decimal(v, 80))
+                || !v.incomplete
+                || v.estimates.len() > 32
+                || v.estimates.iter().any(|estimate| {
+                    estimate.currency.len() != 3
+                        || !estimate.currency.bytes().all(|c| c.is_ascii_uppercase())
+                        || !currencies.insert(&estimate.currency)
+                        || estimate.known_amount.as_deref().is_some_and(|amount| {
+                            let (whole, fraction) = amount.split_once('.').unwrap_or((amount, ""));
+                            !decimal(whole, 80)
+                                || amount.len() > 90
+                                || fraction.len() > 9
+                                || !fraction.bytes().all(|c| c.is_ascii_digit())
+                                || (amount.contains('.') && fraction.is_empty())
+                        })
+                })
+            {
+                return Err(NativeFailure::InvalidEvidence);
+            }
         }
         if let Some(v) = &self.accounts {
             if v.entries.len() > 20 {

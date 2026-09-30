@@ -128,11 +128,56 @@ pub async fn publish_tray(
     summary: TraySummary,
 ) -> Result<(), NativeFailure> {
     authorized(&window, &windows)?;
-    let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
-    state.publish(window.label(), &scope, revision, summary)?;
-    drop(state);
+    let host = Arc::clone(host.inner());
+    let windows = Arc::clone(windows.inner());
+    let window = window.clone();
+    // File synchronization runs off the native UI and async executor threads.
+    // Preserve order under the tray scope/revision lock, and recheck the saved
+    // binding there so a closed/replaced window cannot publish another profile.
+    tauri::async_runtime::spawn_blocking(move || {
+        // CEF URL reads wait on the native UI loop. Do them before acquiring
+        // the publication lock so UI-thread shutdown can join that lock safely.
+        authorized(&window, &windows)?;
+        let binding = if window.label() == "main" {
+            None
+        } else {
+            Some(saved_binding(&window, &windows)?)
+        };
+        let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+        if host.stop.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        if let Some(binding) = &binding {
+            let current = windows.0.try_lock().map_err(|_| NativeFailure::Busy)?;
+            if !current.get(window.label()).is_some_and(|value| {
+                !value.closing
+                    && value.instance == binding.instance
+                    && value.profile.id == binding.profile.id
+            }) {
+                return Err(NativeFailure::PermissionDenied);
+            }
+        }
+        state.publish(window.label(), &scope, revision, summary.clone())?;
+        if let Some(binding) = binding {
+            // Widget storage is a separate presentation outcome. Its closed
+            // diagnostic and the widget's expiry remain truthful without
+            // disabling an already accepted in-memory tray publication.
+            let _ =
+                super::widget_host::publish(&binding.profile.id, &binding.profile.name, &summary);
+        }
+        Ok::<(), NativeFailure>(())
+    })
+    .await
+    .map_err(|_| NativeFailure::StorageUnavailable)??;
     schedule(&app);
     Ok(())
+}
+
+pub fn remove_widget(app: &AppHandle<Cef>, id: &str) {
+    let host = app.state::<Arc<TrayHost>>();
+    if let Ok(_guard) = host.state.lock() {
+        let _ = super::widget_host::remove(id);
+    }
 }
 #[tauri::command]
 pub async fn read_tray_action(
@@ -595,6 +640,12 @@ impl TrayHost {
 
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Release);
+        // Join any admitted snapshot publication before the exit marker; queued
+        // blocking publications observe stop under this same lock and cannot
+        // make the persisted metadata fresh again after process shutdown.
+        if let Ok(_guard) = self.state.lock() {
+            super::widget_host::stop();
+        }
         if let Some(task) = self.task.lock().unwrap_or_else(|e| e.into_inner()).take() {
             task.thread().unpark();
             let _ = task.join();

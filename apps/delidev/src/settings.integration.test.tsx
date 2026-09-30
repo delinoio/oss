@@ -501,9 +501,15 @@ it("persists native Claude permission selection through the desktop and real Go 
 it("saves and renames GitHub profiles through the real Go server and CLI", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   let saves = 0;
+  // Exercise sequential save/list latency and a delayed durable-save
+  // acknowledgment. Wait for refreshed profiles without replaying writes.
   const slowTransport: Transport = {
     ...transport,
     async unary(method, signal, timeoutMs, header, input, contextValues) {
+      const profileList = method.name === "ListResources" && (input as { filter?: { kind?: EntityKind } }).filter?.kind === EntityKind.INTEGRATION;
+      if (method.name === "SaveIntegrationProfile" || profileList) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+      }
       if (method.name === "SaveIntegrationProfile") {
         saves += 1;
         const response = await transport.unary(method, signal, timeoutMs, header, input, contextValues);
