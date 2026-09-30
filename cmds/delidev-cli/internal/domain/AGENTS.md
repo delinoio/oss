@@ -36,6 +36,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Remediation defaults use merge; rebase requires explicit effective server/repository policy and an exact expected-head lease. Manual requests bind exact decimal set/problem revisions and immutable source/content identities. Closed typed push proofs distinguish verified, unchanged and uncertain state; native success alone never means handled.
 
+- Every immutable manual-fix execution assignment independently requires Codex Execute mode and explicit workspace-write or full-access permission. Initial request acceptance cannot preserve write authority after the selected Agent becomes read-only or returns to default permission before dispatch.
+
 - Claude continuation candidates require a correlated non-aborted successful or failed root outcome, unchanged permission and settled original input/callback/task/compaction facts. A `background_requested` terminal is ineligible even without a tracked background-task event. Failed predecessors require explicit Resume intent; a candidate never substitutes for independently verified native history and cleanup.
 
 - Keep negotiated native accounting unit kinds distinct under the usage contract. GrokClosedInput preserves its supplied uint64 total, original input/history/closure/source references and immutable attribution; it has no pricing or budget contribution.

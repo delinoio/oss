@@ -323,6 +323,11 @@ The separate private Worker matching read now observes the actual prepared Local
 
 ## Manual PR fix execution (issue #1081)
 
+Every immutable remediation job independently requires Codex Execute mode and
+explicit workspace-write or full-access permission. Dispatch resolves the current
+Agent configuration again; a change to read-only or default permission after
+request acceptance cannot retain manual Git write authority.
+
 Authenticated owner/paired clients use the additive `PullRequestFixService`. Its typed `CODEX_GIT_V1` capability advertises the currently supported Codex API execution profile with explicitly selected workspace-write or full-access permissions. Other harness profiles fail explicitly without fallback or permission elevation. `RequestPullRequestFix` binds an original UUID-v7 request to version-1 JSON with explicit project/repository IDs, original set revision and 1–100 original problem IDs, revisions and content versions. Revisions are canonical decimal strings. Actor-bound reference-only receipts replay current retained attempt/session/set resources without new provider reads, workspace work or inference. Initial identical actor/request selections coalesce through a bounded cancellable in-memory pre-acceptance gate and re-read the durable receipt before provider inspection; foreign input or actors cannot share it. Accepted replay bypasses the gate's capacity. The gate retains no native execution grant across restarts.
 
 Manual feedback may address retained original review comments, approved-review bodies and conversation comments even after provider edits or deletion. Fresh detail still proves the exact open PR and available source. Required CI and conflict fixes also require their fresh independent current prerequisites; unknown CI or mergeability never grants work. Read results are checked against the selected repository revision/profile generation before atomic acceptance, and dispatch rechecks the original target and all gates before consuming the ordinary input/account routing claim.

@@ -84,8 +84,8 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 }
 
 func (i ExecutionJobInput) Validate() error {
-	if i.Remediation != nil && (i.Remediation.Validate() != nil || i.Input.Mode != ExecuteMode || i.Configuration.Harness != Codex) {
-		return Fail(Unsupported, "This assignment lacks the verified manual Git profile.", "Select the Codex execution profile for manual PR fixes.")
+	if i.Remediation != nil && (i.Remediation.Validate() != nil || i.Input.Mode != ExecuteMode || i.Configuration.Harness != Codex || (i.Configuration.Options.Permission != PermissionWorkspaceWrite && i.Configuration.Options.Permission != PermissionFullAccess)) {
+		return Fail(Unsupported, "This assignment lacks the verified manual Git profile.", "Select the Codex execution profile with explicit write permission for manual PR fixes.")
 	}
 	if !((i.Version == 1 && i.Continuation == nil) || (i.Version == 2 && i.Continuation != nil)) || i.Installation.Harness != i.Configuration.Harness {
 		return Fail(Unsupported, "The execution assignment profile is incompatible.", "Use a matching server and Worker native profile.")
