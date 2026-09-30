@@ -157,3 +157,25 @@ inventory unchanged.
 
 These fixtures establish Go/Connect and presentation behavior with reported
 native state; they do not add installed-native or cross-platform acceptance.
+
+## PR #1176 maintenance: base merge and broad validation
+
+The fetched base `2b658e053` introduced a sidebar focus handoff and a separate
+Activity documentation section. The merge preserves that handoff, retains the
+connection-mounted fork controller, and keeps both documentation sections.
+Generated-client build and frontend type checking passed; the App, sidebar and
+fork component selection passed all 62 tests. Root `pnpm proto:check` passed
+format/lint, breaking and fresh-generation checks after the automatic protocol
+merge.
+
+Before that merge, at `bb2887060`, `VITEST_MAX_WORKERS=1 pnpm test` in
+`apps/delidev` passed all 962 tests in 85 files, followed by bundle, desktop
+launcher, widget and production-build checks. Root Go vet passed.
+`GOMAXPROCS=4 go test -race ./cmds/delidev-cli/...` exited nonzero: ordinary CLI
+workspace reads failed as unavailable, and the Grok, server and workspace
+packages reached their ten-minute package watchdogs. All other tested packages
+passed. The existing host contention and earlier comparison evidence remain
+relevant; this run alone does not prove that every timeout is a baseline failure.
+The last workspace binary was already compiled at that revision and used only
+private fixtures while the independent frontend merge was prepared. No broad Go
+success is claimed.
