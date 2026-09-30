@@ -85,10 +85,10 @@ func TestLaunchAdmissionPinsConcurrentServiceControl(t *testing.T) {
 	if _, err := AdmitLaunch(ctx, m.Root); err == nil || ctx.Err() == nil {
 		t.Fatal("overlapping launch did not honor cancellation")
 	}
-	controlCtx, controlCancel := context.WithTimeout(context.Background(), time.Second)
-	defer controlCancel()
 	lock.Close()
 	control(t, m, Remove, 1)
+	controlCtx, controlCancel := context.WithTimeout(context.Background(), time.Second)
+	defer controlCancel()
 	after, err := AdmitLaunch(controlCtx, m.Root)
 	if err != nil {
 		t.Fatal(err)

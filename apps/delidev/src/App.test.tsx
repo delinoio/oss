@@ -7,6 +7,10 @@ import { ConfigurationService, EntityKind, InboxService, InboxSource, Integratio
 import { App } from "./App";
 import { encode } from "./documents";
 
+// Full Settings mounts and sequential navigation share this aggregate fixture
+// budget. Per-observation waits and product RPC/native deadlines remain unchanged.
+const fullShellTimeoutMs = 60_000;
+
 function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false, automaticTitles = false, selectorFailure?: Code, emptyAgents = false, agentGate?: Promise<void>) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
@@ -191,7 +195,7 @@ it("abandons an uncertain New Project save without replay when reopening", async
   expect(value.saveConfiguration).toHaveBeenCalledTimes(1);
   expect(value.enqueues).not.toHaveBeenCalled();
   expect(value.controls).not.toHaveBeenCalled();
-});
+}, fullShellTimeoutMs);
 
 it("invalidates the loaded sidebar pages after saving without resetting their cursors or archive filter", async () => {
   const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository" }) });
@@ -238,7 +242,7 @@ it("invalidates the loaded sidebar pages after saving without resetting their cu
 // This full-shell scenario performs several sequential pagination and settings
 // interactions. Bound its aggregate CI duration separately from the unchanged
 // per-observation deadlines; the default five seconds is not a product SLA.
-}, 15_000);
+}, fullShellTimeoutMs);
 
 it("keeps the draft and session mounted across settings and navigation, and renders native text inertly", async () => {
   const value = fixture();
@@ -259,7 +263,7 @@ it("keeps the draft and session mounted across settings and navigation, and rend
   expect(await screen.findByText('<script>window.invalid = true</script>')).toBeTruthy();
   expect(window.document.querySelector("script")).toBeNull();
   expect(value.enqueues).not.toHaveBeenCalled();
-});
+}, fullShellTimeoutMs);
 
 it("refreshes reads after recovery without replacing the connection's session draft", async () => {
   const value = fixture();

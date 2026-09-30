@@ -59,3 +59,21 @@ uncertainty remain recorded, without promoting earlier checks to this revision.
 Final validation results and any remaining failures are appended to this
 issue-specific record. Generated repository-owned dist output is removed before
 publishing the completed change.
+
+## Fixture bounds and product wording
+
+The service-admission fixture now starts its one-second context after unrelated
+service removal completes. The bound still applies to admission; setup no longer
+consumes it. The cancellation and service-control race regressions pass with
+`GOMAXPROCS=2 go test -race -p 1` (CLI 4.454 seconds; user-service 2.062 seconds).
+Final-source `go vet -p 1 ./cmds/delidev-cli/...` also passes.
+
+The first complete frontend run passed 1,237 tests in 94 files, including all nine
+desktop cases, but three existing full-shell App cases exceeded their aggregate
+15-second fixture budget. Those three cases and the full Settings Stop-retention
+case now have a 60-second aggregate budget. Assertions, observation waits and
+product RPC/native deadlines are unchanged. The final focused App/desktop run
+passes all 53 tests in 66.84 seconds. A complete pipeline rerun is recorded below.
+
+The ordinary tray exit label is `Quit DeliDev`. Its detached-runtime lifetime is
+unchanged and remains documented in the internal desktop contract.

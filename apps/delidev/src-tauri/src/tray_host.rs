@@ -482,7 +482,7 @@ fn render(app: &AppHandle<Cef>) -> tauri::Result<()> {
     menu.append(&MenuItem::with_id(
         app,
         "tray-quit",
-        "Quit DeliDev (keep server and Workers running)",
+        "Quit DeliDev",
         true,
         None::<&str>,
     )?)?;

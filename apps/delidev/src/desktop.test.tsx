@@ -224,4 +224,7 @@ it("retains the original Stop and confirmation across diagnostics hiding and Set
   await waitFor(() => expect(stop).toHaveBeenCalledTimes(2));
   expect(stop.mock.calls[1][0]).toEqual(stop.mock.calls[0][0]);
   expect(bridge.invoke.mock.calls.some(([command]) => command === "connect_local" || command === "retry_local")).toBe(false);
-}, 15_000);
+  // This case repeatedly mounts the complete Settings tree while retaining its
+  // sibling connection controller. Allow slow test hosts without relaxing RPC or
+  // native deadlines or the identical-request assertions above.
+}, 60_000);
