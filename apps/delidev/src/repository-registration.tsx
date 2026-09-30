@@ -13,8 +13,19 @@ import { Problem } from "./ui";
 
 export type ChooseRepositoryFolder = () => Promise<string | null>;
 enum Computer { Local = "local", Remote = "remote" }
+enum SelectionStage { Picker, Worker }
 interface Source { path: string; machine: string; name: string; local: boolean }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function folderSelectionProblem(error: unknown): string {
+  if (error instanceof ConnectError) return error.rawMessage;
+  switch (error) {
+    case "busy": return "Another window is choosing a folder. Wait for it to finish, then try Choose folder again.";
+    case "invalid-evidence": return "The selected folder cannot be used. Choose another folder or enter a valid absolute checkout path.";
+    case "permission-denied": return "Folder selection was denied. Check this window's authorization and folder access, then try Choose folder again.";
+    default: return "Folder selection failed. Try Choose folder again or enter an absolute checkout path.";
+  }
+}
 
 export function selectedInspectionRemote(output: Document, preferred: string): string {
   const remotes = items(output.remotes).map(text);
@@ -107,11 +118,15 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const start = async (picker: boolean) => {
     if (gate.current || blocked || !live()) return;
     gate.current = true; setBusy(true);
+    let stage = picker ? SelectionStage.Picker : SelectionStage.Worker;
     try {
       const selectedPath = picker ? await native(chooseFolder ?? (() => Promise.reject(new ConnectError("Folder selection is unavailable. Enter a path to continue.", Code.Unavailable)))) : path;
       if (!live() || selectedPath === null) return;
       setProblem("");
-      if (!selectedPath || selectedPath.length > 4096 || selectedPath.includes("\0")) throw new ConnectError("Enter a bounded absolute checkout path.", Code.InvalidArgument);
+      if (!selectedPath || selectedPath.length > 4096 || selectedPath.includes("\0")) throw new ConnectError(picker ? folderSelectionProblem("invalid-evidence") : "Enter a bounded absolute checkout path.", Code.InvalidArgument);
+      // A picker failure has no accepted selection or Worker observation. Only
+      // a validated selection advances to Worker verification and replaces draft state.
+      stage = SelectionStage.Worker;
       setPath(selectedPath);
       setSummary(undefined); setData(newConfiguration(EntityKind.REPOSITORY)); setOptions(false);
       setSource(undefined);
@@ -122,7 +137,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       if (!uuid.test(selectedMachine)) throw new ConnectError("Select the computer that owns this checkout.", Code.InvalidArgument);
       await inspectSource({ path: selectedPath, machine: selectedMachine, name: local ? "This computer" : machineName || "Selected remote computer", local });
     } catch (error) {
-      if (live()) setProblem(error instanceof ConnectError ? error.rawMessage : error === "permission-denied" ? "Access to this computer's Worker was denied. Check device authorization and private-state permissions, then retry." : "This computer's Worker could not be verified. Check its registration and connection in Execution Workers, then retry. The selected folder is retained.");
+      if (live()) setProblem(stage === SelectionStage.Picker ? folderSelectionProblem(error) : error instanceof ConnectError ? error.rawMessage : error === "permission-denied" ? "Access to this computer's Worker was denied. Check device authorization and private-state permissions, then retry." : "This computer's Worker could not be verified. Check its registration and connection in Execution Workers, then retry. The selected folder is retained.");
     } finally { gate.current = false; if (live()) setBusy(false); }
   };
   const completeInspection = useCallback((output: Document) => {

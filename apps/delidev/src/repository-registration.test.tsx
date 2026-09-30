@@ -158,6 +158,34 @@ it.each([LocalWorkerState.NotStarted, LocalWorkerState.Exited])("retains the fol
   expect(f.inspected).not.toHaveBeenCalled(); expect(f.control.mock.calls).toEqual([["status", undefined]]);
 });
 
+it.each([
+  ["busy", /Another window is choosing a folder/],
+  ["invalid-evidence", /selected folder cannot be used/],
+  ["permission-denied", /Folder selection was denied/],
+  ["unexpected", /Folder selection failed/],
+])("reports picker %s before any Worker verification", async (error, guidance) => {
+  const f = fixture(); f.choose.mockRejectedValueOnce(error); f.mount(); await f.add();
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await screen.findByText(guidance);
+  expect(f.proof).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
+  expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
+  expect(screen.queryByText(/Worker could not be verified|selected folder is retained/)).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Absolute checkout path" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Choose folder" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("preserves the current confirmation and options when a replacement picker fails", async () => {
+  const f = fixture(); f.mount(); await f.chooseAndReview();
+  fireEvent.click(screen.getByRole("button", { name: "Optional settings" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Retained name" } });
+  f.choose.mockRejectedValueOnce("busy");
+  fireEvent.click(screen.getByRole("button", { name: "Change folder" }));
+  await screen.findByText(/Another window is choosing a folder/);
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained name");
+  expect(screen.getByText("/canonical/oss")).toBeTruthy();
+  expect(f.proof).toHaveBeenCalledTimes(1); expect(f.control).toHaveBeenCalledTimes(1); expect(f.inspected).toHaveBeenCalledTimes(1);
+});
+
 it("does not label unreadable proof as an absent registration", async () => {
   const f = fixture(); f.proof.mockRejectedValueOnce("permission-denied"); f.mount(); await f.add();
   fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByText(/Access.*was denied/);
