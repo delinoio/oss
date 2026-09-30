@@ -53,11 +53,12 @@ const (
 	RoutingKind        Kind = "routing"
 	NetworkProfileKind Kind = "network_profile"
 	NetworkRouteKind   Kind = "network_route"
+	ForwardKind        Kind = "forward"
 )
 
 func (k Kind) Valid() bool {
 	switch k {
-	case PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind, NetworkProfileKind, NetworkRouteKind:
+	case ForwardKind, PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind, NetworkProfileKind, NetworkRouteKind:
 		return true
 	default:
 		return false

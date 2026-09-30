@@ -189,3 +189,7 @@ Schema v23 adds durable managed-backup deletion indexing and external deletion o
 
 ### Explicit outbound networking
 Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. See [the network contract](cmds-delidev-network-contract.md); Worker bootstrap/native proxy application remains separate.
+
+## Authenticated development-server forwarding
+
+Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.

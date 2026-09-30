@@ -54,6 +54,7 @@ type client struct {
 	integrations  delidevv1connect.IntegrationServiceClient
 	network       delidevv1connect.NetworkServiceClient
 	providers     delidevv1connect.ProviderServiceClient
+	forwards      delidevv1connect.ForwardServiceClient
 	sessions      delidevv1connect.SessionServiceClient
 	interactions  delidevv1connect.InteractionServiceClient
 	inbox         delidevv1connect.InboxServiceClient
@@ -165,7 +166,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		return emit(nil, err)
 	}
 	defer c.transport.CloseIdleConnections()
-	if command != "events" {
+	if command != "events" && !(command == "session" && len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start") {
 		limit := 30 * time.Second
 		if command == "github" {
 			limit = 40 * time.Second
@@ -690,6 +691,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		schedules:     delidevv1connect.NewScheduleServiceClient(httpClient, endpoint, opts...),
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),
 		sessions:      delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...),
+		forwards:      delidevv1connect.NewForwardServiceClient(httpClient, endpoint, opts...),
 		accounts:      delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...),
 		integrations:  delidevv1connect.NewIntegrationServiceClient(httpClient, endpoint, opts...),
 		network:       delidevv1connect.NewNetworkServiceClient(httpClient, endpoint, opts...),
@@ -861,6 +863,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   provider discover --account-id ID --revision N
   model search [--query TEXT] [--provider-id ID] [--include-hidden] [--enabled-providers-only] [--limit N] [--page-token TOKEN]
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
+  session forward start|status|stop|reconcile --session-id ID [--id ID] [--revision N] [--machine-id ID --worker-port N --local-port N]
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
   session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
   session review-context --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]

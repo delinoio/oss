@@ -19,3 +19,4 @@ export * from "./validation.js";
 export * as UsageQuery from "./gen/delidev/v1/delidev-UsageService_connectquery.js";
 export * as IntegrationQuery from "./gen/delidev/v1/delidev-IntegrationService_connectquery.js";
 export * as NetworkQuery from "./gen/delidev/v1/delidev-NetworkService_connectquery.js";
+export * as ForwardQuery from "./gen/delidev/v1/delidev-ForwardService_connectquery.js";
