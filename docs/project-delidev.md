@@ -99,7 +99,7 @@ Home (Sessions/New Session) keeps independent bounded 50-record reads and connec
 
 ## Session terminal deletion invariant
 
-Interactive terminals belong to the prepared session's original Worker and primary workspace. Agent Stop preserves them. Archive and permanent deletion join their independently confirmed process-tree cleanup; deletion cannot dispatch workspace removal before that join or bypass it during final purge. See the [terminal contract](cmds-delidev-terminals-contract.md) and [storage contract](cmds-delidev-storage-contract.md).
+Interactive terminals belong to the prepared session's original Worker and primary workspace. Agent Stop preserves them. Archive and permanent deletion join their independently confirmed process-tree cleanup; deletion cannot dispatch workspace removal before that join or bypass it during final purge. Replacement Workers may adopt only exact close reconciliation after a fresh current-instance server claim, preserving original evidence without creating a shell or replaying controls. See the [terminal contract](cmds-delidev-terminals-contract.md) and [storage contract](cmds-delidev-storage-contract.md).
 
 Creation synchronizes the original process-owner index before native-start
 intent. Pre-native restart reconciliation requires that retained index;

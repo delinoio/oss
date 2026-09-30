@@ -39,14 +39,25 @@ const (
 )
 
 type terminalOperationJournal struct {
-	TerminalID  domain.ID              `json:"terminal_id"`
-	OperationID domain.ID              `json:"operation_id"`
-	InstanceID  domain.ID              `json:"instance_id"`
-	Digest      string                 `json:"digest"`
-	ClaimID     domain.ID              `json:"claim_id"`
-	ReportID    domain.ID              `json:"report_id"`
-	Phase       terminalOperationPhase `json:"phase"`
-	Result      *terminal.Result       `json:"result,omitempty"`
+	TerminalID    domain.ID              `json:"terminal_id"`
+	OperationID   domain.ID              `json:"operation_id"`
+	InstanceID    domain.ID              `json:"instance_id"`
+	Digest        string                 `json:"digest"`
+	ClaimID       domain.ID              `json:"claim_id"`
+	ReportID      domain.ID              `json:"report_id"`
+	Phase         terminalOperationPhase `json:"phase"`
+	Result        *terminal.Result       `json:"result,omitempty"`
+	CloseRecovery *terminalCloseRecovery `json:"close_recovery,omitempty"`
+}
+
+// Replacement authority is separate from the immutable original operation.
+// Fresh receipt IDs bind the same close to the replacement's authenticated
+// instance; they must never be used to adopt creation, input or resize work.
+type terminalCloseRecovery struct {
+	InstanceID domain.ID `json:"instance_id"`
+	ClaimID    domain.ID `json:"claim_id"`
+	ReportID   domain.ID `json:"report_id"`
+	Claimed    bool      `json:"claimed"`
 }
 
 type nativeTerminal struct {
@@ -140,8 +151,11 @@ func (m *terminalManager) loadJournal(a terminal.Assignment) (terminalOperationJ
 		j = terminalOperationJournal{TerminalID: a.ID, OperationID: a.Operation.ID, InstanceID: m.instance, Digest: terminalOperationDigest(a), ClaimID: domain.NewID(), ReportID: domain.NewID(), Phase: terminalPrepared}
 		return j, m.saveJournal(j)
 	}
-	if err != nil || domain.Decode(raw, &j) != nil || j.TerminalID != a.ID || j.OperationID != a.Operation.ID || j.InstanceID != m.instance || j.Digest != terminalOperationDigest(a) || j.ClaimID.Validate() != nil || j.ReportID.Validate() != nil {
+	if err != nil || domain.Decode(raw, &j) != nil || j.TerminalID != a.ID || j.OperationID != a.Operation.ID || j.InstanceID.Validate() != nil || (j.InstanceID != m.instance && a.Operation.Action != domain.TerminalClose) || j.Digest != terminalOperationDigest(a) || j.ClaimID.Validate() != nil || j.ReportID.Validate() != nil {
 		return j, domain.Fail(domain.RecoveryRequired, "The original terminal operation journal is unavailable or changed.", "Close and reconcile original process ownership; never replay uncertain input.")
+	}
+	if recovery := j.CloseRecovery; recovery != nil && (a.Operation.Action != domain.TerminalClose || recovery.InstanceID.Validate() != nil || recovery.ClaimID.Validate() != nil || recovery.ReportID.Validate() != nil) {
+		return j, domain.TerminalUnavailable()
 	}
 	switch j.Phase {
 	case terminalPrepared, terminalClaimed, terminalStarted, terminalFinished:
@@ -181,8 +195,20 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 	if err != nil {
 		return err
 	}
-	if j.Phase == terminalPrepared {
-		claimed, err := m.client.ClaimTerminal(ctx, authenticated(m.credential, &pb.ClaimTerminalRequest{RequestId: string(j.ClaimID), MachineId: string(m.credential.MachineID), InstanceId: string(m.instance), TerminalId: string(assignment.ID), OperationId: string(assignment.Operation.ID)}))
+	claimID, reportID := j.ClaimID, j.ReportID
+	recoveryClaim := false
+	if j.InstanceID != m.instance || j.CloseRecovery != nil {
+		if j.CloseRecovery == nil || j.CloseRecovery.InstanceID != m.instance {
+			j.CloseRecovery = &terminalCloseRecovery{InstanceID: m.instance, ClaimID: domain.NewID(), ReportID: domain.NewID()}
+			if err := m.saveJournal(j); err != nil {
+				return err
+			}
+		}
+		claimID, reportID = j.CloseRecovery.ClaimID, j.CloseRecovery.ReportID
+		recoveryClaim = !j.CloseRecovery.Claimed
+	}
+	if j.Phase == terminalPrepared || recoveryClaim {
+		claimed, err := m.client.ClaimTerminal(ctx, authenticated(m.credential, &pb.ClaimTerminalRequest{RequestId: string(claimID), MachineId: string(m.credential.MachineID), InstanceId: string(m.instance), TerminalId: string(assignment.ID), OperationId: string(assignment.Operation.ID)}))
 		if err != nil {
 			return rpc.ClientError(err)
 		}
@@ -191,12 +217,17 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 			return domain.TerminalUnavailable()
 		}
 		assignment = original
-		j.Phase = terminalClaimed
+		if j.CloseRecovery != nil {
+			j.CloseRecovery.Claimed = true
+		}
+		if j.Phase == terminalPrepared {
+			j.Phase = terminalClaimed
+		}
 		if err := m.saveJournal(j); err != nil {
 			return err
 		}
 	}
-	if j.Phase == terminalStarted {
+	if j.Phase == terminalStarted && assignment.Operation.Action != domain.TerminalClose {
 		// The synchronized side-effect claim survived, but its outcome did not.
 		// Missing completion is never permission to start a second shell or resend.
 		result := terminal.Result{State: domain.TerminalUncertain, Rows: assignment.Terminal.Rows, Columns: assignment.Terminal.Columns, Shell: assignment.Terminal.Shell, Cwd: assignment.Terminal.Cwd, Problem: domain.Fail(domain.RecoveryRequired, "The terminal operation has an unconfirmed native outcome.", "Close the original terminal to reconcile exact ownership; do not resend its input.")}
@@ -205,10 +236,15 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 			return err
 		}
 	}
-	if j.Phase == terminalClaimed {
-		if err := m.markStarted(&j, assignment.Operation.Action); err != nil {
-			return err
+	if j.Phase == terminalClaimed || (j.Phase == terminalStarted && assignment.Operation.Action == domain.TerminalClose) {
+		if j.Phase == terminalClaimed {
+			if err := m.markStarted(&j, assignment.Operation.Action); err != nil {
+				return err
+			}
 		}
+		// Interrupted close may repeat only independent original-owner cleanup.
+		// It never launches a shell or replays a control. Finished results below
+		// retain their original bytes rather than repeating cleanup.
 		result := m.execute(assignment)
 		j.Result, j.Phase = &result, terminalFinished
 		if err := m.saveJournal(j); err != nil {
@@ -218,7 +254,7 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 	if j.Result == nil || j.Result.Validate() != nil {
 		return domain.TerminalUnavailable()
 	}
-	if err := m.report(ctx, assignment.ID, assignment.Operation.ID, j.ReportID, *j.Result); err != nil {
+	if err := m.report(ctx, assignment.ID, assignment.Operation.ID, reportID, *j.Result); err != nil {
 		return err
 	}
 	// After confirmed report the server will never claim this operation again.
@@ -466,14 +502,23 @@ func (m *terminalManager) observeExits(ctx context.Context) {
 	for _, entry := range entries {
 		raw, err := security.ReadPrivate(filepath.Join(m.config.Root, "terminal-operations", entry.Name()), terminalOperationJournalMaxBytes)
 		var j terminalOperationJournal
-		if err != nil || domain.Decode(raw, &j) != nil || j.InstanceID != m.instance || j.Result == nil || j.Phase != terminalFinished || j.ReportID.Validate() != nil || j.TerminalID.Validate() != nil {
+		if err != nil || domain.Decode(raw, &j) != nil || j.Result == nil || j.Phase != terminalFinished || j.ReportID.Validate() != nil || j.TerminalID.Validate() != nil {
+			continue
+		}
+		reportID := j.ReportID
+		if recovery := j.CloseRecovery; recovery != nil {
+			if recovery.InstanceID != m.instance || !recovery.Claimed || recovery.ClaimID.Validate() != nil || recovery.ReportID.Validate() != nil || j.Digest == "" {
+				continue
+			}
+			reportID = recovery.ReportID
+		} else if j.InstanceID != m.instance {
 			continue
 		}
 		operation := j.OperationID
 		if j.Digest == "" {
 			operation = ""
 		}
-		if m.report(ctx, j.TerminalID, operation, j.ReportID, *j.Result) == nil {
+		if m.report(ctx, j.TerminalID, operation, reportID, *j.Result) == nil {
 			_ = os.Remove(m.journalPath(j.OperationID))
 			_ = security.SyncParent(m.journalPath(j.OperationID))
 		}

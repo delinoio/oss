@@ -125,7 +125,16 @@ native launch can reconcile that retained empty index; a missing or changed
 index still cannot establish cleanup. Native-start intent is synchronized
 before side effects.
 An interrupted started operation is reported uncertain instead of repeating
-input, resize or shell creation. Finished results retry their exact report;
+input, resize or shell creation. An interrupted close can reconcile the same
+original process owner again. A replacement instance may adopt only an exact
+close assignment after independently claiming current server/device authority.
+It preserves original operation IDs, digest, claim/report IDs and finished result
+bytes while retaining separate instance-bound close-recovery claim/report IDs.
+Claim and report response loss reuse those replacement receipt identities;
+another replacement must claim its own authority. Auxiliary report retry waits
+for a synchronized confirmed current-instance close claim. Missing or changed
+process evidence remains uncertain; adoption cannot create a shell or resend a
+control. Finished results retry their exact report;
 confirmed reports retire the journal. Terminal reports share a 64 KiB JSON limit
 between Worker and server, covering both accepted 4,096-byte paths even under
 worst-case six-byte JSON escaping. Journal reads and writes share a 68 KiB
