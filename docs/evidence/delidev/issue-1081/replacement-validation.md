@@ -46,9 +46,8 @@ numbers or migration allocations. Main subsequently advanced to
 changes were merged without altering their allocations, and bindings were
 regenerated from the combined sources.
 
-Required and focused verification is in progress; final results will be recorded
-in a separate evidence file before publication. No current full-suite pass is
-claimed here.
+Executed verification and remaining reruns are recorded separately in
+`local-validation-2026-09-30.md`. No current full-suite pass is claimed here.
 
 ## Limits
 
