@@ -140,7 +140,7 @@ func (s *sessionAPI) observeInput(ctx context.Context, root string) (*inputObser
 	if s.runtimeRoot != "" && root != s.runtimeRoot {
 		return nil, sessionInvalid()
 	}
-	if s.creation == nil || s.input == nil || s.events == nil || s.events.ctx == nil || !filepath.IsAbs(root) || domain.Text(root, "native root", 32768, true) != nil {
+	if s.creation == nil || s.input == nil || s.events == nil || s.events.ctx == nil || !(filepath.IsAbs(root) || root == "/" && s.apiProfile != nil && s.apiProfile.WorkspaceRoot != nil && s.apiProfile.WorkspaceRoot.windowsGlobal() && s.apiProfile.WorkspaceRoot.native == root) || domain.Text(root, "native root", 32768, true) != nil {
 		return nil, sessionInvalid()
 	}
 	if s.observer != nil {
