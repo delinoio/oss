@@ -21,6 +21,11 @@ import (
 
 func publicCompactionFixture(t *testing.T) (*firstDispatchFixture, *publicationFixture) {
 	t.Helper()
+	return publicCompactionOutcomeFixture(t, domain.ExecutionSucceeded)
+}
+
+func publicCompactionOutcomeFixture(t *testing.T, outcome domain.ExecutionOutcome) (*firstDispatchFixture, *publicationFixture) {
+	t.Helper()
 	f := newFirstDispatchFixtureForHarness(t, domain.ClaudeCode, domain.ExecuteMode)
 	if e := f.service.dispatchExecution(context.Background(), f.refresh(t)); e != nil {
 		t.Fatal(e)
@@ -29,7 +34,12 @@ func publicCompactionFixture(t *testing.T) (*firstDispatchFixture, *publicationF
 	c.claim(t)
 	pf := &publicationFixture{authorityFixture: &authorityFixture{service: f.service, http: nil, client: f.workerClient, workerToken: f.workerIdentity.Token, job: domain.ID(c.job.Id), device: f.workerDevice, instance: domain.ID(f.workerInstance), input: c.input}, revision: c.job.Revision, thread: c.input.SessionID, turn: "123e4567-e89b-42d3-a456-426614174000"}
 	terminal := publishClaudeTerminalFixture(t, pf, true)
+	if outcome == domain.ExecutionFailed {
+		terminal.Outcome = outcome
+		terminal.ClaudeTerminal.Reason, terminal.ClaudeTerminal.Error, terminal.ClaudeTerminal.Command = domain.ClaudeAPIError, true, domain.ClaudeCommandCancelled
+	}
 	completion := publishClaudeRootCompletionFixture(t, pf, terminal)
+	completion.Outcome = outcome
 	raw, _ := json.Marshal(completion)
 	_, e := f.workerClient.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(c.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: raw}))
 	if e != nil {
@@ -373,5 +383,32 @@ func TestWorkerRevocationPreservesCompactionDispatchBoundary(t *testing.T) {
 				t.Fatal("undispatched compaction wedged Stop/Archive")
 			}
 		})
+	}
+}
+
+func TestCompactionRejectsFailedConversationEligibleForExplicitResume(t *testing.T) {
+	f, _ := publicCompactionOutcomeFixture(t, domain.ExecutionFailed)
+	ctx := context.Background()
+	before := f.refresh(t)
+	prior, err := store.Decode[domain.Session](before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prior.Outcome != domain.ExecutionFailed || prior.Recovery != domain.NoRecovery || !prior.Execution.CleanupVerified || !prior.Execution.ClaudeContinuationBoundary(prior.Execution.InputID) {
+		t.Fatal("fixture did not retain a verified failed Resume boundary")
+	}
+	client := sessionClient(f.accountFixture)
+	observation, err := client.GetSessionContext(ctx, ownerRequest(f.identity, &pb.GetSessionContextRequest{SessionId: string(before.ID)}))
+	if err != nil || len(observation.Msg.Capabilities) != 1 {
+		t.Fatal("failed conversation gained manual compaction capability", err)
+	}
+	_, err = client.CompactSession(ctx, ownerRequest(f.identity, &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(before), domain.NewID())}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatal("failed Resume eligibility authorized manual compaction", err)
+	}
+	after := f.refresh(t)
+	state, err := store.Decode[domain.Session](after)
+	if err != nil || after.Revision != before.Revision || !reflect.DeepEqual(state, prior) {
+		t.Fatal("rejected compaction changed the failed predecessor", err)
 	}
 }

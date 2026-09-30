@@ -12,6 +12,8 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - `protos/delidev/v1`: versioned Connect schema; `protos/gen/go/delidev/v1`: generated Go bindings.
 - `packages/delidev-api-client`: generated TypeScript client and bounded transport/synchronization helpers.
 
+New schedule creation adds frequency presets and a creation-only three-section layout under the [desktop contract](apps-delidev-desktop-contract.md#new-schedule-creation-issue-1152), while strict schedule definitions and server recurrence authority remain unchanged.
+
 ## Domain Contract Documents
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
@@ -20,7 +22,8 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Protocol contract](protos-delidev-v1-contract.md)
 - [TypeScript client contract](packages-delidev-api-client-contract.md)
-- [Desktop client contract](apps-delidev-desktop-contract.md)
+- [Desktop client contract](apps-delidev-desktop-contract.md), including [Agent Worker core/optional presentation](apps-delidev-desktop-contract.md#agent-worker-core-and-optional-presentation) and its [issue #1158 evidence](evidence/delidev/issue-1158/agent-settings.md)
+- [AI Subscription settings](apps-delidev-subscription-settings-contract.md)
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Session file explorer and Git comparisons](cmds-delidev-files-contract.md)
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)

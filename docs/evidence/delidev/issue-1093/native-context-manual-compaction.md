@@ -128,3 +128,34 @@ rerun did not repeat frontend or installed-native acceptance, and does not upgra
 protocol fixtures into account/platform acceptance. Generated repository-owned
 `dist` directories were removed after validation; the private test processes from
 this aggregate run had exited before final cleanup.
+
+## Latest-base conflict repair
+
+Merged main `82020a7ef2916534f3342aa5208f43d2a051b052` after it advanced during
+aggregate validation. Scoped instruction conflicts retain both owners' complete
+rules. The shared Claude fixture keeps main's settled-success/failure publisher
+and adds the original compaction fixture adapter; no failed Resume scenario was
+removed or narrowed. A new authenticated regression verifies that a cleaned failed
+conversation eligible for explicit Resume has no manual-compaction capability,
+rejects CompactSession and preserves its original revision/outcome/diagnostic.
+Manual compaction still requires its independently checked successful predecessor.
+
+Post-merge focused race validation passed:
+
+- Domain/server/Worker:
+  `go test -race -p 1 ./cmds/delidev-cli/internal/domain
+  ./cmds/delidev-cli/internal/server ./cmds/delidev-cli/internal/worker
+  -run 'Compaction|Claude.*(Continuation|Recovery|Failed|Resume)' -count=1`
+  (1.583 s / 61.888 s / 6.362 s).
+- Native proof fixtures:
+  `go test -race -p 1 ./cmds/delidev-cli/internal/harness/claude
+  -run 'OriginalFailedEOF|ClosedContinuation|FailedCheckpoint' -count=1`
+  (5.992 s). These remain controlled proof fixtures, not installed-native acceptance.
+- Full Go vet passed again. Full `pnpm proto:check` passed with the breaking baseline
+  pinned to this exact main revision, and generated bindings reproduced without
+  drift. API-client typecheck and all 44 tests passed again.
+
+There is no frontend implementation diff against this merged base. The earlier
+frontend singleton failure and native acceptance gap remain recorded; no new
+frontend, installed-Claude or full-suite race pass is claimed by this focused merge
+verification. The aggregate race results above belong to the pre-merge repair tree.
