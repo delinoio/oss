@@ -664,7 +664,12 @@ impl BrowserHost {
                 continue;
             }
             if processed >= 64 || started.elapsed() >= Duration::from_secs(45) {
-                return Err(NativeFailure::TimedOut);
+                tracing::warn!(
+                    operation = "browser_removal",
+                    state = "deferred",
+                    code = "cleanup-budget"
+                );
+                break;
             }
             processed += 1;
             let mut removal: Removal = read_json(&path)?;
@@ -685,11 +690,25 @@ impl BrowserHost {
                 std::fs::File::open(cache.parent().unwrap())
                     .and_then(|f| f.sync_all())
                     .map_err(|_| NativeFailure::StorageUnavailable)?;
+                Ok(())
+            })();
+            if let Err(code) = result {
+                tracing::warn!(
+                    operation = "browser_removal",
+                    state = "local-failure",
+                    ?code
+                );
+                first_failure.get_or_insert(code);
+                continue;
+            }
+            // A completed local purge and a deferred server acknowledgment are
+            // separate outcomes. Offline/revoked authority retains the original
+            // intent without turning an otherwise normal quit into host failure.
+            let acknowledgment = (|| -> Result<()> {
                 let current = self
                     .connector
                     .browser_profile(removal.scope.as_ref(), &removal.record.id)?;
                 if current.data.state == ProfileState::Removed {
-                    fs::remove_file(path).map_err(|_| NativeFailure::StorageUnavailable)?;
                     return Ok(());
                 }
                 if current.id != removal.record.id
@@ -703,13 +722,21 @@ impl BrowserHost {
                     &removal.record,
                     &removal.request_id,
                 )?;
-                fs::remove_file(path).map_err(|_| NativeFailure::StorageUnavailable)?;
-                tracing::info!(operation = "browser_removal", state = "confirmed");
                 Ok(())
             })();
-            if let Err(code) = result {
-                tracing::warn!(operation = "browser_removal", ?code);
-                first_failure.get_or_insert(code);
+            match acknowledgment {
+                Ok(()) => {
+                    if fs::remove_file(path).is_err() {
+                        first_failure.get_or_insert(NativeFailure::StorageUnavailable);
+                    } else {
+                        tracing::info!(operation = "browser_removal", state = "confirmed");
+                    }
+                }
+                Err(code) => tracing::warn!(
+                    operation = "browser_removal",
+                    state = "acknowledgment-deferred",
+                    ?code
+                ),
             }
         }
         first_failure.map_or(Ok(()), Err)
@@ -989,6 +1016,42 @@ mod tests {
     use delidev_desktop::browser::Profile;
 
     use super::*;
+    #[test]
+    fn offline_acknowledgment_retains_intent_without_failing_normal_quit() {
+        let temp = tempfile::tempdir().unwrap();
+        let sidecar = temp.path().join("sidecar");
+        fs::write(&sidecar, "#!/bin/sh\nexit 1\n").unwrap();
+        fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
+        let connector = Arc::new(Connector::new(sidecar, temp.path().to_path_buf()).unwrap());
+        let host = BrowserHost::new(temp.path().join("cef"), connector).unwrap();
+        let record = ProfileRecord {
+            id: uuid::Uuid::now_v7().to_string(),
+            revision: 2,
+            data: Profile {
+                server_id: uuid::Uuid::now_v7().to_string(),
+                device_id: uuid::Uuid::now_v7().to_string(),
+                account_id: uuid::Uuid::now_v7().to_string(),
+                state: ProfileState::RemovalPending,
+                deletion_request_id: uuid::Uuid::now_v7().to_string(),
+            },
+        };
+        let cache = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
+        host.require_removal(record.clone(), None).unwrap();
+        host.stopping.store(true, Ordering::Release);
+        host.finish_removals().unwrap();
+        assert!(!cache.exists());
+        let intent = host
+            .root
+            .join("removals")
+            .join(format!("{}.json", record.id));
+        let retained: Removal = read_json(&intent).unwrap();
+        assert!(retained.shutdown_confirmed);
+        let original_request = retained.request_id;
+        host.finish_removals().unwrap();
+        let retry: Removal = read_json(&intent).unwrap();
+        assert_eq!(retry.request_id, original_request);
+        assert!(!cache.exists());
+    }
     #[test]
     fn pending_cleanup_waits_for_owned_late_flush_and_native_close_proof() {
         let temp = tempfile::tempdir().unwrap();

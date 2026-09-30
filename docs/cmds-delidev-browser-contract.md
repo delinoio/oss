@@ -114,7 +114,9 @@ the server remains pending until a fresh exact ownership/status read and origina
 confirmation succeeds. A retry does not reopen the profile or infer completion.
 Each exit handles at most 64 intents within a 45-second loop budget, with the
 existing 40-second sidecar command bound; remaining or uncertain intents stay
-pending for a later process cleanup. Generated cache data and native fixtures
+pending for a later process cleanup. Deferred acknowledgments and exhausted
+cleanup budgets emit structured pending state and preserve a successful normal
+quit; failed local persistence or deletion remains a host failure. Generated cache data and native fixtures
 remain untracked.
 
 ## Security
