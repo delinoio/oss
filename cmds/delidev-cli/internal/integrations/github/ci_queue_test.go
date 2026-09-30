@@ -28,6 +28,20 @@ func ciQueueNodeFixture(node map[string]any) map[string]any {
 	return map[string]any{"data": map[string]any{"node": node}}
 }
 
+func TestCIQueryRejectsMergeQueueEntryAfterFinalRulesRead(t *testing.T) {
+	c, reads := ciClientFixture(t, func(read int, node map[string]any) map[string]any {
+		if read == 3 {
+			return ciQueueNodeFixture(node)
+		}
+		return map[string]any{"data": map[string]any{"node": node}}
+	})
+	query := domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryCI, Number: "17"}
+	value, err := c.QueryRepository(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", query)
+	if *reads != 3 || domain.SafeError(err).Code != domain.Conflict || value.CI != nil {
+		t.Fatal("queue entry after the final rules read retained earlier PR failure evidence", value.CI, err, *reads)
+	}
+}
+
 func TestQueueCICompletesIndependentEntryAndCheckPages(t *testing.T) {
 	c, reads := ciClientFixture(t, func(read int, node map[string]any) map[string]any {
 		envelope := ciQueueNodeFixture(node)

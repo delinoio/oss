@@ -142,7 +142,11 @@ func TestCIQueryBindsActiveRulesAndRejectsChangedResults(t *testing.T) {
 		})
 		query := domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryCI, Number: "17"}
 		value, err := c.QueryRepository(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", query)
-		if *reads != 2 {
+		wantReads := 3
+		if changed {
+			wantReads = 2
+		}
+		if *reads != wantReads {
 			t.Fatal("CI inventory was not rechecked", *reads)
 		}
 		if changed {
