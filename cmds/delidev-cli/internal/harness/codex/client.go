@@ -27,6 +27,7 @@ type Config struct {
 	API     *APIConfig
 }
 type Client struct {
+	home         string
 	wire         *nativewire.Connection
 	version      string
 	ownerID      domain.ID
@@ -179,7 +180,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	client = &Client{wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api}
+	client = &Client{home: home, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api}
 	if err := client.verifyAPI(ctx, config.Process.Cwd); err != nil {
 		return nil, err
 	}

@@ -237,6 +237,7 @@ type LocalOrigin struct {
 // Blocked or restored sessions must never be interpreted as completed execution.
 type Session struct {
 	Storage                *WorkspaceStorage          `json:"storage,omitempty"`
+	Fork                   *ForkOrigin                `json:"fork,omitempty"`
 	EstimatedCostBudget    *EstimatedCostBudget       `json:"estimated_cost_budget,omitempty"`
 	ScheduleOrigin         *ScheduleOrigin            `json:"schedule_origin,omitempty"`
 	LocalOrigin            *LocalOrigin               `json:"local_origin,omitempty"`

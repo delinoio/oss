@@ -19,7 +19,15 @@ type SessionDeletionCopy struct {
 	SnapshotID  ID      `json:"snapshot_id,omitempty"`
 }
 
+type SessionDeletionFork struct {
+	JobID            ID     `json:"job_id"`
+	RuntimeID        ID     `json:"runtime_id"`
+	CheckpointDigest string `json:"checkpoint_digest"`
+	JobInputDigest   string `json:"job_input_digest"`
+}
+
 type SessionDeletionWork struct {
+	Fork               *SessionDeletionFork  `json:"fork,omitempty"`
 	Version            uint32                `json:"version"`
 	DeletionID         ID                    `json:"deletion_id"`
 	ServerID           ID                    `json:"server_id"`
@@ -31,7 +39,7 @@ type SessionDeletionWork struct {
 }
 
 func (w SessionDeletionWork) Validate() error {
-	if w.Version != 1 || len(w.Copies) == 0 || len(w.Copies) > 4096 || len(w.PreparationDigests) > 4096 {
+	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil) || len(w.Copies) > 4096 || len(w.PreparationDigests) > 4096 {
 		return SessionDeletionPending()
 	}
 	for _, id := range []ID{w.DeletionID, w.ServerID, w.SessionID, w.MachineID, w.DeviceID} {
@@ -39,13 +47,16 @@ func (w SessionDeletionWork) Validate() error {
 			return SessionDeletionPending()
 		}
 	}
+	if w.Fork != nil && (w.Fork.JobID.Validate() != nil || w.Fork.RuntimeID.Validate() != nil || !deletionHash(w.Fork.CheckpointDigest) || !deletionHash(w.Fork.JobInputDigest) || len(w.PreparationDigests) == 0) {
+		return SessionDeletionPending()
+	}
 	seen := make(map[ID]bool, len(w.Copies))
 	for _, c := range w.Copies {
 		if c.Revision == 0 || c.InstanceID.Validate() != nil || !deletionHash(c.Digest) || (c.ExecutionID != "" && c.ExecutionID.Validate() != nil) {
 			return SessionDeletionPending()
 		}
 		switch c.Type {
-		case PrepareWorkspaceJob, RecoverWorkspaceJob, ExecuteSessionJob, RecoverExecutionJob, GenerateSessionTitleJob, WorkspaceStorageJob:
+		case PrepareWorkspaceJob, RecoverWorkspaceJob, ExecuteSessionJob, RecoverExecutionJob, GenerateSessionTitleJob, WorkspaceStorageJob, ForkSessionJob:
 		default:
 			return SessionDeletionPending()
 		}

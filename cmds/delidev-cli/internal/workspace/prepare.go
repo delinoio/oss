@@ -19,15 +19,22 @@ import (
 )
 
 type RepositorySpec struct {
-	PRTarget        *domain.PRGitTarget `json:"pr_target,omitempty"`
-	ID              domain.ID           `json:"id"`
-	Checkout        string              `json:"checkout"`
-	PreferredRemote string              `json:"preferred_remote,omitempty"`
-	Base            domain.Reference    `json:"base"`
-	Starting        domain.Reference    `json:"starting"`
-	AutoFetch       bool                `json:"auto_fetch"`
+	// ForkRegistrationSource preserves the original common-directory authority
+	// after the parent managed workspace is deleted. Copying still uses Checkout.
+	ForkRegistrationSource string              `json:"fork_registration_source,omitempty"`
+	PRTarget               *domain.PRGitTarget `json:"pr_target,omitempty"`
+	ID                     domain.ID           `json:"id"`
+	Checkout               string              `json:"checkout"`
+	PreferredRemote        string              `json:"preferred_remote,omitempty"`
+	Base                   domain.Reference    `json:"base"`
+	Starting               domain.Reference    `json:"starting"`
+	AutoFetch              bool                `json:"auto_fetch"`
 }
 type PrepareRequest struct {
+	// ForkSourceID is an immutable Worker-owned copy profile. Ordinary creation
+	// never accepts it; the fork coordinator binds the original source manifest.
+	ForkSourceID      domain.ID            `json:"fork_source_id,omitempty"`
+	ForkSourcePath    string               `json:"fork_source_path,omitempty"`
 	SessionID         domain.ID            `json:"session_id"`
 	MachineID         domain.ID            `json:"machine_id"`
 	OriginMachineID   domain.ID            `json:"origin_machine_id,omitempty"`
@@ -125,7 +132,7 @@ func (r PrepareRequest) validate() error {
 		return err
 	}
 	for _, repo := range r.Repositories {
-		if !filepath.IsAbs(repo.Checkout) {
+		if !filepath.IsAbs(repo.Checkout) || repo.ForkRegistrationSource != "" && !filepath.IsAbs(repo.ForkRegistrationSource) {
 			return domain.Fail(domain.InvalidArgument, "A checkout path must be absolute on this Worker.", "Use Worker repository inspection.")
 		}
 	}
@@ -135,6 +142,12 @@ func (r PrepareRequest) validate() error {
 // Server-side evidence validation cannot interpret a remote Worker's paths
 // with the server host OS. ValidateResult checks them against the Worker OS.
 func (r PrepareRequest) validateStructure() error {
+	if r.ForkSourceID != "" && (r.ForkSourceID.Validate() != nil || r.ForkSourceID == r.SessionID) {
+		return ResultUncertain()
+	}
+	if r.ForkSourcePath != "" && (r.ForkSourceID == "" || r.Type != domain.GeneralChat) {
+		return ResultUncertain()
+	}
 	if err := r.SessionID.Validate(); err != nil {
 		return err
 	}
@@ -160,6 +173,9 @@ func (r PrepareRequest) validateStructure() error {
 	primary := false
 	prTargets := 0
 	for _, repo := range r.Repositories {
+		if repo.ForkRegistrationSource != "" && (r.ForkSourceID == "" || r.Type != domain.Worktree) {
+			return ResultUncertain()
+		}
 		if err := validatePRPreparation(repo, r.Type); err != nil {
 			return err
 		}
@@ -183,6 +199,10 @@ func (r PrepareRequest) validateStructure() error {
 	return nil
 }
 func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest, error) {
+	return m.prepare(ctx, request, nil)
+}
+
+func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnapshot *ForkSnapshot) (Manifest, error) {
 	if err := request.validate(); err != nil {
 		return Manifest{}, err
 	}
@@ -236,6 +256,11 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 			return Manifest{}, domain.Fail(domain.RecoveryRequired, "This session already owns a different workspace preparation.", "Inspect its recorded workspace; never overwrite an existing checkout.")
 		}
 		if old.State == Ready {
+			if forkSnapshot != nil {
+				// A fresh fork cannot adopt a prior workspace whose native side
+				// effects are not proved by this preparation attempt.
+				return old, ResultUncertain()
+			}
 			if err := m.verify(old); err != nil {
 				return old, err
 			}
@@ -256,6 +281,7 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 		}
 		return security.WriteAtomic(manifestPath, raw)
 	}
+	var copies []forkCopy
 	if err := write(); err != nil {
 		return uncertain(err)
 	}
@@ -283,6 +309,13 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 		if err := security.PrivateDir(manifest.PrimaryPath); err != nil {
 			return failed(domain.SafeError(err))
 		}
+		if request.ForkSourceID != "" {
+			copy, err := copyForkTree(ctx, request.ForkSourcePath, manifest.PrimaryPath, false)
+			if err != nil {
+				return failed(err)
+			}
+			copies = append(copies, copy)
+		}
 	} else {
 		for _, spec := range request.Repositories {
 			if err := ctx.Err(); err != nil {
@@ -293,6 +326,16 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 				return failed(err)
 			}
 			prepared := PreparedRepository{ID: spec.ID, Source: inspection.Root, Base: spec.Base, Starting: spec.Starting, Owned: request.Type == domain.Worktree}
+			if spec.ForkRegistrationSource != "" {
+				// Both authorities must still identify one common Git directory before
+				// recording the stable registration source used for recovery and deletion.
+				copied, e := git.run(ctx, inspection.Root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+				registered, re := git.run(ctx, spec.ForkRegistrationSource, "rev-parse", "--path-format=absolute", "--git-common-dir")
+				if e != nil || re != nil || trimGit(copied) != trimGit(registered) {
+					return failed(ResultUncertain())
+				}
+				prepared.Source = spec.ForkRegistrationSource
+			}
 			if request.Type == domain.Local {
 				// Local means exactly the existing checkout. Do not fetch, select a new
 				// starting branch, or prepare a replacement tree for any repository.
@@ -351,8 +394,20 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 				if err := write(); err != nil {
 					return failed(domain.SafeError(err))
 				}
-				if _, err = git.run(ctx, inspection.Root, "worktree", "add", "--detach", "--", prepared.Path, prepared.StartingCommit); err != nil {
+				args := []string{"worktree", "add", "--detach"}
+				if request.ForkSourceID != "" {
+					args = append(args, "--no-checkout")
+				}
+				args = append(args, "--", prepared.Path, prepared.StartingCommit)
+				if _, err = git.run(ctx, inspection.Root, args...); err != nil {
 					return failed(err)
+				}
+				if request.ForkSourceID != "" {
+					copy, err := copyForkRepository(ctx, git, inspection.Root, prepared.Path, prepared.StartingCommit)
+					if err != nil {
+						return failed(err)
+					}
+					copies = append(copies, copy)
 				}
 			}
 			if !prepared.Owned {
@@ -369,7 +424,19 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 	if err := ctx.Err(); err != nil {
 		return failed(domain.SafeError(err))
 	}
+	// Compare every source again after the final repository has been copied.
+	// A valid per-repository prefix alone cannot prove an all-repository snapshot.
+	for _, copy := range copies {
+		if err := copy.verify(ctx, git); err != nil {
+			return failed(err)
+		}
+	}
 	manifest.State = Ready
+	if forkSnapshot != nil {
+		if err := forkSnapshot.Verify(ctx, manifest); err != nil {
+			return failed(err)
+		}
+	}
 	if err := write(); err != nil {
 		return failed(domain.SafeError(err))
 	}

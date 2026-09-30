@@ -134,7 +134,17 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			jobLocks[i].Close()
 		}
 	}()
-	allowAbsentWorkspace := true
+	allowAbsentWorkspace := w.Fork == nil
+	if w.Fork != nil && !proof.RemovalStarted {
+		if _, err := executionCheckpointPath(root, w.Fork.RuntimeID); err != nil {
+			return proof, domain.SessionDeletionPending()
+		}
+		raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(w.Fork.RuntimeID), "fork-completion.json"), maxExecutionCheckpointBytes)
+		var checkpoint ForkCheckpoint
+		if err != nil || executionInputDigest(raw) != w.Fork.CheckpointDigest || domain.Decode(raw, &checkpoint) != nil || checkpoint.Version != 1 || checkpoint.JobID != w.Fork.JobID || checkpoint.JobInputDigest != w.Fork.JobInputDigest || checkpoint.RuntimeID != w.Fork.RuntimeID || checkpoint.SessionID != w.SessionID || checkpoint.MachineID != w.MachineID || string(mustForkJSON(checkpoint)) != string(raw) {
+			return proof, domain.SessionDeletionPending()
+		}
+	}
 	for _, copy := range w.Copies {
 		// Native execution and final journal/report publication retain this
 		// outer lock after workspace and outbox locks are released. Join it
@@ -228,6 +238,11 @@ func removeSessionTree(ctx context.Context, root, path string) error {
 func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
 	paths := []string{filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock")}
 	paths = append(paths, workspace.SessionStorageCopyPaths(root, w)...)
+	if w.Fork != nil {
+		// The source job journal may be shared with a live parent or already gone.
+		// Only the child-bound immutable checkpoint grants ownership of this runtime.
+		paths = append(paths, filepath.Join(root, "runtimes", string(w.Fork.RuntimeID)))
+	}
 	titlePrefixes := map[string]bool{}
 	for _, copy := range w.Copies {
 		if e := ctx.Err(); e != nil {
