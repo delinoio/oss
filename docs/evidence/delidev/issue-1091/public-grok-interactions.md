@@ -10,14 +10,26 @@ Existing first-text successful history and original Stop remain separately teste
 
 ## Executed validation
 
-- Root frozen `pnpm install` and exact-path Git LFS hydration of the desktop icon succeeded before asset validation.
-- API client build and desktop TypeScript typecheck passed.
-- `pnpm proto:check` passed lint, breaking and reproducible generated bindings.
-- Original public projection tests passed for mixed tools and approved/cancelled/abandoned/revised Plan fixtures, preserving original exact JSON values.
-- Transactional public Write tests passed for once/session/rejection, exact receipt replay, competing responses, wrong response kind, stale revisions, Stop and Worker-instance revocation.
-- Controlled original first-input process tests passed for Write rejection and native Plan completion; the initial broader run also passed Write allow and existing first text. A loaded-host initialization deadline failure was rerun successfully.
-- Focused new desktop tests passed (9 tests), including exact large revision, cancellation, original answer/notes, revision display and malformed/mixed request rejection.
-- Required default `pnpm test` was executed twice. The cancellation-form defect found in the first run was corrected and focused tests passed. The second run had 80 passing files/961 passing tests and 5 failing files/8 failing tests with existing fixture/timeouts under concurrent host load. A serial suite is in progress to distinguish contention from regressions.
-- Required root Go race suite is in progress with bounded package concurrency; an existing CLI workspace fixture exceeded its operation deadline. Remaining outcomes and focused response/Plan regressions will be recorded after completion.
+All checks below ran in the isolated issue worktree on macOS arm64. Focused native tests use temporary private state and controlled fixture processes. No real provider credential or account was used.
 
-No unperformed native/account/platform acceptance is inferred from parser, transactional or controlled-process results.
+| Check | Result |
+| --- | --- |
+| Root `pnpm install --frozen-lockfile`, exact-path Git LFS hydration of the desktop icon | Passed; the consumed desktop icon is hydrated. |
+| API client build, desktop `pnpm typecheck` | Passed after the final frontend changes. |
+| Root `pnpm proto:check` | Passed lint, breaking and reproducible generated bindings. This change adds Resource JSON variants without changing the protobuf service/schema. |
+| Original tool projection and public first-input fixtures | Mixed Read/Write/question and approved/cancelled/abandoned/revised Plan projection passed. Controlled Write allow/reject, native Plan and existing first-text closure passed in focused runs. A later combined race rerun failed three cases during original API initialization before public input; those deadline/uncertain-delivery failures are retained. |
+| Transactional public Write response regressions, with Go race detection | Passed once/session/rejection, exact receipt replay, competing responses, wrong response kind, stale revisions, Stop and Worker-instance revocation. |
+| Transactional original questions, Plan revisions/transitions and initial Plan completion, with Go race detection | Passed answer/notes, exact original revision ownership, approved/cancelled/abandoned transitions, and initial Plan terminal/report without a common approval gate. |
+| Worker original-response boundary and extra-publication regressions, with Go race detection | Passed one native reply after a lost delivery receipt, competing control, lost claim acknowledgment, foreign claim rejection, Stop/revocation and uncertain-delivery retention. |
+| CLI original question/approval response parity, with Go race detection | Passed original response documents and exact receipt replay after native closure. |
+| Public tools terminal/report regressions, with Go race detection | Passed original aggregate validation, lost terminal acknowledgment and independently verified process/workspace cleanup reporting. |
+| Root `go vet -p 1 ./cmds/delidev-cli/...` | Passed. |
+| `go build -p 1 -o /private/tmp/delidev-1091-validation-cli ./cmds/delidev-cli` | Passed with task-private build/module caches. |
+| Focused desktop original-interaction and existing native Grok tests | Passed all 101 tests after exact option and aggregate display validation. |
+| Desktop bundle dry-run, desktop launch, widget and production build checks | Passed independently: 8 bundle tests, 16 launch tests, widget check and production build. |
+| Required root `GOMAXPROCS=2 go test -race -p 1 ./cmds/delidev-cli/... -timeout=30m` | Still running at this evidence update; existing CLI workspace, discovery, Claude cleanup and Codex steer fixtures have failed their deadlines/reconciliation checks. This is not a passing full-suite result. |
+| Required desktop `pnpm test` | Executed repeatedly. The run with a private build cache passed 969/970 unit tests and failed the existing tray test's five-second timeout; that test passed separately with a 20-second budget. The final run with both private Go caches passed 84 files/969 tests and failed the existing settings-preferences integration assertion waiting for its create button. That scenario passed in the earlier focused settings rerun. Packaging phases passed independently. Neither run is a passing full-script result. |
+
+The first full frontend run found a question cancellation defect, which was corrected. A subsequent default run passed 80 files/961 tests and failed 5 files/8 tests. Serial unit validation passed 83 files/967 tests with two existing settings integration hook timeouts; both settings tests passed separately with a 60-second hook budget. No test source timeout was weakened. A later complete attempt passed 957 tests but lost fixture initialization when shared Go build-cache objects and the pinned toolchain compiler disappeared during concurrent work. Task-private `GOCACHE` and `GOMODCACHE` were then used for stable subsequent compilation. Process inspection showed multiple concurrent native suites and compilers; host contention is an inference for deadline failures, not proof that every failure is unrelated to this change.
+
+The full-suite failures remain visible. No unperformed native/account/platform/release acceptance, unsupported richer Stop terminal, continuation, or broader issue #964 completion is inferred from parser, transactional or controlled-process results.
