@@ -50,7 +50,7 @@ function useSessionStream(id: string) {
     const known = new Set<string>();
     const run = async () => {
       for await (const change of synchronizeResources(client, { kind: EntityKind.SESSION, sessionId: id }, {
-        signal: controller.signal, watchKinds: [EntityKind.MESSAGE, EntityKind.QUEUE, EntityKind.INTERACTION, EntityKind.SUBAGENT],
+        signal: controller.signal, watchKinds: [EntityKind.MESSAGE, EntityKind.QUEUE, EntityKind.INTERACTION],
         maxResources: 2000, maxDocumentBytes: 8 << 20,
       })) {
         if (controller.signal.aborted) return;
