@@ -109,9 +109,13 @@ is introduced, so no migration backup is needed for this extension.
 
 Private Worker command/registration claims live under the action job directory.
 Each claim creates missing private root/jobs/job directories and validates existing
-components before its atomic write; shared or symlinked scopes are rejected rather
+components before its exclusive create; shared or symlinked scopes are rejected rather
 than repaired. Compaction does not rely on the ordinary execution publisher to
 create this scope.
+Registration and command claims synchronize both file and parent before their
+dependent side effect. Complete, partial and identical existing claims cannot be
+overwritten, removed or retried, even if the outer job journal was lost. Concurrent
+claim creation grants at most one writer.
 After native and workspace cleanup join, an exclusive atomic
 `compaction-checkpoints/<action-id>.json` file binds server/device/instance/job and exact assignment revision, canonical
 assignment digest, original assignment/completion and native checkpoint/reference.

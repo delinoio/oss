@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -219,5 +221,65 @@ func TestCompactionClaimsRejectUnsafeScopeBeforeWriting(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCompactionClaimsNeverReplaceRetainedSendEvidence(t *testing.T) {
+	for _, name := range []compactionClaimName{compactionRegistrationClaim, compactionCommandClaim} {
+		t.Run(string(name), func(t *testing.T) {
+			root, job := filepath.Join(t.TempDir(), "worker"), domain.NewID()
+			original := struct{ ActionID domain.ID }{domain.NewID()}
+			if err := writeCompactionClaim(root, job, name, original); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(root, "jobs", string(job), string(name))
+			before, err := security.ReadPrivate(path, 1024)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, value := range []any{original, struct{ ActionID domain.ID }{domain.NewID()}} {
+				if err := writeCompactionClaim(root, job, name, value); domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("retained claim allowed another native send", err)
+				}
+				after, err := security.ReadPrivate(path, 1024)
+				if err != nil || string(after) != string(before) {
+					t.Fatal("retained send evidence was overwritten", err)
+				}
+			}
+			// A torn write is still evidence of an attempted claim. It cannot be
+			// removed or repaired by a fresh outer Worker journal.
+			if err := security.WriteAtomic(path, []byte(`{"action_id":`)); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeCompactionClaim(root, job, name, original); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("partial claim was silently repaired", err)
+			}
+			retained, err := security.ReadPrivate(path, 1024)
+			if err != nil || string(retained) != `{"action_id":` {
+				t.Fatal("partial claim evidence changed", err)
+			}
+		})
+	}
+}
+
+func TestCompactionCommandClaimHasOneConcurrentWriter(t *testing.T) {
+	root, job := filepath.Join(t.TempDir(), "worker"), domain.NewID()
+	var successes atomic.Int32
+	var writers sync.WaitGroup
+	for n := 0; n < 8; n++ {
+		writers.Add(1)
+		go func() {
+			defer writers.Done()
+			err := writeCompactionClaim(root, job, compactionCommandClaim, struct{ ActionID domain.ID }{domain.NewID()})
+			if err == nil {
+				successes.Add(1)
+			} else if domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Error("unexpected claim failure", err)
+			}
+		}()
+	}
+	writers.Wait()
+	if successes.Load() != 1 {
+		t.Fatal("native send claim had multiple writers", successes.Load())
 	}
 }

@@ -63,7 +63,32 @@ func writeCompactionClaim(root string, job domain.ID, name compactionClaimName, 
 			return domain.CompactionUncertain()
 		}
 	}
-	return writeJSON(filepath.Join(directory, string(name)), value)
+	data, err := json.Marshal(value)
+	if err != nil {
+		return domain.CompactionUncertain()
+	}
+	// Creation itself claims the send exactly once. Even a partial write must
+	// remain authoritative after loss of the outer journal; never replace or
+	// remove it to manufacture a fresh native command opportunity.
+	path := filepath.Join(directory, string(name))
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return domain.CompactionUncertain()
+	}
+	defer f.Close()
+	if _, err := f.Write(data); err != nil {
+		return domain.CompactionUncertain()
+	}
+	if err := f.Sync(); err != nil {
+		return domain.CompactionUncertain()
+	}
+	if err := f.Close(); err != nil {
+		return domain.CompactionUncertain()
+	}
+	if err := security.SyncParent(path); err != nil {
+		return domain.CompactionUncertain()
+	}
+	return nil
 }
 
 type compactionPhase string
