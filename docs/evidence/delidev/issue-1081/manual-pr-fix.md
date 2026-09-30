@@ -99,3 +99,18 @@ create this record. `go test -race -p 1 ./cmds/delidev-cli/internal/store
 check the exact original proof references and absence for every unverified or
 dismissed scenario. This controlled evidence is not real native/account
 acceptance.
+
+## Initial identical-request repair
+
+A later focused race run reproduced two initial identical requests colliding in
+the existing exclusive provider inspection before receipt publication. The
+plain earlier fixture pass did not establish this concurrent boundary. Exact
+actor/input request coalescing now occurs before provider reads; waiters re-read
+the durable receipt. Ownership is cancellable and bounded to 64 original
+requests, while accepted receipt replay bypasses that capacity. Different actors
+or input cannot share an original request. This gate retains no native grant.
+
+`go test -race -p 1 ./cmds/delidev-cli/internal/server
+-run 'TestPRFix|TestManualPRFix' -count=5` passed (17.691 seconds), including all
+three retained problem scenarios and the new exact/capacity/cancellation cases.
+The fix is retained separately from the base-merge repair.

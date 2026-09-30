@@ -3,9 +3,11 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -19,6 +21,60 @@ import (
 type prFixReceipt struct {
 	AttemptID domain.ID `json:"attempt_id"`
 	SessionID domain.ID `json:"session_id"`
+}
+
+// Coalesce only an identical original actor/request while pre-acceptance
+// provider reads run outside the database transaction. Receipt replay stays
+// durable and precedes this bounded, ephemeral gate; it is not a native retry.
+type prFixRequestTracker struct {
+	mu     sync.Mutex
+	active map[domain.ID]*prFixRequestOwner
+}
+type prFixRequestOwner struct {
+	digest [sha256.Size]byte
+	done   chan struct{}
+}
+
+func (t *prFixRequestTracker) claim(ctx context.Context, request domain.ID, identity any) (func(), error) {
+	raw, err := json.Marshal(identity)
+	if err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256(raw)
+	for {
+		if ctx.Err() != nil {
+			return nil, domain.SafeError(ctx.Err())
+		}
+		t.mu.Lock()
+		if prior := t.active[request]; prior != nil {
+			t.mu.Unlock()
+			if prior.digest != digest {
+				return nil, domain.Fail(domain.Conflict, "The active fix request has different original input or actor.", "Preserve the original request ID and exact selection; no new lookup was started.")
+			}
+			select {
+			case <-ctx.Done():
+				return nil, domain.SafeError(ctx.Err())
+			case <-prior.done:
+				continue
+			}
+		}
+		if len(t.active) >= 64 {
+			t.mu.Unlock()
+			return nil, domain.Fail(domain.ResourceExhausted, "Too many original PR fix requests are being inspected.", "Wait for an existing request; accepted receipt replay remains available.")
+		}
+		if t.active == nil {
+			t.active = make(map[domain.ID]*prFixRequestOwner)
+		}
+		owner := &prFixRequestOwner{digest: digest, done: make(chan struct{})}
+		t.active[request] = owner
+		t.mu.Unlock()
+		return sync.OnceFunc(func() {
+			t.mu.Lock()
+			delete(t.active, request)
+			close(owner.done)
+			t.mu.Unlock()
+		}), nil
+	}
 }
 
 func (s *Service) GetPullRequestFixCapabilities(ctx context.Context, req *connect.Request[pb.GetPullRequestFixCapabilitiesRequest]) (*connect.Response[pb.GetPullRequestFixCapabilitiesResponse], error) {
@@ -258,6 +314,19 @@ func (s *Service) RequestPullRequestFix(ctx context.Context, req *connect.Reques
 	result, replayed, err := s.Store.Replay(ctx, request, "pr.fix.request", identity)
 	if err != nil {
 		return fail(err)
+	}
+	if !replayed {
+		release, err := s.prFixRequests.claim(ctx, request, identity)
+		if err != nil {
+			return fail(err)
+		}
+		defer release()
+		// Another identical caller may have accepted while this caller waited.
+		// Read its exact durable receipt before any provider inspection or plan.
+		result, replayed, err = s.Store.Replay(ctx, request, "pr.fix.request", identity)
+		if err != nil {
+			return fail(err)
+		}
 	}
 	if !replayed {
 		var set domain.PRProblemSet

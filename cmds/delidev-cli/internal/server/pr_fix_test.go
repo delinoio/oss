@@ -218,3 +218,41 @@ func TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion(t *testing.T) {
 		})
 	}
 }
+
+// In-flight input/actor ownership is bounded and cancellable independently of
+// durable receipt validation. Waiting never starts another provider lookup.
+func TestPRFixConcurrentRequestOwnershipIsExactBoundedAndCancellable(t *testing.T) {
+	var tracker prFixRequestTracker
+	id := domain.NewID()
+	release, err := tracker.claim(context.Background(), id, "original actor and input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if _, err := tracker.claim(context.Background(), id, "foreign actor or input"); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("foreign request coalesced", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	waiting := make(chan error, 1)
+	go func() { _, err := tracker.claim(ctx, id, "original actor and input"); waiting <- err }()
+	cancel()
+	if err := <-waiting; domain.SafeError(err).Code != domain.Canceled {
+		t.Fatal("waiting ignored cancellation", err)
+	}
+	for range 63 {
+		finish, err := tracker.claim(context.Background(), domain.NewID(), "independent selection")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer finish()
+	}
+	if _, err := tracker.claim(context.Background(), domain.NewID(), "overflow"); domain.SafeError(err).Code != domain.ResourceExhausted {
+		t.Fatal("unbounded owner inventory", err)
+	}
+	release()
+	next, err := tracker.claim(context.Background(), id, "original actor and input")
+	if err != nil {
+		t.Fatal("original request could not continue", err)
+	}
+	next()
+}
