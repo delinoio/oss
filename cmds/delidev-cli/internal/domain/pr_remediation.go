@@ -109,6 +109,9 @@ func EvaluatePRRemediation(problem PRProblem, observed RepositoryQueryResult, po
 		if observed.CI.Result.State == CIUnknown {
 			return PRRemediationCIUnknown, nil
 		}
+		if problem.CI.Source != observed.CI.Result.Source || problem.CI.Source == CIMergeQueueCommit && (observed.CI.MergeQueue == nil || problem.CI.QueueNodeID != observed.CI.MergeQueue.NodeID || problem.CI.QueueEntryNodeID != observed.CI.MergeQueue.Entry.NodeID) {
+			return PRRemediationNoCIFailure, nil
+		}
 		proof, err := NewPRCIObservation(problem.SetID, observed)
 		if err != nil {
 			return "", err

@@ -272,6 +272,11 @@ type Session struct {
 	NextExecutionIntent    ExecutionIntent            `json:"next_execution_intent,omitempty"`
 	Execution              *ExecutionProgress         `json:"execution,omitempty"`
 	StartupRejection       *ExecutionStartupRejection `json:"startup_rejection,omitempty"`
+
+	AccountChanges []SessionAccountChange `json:"account_changes,omitempty"`
+	// Current grant observations can precede native thread publication. They
+	// are copied into progress and reset only when a fresh execution is claimed.
+	CurrentNativeHistory NativeHistoryMode `json:"current_native_history,omitempty"`
 }
 
 type PreparationState string

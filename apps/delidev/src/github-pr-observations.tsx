@@ -19,7 +19,7 @@ export function validPRObservation(result: Document, query: GitHubQuery, item: D
   if (query.operation === QueryOperation.Feedback) return query.kind === "pull-request" && result.diff == null && result.checks == null && result.statuses == null && result.rules == null && result.ci == null && validPRFeedback(result.feedback, item);
   if (result.feedback != null) return false;
   const diff = object(result.diff), checks = object(result.checks), statuses = object(result.statuses);
-  if (query.operation === QueryOperation.CI) return query.kind === "pull-request" && result.diff == null && result.checks == null && result.statuses == null && result.rules == null && validPRCI(result.ci, item);
+  if (query.operation === QueryOperation.CI) return query.kind === "pull-request" && result.diff == null && result.checks == null && result.statuses == null && result.rules == null && validPRCI(result.ci, { ...item, repository_node_id: object(result.repository).node_id });
   if (result.ci != null) return false;
   if (query.operation === QueryOperation.Rules) return query.kind === "pull-request" && result.diff == null && result.checks == null && result.statuses == null && validPRRules(result.rules, item);
   if (result.rules != null) return false;

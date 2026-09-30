@@ -29,10 +29,11 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1   SystemCapability = 1
 	SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 SystemCapability = 2
 	// Optional current-user registrations on the server computer, never remote Workers.
-	SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1              SystemCapability = 3
-	SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1          SystemCapability = 4
-	SystemCapability_SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1 SystemCapability = 9
-	SystemCapability_SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1          SystemCapability = 11
+	SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1                SystemCapability = 3
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1            SystemCapability = 4
+	SystemCapability_SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1   SystemCapability = 9
+	SystemCapability_SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1            SystemCapability = 11
+	SystemCapability_SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1 SystemCapability = 5
 )
 
 // Enum value maps for SystemCapability.
@@ -45,15 +46,17 @@ var (
 		4:  "SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1",
 		9:  "SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1",
 		11: "SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1",
+		5:  "SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1",
 	}
 	SystemCapability_value = map[string]int32{
-		"SYSTEM_CAPABILITY_UNSPECIFIED":                   0,
-		"SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1":           1,
-		"SYSTEM_CAPABILITY_SESSION_FORWARDING_V1":         2,
-		"SYSTEM_CAPABILITY_USER_SERVICES_V1":              3,
-		"SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1":          4,
-		"SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1": 9,
-		"SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1":          11,
+		"SYSTEM_CAPABILITY_UNSPECIFIED":                     0,
+		"SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1":             1,
+		"SYSTEM_CAPABILITY_SESSION_FORWARDING_V1":           2,
+		"SYSTEM_CAPABILITY_USER_SERVICES_V1":                3,
+		"SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1":            4,
+		"SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1":   9,
+		"SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1":            11,
+		"SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1": 5,
 	}
 )
 
@@ -2445,7 +2448,7 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\aservice\x18\x01 \x01(\v2\x17.delidev.v1.UserServiceR\aservice\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed*\xc2\x02\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed*\xf9\x02\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1\x10\x01\x12+\n" +
@@ -2453,7 +2456,8 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\"SYSTEM_CAPABILITY_USER_SERVICES_V1\x10\x03\x12*\n" +
 	"&SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1\x10\x04\x123\n" +
 	"/SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1\x10\t\x12*\n" +
-	"&SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1\x10\v*\x84\x01\n" +
+	"&SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1\x10\v\x125\n" +
+	"1SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1\x10\x05*\x84\x01\n" +
 	"\x13BackupDeletionState\x12%\n" +
 	"!BACKUP_DELETION_STATE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dBACKUP_DELETION_STATE_PENDING\x10\x01\x12#\n" +

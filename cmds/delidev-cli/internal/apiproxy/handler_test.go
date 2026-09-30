@@ -31,6 +31,7 @@ type fixtureAuthority struct {
 	keys, releases, acquires atomic.Int32
 	authorize                func(context.Context, ReferenceKind, string) error
 	observe                  func(context.Context, ReferenceKind, string) error
+	history                  func(context.Context, bool) error
 }
 
 func (a *fixtureAuthority) Acquire(ctx context.Context, token string) (*Lease, error) {
@@ -45,7 +46,7 @@ func (a *fixtureAuthority) Acquire(ctx context.Context, token string) (*Lease, e
 			key = fixtureKey
 		}
 		return []byte(key), ctx.Err()
-	}, AuthorizeReference: a.authorize, ObserveReference: a.observe}, nil
+	}, AuthorizeReference: a.authorize, ObserveReference: a.observe, ObserveHistory: a.history}, nil
 }
 
 type lockedLog struct {

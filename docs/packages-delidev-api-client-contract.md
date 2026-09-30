@@ -141,6 +141,8 @@ its exact receipt. Explicit recovery is separate from native replay. Generated
 storage workflow or automatic retention is implied. Decimal byte/revision values
 remain precise. See the [storage contract](cmds-delidev-storage-contract.md).
 
+Generated `SessionQuery.switchSessionAccount` and the typed System stopped-Codex-account-switch capability expose explicit future selection. Preserve exact request/account/session revision after acknowledgement loss; replay is explicit and current-state-only. The server validates stopped ownership, portable history and compatibility. No client-side eligibility/routing, implicit Resume or credential access is introduced.
+
 ## Current-user service metadata
 
 Generated SystemQuery exports `getUserService` and `controlUserService` with the additive `USER_SERVICES_V1` capability and closed service enums. Keep exact bigint revisions and original request identity; pending/uncertain control cannot be retried as a fresh native write. Returned metadata excludes private paths, executable/process identity and authentication. Read capability and absent state through the existing real Go Connect fixture, without native registrations. See the [user-service contract](cmds-delidev-user-services-contract.md).
