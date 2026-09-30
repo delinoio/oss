@@ -100,7 +100,7 @@ func (c ExecutionContinuation) Validate(input ExecutionJobInput) error {
 	}
 	p, done := c.Previous, c.Completion
 	if c.PreviousAccountID != "" || c.PreviousConnectionID != "" {
-		if input.Configuration.Harness != Codex || c.PreviousAccountID.Validate() != nil || c.PreviousConnectionID.Validate() != nil || c.PreviousAccountID == input.AccountID || p.NativeHistory != FullNativeHistory || c.Intent != ContinueExplicitly {
+		if input.Configuration.Harness != Codex || c.PreviousAccountID.Validate() != nil || c.PreviousConnectionID.Validate() != nil || (c.PreviousAccountID == input.AccountID && c.PreviousConnectionID == input.ConnectionID) || p.NativeHistory != FullNativeHistory || c.Intent != ContinueExplicitly {
 			return invalid()
 		}
 	}

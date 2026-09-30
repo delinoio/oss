@@ -141,6 +141,90 @@ func TestStoppedAccountSwitchRetainsHistoryAndRequiresExplicitResume(t *testing.
 	}
 }
 
+func TestAccountSwitchBackPreservesPredecessorConnection(t *testing.T) {
+	for _, reconnect := range []bool{false, true} {
+		name := "original-connection"
+		if reconnect {
+			name = "reconnected-account"
+		}
+		t.Run(name, func(t *testing.T) {
+			f, b, oldToken := accountSwitchFixture(t, domain.FullNativeHistory, true)
+			ctx := context.Background()
+			client := sessionClient(f.accountFixture)
+			previous := f.input
+			if _, err := client.SwitchSessionAccount(ctx, ownerRequest(f.identity, switchRequest(f, b, t))); err != nil {
+				t.Fatal(err)
+			}
+			a := currentCatalogResource(t, f.accountFixture, f.account)
+			if reconnect {
+				disconnected, err := f.accounts.DisconnectAccount(ctx, ownerRequest(f.identity, &pb.DisconnectAccountRequest{Mutation: acctMutation(a, domain.NewID())}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				connected, err := connectAccount(f.accountFixture, disconnected.Msg.Account, domain.NewID(), "", true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				validated, err := f.accounts.ValidateAccount(ctx, ownerRequest(f.identity, &pb.ValidateAccountRequest{Mutation: acctMutation(connected.Msg.Account, domain.NewID())}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				a = validated.Msg.Account
+			}
+			connection := accountBody(t, a).Connection.ID
+			if reconnect && connection == previous.ConnectionID {
+				t.Fatal("reconnect retained the original connection")
+			}
+			if _, err := client.SwitchSessionAccount(ctx, ownerRequest(f.identity, switchRequest(f, a, t))); err != nil {
+				t.Fatal(err)
+			}
+			f.enqueue(t, "explicit A continuation", domain.ExecuteMode)
+			f.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
+			f.claim(t)
+			if f.input.AccountID != previous.AccountID || f.input.ConnectionID != connection || f.input.Continuation.Previous.ExecutionID != previous.ExecutionID {
+				t.Fatal("switch-back changed successor or predecessor ownership")
+			}
+			c := f.input.Continuation
+			if reconnect {
+				if c.PreviousAccountID != previous.AccountID || c.PreviousConnectionID != previous.ConnectionID {
+					t.Fatal("reconnected account lost the original checkpoint connection")
+				}
+				// A previous scope must remain a complete, distinct pair and may
+				// never authorize automatic or account-bound continuation.
+				for _, invalid := range []string{"same-scope", "missing-connection", "automatic", "account-bound"} {
+					copy := *c
+					switch invalid {
+					case "same-scope":
+						copy.PreviousConnectionID = connection
+					case "missing-connection":
+						copy.PreviousConnectionID = ""
+					case "automatic":
+						copy.Intent = domain.ContinueAutomatically
+					case "account-bound":
+						copy.Previous.NativeHistory = domain.AccountBoundHistory
+					}
+					if copy.Validate(f.input) == nil {
+						t.Fatalf("unsafe predecessor scope accepted: %s", invalid)
+					}
+				}
+			} else if c.PreviousAccountID != "" || c.PreviousConnectionID != "" {
+				t.Fatal("unchanged connection added a different predecessor scope")
+			}
+			lease, err := f.service.executionAuthority.Acquire(ctx, f.grant(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer lease.Release()
+			if lease.Scope.ConnectionID != connection {
+				t.Fatal("successor grant reused the predecessor connection")
+			}
+			if _, err := f.service.executionAuthority.Acquire(ctx, oldToken); err == nil {
+				t.Fatal("original execution grant survived the switch-back")
+			}
+		})
+	}
+}
+
 func TestAccountSwitchRejectsUncertainOrIneligibleSelectionsAtomically(t *testing.T) {
 	for _, scenario := range []string{"active", "unknown-history", "account-bound", "cleanup", "stale", "disabled-B", "outside-snapshot", "provider-off", "archived", "unconfirmed", "worker", "project-restricted", "title-uncertain", "contradictory-terminal"} {
 		t.Run(scenario, func(t *testing.T) {

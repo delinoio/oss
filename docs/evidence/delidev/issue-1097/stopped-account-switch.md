@@ -121,3 +121,36 @@ establish hosted-account inference, billing, subscription switching, desktop
 selection UI, Windows/Linux native execution or release acceptance. Unknown
 or required account-bound remote state remains unsupported. No product-wide
 issue #964 completion or GA claim follows from this increment.
+
+## PR #1177 predecessor-connection review repair
+
+The review inspected head `61fd64eb2c49bd7956f07ee7bcc35e073955ec82`.
+The authenticated temporary-server regression
+`TestAccountSwitchBackPreservesPredecessorConnection` reproduced the lost
+checkpoint connection when A was switched to B, disconnected/reconnected,
+then explicitly selected again before Resume. The unchanged-connection case
+passed; the reconnected case failed before the fix.
+
+Assignment creation and continuation validation now compare complete
+account/connection pairs. The regression verifies the old checkpoint binding,
+fresh successor connection/grant, and rejection of incomplete, identical,
+automatic or account-bound predecessor scopes. Focused validation passed:
+`GOMAXPROCS=2 go test -race -p 2 -timeout 5m
+./cmds/delidev-cli/internal/server ./cmds/delidev-cli/internal/domain
+-run 'Test(AccountSwitch|StoppedAccountSwitch|Continuation|ExecutionConfiguration|ExecutionInstructions)'
+-count=1` (server 87.975 seconds; domain 8.226 seconds).
+
+Two earlier regression-build attempts did not execute tests: shared Go cache
+files were missing, then shared compiler/vet binaries disappeared during the
+build. The reproduced failure and passing run used a private temporary build
+cache and private copy of the pinned Go 1.26.8 toolchain from its cached
+module archive, with `GOTOOLCHAIN=local`. No shared cache was cleared or other
+chat's process stopped.
+
+A read-only follow-up of the original broad race log additionally observed the
+Codex harness package's 20-minute timeout. The original command still had
+remaining packages at that observation. This is not a passing full race run
+or complete native acceptance, and it does not alter the earlier qualifications.
+
+`GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/internal/server
+./cmds/delidev-cli/internal/domain` also passed with that private toolchain/cache.
