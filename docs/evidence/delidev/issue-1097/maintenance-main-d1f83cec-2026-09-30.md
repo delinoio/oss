@@ -64,3 +64,12 @@ initialization failures; this pass does not repeat those unchanged attempts.
 No installed-native, hosted-account, subscription, platform-release or billing
 evidence is added. Repository-owned generated `dist` outputs are removed after
 validation and commits. The final push requires new-head CI and review evidence.
+
+## Committed-source result
+
+Merge commit `6f756e5fa2d5a816f6e844d0a319563f34fb4b8c` has the two exact
+parents recorded above. Root Lefthook Go formatting passed and the worktree was
+clean after the merge. The final repair inventory contained no Codex review
+threads, but the preceding head had developed a macOS Go failure and consequent
+CI Result failure. The separate [CI investigation](macos-grok-probe-ci-2026-09-30.md)
+records that failure and the bounded local repetitions without claiming CI repair.
