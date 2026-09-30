@@ -3549,6 +3549,57 @@ points. No production signing, notarization, publication or installed Dock
 appearance is claimed. Generated desktop/client `dist` directories were removed
 after verification.
 
+### Issue #1134 shorter AI Subscription category (2026-09-30)
+
+The shared Settings category label is now exactly **AI Subscription** in the
+sidebar, heading and compact option. Its `subscription-accounts` value, all
+16 categories and their order, account filtering, help text, mutation locks and
+retained workflows remain unchanged. No CSS, font, icon, API, schema, backend or
+dependency change is included. Current naming is synchronized in the desktop
+rules, project index and desktop/account contracts; historical evidence above
+retains its original wording. The desktop category inventory also now records
+the existing sixteenth Backups category rather than the stale count of fifteen.
+
+The existing empty-Settings navigation test now checks all 16 compact option
+labels and values, every sidebar selection and heading, and compact selection
+back to `subscription-accounts` with its exact AI Subscription text/current
+state. The first validation attempt stopped at a new test query's unsupported
+TypeScript option; it was corrected before the full successful run. `pnpm test`
+from `apps/delidev` passes typed-client generation, type checking, all 74 Vitest
+files / 948 tests, all 8 package-verifier and 16 asset/launcher cases, native
+Swift widget fixtures and the production build. `git diff --check` and
+`git lfs fsck` pass.
+
+Native visual smoke used the unchanged pinned CEF development launcher on
+macOS 26.6.2 arm64, with a separately built ad-hoc bundle, temporary private app
+and server state, and a separately paired loopback server. The existing server
+on port 46310 was not changed. At 100% zoom, manually resized native content
+viewports of 960×640 and 1440×900 both show the selected label on one line in the
+unchanged 240px navigation pane, with the matching heading and unchanged API
+Accounts label. The 2× captures measure 1920×1344 and 2880×1864 including the
+32px native title bar. The first isolated build encountered a relocated CMake
+cache in the copied build output; removing that temporary generated cache
+allowed the normal launcher to build, sign and run successfully.
+
+A separate temporary browser fixture reused the real Settings component,
+production styles and the existing test's in-memory Connect fixture. At
+720×640 CSS pixels and 100% zoom, the compact selector displays the exact new
+label and retains its value and heading. Chrome's native zoom control confirms
+200%; a 1440×900 viewport override then measures 720×450 CSS pixels. Compact
+selection between API Accounts and AI Subscription updates the corresponding
+heading; the selector and Close control remain within the viewport, with no
+horizontal overflow or visibly clipped focus outline. These are browser
+responsive/zoom checks, distinct from the two native CEF checks: the native host
+has a 960px minimum width, and its keyboard shortcuts did not expose working
+page zoom. Windows/Linux runtime, production signing and release/publication
+acceptance are not established by this copy change.
+
+Temporary browser fixtures and generated desktop/client `dist` directories
+were removed after validation. The isolated app received Quit; its remaining
+CEF processes required task-scoped termination during cleanup. The temporary
+server was explicitly stopped. No user credentials or hosted inference were
+used.
+
 ### 2026-09-30 — AI API Keys presentation (#1135)
 
 Inspected freshly fetched `main` at
@@ -3589,3 +3640,23 @@ restored, and fixture sources, preview and generated repository-owned `dist`
 output were removed after inspection. This is browser/component layout evidence,
 not packaged CEF, Windows/Linux installation, real hosted-provider or inference
 acceptance. Historical evidence above remains unchanged.
+
+During PR #1140's first maintenance pass, `main` advanced to
+`1399d131dcd5ef205f5be02b17073936b21f31c7` through PR #1139, shortening the
+subscription category to **AI Subscription**. The base was merged into the
+issue branch, retaining that label and its additional compact-navigation
+assertions alongside **AI API Keys**. Both original evidence entries were
+preserved. The complete `pnpm test` command passed again after conflict
+resolution: 74 files / 953 tests, TypeScript, package/launcher checks, widget
+fixtures and the production build. The earlier Chrome captures document the
+API presentation before this independent subscription-label merge; they do
+not establish new native evidence for the combined revision.
+
+The additional root `go test ./cmds/delidev-cli/...` run exited with failure:
+`TestCLISessionAcceptanceQueueAndArchive` returned `unavailable` while creating
+a review comment because the fixture's workspace reader reported
+`recovery_required`. All other reported packages passed. The isolated retry,
+`go test ./cmds/delidev-cli/internal/cli -run '^TestCLISessionAcceptanceQueueAndArchive$' -count=1`,
+passed in 47.588 seconds, and `go vet ./cmds/delidev-cli/...` passed separately.
+This records the full-suite failure and successful retry without claiming a
+full Go-suite pass or a native workspace-reader fix; no Go code changed.
