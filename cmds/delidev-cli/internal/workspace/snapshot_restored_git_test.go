@@ -3,6 +3,7 @@ package workspace
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,20 @@ import (
 
 func TestSnapshotRestoredGitIdentityAtLongPrivatePath(t *testing.T) {
 	m := manager(t)
+	diagnostics, err := os.CreateTemp(t.TempDir(), "native-preparation-*.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Logger = slog.New(slog.NewJSONHandler(diagnostics, nil))
+	m.Git.Logger = m.Logger
+	t.Cleanup(func() {
+		diagnostics.Close()
+		if t.Failed() {
+			if raw, err := os.ReadFile(diagnostics.Name()); err == nil {
+				t.Log(string(raw))
+			}
+		}
+	})
 	source, err := filepath.EvalSymlinks(repository(t))
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +49,11 @@ func TestSnapshotRestoredGitIdentityAtLongPrivatePath(t *testing.T) {
 	}
 	root = filepath.Join(root, strings.Repeat("x", rootLength-len(root)-1))
 	m.Root = root
+	// This fixture exercises restored stores, rather than long-path creation.
+	// Native Git for Windows defaults to disabled long paths. Enable them only
+	// in this temporary source for setup, then explicitly disable them before
+	// storage so restoration cannot borrow the source or ambient configuration.
+	gitTest(t, source, "config", "core.longpaths", "true")
 	manifest, err := m.Prepare(context.Background(), prepare)
 	if err != nil {
 		t.Fatal(err)
