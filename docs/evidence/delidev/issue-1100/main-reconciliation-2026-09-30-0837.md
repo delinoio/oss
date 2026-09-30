@@ -68,3 +68,8 @@ No repeat of those unchanged blocked local attempts was made in this pass.
 Fresh CI and Codex results on the pushed head are assessed by the next
 scheduled run. Fixtures, builds and a macOS test cannot establish hosted Grok,
 installed-provider, native visual, Windows/Linux product or release acceptance.
+
+The final helper snapshot later surfaced one actionable cancellation-race
+thread. Its reproduction and separate repair within the same single-push pass
+are recorded in [the review evidence](review-cancellation-race.md). The earlier
+empty thread inventory above describes its original observation time.

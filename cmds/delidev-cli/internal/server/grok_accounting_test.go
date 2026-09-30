@@ -137,6 +137,87 @@ func TestGrokAccountingExcludesUnverifiedLegacyAndInterruptedInputs(t *testing.T
 	}
 }
 
+func TestGrokAccountingExcludesSuccessRacingStopAndArchive(t *testing.T) {
+	type cancellationPhase uint8
+	const (
+		beforeTerminal cancellationPhase = iota
+		beforeCleanup
+		afterCleanup
+	)
+	phases := []struct {
+		name  string
+		phase cancellationPhase
+	}{{"before-terminal", beforeTerminal}, {"before-cleanup", beforeCleanup}, {"after-cleanup", afterCleanup}}
+	for _, action := range []pb.SessionAction{pb.SessionAction_SESSION_ACTION_STOP, pb.SessionAction_SESSION_ACTION_ARCHIVE} {
+		for _, phase := range phases {
+			t.Run(action.String()+"/"+phase.name, func(t *testing.T) {
+				ctx := context.Background()
+				f, terminal := grokServerTerminalFixture(t, true)
+				client := delidevv1connect.NewSessionServiceClient(f.http.Client(), f.http.URL)
+				control := func() {
+					t.Helper()
+					r, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, err = client.ControlSession(ctx, ownerRequest(f.service.Identity, &pb.ControlSessionRequest{
+						Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision},
+						Action:   action,
+					}))
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				if phase.phase == beforeTerminal {
+					control()
+				}
+				f.publish(t, terminal)
+				if phase.phase == beforeCleanup {
+					control()
+				}
+				report, _ := f.reportCompletion(t, grokCompletion(f, terminal.Sequence))
+				if phase.phase == afterCleanup {
+					control()
+				}
+				if replay, err := f.client.ReportWork(ctx, ownerRequest(security.Identity{Token: f.workerToken}, report)); err != nil || !replay.Msg.Replayed {
+					t.Fatal("cleanup receipt replay failed", err)
+				}
+				r, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				session, err := store.Decode[domain.Session](r)
+				if err != nil || session.Execution == nil || session.Execution.GrokTerminal == nil || session.Execution.GrokStop != nil || session.Execution.Outcome != domain.ExecutionSucceeded || !session.Execution.CleanupVerified || session.ActiveExecutionID != "" || session.Dispatch != domain.DispatchPaused {
+					t.Fatal("accounting exclusion lost native success or owned cleanup", err)
+				}
+				wantOutcome := domain.ExecutionSucceeded
+				if phase.phase == beforeTerminal {
+					wantOutcome = domain.ExecutionStopped
+				}
+				if session.Outcome != wantOutcome || action == pb.SessionAction_SESSION_ACTION_ARCHIVE && session.Archive != domain.Archived || action == pb.SessionAction_SESSION_ACTION_STOP && session.Archive != domain.NotArchived {
+					t.Fatal("accounting exclusion rewrote product outcome or Archive")
+				}
+				source, err := f.service.Store.Get(ctx, domain.UsageKind, session.Execution.LatestUsageID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				usage, err := store.Decode[domain.GrokUsageRecord](source)
+				if err != nil || usage.Usage.Counts != terminal.GrokTerminal.Counts {
+					t.Fatal("accounting exclusion erased original response usage", err)
+				}
+				got := grokAccountingSummary(t, f, pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1)
+				if phase.phase == afterCleanup {
+					if len(got.Totals.Accounting) != 1 || got.Totals.Accounting[0].Units != 1 || got.Totals.Accounting[0].KnownTotal != "16" {
+						t.Fatal("later control or receipt replay changed committed accounting")
+					}
+				} else if len(got.Totals.Accounting) != 0 || len(got.Groups) != 0 || len(got.Analytics.Models) != 0 {
+					t.Fatal("success racing accepted control entered verified accounting")
+				}
+			})
+		}
+	}
+}
+
 func TestMixedCodexGrokAccountingKeepsUnitKindsAndLegacyCounts(t *testing.T) {
 	f, e := grokServerTerminalFixture(t, true)
 	f.publish(t, e)

@@ -2,7 +2,7 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
-- Publish GrokClosedInput accounting only in the original independently verified completion transaction, after matching original input, response, closed history and owned cleanup. Echo explicit NATIVE_UNITS_V1 reads, retain legacy response-only coverage and bound the combined units/groups/wire sizes. Advertise native accounting independently with capability value 4; never price Grok categories.
+- Publish GrokClosedInput accounting only in the original independently verified completion transaction, after matching original input, response, closed history and owned cleanup. Require successful product outcome and no original job cancellation at that commit, including Stop/Archive accepted after native success but before cleanup retention. Preserve native success/cleanup separately and retain units committed before later controls. Echo explicit NATIVE_UNITS_V1 reads, retain legacy response-only coverage and bound the combined units/groups/wire sizes. Advertise native accounting independently with capability value 4; never price Grok categories.
 
 - Keep PR activity projection and original-source validation in `activity_pr.go` under the activity contract. Validate immutable original versions and stable numeric PR ownership, preserve historical navigation across repository renames, cap complete pages in protobuf and JSON, and advertise the typed activity capability. Reads cannot change Inbox or PR handling or infer verified handling from an attempt.
 

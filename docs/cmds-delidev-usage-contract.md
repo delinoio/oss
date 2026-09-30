@@ -152,8 +152,13 @@ after its acknowledged successful first-text terminal and independent owned
 workspace cleanup. It requires original closed user-input digest / native turn,
 matching retained response observation, native closure identity and closed-history
 digest. Legacy terminals without that original user proof, interrupted partial
-text, pre-text interruption, success racing Stop and incomplete cleanup produce
-no unit. The existing live Worker history comparison rejects altered native
+text, pre-text interruption, success racing accepted Stop or Archive before
+completion retention, and incomplete cleanup produce no unit. The completion
+transaction requires a successful product outcome and no original job
+cancellation, including controls accepted after native success but before the
+cleanup report. Native success and verified cleanup remain independently
+retained; later controls never remove an already committed accounting unit.
+The existing live Worker history comparison rejects altered native
 history before terminal publication; receipt recovery never repeats native work.
 
 The immutable row retains the original report UUID-v7 receipt, job, input and
