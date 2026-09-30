@@ -51,10 +51,40 @@ interference qualification.
 - Required ignored DevHud administrator and ach embedded assets were generated
   before repository commit hooks; generated `dist` output is removed after validation.
 
-The complete DeliDev Go race suite is running separately for this composition;
-its outcome will be recorded below before the final push. Prior full-suite failures
-and exact-main comparisons in [the original evidence](README.md) remain valid
-historical observations and are not replaced by these focused passes.
+## Complete race-suite outcome
+
+`GOCACHE=/private/tmp/delidev-1080-go-cache go test -race -p 4 -timeout 20m
+./cmds/delidev-cli/...` completed with exit 1 on the composed source committed as
+`5e7da13d1c96c46aee37f38c808f5b97789216d2`. No package reached the configured
+twenty-minute deadline, and no restore test failed. The broad suite remains
+non-passing; these focused and package-level passes do not replace that result.
+
+| Package | Result | Observation |
+| --- | --- | --- |
+| CLI | Failed, 185.106s | `TestCLISessionAcceptanceQueueAndArchive`: creation-comparison workspace file reader unavailable at `sessions_test.go:239`. |
+| Claude harness | Failed, 216.080s | `TestProbeOwnsOnlyBoundedPrivateInitialization/foreign`: timeout returned unavailable instead of unsupported; `TestStreamRejectsProtocolFailuresAndStopsOwnedScope/invalid-utf8`: owned incompatible scope did not stop within the fixture wait. |
+| Workspace | Failed, 690.490s | `TestWorkspaceDiffUnbornAndBoundedResults`: bounded oversized-diff observation timed out at `diff_test.go:170`. |
+| Store | Passed, 457.248s | Includes every backup restore test and the new PR activity deletion regression. |
+| Server | Passed, 1043.885s | Includes authenticated restore/barrier tests and the merged server fixtures. |
+| Worker | Passed, 325.227s | Existing execution/cleanup fixtures. |
+| Grok harness | Passed, 1184.342s | Completed before the package deadline. |
+| Nativewire | Passed, 19.963s | The earlier independently baseline-reproduced logging-buffer race did not recur in this run. |
+
+All remaining tested packages passed, including API proxy, connections,
+credentials, domain, forwarding, common harness, Codex, OpenCode, GitHub,
+presentation, process, providers, security and user services. The independent
+cache avoided the missing-cache-file build failures from the initial run.
+
+Prior full-suite failures and exact-main comparisons in
+[the original evidence](README.md) remain valid historical observations. Prior
+unchanged-base runs independently reproduced the named CLI and Claude failures;
+this maintenance pass did not rerun those baselines. The workspace fixture also
+failed previously, but this oversized-diff timeout has no independent baseline
+attribution. Its failure remains visible rather than being classified as a
+restore regression or proven upstream defect.
+
+Generated repository-owned `dist` directories have been removed. No tracked
+`dist` output or unrelated checkout changes are included in this repair.
 
 These results do not establish actual-account, native harness, Worker workspace,
 Windows/Linux execution or platform-distribution acceptance. Cross-builds and
