@@ -8,6 +8,8 @@ Authenticated owner/client RPC and CLI operations provide preview, snapshot crea
 
 ## Executed replacement checks
 
+Implementation checks below cover commits `ea83fc363a278caacfe0746c9fef9d0a958820c5` and `6e472548da7f4006814e166c3f4c1b42b47c642a`. The focused initial command was `go test -race -p 2 -timeout=15m ./cmds/delidev-cli/internal/workspace ./cmds/delidev-cli/internal/server ./cmds/delidev-cli/internal/worker ./cmds/delidev-cli/internal/cli -run 'Snapshot|WorkspaceStorage|WorkspaceCapability'`; its CLI package matched no tests.
+
 - Focused snapshot/Worker/server race regressions pass: two-repository restoration preserves unpushed commits, staged/unstaged changes, untracked/ignored data, executable modes and escaping symlinks; original sources can be offline during restore, and local remote fixtures receive no push.
 - Second-repository disk exhaustion, cancellation during copying and after publication, socket/FIFO/device rejection, stale preview, destination conflict, General Chat, original claim identity, interrupted-job recovery, receipt replay, Resume exclusion and only-copy protection pass.
 - Protocol formatting/lint and FILE compatibility against current main pass.
@@ -15,12 +17,19 @@ Authenticated owner/client RPC and CLI operations provide preview, snapshot crea
 - API client build/typecheck and all 44 tests pass, retaining generated service and historical compatibility imports.
 
 - The strengthened second-repository disk-full regression passes for both explicit snapshot creation and preview-bound manual cleanup, comparing the complete original workspace/Git digest and byte count afterward (`go test -race -timeout=5m ./cmds/delidev-cli/internal/workspace -run TestSnapshotSecondRepositoryDiskFailurePreservesAllSources`; 189.377s under concurrent host load).
+- Explicit storage CLI/journal regressions pass: `go test -race -p 2 -timeout=10m ./cmds/delidev-cli/internal/cli ./cmds/delidev-cli/internal/worker -run '^(TestStorageCLIUsesExactConnectMutationAndConfirmation|TestStorageJournalDoesNotReplayCleanupAndRecoveryBindsOriginal)$'` (CLI 7.896s; Worker 3.457s).
 - `go vet ./cmds/delidev-cli/...` passes.
 - Complete root `pnpm proto:check` passes, including regenerated-source freshness.
 - Workspace test binaries cross-compile for Windows amd64 and Linux arm64. This is compilation evidence only.
 - `git lfs fsck` passes. Generated API-client `dist` output is removed.
 
-The required full `go test -race -p 2 -timeout=30m ./cmds/delidev-cli/...` run is still in progress. Its CLI package has reported a workspace-file reader timeout in `TestCLISessionAcceptanceQueueAndArchive` (171.685s package time); an isolated rerun and a source-only current-main comparison are in progress. No full-suite success or regression classification is claimed yet.
+The required full `go test -race -p 2 -timeout=30m ./cmds/delidev-cli/...` run remains in progress as of 2026-09-30 07:00 UTC and has already reported these failures:
+
+- CLI: `TestCLISessionAcceptanceQueueAndArchive` reports the workspace-file reader unavailable at `sessions_test.go:215` (171.685s package time). An isolated branch rerun fails earlier during preparation at line 202 (126.401s package time). The exact isolated command on a source-only archive of current main `74701b8948694e2bf8f8ba6d07e596c2d2f358a7`, `go test -race -timeout=5m ./cmds/delidev-cli/internal/cli -run '^TestCLISessionAcceptanceQueueAndArchive$' -count=1`, reproduces the original line-215 reader failure (70.349s package time). That specific failure is therefore also present on the baseline on this host.
+- Claude harness (910.445s package time): bounded probe cleanup/timing, late acknowledgments, original callback cancellation, protocol-failure shutdown, and mismatched reply echo tests fail.
+- Codex harness (1164.175s package time): original approval response/execution, permission grant, and exact workspace-root tests fail with handshake or uncertain-delivery outcomes.
+
+The Claude and Codex harness source directories have no diff from the inspected main revision; their failures have not been independently reproduced on main. Other packages continue running. Concurrent native test processes are present on the host, but the record does not infer that scheduling explains every failure. No complete race-suite success is claimed.
 
 ## Evidence limits
 
