@@ -16,7 +16,7 @@ Follow the root and parent instructions and docs/cmds-delidev-workspace-contract
 
 - Snapshot creation/cleanup holds one Worker-wide cross-process publication gate through capacity admission and durable publication. Reject at 4,096 retained snapshots before staging; independent session locks cannot reserve the final global slot. A busy publication gate returns conflict without creating output or touching source.
 
-- Snapshot copying shares one remaining byte/entry budget across workspace data and every independent Git store. Reserve bounded manifest/config-rewrite byte headroom before payload writes, count Git roots once, and charge only new overlay directories. Reject excess files before creating them; growing files cannot write beyond their metadata reservation.
+- Snapshot copying shares one remaining byte/entry budget across workspace data and every independent Git store. Reserve bounded manifest/config-rewrite byte headroom before payload writes, count Git roots once, reserve an entry before recreating an absent Git config, and charge only new overlay directories. Reject excess files before creating them; growing files cannot write beyond their metadata reservation.
 
 - Snapshot deletion reserves two inventory entries for its workspace/manifest wrappers beyond the 8,192-entry workspace bound; reject unexpected snapshot-root content.
 

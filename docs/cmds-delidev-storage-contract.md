@@ -378,7 +378,8 @@ byte/entry budget applies during workspace and independent Git-store copying.
 Capture conservatively reserves the full 8 MiB manifest allowance plus 256 bytes
 per repository for copied Git config rewrites before copying payloads; this bounded
 headroom can reject data close to 8 GiB even when its final metadata would be smaller.
-Git roots count once, overlapping administration directories count only when new,
+Git roots count once, Git-created config files reserve an entry before writing,
+overlapping administration directories count only when new,
 and excess or growing-file bytes never enter the copied payload. Published snapshot
 inventory is capped at 4,096 entries. Creation and cleanup hold a Worker-wide
 cross-process publication gate from count admission through durable publication;

@@ -196,6 +196,15 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 			return err
 		}
 	}
+	// Git can recreate a missing local config. Its bounded bytes have reserved
+	// headroom, but the new payload file also needs a complete-inventory slot.
+	if _, err := os.Lstat(filepath.Join(target, ".git", "config")); errors.Is(err, os.ErrNotExist) {
+		if err := budget.take(0); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
 	// A relative worktree location keeps the independent Git store relocatable;
 	// original source checkouts, refs and administrative files are never changed.
 	if _, err := git.run(ctx, target, "config", "--local", "core.bare", "false"); err != nil {
