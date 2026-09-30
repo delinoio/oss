@@ -122,7 +122,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Native subagent observations follow `docs/cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
 
-- Validate subagent native ownership with one bounded complete-batch query before writes. Do not rescan large source-coverage JSON separately for every child; preserve cross-execution conflict detection without a schema migration.
+- Validate subagent native/product/execution ownership and original Claude parent-tool claims with one bounded complete-batch query before writes. Include retained terminal claims from earlier executions even when proposed native/product IDs are fresh. Do not rescan large source-coverage JSON separately for every child; preserve cross-execution conflict detection without a schema migration.
 
 - Same-account Codex forks follow `docs/cmds-delidev-forks-contract.md`. Keep source boundary reservations read-only, original actor/current account checks at acceptance/claim/publication, once-only journaled native Fork, private rollout proof, complete multi-repository snapshot checks across native creation, separate opened roots for copy reads/writes, synchronized copied files/directories, independent child queues and immutable continuation settings. Unknown native/cleanup outcomes never authorize another Fork.
 
