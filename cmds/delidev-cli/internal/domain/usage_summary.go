@@ -20,19 +20,23 @@ const (
 )
 
 type UsageSelection struct {
-	From        time.Time
-	Until       time.Time
-	SessionID   ID
-	ProjectID   ID
-	AccountID   ID
-	ProviderID  ID
-	ModelID     ID
-	GeneralChat bool
-	Granularity UsageTimeGranularity
-	TimeZone    string
+	From              time.Time
+	Until             time.Time
+	SessionID         ID
+	ProjectID         ID
+	AccountID         ID
+	ProviderID        ID
+	ModelID           ID
+	GeneralChat       bool
+	Granularity       UsageTimeGranularity
+	TimeZone          string
+	AccountingProfile AccountingProfile
 }
 
 func (f UsageSelection) Validate() error {
+	if f.AccountingProfile != ResponseOnlyAccounting && f.AccountingProfile != NativeUnitsV1Accounting {
+		return Fail(InvalidArgument, "Unsupported usage accounting profile.", "Choose a supported accounting profile.")
+	}
 	if f.From.UnixMilli() <= 0 || f.Until.UnixMilli() > 253402300799999 || !f.Until.After(f.From) || f.Until.Sub(f.From) > UsageWindowLimit || (f.GeneralChat && f.ProjectID != "") {
 		return Fail(InvalidArgument, "Invalid usage time range or project selection.", "Select a positive half-open time range of at most 366 days, and either a project or General Chat.")
 	}
@@ -139,13 +143,14 @@ func (m *UsageMeasure) add(value *int64) {
 }
 
 type UsageTotals struct {
-	Responses       uint32       `json:"responses"`
-	Input           UsageMeasure `json:"input"`
-	CachedInput     UsageMeasure `json:"cached_input"`
-	CacheWriteInput UsageMeasure `json:"cache_write_input"`
-	Output          UsageMeasure `json:"output"`
-	ReasoningOutput UsageMeasure `json:"reasoning_output"`
-	Total           UsageMeasure `json:"total"`
+	Accounting      []AccountingTotals `json:"accounting,omitempty"`
+	Responses       uint32             `json:"responses"`
+	Input           UsageMeasure       `json:"input"`
+	CachedInput     UsageMeasure       `json:"cached_input"`
+	CacheWriteInput UsageMeasure       `json:"cache_write_input"`
+	Output          UsageMeasure       `json:"output"`
+	ReasoningOutput UsageMeasure       `json:"reasoning_output"`
+	Total           UsageMeasure       `json:"total"`
 }
 
 func mergeUsageMeasure(target *UsageMeasure, source UsageMeasure) {
@@ -164,6 +169,30 @@ func mergeUsageMeasure(target *UsageMeasure, source UsageMeasure) {
 }
 
 func (t *UsageTotals) Merge(source UsageTotals) {
+	for _, incoming := range source.Accounting {
+		index := -1
+		for i := range t.Accounting {
+			if t.Accounting[i].Kind == incoming.Kind {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			t.Accounting = append(t.Accounting, incoming)
+			continue
+		}
+		target := &t.Accounting[index]
+		var sum, value big.Int
+		sum.SetString(target.KnownTotal, 10)
+		value.SetString(incoming.KnownTotal, 10)
+		if incoming.MeasuredUnits > 0 {
+			sum.Add(&sum, &value)
+			target.KnownTotal = sum.String()
+		}
+		target.Units += incoming.Units
+		target.MeasuredUnits += incoming.MeasuredUnits
+		target.UnavailableUnits += incoming.UnavailableUnits
+	}
 	t.Responses += source.Responses
 	mergeUsageMeasure(&t.Input, source.Input)
 	mergeUsageMeasure(&t.CachedInput, source.CachedInput)

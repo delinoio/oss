@@ -19,7 +19,16 @@ func usageMeasure(value domain.UsageMeasure) *pb.UsageMeasure {
 	return &pb.UsageMeasure{KnownTotal: value.KnownTotal, MeasuredResponses: value.MeasuredResponses, UnavailableResponses: value.UnavailableResponses}
 }
 func usageTotals(value domain.UsageTotals) *pb.UsageTotals {
-	return &pb.UsageTotals{Responses: value.Responses, Input: usageMeasure(value.Input), CachedInput: usageMeasure(value.CachedInput), CacheWriteInput: usageMeasure(value.CacheWriteInput), Output: usageMeasure(value.Output), ReasoningOutput: usageMeasure(value.ReasoningOutput), Total: usageMeasure(value.Total)}
+	result := &pb.UsageTotals{Responses: value.Responses, Input: usageMeasure(value.Input), CachedInput: usageMeasure(value.CachedInput), CacheWriteInput: usageMeasure(value.CacheWriteInput), Output: usageMeasure(value.Output), ReasoningOutput: usageMeasure(value.ReasoningOutput), Total: usageMeasure(value.Total)}
+	for _, unit := range value.Accounting {
+		wire := &pb.AccountingTotals{Kind: pb.AccountingUnitKind(unit.Kind), Units: unit.Units, KnownTotal: unit.KnownTotal, MeasuredUnits: unit.MeasuredUnits, UnavailableUnits: unit.UnavailableUnits}
+		wire.ActualCost = pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE
+		if unit.Kind == domain.GrokClosedInput {
+			wire.EstimatedCost = pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE
+		}
+		result.Accounting = append(result.Accounting, wire)
+	}
+	return result
 }
 func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.GetUsageSummaryRequest]) (*connect.Response[pb.GetUsageSummaryResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
@@ -35,7 +44,7 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 	if from == 0 {
 		from = until - (30 * 24 * time.Hour).Milliseconds()
 	}
-	f := domain.UsageSelection{From: time.UnixMilli(from), Until: time.UnixMilli(until), SessionID: domain.ID(req.Msg.SessionId), ProjectID: domain.ID(req.Msg.ProjectId), AccountID: domain.ID(req.Msg.AccountId), ProviderID: domain.ID(req.Msg.ProviderId), ModelID: domain.ID(req.Msg.ModelId), GeneralChat: req.Msg.GeneralChat, Granularity: domain.UsageTimeGranularity(req.Msg.Granularity), TimeZone: req.Msg.TimeZone}
+	f := domain.UsageSelection{From: time.UnixMilli(from), Until: time.UnixMilli(until), SessionID: domain.ID(req.Msg.SessionId), ProjectID: domain.ID(req.Msg.ProjectId), AccountID: domain.ID(req.Msg.AccountId), ProviderID: domain.ID(req.Msg.ProviderId), ModelID: domain.ID(req.Msg.ModelId), GeneralChat: req.Msg.GeneralChat, Granularity: domain.UsageTimeGranularity(req.Msg.Granularity), TimeZone: req.Msg.TimeZone, AccountingProfile: domain.AccountingProfile(req.Msg.AccountingProfile)}
 	if err := f.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
@@ -50,6 +59,7 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 		if err != nil {
 			return err
 		}
+		result.AccountingProfile = req.Msg.AccountingProfile
 		result.Totals = usageTotals(summary.Totals)
 		result.Estimates = estimateTotals(summary.Estimates)
 		for _, value := range summary.Estimates.Currencies {
@@ -147,10 +157,14 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 		return nil, rpc.Error(err, correlation)
 	}
 	dayBucketCount, modelGroupCount := 0, 0
+	accountingUnits := uint32(0)
+	for _, unit := range result.Totals.Accounting {
+		accountingUnits += unit.Units
+	}
 	if result.Analytics != nil {
 		dayBucketCount, modelGroupCount = len(result.Analytics.Days), len(result.Analytics.Models)
 	}
-	s.logger.DebugContext(ctx, "usage_summary_read_completed", "correlation_id", correlation, "group_count", len(result.Groups), "response_count", result.Totals.Responses, "day_bucket_count", dayBucketCount, "model_group_count", modelGroupCount)
+	s.logger.DebugContext(ctx, "usage_summary_read_completed", "correlation_id", correlation, "accounting_unit_count", accountingUnits, "group_count", len(result.Groups), "response_count", result.Totals.Responses, "day_bucket_count", dayBucketCount, "model_group_count", modelGroupCount)
 	response := connect.NewResponse(result)
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil

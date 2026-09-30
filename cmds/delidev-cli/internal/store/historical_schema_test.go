@@ -70,6 +70,13 @@ func historicalSchema(db *sql.DB, version string) (sql.Result, error) {
 		if _, err = tx.ExecContext(ctx, `CREATE TEMP TABLE `+quote("retained_"+table)+` AS SELECT * FROM main.`+quote(table)); err != nil {
 			return nil, err
 		}
+		// These frozen schemas predate native accounting. Retained user records
+		// must not carry a future layout marker into a reconstructed old fixture.
+		if table == "metadata" {
+			if _, err = tx.ExecContext(ctx, "DELETE FROM temp.retained_metadata WHERE key='native_accounting_layout'"); err != nil {
+				return nil, err
+			}
+		}
 	}
 	// Remove triggers first, then virtual tables (which own shadow tables), then
 	// ordinary tables. All recreation below comes from the historical SQL file.
