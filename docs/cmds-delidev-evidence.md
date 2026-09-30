@@ -3496,3 +3496,123 @@ not establish real-account, native desktop, provisioned widget, supported
 Windows/X11 runtime or release acceptance. Fresh pushed-head CI remains
 required, and the prior Codex review quota response is still missing-review
 evidence rather than an approval.
+
+### Desktop source-icon LFS preparation (2026-09-30)
+
+The ordinary macOS development entry point reproduced `Invalid PNG signature`
+while bundling its app icon: the source icon was a 132-byte Git LFS pointer for
+a 1,514,329-byte PNG. Frontend, sidecar, widget and native host builds had passed.
+Providing the exact digest-verified original icon as a temporary diagnostic
+input allowed bundling and native architecture/CEF/widget/entitlement/ad-hoc
+signature checks to pass. That diagnostic invocation intentionally exited before
+application state initialization; it was not a native UI acceptance result.
+
+The shared `prepare:assets` step now precedes native development, ordinary
+build/bundle and dry-run packaging. It restores only the unchanged committed
+source-icon pointer from cache or an exact-path current-ref LFS fetch, verifies
+size/digest/PNG container integrity and preserves local image and pointer edits.
+Existing PNGs require neither Git nor networking. Stable structured failures
+include recovery guidance without raw Git output, and cancellation joins the
+active Git child through the existing process lifecycle.
+
+Ten focused asset cases pass with temporary repositories and a local LFS remote,
+covering offline restoration, scoped fetch under conflicting caller filters,
+local changes, unavailable tools/downloads, integrity, concurrent edits and real
+SIGTERM delivery. The existing six launcher cases pass in their standalone run,
+and eight package verifier cases plus the native-package CI contract pass.
+The first concurrent aggregate was interrupted after an existing launcher signal
+case stalled. The initial full frontend run was also interrupted after existing
+backup, desktop, tray and Settings cases exceeded their deadlines under concurrent
+native compilation and host load. No product test timeout was increased.
+Normal root `pnpm install --frozen-lockfile` passed, including linked-worktree
+Lefthook installation.
+
+The launcher signal fixture waited only for inherited child stdout, which could
+arrive before the wrapper returned from process creation and installed its
+signal handlers. Both signal fixtures now wait for explicit wrapper and child
+readiness before sending SIGTERM. The combined `pnpm test:desktop-launch` passes
+all 16 cases without serializing files or increasing timeouts. The eight bundle
+verifier cases and native Swift widget fixtures also pass separately.
+
+Starting with the real source icon still represented by its LFS pointer after
+installation, ordinary `pnpm dev:desktop` restored the cached PNG automatically
+and completed frontend, sidecar, widget, native host, CEF app bundling and ad-hoc
+signing. The generated arm64 debug app passed native architecture, CEF resources,
+macOS 13 metadata, both widget extensions/entitlements and deep strict signature
+verification. Its initial launch reported `SidecarFailed` and an existing CEF
+browser session while another checkout's DeliDev/server was already running.
+Launching that exact generated app with a temporary HOME/cache and data directory
+displayed the native DeliDev local-server connection screen. The occupied local
+server port still prevented a fresh connection; this establishes window/rendering
+evidence, not authenticated server or provisioned WidgetKit acceptance. Only this
+temporary app was stopped, with runtime return and process exit code 0 observed;
+the pre-existing app and server were left running.
+
+A complete single-worker `pnpm test` attempt passed client generation and type
+checking, then finished Vitest with 71 passing files / 933 passing tests and
+3 failing files / 12 failures. Those failures were in the unchanged App, Settings
+integration and tray presentation tests (5-second deadlines and asynchronous
+element/state waits); that attempt did not establish a green full frontend suite.
+An isolated rerun of those exact three files passed all 49 tests with the
+unchanged deadlines and product code. The production frontend build passed
+during the native launch. No Rust, Go,
+frontend product code, runtime pins or signing policies changed.
+
+The final single-worker `pnpm test` pipeline passed all 74 frontend files / 945
+tests, client generation/type checking, all 8 package-verifier and 16
+asset/launcher cases, native Swift widget fixtures and the production frontend
+build. Test deadlines were unchanged. Generated desktop/client `dist` directories
+and this task's temporary native smoke data were removed after verification.
+
+
+### PR #1125 asset-preparation main conflict repair (2026-09-30)
+
+Merged main at `da93cb9b9962acb100cb018e255e4ff0b2374e33`, including
+the background-extracted icon, shared native asset preflight and the compatible
+`fast-uri` 3.1.8 / `ip-address` 10.7.1 lockfile updates. The only conflict was
+the append-only evidence ledger. Every heading and both parents' original
+evidence remain intact, including the earlier complete Go-race failure and
+isolated CLI success. The merged app instructions retain both original Grok
+response/Plan ownership and the new icon/preflight policies. No Grok source,
+Go source, Rust source or protocol binding changes in this merge.
+
+The normal root Node.js `24.20.0` `pnpm install --frozen-lockfile` passes,
+including ordinary linked-worktree hook/app preparation
+(`/tmp/delidev-1125-assets-merge-install.log`). The source icon is hydrated
+and its 585,665 bytes match SHA-256
+`88a91d0ea8462b0b8d59d53d212a4f4030f99a2775eb733b38be8234b077364f`;
+all 14 LFS asset files match their merged-index size/digest. The real
+`pnpm prepare:assets` accepts that validated PNG.
+
+The complete normal-concurrency Node 24 `apps/delidev` `pnpm test` pipeline
+passes 76 frontend files / 970 tests, client build/type checking, eight package
+verifier cases, all 16 combined asset/launcher fixtures, native Swift widget
+fixtures and production build
+(`/tmp/delidev-1125-assets-merge-frontend.log`). Public documentation tests
+pass site-switcher cases, production generation, route/content validation and
+15 clibox validation cases. All 95 repository CI contract tests and workflow
+validation pass (`/tmp/delidev-1125-assets-merge-contracts.log`).
+
+Final exported-icon verification reads the 1254px source, 256px PNG and every
+16/24/32/48/64/256px ICO frame. It passes near-opaque ribbon interior samples,
+graded edge alpha, transparent corners/centers, source-relative mean alpha
+coverage within one percentage point and exact PNG/256px ICO pixel equality.
+The source mean alpha is 0.319858; final frames range from 0.319692 to 0.320741.
+Light, dark and checkerboard composites of the final PNG were visually
+inspected and retain clean ribbon edges and the transparent play cutout
+(`/tmp/delidev-1125-assets-merge-icon-validation.json` and
+`/tmp/delidev-1125-assets-merge-icon-composites.png`). The first diagnostic
+sampler required a three-pixel opaque interior at 16px; that unsupported
+extra sampling assumption was corrected to use resolution-appropriate
+canonical interior samples. No source or exported icon was altered.
+
+`pnpm audit --json` exits zero with no Node advisories across its 621-dependency
+report (`/tmp/delidev-1125-assets-merge-audit.json`). Authenticated paginated
+GitHub Dependabot reads retain five open Cargo alerts: glib #181, rand #182
+and ml-dsa #212-214. The dependency security contract's pinned upstream
+constraints remain authoritative; no Cargo scanner, full security clearance,
+new exception or alert dismissal is claimed for this Node-only dependency
+merge. No native app launch, provisioned WidgetKit, real-account or release
+acceptance was performed here. Prior Rust/native/Go results retain their
+original revision and limits. Generated repository-owned `dist` output is
+removed after validation; the pushed head still requires fresh CI/review.
