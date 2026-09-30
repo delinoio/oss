@@ -160,6 +160,13 @@ confirm absence before returning a definite rejection; failed removal or unjoine
 inspection retains uncertainty. Successful inspection keeps the runtime for the
 original native creation attempt.
 
+Workspace request derivation checks all repository manifest eligibility and the
+complete request structure before creating a child process index or running Git.
+An unborn later repository, duplicate repository ID or missing primary therefore
+cannot leave an unpublished child process scope after definite rejection. Actual
+source HEADs are read only after those checks; native read/ownership failures
+retain recovery classification and process evidence.
+
 Every later pre-native workspace rejection applies the same unused-runtime
 cleanup after joined source inspection and independently verified owned-copy
 rollback. A `RecoveryRequired` workspace result may leave owned copies without

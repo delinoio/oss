@@ -170,33 +170,41 @@ func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child do
 		}
 		request.OriginMachineID = source.MachineID
 	}
-	git := m.Git
-	git.OwnerID, git.readOnly = child, true
-	if err := security.PrivateDir(filepath.Join(git.ProcessRoot, string(child))); err != nil {
-		return request, ResultUncertain()
-	}
+	// Reject all manifest-level problems before creating a child process index.
+	// An unpublished child has no deletion inventory to retire that index.
 	for _, repo := range source.Repositories {
 		if repo.LocalHEAD == LocalHEADUnborn {
 			return request, forkUnsupported()
 		}
-		head, err := git.run(ctx, repo.Path, "rev-parse", "--verify", "HEAD")
-		commit := strings.TrimSpace(string(head))
-		if err != nil || !canonicalCommit(commit) {
-			return request, ResultUncertain()
-		}
-		spec := RepositorySpec{ID: repo.ID, Checkout: repo.Path, Base: domain.Reference{Type: domain.CommitReference, Name: commit}, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}}
+		spec := RepositorySpec{ID: repo.ID, Checkout: repo.Path}
 		if kind == domain.Worktree {
 			spec.ForkRegistrationSource = repo.Source
-		}
-		if kind == domain.Local {
-			spec.Starting = domain.Reference{}
 		}
 		request.Repositories = append(request.Repositories, spec)
 		if repo.Path == source.PrimaryPath {
 			request.PrimaryRepository = repo.ID
 		}
 	}
-	return request, request.validate()
+	if err := request.validate(); err != nil {
+		return request, err
+	}
+	git := m.Git
+	git.OwnerID, git.readOnly = child, true
+	if err := security.PrivateDir(filepath.Join(git.ProcessRoot, string(child))); err != nil {
+		return request, ResultUncertain()
+	}
+	for i, repo := range source.Repositories {
+		head, err := git.run(ctx, repo.Path, "rev-parse", "--verify", "HEAD")
+		commit := strings.TrimSpace(string(head))
+		if err != nil || !canonicalCommit(commit) {
+			return request, ResultUncertain()
+		}
+		request.Repositories[i].Base = domain.Reference{Type: domain.CommitReference, Name: commit}
+		if kind == domain.Worktree {
+			request.Repositories[i].Starting = request.Repositories[i].Base
+		}
+	}
+	return request, nil
 }
 
 // scanForkTree uses an opened root for every access. Links and special files are
