@@ -3557,3 +3557,94 @@ tests then pass. Neither broad root Rust invocation is a completed successful
 run. No source in Forge or pnport is changed. Generated desktop/client `dist`
 directories are removed after validation, and native release/desktop visual
 acceptance remains separate.
+
+### Desktop source-icon LFS preparation (2026-09-30)
+
+The ordinary macOS development entry point reproduced `Invalid PNG signature`
+while bundling its app icon: the source icon was a 132-byte Git LFS pointer for
+a 1,514,329-byte PNG. Frontend, sidecar, widget and native host builds had passed.
+Providing the exact digest-verified original icon as a temporary diagnostic
+input allowed bundling and native architecture/CEF/widget/entitlement/ad-hoc
+signature checks to pass. That diagnostic invocation intentionally exited before
+application state initialization; it was not a native UI acceptance result.
+
+The shared `prepare:assets` step now precedes native development, ordinary
+build/bundle and dry-run packaging. It restores only the unchanged committed
+source-icon pointer from cache or an exact-path current-ref LFS fetch, verifies
+size/digest/PNG container integrity and preserves local image and pointer edits.
+Existing PNGs require neither Git nor networking. Stable structured failures
+include recovery guidance without raw Git output, and cancellation joins the
+active Git child through the existing process lifecycle.
+
+Ten focused asset cases pass with temporary repositories and a local LFS remote,
+covering offline restoration, scoped fetch under conflicting caller filters,
+local changes, unavailable tools/downloads, integrity, concurrent edits and real
+SIGTERM delivery. The existing six launcher cases pass in their standalone run,
+and eight package verifier cases plus the native-package CI contract pass.
+The first concurrent aggregate was interrupted after an existing launcher signal
+case stalled. The initial full frontend run was also interrupted after existing
+backup, desktop, tray and Settings cases exceeded their deadlines under concurrent
+native compilation and host load. No product test timeout was increased.
+Normal root `pnpm install --frozen-lockfile` passed, including linked-worktree
+Lefthook installation.
+
+The launcher signal fixture waited only for inherited child stdout, which could
+arrive before the wrapper returned from process creation and installed its
+signal handlers. Both signal fixtures now wait for explicit wrapper and child
+readiness before sending SIGTERM. The combined `pnpm test:desktop-launch` passes
+all 16 cases without serializing files or increasing timeouts. The eight bundle
+verifier cases and native Swift widget fixtures also pass separately.
+
+Starting with the real source icon still represented by its LFS pointer after
+installation, ordinary `pnpm dev:desktop` restored the cached PNG automatically
+and completed frontend, sidecar, widget, native host, CEF app bundling and ad-hoc
+signing. The generated arm64 debug app passed native architecture, CEF resources,
+macOS 13 metadata, both widget extensions/entitlements and deep strict signature
+verification. Its initial launch reported `SidecarFailed` and an existing CEF
+browser session while another checkout's DeliDev/server was already running.
+Launching that exact generated app with a temporary HOME/cache and data directory
+displayed the native DeliDev local-server connection screen. The occupied local
+server port still prevented a fresh connection; this establishes window/rendering
+evidence, not authenticated server or provisioned WidgetKit acceptance. Only this
+temporary app was stopped, with runtime return and process exit code 0 observed;
+the pre-existing app and server were left running.
+
+A complete single-worker `pnpm test` attempt passed client generation and type
+checking, then finished Vitest with 71 passing files / 933 passing tests and
+3 failing files / 12 failures. Those failures were in the unchanged App, Settings
+integration and tray presentation tests (5-second deadlines and asynchronous
+element/state waits); that attempt did not establish a green full frontend suite.
+An isolated rerun of those exact three files passed all 49 tests with the
+unchanged deadlines and product code. The production frontend build passed
+during the native launch. No Rust, Go,
+frontend product code, runtime pins or signing policies changed.
+
+The final single-worker `pnpm test` pipeline passed all 74 frontend files / 945
+tests, client generation/type checking, all 8 package-verifier and 16
+asset/launcher cases, native Swift widget fixtures and the production frontend
+build. Test deadlines were unchanged. Generated desktop/client `dist` directories
+and this task's temporary native smoke data were removed after verification.
+
+### PR #1127 base merge: icon preparation and dependency pins (2026-09-30)
+
+The terminal branch integrates main revision
+`da93cb9b9962acb100cb018e255e4ff0b2374e33`, preserving both the earlier terminal
+maintenance evidence and the source-icon preparation history. The merge also
+retains main's transparent icon and `fast-uri` 3.1.8 / `ip-address` 10.7.1
+dependency resolutions. Frozen root installation passes with linked-worktree
+hooks. Only the exact incoming source-icon LFS path is fetched and checked out;
+its 585,665 bytes match the staged SHA-256
+`88a91d0ea8462b0b8d59d53d212a4f4030f99a2775eb733b38be8234b077364f`.
+The shared asset preflight accepts that hydrated PNG.
+
+Under Node 24.20.0, all 16 asset/launcher cases and 95 repository contract tests
+pass. The complete `apps/delidev` `pnpm test` pipeline passes 75 files / 947
+frontend tests, type checking and client build, eight package-verifier cases,
+16 asset/launcher cases, native Swift widget fixtures and the production build.
+The fresh `pnpm audit` reports zero npm vulnerabilities; this is not a new audit
+of the separate native dependency graphs and does not remove their retained
+upstream constraints. No Go, Rust, protocol or generated-client source changed,
+so the prior broad Go cutoff results remain visible without repeating those
+unchanged suites. Generated desktop/client `dist` output is removed after
+validation. This merge adds no new native desktop visual, remote Worker or
+release acceptance evidence; the new head requires fresh hosted checks.
