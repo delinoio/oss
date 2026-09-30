@@ -226,3 +226,28 @@ explicit continuation and newly queued manual PR input preserve their ownership.
 -count=1` passed (16.285 seconds). No production lifecycle gate was relaxed.
 The current broad result must come from an immutable committed-source snapshot,
 separate from the earlier mixed-source failure.
+
+## Immutable-source final broad race result
+
+`go test -race ./cmds/delidev-cli/...` ran from an archive of committed source
+`c9896e1a589dce24a452eb1ecc02dd9e6daf9e29`, from 08:32:47 to 08:43:22 UTC on
+2026-09-30, and exited 1. No tracked source changed in that snapshot. Seventeen
+tested packages passed, five failed, and two had no tests. Store (569.950s),
+Worker (471.061s), Codex (264.049s), OpenCode (98.579s), domain, provider and
+harness discovery packages passed. No race-detector warning was observed.
+
+The failures remain unresolved local full-suite evidence:
+
+- CLI session acceptance reported an unavailable fixture workspace file reader.
+- Claude oversized-stream/flood cases did not confirm native scope cleanup.
+- Grok reached the default ten-minute package timeout during original initial
+  plan mode/acknowledgment cases.
+- Server reached that package timeout during the Doctor exact-reference fixture.
+- Workspace reported a timed-out unborn diff read and then reached the package
+  timeout while the new rebase conflict fixture was running. This broad run
+  therefore does not establish completion of that final fixture under race.
+
+These are recorded outcomes, not a green full suite or a blanket baseline-cause
+claim. The earlier unchanged-primary control proves only its specific App/Grok
+observations. Isolated manual Git race verification is recorded separately below.
+`go vet ./cmds/delidev-cli/...` passed after both dispatch repairs.
