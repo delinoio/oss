@@ -114,8 +114,14 @@ can read current counts after account removal.
 A native poll reads the original local and saved client scopes, including unopened
 windows. Cleanup inventory reads use an independent read-only sidecar controller
 with a two-second joined-child deadline and cannot acquire the interactive
-controller gate. Native shutdown bounds the remaining observation rather than
-waiting through every offline endpoint. After exact pending ownership is observed, it atomically writes a private
+controller gate. Quit immediately denies new presentations and requests child
+closure, then keeps the native event loop alive through a final worker discovery
+pass with an eight-second scheduling budget. No new read starts after that
+budget; an in-flight operation retains its existing joined-child bounds. Final
+discovery can observe an account deleted during the preceding poll sleep, and
+must finish before either zero-child exit or the last native close callback can
+release shutdown. Offline scopes outside the budget remain discoverable on a
+later launch. After exact pending ownership is observed, it atomically writes a private
 removal intent before closing every profile user or discarding pending creation.
 A removal intent permanently denies reopening. Cleanup is deferred through the
 whole native application's shutdown: raw-child creation/close accounting keeps

@@ -100,6 +100,21 @@ struct State {
     reservations: BTreeMap<String, String>,
     live: usize,
     exit_code: Option<i32>,
+    discovery_pending: bool,
+}
+impl State {
+    fn exit_when_ready(&self) -> Option<i32> {
+        if self.live == 0 && !self.discovery_pending {
+            self.exit_code
+        } else {
+            None
+        }
+    }
+}
+#[derive(Clone, Copy)]
+enum DiscoveryPass {
+    Poll,
+    Exit { deadline: Instant },
 }
 pub struct BrowserHost {
     root: PathBuf,
@@ -160,90 +175,26 @@ impl BrowserHost {
             state.exit_code = Some(code);
         }
         self.close_all();
-        self.state.lock().map(|s| s.live > 0).unwrap_or(true)
+        self.state
+            .lock()
+            .map(|s| s.live > 0 || s.discovery_pending)
+            .unwrap_or(true)
     }
 
     pub fn start(self: &Arc<Self>, app: AppHandle<Cef>) {
+        self.state.lock().unwrap().discovery_pending = true;
         let host = Arc::clone(self);
         let thread = thread::spawn(move || {
+            let close_scope = |scope: SavedConnection| {
+                let copy = Arc::clone(&host);
+                let _ = app.run_on_main_thread(move || copy.close_scope(&scope));
+            };
+            let close_profile = |id: String| {
+                let copy = Arc::clone(&host);
+                let _ = app.run_on_main_thread(move || copy.close_profile(&id));
+            };
             while !host.stopping.load(Ordering::Acquire) {
-                // Completed offline connection tombstones retain the exact non-secret
-                // scope even after its client credential has been destroyed. This also
-                // discovers removals initiated by the CLI or while the app was stopped.
-                let mut after = String::new();
-                for _ in 0..16 {
-                    if host.stopping.load(Ordering::Acquire) {
-                        break;
-                    }
-                    let Ok(page) = host.observer.removed_connections(&after) else {
-                        break;
-                    };
-                    for scope in page.connections {
-                        if let Err(code) = host.prepare_forget(&scope) {
-                            tracing::warn!(operation = "browser_scope_removal", ?code);
-                            continue;
-                        }
-                        let copy = Arc::clone(&host);
-                        let _ = app.run_on_main_thread(move || copy.close_scope(&scope));
-                    }
-                    after = page.next_after;
-                    if after.is_empty() {
-                        break;
-                    }
-                }
-                // Read every saved client, including windows which have not been opened.
-                let mut scopes = vec![None];
-                if let Ok(saved) = host.observer.saved_connections() {
-                    scopes.extend(saved.into_iter().map(Some));
-                }
-                for scope in scopes {
-                    let mut page = String::new();
-                    for _ in 0..100 {
-                        if host.stopping.load(Ordering::Acquire) {
-                            break;
-                        }
-                        let result = host.observer.browser_query(
-                            scope.as_ref(),
-                            &[
-                                "list".into(),
-                                "--page-size".into(),
-                                "50".into(),
-                                "--page-token".into(),
-                                page.clone().into(),
-                            ],
-                        );
-                        let Ok(result) = result else { break };
-                        let Some(profiles) = result.get("profiles").and_then(|v| v.as_array())
-                        else {
-                            break;
-                        };
-                        for value in profiles {
-                            let Ok(record) = serde_json::from_value::<ProfileRecord>(value.clone())
-                            else {
-                                continue;
-                            };
-                            if record.validate().is_err()
-                                || record.data.state != ProfileState::RemovalPending
-                            {
-                                continue;
-                            }
-                            if let Err(code) = host.prepare_removal(record.clone(), scope.clone()) {
-                                tracing::warn!(operation = "browser_removal", ?code);
-                                continue;
-                            }
-                            let copy = Arc::clone(&host);
-                            let _ = app.run_on_main_thread(move || copy.close_profile(&record.id));
-                        }
-                        page = result
-                            .get("next_page_token")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        if page.is_empty() {
-                            break;
-                        }
-                    }
-                }
+                host.discover_removals(DiscoveryPass::Poll, close_scope, close_profile);
                 for _ in 0..50 {
                     if host.stopping.load(Ordering::Acquire) {
                         break;
@@ -251,8 +202,133 @@ impl BrowserHost {
                     thread::sleep(Duration::from_millis(100));
                 }
             }
+            // Quit may arrive in the polling sleep after a new account deletion.
+            // Keep the event loop alive through one final worker discovery pass.
+            host.discover_removals(
+                DiscoveryPass::Exit {
+                    deadline: Instant::now() + Duration::from_secs(8),
+                },
+                close_scope,
+                close_profile,
+            );
+            if let Some(code) = host.finish_discovery() {
+                app.exit(code);
+            }
         });
         *self.join.lock().unwrap() = Some(thread);
+    }
+
+    fn can_discover(&self, pass: DiscoveryPass) -> bool {
+        match pass {
+            DiscoveryPass::Poll => !self.stopping.load(Ordering::Acquire),
+            DiscoveryPass::Exit { deadline } => Instant::now() < deadline,
+        }
+    }
+
+    fn discover_removals(
+        &self,
+        pass: DiscoveryPass,
+        mut close_scope: impl FnMut(SavedConnection),
+        mut close_profile: impl FnMut(String),
+    ) {
+        // Completed offline connection tombstones preserve their original scope
+        // after credential destruction, including removals initiated by the CLI.
+        let mut after = String::new();
+        for _ in 0..16 {
+            if !self.can_discover(pass) {
+                break;
+            }
+            let Ok(page) = self.observer.removed_connections(&after) else {
+                break;
+            };
+            for scope in page.connections {
+                if !self.can_discover(pass) {
+                    break;
+                }
+                if let Err(code) = self.prepare_forget(&scope) {
+                    tracing::warn!(operation = "browser_scope_removal", ?code);
+                    continue;
+                }
+                close_scope(scope);
+            }
+            after = page.next_after;
+            if after.is_empty() {
+                break;
+            }
+        }
+        // Include saved clients whose windows have never been opened. Each child
+        // retains the observer's two-second deadline; no new read starts after
+        // the final pass's budget expires, even when endpoints remain offline.
+        let mut scopes = vec![None];
+        if self.can_discover(pass)
+            && let Ok(saved) = self.observer.saved_connections()
+        {
+            scopes.extend(saved.into_iter().map(Some));
+        }
+        for scope in scopes {
+            let mut page = String::new();
+            for _ in 0..100 {
+                if !self.can_discover(pass) {
+                    break;
+                }
+                let result = self.observer.browser_query(
+                    scope.as_ref(),
+                    &[
+                        "list".into(),
+                        "--page-size".into(),
+                        "50".into(),
+                        "--page-token".into(),
+                        page.clone().into(),
+                    ],
+                );
+                let Ok(result) = result else { break };
+                let Some(profiles) = result.get("profiles").and_then(|v| v.as_array()) else {
+                    break;
+                };
+                for value in profiles {
+                    if !self.can_discover(pass) {
+                        break;
+                    }
+                    let Ok(record) = serde_json::from_value::<ProfileRecord>(value.clone()) else {
+                        continue;
+                    };
+                    if record.validate().is_err()
+                        || record.data.state != ProfileState::RemovalPending
+                    {
+                        continue;
+                    }
+                    if let Err(code) = self.prepare_removal(record.clone(), scope.clone()) {
+                        tracing::warn!(operation = "browser_removal", ?code);
+                        continue;
+                    }
+                    close_profile(record.id);
+                }
+                page = result
+                    .get("next_page_token")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if page.is_empty() {
+                    break;
+                }
+            }
+        }
+        if matches!(pass, DiscoveryPass::Exit { .. }) {
+            tracing::info!(
+                operation = "browser_removal_discovery",
+                state = if self.can_discover(pass) {
+                    "finished"
+                } else {
+                    "budget-deferred"
+                }
+            );
+        }
+    }
+
+    fn finish_discovery(&self) -> Option<i32> {
+        let mut state = self.state.lock().ok()?;
+        state.discovery_pending = false;
+        state.exit_when_ready()
     }
 
     pub fn stop(&self) {
@@ -1355,7 +1431,7 @@ cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppH
  fn on_after_created(&self,browser:Option<&mut Browser>){let Some(b)=browser else{return};let Ok(mut state)=self.host.state.lock()else{if let Some(h)=b.host(){h.close_browser(1)};return};let removing=state.profiles.get(&self.profile).is_none_or(|p|p.removing);if !removing&&!self.host.stopping.load(Ordering::Acquire)&&let Some(view)=state.views.get_mut(&self.request.window)&&view.generation==self.request.generation{view.browser=Some(b.clone());if let Some(h)=b.host()&&let Err(code)=position(h.window_handle(),view.request.bounds,view.request.scale,true){tracing::warn!(operation="browser_geometry",?code)}}else if let Some(h)=b.host(){h.close_browser(1)}}
  fn on_before_popup(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_popup_id:i32,_target_url:Option<&CefString>,_target_frame_name:Option<&CefString>,_target_disposition:WindowOpenDisposition,_user_gesture:i32,_popup_features:Option<&PopupFeatures>,_window_info:Option<&mut WindowInfo>,_client:Option<&mut Option<Client>>,_settings:Option<&mut BrowserSettings>,_extra_info:Option<&mut Option<DictionaryValue>>,_no_javascript_access:Option<&mut i32>)->i32{1}
  fn on_before_close(&self,_browser:Option<&mut Browser>){
-   let exit = if let Ok(mut state)=self.host.state.lock(){state.live=state.live.saturating_sub(1);if state.live==0{state.exit_code}else{None}}else{None};
+   let exit = if let Ok(mut state)=self.host.state.lock(){state.live=state.live.saturating_sub(1);state.exit_when_ready()}else{None};
    tracing::info!(operation="browser_view",state="closed");
    if let Some(code)=exit{self.app.exit(code);}
  }
@@ -1615,6 +1691,95 @@ mod tests {
         let state = host.state.lock().unwrap();
         assert!(state.views.is_empty());
         assert_eq!(state.reservations.get("fixture"), Some(&replacement));
+    }
+
+    #[test]
+    fn exit_discovers_deletion_since_last_poll_before_releasing_native_shutdown() {
+        let (temp, host, mut record) = storage_fixture();
+        fs::write(temp.path().join("sidecar"), r#"#!/bin/sh
+case "$*" in
+  *"connection removed"*) printf '%s\n' '{"version":1,"result":{"connections":[],"next_after":""}}' ;;
+  *"connection list"*) printf '%s\n' '{"version":1,"result":{"connections":[]}}' ;;
+  *"browser-profile list"*) /bin/cat "$(dirname "$0")/reply.json" ;;
+  *) exit 1 ;;
+esac
+"#).unwrap();
+        let reply = temp.path().join("reply.json");
+        fs::write(
+            &reply,
+            serde_json::json!({"version":1,"result":{"profiles":[record],"next_page_token":""}})
+                .to_string(),
+        )
+        .unwrap();
+        let cache = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
+        host.discover_removals(
+            DiscoveryPass::Poll,
+            |_| panic!("unexpected scope removal"),
+            |_| panic!("unexpected account removal"),
+        );
+        assert_eq!(fs::read_dir(host.root.join("removals")).unwrap().count(), 0);
+
+        // The owner deletes the account after the last successful poll, then
+        // quits during its sleep. Native children may close before discovery.
+        record.revision = 2;
+        record.data.state = ProfileState::RemovalPending;
+        record.data.deletion_request_id = uuid::Uuid::now_v7().to_string();
+        fs::write(
+            &reply,
+            serde_json::json!({"version":1,"result":{"profiles":[record],"next_page_token":""}})
+                .to_string(),
+        )
+        .unwrap();
+        host.state.lock().unwrap().discovery_pending = true;
+        assert!(host.begin_exit(7));
+        assert_eq!(host.state.lock().unwrap().exit_when_ready(), None);
+        let mut closed = Vec::new();
+        host.discover_removals(
+            DiscoveryPass::Exit {
+                deadline: Instant::now() + Duration::from_secs(8),
+            },
+            |_| panic!("unexpected scope removal"),
+            |id| closed.push(id),
+        );
+        assert_eq!(closed, vec![record.id.clone()]);
+        assert_eq!(host.finish_discovery(), Some(7));
+        assert!(!host.begin_exit(7));
+        assert!(cache.exists());
+        // Discovery grants no purge before independent native shutdown proof.
+        let intent = host
+            .root
+            .join("removals")
+            .join(format!("{}.json", record.id));
+        assert!(!read_json::<Removal>(&intent).unwrap().shutdown_confirmed);
+        host.finish_removals().unwrap();
+        assert!(!cache.exists());
+        assert!(intent.exists());
+    }
+
+    #[test]
+    fn final_discovery_budget_prevents_new_sidecar_reads_and_preserves_close_gate() {
+        let (temp, host, _record) = storage_fixture();
+        fs::write(
+            temp.path().join("sidecar"),
+            "#!/bin/sh\n: > \"$(dirname \"$0\")/unexpected-read\"\nexit 1\n",
+        )
+        .unwrap();
+        host.state.lock().unwrap().discovery_pending = true;
+        host.state.lock().unwrap().live = 1;
+        assert!(host.begin_exit(0));
+        host.discover_removals(
+            DiscoveryPass::Exit {
+                deadline: Instant::now(),
+            },
+            |_| panic!("unexpected scope removal"),
+            |_| panic!("unexpected account removal"),
+        );
+        assert!(!temp.path().join("unexpected-read").exists());
+        assert_eq!(host.finish_discovery(), None);
+        assert!(host.begin_exit(0));
+        host.state.lock().unwrap().live = 0;
+        assert_eq!(host.state.lock().unwrap().exit_when_ready(), Some(0));
+        assert!(!host.begin_exit(0));
     }
 
     #[test]
