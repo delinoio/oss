@@ -1,5 +1,6 @@
 import { defaultRemediationPolicy, RemediationPolicyFields } from "./remediation-policy";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { AgentConfiguration, AgentReadProblem } from "./agent-configuration";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -30,8 +31,8 @@ export function newConfiguration(kind: EntityKind): Document {
     default: throw new Error("Unsupported configuration editor");
   }
 }
-export function TextField({ label, value, change, required = false, max = 256, disabled = false }: { label: string; value: unknown; change: (value: string) => void; required?: boolean; max?: number; disabled?: boolean }) {
-  return <label>{label}<input value={text(value)} required={required} maxLength={max} disabled={disabled} onChange={(event) => change(event.target.value)} /></label>;
+export function TextField({ label, value, change, required = false, max = 256, disabled = false, markRequired = false, placeholder }: { label: string; value: unknown; change: (value: string) => void; required?: boolean; max?: number; disabled?: boolean; markRequired?: boolean; placeholder?: string }) {
+  return <label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<input aria-label={markRequired ? label : undefined} placeholder={placeholder} value={text(value)} required={required} maxLength={max} disabled={disabled} onChange={(event) => change(event.target.value)} /></label>;
 }
 function Choice({ label, value, choices, change, disabled = false, inherited = false }: { label: string; value: unknown; choices: readonly string[]; change: (value: string) => void; disabled?: boolean; inherited?: boolean }) {
   const selected = text(value);
@@ -54,6 +55,7 @@ function AgentPermissions({ harness, options, change }: { harness: unknown; opti
   }
   return <>
     <Choice label="Permission mode" value={options.permission} choices={Object.values(Permission)} change={(permission) => change({ ...options, permission })} />
+    {options.permission === Permission.Default ? <p>Uses the harness default. Review permissions before execution.</p> : null}
     {options.permission === Permission.Full ? <p className="notice">Full access permits native operations beyond the workspace when supported. Review this scope before using the Agent Worker.</p> : null}
     {options.claude_permission !== undefined ? <><p role="alert">A Claude permission selection is retained: {text(options.claude_permission)}. It cannot be applied to this harness.</p><button type="button" onClick={() => { const next = { ...options }; delete next.claude_permission; change(next); }}>Clear Claude permission selection</button></> : null}
   </>;
@@ -62,7 +64,9 @@ function Check({ label, value, change }: { label: string; value: unknown; change
 
 // Selectors retain only one bounded page. An already selected identity outside
 // that page remains explicit rather than falling back to its first result.
-export function ResourceChoice({ label, kind, value, change, active, disabled = false, required = false, allowed, activeApiOnly = false, showStatus = false }: { label: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean }) {
+export function ResourceChoice({ label, kind, value, change, active, disabled = false, required = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false }: { label: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean }) {
+  const reportRead = useContext(AgentReadProblem);
+  const agentPresentation = Boolean(reportRead) || markRequired;
   const [page, setPage] = useState("");
   const [subscriptionPage, setSubscriptionPage] = useState("");
   const needsProviderCapability = activeApiOnly && (kind === EntityKind.PROVIDER || kind === EntityKind.MODEL);
@@ -86,10 +90,14 @@ export function ResourceChoice({ label, kind, value, change, active, disabled = 
   const pageData = kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.data : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.data : result.data;
   const pageError = kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.error : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.error : result.error;
   const pageFailure = pageError ?? (kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.failureReason : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.failureReason : result.failureReason);
-  const errorCode = pageFailure instanceof ConnectError ? pageFailure.code : undefined;
+  const failure = pageFailure ?? (agentPresentation && needsProviderCapability ? inventory.error ?? inventory.failureReason ?? selected.error ?? selected.failureReason ?? selectedProvider.error ?? selectedProvider.failureReason : undefined);
+  const initialFetching = fetching || (agentPresentation && needsProviderCapability && inventory.isFetching && !ready);
+  const readProblem = Boolean(failure || selectedProviderOff || (active && needsProviderCapability && inventory.data && !ready));
+  useEffect(() => { reportRead?.(label, readProblem); }, [label, readProblem, reportRead]);
+  const errorCode = failure instanceof ConnectError ? failure.code : undefined;
   let statusMessage = "";
-  if (active && showStatus) {
-    if (pageFailure) {
+  if (active && (showStatus || agentPresentation)) {
+    if (failure) {
       const reason = errorCode === Code.PermissionDenied || errorCode === Code.Unauthenticated
         ? `The server denied access to these choices${fetching ? "; retrying." : "."}`
         : errorCode === Code.Unavailable || errorCode === Code.DeadlineExceeded
@@ -98,9 +106,9 @@ export function ResourceChoice({ label, kind, value, change, active, disabled = 
       statusMessage = pageData
         ? `Showing cached ${label} choices. ${reason} Your current selection is retained.`
         : `${reason} Your current selection is retained.`;
-    } else if (fetching && !pageData) {
+    } else if (initialFetching && !pageData) {
       statusMessage = `Loading ${label} choices…`;
-    } else if (pageData && rows.length === 0) {
+    } else if (pageData && (agentPresentation ? pageRows : rows).length === 0) {
       statusMessage = nextPage
         ? `No selectable ${label} choices are on this page. More choices are available.`
         : `No selectable ${label} choices are on this page.`;
@@ -110,9 +118,9 @@ export function ResourceChoice({ label, kind, value, change, active, disabled = 
       statusMessage = `The selected ${label} is outside this page or unavailable. Its identity is retained; no other choice was selected.`;
     }
   }
-  return <div className="resource-choice"><label>{label}<select disabled={disabled} required={required} value={value} onChange={(event) => change(event.target.value, document(rows.find((row) => row.id === event.target.value)), rows.find((row) => row.id === event.target.value))}><option value="">Select {label.toLowerCase()}</option>{value && !rows.some((row) => row.id === value) ? <option value={value} disabled>Selected {kindNames[kind]} · {value}</option> : null}{rows.map((row) => { const off = row.id === value && selectedProviderOff; const name = resourceName(row); return <option key={row.id} value={row.id} disabled={off}>{off ? `Off provider · ${name}` : name}{kind === EntityKind.ACCOUNT ? ` · ${text(document(row).health)}` : ""}</option>; })}</select></label>
+  return <div className="resource-choice"><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<select aria-label={markRequired ? label : undefined} disabled={disabled} required={required} value={value} onChange={(event) => change(event.target.value, document(rows.find((row) => row.id === event.target.value)), rows.find((row) => row.id === event.target.value))}><option value="">Select {label.toLowerCase()}</option>{value && !rows.some((row) => row.id === value) ? <option value={value} disabled>Selected {kindNames[kind]} · {value}</option> : null}{rows.map((row) => { const off = row.id === value && selectedProviderOff; const name = resourceName(row); return <option key={row.id} value={row.id} disabled={off}>{off ? `Off provider · ${name}` : name}{kind === EntityKind.ACCOUNT ? ` · ${text(document(row).health)}` : ""}</option>; })}</select></label>
     {statusMessage ? <p role="status">{statusMessage}</p> : null}
-    {needsProviderCapability && active && !ready ? <p role="status">Provider and model choices require a server that reports the provider inventory capabilities.</p> : null}
+    {needsProviderCapability && active && !ready && (!agentPresentation || (!inventory.isFetching && !failure)) ? <p role="status">Provider and model choices require a server that reports the provider inventory capabilities.</p> : null}
     {kind === EntityKind.PROVIDER && needsProviderCapability ? <>
       {page || nextPage ? <nav className="actions" aria-label="Active API provider choices"><button type="button" disabled={!page || fetching || disabled} onClick={() => setPage("")}>First API providers</button><button type="button" disabled={!nextPage || fetching || disabled || !ready} onClick={() => setPage(nextPage ?? "")}>More API providers</button></nav> : null}
       {subscriptionPage || result.data?.nextPageToken ? <nav className="actions" aria-label="Native subscription provider choices"><button type="button" disabled={!subscriptionPage || result.isFetching || disabled} onClick={() => setSubscriptionPage("")}>First subscription providers</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching || disabled} onClick={() => setSubscriptionPage(result.data!.nextPageToken)}>More subscription providers</button></nav> : null}
@@ -153,7 +161,14 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
   if (kind === EntityKind.AGENT) {
     const options = object(data.options);
     const option = (name: string) => (value: unknown) => change({ ...data, options: { ...options, [name]: value } });
-    return <><TextField label="Name" value={data.name} change={field("name")} required /><Choice label="Harness" value={data.harness} choices={Object.values(Harness)} change={field("harness")} /><ResourceChoice label="Model" kind={EntityKind.MODEL} value={text(data.model_id)} change={field("model_id")} activeApiOnly active={active} required /><TextField label="Reasoning effort" value={data.effort} change={field("effort")} /><Choice label="Account routing" value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label="Accounts" kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /><OrderedLinks label="Instruction templates" kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} /><AgentPermissions harness={data.harness} options={options} change={field("options")} /><details><summary>Native harness options</summary><TextField label="Subagent model" value={options.subagent_model} change={option("subagent_model")} /><TextField label="Subagent effort" value={options.subagent_effort} change={option("subagent_effort")} /><label>Maximum concurrency (0 uses native default)<input type="number" min={0} max={64} value={Number(options.max_concurrency ?? 0)} onChange={(event) => option("max_concurrency")(Number(event.target.value))} /></label>{data.harness !== Harness.Claude ? <TextField label="Approval policy" value={options.approval_policy} change={option("approval_policy")} /> : null}<TextField label="Approval review model" value={options.approval_review_model} change={option("approval_review_model")} /><TextField label="Service tier" value={options.service_tier} change={option("service_tier")} /><p>Unsupported native options produce a server error; no fallback harness or account is selected.</p></details></>;
+    return <AgentConfiguration data={data} routingProblem={data.routing !== undefined && data.routing !== "" && !Object.values(Routing).includes(data.routing as Routing)}
+      core={<><TextField label="Name" value={data.name} change={field("name")} required markRequired placeholder="e.g. Code reviewer" /><div className="agent-core-columns"><Choice label="Harness" value={data.harness} choices={Object.values(Harness)} change={field("harness")} /><ResourceChoice label="Model" kind={EntityKind.MODEL} value={text(data.model_id)} change={field("model_id")} activeApiOnly active={active} required markRequired /></div></>}
+      permissions={<AgentPermissions harness={data.harness} options={options} change={field("options")} />}
+      reasoning={<TextField label="Reasoning effort" value={data.effort} change={field("effort")} />}
+      accounts={<><Choice label="Account routing" value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label="Accounts" kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
+      instructions={<OrderedLinks label="Instruction templates" kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} />}
+      native={<><TextField label="Subagent model" value={options.subagent_model} change={option("subagent_model")} /><TextField label="Subagent effort" value={options.subagent_effort} change={option("subagent_effort")} /><label>Maximum concurrency (0 uses native default)<input type="number" min={0} max={64} value={Number(options.max_concurrency ?? 0)} onChange={(event) => option("max_concurrency")(Number(event.target.value))} /></label>{data.harness !== Harness.Claude ? <TextField label="Approval policy" value={options.approval_policy} change={option("approval_policy")} /> : null}<TextField label="Approval review model" value={options.approval_review_model} change={option("approval_review_model")} /><TextField label="Service tier" value={options.service_tier} change={option("service_tier")} /><p>Unsupported native options produce a server error; no fallback harness or account is selected.</p></>}
+    />;
   }
   return null;
 }

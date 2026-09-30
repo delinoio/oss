@@ -169,6 +169,61 @@ Provider, model, AI account, Agent Worker and instruction-template forms use gen
 
 Each edit captures its original resource revision and full document. Server-owned account observations and model discovery provenance are preserved. A peer revision change blocks a new save while retaining the draft; an uncertain save retries only its original request. Edits and exact uncertain requests remain available within the current Settings opening across category and responsive layout changes. Closing discards them, including when an accepted save may still complete on the server. Forms cap complete documents at 1 MiB and instruction content at 128 KiB UTF-8 before retention, and selectors retain one bounded page with an explicit selected identity outside that page.
 
+### Agent Worker core and optional presentation
+
+Issue #1158 owns only the shared Agent Worker create/edit form. The existing
+Settings shell, category copy, navigation and native geometry stay unchanged.
+The form follows the approved V1 text specification: left-aligned, at most 800
+CSS px wide, with a 20px-equivalent title, 16px section headings, 14px labels and
+13px explanations in scalable units. Core settings uses 24px padding, 16px field
+gaps, 44px controls, 8px control radii and a 12px panel radius with the existing
+system font and light-neutral/blue tokens. Name occupies a full row, Harness and
+Model share equal columns, and permissions remain below their divider. Only Name
+and Model show required markers, retaining their accessible names and validation.
+The creation subtitle is “Configure the essentials, then customize only what you
+need.” Default permission guidance is “Uses the harness default. Review permissions
+before execution.” Native permission/incompatibility explanations and explicit
+clearing remain authoritative.
+
+Four native `details` disclosures start closed for both create and edit, may open
+independently and retain mounted controls and queries throughout the opening:
+
+| Order | Section | Summary and retained fields |
+| --- | --- | --- |
+| 1 | Reasoning | Current `effort`, or Native default when absent/empty; no normalization |
+| 2 | Accounts & routing | Account count plus explicit routing or Server default when inherited; ordered weighted accounts and all add/move/remove operations |
+| 3 | Instructions | Template count; all ordered reference operations |
+| 4 | Native harness options | Defaults only for absent/empty known fields or concurrency 0 with no unknown keys; otherwise Customized, explicitly identifying unknown options as retained |
+
+When accounts are empty, “Can be saved without accounts; execution requires an
+eligible account.” stays visible outside the closed disclosure. This is information,
+not an error or readiness grant. Unsupported selections remain explicit, harness
+switches preserve values, and all unknown document/link/option fields survive save.
+Collapsed sections expose Needs attention for read or validation problems, while
+expanded selectors retain sanitized detailed diagnostics. Loading, successful
+empty current pages (including continuation), permission/authentication failure,
+connection failure and cached prior choices after failed refresh remain distinct;
+a failed read never becomes an empty inventory or a new verification.
+
+Disclosures use native keyboard semantics and remove closed contents from the tab
+order without unmounting them. Invalid hidden inputs open their section before
+focus, preserving unrelated fields. Below 640 CSS px of available **form width**,
+Harness and Model use one column. Text, identifiers and action buttons wrap, focus
+outlines stay visible, and the Cancel edit / Save Agent Worker footer follows normal
+scrolling with Cancel before Save. The exact uncertain retry remains explicit.
+Existing locks, revision conflicts, accepted jobs, bounded selectors/provider gating,
+complete-document limits and byte-identical request retries remain unchanged.
+
+Close, Escape/native cancel and navigation away still dispose the entire Settings
+opening under #1138/#1150, with no abandoned request restoration/replay or late
+updates to replacement openings. Same-identity reconnect retains the active editor.
+This ordinary UI rollout has no API, schema, default, dependency, migration, backend
+deployment, polling, execution, logging or feature-flag change. Component/browser
+checks and supported-platform native acceptance are recorded separately in the
+[issue #1158 evidence](evidence/delidev/issue-1158/agent-settings.md).
+
+### Settings shell and opening lifetime
+
 Settings is a full-window presentation inside the existing native modal and fills the webview content viewport below the native title bar. It covers the ordinary app sidebar without resizing, maximizing, or entering OS fullscreen; all other modal callers keep the standard dialog layout. Its fixed 64px header contains the Settings title and an accessible Close Settings action with an Esc hint. At desktop widths, the grouped 240px navigation pane and flexible content pane scroll independently. The groups and 16 categories appear once in this order: AI & agents (AI Subscription, AI API Keys, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Execution Workers), and System (Paired devices, Server preferences, Integrations, Diagnostics, Notifications, Import / Export, Backups). Below 760 CSS pixels, the sidebar is visually removed and replaced by a labeled native select with the same groups and selection; category panels stay mounted across selection and responsive changes. Content padding is 40px, reduced to 24px below 1100px. The shell must reflow at 200% zoom without clipping controls or focus outlines.
 
 The shared AI Subscription category label is exactly the same in the sidebar, category heading and compact selector. Its category ID remains `subscription-accounts`; the selected English label fits on one line in the existing 240px sidebar at 100% zoom without changes to layout, font or icon styling.
@@ -178,6 +233,10 @@ Navigation retains the existing category IDs and the edit/account/delete/routing
 Each opening owns a fresh mounted component tree, mutation registry and authenticated transport wrapper. Supported RPC requests receive a linked opening abort signal; disposal rejects late outcomes and blocks follow-up RPC/native work even when the underlying operation ignores cancellation. Native Worker and notification permission completions cannot update a replacement opening. Keep the connection QueryClient and successful-save invalidation; cancel/remove only queries keyed by the disposed transport or opening and remove its tagged mutation cache entries. Same-identity reconnects retain the currently open editor and route subsequent requests through the replacement authenticated transport. Strict Mode setup/cleanup replay creates a fresh un-aborted generation before mounting its readers. Fresh reads may reveal committed changes or pending server jobs; this is authoritative state, never restoration of an abandoned workflow.
 
 Every category has one visible category title and its existing scope/help description above its content. Configuration list toolbars keep Refresh settings and any eligible existing New action together at the upper right; detailed editors retain their existing explicit save/cancel/back actions. Devices and Execution Workers do not gain a generic create action, and Server preferences remains a revision-bound singleton. Providers has one New Provider action and, only after a successful empty first-page read, the single bordered “No providers yet” panel. Initial loading and initial read errors do not render that empty state or enable create. A cached result remains visible during refresh; a refresh error shows its sanitized correlated failure and a stale-results notice. Pagination is hidden only for a successful empty first page with no continuation token; an empty later page still offers First page. Query staleness alone is not a read failure.
+
+GitHub Integrations uses the approved issue #1147 content hierarchy within this shell. Its description is “Manage GitHub profiles for repository access. AI accounts are configured separately.” One left-aligned GitHub panel, at most 1040 CSS pixels wide, contains the provider heading, Refresh, bounded profile rows and exactly one New GitHub profile action. Only a successful empty first page without a continuation or read failure moves that action into first-profile guidance with three static informational steps. Loading, initial failure, cached refresh/failure and empty continuation/later pages remain distinct; create keeps its original eligibility before read success and paging keeps its original opaque cursor and 50-resource size.
+
+Rows and Manage display Token storage and Identity validation separately, including pending denial, unsupported versions, unknown observations and original check time/identity when provided. Neither identity verification nor token storage claims repository capability. Create/rename forms are bounded to 760 CSS pixels, focus the name only on first visible entry, and keep token type/owner immutable after creation. Manage separates explicit token connection, identity validation and confirmed deletion. Its empty password field disables submission and never reveals stored tokens. Full official-form guidance remains mounted inside a native disclosure; toggling alone cannot query or open a form. New unconnected profiles explain token creation by default; connected profiles initially collapse it. Existing exact uncertain identities, decimal revisions, PAT clearing, operation/navigation guards and the common Settings opening lifecycle remain authoritative. Use scoped CSP-compatible CSS, decorative vectors, wrapping metadata/actions and stacked steps; preserve shell spacing, category selection and native modal focus/close behavior. See the [integration contract](cmds-delidev-integrations-contract.md) for authority and operation ordering.
 
 Settings-specific colors and system fonts are scoped to this modal and remain CSP-compatible: white content, pale-gray navigation, 8px control radii, a 12px empty-panel radius, 40px minimum controls, decorative outline icons and non-color selected-state semantics. Do not add a route, native window, dependency, external asset, inline-style exception, public API, persisted schema, storage, authorization, credential, polling or migration change. Component tests do not establish native geometry or keyboard containment; record native desktop smoke evidence separately, including platform and viewport, and report unsupported/unavailable platforms without claiming acceptance.
 
