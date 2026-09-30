@@ -3635,3 +3635,39 @@ security dependency resolutions are retained. Conflict verification confirms
 both original evidence blocks are present and no markers or whitespace errors
 remain. Go, protocol and Rust source bytes are unchanged from the preceding
 repair head `8852a87ab2b4535bd4387f4c9e7bbd5812a43cbd`.
+
+### PR #1121 singleton-preferences CI fixture repair (2026-09-30)
+
+The `DevHud Protocol and Client` job at run `36659300077`, job
+`109710350518`, passed protocol lint/breaking/freshness and both API-client
+suites, then failed only the singleton-preferences Settings case (944/945
+frontend tests passed). Its first post-save `Edit Server preferences` lookup
+used the DOM library's default one-second limit despite sequential durable save
+and inventory refresh RPCs.
+
+The retained real-server fixture now delays each selected SETTINGS
+SaveConfiguration/ListResources reply by 600 ms. With the old one-second lookup,
+this reproduces the same failure deterministically
+(`/tmp/delidev-1121-repair-0221-settings-negative-prepared.log`). Explicit bounded
+five-second New/Edit waits then pass all 11 Settings integration cases (18.57s),
+with the overall 15-second singleton budget, exact Go defaults, original ID,
+changed fields and revision increment unchanged
+(`/tmp/delidev-1121-repair-0221-settings-positive.log`). Production code and RPC
+deadlines are unchanged.
+
+An initial focused invocation could not load the removed generated client and
+ran no tests; rebuilding the client supplied that prerequisite before the
+negative/positive comparison. Main's source icon was restored from its local
+LFS cache by the shared asset preflight, and root frozen installation passed
+with the retained security dependency resolutions.
+
+Final local validation passes the complete Node.js 24 desktop `pnpm test`:
+74 files / 945 React tests, generated-client build/type checking, eight packaging
+checks, 16 asset/launcher cases, native Swift widget fixtures and production
+build (`/tmp/delidev-1121-repair-0221-front.log`). Root `pnpm proto:check`
+passes lint, main compatibility and complete generation freshness. The API
+client passes 41 tests and type checking; all 95 root contract cases and workflow
+validation pass. Generated desktop/client `dist` output is removed. Unchanged
+Go/Rust sources retain the preceding repair's explicitly recorded validation,
+including the aggregate CLI deadline failure and passing CLI rerun; those
+results are not relabeled as a new aggregate pass.
