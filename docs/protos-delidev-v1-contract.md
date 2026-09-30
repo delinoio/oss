@@ -324,7 +324,7 @@ IntegrationService adds owner/client-only ListPullRequestRemediationAttempts and
 
 ### Managed database backup observation
 
-SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and remaining session deletion/restoration work. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
+SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and the separate permanent-session deletion and remaining restoration work. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
 
 
 ### Durable backup creation
@@ -348,3 +348,24 @@ System capability wire values retain `AUTOMATIC_TITLES_V1 = 1` and the merged `S
 ## Authenticated development-server forwarding
 
 Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
+
+
+### Permanent session deletion
+
+`SessionService.DeleteSession` uses the existing UUID-v7/revision `Mutation` and
+returns an original typed `SessionDeletionJob`, request ID and replay flag.
+`GetSessionDeletion` reads by original session ID after content removal. Owner and
+paired-client authority applies; Worker credentials cannot invoke these APIs.
+`SystemCapability.PERMANENT_SESSION_DELETION_V1` advertises the additive surface.
+Pending/succeeded enum state, exact uint64 revision, accepted/finished timestamps,
+Worker count and database/backup acknowledgements keep acceptance separate from
+confirmed removal; unknown reclaimed bytes must remain unknown.
+
+`WorkerService.ListSessionDeletionWork` and `ReportSessionDeletion` form an
+independent current-instance-authenticated cleanup lane, bound to original paired
+machine/device and immutable versioned ownership metadata. Work pages contain at
+most 20 plans and 1 MiB; UUID continuation is observation only. Reports contain
+only original session/deletion IDs, plan digest and retained request UUID. No
+paths, prompts, credentials or new execution authority cross this boundary.
+Generate Go and TypeScript/Connect Query sources together and follow the
+[storage contract](cmds-delidev-storage-contract.md).

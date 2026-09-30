@@ -128,6 +128,10 @@ func (s *Store) InspectBackup(ctx context.Context, id, expectedServer domain.ID)
 // afterCopy permits deterministic tests of an external SQLite open while the
 // private copy is being validated. Product callers never supply this checkpoint.
 func (s *Store) inspectBackup(ctx context.Context, id, expectedServer domain.ID, afterCopy func()) (BackupInspection, error) {
+	return s.inspectBackupContent(ctx, id, expectedServer, afterCopy, nil)
+}
+
+func (s *Store) inspectBackupContent(ctx context.Context, id, expectedServer domain.ID, afterCopy func(), observe func(*sql.DB) error) (BackupInspection, error) {
 	var result BackupInspection
 	if err := lockBackupContext(ctx, &s.backupGate); err != nil {
 		return result, err
@@ -228,6 +232,11 @@ func (s *Store) inspectBackup(ctx context.Context, id, expectedServer domain.ID,
 	}
 	if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&owner); err != nil || owner != expectedServer {
 		return result, domain.Fail(domain.PermissionDenied, "This backup does not belong to the selected server.", "Select a backup with the same original server identity; credentials are not imported.")
+	}
+	if observe != nil {
+		if err := observe(db); err != nil {
+			return result, err
+		}
 	}
 	after, err := input.Stat()
 	if err != nil || !sameBackup(before, after) {

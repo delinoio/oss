@@ -46,6 +46,13 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
+Permanent session deletion uses owner/client Connect and equivalent confirmed CLI
+commands, durable intent outside SQLite, original Worker cleanup acknowledgements
+and managed-backup erasure. Forwarding peers independently confirm cleanup;
+offline or uncertain ownership remains pending. Original Local checkouts, other
+sessions and shared account profiles are preserved. The [storage contract](cmds-delidev-storage-contract.md)
+owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
+
 ## Cross-Domain Invariants
 - Go owns business logic; clients use authenticated Connect and preserve exact request/revision identities.
 - Local and remote operation preserve original native ownership, explicit authorization, credential isolation and uncertainty.

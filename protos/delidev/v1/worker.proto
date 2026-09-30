@@ -13,6 +13,8 @@ message ErrorDetail {
 }
 
 service WorkerService {
+  rpc ListSessionDeletionWork(ListSessionDeletionWorkRequest) returns (ListSessionDeletionWorkResponse);
+  rpc ReportSessionDeletion(ReportSessionDeletionRequest) returns (ReportSessionDeletionResponse);
   rpc WatchForwardRequests(WatchForwardRequestsRequest) returns (stream WatchForwardRequestsResponse);
   rpc WatchWorkspaceReads(WatchWorkspaceReadsRequest) returns (stream WatchWorkspaceReadsResponse);
   rpc ReportWorkspaceRead(ReportWorkspaceReadRequest) returns (ReportWorkspaceReadResponse);
@@ -244,4 +246,26 @@ message WatchForwardRequestsRequest {
 message WatchForwardRequestsResponse {
   bool heartbeat = 1;
   Resource forward = 2;
+}
+
+message ListSessionDeletionWorkRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+  string after_session_id = 3;
+}
+message ListSessionDeletionWorkResponse {
+  // Closed version-1 metadata-only ownership envelopes, at most 20 per page.
+  repeated bytes work_json = 1;
+  string next_session_id = 2;
+}
+message ReportSessionDeletionRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string session_id = 4;
+  string deletion_id = 5;
+  string work_digest = 6;
+}
+message ReportSessionDeletionResponse {
+  SessionDeletionJob job = 1;
 }

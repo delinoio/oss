@@ -198,6 +198,10 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 		return uncertain(err)
 	}
 	defer lock.Close()
+	if _, e := os.Lstat(filepath.Join(m.Root, "session-deletions", string(request.SessionID)+".json")); !errors.Is(e, os.ErrNotExist) {
+		return Manifest{}, domain.SessionDeletionPending()
+	}
+
 	if err := m.noActiveExecutionClaim(request.SessionID); err != nil {
 		return uncertain(err)
 	}

@@ -126,6 +126,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err := state.RestoreBackupDeletionIntents(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}), identity.ServerID); err != nil {
 		return err
 	}
+	if err := state.RestoreSessionDeletionIntents(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}), identity.ServerID); err != nil {
+		return err
+	}
 	listener, err := net.Listen("tcp", config.Listen)
 	if err != nil {
 		return domain.Fail(domain.Unavailable, "The requested listener could not be bound.", "Free the configured port or explicitly select another listener; DeliDev never remaps it automatically.")
@@ -192,6 +195,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	deletionsDone := make(chan struct{})
 	go func() { defer close(deletionsDone); service.runBackupDeletions(deletionsCtx) }()
 	defer func() { stopDeletions(); <-deletionsDone }()
+	sessionDeletionsCtx, stopSessionDeletions := context.WithCancel(child)
+	sessionDeletionsDone := make(chan struct{})
+	go func() { defer close(sessionDeletionsDone); service.runSessionDeletions(sessionDeletionsCtx) }()
+	defer func() { stopSessionDeletions(); <-sessionDeletionsDone }()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)
 	if ready != nil {
 		ready(service.Endpoint)
