@@ -231,7 +231,7 @@ func ApplySubagents(prior SubagentState, root string, batch []SubagentObservatio
 		}
 		seen[o.NativeID], ids[o.ID] = true, o.NativeID
 		if old, ok := next[o.NativeID]; ok {
-			if old.ID != o.ID || old.ParentID != o.ParentID || old.ParentToolID != o.ParentToolID || old.Status.Terminal() && o.Status != old.Status {
+			if old.ID != o.ID || old.ParentID != o.ParentID || old.ParentToolID != o.ParentToolID || old.Status.Terminal() && o.Status != old.Status && o.Status != SubagentShutdown {
 				return nil, invalidSubagent()
 			}
 			if old.Tool != nil && o.Tool != nil && *old.Tool != *o.Tool {

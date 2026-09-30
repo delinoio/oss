@@ -171,7 +171,9 @@ func (c *Client) ObserveResolvedActivity(ctx context.Context, event Event) (Even
 }
 
 // InspectDescendants uses only read operations. It does not load/resume children
-// or reuse their direct-input capability. All pages validate before publication.
+// or reuse their direct-input capability. State-DB-only inventory avoids the
+// native list default that scans and repairs rollout metadata. All pages
+// validate before publication.
 func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -187,11 +189,12 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 	seen := map[string]bool{}
 	for page := 0; page < 16; page++ {
 		response, err := c.wire.Call(ctx, domain.NewID(), "thread/list", struct {
-			Ancestor domain.ID `json:"ancestorThreadId"`
-			Limit    int       `json:"limit"`
-			Cursor   string    `json:"cursor,omitempty"`
-			Sources  []string  `json:"sourceKinds"`
-		}{c.thread, 128, cursor, []string{"subAgent", "subAgentThreadSpawn", "subAgentOther"}})
+			Ancestor    domain.ID `json:"ancestorThreadId"`
+			Limit       int       `json:"limit"`
+			Cursor      string    `json:"cursor,omitempty"`
+			Sources     []string  `json:"sourceKinds"`
+			StateDBOnly bool      `json:"useStateDbOnly"`
+		}{c.thread, 128, cursor, []string{"subAgent", "subAgentThreadSpawn", "subAgentOther"}, true})
 		if err != nil {
 			return Event{}, err
 		}
@@ -308,12 +311,14 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			return Event{}, true, incompatible()
 		}
 		o.SourceID = string(turn.ID)
-		switch turn.Status {
-		case TurnCompleted:
+		switch {
+		case o.Status == domain.SubagentShutdown:
+			// A late turn notification cannot reopen an explicitly closed agent.
+		case turn.Status == TurnCompleted:
 			o.Status = domain.SubagentCompleted
-		case TurnInterrupted:
+		case turn.Status == TurnInterrupted:
 			o.Status = domain.SubagentInterrupted
-		case TurnFailed:
+		case turn.Status == TurnFailed:
 			o.Status = domain.SubagentFailed
 		}
 	case "item/started", "item/completed":
@@ -416,16 +421,18 @@ func (c *Client) readChildHistory(ctx context.Context, child domain.SubagentObse
 	if err != nil {
 		return child, err
 	}
-	switch turn.Status {
-	case TurnRunning:
+	switch {
+	case child.Status == domain.SubagentShutdown:
+		// Stored turn completion predates native closeAgent lifecycle shutdown.
+	case turn.Status == TurnRunning:
 		if !child.Status.Terminal() {
 			child.Status = domain.SubagentRunning
 		}
-	case TurnCompleted:
+	case turn.Status == TurnCompleted:
 		child.Status = domain.SubagentCompleted
-	case TurnFailed:
+	case turn.Status == TurnFailed:
 		child.Status = domain.SubagentFailed
-	case TurnInterrupted:
+	case turn.Status == TurnInterrupted:
 		child.Status = domain.SubagentInterrupted
 	}
 	var fields map[string]json.RawMessage

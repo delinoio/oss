@@ -26,7 +26,7 @@ func (f *threadFixture) handleSubagentRead(id json.RawMessage, method string, ra
 		_ = out.Close()
 	}
 	if method == "thread/list" {
-		if params["ancestorThreadId"] != string(f.thread["id"].(domain.ID)) {
+		if params["ancestorThreadId"] != string(f.thread["id"].(domain.ID)) || params["useStateDbOnly"] != true {
 			os.Exit(73)
 		}
 		if f.subagents == nil {
@@ -75,6 +75,26 @@ func TestSubagentDescendantInspectionReadsHistoryWithoutChildControls(t *testing
 	observed, err := c.ObserveResolvedActivity(context.Background(), activity)
 	if err != nil || observed.Subagents[0].Source != domain.CodexActivitySource || observed.Subagents[0].SourceID != activity.ItemID || observed.Subagents[0].Output != nil {
 		t.Fatal("activity lost original source identity or invented output", err)
+	}
+	// Native closeAgent can follow completed output. Reading that older turn or
+	// receiving its late terminal notification must retain explicit shutdown.
+	child := domain.ID(e.Subagents[0].NativeID)
+	closed, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": map[string]any{"type": "collabAgentToolCall", "id": "native-close", "tool": "closeAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "shutdown", "message": nil}}}})
+	if err != nil || closed.Subagents[0].Status != domain.SubagentShutdown {
+		t.Fatal("native close after completion was rejected", err)
+	}
+	late, err := observeFixture(c, "turn/completed", map[string]any{"threadId": child, "turn": fixtureTurn(domain.NewID(), TurnCompleted)})
+	if err != nil || late.Subagents[0].Status != domain.SubagentShutdown {
+		t.Fatal("late child turn reopened shutdown", err)
+	}
+	read, err := c.InspectDescendants(context.Background())
+	if err != nil {
+		t.Fatal("closed child history could not be read", err)
+	}
+	for _, observed := range read.Subagents {
+		if observed.NativeID == string(child) && observed.Status != domain.SubagentShutdown {
+			t.Fatal("stored child turn reopened shutdown")
+		}
 	}
 	for _, call := range capturedThreads(t, capture) {
 		if call["method"] != "thread/start" && call["method"] != "thread/list" && call["method"] != "thread/turns/list" {

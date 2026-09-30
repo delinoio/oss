@@ -52,6 +52,15 @@ func TestSubagentTreeRejectsForeignCyclicAndReusedIdentitiesAtomically(t *testin
 	if err != nil || !state.Closed() {
 		t.Fatal("late child completion lost", err)
 	}
+	b.Status = SubagentShutdown
+	state, err = ApplySubagents(state, root, []SubagentObservation{b})
+	if err != nil || !state.Closed() {
+		t.Fatal("native shutdown after completion was rejected", err)
+	}
+	b.Status = SubagentCompleted
+	if _, err := ApplySubagents(state, root, []SubagentObservation{b}); err == nil {
+		t.Fatal("shutdown lifecycle was reopened")
+	}
 	b.Status = SubagentRunning
 	if _, err := ApplySubagents(state, root, []SubagentObservation{b}); err == nil {
 		t.Fatal("terminal regression accepted")
