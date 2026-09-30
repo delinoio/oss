@@ -189,7 +189,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .skip:focus { top: 10px; }
 @media (max-width: 1100px) { .app { grid-template-columns: 309px minmax(0, 1fr); } .sidebar { grid-template-columns: 52px minmax(0, 256px); } }
 @media (max-width: 850px) { .session { padding: 18px; } .session-header { align-items: start; flex-direction: column; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
 @media (prefers-reduced-motion: reduce) { .sidebar-status-running { animation: none; } .sidebar-disclosure { transition: none; } }
 .requests { max-height: 40vh; overflow: auto; flex-shrink: 0; }
 .interaction { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-block: 12px; }

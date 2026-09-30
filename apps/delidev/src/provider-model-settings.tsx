@@ -46,9 +46,16 @@ function presetData(entry: ProviderInventoryEntry, presets: Document[]): Documen
   return preset ? object(preset.provider) : undefined;
 }
 
+function providerIdentity(entry: ProviderInventoryEntry): string {
+  // First activation can publish a saved UUID before its original response arrives.
+  // Keep the row and retained request bound to the same managed preset throughout.
+  const presetID = presetString(entry.presetId);
+  return presetID ? `preset:${presetID}` : entry.providerId || `preset:${entry.presetId}`;
+}
+
 function ProviderToggle({ entry, presets, changed, refresh }: { entry: ProviderInventoryEntry; presets: Document[]; changed: () => void; refresh: () => unknown }) {
   const presetID = presetString(entry.presetId);
-  const identity = entry.providerId || `preset:${presetID ?? entry.presetId}`;
+  const identity = providerIdentity(entry);
   const mutation = useRetainedMutation(`provider-activation:${identity}`, ConfigurationQuery.saveConfiguration, changed);
   const saved = entry.provider;
   useEffect(() => { if (mutation.error) void refresh(); }, [mutation.error, refresh]);
@@ -109,7 +116,7 @@ export function ApiProviderSettings({
   const row = (entry: ProviderInventoryEntry) => {
     const customCopy = presetData(entry, presets);
     const accountState = entry.accountCountsAvailable ? `${entry.connectedAccounts.toString()} connected · ${entry.totalAccounts.toString()} total` : "Account counts unavailable";
-    return <article className="result provider-row" key={entry.providerId || `preset:${entry.presetId}`}>
+    return <article className="result provider-row" key={providerIdentity(entry)}>
       <div className="provider-row-heading"><div><h4>{entry.displayName}</h4><p>{entry.presetId === ProviderPresetId.UNSPECIFIED ? "Custom API provider" : local.includes(entry) ? "Local API server" : "Preset"}</p></div><ProviderToggle entry={entry} presets={presets} changed={changed} refresh={result.refetch} /></div>
       <p>Accounts: {accountState}. Connection state is separate from provider validation and model compatibility.</p>
       {!entry.enabled && entry.totalAccounts > 0n ? <p>Turning this provider off preserves its accounts, credentials, models and history.</p> : null}

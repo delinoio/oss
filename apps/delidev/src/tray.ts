@@ -6,7 +6,7 @@ export enum TrayQuotaState { Observed = "observed", Unknown = "unknown", Stale =
 interface TrayQuota { state: TrayQuotaState; remaining_basis_points: number | null; observed_at: string | null; reset_at: string | null }
 export interface TraySummary {
   overview: { observed_at: string; stale: boolean; active_sessions: string; pending_interactions: string; registered_workers: string; connected_workers: string } | null;
-  usage: { known_tokens: string | null; incomplete: boolean } | null;
+  usage: { known_tokens: string | null; incomplete: boolean; estimates: { currency: string; known_amount: string | null }[] } | null;
   accounts: { entries: { alias: string; windows: TrayQuota[]; more: boolean }[]; more: boolean } | null;
 }
 export const unavailableTray = (): TraySummary => ({ overview: null, usage: null, accounts: null });
@@ -25,7 +25,12 @@ export function traySummary(overview: GetOverviewResponse | undefined, overviewF
     const total = usage.totals?.total;
     // Exact observed root responses remain incomplete telemetry even when all
     // recorded counters are known. This is neither billing nor pooled quota.
-    summary.usage = { known_tokens: total && total.measuredResponses > 0 && decimal.test(total.knownTotal) ? total.knownTotal : null, incomplete: true };
+    const currencies = usage.estimates?.currencies ?? [];
+    const seen = new Set<string>();
+    if (currencies.length <= 32 && currencies.every((value) => {
+      if (!/^[A-Z]{3}$/.test(value.currency) || seen.has(value.currency) || (value.knownAmount !== "" && !/^(0|[1-9][0-9]{0,79})(\.[0-9]{1,9})?$/.test(value.knownAmount))) return false;
+      seen.add(value.currency); return true;
+    })) summary.usage = { known_tokens: total && total.measuredResponses > 0 && decimal.test(total.knownTotal) ? total.knownTotal : null, incomplete: true, estimates: currencies.map((value) => ({ currency: value.currency, known_amount: value.knownAmount || null })) };
   }
   if (accounts && accounts.resources.length <= 20 && observed) {
     const now = Date.parse(observed);
