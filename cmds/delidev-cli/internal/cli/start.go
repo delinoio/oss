@@ -140,7 +140,12 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 		}
 		return status, nil
 	} else if code := domain.SafeError(err).Code; code != domain.ServerUnavailable && code != domain.Unavailable {
-		return nil, err
+		// A fresh launch is intentional Start even while the previous Stop is
+		// completing. Only that mode joins cleanup below; ordinary Start keeps
+		// its live-stopping conflict and Retry never reopens stopped intent.
+		if mode != startupDesktopLaunch || code != domain.Conflict {
+			return nil, err
+		}
 	}
 	if mode == startupObservation {
 		return nil, domain.Fail(domain.ServerUnavailable, "DeliDev is not connected.", "Inspect connection diagnostics before an explicit retry.")

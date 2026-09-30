@@ -3,18 +3,120 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
+
+func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := security.CreateIdentity(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := server.Config{DataDir: root, Listen: "127.0.0.1:0"}
+	if _, err := server.WriteRunning(root, config); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SuppressLocalRestart(root, domain.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	original, err := server.ReadLifecycle(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed := make(chan struct{}, 4)
+	peer := httptest.NewServer(connect.NewUnaryHandler(delidevv1connect.SystemServiceGetStatusProcedure,
+		func(_ context.Context, req *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
+			if req.Header().Get("Authorization") != "Bearer "+owner.Token {
+				return nil, connect.NewError(connect.CodeUnauthenticated, nil)
+			}
+			observed <- struct{}{}
+			return connect.NewResponse(&pb.GetStatusResponse{Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, ServerId: string(owner.ServerID), Stopping: true}), nil
+		}))
+	defer peer.Close()
+	endpoint := server.Endpoint{URL: peer.URL, ServerID: owner.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}
+	raw, _ := json.Marshal(endpoint)
+	if err := security.WriteAtomic(filepath.Join(root, "server.json"), raw); err != nil {
+		t.Fatal(err)
+	}
+	ownership, err := security.TryLock(filepath.Join(root, "server.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ownership.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	o := options{dataDir: root}
+	streams := IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}
+	for _, mode := range []startupMode{startupDesktopRetry, startupEnsure, startupObservation} {
+		result, err := detachedStartup(ctx, o, config, streams, mode)
+		if err != nil || result.(map[string]any)["state"] != "stopped" {
+			t.Fatal("Stop was not preserved", mode, result, err)
+		}
+	}
+	if _, err := startDetached(ctx, o, config, streams); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("ordinary Start lost live-stopping conflict", err)
+	}
+	<-observed
+	done := make(chan error, 1)
+	go func() { _, err := detachedStartup(ctx, o, config, streams, startupDesktopLaunch); done <- err }()
+	select {
+	case <-observed:
+	case err := <-done:
+		t.Fatal("fresh launch did not inspect the stopping server", err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case err := <-done:
+		t.Fatal("fresh launch did not join pending cleanup", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	retained, err := server.ReadLifecycle(root)
+	if err != nil || retained != original {
+		t.Fatal("pending cleanup replaced Stop intent", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "server.log")); !os.IsNotExist(err) {
+		t.Fatal("pending cleanup spawned a replacement")
+	}
+	peer.Close()
+	if err := os.Remove(filepath.Join(root, "server.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ownership.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal("fresh launch did not resume after cleanup", err)
+	}
+	c, err := connectClient(o, streams.In)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.transport.CloseIdleConnections()
+	defer c.system.StopServer(context.Background(), request(c, &pb.StopServerRequest{RequestId: string(domain.NewID())}))
+	next, err := server.ReadLifecycle(root)
+	if err != nil || next.State != server.DesiredRunning || next.Generation == original.Generation {
+		t.Fatal("fresh launch did not publish a replacement generation", next, err)
+	}
+}
 
 func TestDesktopLaunchInitializesReusesAndPreservesStop(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private")

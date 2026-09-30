@@ -18,3 +18,18 @@ below when their results are available.
 Earlier broad-test failures and native/platform acceptance gaps remain recorded
 in `launch-default.md` and `main-merge-maintenance-2026-09-30.md`; these component
 checks do not establish native UI acceptance or erase those qualifications.
+
+## Still-answering Stop review
+
+The fresh-launch probe previously returned a stopping conflict before joining
+original store ownership. Fresh launch now treats only that conflict as pending
+cleanup. It retains the original intent until the store lock releases; service
+registration admission still prevents a competing process. Ordinary Start,
+Retry, ensure and observation retain their existing Stop behavior.
+
+`go test -race ./cmds/delidev-cli/internal/cli -run
+'^TestDesktopLaunchJoinsStillAnsweringStoppedServer$' -count=1` passed. The fixture
+uses an authenticated Connect stopping-status endpoint and a separately held
+original store lock, proves no replacement intent/log while held, then observes
+the same pending launch start a real detached replacement after release. This
+bounded synthetic stopping interval is not a native UI acceptance result.
