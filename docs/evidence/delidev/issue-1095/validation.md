@@ -44,3 +44,13 @@ Repair source revision: `979f8b44fe7f320be2972aff8c1ca4752a40df14`. The same fiv
 The post-repair `pnpm proto:check` completed format/lint and breaking checks, then its generation step failed because a referenced `container/heap` archive was missing from the shared Go build cache. A second generation through `GOCACHE=<temporary task cache> GOMAXPROCS=2 pnpm proto:generate` passed. The normal freshness assertions (`git diff --exit-code` over all four generated-source roots and no untracked generated files) then passed with no output changes. This isolated retry did not change repository configuration or the user's shared cache.
 
 These focused repair checks do not supersede the complete native-suite failures or real-account acceptance limits above. New-head CI and review remain separate evidence after publication.
+
+## Initiator revocation review repair
+
+The non-outdated Codex finding [on queued initiator revocation](https://github.com/delinoio/oss/pull/1174#discussion_r4141950170) was reproduced: queued login, refresh and logout all retained their pending operation after the initiating paired client was revoked. The new race regression failed all three queued cases before the fix.
+
+Client revocation now cancels its still-queued operations in the same transaction as credential revocation. It changes neither protected generations nor accepted logout health and preserves claimed/native leases. New authorized requests can proceed, while the original operation cannot grant authority and receipt replay cannot cancel a replacement operation from another initiator. Six queued/claimed cases pass under the race detector.
+
+Validation base: `631b9d5d02ea5f3e35133943bb979598b6586db6`. Tested source blobs: `devices.go` `bb870b4a78863d45cddf37371dc6401694aeed81`, `subscriptions.go` `50fbe00b6125991b7fbab0e71a37c17d7acf7008`, and `subscriptions_test.go` `40e5ad7f967305fb321a1950664f7a580b4e898e`. The same five-package `Subscription|Managed|Bundle` race command passed after this fix, followed by `GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/...`.
+
+The first new regression attempt could not build because the shared Go 1.26.8 compiler/vet files disappeared. Both the reproducing run and passing repair checks used an isolated temporary extraction of the already downloaded exact Go 1.26.8 archive (`GOTOOLCHAIN=local`), whose version was confirmed. No repository runtime pin or user credentials changed. The previously recorded complete native-suite failures remain unresolved and are not replaced by these focused passes.

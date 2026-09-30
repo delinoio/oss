@@ -58,6 +58,31 @@ func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
 	return nil
 }
 
+// Queued lifecycle requests have not granted native authority. Settle them in
+// the same transaction as client revocation, without releasing independent or
+// claimed leases and without undoing logout's accepted execution revocation.
+func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
+	accounts, err := all(tx, domain.AccountKind)
+	if err != nil {
+		return err
+	}
+	for _, record := range accounts {
+		account, err := store.Decode[domain.Account](record)
+		if err != nil {
+			return err
+		}
+		state := account.Subscription
+		if state == nil || state.Pending == nil || state.Pending.Actor.DeviceID != device || state.Pending.Phase != domain.SubscriptionQueued {
+			continue
+		}
+		state.Pending = nil
+		if _, err := tx.Put(domain.AccountKind, record.ID, record.Revision, "", "", account); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func subscriptionInstallation(tx *store.Tx, machineID domain.ID) (domain.Installation, error) {
 	_, machine, err := activeMachine(tx, machineID)
 	if err != nil {

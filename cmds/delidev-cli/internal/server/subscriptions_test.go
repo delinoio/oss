@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -508,5 +509,85 @@ func TestSubscriptionCapabilityNegotiatesWithExistingWorkerCapabilities(t *testi
 	request.Capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1)
 	if _, err := client.AttachWorker(context.Background(), subscriptionRequest(f.workerToken, request)); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("duplicate capability accepted: %v", err)
+	}
+}
+
+func TestSubscriptionQueuedInitiatorRevocationSettlesOperations(t *testing.T) {
+	for _, phase := range []domain.SubscriptionPhase{domain.SubscriptionQueued, domain.SubscriptionClaimed} {
+		for _, action := range []pb.SubscriptionAction{
+			pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN,
+			pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH,
+			pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT,
+		} {
+			t.Run(string(phase)+"/"+action.String(), func(t *testing.T) {
+				f := newSubscriptionFixture(t)
+				if action != pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN {
+					raw := f.login()
+					defer clear(raw)
+				}
+				devices := delidevv1connect.NewDeviceServiceClient(http.DefaultClient, f.http.URL)
+				ctx := context.Background()
+				code, token := randomCode(), randomCode()
+				codeHash, tokenHash := sha256.Sum256([]byte(code)), sha256.Sum256([]byte(token))
+				pairing, err := devices.CreatePairing(ctx, subscriptionRequest(f.service.Identity.Token, &pb.CreatePairingRequest{RequestId: string(domain.NewID()), Name: "subscription client", Type: pb.DeviceType_DEVICE_TYPE_CLIENT, CodeDigest: codeHash[:]}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				paired, err := devices.PairDevice(ctx, connect.NewRequest(&pb.PairDeviceRequest{RequestId: string(domain.NewID()), PairingId: pairing.Msg.Pairing.Id, Code: code, DeviceId: string(domain.NewID()), CredentialDigest: tokenHash[:]}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				r, _ := f.record()
+				requested, err := f.client.RequestSubscription(ctx, subscriptionRequest(token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: action}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var active *pb.TakeSubscriptionResponse
+				if phase == domain.SubscriptionClaimed {
+					active, err = f.take(requested.Msg, action)
+					if err != nil {
+						t.Fatal(err)
+					}
+					clear(active.Bundle)
+				}
+				_, before := f.record()
+				revoke := &pb.RevokeDeviceRequest{Mutation: acctMutation(paired.Msg.Device, domain.NewID())}
+				if _, err := devices.RevokeDevice(ctx, subscriptionRequest(f.service.Identity.Token, revoke)); err != nil {
+					t.Fatal(err)
+				}
+				_, after := f.record()
+				if phase == domain.SubscriptionClaimed {
+					if after.Subscription.Pending == nil || after.Subscription.Pending.ID != before.Subscription.Pending.ID || after.Subscription.Lease == nil || string(after.Subscription.Lease.ID) != active.LeaseId || after.Subscription.Generation != before.Subscription.Generation || after.Health != before.Health {
+						t.Fatal("initiator revocation released original claimed ownership")
+					}
+					if _, err := f.take(requested.Msg, action); err == nil {
+						t.Fatal("claimed operation granted another lease after revocation")
+					}
+					return
+				}
+				if after.Subscription.Pending != nil || after.Subscription.Lease != nil || after.Subscription.RecoveryRequired {
+					t.Fatal("revocation retained an unclaimed operation or fabricated native ownership")
+				}
+				if after.Subscription.Generation != before.Subscription.Generation || after.Health != before.Health || after.Subscription.IdentityCommitment != before.Subscription.IdentityCommitment {
+					t.Fatal("queued cancellation changed credential ownership or accepted logout revocation")
+				}
+				if _, err := f.take(requested.Msg, action); err == nil {
+					t.Fatal("revoked operation granted native authority")
+				}
+				replacement := f.start(action)
+				if _, err := devices.RevokeDevice(ctx, subscriptionRequest(f.service.Identity.Token, revoke)); err != nil {
+					t.Fatal(err)
+				}
+				_, current := f.record()
+				if current.Subscription.Pending == nil || string(current.Subscription.Pending.ID) != replacement.OperationId {
+					t.Fatal("revocation receipt replay canceled another initiator's replacement operation")
+				}
+				lease, err := f.take(replacement, action)
+				if err != nil {
+					t.Fatal("replacement authorized request could not acquire the account", err)
+				}
+				clear(lease.Bundle)
+			})
+		}
 	}
 }
