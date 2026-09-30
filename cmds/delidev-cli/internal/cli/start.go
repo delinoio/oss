@@ -3,9 +3,12 @@ package cli
 import (
 	"context"
 	"errors"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -126,14 +129,19 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 		if status.Msg.ProtocolVersion != rpc.ProtocolVersion || status.Msg.Version != rpc.Version {
 			return nil, domain.Fail(domain.Unsupported, "A different server version already owns this scope.", "Use its compatible CLI or explicitly stop it after reviewing active sessions.")
 		}
+		if (mode == startupDesktopLaunch || mode == startupDesktopRetry) && (!desktopStartupListenerMatches(config, status.Msg.Listener) || status.Msg.Listener != c.endpoint) {
+			return nil, domain.Fail(domain.Unsupported, "The running server listener is incompatible with desktop launch.", "Preserve the original server and use its compatible client or inspect connection diagnostics.")
+		}
 		if status.Msg.Stopping || intent.State == server.DesiredStopped {
 			return nil, domain.Fail(domain.Conflict, "The server is stopping.", "Wait for confirmed shutdown before explicitly starting again.")
 		}
 		return map[string]any{"reused": true, "status": status.Msg}, nil
 	}
 	if status, err := probe(); err == nil {
-		// Adopt legacy foreground servers only after authenticated compatibility.
-		if intent.Version == 0 && mode != startupObservation && !serviceManaged {
+		// Desktop status cannot prove legacy TLS paths or allowed origins. Reuse
+		// an authenticated compatible listener without inventing restart intent.
+		// Ordinary explicit startup retains its existing legacy adoption behavior.
+		if intent.Version == 0 && mode != startupObservation && mode != startupDesktopLaunch && mode != startupDesktopRetry && !serviceManaged {
 			if _, err := server.WriteRunning(o.dataDir, config); err != nil {
 				return nil, err
 			}
@@ -268,6 +276,27 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 			}
 		}
 	}
+}
+
+func desktopStartupListenerMatches(config server.Config, listener string) bool {
+	if rpc.ValidateEndpoint(listener) != nil {
+		return false
+	}
+	endpoint, err := url.Parse(listener)
+	protocol := "http"
+	if config.TLSCertificate != "" {
+		protocol = "https"
+	}
+	listen := config.Listen
+	if listen == "" {
+		listen = server.DefaultListen
+	}
+	host, port, splitErr := net.SplitHostPort(listen)
+	if err != nil || splitErr != nil || endpoint.Scheme != protocol || !net.ParseIP(host).Equal(net.ParseIP(endpoint.Hostname())) {
+		return false
+	}
+	actualPort, err := strconv.Atoi(endpoint.Port())
+	return err == nil && actualPort > 0 && actualPort <= 65535 && (port == "0" || port == endpoint.Port())
 }
 
 // Startup already holds the controller and lifecycle locks. A still-owned

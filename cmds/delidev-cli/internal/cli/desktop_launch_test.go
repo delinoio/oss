@@ -42,13 +42,14 @@ func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	observed := make(chan struct{}, 4)
-	peer := httptest.NewServer(connect.NewUnaryHandler(delidevv1connect.SystemServiceGetStatusProcedure,
+	var peer *httptest.Server
+	peer = httptest.NewServer(connect.NewUnaryHandler(delidevv1connect.SystemServiceGetStatusProcedure,
 		func(_ context.Context, req *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
 			if req.Header().Get("Authorization") != "Bearer "+owner.Token {
 				return nil, connect.NewError(connect.CodeUnauthenticated, nil)
 			}
 			observed <- struct{}{}
-			return connect.NewResponse(&pb.GetStatusResponse{Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, ServerId: string(owner.ServerID), Stopping: true}), nil
+			return connect.NewResponse(&pb.GetStatusResponse{Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, ServerId: string(owner.ServerID), Listener: peer.URL, Stopping: true}), nil
 		}))
 	defer peer.Close()
 	endpoint := server.Endpoint{URL: peer.URL, ServerID: owner.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}
@@ -115,6 +116,60 @@ func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 	next, err := server.ReadLifecycle(root)
 	if err != nil || next.State != server.DesiredRunning || next.Generation == original.Generation {
 		t.Fatal("fresh launch did not publish a replacement generation", next, err)
+	}
+}
+
+func TestDesktopLaunchPreservesLegacyListenerAndAbsentConfiguration(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	config := server.Config{DataDir: root, Listen: "127.0.0.1:0"}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	foreground, exit := context.WithCancel(ctx)
+	defer exit()
+	ready, done := make(chan server.Endpoint, 1), make(chan error, 1)
+	go func() { done <- server.Serve(foreground, config, func(e server.Endpoint) { ready <- e }) }()
+	var endpoint server.Endpoint
+	select {
+	case endpoint = <-ready:
+	case err := <-done:
+		t.Fatal(err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	// Simulate a live pre-lifecycle server without changing its actual listener,
+	// owner identity, database or running process.
+	if err := os.Remove(filepath.Join(root, "server-lifecycle.json")); err != nil {
+		t.Fatal(err)
+	}
+	o := options{dataDir: root}
+	streams := IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}
+	desktop := config
+	desktop.Listen = "127.0.0.1:46310"
+	for _, mode := range []startupMode{startupDesktopLaunch, startupDesktopRetry} {
+		if _, err := detachedStartup(ctx, o, desktop, streams, mode); domain.SafeError(err).Code != domain.Unsupported {
+			t.Fatal("desktop accepted a different legacy listener", mode, err)
+		}
+		if retained, err := server.ReadLifecycle(root); err != nil || retained.Version != 0 {
+			t.Fatal("desktop invented legacy configuration", retained, err)
+		}
+		if retained, err := server.LoadEndpoint(root); err != nil || retained != endpoint {
+			t.Fatal("desktop changed the legacy endpoint", retained, err)
+		}
+	}
+	desktop.Listen = strings.TrimPrefix(endpoint.URL, "http://")
+	desktop.AllowedOrigins = []string{"tauri://localhost"}
+	if result, err := detachedStartup(ctx, o, desktop, streams, startupDesktopLaunch); err != nil || result.(map[string]any)["reused"] != true {
+		t.Fatal("compatible legacy listener not reused", result, err)
+	}
+	if retained, err := server.ReadLifecycle(root); err != nil || retained.Version != 0 {
+		t.Fatal("reuse invented unproved origin configuration", retained, err)
+	}
+	exit()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if result, err := ensureDetached(ctx, o, desktop, streams, true); err != nil || result.(map[string]any)["state"] != "stopped" {
+		t.Fatal("legacy exit acquired desktop restart intent", result, err)
 	}
 }
 

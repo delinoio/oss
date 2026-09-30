@@ -33,3 +33,17 @@ uses an authenticated Connect stopping-status endpoint and a separately held
 original store lock, proves no replacement intent/log while held, then observes
 the same pending launch start a real detached replacement after release. This
 bounded synthetic stopping interval is not a native UI acceptance result.
+
+## Legacy listener/configuration review
+
+Desktop launch/Retry now validate the authenticated status listener against the
+requested listener and stored endpoint before reuse. They leave absent legacy
+lifecycle configuration absent even for a compatible listener, because status
+cannot prove original TLS paths or allowed origins. Ordinary explicit startup
+retains its original legacy adoption behavior.
+
+The race-enabled stopping, legacy-listener and initialization/Stop regressions
+passed together (three tests). The legacy fixture uses an actual foreground
+server with its lifecycle record removed to represent a pre-lifecycle process;
+it proves an alternate listener stays untouched, compatible live reuse does not
+publish invented origins, and ensure does not restart it after exit.
