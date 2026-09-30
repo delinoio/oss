@@ -26,7 +26,7 @@ The desktop/CLI/server/Worker implementation is in progress. The 2026-09-28 part
 | CLI build/distribution and OS lifecycle | Pending | Native Windows/Linux evidence pending |
 
 ## Presentation scope
-The owner explicitly confirmed on 2026-09-25 that the active request includes the desktop app and the complete issue #964. The earlier CLI-only scope describes prior implementation increments, not the current completion criterion. Desktop windows, tray/notification integration and native browser dispatch are implemented with bounded evidence recorded below; direct tray-menu activation, OS notification delivery, the macOS widget, signed distribution and supported-platform acceptance remain incomplete. All remaining server/Worker requirements still apply; no desktop completion is claimed.
+The owner explicitly confirmed on 2026-09-25 that the active request includes the desktop app and the complete issue #964. The earlier CLI-only scope describes prior implementation increments, not the current completion criterion. Desktop windows, tray/notification integration and native browser dispatch are implemented with bounded evidence recorded below; direct tray-menu activation, OS notification delivery, provisioned macOS widget installation/interaction, signed distribution and supported-platform acceptance remain incomplete. The initial widget implementation and bounded native evidence are recorded separately below. All remaining server/Worker requirements still apply; no desktop completion is claimed.
 
 The TypeScript direct-Connect integration boundary is now implemented in `packages/delidev-api-client`, with generated service-specific React Query descriptors and bounded snapshot/event synchronization. Its real Go-server fixture validates the transport and replay boundary; it does not establish a packaged desktop or large-history presentation.
 
@@ -3293,3 +3293,59 @@ required Node.js 24 runtime: all 941 component tests across 74 files, typecheck,
 Rsbuild bundle. These are private fixture/build results, not native packaged
 or real-account acceptance. Generated frontend/client `dist` outputs were
 removed after validation. CI on the forthcoming repair commit remains pending.
+
+### Initial privacy-safe macOS status widget (#1090, 2026-09-30)
+
+- Added macOS 13 WidgetKit and Intents selection extensions (`io.delino.delidev.widget` and `io.delino.delidev.widget.selection`) sharing only `group.io.delino.delidev` metadata with the desktop. Each instance selects an exact saved-profile UUID; no default/fallback, account credentials, endpoint, prompt, conversation text, networking or agent action is available. Go/RPC/CLI business semantics and schemas remain unchanged.
+- The existing authenticated tray projection supplies independently unavailable/known-zero/large exact token values, incomplete coverage, separate exact currency estimates and account quota windows. Private typed reconstruction masks aliases and discards extra secret/content fields. Scope/revision and saved-window instance checks serialize publication; synchronized owner-private atomic storage rejects links, hard links, corruption, unsafe modes and oversized files. Failed reads retain last-success data as stale. Exit joins admitted writes before marking snapshots stale, and queued writes cannot renew freshness after exit. Widget-storage failure does not disable the existing tray.
+- Native macOS arm64 Swift fixtures pass for exact values/currencies, quota unknown/reset/expiry, two-server isolation/removal, stale/closure timestamps, seeded secret/email sentinels and private storage. Both extensions compile with macOS 13 metadata and declared sandbox/group entitlements. Small/medium/large SwiftUI renders were visually inspected; incomplete-coverage and last-success labels remain visible independently of long values.
+- A real credential-free ad-hoc debug DeliDev app was assembled by the pinned Tauri CLI. Actual bundle verification passed for the main/sidecar/CEF/helper architectures, required CEF resources, both embedded extensions, exact bundle/extension identities, macOS 13, App Group/sandbox entitlements and strict nested signatures. This is static development packaging, not provisioned installation, WidgetKit gallery/configuration interaction, real-provider acceptance, production signing, notarization or publication. The existing CEF execution entitlements remain on the app only.
+- Full frontend `pnpm test` passed on Node.js 24: 74 files / 942 tests, native Swift fixtures, package/launch scripts, typecheck and production build. Repository contract checks passed (95), workflow validation passed, and the native Rust core/host checks passed (15 core tests plus seven host tests; four existing tests ignored). Earlier concurrent frontend attempts timed out in unrelated existing tests; a constrained run also had a temporary Git initialization failure, before the full command passed.
+- Initial root `cargo test` attempts did not pass: eight untouched `clibox-fspy` macOS process/injection tests failed during concurrent compilation, and a four-thread repeat stopped at `clibox`'s `cancellation_forwards_shutdown_output_before_returning`. The latter passed alone with one test thread. No source in those crates was changed.
+- The final root `cargo test -- --test-threads=1` with canonical `TMPDIR=/private/tmp` and the existing CEF cache passed every workspace unit/integration target, including the earlier clibox failures. It then exited at `clibox-system` doctest compilation with `E0463` for `objc2_app_kit` and `objc2_foundation`; that crate is unchanged. A separate root `cargo test --doc -- --test-threads=1` rebuilt dependencies and passed all workspace doctests. These two completed checks cover the workspace test targets, while the failed full-command invocation remains recorded. Generated desktop/client `dist` directories were removed after compilation and packaging.
+
+### PR #1120 real-server GitHub profile wait repair (2026-09-30)
+
+The hosted protocol/client job passed 941 of 942 desktop tests but timed out
+waiting for `Rename Real server profile` after saving a profile. The fixture now
+delays the original profile save and profile-list reads by 600 ms each. This
+reproduced the same missing-button failure under the default one-second wait;
+bounded five-second waits for the created and renamed profile pass. The real
+Go server and CLI still verify the exact saved fields and final revision 2.
+Production RPC behavior, retries and the 30-second scenario deadline are
+unchanged. Full desktop `pnpm test` then passed 74 files / 942 tests, type
+checking, packaging/launcher checks, native Swift fixtures and the production
+build. Generated desktop/client `dist` output was removed after verification.
+No new Rust, Go, protocol or platform acceptance changes were made; the repaired
+hosted CI result remains pending after the push.
+
+### PR #1114 merge reconciliation (2026-09-30)
+
+Merged main revision `ba2fc2d2ca6eb5ec3d21786d771ea81dea33d4da` after
+GitHub reported conflicts. The independently repaired GitHub profile fixture
+retains the original delayed save/list RPCs and five-second observation waits;
+the complete restore and macOS widget evidence additions are both preserved.
+The backup Go implementation and generated protocol/client bindings are unchanged
+by the merge.
+
+Package-local `pnpm test` on Node.js 24 passed all 942 component tests across
+74 files, type checking, native package/launcher checks, native Swift widget
+fixtures and the production build. The root Rust attempts are separate:
+`TMPDIR=/private/tmp cargo test -- --test-threads=1` initially stopped at an
+unchanged Forge fixture with `FontUnavailable` because its LFS font was still a
+pointer. All repository LFS objects were then hydrated and `git lfs fsck --objects`
+passed; the formerly failing Forge fixture passed in the next root run. That run
+stopped at two unchanged pnport tests requiring its native injection artifact.
+The documented `cargo build -p pnport -p fspy_preload_unix --features fspy_preload_unix/pnport`
+prerequisite passed and both development/test-directory dylibs contained the
+required readiness marker. A root repeat with that feature enabled stopped at
+clibox's unchanged `fspy_open` fixtures with `trace_loss`. These failures remain
+visible; no full root Rust pass is claimed. DeliDev core tests passed with 14
+successful tests and four existing explicit-sidecar fixtures ignored. All tests
+used their existing private fixtures; these results do not establish native
+packaged, real-provider or distribution acceptance.
+
+Post-merge `pnpm proto:check` passed formatting/lint, compatibility and exact
+generated-source freshness without schema/binding drift. Generated desktop/client
+`dist` outputs were removed. CI for the merge commit is pending after publication;
+earlier successful CI applies only to its previously checked head.

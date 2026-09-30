@@ -500,13 +500,14 @@ it("persists native Claude permission selection through the desktop and real Go 
 
 it("saves and renames GitHub profiles through the real Go server and CLI", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  // Saving then refreshing the profile list requires two real RPCs. Exercise
-  // ordinary delayed replies so this fixture does not depend on a fast runner;
-  // the component-test library's one-second wait is not a server SLA.
+  // Exercise the hosted CI timeout with sequential save and list latency. The
+  // fixture must wait for the actual refreshed profile, without replaying saves.
+  // The component-test library's one-second wait is not a server SLA.
   const slowTransport: Transport = {
     ...transport,
     async unary(method, signal, timeoutMs, header, input, contextValues) {
-      if (method.name === "SaveIntegrationProfile" || (method.name === "ListResources" && (input as { filter?: { kind?: EntityKind } }).filter?.kind === EntityKind.INTEGRATION)) {
+      const profileList = method.name === "ListResources" && (input as { filter?: { kind?: EntityKind } }).filter?.kind === EntityKind.INTEGRATION;
+      if (method.name === "SaveIntegrationProfile" || profileList) {
         await new Promise(resolve => setTimeout(resolve, 600));
       }
       return transport.unary(method, signal, timeoutMs, header, input, contextValues);

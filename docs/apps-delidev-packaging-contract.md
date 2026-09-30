@@ -42,7 +42,7 @@ matrix consumed by CI; it requires neither dependencies nor credentials.
 The macOS-specific `bundle:macos-dry-run` remains available for development
 checkouts and verifies strict nested ad-hoc signatures, original bundle ID,
 macOS 13 metadata, main/sidecar/CEF/helper architecture and required CEF data.
-The general command archives that verified app with file modes retained.
+Both macOS widget extensions are explicitly built and embedded under `Contents/PlugIns` with bundle IDs `io.delino.delidev.widget` and `io.delino.delidev.widget.selection`, macOS 13 metadata, native architecture, sandbox entitlements and App Group `group.io.delino.delidev`. The containing app declares the same group. Local extension builds disable Xcode provisioning and then ad-hoc sign the declared entitlements; this does not establish provisioned group access or widget installation. Follow [the widget contract](apps-delidev-widget-contract.md). The general command archives that verified app with file modes retained.
 Windows extracts the MSI administratively without installing it, verifies
 original app/sidecar/CEF PE64 architecture and resources, and requires the product
 executables and installer to report `NotSigned`. Linux extracts the DEB without
