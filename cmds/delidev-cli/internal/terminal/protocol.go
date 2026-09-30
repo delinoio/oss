@@ -37,9 +37,18 @@ func (r Result) Validate() error {
 	if r.Rows == 0 || r.Columns == 0 || r.Rows > 500 || r.Columns > 1000 || domain.Text(r.Shell, "terminal shell", 4096, false) != nil || domain.Text(r.Cwd, "terminal directory", 4096, false) != nil {
 		return domain.Fail(domain.InvalidArgument, "Invalid terminal result.", "Preserve the original terminal assignment.")
 	}
+	if r.Problem != nil {
+		// Only native terminal failure classifications cross this boundary. The
+		// server replaces all remote diagnostic text before public persistence.
+		switch r.Problem.Code {
+		case domain.InvalidArgument, domain.NotFound, domain.Conflict, domain.PermissionDenied, domain.Unavailable, domain.MissingInput, domain.Unsupported, domain.RecoveryRequired, domain.ResourceExhausted, domain.Canceled, domain.Internal:
+		default:
+			return domain.Fail(domain.InvalidArgument, "Invalid terminal failure classification.", "Report a supported native terminal failure code.")
+		}
+	}
 	switch r.State {
 	case domain.TerminalRunning:
-		if !r.CleanupVerified && r.ExitCode == nil && r.Shell != "" && r.Cwd != "" {
+		if !r.CleanupVerified && r.ExitCode == nil && r.Problem == nil && r.Shell != "" && r.Cwd != "" {
 			return nil
 		}
 	case domain.TerminalClosed, domain.TerminalExited:

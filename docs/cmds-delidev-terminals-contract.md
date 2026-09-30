@@ -163,6 +163,14 @@ state, cleanup fact and stable error code. Interrupted auxiliary channels log
 the machine and safe code. Existing process-scope logs retain ownership IDs and
 safe lifecycle facts. Never log raw bytes, shell command text, paths, tokens,
 environment values or raw OS errors.
+Worker-reported problems accept only the closed native terminal classifications:
+`invalid_argument`, `not_found`, `conflict`, `permission_denied`, `unavailable`,
+`missing_input`, `unsupported`, `recovery_required`, `resource_exhausted`,
+`canceled` and `internal`. Unknown or disallowed codes and problems on running
+results are rejected. Before public persistence, the server retains only that
+classification and its own bounded message/guidance, discarding remote message,
+guidance, cause and correlation ID. Receipt identity still binds the original
+report bytes, so exact acknowledgement retries remain read-only.
 
 ## Build and Test
 

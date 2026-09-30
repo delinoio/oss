@@ -455,6 +455,12 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 	if len(req.Msg.ResultJson) > terminal.MaxResultBytes || domain.Decode(req.Msg.ResultJson, &output) != nil || output.Validate() != nil {
 		return fail(domain.Fail(domain.InvalidArgument, "Invalid terminal report.", "Report bounded original native facts."))
 	}
+	if output.Problem != nil {
+		// Worker diagnostics are untrusted even when their code is recognized.
+		// Keep the original request bytes for receipt identity, but never publish
+		// remote messages, guidance, causes or correlation identifiers.
+		output.Problem = domain.Fail(output.Problem.Code, "The Worker could not complete the terminal operation.", "Inspect the original terminal and reconcile its owned processes before retrying.")
+	}
 	actor, _ := domain.PrincipalFrom(ctx)
 	machine, instance := domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId)
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "terminal.report", req.Msg, func(tx *store.Tx) (any, error) {

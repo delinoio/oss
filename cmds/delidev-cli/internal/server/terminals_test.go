@@ -173,6 +173,60 @@ func TestTerminalReceiptsOutputReattachAndArchiveBarrier(t *testing.T) {
 	}
 }
 
+func TestTerminalReportSanitizesWorkerProblemsAndPreservesExactReceipt(t *testing.T) {
+	f, session, worker, client, instance, _ := terminalFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	product := delidevv1connect.NewTerminalServiceClient(http.DefaultClient, f.endpoint.URL)
+	accepted, err := product.CreateTerminal(ctx, ownerRequest(f.identity, &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value domain.Terminal
+	if err := domain.Decode(accepted.Msg.Terminal.DocumentJson, &value); err != nil {
+		t.Fatal(err)
+	}
+	claim := &pb.ClaimTerminalRequest{RequestId: string(domain.NewID()), MachineId: string(value.MachineID), InstanceId: instance, TerminalId: accepted.Msg.Terminal.Id, OperationId: string(value.Pending.ID)}
+	if _, err := client.ClaimTerminal(ctx, ownerRequest(worker, claim)); err != nil {
+		t.Fatal(err)
+	}
+	marker := "private-native-token-path-stderr"
+	problem := &domain.Error{Code: "unknown_native_code", Message: strings.Repeat(marker, 256), Guidance: marker, Cause: marker, CorrelationID: marker}
+	result := terminal.Result{State: domain.TerminalUncertain, Rows: 24, Columns: 80, Problem: problem}
+	raw, _ := json.Marshal(result)
+	report := &pb.ReportTerminalRequest{RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: instance, TerminalId: claim.TerminalId, OperationId: claim.OperationId, ResultJson: raw}
+	if _, err := client.ReportTerminal(ctx, ownerRequest(worker, report)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatal("unknown failure code crossed the report boundary", err)
+	}
+	// A rejected report must not consume the request ID or operation. The
+	// corrected classification can commit while its text remains untrusted.
+	problem.Code = domain.RecoveryRequired
+	report.ResultJson, _ = json.Marshal(result)
+	reported, err := client.ReportTerminal(ctx, ownerRequest(worker, report))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := domain.Decode(reported.Msg.Terminal.DocumentJson, &value); err != nil {
+		t.Fatal(err)
+	}
+	if value.Problem == nil || value.Problem.Code != domain.RecoveryRequired || value.Problem.Message == problem.Message || value.Problem.Guidance == problem.Guidance || value.Problem.Cause != "" || value.Problem.CorrelationID != "" || bytes.Contains(reported.Msg.Terminal.DocumentJson, []byte(marker)) {
+		t.Fatal("Worker diagnostic text entered public terminal state")
+	}
+	stored := currentCatalogResource(t, f, reported.Msg.Terminal)
+	if bytes.Contains(stored.DocumentJson, []byte(marker)) {
+		t.Fatal("Worker diagnostic text persisted")
+	}
+	replayed, err := client.ReportTerminal(ctx, ownerRequest(worker, report))
+	if err != nil || replayed.Msg.Terminal.Revision != reported.Msg.Terminal.Revision {
+		t.Fatal("exact original report did not replay read-only", err)
+	}
+	problem.Message = "different untrusted diagnostic with the same classification"
+	report.ResultJson, _ = json.Marshal(result)
+	if _, err := client.ReportTerminal(ctx, ownerRequest(worker, report)); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("sanitized projection replaced original receipt identity", err)
+	}
+}
+
 func TestTerminalCloseBeforeCreateReportAndExitRacingQueuedInput(t *testing.T) {
 	f, session, worker, client, instance, manifest := terminalFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
