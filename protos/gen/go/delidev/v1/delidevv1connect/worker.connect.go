@@ -33,6 +33,18 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// WorkerServiceWatchTerminalsProcedure is the fully-qualified name of the WorkerService's
+	// WatchTerminals RPC.
+	WorkerServiceWatchTerminalsProcedure = "/delidev.v1.WorkerService/WatchTerminals"
+	// WorkerServiceClaimTerminalProcedure is the fully-qualified name of the WorkerService's
+	// ClaimTerminal RPC.
+	WorkerServiceClaimTerminalProcedure = "/delidev.v1.WorkerService/ClaimTerminal"
+	// WorkerServiceReportTerminalProcedure is the fully-qualified name of the WorkerService's
+	// ReportTerminal RPC.
+	WorkerServiceReportTerminalProcedure = "/delidev.v1.WorkerService/ReportTerminal"
+	// WorkerServicePublishTerminalOutputProcedure is the fully-qualified name of the WorkerService's
+	// PublishTerminalOutput RPC.
+	WorkerServicePublishTerminalOutputProcedure = "/delidev.v1.WorkerService/PublishTerminalOutput"
 	// WorkerServiceWatchForwardRequestsProcedure is the fully-qualified name of the WorkerService's
 	// WatchForwardRequests RPC.
 	WorkerServiceWatchForwardRequestsProcedure = "/delidev.v1.WorkerService/WatchForwardRequests"
@@ -78,6 +90,10 @@ const (
 
 // WorkerServiceClient is a client for the delidev.v1.WorkerService service.
 type WorkerServiceClient interface {
+	WatchTerminals(context.Context, *connect.Request[v1.WatchTerminalsRequest]) (*connect.ServerStreamForClient[v1.WatchTerminalsResponse], error)
+	ClaimTerminal(context.Context, *connect.Request[v1.ClaimTerminalRequest]) (*connect.Response[v1.ClaimTerminalResponse], error)
+	ReportTerminal(context.Context, *connect.Request[v1.ReportTerminalRequest]) (*connect.Response[v1.ReportTerminalResponse], error)
+	PublishTerminalOutput(context.Context, *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error)
 	WatchForwardRequests(context.Context, *connect.Request[v1.WatchForwardRequestsRequest]) (*connect.ServerStreamForClient[v1.WatchForwardRequestsResponse], error)
 	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest]) (*connect.ServerStreamForClient[v1.WatchWorkspaceReadsResponse], error)
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
@@ -106,6 +122,30 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workerServiceMethods := v1.File_delidev_v1_worker_proto.Services().ByName("WorkerService").Methods()
 	return &workerServiceClient{
+		watchTerminals: connect.NewClient[v1.WatchTerminalsRequest, v1.WatchTerminalsResponse](
+			httpClient,
+			baseURL+WorkerServiceWatchTerminalsProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("WatchTerminals")),
+			connect.WithClientOptions(opts...),
+		),
+		claimTerminal: connect.NewClient[v1.ClaimTerminalRequest, v1.ClaimTerminalResponse](
+			httpClient,
+			baseURL+WorkerServiceClaimTerminalProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ClaimTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		reportTerminal: connect.NewClient[v1.ReportTerminalRequest, v1.ReportTerminalResponse](
+			httpClient,
+			baseURL+WorkerServiceReportTerminalProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ReportTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		publishTerminalOutput: connect.NewClient[v1.PublishTerminalOutputRequest, v1.PublishTerminalOutputResponse](
+			httpClient,
+			baseURL+WorkerServicePublishTerminalOutputProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("PublishTerminalOutput")),
+			connect.WithClientOptions(opts...),
+		),
 		watchForwardRequests: connect.NewClient[v1.WatchForwardRequestsRequest, v1.WatchForwardRequestsResponse](
 			httpClient,
 			baseURL+WorkerServiceWatchForwardRequestsProcedure,
@@ -195,6 +235,10 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
+	watchTerminals        *connect.Client[v1.WatchTerminalsRequest, v1.WatchTerminalsResponse]
+	claimTerminal         *connect.Client[v1.ClaimTerminalRequest, v1.ClaimTerminalResponse]
+	reportTerminal        *connect.Client[v1.ReportTerminalRequest, v1.ReportTerminalResponse]
+	publishTerminalOutput *connect.Client[v1.PublishTerminalOutputRequest, v1.PublishTerminalOutputResponse]
 	watchForwardRequests  *connect.Client[v1.WatchForwardRequestsRequest, v1.WatchForwardRequestsResponse]
 	watchWorkspaceReads   *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
 	reportWorkspaceRead   *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
@@ -209,6 +253,26 @@ type workerServiceClient struct {
 	claimQuestionResponse *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
 	claimApprovalResponse *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
 	claimSteerInput       *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+}
+
+// WatchTerminals calls delidev.v1.WorkerService.WatchTerminals.
+func (c *workerServiceClient) WatchTerminals(ctx context.Context, req *connect.Request[v1.WatchTerminalsRequest]) (*connect.ServerStreamForClient[v1.WatchTerminalsResponse], error) {
+	return c.watchTerminals.CallServerStream(ctx, req)
+}
+
+// ClaimTerminal calls delidev.v1.WorkerService.ClaimTerminal.
+func (c *workerServiceClient) ClaimTerminal(ctx context.Context, req *connect.Request[v1.ClaimTerminalRequest]) (*connect.Response[v1.ClaimTerminalResponse], error) {
+	return c.claimTerminal.CallUnary(ctx, req)
+}
+
+// ReportTerminal calls delidev.v1.WorkerService.ReportTerminal.
+func (c *workerServiceClient) ReportTerminal(ctx context.Context, req *connect.Request[v1.ReportTerminalRequest]) (*connect.Response[v1.ReportTerminalResponse], error) {
+	return c.reportTerminal.CallUnary(ctx, req)
+}
+
+// PublishTerminalOutput calls delidev.v1.WorkerService.PublishTerminalOutput.
+func (c *workerServiceClient) PublishTerminalOutput(ctx context.Context, req *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error) {
+	return c.publishTerminalOutput.CallUnary(ctx, req)
 }
 
 // WatchForwardRequests calls delidev.v1.WorkerService.WatchForwardRequests.
@@ -283,6 +347,10 @@ func (c *workerServiceClient) ClaimSteerInput(ctx context.Context, req *connect.
 
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
+	WatchTerminals(context.Context, *connect.Request[v1.WatchTerminalsRequest], *connect.ServerStream[v1.WatchTerminalsResponse]) error
+	ClaimTerminal(context.Context, *connect.Request[v1.ClaimTerminalRequest]) (*connect.Response[v1.ClaimTerminalResponse], error)
+	ReportTerminal(context.Context, *connect.Request[v1.ReportTerminalRequest]) (*connect.Response[v1.ReportTerminalResponse], error)
+	PublishTerminalOutput(context.Context, *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error)
 	WatchForwardRequests(context.Context, *connect.Request[v1.WatchForwardRequestsRequest], *connect.ServerStream[v1.WatchForwardRequestsResponse]) error
 	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
@@ -307,6 +375,30 @@ type WorkerServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workerServiceMethods := v1.File_delidev_v1_worker_proto.Services().ByName("WorkerService").Methods()
+	workerServiceWatchTerminalsHandler := connect.NewServerStreamHandler(
+		WorkerServiceWatchTerminalsProcedure,
+		svc.WatchTerminals,
+		connect.WithSchema(workerServiceMethods.ByName("WatchTerminals")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceClaimTerminalHandler := connect.NewUnaryHandler(
+		WorkerServiceClaimTerminalProcedure,
+		svc.ClaimTerminal,
+		connect.WithSchema(workerServiceMethods.ByName("ClaimTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceReportTerminalHandler := connect.NewUnaryHandler(
+		WorkerServiceReportTerminalProcedure,
+		svc.ReportTerminal,
+		connect.WithSchema(workerServiceMethods.ByName("ReportTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServicePublishTerminalOutputHandler := connect.NewUnaryHandler(
+		WorkerServicePublishTerminalOutputProcedure,
+		svc.PublishTerminalOutput,
+		connect.WithSchema(workerServiceMethods.ByName("PublishTerminalOutput")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceWatchForwardRequestsHandler := connect.NewServerStreamHandler(
 		WorkerServiceWatchForwardRequestsProcedure,
 		svc.WatchForwardRequests,
@@ -393,6 +485,14 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case WorkerServiceWatchTerminalsProcedure:
+			workerServiceWatchTerminalsHandler.ServeHTTP(w, r)
+		case WorkerServiceClaimTerminalProcedure:
+			workerServiceClaimTerminalHandler.ServeHTTP(w, r)
+		case WorkerServiceReportTerminalProcedure:
+			workerServiceReportTerminalHandler.ServeHTTP(w, r)
+		case WorkerServicePublishTerminalOutputProcedure:
+			workerServicePublishTerminalOutputHandler.ServeHTTP(w, r)
 		case WorkerServiceWatchForwardRequestsProcedure:
 			workerServiceWatchForwardRequestsHandler.ServeHTTP(w, r)
 		case WorkerServiceWatchWorkspaceReadsProcedure:
@@ -429,6 +529,22 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedWorkerServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkerServiceHandler struct{}
+
+func (UnimplementedWorkerServiceHandler) WatchTerminals(context.Context, *connect.Request[v1.WatchTerminalsRequest], *connect.ServerStream[v1.WatchTerminalsResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchTerminals is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ClaimTerminal(context.Context, *connect.Request[v1.ClaimTerminalRequest]) (*connect.Response[v1.ClaimTerminalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ClaimTerminal is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ReportTerminal(context.Context, *connect.Request[v1.ReportTerminalRequest]) (*connect.Response[v1.ReportTerminalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ReportTerminal is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) PublishTerminalOutput(context.Context, *connect.Request[v1.PublishTerminalOutputRequest]) (*connect.Response[v1.PublishTerminalOutputResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.PublishTerminalOutput is not implemented"))
+}
 
 func (UnimplementedWorkerServiceHandler) WatchForwardRequests(context.Context, *connect.Request[v1.WatchForwardRequestsRequest], *connect.ServerStream[v1.WatchForwardRequestsResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchForwardRequests is not implemented"))

@@ -43,4 +43,21 @@ Update this contract and scoped AGENTS when process ownership, proof of terminat
 
 Preparation recovery uses `ReconcileOwnerContext` to stop between bounded native ownership checks when its Worker deadline/cancellation fires. A check already terminating owned work finishes its confirmation before returning. Cancellation is not completion proof; partial reconciliation retains workspace recovery and blocks replacement preparation.
 
+## Interactive native terminals
+
+`process.Config.Terminal` selects a bounded 1–500-row, 1–1000-column terminal instead of ordinary pipes. Unix allocates a PTY inside the original independent supervisor and starts a new controlling session. Windows ConPTY is attached alongside the atomic suspended Job Object assignment. Neither replaces descendant ownership with a process group. Terminal stderr shares the native terminal byte stream; ordinary process streams retain their existing separation.
+
+Resize is serialized with input and acknowledged after native application. Native bytes remain undecoded until the consuming client. PTY EOF and ConPTY closure are joined with output consumption and original descendant reconciliation before completed ownership is published. ConPTY drains output concurrently with closure to avoid its synchronous output deadlock. Unix slave allocation or shell launch failure before native execution publishes clean prelaunch completion; unsupported native APIs retain typed failures.
+
+ConPTY startup explicitly sets `STARTF_USESTDHANDLES` with null standard handles
+and disables handle inheritance. This prevents Windows from copying redirected
+parent stdio into the shell instead of binding its pseudoconsole; see the
+[Microsoft terminal discussion](https://github.com/microsoft/terminal/discussions/15814).
+Ordinary pipe launches retain their explicit inherited handle list, and both
+launch modes retain suspended creation with atomic Job Object assignment.
+
+Focused macOS arm64 process fixtures exercise an actual interactive `/bin/sh`, TTY detection, resize, multibyte bytes, natural exit and owned descendant cleanup. Windows cross-compilation does not establish native ConPTY acceptance.
+
+## Optional user-service controllers
+
 Optional user-service controllers use process-birth observation for identity checking but do not reuse execution-scope signaling or change harness ownership. Their independent foreground exclusivity, durable Stop and registration cleanup are defined in the [user-service contract](cmds-delidev-user-services-contract.md). Service-controller exit is not per-session cleanup proof.

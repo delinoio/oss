@@ -554,3 +554,5 @@ dialog.modal-full-window::backdrop { background: transparent; }
   .settings-category-heading { flex-wrap: wrap; gap: 14px; }
   .settings-toolbar { justify-content: flex-start; width: 100%; }
 }
+
+.terminal-output { min-height: 12rem; max-height: 30rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: monospace; background: #14171c; color: #e5e7eb; padding: 0.75rem; }

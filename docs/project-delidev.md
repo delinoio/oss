@@ -3,6 +3,8 @@
 ## Goal
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 remains normative; implementation and real-environment evidence are distinct.
 
+Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows ConPTY processes, authenticated create/control/output operations and equivalent CLI commands. The desktop provides a bounded text terminal view. Agent Stop preserves terminals; Archive and storage deletion join their independent exact cleanup gate. The [terminal contract](cmds-delidev-terminals-contract.md) and [issue evidence](evidence/delidev/issue-1088/validation.md) distinguish fixture/cross-build validation from native platform, remote Worker and release acceptance; this increment does not complete the remaining issue #964 scope.
+
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its executable is `delidev`.
 
@@ -26,6 +28,8 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)
 - [Portable configuration](cmds-delidev-configuration-transfer-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
+- [Worker-owned session terminals](cmds-delidev-terminals-contract.md)
+
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)

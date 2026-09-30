@@ -41,3 +41,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Keep process startup/shutdown in `server_startup.go`, HTTP authorization in `server_http.go`, Connect registration in `server_routes.go`, and system status/capability responses in `server_status.go`. New service behavior belongs in its service file; preserve middleware and registration order.
+
+- Session terminals follow `docs/cmds-delidev-terminals-contract.md`: native side effects require original durable claims, exact Worker/process/workspace ownership and independent joined cleanup. Preserve client reattachment, bounded ordered bytes and explicit gaps without another shell; Agent Stop preserves terminals while every Archive/deletion boundary waits for their cleanup. Never use PID absence as termination authority.

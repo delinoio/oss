@@ -52,6 +52,7 @@ const (
 	EntityKind_ENTITY_KIND_PAIRING      EntityKind = 25
 	EntityKind_ENTITY_KIND_STEER        EntityKind = 26
 	EntityKind_ENTITY_KIND_FORWARD      EntityKind = 27
+	EntityKind_ENTITY_KIND_TERMINAL     EntityKind = 31
 )
 
 // Enum value maps for EntityKind.
@@ -85,6 +86,7 @@ var (
 		25: "ENTITY_KIND_PAIRING",
 		26: "ENTITY_KIND_STEER",
 		27: "ENTITY_KIND_FORWARD",
+		31: "ENTITY_KIND_TERMINAL",
 	}
 	EntityKind_value = map[string]int32{
 		"ENTITY_KIND_UNSPECIFIED":  0,
@@ -115,6 +117,7 @@ var (
 		"ENTITY_KIND_PAIRING":      25,
 		"ENTITY_KIND_STEER":        26,
 		"ENTITY_KIND_FORWARD":      27,
+		"ENTITY_KIND_TERMINAL":     31,
 	}
 )
 
@@ -443,7 +446,7 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x11expected_revision\x18\x03 \x01(\x04R\x10expectedRevision\"[\n" +
 	"\rForwardChange\x12.\n" +
 	"\aforward\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aforward\x12\x1a\n" +
-	"\breplayed\x18\x02 \x01(\bR\breplayed*\xd2\x05\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed*\xec\x05\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -474,7 +477,8 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x0fENTITY_KIND_JOB\x10\x18\x12\x17\n" +
 	"\x13ENTITY_KIND_PAIRING\x10\x19\x12\x15\n" +
 	"\x11ENTITY_KIND_STEER\x10\x1a\x12\x17\n" +
-	"\x13ENTITY_KIND_FORWARD\x10\x1b*[\n" +
+	"\x13ENTITY_KIND_FORWARD\x10\x1b\x12\x18\n" +
+	"\x14ENTITY_KIND_TERMINAL\x10\x1f*[\n" +
 	"\rUsageCoverage\x12\x1e\n" +
 	"\x1aUSAGE_COVERAGE_UNSPECIFIED\x10\x00\x12*\n" +
 	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01B<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"

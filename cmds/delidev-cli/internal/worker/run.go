@@ -27,6 +27,7 @@ import (
 )
 
 type Config struct {
+	terminals        *terminalManager
 	Root             string
 	StartupID        domain.ID
 	Logger           *slog.Logger
@@ -171,6 +172,8 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	defer transport.CloseIdleConnections()
 	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
 	instance, attachID := domain.NewID(), domain.NewID()
+	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
+	defer config.terminals.close()
 	var capabilityAttachID domain.ID
 	var capabilityProfile string
 	backoff := time.Second
@@ -208,7 +211,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
-			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1}
+			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
 			}
@@ -536,11 +539,25 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		}
 		cancel(err)
 	}()
+	terminalsDone := make(chan struct{})
+	go func() {
+		defer close(terminalsDone)
+		if config.terminals != nil {
+			config.terminals.watch(ctx)
+		}
+	}()
 	forwardsDone := make(chan struct{})
 	go func() { defer close(forwardsDone); watchForwards(ctx, config, credential, instance) }()
 	readsDone := make(chan struct{})
 	go func() { defer close(readsDone); watchWorkspaceReads(ctx, config, client, credential, instance) }()
-	defer func() { cancel(context.Canceled); _ = stream.Close(); <-received; <-readsDone; <-forwardsDone }()
+	defer func() {
+		cancel(context.Canceled)
+		_ = stream.Close()
+		<-received
+		<-readsDone
+		<-forwardsDone
+		<-terminalsDone
+	}()
 	for {
 		var work assignment
 		select {

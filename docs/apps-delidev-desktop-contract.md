@@ -146,6 +146,26 @@ The selected detail refreshes while Inbox is active and the window is visible, a
 
 Question/approval forms share their typed controls with the session view, but Inbox drafts remain React-memory-only and scoped to the effective connection identity. Each draft retains the original interaction ID, interaction revision and request identity. Preserve a draft after source/request changes for inspection and block applying it to a new request. Bound the serialized collection to 4 MiB and 1,000 nonempty requests per connection; a limit error keeps the previous draft intact. An uncertain submission retains its exact mutation identity and may be retried only after a fresh current-source read. The persistent Inbox controller preserves drafts while the user visits other app surfaces. This UI work does not establish native notification delivery on a supported operating system.
 
+### Session terminals
+
+The session's Terminals pane uses authenticated generated public operations
+under the [terminal contract](cmds-delidev-terminals-contract.md). Mounting it
+lists retained terminal metadata; only explicit creation launches a shell.
+Creation supports the Worker's default shell or an absolute override. Each
+terminal offers line input, Ctrl+C/Ctrl+D bytes, resize, output reattachment and
+close. Creation/control use the connection-owned retained mutation registry;
+an uncertain retry preserves the original request and revision.
+
+Output uses one incremental UTF-8 decoder per terminal and exact bigint cursors
+across reconnects. Gaps visibly reset decoding, normal confirmed exit flushes
+its tail, and stale generations cannot publish after view disposal. The text
+view is bounded to 262,144 UTF-16 code units without splitting a retained
+surrogate pair. It preserves the native byte contract but does not emulate a
+full VT/full-screen application display. Styling remains static under the
+production CSP. Hiding the view aborts observation only; Agent Stop preserves
+terminals and Archive waits for native cleanup. Worker/shell/cwd and current
+terminal state are displayed separately from connection state.
+
 ## Storage
 The server remains the only database owner. Frontend query caches and unsent drafts are memory-only and scoped to the selected connection. No credential, prompt, transcript, cursor or account browser state enters Web Storage. Client exit cannot stop server-owned sessions. Native profiles and server startup are separate infrastructure boundaries.
 

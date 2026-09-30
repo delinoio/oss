@@ -49,6 +49,7 @@ type Service struct {
 	delidevv1connect.UnimplementedDeviceServiceHandler
 	delidevv1connect.UnimplementedForwardServiceHandler
 	delidevv1connect.UnimplementedWorkerServiceHandler
+	delidevv1connect.UnimplementedTerminalServiceHandler
 	delidevv1connect.UnimplementedAccountServiceHandler
 	delidevv1connect.UnimplementedProviderServiceHandler
 	delidevv1connect.UnimplementedIntegrationServiceHandler
@@ -76,6 +77,8 @@ type Service struct {
 	pairAttempts       map[string]attemptWindow
 	workerStreams      map[domain.ID]workerStream
 	auxiliaryStreams   map[domain.ID]workerStream
+	terminalOutputMu   sync.Mutex
+	terminalOutputs    map[domain.ID]*terminalOutputRing
 	forwardsOnce       sync.Once
 	forwardEpoch       domain.ID
 	forwardsMu         sync.Mutex

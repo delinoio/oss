@@ -18,6 +18,7 @@ import public "delidev/v1/schedule.proto";
 import public "delidev/v1/search.proto";
 import public "delidev/v1/session.proto";
 import public "delidev/v1/system.proto";
+import public "delidev/v1/terminal.proto";
 import public "delidev/v1/usage.proto";
 import public "delidev/v1/worker.proto";
 

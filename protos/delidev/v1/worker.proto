@@ -2,6 +2,7 @@ syntax = "proto3";
 package delidev.v1;
 
 import "delidev/v1/common.proto";
+import "delidev/v1/terminal.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
@@ -13,6 +14,10 @@ message ErrorDetail {
 }
 
 service WorkerService {
+  rpc WatchTerminals(WatchTerminalsRequest) returns (stream WatchTerminalsResponse);
+  rpc ClaimTerminal(ClaimTerminalRequest) returns (ClaimTerminalResponse);
+  rpc ReportTerminal(ReportTerminalRequest) returns (ReportTerminalResponse);
+  rpc PublishTerminalOutput(PublishTerminalOutputRequest) returns (PublishTerminalOutputResponse);
   rpc WatchForwardRequests(WatchForwardRequestsRequest) returns (stream WatchForwardRequestsResponse);
   rpc WatchWorkspaceReads(WatchWorkspaceReadsRequest) returns (stream WatchWorkspaceReadsResponse);
   rpc ReportWorkspaceRead(ReportWorkspaceReadRequest) returns (ReportWorkspaceReadResponse);
@@ -114,6 +119,7 @@ enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
   WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 = 1;
   WORKER_CAPABILITY_SESSION_FORWARDING_V1 = 2;
+  WORKER_CAPABILITY_SESSION_TERMINALS_V1 = 4;
 }
 
 message AttachWorkerResponse {

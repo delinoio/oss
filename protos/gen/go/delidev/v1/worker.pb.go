@@ -27,6 +27,7 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED               WorkerCapability = 0
 	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 WorkerCapability = 1
 	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1     WorkerCapability = 2
+	WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1      WorkerCapability = 4
 )
 
 // Enum value maps for WorkerCapability.
@@ -35,11 +36,13 @@ var (
 		0: "WORKER_CAPABILITY_UNSPECIFIED",
 		1: "WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1",
 		2: "WORKER_CAPABILITY_SESSION_FORWARDING_V1",
+		4: "WORKER_CAPABILITY_SESSION_TERMINALS_V1",
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":               0,
 		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1": 1,
 		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":     2,
+		"WORKER_CAPABILITY_SESSION_TERMINALS_V1":      4,
 	}
 )
 
@@ -2077,7 +2080,7 @@ var File_delidev_v1_worker_proto protoreflect.FileDescriptor
 const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\n" +
 	"\x17delidev/v1/worker.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\"z\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\x1a\x19delidev/v1/terminal.proto\"z\n" +
 	"\vErrorDetail\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x1a\n" +
 	"\bguidance\x18\x02 \x01(\tR\bguidance\x12\x14\n" +
@@ -2250,13 +2253,17 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"instanceId\"l\n" +
 	"\x1cWatchForwardRequestsResponse\x12\x1c\n" +
 	"\theartbeat\x18\x01 \x01(\bR\theartbeat\x12.\n" +
-	"\aforward\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aforward*\x93\x01\n" +
+	"\aforward\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aforward*\xbf\x01\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
 	"+WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1\x10\x01\x12+\n" +
-	"'WORKER_CAPABILITY_SESSION_FORWARDING_V1\x10\x022\xde\n" +
-	"\n" +
-	"\rWorkerService\x12k\n" +
+	"'WORKER_CAPABILITY_SESSION_FORWARDING_V1\x10\x02\x12*\n" +
+	"&WORKER_CAPABILITY_SESSION_TERMINALS_V1\x10\x042\xd6\r\n" +
+	"\rWorkerService\x12Y\n" +
+	"\x0eWatchTerminals\x12!.delidev.v1.WatchTerminalsRequest\x1a\".delidev.v1.WatchTerminalsResponse0\x01\x12T\n" +
+	"\rClaimTerminal\x12 .delidev.v1.ClaimTerminalRequest\x1a!.delidev.v1.ClaimTerminalResponse\x12W\n" +
+	"\x0eReportTerminal\x12!.delidev.v1.ReportTerminalRequest\x1a\".delidev.v1.ReportTerminalResponse\x12l\n" +
+	"\x15PublishTerminalOutput\x12(.delidev.v1.PublishTerminalOutputRequest\x1a).delidev.v1.PublishTerminalOutputResponse\x12k\n" +
 	"\x14WatchForwardRequests\x12'.delidev.v1.WatchForwardRequestsRequest\x1a(.delidev.v1.WatchForwardRequestsResponse0\x01\x12h\n" +
 	"\x13WatchWorkspaceReads\x12&.delidev.v1.WatchWorkspaceReadsRequest\x1a'.delidev.v1.WatchWorkspaceReadsResponse0\x01\x12f\n" +
 	"\x13ReportWorkspaceRead\x12&.delidev.v1.ReportWorkspaceReadRequest\x1a'.delidev.v1.ReportWorkspaceReadResponse\x12Q\n" +
@@ -2323,6 +2330,14 @@ var file_delidev_v1_worker_proto_goTypes = []any{
 	(*WatchForwardRequestsResponse)(nil),  // 32: delidev.v1.WatchForwardRequestsResponse
 	(*Mutation)(nil),                      // 33: delidev.v1.Mutation
 	(*Resource)(nil),                      // 34: delidev.v1.Resource
+	(*WatchTerminalsRequest)(nil),         // 35: delidev.v1.WatchTerminalsRequest
+	(*ClaimTerminalRequest)(nil),          // 36: delidev.v1.ClaimTerminalRequest
+	(*ReportTerminalRequest)(nil),         // 37: delidev.v1.ReportTerminalRequest
+	(*PublishTerminalOutputRequest)(nil),  // 38: delidev.v1.PublishTerminalOutputRequest
+	(*WatchTerminalsResponse)(nil),        // 39: delidev.v1.WatchTerminalsResponse
+	(*ClaimTerminalResponse)(nil),         // 40: delidev.v1.ClaimTerminalResponse
+	(*ReportTerminalResponse)(nil),        // 41: delidev.v1.ReportTerminalResponse
+	(*PublishTerminalOutputResponse)(nil), // 42: delidev.v1.PublishTerminalOutputResponse
 }
 var file_delidev_v1_worker_proto_depIdxs = []int32{
 	33, // 0: delidev.v1.ClaimSteerInputRequest.mutation:type_name -> delidev.v1.Mutation
@@ -2349,36 +2364,44 @@ var file_delidev_v1_worker_proto_depIdxs = []int32{
 	34, // 21: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
 	34, // 22: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
 	34, // 23: delidev.v1.WatchForwardRequestsResponse.forward:type_name -> delidev.v1.Resource
-	31, // 24: delidev.v1.WorkerService.WatchForwardRequests:input_type -> delidev.v1.WatchForwardRequestsRequest
-	27, // 25: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
-	29, // 26: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
-	12, // 27: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	14, // 28: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	15, // 29: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
-	21, // 30: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	23, // 31: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	25, // 32: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
-	10, // 33: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
-	8,  // 34: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
-	4,  // 35: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
-	6,  // 36: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
-	2,  // 37: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
-	32, // 38: delidev.v1.WorkerService.WatchForwardRequests:output_type -> delidev.v1.WatchForwardRequestsResponse
-	28, // 39: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
-	30, // 40: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
-	13, // 41: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	17, // 42: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	16, // 43: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
-	22, // 44: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	24, // 45: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	26, // 46: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
-	11, // 47: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
-	9,  // 48: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
-	5,  // 49: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
-	7,  // 50: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
-	3,  // 51: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
-	38, // [38:52] is the sub-list for method output_type
-	24, // [24:38] is the sub-list for method input_type
+	35, // 24: delidev.v1.WorkerService.WatchTerminals:input_type -> delidev.v1.WatchTerminalsRequest
+	36, // 25: delidev.v1.WorkerService.ClaimTerminal:input_type -> delidev.v1.ClaimTerminalRequest
+	37, // 26: delidev.v1.WorkerService.ReportTerminal:input_type -> delidev.v1.ReportTerminalRequest
+	38, // 27: delidev.v1.WorkerService.PublishTerminalOutput:input_type -> delidev.v1.PublishTerminalOutputRequest
+	31, // 28: delidev.v1.WorkerService.WatchForwardRequests:input_type -> delidev.v1.WatchForwardRequestsRequest
+	27, // 29: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
+	29, // 30: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
+	12, // 31: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	14, // 32: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	15, // 33: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
+	21, // 34: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	23, // 35: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	25, // 36: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
+	10, // 37: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
+	8,  // 38: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
+	4,  // 39: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
+	6,  // 40: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
+	2,  // 41: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
+	39, // 42: delidev.v1.WorkerService.WatchTerminals:output_type -> delidev.v1.WatchTerminalsResponse
+	40, // 43: delidev.v1.WorkerService.ClaimTerminal:output_type -> delidev.v1.ClaimTerminalResponse
+	41, // 44: delidev.v1.WorkerService.ReportTerminal:output_type -> delidev.v1.ReportTerminalResponse
+	42, // 45: delidev.v1.WorkerService.PublishTerminalOutput:output_type -> delidev.v1.PublishTerminalOutputResponse
+	32, // 46: delidev.v1.WorkerService.WatchForwardRequests:output_type -> delidev.v1.WatchForwardRequestsResponse
+	28, // 47: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
+	30, // 48: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
+	13, // 49: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	17, // 50: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	16, // 51: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
+	22, // 52: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	24, // 53: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	26, // 54: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
+	11, // 55: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
+	9,  // 56: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
+	5,  // 57: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
+	7,  // 58: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
+	3,  // 59: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
+	42, // [42:60] is the sub-list for method output_type
+	24, // [24:42] is the sub-list for method input_type
 	24, // [24:24] is the sub-list for extension type_name
 	24, // [24:24] is the sub-list for extension extendee
 	0,  // [0:24] is the sub-list for field type_name
@@ -2390,6 +2413,7 @@ func file_delidev_v1_worker_proto_init() {
 		return
 	}
 	file_delidev_v1_common_proto_init()
+	file_delidev_v1_terminal_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

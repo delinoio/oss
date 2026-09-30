@@ -33,3 +33,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Common parsing, authenticated clients, document input, and output envelopes belong to `arguments.go`, `client.go`, `document.go`, and `output.go`. Command-family dispatch belongs in `dispatch_<family>.go`; preserve request ID propagation and the generic resource fallback.
+
+- Session terminals follow `docs/cmds-delidev-terminals-contract.md`: native side effects require original durable claims, exact Worker/process/workspace ownership and independent joined cleanup. Preserve client reattachment, bounded ordered bytes and explicit gaps without another shell; Agent Stop preserves terminals while every Archive/deletion boundary waits for their cleanup. Never use PID absence as termination authority.

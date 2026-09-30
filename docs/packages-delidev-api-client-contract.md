@@ -29,6 +29,13 @@ Generated `ListResourcesRequest` exposes optional account-only provider and acco
 
 Additional explicit `watchKinds` may share the primary kind snapshot cursor, loading only changed identities of those kinds. Their initial state must be paginated separately; they are never invented as members of the primary snapshot. All watched kinds share the memory/revision bounds.
 
+`TerminalQuery` exports generated creation/control/output descriptors under the
+[terminal contract](cmds-delidev-terminals-contract.md). Terminal observations use
+the existing resource filter, while raw output is a cancellable streaming read.
+Consumers retain bigint sequence precision, incremental decoding state and an
+explicit epoch/gap boundary; mutation retries retain the exact original request.
+Canceling a read cannot close or recreate the native terminal.
+
 ## Storage
 No implicit persistence. Tokens remain caller-owned; cursors, resource revision/size accounting and duplicate IDs exist only during the selected connection. No SQLite, workspace, account browser or secure-vault access is implemented here. A client switches server/device only after canceling prior streams and clearing their query/resource caches.
 
