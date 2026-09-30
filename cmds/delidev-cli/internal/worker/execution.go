@@ -249,13 +249,19 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		managedPreNativeCleanup = domain.SafeError(err).Code != domain.RecoveryRequired
 		return nil, err
 	}
-	defer func() {
-		if managed != nil {
-			bounded, stop := context.WithTimeout(context.Background(), 5*time.Second)
-			managedLatest, err = client.ManagedBundle(bounded, false)
-			stop()
-			managedSuccess = err == nil
+	managedBundleAttempted := false
+	captureManagedBundle := func() {
+		if managed == nil || managedBundleAttempted {
+			return
 		}
+		managedBundleAttempted = true
+		bounded, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		bundle, bundleErr := client.ManagedBundle(bounded, false)
+		managedLatest, managedSuccess = bundle, bundleErr == nil
+	}
+	defer func() {
+		captureManagedBundle()
 		if err := client.Close(); err != nil {
 			output, returned = nil, domain.SafeError(err)
 			return
@@ -363,6 +369,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		// A terminal event is not cleanup. Close/join the native scope, prove
 		// the workspace lease's process index, then form a completion result.
+		// Read native identity and final credentials while its wire is still
+		// open; the defer only reads on earlier exits and never retries this read.
+		captureManagedBundle()
 		if err := client.Close(); err != nil {
 			return nil, err
 		}

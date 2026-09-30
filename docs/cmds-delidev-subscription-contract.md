@@ -68,6 +68,8 @@ Both native thread start and resume recheck the merged configuration for the act
 
 Thread publication and checkpoint retention/read also bind the native provider to the immutable accepted authentication profile. Managed execution requires built-in OpenAI; API execution retains its existing relay provider. The private checkpoint comparison copies the profile only from accepted configuration, preserves API checkpoint bytes and cannot promote an uncertain subscription lease into recovery authority.
 
+Managed execution captures native identity and the final authentication bundle once before closing the native wire, including before the normal terminal Close. Earlier exits perform the same bounded read before deferred closure, with no automatic retry. After native/process closure, credential cleanup requires the remaining auth file to match those captured bytes, scans retained history and only then submits protected write-back. A terminal event alone establishes none of these cleanup or authentication facts.
+
 Credential cleanup scans retained native files for raw token material and padded or unpadded standard/URL Base64 copies under the existing file/count/byte bounds. Finding a remnant leaves cleanup unconfirmed and retains recovery ownership without erasing the original native history.
 
 ## Logging
