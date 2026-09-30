@@ -336,7 +336,8 @@ Provider activation adds an owner/client-only `ProviderService.ListProviderInven
 ### Managed database restore
 
 `SystemService.RestoreBackup` and `GetBackupRestore` are owner/paired-client-only
-operations. `MANAGED_BACKUP_RESTORE_V1` advertises availability; `InspectBackup`
+operations. `MANAGED_BACKUP_RESTORE_V1` (wire value 3) advertises availability,
+preserving published `SESSION_FORWARDING_V1` value 2; `InspectBackup`
 adds an exact uint64 `restore_revision`. Restoration requires a UUID-v7 request,
 original backup revision/metadata/digest, a present exact expected live revision
 and explicit confirmation. Generated Go and TypeScript/Connect Query descriptors
@@ -346,3 +347,7 @@ the external journal before opening SQLite. Keep request UUIDs and decimal
 revisions exact across uncertain responses; polling never repeats replacement.
 Follow the [storage contract](cmds-delidev-storage-contract.md) for authorization,
 deletion enforcement, historical quarantine, bounds and recovery evidence limits.
+
+## Authenticated development-server forwarding
+
+Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.

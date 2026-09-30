@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -10,6 +11,22 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
+
+func TestStatusPreservesForwardingAndRestoreCapabilities(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	status, err := s.GetStatus(context.Background(), connect.NewRequest(&pb.GetStatusRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 != 2 || pb.SystemCapability_SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1 != 3 {
+		t.Fatal("published forwarding capability or additive restore number changed")
+	}
+	for _, capability := range []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1, pb.SystemCapability_SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1} {
+		if !slices.Contains(status.Msg.Capabilities, capability) {
+			t.Fatal("supported capability was not advertised", capability)
+		}
+	}
+}
 
 func TestRestoreRPCRequiresOriginalInspectionAndCurrentAuthority(t *testing.T) {
 	s, _ := newDoctorFixture(t)

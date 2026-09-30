@@ -11,6 +11,20 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
+func TestFreshSchemaInstallsProviderActivationIndex(t *testing.T) {
+	s, _ := openTest(t)
+	var version, indexes int
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='provider_preset_unique'").Scan(&indexes); err != nil {
+		t.Fatal(err)
+	}
+	if version != SchemaVersion || indexes != 1 {
+		t.Fatalf("fresh database lacks provider activation schema: user_version=%d preset_index=%d", version, indexes)
+	}
+}
+
 func TestCatalogMigrationPreservesV2AndRollsBackIdentityConflicts(t *testing.T) {
 	for _, conflict := range []string{"none", "canonical", "alias"} {
 		t.Run(conflict, func(t *testing.T) {

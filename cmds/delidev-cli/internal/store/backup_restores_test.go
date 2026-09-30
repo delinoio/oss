@@ -408,6 +408,133 @@ func TestBackupRestoreRejectsChangedInspectionRevisionAndOwnership(t *testing.T)
 	}
 }
 
+func TestBackupRestoreRequiresIndependentForwardCleanup(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		forward domain.Forward
+		allowed bool
+	}{
+		{"pending", domain.Forward{State: domain.ForwardPending}, false},
+		{"active", domain.Forward{State: domain.ForwardActive, ClientClaimed: true, WorkerClaimed: true}, false},
+		{"stopping", domain.Forward{State: domain.ForwardStopping, ClientClaimed: true, WorkerClaimed: true, ClientClean: true}, false},
+		{"missing-client-proof", domain.Forward{State: domain.ForwardStopped, ClientClaimed: true, WorkerClaimed: true, WorkerClean: true}, false},
+		{"missing-worker-proof", domain.Forward{State: domain.ForwardStopped, ClientClaimed: true, WorkerClaimed: true, ClientClean: true}, false},
+		{"settled", domain.Forward{State: domain.ForwardStopped, ClientClaimed: true, WorkerClaimed: true, ClientClean: true, WorkerClean: true}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s, root, ctx, in, original := restoreFixture(t)
+			_, err := s.Mutate(ctx, domain.NewID(), "fixture-forward", nil, func(tx *Tx) (any, error) {
+				return tx.Put(domain.ForwardKind, domain.NewID(), 0, "", "", test.forward)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			in.ExpectedRevision, err = s.RestoreRevision(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
+			before, err := os.ReadFile(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = s.RestoreBackup(ctx, domain.NewID(), in)
+			if test.allowed {
+				if err != nil {
+					t.Fatal("settled forward blocked restore", err)
+				}
+			} else {
+				if domain.SafeError(err).Code != domain.RecoveryRequired || s.RestoreFrozen() {
+					t.Fatal("unsettled forward did not preserve the live epoch", err)
+				}
+				if _, err := s.Get(ctx, domain.ProjectKind, original); err != nil {
+					t.Fatal("live state changed", err)
+				}
+			}
+			after, err := os.ReadFile(source)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("restore changed the source image", err)
+			}
+		})
+	}
+}
+
+func TestBackupRestoreQuarantinesHistoricalForwards(t *testing.T) {
+	s, root, ctx, in, _ := restoreFixture(t)
+	active, pending, stopped := domain.NewID(), domain.NewID(), domain.NewID()
+	_, err := s.Mutate(ctx, domain.NewID(), "fixture-forwards", nil, func(tx *Tx) (any, error) {
+		for _, entry := range []struct {
+			id      domain.ID
+			forward domain.Forward
+		}{
+			{active, domain.Forward{State: domain.ForwardActive, ClientClaimed: true, WorkerClaimed: true}},
+			{pending, domain.Forward{State: domain.ForwardPending}},
+			{stopped, domain.Forward{State: domain.ForwardStopped, ClientClaimed: true, WorkerClaimed: true, ClientClean: true, WorkerClean: true}},
+		} {
+			if _, err := tx.Put(domain.ForwardKind, entry.id, 0, "", "", entry.forward); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup, err := s.Backup(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := s.InspectBackup(ctx, backup, in.ServerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Backup, in.SHA256 = inspection.Backup, inspection.SHA256
+	// The current timeline has independent positive cleanup, while the image
+	// retains its original unknown claims. Replacement cannot fabricate proof.
+	_, err = s.Mutate(ctx, domain.NewID(), "fixture-settled-forwards", nil, func(tx *Tx) (any, error) {
+		return nil, tx.VisitForwards("", func(row Record, forward domain.Forward) error {
+			forward.ClientClean, forward.WorkerClean = true, true
+			forward.Stop()
+			_, err := tx.Put(domain.ForwardKind, row.ID, row.Revision, "", "", forward)
+			return err
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.ExpectedRevision, err = s.RestoreRevision(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.RestoreBackup(ctx, domain.NewID(), in); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	reopened, err := Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	row, err := reopened.Get(ctx, domain.ForwardKind, active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forward, err := Decode[domain.Forward](row)
+	if err != nil || forward.State != domain.ForwardStopping || !forward.ClientClaimed || !forward.WorkerClaimed || forward.ClientClean || forward.WorkerClean {
+		t.Fatal("historical native ownership was reopened or fabricated", forward, err)
+	}
+	for _, id := range []domain.ID{pending, stopped} {
+		row, err := reopened.Get(ctx, domain.ForwardKind, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		forward, err := Decode[domain.Forward](row)
+		if err != nil || !forward.Closed() {
+			t.Fatal("historical closed or unclaimed forward was reopened", forward, err)
+		}
+	}
+}
+
 func TestConcurrentBackupRestoresPublishAtMostOnce(t *testing.T) {
 	s, _, ctx, in, _ := restoreFixture(t)
 	var wg sync.WaitGroup

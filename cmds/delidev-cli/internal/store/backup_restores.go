@@ -514,7 +514,10 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		 json_extract(body,'$.outcome')='running' OR json_extract(body,'$.recovery') IN ('required','reconciling') OR
 		 json_extract(body,'$.archive')='archiving' OR json_extract(body,'$.preparation.state') IN ('stopping','uncertain'))) OR
 		 (kind='account' AND json_extract(body,'$.removal') IS NOT NULL) OR
-		 (kind='integration' AND json_extract(body,'$.pending') IS NOT NULL))`).Scan(&blocked)
+		 (kind='integration' AND json_extract(body,'$.pending') IS NOT NULL) OR
+		 (kind='forward' AND (COALESCE(json_extract(body,'$.state'),'')<>'stopped' OR
+		 COALESCE(json_extract(body,'$.client_clean'),0)<>1 OR
+		 COALESCE(json_extract(body,'$.worker_clean'),0)<>1)))`).Scan(&blocked)
 		if err != nil {
 			return storageError(err)
 		}
@@ -524,7 +527,7 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		}
 		blocked = blocked || claimed
 		if blocked {
-			return domain.Fail(domain.RecoveryRequired, "Restore requires independently settled execution and credential ownership.", "Stop and reconcile original work and credential operations first; restore never terminates it.")
+			return domain.Fail(domain.RecoveryRequired, "Restore requires independently settled execution, forwarding and credential ownership.", "Stop and reconcile original work, forwards and credential operations first; restore never terminates them.")
 		}
 		return nil
 	})

@@ -165,7 +165,8 @@ snapshots and allocation remain outside that measurement.
 ## Managed database restore
 
 Issue #1080 adds owner/paired-client `SystemService.RestoreBackup` and
-`GetBackupRestore`, with the `MANAGED_BACKUP_RESTORE_V1` status capability.
+`GetBackupRestore`, with the `MANAGED_BACKUP_RESTORE_V1` status capability (wire
+value 3, preserving published session-forwarding value 2).
 `InspectBackup` also returns the exact committed live `restore_revision`. Inspection
 is an observation; eligibility is independently rechecked at replacement.
 
@@ -181,7 +182,8 @@ The thirty-second cancellable operation holds both the managed-file gate and
 exclusive store gate under the server's process lock. It checks original actor,
 server identity and exact event revision, then refuses live claimed/uncertain jobs,
 active/running/recovery/archiving sessions, uncertain/stopping workspace ownership,
-and pending credential removals/integration operations. Restore never stops a
+pending credential removals/integration operations, and any forward that is not
+stopped with both original peer cleanup flags confirmed. Restore never stops a
 Worker to create eligibility. Concurrent mutations/claims cannot cross the final
 validation boundary; a second restore cannot publish in the old epoch.
 
@@ -206,7 +208,9 @@ connection/validation/removal authority. Protected credential storage stays unto
 Every restored session is paused and recovery-required. Nonterminal historical
 jobs are canceled with a typed quarantine problem; schedules are disabled and their
 next-run timestamps cleared. Historical assignment copies cannot grant native
-recovery/continuation authority. Keep original evidence in the source and safety
+recovery/continuation authority. Historical forwards transition through their
+ordinary Stop model without reopening sockets or fabricating claimed-peer cleanup;
+unknown original cleanup remains stopping. Keep original evidence in the source and safety
 images rather than manufacture cleanup or replay input. Permanent backup-removal
 jobs alone retain their current external obligation and controller semantics.
 Restore request UUIDs remain globally reserved across rollback and unjournaled

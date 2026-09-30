@@ -97,7 +97,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 	}
 	// Retain closed domain models and historical claims. Changing execution
 	// bookkeeping alone never proves native cleanup or allows Resume/recovery.
-	rows, err := tx.QueryContext(ctx, "SELECT id,kind,body FROM entities WHERE kind IN ('session','job','schedule','account','integration') ORDER BY id")
+	rows, err := tx.QueryContext(ctx, "SELECT id,kind,body FROM entities WHERE kind IN ('session','job','schedule','account','integration','forward') ORDER BY id")
 	if err != nil {
 		return storageError(err)
 	}
@@ -176,6 +176,16 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 				return err
 			}
 			v.Connection, v.Pending = nil, nil
+			value = v
+		case domain.ForwardKind:
+			var v domain.Forward
+			if err := domain.Decode(raw, &v); err != nil {
+				rows.Close()
+				return err
+			}
+			// Historical claims never reopen sockets. Stop retains unknown
+			// original cleanup rather than inventing proof from replacement.
+			v.Stop()
 			value = v
 		}
 		body, err := json.Marshal(value)
