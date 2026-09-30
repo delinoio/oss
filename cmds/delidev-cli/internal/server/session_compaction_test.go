@@ -63,7 +63,7 @@ func publicCompactionResult(i domain.SessionCompactionInput, job domain.ID, fail
 }
 
 func TestPublicCompactionAtomicReceiptAndFIFO(t *testing.T) {
-	for _, scenario := range []string{"success", "failed-compact-outer-success", "queued-stop", "queued-archive", "lost-report", "foreign-result"} {
+	for _, scenario := range []string{"success", "failed-compact-outer-success", "queued-stop", "queued-archive", "claimed-stop", "claimed-archive", "claimed-disconnect", "lost-report", "foreign-result"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := context.Background()
 			f, pf := publicCompactionFixture(t)
@@ -149,6 +149,25 @@ func TestPublicCompactionAtomicReceiptAndFIFO(t *testing.T) {
 				t.Fatal("manual action changed relay authority", e)
 			}
 			lease.Release()
+			canceled := strings.HasPrefix(scenario, "claimed-")
+			if canceled {
+				if scenario == "claimed-disconnect" {
+					account, err := f.service.Store.Get(ctx, domain.AccountKind, input.Assignment.AccountID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, e = f.accounts.DisconnectAccount(ctx, ownerRequest(f.identity, &pb.DisconnectAccountRequest{Mutation: acctMutation(resourceForTest(account), domain.NewID())}))
+				} else {
+					action := pb.SessionAction_SESSION_ACTION_STOP
+					if scenario == "claimed-archive" {
+						action = pb.SessionAction_SESSION_ACTION_ARCHIVE
+					}
+					_, e = client.ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(resourceForTest(f.refresh(t)), domain.NewID()), Action: action}))
+				}
+				if e != nil {
+					t.Fatal("claimed cancellation", e)
+				}
+			}
 			result := publicCompactionResult(input, claim.ID, scenario == "failed-compact-outer-success")
 			if scenario == "foreign-result" {
 				result.Checkpoint.JobID = domain.NewID()
@@ -176,9 +195,19 @@ func TestPublicCompactionAtomicReceiptAndFIFO(t *testing.T) {
 			if state.Outcome != prior.Outcome || state.ExecutionSelection() != prior.ExecutionSelection() || !reflect.DeepEqual(state.Execution, prior.Execution) || state.PendingInputs != 1 {
 				t.Fatal("action changed conversation/queue history")
 			}
-			if scenario == "lost-report" || scenario == "foreign-result" {
+			if scenario == "lost-report" || scenario == "foreign-result" || canceled {
 				if state.Recovery != domain.NeedsRecovery || state.Dispatch != domain.DispatchPaused || state.CompactionJobID != claim.ID {
 					t.Fatal("uncertainty regained send authority")
+				}
+				if canceled {
+					jr, err := f.service.Store.Get(ctx, domain.JobKind, claim.ID)
+					job, decodeErr := store.Decode[domain.Job](jr)
+					if err != nil || decodeErr != nil || job.State != domain.JobUncertain || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || string(job.Output) != string(output) || !reflect.DeepEqual(state.Compaction, prior.Compaction) {
+						t.Fatal("canceled report released ownership or lost observed evidence", err, decodeErr)
+					}
+					if scenario == "claimed-archive" && state.Archive != domain.ArchivePending {
+						t.Fatal("canceled report finalized Archive")
+					}
 				}
 				// Recovery of the old conversation must not release a distinct
 				// uncertain action's workspace or permit another command.

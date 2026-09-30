@@ -166,11 +166,21 @@ func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revisio
 	}
 	var output domain.SessionCompactionResult
 	verified := problem == nil && domain.Decode(raw, &output) == nil && output.Validate() == nil && output.ActionID == input.ActionID && output.ExecutionID == input.Assignment.ExecutionID && output.Checkpoint.JobID == r.ID
+	canceled, err := tx.JobCancellationRequested(r.ID)
+	if err != nil {
+		return store.Record{}, err
+	}
 	now := time.Now().UTC()
 	j.FinishedAt = &now
 	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
-	if !verified {
+	if !verified || canceled {
 		j.State, j.Problem, j.Output = domain.JobUncertain, domain.CompactionUncertain(), nil
+		// Cancellation of claimed work retains native ownership even when a
+		// valid late report arrives. Its observations remain evidence, but cannot
+		// grant a successor checkpoint or finalize a pending Archive.
+		if verified {
+			j.Output = raw
+		}
 		session.Recovery = domain.NeedsRecovery
 	} else {
 		session.CompactionJobID = ""
@@ -178,15 +188,11 @@ func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revisio
 		j.Output = raw
 		j.State = domain.JobSucceeded
 		j.Problem = nil
-		canceled, err := tx.JobCancellationRequested(r.ID)
-		if err != nil {
-			return store.Record{}, err
-		}
 		if output.Outcome == domain.CompactionFailed {
 			j.State = domain.JobFailed
 			j.Problem = domain.Fail(domain.Conflict, "The native compaction command failed.", "Explicit Resume is required before later input; the prior execution outcome is preserved.")
 		}
-		if output.Outcome == domain.CompactionSucceeded && !canceled && session.Archive == domain.NotArchived && session.Recovery == domain.NoRecovery && input.Dispatch == domain.DispatchReady {
+		if output.Outcome == domain.CompactionSucceeded && session.Archive == domain.NotArchived && session.Recovery == domain.NoRecovery && input.Dispatch == domain.DispatchReady {
 			session.Dispatch, session.NextExecutionIntent = domain.DispatchReady, input.Intent
 		}
 		if session.Archive == domain.ArchivePending && session.Recovery == domain.NoRecovery {
