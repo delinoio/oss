@@ -56,6 +56,21 @@ it("opens the native-selected view without sending work or losing the session dr
   await act(async () => { for (const callback of native.callbacks) callback(); });
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe("Keep this unsent");
+  native.pending = { id: newRequestId(), destination: "settings" };
+  await act(async () => { for (const callback of native.callbacks) callback(); });
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Tray-abandoned draft" } });
+  // Tray navigation away also closes the opening, even while an editor is active.
+  native.pending = { id: newRequestId(), destination: "sessions" };
+  await act(async () => { for (const callback of native.callbacks) callback(); });
+  native.pending = { id: newRequestId(), destination: "settings" };
+  await act(async () => { for (const callback of native.callbacks) callback(); });
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Keep this unsent");
   expect(send).not.toHaveBeenCalled();
   view.unmount();
   expect(native.callbacks.size).toBe(0);
