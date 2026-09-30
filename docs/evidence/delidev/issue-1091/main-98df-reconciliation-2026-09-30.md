@@ -47,9 +47,53 @@ user credentials or hosted inference. Go commands use the task-private
   not reach bundle, launch, widget or frontend build stages. This is a recorded
   failure, not a complete frontend pass or proof that the timeout is unrelated.
 
-The complete root DeliDev race suite and frontend timeout investigation remain
-to be recorded after the merge commit. No Windows-native, installed Grok or
-real-account acceptance is inferred from these local fixture results.
+## Post-merge frontend verification
+
+The merge commit is `44b68c0b690024af6a6498577694ff0ec28e430f`. The unchanged
+`App.test.tsx` file passed all 45 tests in isolation with its original deadlines;
+the initially failing targeted-entry test was not edited by this merge. Main's
+App fixture change separates different notification/import draft checks.
+
+A second unmodified `pnpm test` in `apps/delidev` passed the complete command:
+client build, typecheck, all 1,292 unit tests in 100 files, eight bundle-dry-run
+fixtures, 16 desktop-launch/asset fixtures, widget fixtures and the production
+frontend build. It used the original default runner settings and deadlines.
+The first failure remains recorded above; the successful retry does not prove
+its cause or imply any native platform/account acceptance.
+
+`node scripts/delidev/verify-independent-changes.mjs` also passed its disposable
+provider/schedule schema merge experiment, with reproducible generated bindings
+and no shared changed files. It did not change this checkout or publish anything.
+
+## Complete root race run and closest checks
+
+At merge commit `44b68c0b690024af6a6498577694ff0ec28e430f`, the required root
+command `go test -race -p 2 -timeout=20m ./cmds/delidev-cli/...` exited 1. Twenty
+packages passed, two packages had no test files, and two packages failed:
+
+- Worker failed `TestStreamTerminationCancelsRunningOwnedWork/permission_denied`
+  with `stream termination left native work running`. The complete group took
+  60.04 seconds; the package took 356.991 seconds. The test and its watch
+  controller have no diff against pinned main `98df29c41ddf3c8b1274c51fe8f406b6dae6ca74`.
+  The unchanged whole group passed in isolation in 16.820 seconds using
+  `go test -race -p 2 -timeout=20m ./cmds/delidev-cli/internal/worker -run '^TestStreamTerminationCancelsRunningOwnedWork$'`.
+- Workspace hit the package-wide 20-minute watchdog, exiting after 1,200.439
+  seconds. `TestRemoteFetchUsesUpdatedCommitAndNeverStaleFallback` had been
+  running for 18 seconds at that point; the captured stack was in owned Git
+  inspection. The test, Git command implementation and Unix process controller
+  have no diff against the same pinned main. The unchanged selected test passed
+  in isolation in 35.857 seconds using
+  `go test -race -p 2 -timeout=20m ./cmds/delidev-cli/internal/workspace -run '^TestRemoteFetchUsesUpdatedCommitAndNeverStaleFallback$'`.
+
+Both isolated commands used the same task-private Go cache, `GOMAXPROCS=4`, race
+instrumentation and original deadlines. They do not establish either broad-run
+failure's cause, prove that the failures are unrelated, or turn the complete
+race suite into a pass. No cancellation behavior, test deadline or runner
+settings were changed to obtain these results.
+
+No Windows-native, installed Grok or real-account acceptance is inferred from
+these local fixtures. Generated repository-owned `dist` outputs are removed
+after validation and commit hooks finish.
 
 ## Review boundary
 
