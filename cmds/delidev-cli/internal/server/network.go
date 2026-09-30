@@ -59,9 +59,15 @@ func (s *Service) networkReply(ctx context.Context, result store.Result, kind do
 	if !receipt.Deleted {
 		record, err := s.Store.Get(ctx, kind, receipt.ID)
 		if err != nil {
-			return nil, err
+			if domain.SafeError(err).Code != domain.NotFound {
+				return nil, err
+			}
+			// The receipt proves acceptance independently of the live resource.
+			// A later deletion cannot authorize recreation by an exact retry.
+			response.Deleted = true
+		} else {
+			response.Resource = rpc.Resource(record)
 		}
-		response.Resource = rpc.Resource(record)
 	}
 	return response, nil
 }
