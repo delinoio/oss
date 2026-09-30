@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -148,10 +149,18 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string, proje
 		config.Settings.Agent, config.Settings.Permission = agentAt(turn), []PermissionRule{}
 		config.Instructions = "Private immutable additive checkpoint instruction."
 		if turn > 0 {
-			config.Workspace, config.NativeRoot = original.Workspace, original.NativeRoot
+			config.Workspace, config.NativeRoot, config.Root = original.Workspace, original.NativeRoot, original.Root
 		} else {
 			if len(project) == 1 && project[0] != checkpointGeneralChat {
 				prepareNativeCheckpointGit(t, &config, project[0])
+			}
+			if runtime.GOOS == "windows" && config.NativeRoot == filesystemBoundary(config.Workspace) {
+				var err error
+				config.Root, err = GlobalWorkspaceRoot(config.Workspace)
+				if err != nil {
+					t.Fatal(err)
+				}
+				config.NativeRoot = ""
 			}
 			original = config
 		}
