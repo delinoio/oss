@@ -47,3 +47,18 @@ passed together (three tests). The legacy fixture uses an actual foreground
 server with its lifecycle record removed to represent a pre-lifecycle process;
 it proves an alternate listener stays untouched, compatible live reuse does not
 publish invented origins, and ensure does not restart it after exit.
+
+## Relative launch-admission scope review
+
+Launch admission now applies `filepath.Abs` before `filepath.EvalSymlinks`,
+matching existing service-scope ownership. Ordinary relative `--data-dir`
+ensure remains observational for an unconfigured scope and does not create an
+owner or lifecycle record. Relative and absolute spellings of an installed
+scope retain the same stopped registration and contend for the same admission
+lock, without changing process cwd or user configuration.
+
+`go test -race ./cmds/delidev-cli/internal/cli
+./cmds/delidev-cli/internal/userservice -run
+'TestLaunchAdmission|TestDesktopLaunchAdmissionPreservesRelativeEnsureScope'
+-count=1` passed both packages, including the existing concurrent native-control
+admission regression.

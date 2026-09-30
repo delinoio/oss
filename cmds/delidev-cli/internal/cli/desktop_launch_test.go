@@ -21,6 +21,27 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
+func TestDesktopLaunchAdmissionPreservesRelativeEnsureScope(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	working, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(working, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := Run(context.Background(), []string{"--data-dir", relative, "server", "ensure"}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}); code != 0 {
+		t.Fatal("relative ensure scope rejected", code)
+	}
+	if intent, err := server.ReadLifecycle(root); err != nil || intent.Version != 0 {
+		t.Fatal("unconfigured ensure gained restart intent", intent, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "owner.json")); !os.IsNotExist(err) {
+		t.Fatal("unconfigured ensure initialized an owner")
+	}
+}
+
 func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private")
 	if err := security.PrivateDir(root); err != nil {

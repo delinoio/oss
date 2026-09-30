@@ -19,7 +19,11 @@ type LaunchAdmission struct {
 }
 
 func AdmitLaunch(ctx context.Context, root string) (*LaunchAdmission, error) {
-	canonical, err := filepath.EvalSymlinks(root)
+	absolute, err := filepath.Abs(root)
+	if err != nil {
+		return nil, domain.SafeError(err)
+	}
+	canonical, err := filepath.EvalSymlinks(absolute)
 	if err != nil {
 		return nil, domain.SafeError(err)
 	}

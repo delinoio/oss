@@ -3,11 +3,43 @@ package userservice
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
+
+func TestLaunchAdmissionCanonicalizesRelativeScope(t *testing.T) {
+	m, _ := fixture(t)
+	m.Kind = Server
+	control(t, m, Install, 0)
+	working, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(working, m.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission, err := AdmitLaunch(context.Background(), relative)
+	if err != nil {
+		t.Fatal("relative admission", err)
+	}
+	defer admission.Close()
+	if admission.root != m.Root {
+		t.Fatal("relative admission changed scope identity")
+	}
+	if managed, stopped, err := admission.Managed(); err != nil || !managed || !stopped {
+		t.Fatal("relative admission lost native registration", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := AdmitLaunch(ctx, m.Root); err == nil || ctx.Err() == nil {
+		t.Fatal("absolute spelling crossed the relative admission lock", err)
+	}
+}
 
 func TestLaunchAdmissionPinsConcurrentServiceControl(t *testing.T) {
 	m, f := fixture(t)
