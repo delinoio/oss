@@ -24,6 +24,15 @@ type networkReceipt struct {
 	Deleted bool      `json:"deleted,omitempty"`
 }
 
+type networkSaveInput struct {
+	Actor      domain.Principal
+	ID         domain.ID
+	Revision   uint64
+	Definition domain.ProxyDefinition
+	Commitment string
+	Clear      bool
+}
+
 func directNetworkProfile() domain.NetworkProfile {
 	return domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{Name: "Direct", Mode: domain.ProxyDirect}}
 }
@@ -91,14 +100,7 @@ func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[p
 	if len(raw) > 0 {
 		commitment = s.networkCommitment(domain.ID(req.Msg.Mutation.RequestId), raw)
 	}
-	bound := struct {
-		Actor      domain.Principal
-		ID         domain.ID
-		Revision   uint64
-		Definition domain.ProxyDefinition
-		Commitment string
-		Clear      bool
-	}{input.Actor, id, input.Revision, definition, commitment, req.Msg.ClearCredential}
+	bound := networkSaveInput{input.Actor, id, input.Revision, definition, commitment, req.Msg.ClearCredential}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
@@ -106,6 +108,9 @@ func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[p
 	defer unlock()
 	requestID := domain.ID(req.Msg.Mutation.RequestId)
 	result, found, err := s.Store.Replay(ctx, requestID, "network.save", bound)
+	if err == nil {
+		err = s.reconcileNetworkSaveIntent(ctx, requestID, bound)
+	}
 	var prior domain.NetworkProfile
 	if err == nil && !found {
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
@@ -163,6 +168,9 @@ func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[p
 					}
 				}
 				if err == nil {
+					err = s.writeNetworkSaveIntent(networkSaveIntent{Version: 1, ServerID: s.Identity.ServerID, RequestID: requestID, Input: bound, State: networkSavePending})
+				}
+				if err == nil {
 					_, err = vault.Put(ctx, proxyRef(id, requestID), raw)
 				}
 			}
@@ -180,6 +188,9 @@ func (s *Service) SaveNetworkProfile(ctx context.Context, req *connect.Request[p
 				_, err := tx.Put(domain.NetworkProfileKind, id, input.Revision, "", "", value)
 				return networkReceipt{ID: id}, err
 			})
+			if err == nil && len(raw) > 0 {
+				err = s.clearNetworkSaveIntent()
+			}
 		}
 	}
 	if err != nil {

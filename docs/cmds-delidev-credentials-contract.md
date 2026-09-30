@@ -6,6 +6,17 @@ Issue #964 and [the CLI contract](cmds-delidev-contract.md) require authoritativ
 
 Only an authenticated server lifecycle operation may use the primitive. Callers own account revision checks, request receipt coordination and authorization revalidation. They must retain staged references after an uncertain database commit, compare them with authoritative state during reconciliation, and never speculate that a failed response means no credential was saved. A SQLite backup or non-secret configuration export is not a credential backup.
 
+Network profile writes additionally retain one server-bound private publication
+intent before calling this primitive, under the [network contract](cmds-delidev-network-contract.md).
+It binds original actor/input and immutable owner/request reference without
+credential bytes. Exact retry may resume that generation. A distinct request
+must compare the original authoritative SQLite receipt; a proved unpublished
+generation enters durable cleanup denial and must be removed before another
+native write. Unknown receipt or native cleanup proof blocks replacement. An
+accepted receipt permits clearing only the publication intent, preserving the
+credential for its published profile and pinned routes. The private intent is
+not a credential backup or a public profile.
+
 The vault holds an exclusive private directory lock and pins its server UUID-v7 identity. A missing identity pin cannot rebind a populated vault. Under the exclusive lock, first-open recovery may discard only bounded private regular `.pending-<decimal>` atomic-write scratch files at an otherwise empty vault root; it validates every entry before removal and synchronizes cleanup. Owner directories, links, unknown names or oversized files retain recovery-required state. References comprise an owner UUID-v7, mutation request UUID-v7 and closed purpose (`account-api`, `account-login`, `network-proxy`, `worker-ssh`). Aliases, emails, provider URLs and user-selected filesystem paths are not native credential names. A replacement receives a fresh mutation ID. Private directory/file ownership, permissions and non-symlink checks apply to every access. Running independent copies of the same server identity against the same native references is outside the single-authority contract.
 
 GitHub PATs now have the separate direct native storage primitive below. The account envelope primitive does not store PAT payloads. Public PAT configuration/validation, credential import, platform unlock UI, backup restoration and provider login require their separate lifecycle composition.
