@@ -5,6 +5,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 
 // All operations, including loopback, require authenticated owner authorization.
 service SystemService {
+  rpc GetUserService(GetUserServiceRequest) returns (GetUserServiceResponse);
+  rpc ControlUserService(ControlUserServiceRequest) returns (ControlUserServiceResponse);
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
   rpc GetOverview(GetOverviewRequest) returns (GetOverviewResponse);
   rpc StopServer(StopServerRequest) returns (StopServerResponse);
@@ -156,7 +158,9 @@ enum SystemCapability {
   // Session creation can opt into server-owned, Worker-executed automatic titles.
   SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 = 1;
   SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 = 2;
-  SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 3;
+  // Optional current-user registrations on the server computer, never remote Workers.
+  SYSTEM_CAPABILITY_USER_SERVICES_V1 = 3;
+  SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 4;
 }
 message StopServerRequest {
   string request_id = 1;
@@ -1731,6 +1735,57 @@ message SwitchSessionAccountRequest {
 }
 message SwitchSessionAccountResponse {
   SessionChange change = 1;
+}
+
+// User services are infrastructure on the current server's computer. No paths,
+// credentials, native PID or executable identity appear on this wire boundary.
+enum UserServiceKind {
+  USER_SERVICE_KIND_UNSPECIFIED = 0;
+  USER_SERVICE_KIND_SERVER = 1;
+  USER_SERVICE_KIND_WORKER = 2;
+}
+enum UserServiceAction {
+  USER_SERVICE_ACTION_UNSPECIFIED = 0;
+  USER_SERVICE_ACTION_INSTALL = 1;
+  USER_SERVICE_ACTION_START = 2;
+  USER_SERVICE_ACTION_STOP = 3;
+  USER_SERVICE_ACTION_REMOVE = 4;
+}
+enum UserServiceState {
+  USER_SERVICE_STATE_UNSPECIFIED = 0;
+  USER_SERVICE_STATE_ABSENT = 1;
+  USER_SERVICE_STATE_STOPPED = 2;
+  USER_SERVICE_STATE_STARTING = 3;
+  USER_SERVICE_STATE_RUNNING = 4;
+  USER_SERVICE_STATE_STOPPING = 5;
+  USER_SERVICE_STATE_UNCERTAIN = 6;
+}
+message UserService {
+  UserServiceKind kind = 1;
+  string id = 2;
+  uint64 revision = 3;
+  UserServiceState state = 4;
+  UserServiceState desired_state = 5;
+  bool login_enabled = 6;
+  // Joined service controller only; per-session native recovery is independent.
+  bool cleanup_confirmed = 7;
+}
+message GetUserServiceRequest {
+  UserServiceKind kind = 1;
+}
+message GetUserServiceResponse {
+  UserService service = 1;
+}
+message ControlUserServiceRequest {
+  UserServiceKind kind = 1;
+  UserServiceAction action = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+}
+message ControlUserServiceResponse {
+  UserService service = 1;
+  string request_id = 2;
+  bool replayed = 3;
 }
 
 // A session forward is explicitly selected, client-owned and loopback-only.

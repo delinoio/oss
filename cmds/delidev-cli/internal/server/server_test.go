@@ -91,11 +91,13 @@ func TestRealConnectAuthenticationOriginsAndRedaction(t *testing.T) {
 		}
 		capabilities[capability] = true
 	}
-	// Preserve main's forwarding value and negotiate stopped-account selection
-	// independently; both branches originally introduced numeric value 2.
+	// Preserve merged capability values and negotiate stopped-account selection
+	// independently from forwarding and current-user services.
 	for wire, name := range map[pb.SystemCapability]string{
+		1: "SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1",
 		2: "SYSTEM_CAPABILITY_SESSION_FORWARDING_V1",
-		3: "SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1",
+		3: "SYSTEM_CAPABILITY_USER_SERVICES_V1",
+		4: "SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1",
 	} {
 		if !capabilities[wire] || wire.String() != name {
 			t.Fatalf("missing or reinterpreted capability %d: %s", wire, wire.String())
