@@ -2,12 +2,10 @@ package worker
 
 import (
 	"context"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"google.golang.org/protobuf/proto"
@@ -102,10 +100,6 @@ func watchAuxiliary(ctx context.Context, config Config, client delidevv1connect.
 				return publicationUncertain()
 			}
 			id := domain.ID(message.Job.Id)
-			lock, err := security.TryLock(filepath.Join(config.Root, "jobs", string(id)+".lock"))
-			if err != nil {
-				return domain.Fail(domain.RecoveryRequired, "The local title operation is already owned or cannot be locked.", "Preserve the Worker journal and reconcile the accepted title job without resending its prompt.")
-			}
 			jobCtx, stopJob := context.WithCancel(watchCtx)
 			if message.CancelRequested {
 				stopJob()
@@ -114,47 +108,18 @@ func watchAuxiliary(ctx context.Context, config Config, client delidevv1connect.
 			if activeID != "" {
 				activeMu.Unlock()
 				stopJob()
-				_ = lock.Close()
 				return publicationUncertain()
 			}
 			activeID, activeCancel, lastAssigned = id, stopJob, id
 			activeMu.Unlock()
 
-			jobConfig := config
-			jobConfig.execution = &PublicationConfig{Root: config.Root, Credential: credential, Instance: instance, Assignment: message.Job, Client: client, Logger: config.Logger}
-			result, runErr := runJob(jobCtx, jobConfig, instance, message.Job, job)
-			stopJob()
+			work := assignment{context: jobCtx, cancel: stopJob}
+			runErr := runAndReportJob(watchCtx, config, client, credential, instance, work, message.Job, job)
 			activeMu.Lock()
 			activeID, activeCancel = "", nil
 			activeMu.Unlock()
-			if closeErr := lock.Close(); closeErr != nil {
-				return domain.Fail(domain.RecoveryRequired, "The local title operation lock could not be released safely.", "Preserve its journal and reconcile the accepted title operation before retrying.")
-			}
 			if runErr != nil {
 				return runErr
-			}
-			if watchCtx.Err() != nil {
-				return context.Cause(watchCtx)
-			}
-			report := &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(result.ReportID), Id: string(result.JobID), ExpectedRevision: result.Revision}, MachineId: string(credential.MachineID), InstanceId: string(instance), OutputJson: result.Output}
-			if result.Problem != nil {
-				report.Problem = &pb.ErrorDetail{Code: string(result.Problem.Code)}
-			}
-			attempt, stopReport := context.WithTimeout(watchCtx, 30*time.Second)
-			_, err = client.ReportWork(attempt, authenticated(credential, report))
-			stopReport()
-			if err != nil {
-				if watchCtx.Err() != nil {
-					return context.Cause(watchCtx)
-				}
-				return err
-			}
-			result.State = journalReported
-			if err := writeJSON(filepath.Join(config.Root, "jobs", string(id)+".json"), result); err != nil {
-				return err
-			}
-			if config.Logger != nil {
-				config.Logger.InfoContext(watchCtx, "worker auxiliary title job reported", "machine_id", credential.MachineID, "job_id", id, "reported_problem", result.Problem != nil)
 			}
 		}
 	}

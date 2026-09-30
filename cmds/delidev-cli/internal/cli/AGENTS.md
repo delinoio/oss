@@ -2,6 +2,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- `activity list` exposes typed PR metadata and capability names from the authenticated ActivityService response. Preserve exact original revisions, numeric identity strings and outcome enums without additional mutations or handling inference; follow the activity contract.
+
 - `account list` accepts optional closed `--account-type api|subscription` and `--provider-id UUID` selectors through the list-only Connect request. Preserve the unfiltered default for existing callers; filters are applied before SQL pagination and bound to cursors. Snapshots and event streams must not inherit them.
 
 - `server overview` / `SystemService.GetOverview` are owner/client-only read observations. Count retained active execution ownership, current unanswered open interactions independently of inbox read state, and registered versus live authorized Workers. Require stream presence, enabled machine, unrevoked Worker identity and a fresh current lease for connected counts; never equate connection with execution readiness. Read one authorized database snapshot under a bounded deadline, return exact integer counts and server UTC day boundaries without source content or secret inspection, and keep ordinary Worker-compatible status unchanged.
@@ -33,3 +35,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Common parsing, authenticated clients, document input, and output envelopes belong to `arguments.go`, `client.go`, `document.go`, and `output.go`. Command-family dispatch belongs in `dispatch_<family>.go`; preserve request ID propagation and the generic resource fallback.
+
+- `session delete --id ID --revision N --confirm [--wait]` and `session deletion --id ID` share authenticated Connect semantics. Preserve original UUID/revision and accepted progress after uncertain reads or cancellation; waiting cannot resubmit deletion or report pending cleanup as success. Follow `docs/cmds-delidev-storage-contract.md`.

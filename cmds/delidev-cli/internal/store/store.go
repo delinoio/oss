@@ -35,6 +35,7 @@ type Store struct {
 	backupCreationGate sync.Mutex
 	notifyMu           sync.Mutex
 	notify             chan struct{}
+	deletionFault      bool
 	closed             bool
 }
 
@@ -102,7 +103,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			lock.Close()
 		}
 	}()
-	for _, name := range []string{"backups", "secrets", "backup-deletions", "backup-removals"} {
+	for _, name := range []string{"backups", "secrets", "backup-deletions", "backup-removals", "session-deletions"} {
 		if err := security.PrivateDir(filepath.Join(root, name)); err != nil {
 			return nil, storageError(err)
 		}
@@ -332,6 +333,10 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 	}
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return Result{}, domain.SessionDeletionPending()
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Result{}, storageError(err)
@@ -417,6 +422,9 @@ func (t *Tx) Get(kind domain.Kind, id domain.ID) (Record, error) { return get(t.
 func (s *Store) Get(ctx context.Context, kind domain.Kind, id domain.ID) (Record, error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return Record{}, domain.SessionDeletionPending()
+	}
 	return get(ctx, s.db, kind, id)
 }
 
@@ -478,6 +486,30 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	}
 	if expected >= 1<<63-1 {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid expected revision.", "Reload the current entity revision.")
+	}
+	// An accepted external deletion obligation permanently closes admission.
+	// Original in-flight observations may settle only existing records; they
+	// cannot create new copies or restore dispatch while cleanup is pending.
+	scope := sessionID
+	if kind == domain.SessionKind {
+		scope = id
+	}
+	if scope != "" {
+		deleting, e := t.SessionDeleting(scope)
+		if e != nil {
+			return Record{}, e
+		}
+		if deleting {
+			if expected == 0 {
+				return Record{}, domain.SessionDeletionPending()
+			}
+			if kind == domain.SessionKind {
+				s, ok := value.(domain.Session)
+				if !ok || s.Dispatch != domain.DispatchPaused || s.NextExecutionIntent != "" {
+					return Record{}, domain.SessionDeletionPending()
+				}
+			}
+		}
 	}
 	// Every Archive completion path shares the socket-cleanup gate, including
 	// late preparation, title and agent reports. Native process completion alone
@@ -581,6 +613,9 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	}
 	if kind == domain.SessionKind {
 		if err := t.StopForwards(id, ""); err != nil {
+			return err
+		}
+		if err := t.deleteSessionPRActivity(id); err != nil {
 			return err
 		}
 	}
@@ -693,6 +728,9 @@ func (t *Tx) List(f Filter) ([]Record, error) { return list(t.ctx, t.tx, f) }
 func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return nil, domain.SessionDeletionPending()
+	}
 	return list(ctx, s.db, f)
 }
 
@@ -705,6 +743,9 @@ func (s *Store) ListPage(ctx context.Context, f Filter) ([]Record, bool, error) 
 	}
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return nil, false, domain.SessionDeletionPending()
+	}
 	rows, err := listRows(ctx, s.db, f, f.Limit+1)
 	if err != nil {
 		return nil, false, err
@@ -721,6 +762,9 @@ func (s *Store) ListPage(ctx context.Context, f Filter) ([]Record, bool, error) 
 func (s *Store) Snapshot(ctx context.Context, f Filter) ([]Record, uint64, error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return nil, 0, domain.SessionDeletionPending()
+	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, 0, storageError(err)
@@ -759,6 +803,9 @@ func (s *Store) Events(ctx context.Context, after uint64, session domain.ID, lim
 	}
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return nil, domain.SessionDeletionPending()
+	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, storageError(err)
@@ -825,6 +872,9 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 	// This lock also excludes revocation mutations. Check the original actor
 	// after acquiring it and retain it through VACUUM/publication, so revocation
 	// that committed first cannot leave a new private backup on disk.
+	if s.deletionFault {
+		return "", domain.SessionDeletionPending()
+	}
 	if err := s.readLocked(ctx, func(tx *Tx) error { return tx.Authorize() }); err != nil {
 		return "", err
 	}
@@ -948,6 +998,9 @@ func init() {
 func (s *Store) Read(ctx context.Context, read func(*Tx) error) error {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return domain.SessionDeletionPending()
+	}
 	return s.readLocked(ctx, read)
 }
 

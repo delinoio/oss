@@ -77,6 +77,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session pr link --id SESSION --repository-id ID --number N
   session pr list|get|unlink --id SESSION [--association-id ID] [--revision N]
   session create --input FILE|- [--wait]
+  session delete --id ID --revision REV --confirm [--wait]
+  session deletion --id ID
   session prepare --id ID --revision N [--wait]
   session recover-workspace --id ID --revision N [--cleanup] [--wait]
   session recover-execution --id ID --revision N --execution-id ID [--wait]

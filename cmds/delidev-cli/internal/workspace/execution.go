@@ -148,6 +148,10 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 			_ = lock.Close()
 		}
 	}()
+
+	if _, e := os.Lstat(filepath.Join(m.Root, "session-deletions", string(input.SessionID)+".json")); !errors.Is(e, os.ErrNotExist) {
+		return nil, domain.SessionDeletionPending()
+	}
 	prior, err := m.readExecutionClaim(input.SessionID)
 	validation := preparationIdentity
 	if previous == nil {

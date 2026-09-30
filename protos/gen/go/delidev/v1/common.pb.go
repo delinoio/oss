@@ -192,6 +192,56 @@ func (UsageCoverage) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_common_proto_rawDescGZIP(), []int{1}
 }
 
+// Irrevocable deletion remains pending until every managed resource is confirmed.
+type SessionDeletionState int32
+
+const (
+	SessionDeletionState_SESSION_DELETION_STATE_UNSPECIFIED SessionDeletionState = 0
+	SessionDeletionState_SESSION_DELETION_STATE_PENDING     SessionDeletionState = 1
+	SessionDeletionState_SESSION_DELETION_STATE_SUCCEEDED   SessionDeletionState = 2
+)
+
+// Enum value maps for SessionDeletionState.
+var (
+	SessionDeletionState_name = map[int32]string{
+		0: "SESSION_DELETION_STATE_UNSPECIFIED",
+		1: "SESSION_DELETION_STATE_PENDING",
+		2: "SESSION_DELETION_STATE_SUCCEEDED",
+	}
+	SessionDeletionState_value = map[string]int32{
+		"SESSION_DELETION_STATE_UNSPECIFIED": 0,
+		"SESSION_DELETION_STATE_PENDING":     1,
+		"SESSION_DELETION_STATE_SUCCEEDED":   2,
+	}
+)
+
+func (x SessionDeletionState) Enum() *SessionDeletionState {
+	p := new(SessionDeletionState)
+	*p = x
+	return p
+}
+
+func (x SessionDeletionState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SessionDeletionState) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_common_proto_enumTypes[2].Descriptor()
+}
+
+func (SessionDeletionState) Type() protoreflect.EnumType {
+	return &file_delidev_v1_common_proto_enumTypes[2]
+}
+
+func (x SessionDeletionState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SessionDeletionState.Descriptor instead.
+func (SessionDeletionState) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{2}
+}
+
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
 // schemas live in the Go domain types. Unknown fields and enum values fail.
 // This envelope never permits arbitrary database writes: each mutation kind
@@ -416,6 +466,123 @@ func (x *ForwardChange) GetReplayed() bool {
 	return false
 }
 
+type SessionDeletionJob struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SessionId       string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Revision        uint64                 `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	State           SessionDeletionState   `protobuf:"varint,4,opt,name=state,proto3,enum=delidev.v1.SessionDeletionState" json:"state,omitempty"`
+	AcceptedAt      string                 `protobuf:"bytes,5,opt,name=accepted_at,json=acceptedAt,proto3" json:"accepted_at,omitempty"`
+	FinishedAt      string                 `protobuf:"bytes,6,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	WorkersPending  uint32                 `protobuf:"varint,7,opt,name=workers_pending,json=workersPending,proto3" json:"workers_pending,omitempty"`
+	DatabaseRemoved bool                   `protobuf:"varint,8,opt,name=database_removed,json=databaseRemoved,proto3" json:"database_removed,omitempty"`
+	BackupsRemoved  bool                   `protobuf:"varint,9,opt,name=backups_removed,json=backupsRemoved,proto3" json:"backups_removed,omitempty"`
+	// Removal is proved separately from filesystem allocation; bytes are unknown.
+	ReclaimedBytesKnown bool `protobuf:"varint,10,opt,name=reclaimed_bytes_known,json=reclaimedBytesKnown,proto3" json:"reclaimed_bytes_known,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *SessionDeletionJob) Reset() {
+	*x = SessionDeletionJob{}
+	mi := &file_delidev_v1_common_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionDeletionJob) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionDeletionJob) ProtoMessage() {}
+
+func (x *SessionDeletionJob) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_common_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionDeletionJob.ProtoReflect.Descriptor instead.
+func (*SessionDeletionJob) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SessionDeletionJob) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SessionDeletionJob) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *SessionDeletionJob) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *SessionDeletionJob) GetState() SessionDeletionState {
+	if x != nil {
+		return x.State
+	}
+	return SessionDeletionState_SESSION_DELETION_STATE_UNSPECIFIED
+}
+
+func (x *SessionDeletionJob) GetAcceptedAt() string {
+	if x != nil {
+		return x.AcceptedAt
+	}
+	return ""
+}
+
+func (x *SessionDeletionJob) GetFinishedAt() string {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return ""
+}
+
+func (x *SessionDeletionJob) GetWorkersPending() uint32 {
+	if x != nil {
+		return x.WorkersPending
+	}
+	return 0
+}
+
+func (x *SessionDeletionJob) GetDatabaseRemoved() bool {
+	if x != nil {
+		return x.DatabaseRemoved
+	}
+	return false
+}
+
+func (x *SessionDeletionJob) GetBackupsRemoved() bool {
+	if x != nil {
+		return x.BackupsRemoved
+	}
+	return false
+}
+
+func (x *SessionDeletionJob) GetReclaimedBytesKnown() bool {
+	if x != nil {
+		return x.ReclaimedBytesKnown
+	}
+	return false
+}
+
 var File_delidev_v1_common_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_common_proto_rawDesc = "" +
@@ -443,7 +610,22 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x11expected_revision\x18\x03 \x01(\x04R\x10expectedRevision\"[\n" +
 	"\rForwardChange\x12.\n" +
 	"\aforward\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aforward\x12\x1a\n" +
-	"\breplayed\x18\x02 \x01(\bR\breplayed*\xd2\x05\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"\x8a\x03\n" +
+	"\x12SessionDeletionJob\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x04R\brevision\x126\n" +
+	"\x05state\x18\x04 \x01(\x0e2 .delidev.v1.SessionDeletionStateR\x05state\x12\x1f\n" +
+	"\vaccepted_at\x18\x05 \x01(\tR\n" +
+	"acceptedAt\x12\x1f\n" +
+	"\vfinished_at\x18\x06 \x01(\tR\n" +
+	"finishedAt\x12'\n" +
+	"\x0fworkers_pending\x18\a \x01(\rR\x0eworkersPending\x12)\n" +
+	"\x10database_removed\x18\b \x01(\bR\x0fdatabaseRemoved\x12'\n" +
+	"\x0fbackups_removed\x18\t \x01(\bR\x0ebackupsRemoved\x122\n" +
+	"\x15reclaimed_bytes_known\x18\n" +
+	" \x01(\bR\x13reclaimedBytesKnown*\xd2\x05\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -477,7 +659,11 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x13ENTITY_KIND_FORWARD\x10\x1b*[\n" +
 	"\rUsageCoverage\x12\x1e\n" +
 	"\x1aUSAGE_COVERAGE_UNSPECIFIED\x10\x00\x12*\n" +
-	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01B<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01*\x88\x01\n" +
+	"\x14SessionDeletionState\x12&\n" +
+	"\"SESSION_DELETION_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eSESSION_DELETION_STATE_PENDING\x10\x01\x12$\n" +
+	" SESSION_DELETION_STATE_SUCCEEDED\x10\x02B<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_common_proto_rawDescOnce sync.Once
@@ -491,23 +677,26 @@ func file_delidev_v1_common_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_common_proto_rawDescData
 }
 
-var file_delidev_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_delidev_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_delidev_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_delidev_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_delidev_v1_common_proto_goTypes = []any{
-	(EntityKind)(0),       // 0: delidev.v1.EntityKind
-	(UsageCoverage)(0),    // 1: delidev.v1.UsageCoverage
-	(*Resource)(nil),      // 2: delidev.v1.Resource
-	(*Mutation)(nil),      // 3: delidev.v1.Mutation
-	(*ForwardChange)(nil), // 4: delidev.v1.ForwardChange
+	(EntityKind)(0),            // 0: delidev.v1.EntityKind
+	(UsageCoverage)(0),         // 1: delidev.v1.UsageCoverage
+	(SessionDeletionState)(0),  // 2: delidev.v1.SessionDeletionState
+	(*Resource)(nil),           // 3: delidev.v1.Resource
+	(*Mutation)(nil),           // 4: delidev.v1.Mutation
+	(*ForwardChange)(nil),      // 5: delidev.v1.ForwardChange
+	(*SessionDeletionJob)(nil), // 6: delidev.v1.SessionDeletionJob
 }
 var file_delidev_v1_common_proto_depIdxs = []int32{
 	0, // 0: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
-	2, // 1: delidev.v1.ForwardChange.forward:type_name -> delidev.v1.Resource
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 1: delidev.v1.ForwardChange.forward:type_name -> delidev.v1.Resource
+	2, // 2: delidev.v1.SessionDeletionJob.state:type_name -> delidev.v1.SessionDeletionState
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_common_proto_init() }
@@ -520,8 +709,8 @@ func file_delidev_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_common_proto_rawDesc), len(file_delidev_v1_common_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   3,
+			NumEnums:      3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -4,6 +4,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Generated ActivityQuery retains the typed PR metadata and PR_HANDLING_V1 capability under the activity contract. Keep exact source revisions and version references; source inspection is an explicit disposable read, and attempt success cannot become verified handling.
+
 - DeliDev generated user-service queries retain exact bigint revisions and original requests; capability support is separate from native manager availability and cleanup. Keep private native identities and credentials off the service wire, and follow `docs/cmds-delidev-user-services-contract.md`.
 
 - Backup job observation uses owner/client `GetBackupCreation` and `GetBackupDeletion` independently of bounded history pages. Keep accepted IDs and exact revisions through navigation, refresh inventory after observed completion, and never replay a mutation to poll status. Follow `docs/cmds-delidev-storage-contract.md`.
@@ -37,3 +39,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - DeliDev session forwards follow `docs/cmds-delidev-forwarding-contract.md`: preserve explicit loopback port selection, original client/Worker/device/instance ownership, negotiated capabilities and bounded ordered opaque traffic. Native claims precede sockets and receipt replay grants no new lifetime. Keep Stop independent from Archive, gate every Archive completion on both original cleanup outcomes, and retain positive private cleanup receipts through offline reporting without redialing or recreating listeners. Worker credentials receive only their original forwarding peer endpoints.
 
 - Preserve legacy generated-path reflection exports as well as declaration imports. Generate the aggregate descriptor view in the compatibility pass, retain original declaration order and canonical TypeScript object identity, and cover both direct enumeration and registry construction in compatibility tests.
+
+- Generated SessionQuery permanent-deletion acceptance/status and Worker cleanup queries preserve original UUIDs, BigInt revisions, pending removal and unknown reclaimed bytes. Generate through the canonical split schema and compatibility pass; no client-side ownership decisions or automatic mutation replay. Follow `docs/cmds-delidev-storage-contract.md`.

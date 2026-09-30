@@ -2,6 +2,8 @@
 
 - Use service-specific schema files and preserve the compatibility `delidev.proto` import. Shared numeric additions must match `allocations.json`; reservations do not advertise support. Run the normal generated-source pipeline and never hand-edit generated output. The exact declaration-relocation map preserves FILE compatibility checks without suppressing semantic changes.
 
+- PR activity activates only #1118's existing main reservations in `activity.proto`: ActivityKind 7–10, ActivityEntry.pull_request 15 and ListActivityResponse.capabilities 3. Keep typed metadata/actor/mode/state separate from private source content and independently verified handling. Regenerate service-owned bindings and compatibility facades together.
+
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - DeliDev system capabilities retain wire values `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, and `USER_SERVICES_V1 = 3`. Never reuse a merged capability number for another meaning; advertise independent capabilities together and regenerate Go/TypeScript from the schema.
@@ -113,3 +115,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - DeliDev session forwards follow `docs/cmds-delidev-forwarding-contract.md`: preserve explicit loopback port selection, original client/Worker/device/instance ownership, negotiated capabilities and bounded ordered opaque traffic. Native claims precede sockets and receipt replay grants no new lifetime. Keep Stop independent from Archive, gate every Archive completion on both original cleanup outcomes, and retain positive private cleanup receipts through offline reporting without redialing or recreating listeners. Worker credentials receive only their original forwarding peer endpoints.
 
 - Generated legacy Go and TypeScript descriptor exports must retain aggregate reflection contents while the actual schema file ownership follows the declaration relocation manifest. Do not register duplicate runtime symbols or commit a serialized aggregate that creates a new per-feature merge hotspot.
+
+- Permanent deletion adds owner/client SessionService acceptance/status and independent owning-Worker cleanup RPCs. Shared job/state messages belong to common.proto; exclusive request/response types belong to their service file. Preserve `PERMANENT_SESSION_DELETION_V1 = 9` from allocations.json alongside merged capabilities, exact uint64 revisions, pending acknowledgements and unknown reclaimed bytes. Follow `docs/cmds-delidev-storage-contract.md` and regenerate bindings.

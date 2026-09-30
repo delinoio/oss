@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, ScheduleAction, ScheduleQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, Mode, object, text, Workspace, type Document } from "./documents";
@@ -6,6 +6,8 @@ import { ReferenceFields, ResourceChoice, TextField } from "./configuration-fiel
 import { useRetainedMutation } from "./mutation";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
+import { Icon as SidebarIcon } from "./sidebar";
+import { ScheduleCreation, type ScheduleCreationProps } from "./schedule-creation";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 
 enum Overlap { Overlap = "overlap", Skip = "skip", Wait = "wait" }
@@ -31,11 +33,11 @@ export function ScheduleEditor({ initial, active, saved, cancel, readLocalWorker
   useEffect(() => protectedChange(true), [protectedChange]);
   const stale = Boolean(initial && current.data?.schedule && initial.revision !== current.data.schedule.revision);
   const local = definition.workspace === Workspace.Local;
-  const field = (key: string) => (value: unknown) => {
-    const next = { ...definition, [key]: value };
-    if (encode(next).byteLength > 1 << 20 || new TextEncoder().encode(text(next.prompt)).byteLength > 256 << 10) { setLimit("The schedule or prompt is too large. The previous draft is retained."); return; }
-    setDefinition(next); setLimit("");
+  const change = (next: Document) => {
+    if (encode(next).byteLength > 1 << 20 || new TextEncoder().encode(text(next.prompt)).byteLength > 256 << 10) { setLimit("The schedule or prompt is too large. The previous draft is retained."); return false; }
+    setDefinition(next); setLimit(""); return true;
   };
+  const field = (key: string) => (value: unknown) => change({ ...definition, [key]: value });
   const submit = async () => {
     if (blocked || stale || (initial && current.error)) return;
     const original = object(document(initial).definition);
@@ -45,6 +47,15 @@ export function ScheduleEditor({ initial, active, saved, cancel, readLocalWorker
     if (local && !retainedLocal && !proof) return;
     void mutation.send({ ...input, localWorkerToken: proof?.token });
   };
+  if (!initial) {
+    const props: ScheduleCreationProps = { definition, change, active, blocked, cancel, submit,
+      localAvailable: localProof.available,
+      selectLocal: () => { void localProof.load().then((proof) => { if (proof) change({ ...definition, workspace: Workspace.Local, machine_id: proof.machineId, starting: [] }); }); },
+      references: local ? null : <StartingReferences key={text(definition.project_id)} project={text(definition.project_id)} starting={items(definition.starting)} change={field("starting")} active={active} />,
+      errors: <>{limit ? <p role="alert">{limit}</p> : null}{localProof.problem ? <p role="alert">{localProof.problem}</p> : null}<Problem error={mutation.error} /></>,
+      retry: mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same schedule</button> : null };
+    return <ScheduleCreation {...props} />;
+  }
   return <section><h3>{initial ? "Edit schedule" : "New schedule"}</h3><form onSubmit={(event) => { event.preventDefault(); void submit(); }}><fieldset disabled={blocked}>
     <TextField label="Schedule name" value={definition.name} required change={field("name")} /><label className="checkbox"><input type="checkbox" checked={definition.enabled === true} onChange={(event) => field("enabled")(event.target.checked)} />Enable future scheduled runs</label><ResourceChoice label="Project" kind={EntityKind.PROJECT} value={text(definition.project_id)} active={active} required change={(project_id) => setDefinition({ ...definition, project_id, starting: [] })} /><ResourceChoice label="Agent Worker" kind={EntityKind.AGENT} value={text(definition.agent_id)} active={active} required change={field("agent_id")} /><ResourceChoice label="Execution Worker" kind={EntityKind.MACHINE} value={text(definition.machine_id)} active={active} disabled={local} required change={field("machine_id")} />
     <div className="actions"><button type="button" aria-pressed={!local} onClick={() => setDefinition({ ...definition, workspace: Workspace.Worktree })}>Use separate Worktrees</button><button type="button" disabled={!localProof.available} aria-pressed={local} onClick={() => { void localProof.load().then((proof) => { if (proof) setDefinition({ ...definition, workspace: Workspace.Local, machine_id: proof.machineId, starting: [] }); }); }}>Use this computer's Local checkouts</button></div><p>Workspace: {local ? "Local computer · originating Worker selected" : "Worktree · separate detached checkouts"}</p>{local ? <p>Existing Local schedules retain their authenticated Worker when unchanged. Selecting this computer explicitly supplies its private Worker proof. Existing checkouts are shared as-is without fetch or starting-reference overrides.</p> : <StartingReferences key={text(definition.project_id)} project={text(definition.project_id)} starting={items(definition.starting)} change={field("starting")} active={active} />}
@@ -85,24 +96,38 @@ export function Schedules({ active, open, readLocalWorker }: { active: boolean; 
   const [selected, setSelected] = useState<Resource>(), [editing, setEditing] = useState<{ initial?: Resource; key: string }>();
   const [historyDraft, setHistoryDraft] = useState(""), [history, setHistory] = useState("");
   const [projectId, setProjectId] = useState("");
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const historyRegionId = useId();
+  const historyInput = useRef<HTMLInputElement>(null);
+  const focusHistoryOnExpansion = useRef(false);
   const [protectedWorkflow, setProtectedWorkflow] = useState(false);
   const closeDrawer = useCloseSidebarDrawer();
   const locked = protectedWorkflow || Boolean(editing);
+  useEffect(() => {
+    // Only an explicit disclosure expansion owns focus; navigation, reconnects
+    // and portal placement must leave the user's current focus untouched.
+    if (!focusHistoryOnExpansion.current) return;
+    focusHistoryOnExpansion.current = false;
+    if (historyExpanded && active && !locked) historyInput.current?.focus();
+  }, [historyExpanded, active, locked]);
   const result = useQuery(ScheduleQuery.listSchedules, { projectId, pageSize: 50, pageToken: page, ...(filter === EnabledFilter.All ? {} : { enabled: filter === EnabledFilter.Enabled }) }, { enabled: active });
   const selectSchedule = (row: Resource) => { if (locked) return; setSelected(row); setHistory(""); closeDrawer(); };
   const newSchedule = () => { if (locked) return; setSelected(undefined); setHistory(""); setEditing({ key: newRequestId() }); closeDrawer(); };
   const openHistory = (event: FormEvent) => { event.preventDefault(); if (locked || !historyDraft.trim()) return; setSelected(undefined); setHistory(historyDraft.trim()); closeDrawer(); };
   return <>
-    <SidebarSurface active={active} title="Schedules">
-      <button className="primary sidebar-action" disabled={locked} onClick={newSchedule}>New schedule</button>
+    <SidebarSurface active={active} title="Schedules" className="schedules-sidebar">
+      <button className="primary sidebar-action" disabled={locked} onClick={newSchedule}><SidebarIcon name="plus" />New schedule</button>
       <div className="sidebar-filter-options" aria-label="Schedule state">{([[EnabledFilter.All, "All schedules"], [EnabledFilter.Enabled, "Enabled"], [EnabledFilter.Paused, "Paused"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} disabled={locked} onClick={() => { setFilter(value); setPage(""); }}>{label}</button>)}</div>
-      <ResourceChoice label="Filter by project" kind={EntityKind.PROJECT} value={projectId} change={(id) => { if (!locked) { setProjectId(id); setPage(""); } }} active={active} disabled={locked} />
-      <header className="sidebar-list-heading"><h3>Schedules</h3><button type="button" disabled={locked || result.isFetching} onClick={() => { setPage(""); void result.refetch(); }}>Refresh</button></header>
+      <ResourceChoice label="Filter by project" emptyLabel="All projects" kind={EntityKind.PROJECT} value={projectId} change={(id) => { if (!locked) { setProjectId(id); setPage(""); } }} active={active} disabled={locked} />
+      <header className="sidebar-list-heading"><h3>Saved schedules</h3><button type="button" disabled={locked || result.isFetching} onClick={() => { setPage(""); void result.refetch(); }}><SidebarIcon name="refresh" />Refresh</button></header>
       <Problem error={result.error} />{result.isPending && active ? <p role="status">Loading schedules…</p> : null}{result.error && result.data ? <p className="sidebar-help">Refresh failed. Showing the previous page.</p> : null}
-      {result.data?.schedules.map((row) => <article key={row.id} className="sidebar-schedule-row"><button type="button" disabled={locked} aria-current={selected?.id === row.id ? "true" : undefined} onClick={() => selectSchedule(row)}>{scheduleName(row)}</button><p>{object(document(row).definition).enabled === true ? "Enabled" : "Paused"} · Next run (UTC): {text(document(row).next_run_at) || "None scheduled"}</p></article>)}
-      {result.data?.schedules.length === 0 ? <p className="sidebar-help">{page ? "No schedules on this page." : "No saved schedules."}</p> : null}
-      <nav aria-label="Schedules pages"><button disabled={locked || !page || result.isFetching} onClick={() => setPage("")}>First</button><button disabled={locked || !result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>Next</button></nav>
-      <form className="sidebar-form" onSubmit={openHistory}><TextField label="Retained schedule ID" value={historyDraft} change={setHistoryDraft} max={36} required disabled={locked} /><button disabled={locked}>Retained history</button></form>
+      {result.data?.schedules.map((row) => <article key={row.id} className="sidebar-schedule-row"><button type="button" disabled={locked} aria-current={selected?.id === row.id ? "true" : undefined} onClick={() => selectSchedule(row)}><span className="schedule-row-title">{scheduleName(row)}</span><span className="schedule-row-state">{object(document(row).definition).enabled === true ? "Enabled" : "Paused"}</span><span className="schedule-row-next">Next run (UTC): <span>{text(document(row).next_run_at) || "None scheduled"}</span></span></button></article>)}
+      {!result.error && result.data?.schedules.length === 0 ? <p className="sidebar-help schedules-empty"><SidebarIcon name="schedules" />{page ? "No schedules on this page." : "No saved schedules."}</p> : null}
+      <nav className="schedules-pages" aria-label="Schedules pages"><button disabled={locked || !page || result.isFetching} onClick={() => setPage("")}>First</button><button disabled={locked || !result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>Next</button></nav>
+      <button type="button" className="schedules-history-toggle" aria-expanded={historyExpanded} aria-controls={historyRegionId} disabled={locked} onClick={() => { if (locked) return; focusHistoryOnExpansion.current = !historyExpanded; setHistoryExpanded(!historyExpanded); }}><SidebarIcon name="chevron" className="schedules-history-chevron" />Retained history</button>
+      <div role="region" id={historyRegionId} aria-label="Retained schedule history lookup" hidden={!historyExpanded}>
+        <form className="sidebar-form" onSubmit={openHistory}><label>Retained schedule ID<input ref={historyInput} value={historyDraft} onChange={(event) => setHistoryDraft(event.target.value)} maxLength={36} required disabled={locked} /></label><button aria-label="Open retained history" disabled={locked}>Retained history</button></form>
+      </div>
     </SidebarSurface>
     <div hidden={!active} className="page schedule-page">{editing ? <ScheduleEditor readLocalWorker={readLocalWorker} key={editing.key} initial={editing.initial} active={active} saved={(row) => { setEditing(undefined); setProtectedWorkflow(false); if (row) setSelected(row); void result.refetch(); }} cancel={() => { setEditing(undefined); setProtectedWorkflow(false); }} protectedChange={setProtectedWorkflow} /> : selected ? <ScheduleDetails key={selected.id} initial={selected} active={active} open={open} close={() => { setSelected(undefined); setProtectedWorkflow(false); void result.refetch(); }} edit={(initial) => { setSelected(undefined); setEditing({ initial, key: newRequestId() }); }} protectedChange={setProtectedWorkflow} /> : history ? <><button onClick={() => setHistory("")}>Back to schedules</button><ScheduleHistory key={history} id={history} active={active} open={open} /></> : <section><h2>Schedules</h2><p>Select a schedule from the sidebar to inspect its details and retained history.</p></section>}</div>
   </>;

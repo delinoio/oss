@@ -60,6 +60,8 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	action := args[0]
 	f := flags("session " + action)
 	switch action {
+	case "delete", "deletion":
+		return sessionDeletionCommand(ctx, c, o, args)
 	case "forward":
 		return sessionForward(ctx, c, o, args[1:], streams)
 	case "pr":

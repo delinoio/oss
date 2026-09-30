@@ -142,7 +142,7 @@ Protocol changes update this contract and [command contract](cmds-delidev-contra
 `SearchService.SearchConversations` is owner/paired-client-only and reads complete current message resources with bounded session metadata. Literal query plus session/project/Agent/original-execution-account/outcome/archive filters follow the search contract; unknown enum values fail. Signed pages bind the actor, all normalized selectors and source epoch through a keyed query commitment. Reads recheck revocation within the same transaction; both protobuf and JSON pages are byte-bounded. Search never changes read state or execution.
 
 ### Activity RPC
-`ActivityService.ListActivity` is owner/paired-client-only and returns closed event/occurrence enums, original source IDs/revisions and server retention time. Execution acceptance, native terminal evidence and scheduling remain distinct. No source documents, prompt/output content, instructions, credentials or native thread/turn IDs enter this response. Current-source pages bind actor/session/project/source epoch, are bounded, and recheck revocation in the read transaction; original execution jobs retain account attribution.
+`ActivityService.ListActivity` is owner/paired-client-only and returns closed event/occurrence enums, original source IDs/revisions and server retention time. Execution acceptance, native terminal evidence, scheduling and PR decisions/outcomes remain distinct. Additive `ActivityPRMetadata` carries original source/revision, stable remote PR identity, exact content-version references, owner/client actor/request and typed attempt mode/state. PR transition UUIDs are immutable; `PR_HANDLING_V1` is explicitly advertised. Verified handling requires its own dedicated source identity, never a successful attempt. No public verification write or execution control is added. No source documents, prompt/output content, instructions, credentials or native thread/turn IDs enter this response. Current-source pages bind actor/session/project/source epoch, are bounded, and recheck revocation in the read transaction; original execution jobs retain account attribution.
 
 `UsageService.GetModelPricing`, `GetPricingVersion` and `SetModelPricing` expose explicit typed nullable decimal token rates with source/date/currency/mode/exclusions. Owner/client writes use the model UUID/configuration revision and independent price revision; actor-bound reference-only receipts return the immutable accepted version even after later pricing changes. Worker access is denied and authorization is rechecked in the read/write transaction. Price versions and original estimates survive configuration changes; there is no automatic historical repricing.
 
@@ -324,7 +324,7 @@ IntegrationService adds owner/client-only ListPullRequestRemediationAttempts and
 
 ### Managed database backup observation
 
-SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and remaining session deletion/restoration work. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
+SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and the separate permanent-session deletion and remaining restoration work. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
 
 
 ### Durable backup creation
@@ -348,3 +348,24 @@ System capability wire values retain `AUTOMATIC_TITLES_V1 = 1` and the merged `S
 ## Authenticated development-server forwarding
 
 Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
+
+
+### Permanent session deletion
+
+`SessionService.DeleteSession` uses the existing UUID-v7/revision `Mutation` and
+returns an original typed `SessionDeletionJob`, request ID and replay flag.
+`GetSessionDeletion` reads by original session ID after content removal. Owner and
+paired-client authority applies; Worker credentials cannot invoke these APIs.
+`SystemCapability.PERMANENT_SESSION_DELETION_V1` advertises the additive surface.
+Pending/succeeded enum state, exact uint64 revision, accepted/finished timestamps,
+Worker count and database/backup acknowledgements keep acceptance separate from
+confirmed removal; unknown reclaimed bytes must remain unknown.
+
+`WorkerService.ListSessionDeletionWork` and `ReportSessionDeletion` form an
+independent current-instance-authenticated cleanup lane, bound to original paired
+machine/device and immutable versioned ownership metadata. Work pages contain at
+most 20 plans and 1 MiB; UUID continuation is observation only. Reports contain
+only original session/deletion IDs, plan digest and retained request UUID. No
+paths, prompts, credentials or new execution authority cross this boundary.
+Generate Go and TypeScript/Connect Query sources together and follow the
+[storage contract](cmds-delidev-storage-contract.md).

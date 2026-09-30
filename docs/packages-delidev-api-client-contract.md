@@ -18,6 +18,7 @@ The DeliDev desktop client connects to one explicitly selected authenticated loc
 
 Generated `ListResourcesRequest` exposes optional account-only provider and account-type selectors. Keep these fields in the list request and its query key/cursor input; do not move them into the shared `Filter` used by snapshots or event streams. The Go server performs filtering before pagination and binds both fields into continuation cursors. Provider inventory reports `ACCOUNT_TYPE_FILTER` separately from its activation/model/provider-filter capabilities; split account views require all of them.
 - `buf.gen.yaml` generates messages and Connect Query descriptors exclusively from `delidev.v1`. Root generation/freshness and Turbo input/output tracking include the package. Existing Go/DevHud/ach output remains reproducible.
+- `ActivityQuery` exposes typed PR handling metadata and the `PR_HANDLING_V1` capability. Preserve original numeric identity strings, bigint revisions, content-version references and separate dismissal/attempt/verified outcomes. Explicit ResourceQuery source inspection reads original retained resources without mutation or handling inference; see the [activity contract](cmds-delidev-activity-contract.md).
 - `UsageQuery` exports generated summary/current-price/historical-price descriptors and the explicit price mutation. Preserve nullable decimal rates, exact amount/counter strings, separate currencies and token-basis versus native coverage. The additive summary request supports explicit day granularity and IANA zone; optional daily/model analytics are server-owned results from the same snapshot as existing totals. Only the server computes historical estimates and Other-model totals; no client-side aggregation or inferred actual cost.
 - Automatic session creation uses generated `SessionQuery.createSession` with explicit `name_mode: "automatic"` and no `name`. `SystemQuery.getStatus` exposes the typed automatic-title server capability; UI gating must use that field rather than a version guess. Session title owner/state/reason remain server-owned `Resource.document_json` fields.
 - `createDeliDevTransport` takes an explicit server origin and caller-owned fresh token supplier. It uses binary Connect POST, server streaming and no automatic mutation retries. `newRequestId` creates UUID-v7 mutation identities; callers retain the complete original request on uncertain retries.
@@ -114,7 +115,7 @@ IntegrationQuery also exports generated ListPullRequestRemediationAttempts and R
 
 ### Managed database backup observation
 
-SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and remaining session deletion/restoration work. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
+SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and the separate permanent-session deletion and remaining restoration work. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
 
 
 ### Durable backup creation
@@ -136,3 +137,11 @@ Generated SystemQuery exports `getUserService` and `controlUserService` with the
 ## Authenticated development-server forwarding
 
 Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
+
+
+Generated `SessionQuery.deleteSession`/`getSessionDeletion` expose confirmed
+irreversible acceptance and independent original-job observation. Generated
+Worker cleanup queries and `PERMANENT_SESSION_DELETION_V1` retain the additive
+protocol without duplicating Go ownership logic. Preserve original request IDs,
+BigInt revisions and pending/unknown removal state; no automatic mutation replay.
+See the [storage contract](cmds-delidev-storage-contract.md).
