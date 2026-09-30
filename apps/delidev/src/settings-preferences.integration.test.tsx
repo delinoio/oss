@@ -12,6 +12,9 @@ import { document } from "./documents";
 import { useSettingsFixture } from "./settings-test-fixture";
 
 const fixture = useSettingsFixture();
+// These controls follow real Go reads or a save plus invalidation/refetch.
+// Allow the round trip to settle while retaining the test's overall 15s deadline.
+const serverRoundTripWait = { timeout: 5000 };
 
 it("creates and edits singleton server preferences with the exact Go defaults", async () => {
   const { transport, runCLI } = fixture;
@@ -19,9 +22,9 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }, serverRoundTripWait));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  const edit = await screen.findByRole("button", { name: "Edit Server preferences" });
+  const edit = await screen.findByRole("button", { name: "Edit Server preferences" }, serverRoundTripWait);
   const resources = createClient(ResourceService, transport);
   const first = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(first).toHaveLength(1);
@@ -31,7 +34,7 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
   fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  await screen.findByRole("button", { name: "Edit Server preferences" });
+  await screen.findByRole("button", { name: "Edit Server preferences" }, serverRoundTripWait);
   const latest = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(latest).toHaveLength(1);
   expect(latest[0].id).toBe(first[0].id);
