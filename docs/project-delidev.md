@@ -81,6 +81,10 @@ See the [sessions contract](cmds-delidev-sessions-contract.md),
 for the controlled native A-to-B result and unperformed
 desktop/real-account/platform acceptance.
 
+## Diagnostic resource-kind invariant
+
+Generic diagnostic consumers must accept the complete closed stored resource-kind inventory, including child-agent and session-forward records, without interpreting retained counts as execution readiness.
+
 ## Change Policy
 Update the owning domain contract when behavior changes. Update this index only for ownership, its domain catalog or cross-domain invariants. Record each implementation/validation increment in its own `docs/evidence/delidev/issue-<number>/` file. A validation-only increment does not require editing this index or an AGENTS file.
 

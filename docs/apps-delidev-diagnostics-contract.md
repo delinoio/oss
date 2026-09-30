@@ -75,3 +75,5 @@ Update this presentation contract, the desktop/diagnostics links and scoped fron
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Repository defaults](repository-defaults.md)
 - [Issue #1144](https://github.com/delinoio/oss/issues/1144)
+
+The first-session prerequisite validator accepts all 29 current stored resource kinds, including `subagent` and `forward`, with an allowlist-derived maximum and exact uint64 count strings. Unknown kinds, duplicate kind rows and invalid counts still make that strict enclosing report unavailable; retained resources never grant execution readiness.
