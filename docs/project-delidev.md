@@ -11,6 +11,8 @@ The desktop app icon keeps its original colored ribbon and transparent cutouts, 
 
 The current pull-request work additionally addresses issues #1056 and #1057: opt-in automatic titles use a separate, capability-negotiated title Worker lane, and the desktop starts sessions from a chat-first page while retaining the existing conversation surface. This increment does not claim completion of issue #964; native desktop visual and real-provider/account acceptance limits remain explicit in the evidence ledger.
 
+Issue #1144 gives Settings Diagnostics the approved independent observation cards and server/storage/Worker/protected-account hierarchy. The [diagnostics contract](cmds-delidev-diagnostics-contract.md#desktop-presentation-issue-1144) defines record-local secondary disclosures, exact measurements and actual-Settings-close reset while preserving the existing read-only report/query and modal ownership. Validation and native-platform limits are recorded separately in the evidence ledger; this increment does not expand business, backend or release scope.
+
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its standalone/sidecar executable is `delidev`.
 

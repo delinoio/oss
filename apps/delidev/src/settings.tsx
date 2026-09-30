@@ -264,7 +264,7 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
             {settingsGroups.map((group) => <optgroup label={group.label} key={group.label}>{group.categories.map((category) => <option key={category} value={category}>{settingsCategories[category].label}</option>)}</optgroup>)}
           </select>
         </label>
-        <div className="settings-category-heading">
+        {area !== SettingsArea.Diagnostics ? <div className="settings-category-heading">
           <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1><p>{categoryDescription}</p></div>
           {configurationList ? <div className="settings-toolbar">
             <button type="button" onClick={() => void result.refetch()}>Refresh settings</button>
@@ -272,13 +272,13 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
               ? <button type="button" className="primary" disabled={kind === EntityKind.SETTINGS && (!result.data || Boolean(result.error || result.isFetching))} onClick={() => setEditing({ key: newRequestId() })}><span className="settings-action-icon" aria-hidden="true">+</span>New {kindNames[kind]}</button>
               : null}
           </div> : null}
-        </div>
+        </div> : null}
         <div className="settings-panels">
           <div hidden={area !== SettingsArea.Backups}><Backups active={visible && area === SettingsArea.Backups} /></div>
           <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} showCategoryIntro={false} onWorkflowReadyChange={reportIntegrationWorkflow} /></div>
           <div hidden={area !== SettingsArea.Transfer}><ConfigurationTransfer active={visible && area === SettingsArea.Transfer} showCategoryIntro={false} onWorkflowReadyChange={reportTransferWorkflow} /></div>
           <div hidden={area !== SettingsArea.Notifications}><NotificationSettings active={visible && area === SettingsArea.Notifications} showCategoryIntro={false} onWorkflowReadyChange={reportNotificationWorkflow} /></div>
-          <div hidden={area !== SettingsArea.Diagnostics}><Doctor active={visible && area === SettingsArea.Diagnostics} showCategoryIntro={false} /></div>
+          <div hidden={area !== SettingsArea.Diagnostics}><Doctor active={visible && area === SettingsArea.Diagnostics} visible={visible} /></div>
           <div hidden={area !== SettingsArea.Configuration}>
             {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority ? <div hidden={kind !== EntityKind.DEVICE || Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} /></div> : null}
