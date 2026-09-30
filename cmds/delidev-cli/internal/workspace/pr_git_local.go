@@ -4,15 +4,14 @@ package workspace
 import (
 	"context"
 	"io"
-	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 )
 
 // These operands never grant an external file, editor, output or config path.
@@ -60,14 +59,13 @@ func validPRLocalArgs(args []string) bool {
 
 // Called only in the harness-launched client after the live Worker bridge has
 // checked the immutable scope. Native authentication never enters this process.
-// The independently owned child inherits the client's OS sandbox. Its private
-// transient process journal lives in that sandbox's temporary directory.
+// Ordinary fork/exec retains the client's OS sandbox and original native
+// execution ownership (macOS coalition, Linux subreaper or Windows job).
+// Do not use process.Run here: its macOS launchd supervisor would create a
+// separate unsandboxed coalition. The Worker joins the original native owner
+// before verifying a push, including any surviving local Git descendants.
 func runPRLocalGit(ctx context.Context, scope prGitScope, args []string, stdout io.Writer) error {
-	dir, err := os.MkdirTemp("", "delidev-pr-local-")
-	if err != nil {
-		return toolFailure()
-	}
-	local := &PRGitTool{scope: scope, path: filepath.Join(dir, "scope.json")}
+	local := &PRGitTool{scope: scope, path: filepath.Join(scope.Root, "pr-git", string(scope.Claim.ExecutionID), "scope.json")}
 	environment := local.localEnvironmentFrom(os.Environ())
 	command := []string{"-C", scope.RepositoryPath, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + filepath.Join(scope.Root, "empty-hooks"), "-c", "user.name=" + scope.LocalName, "-c", "user.email=" + scope.LocalEmail, "-c", "commit.gpgSign=false", "-c", "core.editor=true"}
 	if args[0] == "diff" || args[0] == "show" {
@@ -77,11 +75,13 @@ func runPRLocalGit(ctx context.Context, scope prGitScope, args []string, stdout 
 	bounded, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	output := limitedOutput{limit: MaxGitOutput}
-	err = process.Run(bounded, process.Config{Directory: dir, OwnerID: scope.Claim.JobID, Executable: scope.GitExecutable, Args: command, Env: environment, Cwd: scope.RepositoryPath, Stdout: &output, Stderr: io.Discard, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))})
-	if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
-		return err
-	}
-	_ = os.RemoveAll(dir)
+	child := exec.CommandContext(bounded, scope.GitExecutable, command...)
+	child.Dir, child.Env = scope.RepositoryPath, environment
+	child.Stdout, child.Stderr = &output, io.Discard
+	// Bound inherited output-pipe waiting; descendant cleanup is proved by the
+	// original native owner, not by treating this command's exit as cleanup.
+	child.WaitDelay = time.Second
+	err := child.Run()
 	if err != nil {
 		return domain.Fail(domain.Unavailable, "The sandboxed local PR Git command did not complete.", "Inspect the original workspace and resolve the command without replaying its push.")
 	}

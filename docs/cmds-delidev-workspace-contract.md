@@ -199,8 +199,12 @@ validates closed local-command operands without executing them, and retains
 native authentication only for exact network operations. The harness launcher
 runs local Git and any repository helpers under its inherited native sandbox,
 with a credential-free environment and the captured commit identity. Local
-process ownership uses a private sandbox temporary directory and is joined
-before returning; uncertain cleanup retains its journal. External input/output
+process ownership stays inside the original native execution's macOS coalition,
+Linux subreaper or Windows job. Local Git uses ordinary fork/exec in the launcher,
+never the generic process supervisor whose macOS launchd child would leave the
+harness sandbox. Its command and output waiting are bounded; only independent
+original native-owner closure proves descendant cleanup before push verification.
+External input/output
 file flags, configuration options, path traversal and pathspec magic are rejected. It cancels/joins the listener and commands before proof while keeping
 the original execution lease. Changed configuration, forged metadata or uncertain
 shutdown cannot grant handling or another push; process restart cannot rebuild

@@ -19,7 +19,8 @@ The original evidence file is historical; its results are not current validation
 - Native Worker authentication stays in the parent bridge. It performs only the
   exact fetch/push network operations and read-only scope verification. Local Git
   runs in the harness-launched client and inherits its sandbox, with a sanitized
-  environment, closed operands and joined temporary process ownership. External
+  environment, closed operands and the original native execution's kernel-owned
+  process scope. External
   file/output/config operands are rejected before capability use.
 - A consumed native push claim cannot replay. Independently verified remote
   source/ref/head plus original successful native completion and cleanup are
