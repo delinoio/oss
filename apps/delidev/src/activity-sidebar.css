@@ -1,0 +1,30 @@
+/* Grow only the outlet containing visible Activity content, so its background
+   fills spare height while long filter content keeps its own scroll extent. */
+.sidebar-surface-outlet:has(> .activity-sidebar:not([hidden])) { display: flex; flex-direction: column; flex: 1 0 auto; }
+/* The pane already contributes 12px and its scroll outlet 1px on the right.
+   Add only the remaining inset here; keep all other surfaces and shell intact. */
+.sidebar-surface-content.activity-sidebar { padding: 8px 3px 24px 4px; background: #f8f9fb; color: #202632; }
+/* Only the visible outlet fills the scroll area; hidden controllers stay hidden.
+   A nonshrinking column also retains overflow when labels or errors grow. */
+.sidebar-surface-content.activity-sidebar:not([hidden]) { display: flex; flex-direction: column; flex: 1 0 auto; }
+.sidebar-surface-content.activity-sidebar > h2 { margin: 0 0 16px; font-size: 18px; font-weight: 650; }
+.sidebar-surface-content.activity-sidebar button, .sidebar-surface-content.activity-sidebar select { min-width: 0; min-height: 40px; border-radius: 6px; font-size: 13px; line-height: 1.4; }
+.sidebar-surface-content.activity-sidebar .activity-all { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border-color: transparent; background: transparent; text-align: left; }
+.sidebar-surface-content.activity-sidebar .activity-all:hover { background: #eceef1; }
+.sidebar-surface-content.activity-sidebar .activity-all[aria-pressed="true"] { background: #e7efff; color: #17499f; font-weight: 600; }
+.sidebar-surface-content.activity-sidebar .activity-all > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.sidebar-surface-content.activity-sidebar .activity-filter-icon { width: 16px; height: 16px; flex: 0 0 16px; }
+.sidebar-surface-content.activity-sidebar .activity-filter-group { display: grid; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #d8dee8; }
+.sidebar-surface-content.activity-sidebar .activity-filter-group > h3 { margin: 0; color: #5b6577; font-size: 11px; font-weight: 600; letter-spacing: .06em; }
+.sidebar-surface-content.activity-sidebar .resource-choice, .sidebar-surface-content.activity-sidebar .activity-filter-group > div { min-width: 0; }
+.sidebar-surface-content.activity-sidebar label { gap: 8px; margin: 0; color: #202632; font-size: 12px; font-weight: 550; }
+.sidebar-surface-content.activity-sidebar select { width: 100%; background: white; border-color: #d8dee8; }
+.sidebar-surface-content.activity-sidebar .resource-choice > p, .sidebar-surface-content.activity-sidebar .activity-selected-label { margin: 8px 0 0; color: #5b6577; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.sidebar-surface-content.activity-sidebar .problem { min-width: 0; margin: 8px 0 0; padding: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.sidebar-surface-content.activity-sidebar .problem p { margin: 8px 0 0; }
+.sidebar-surface-content.activity-sidebar .resource-choice .actions { gap: 8px; margin-top: 8px; }
+.sidebar-surface-content.activity-sidebar .activity-filter-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(52px, max-content); align-items: stretch; gap: 8px; }
+.sidebar-surface-content.activity-sidebar .activity-apply { background: #202632; color: white; border-color: #202632; font-weight: 600; overflow-wrap: anywhere; }
+.sidebar-surface-content.activity-sidebar .activity-apply:hover { background: #151a23; border-color: #151a23; }
+.sidebar-surface-content.activity-sidebar .activity-reset { min-width: 52px; padding-inline: 4px; background: transparent; border-color: transparent; color: #5b6577; overflow-wrap: anywhere; }
+.sidebar-surface-content.activity-sidebar .activity-reset:hover { background: #eceef1; }

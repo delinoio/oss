@@ -126,4 +126,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Managed restore uses reserved `MANAGED_BACKUP_RESTORE_V1 = 7`. Preserve existing capabilities 1/2/3 and generate owner/client restore RPCs, presence-aware revision inputs and typed receipt states from `system.proto`.
 
+- Issue #1142 reserves repository-inspection metadata Worker value 6 and attachment-response support field 3, retaining provenance from closed PR #1193 whose Worker value was 5. Main owns value 5 for native compaction. Reservation kinds must match the existing baseline declaration kind, including message-field additions. Keep them allocation-only until the dependent implementation; do not advertise support from a reservation. Follow the protocol and structure contracts.
+
 - The reserved native accounting capability is 4, usage request/response accounting_profile fields are 11/12 and UsageTotals.accounting is 8. Use the service-specific usage/system schemas and generated compatibility views; preserve distinct CodexResponse/GrokClosedInput kinds and legacy omission. Unknown profiles fail; native source proofs remain private and Grok costs unavailable.
