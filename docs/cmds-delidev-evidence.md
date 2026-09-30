@@ -7,7 +7,7 @@ The desktop/CLI/server/Worker implementation is in progress. The 2026-09-28 part
 
 | Boundary | Implementation | Verification |
 | --- | --- | --- |
-| CLI, typed JSON, explicit startup, server/sidecar lifecycle | Versioned JSON/errors, explicit detached/foreground startup and compatible reuse, status/stop, configuration CRUD, read-only doctor, backup implemented; native services/supervision pending | Native macOS subprocess smoke: no implicit startup, readiness/reuse, CRUD, backup, explicit stop, restart persistence |
+| CLI, typed JSON, explicit startup, server/sidecar lifecycle | Versioned JSON/errors, explicit detached/foreground startup and compatible reuse, status/stop, configuration CRUD, read-only doctor, backup and optional current-user server/Worker registrations implemented; native Windows/Linux service execution and real relogin acceptance pending | Native macOS subprocess smoke: no implicit startup, readiness/reuse, CRUD, backup, explicit stop, restart persistence |
 | Connect, authentication, origins, pairing, TLS, streams | Owner authentication on every product RPC, exact origins, TLS-required remote listeners, signed scoped cursors, bounded Connect event streaming implemented; single-use device pairing, credential revocation, machine-scoped Worker authorization and outbound job streams implemented | Real loopback Connect: missing authentication, hostile origin/Host, snapshot/replay, deduplication across restart, backup deduplication, pairing replay/single-use, cross-machine denial, claimed-job/report deduplication, active-stream revocation; remote TLS validation guards tested, remote native lifecycle not validated |
 | SQLite, IDs/revisions, atomic events/receipts, backup/restore | Exclusive private scope, WAL transactions, global entity identity, optimistic revisions, durable receipts, metadata-only events, coherent bounded snapshots, consistent backup implemented; restore/deletion coordination pending | Real temporary SQLite: concurrent retries/restart, rollback, kind collisions, deletion receipt redaction, cursor bounds, WAL backup, corrupt/newer DB preservation; Go race tests pass |
 | Projects, repositories, settings, restrictions, templates | Strict versioned configuration schemas, relationship/revision validation and server-owned health fields implemented; repository saves now revalidate each Worker and atomically commit canonical checkouts with default-on automatic fetch; Project/Agent deletion preserves retained snapshots and final project restrictions while disabling future schedules | CLI/Connect configuration, real Worker saves, multi-machine all-or-nothing validation, missing-remote refusal and concurrent asynchronous revision tests; complete session workflow pending |
@@ -3425,6 +3425,23 @@ Rsbuild bundle. These are private fixture/build results, not native packaged
 or real-account acceptance. Generated frontend/client `dist` outputs were
 removed after validation. CI on the forthcoming repair commit remains pending.
 
+### Optional current-user server and Worker services (issue #1086, 2026-09-30)
+
+- Implemented local install/status/start/stop/remove and authenticated typed `SystemService` operations, additive capability and regenerated Go/TypeScript clients. macOS uses GUI LaunchAgents, Linux the existing same-user systemd bus, and Windows current-SID InteractiveToken/LeastPrivilege Task Scheduler registrations. Definitions use only the installed executable and original private scope; installation starts stopped. Exact private/native ownership checks precede every control, foreground/service controllers share existing scope locks, and atomic revision/event/receipt claims prohibit blind native replay. Stop suppression, login disablement, controller completion and native-session recovery remain independent. Removal retains data/authentication and service history.
+- Controlled-native and real Connect/SQLite race fixtures pass for repeat installation/removal, new Start versus old Stop receipts, delayed login admission, joined cleanup barriers, replaced definition/executable/scope/PID refusal, failed/canceled/revoked operations, unavailable native sessions, anonymous/Worker denial, redacted metadata, correlations and revision conflicts. Automatic server recovery cannot create a competing supervisor; joined Stop preserves ordinary generation-specific suppression after removal without stopping a newer foreground generation.
+- The opt-in real macOS arm64 native fixture passes under the race detector using temporary unique registrations and private server/Worker scopes. Both services launch, the Worker attaches, authenticated self-Stop is acknowledged before server shutdown, cleanup is confirmed, delayed stopped launch and competing foreground startup are refused, repeat startup/removal succeeds, automatic recovery stays stopped after removal, and owner/device credentials plus the database remain intact. The fixture initially exposed actual `launchctl print-disabled` enum strings, cached exited-PID publication lag and the native ten-second restart throttle; the adapter now handles the observed owned states with bounded waits and preserves unknown outcomes. This is bounded same-session LaunchAgents evidence, not actual logout/relogin or installed distribution acceptance.
+- API-client lint, all 42 tests and build pass. Buf formatting/lint and breaking checks pass; the complete `pnpm proto:check` passes, including byte-for-byte generated-file reproduction after committing tool-owned output. Go vet and complete Linux and Windows amd64/arm64 CLI cross-builds pass. These cross-builds are not native Linux/Windows execution.
+- The first full root race run failed an existing CLI workspace-reader test and timed out existing store/server/Worker/workspace fixtures while other repository suites were running on the same machine. A serial full-suite rerun with a 30-minute package timeout also fails the same CLI workspace-reader fixture and existing Claude/Grok discovery timeout fixtures; remaining packages are still in progress, so no complete-suite pass is claimed. The CLI workspace-reader failure independently reproduces under the race detector in an exported unchanged `origin/main` snapshot at `b741cec88d68ba84eaf918bbee22ca28bff57ec6` (55.09 seconds), establishing that failure predates this change. No user credentials, external inference, native Linux/Windows session, real logout/relogin, or release acceptance were used. No Rust or frontend application source changed.
+
+- Follow-up review accepts standard escaped Unix user-bus addresses and GUID metadata while preserving one existing same-user filesystem socket, bounded authentication and no remote/autolaunch fallback. Controlled address fixtures execute on macOS; Linux missing-bus and unresponsive-authentication fixtures compile but have not executed on this host. A read-only nonexistent macOS GUI-domain fixture exercises unavailable native-session classification without touching current-user jobs.
+- A second authorization check immediately before atomic intent publication prevents a client revoked during native observation from committing Stop suppression or native writes. The running-controller regression passes under the race detector and retains its original revision/running intent.
+- PR #1123's macOS Go job exposed a completion-observation race: a stale pending journal could be combined with a subsequently released runtime lock. A 100-run local lifecycle repetition also exposed status probing colliding with controller admission (two failed Starts). Observations now hold the state gate, probe the runtime lock before the completion read, and retain an acquired runtime lock through observation. The service race suite passes (8.200 seconds), all 100 repeated lifecycle runs pass (73.487 seconds), the real Connect authorization/revision/replay/redaction fixture passes under the race detector (2.935 seconds), Go vet passes, and the opt-in real macOS LaunchAgents fixture passes under the race detector (15.503 seconds including test-process overhead). The earlier complete local race-suite failures remain visible above; focused repair evidence does not establish a complete local suite pass. The original PR head's Ubuntu Go CI passed, including Linux user-bus fixtures; CI and review must run again for the repaired head.
+- At head `44d3567499f18487dcdab4623f03b4964fea6567`, macOS and Ubuntu Go CI pass, while Windows Go CI fails only the new service package. Its controller fixtures reject process ownership before startup. Inspection found that the Windows process-image check compared its raw Win32 spelling against the independently canonicalized installation path. The repair canonicalizes that observation and requires the retained executable file identity, preserving SID and before/after birth checks. A Windows-specific regression covers the current kernel-reported image, its available short spelling, and rejection of foreign paths, file identities, SIDs and births. Its amd64/arm64 test binaries compile, Windows-targeted vet passes, host Go vet passes, and the host service race suite passes from cache. Native execution of the repaired Windows regression and actual Task Scheduler lifecycle acceptance remain pending; these compile checks do not establish either result.
+
+- At head `a9e6e14d7685d88cb3cee69135629439b41cae5a`, the macOS, Ubuntu and Windows Go CI jobs and the aggregate CI result pass. Actual Windows Task Scheduler lifecycle, logout/relogin and distribution acceptance remain separate pending evidence. Merging `main` through `60770d06` preserves both this service ledger and the upstream widget ledger. On the merged tree, the controlled service race suite passes from cache; focused CLI capability tests (8.118 seconds), server service-control/provider-inventory/replacement-generation tests (14.285 seconds), and store provider-inventory tests (10.975 seconds) pass under the race detector, and complete CLI Go vet passes. These focused merge checks do not establish a complete local race-suite pass or CI acceptance of the new merge commit. No repository-owned generated `dist` directories remain.
+
+- A second `main` merge through `70ec8ab5` retains the authenticated session-forwarding API, both feature contracts and their source-backed evidence. Its already-merged system capability retains wire value 2, while the additive user-service capability takes value 3; the server advertises both and the Go/TypeScript bindings are regenerated together. Focused forwarding/service CLI, server, controller and private-cleanup race fixtures pass (2.092, 5.972, 2.188 and 1.465 seconds respectively), complete CLI Go vet and Buf formatting/lint/breaking checks pass, and client lint, all 42 tests and build pass. The real client/server fixture verifies all three independent system capabilities together. Full desktop `pnpm test` passes 74 files / 945 tests, type checking, packaging/launcher checks, native Swift widget fixtures and the production build. Windows and Linux amd64/arm64 CLI cross-builds pass; these remain compilation evidence rather than native execution. Generated desktop/client `dist` output is removed. The full `go test -race -p 2 -timeout=20m ./cmds/delidev-cli/...` run passes every package, including the previously failing CLI/harness fixtures and complete server/Worker/workspace suites. The complete `pnpm proto:check` passes against the merged base `70ec8ab59dd35931cde38b271e29583e8cfcb62a`, including byte-for-byte generated reproduction from committed bindings. This establishes a complete local CLI race pass for the merged tree while retaining the historical failed runs above; new-head hosted CI remains unverified.
+
 ### Initial privacy-safe macOS status widget (#1090, 2026-09-30)
 
 - Added macOS 13 WidgetKit and Intents selection extensions (`io.delino.delidev.widget` and `io.delino.delidev.widget.selection`) sharing only `group.io.delino.delidev` metadata with the desktop. Each instance selects an exact saved-profile UUID; no default/fallback, account credentials, endpoint, prompt, conversation text, networking or agent action is available. Go/RPC/CLI business semantics and schemas remain unchanged.
@@ -3690,3 +3707,51 @@ forthcoming merge head. Codex still reports its review quota, with no completed
 review or approval. Local full-race/Rust failures remain separately recorded.
 These temporary fixtures and builds do not establish native app, real-account
 or distribution acceptance; new-head CI remains pending after publication.
+
+### PR #1114 optional-user-service merge reconciliation (2026-09-30)
+
+Merged main revision `545b40804a918505ef9387d6658ff36e850667b1`, retaining
+the complete restore and optional current-user service contracts, instruction
+updates and historical evidence. Published forwarding capability 2 and user
+services capability 3 remain stable; the unmerged restore capability is now 4.
+Both Go and TypeScript bindings were regenerated from the canonical schema.
+The server and real Go/TypeScript integration fixtures verify that both service
+and restore capabilities are advertised with their distinct wire numbers.
+
+Authenticated service control now retains the server lifecycle barrier through
+its original authorization, intent and native effects. A blocked fake native
+installation proves that concurrent restore returns Conflict without freezing
+the store, and that releasing the original control produces exactly one write.
+The existing joined service wrapper preserves the durable Stop produced by
+restore; no native service registration was created by these fixtures.
+
+Focused server race checks for concurrent service control, capability stability,
+restore authority and user-service authorization/replay/redaction passed.
+Node.js 24 protocol lint and compatibility checks passed. The API client's
+lint, all 42 tests across three files, and build passed; root Go vet passed.
+Post-commit Node.js 24 `pnpm proto:check` passed, including exact generated
+freshness. Package-local desktop `pnpm test` passed all 948 component tests
+across 74 files, type checking, all eight package-verifier and 16 asset/launcher
+cases, native Swift widget fixtures and the production build. Windows amd64
+and Linux arm64 CLI cross-builds passed. Generated desktop/client `dist`
+directories were removed. No Rust source changed, so the root Rust suite was
+not repeated; its previous outcomes remain recorded above.
+
+Hosted CI passed all ten selected checks, including final CI Result and the
+Ubuntu/macOS/Windows Go jobs, at the preceding published head
+`c49e5465bf7f0cc58655494fe627e52537b871a4` in run
+[36660730993](https://github.com/delinoio/oss/actions/runs/36660730993).
+That evidence applies only to that head. The current review inventory has no
+inline threads or completed reviews; Codex still reports its review quota.
+Native user-service lifecycle acceptance was not selected, and these temporary
+fixtures/cross-builds do not establish login, native app, real-account or
+distribution acceptance. New-head hosted checks remain pending after publication.
+
+The required complete root race run
+`DELIDEV_NATIVE_USER_SERVICE_TEST=0 go test -race -p 2 -timeout 20m ./cmds/delidev-cli/...`
+completed with exit status 0. Every test package passed, including CLI
+(164.880s), server (531.167s), user-service (4.890s), Grok harness (911.586s)
+and Worker (300.098s); Go reused valid cached results for the unchanged store,
+workspace, native-wire and other listed packages. The earlier failed full-race
+attempts remain historical evidence above; no fixture timeout or product
+deadline changed for this successful run. Native service opt-in stayed disabled.

@@ -127,8 +127,9 @@ Generated `ProviderQuery` exposes bounded provider inventory and the client maps
 ### Managed database restore
 
 `SystemService.RestoreBackup` and `GetBackupRestore` are owner/paired-client-only
-operations. `MANAGED_BACKUP_RESTORE_V1` (wire value 3) advertises availability,
-preserving published `SESSION_FORWARDING_V1` value 2; `InspectBackup`
+operations. `MANAGED_BACKUP_RESTORE_V1` (wire value 4) advertises availability,
+preserving published `SESSION_FORWARDING_V1` value 2 and `USER_SERVICES_V1`
+value 3; `InspectBackup`
 adds an exact uint64 `restore_revision`. Restoration requires a UUID-v7 request,
 original backup revision/metadata/digest, a present exact expected live revision
 and explicit confirmation. Generated Go and TypeScript/Connect Query descriptors
@@ -138,6 +139,10 @@ the external journal before opening SQLite. Keep request UUIDs and decimal
 revisions exact across uncertain responses; polling never repeats replacement.
 Follow the [storage contract](cmds-delidev-storage-contract.md) for authorization,
 deletion enforcement, historical quarantine, bounds and recovery evidence limits.
+
+### Current-user service metadata
+
+Generated SystemQuery exports `getUserService` and `controlUserService` with the additive `USER_SERVICES_V1` capability and closed service enums. Keep exact bigint revisions and original request identity; pending/uncertain control cannot be retried as a fresh native write. Returned metadata excludes private paths, executable/process identity and authentication. Read capability and absent state through the existing real Go Connect fixture, without native registrations. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
 ## Authenticated development-server forwarding
 

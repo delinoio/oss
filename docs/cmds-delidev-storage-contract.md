@@ -166,7 +166,7 @@ snapshots and allocation remain outside that measurement.
 
 Issue #1080 adds owner/paired-client `SystemService.RestoreBackup` and
 `GetBackupRestore`, with the `MANAGED_BACKUP_RESTORE_V1` status capability (wire
-value 3, preserving published session-forwarding value 2).
+value 4, preserving published session-forwarding value 2 and user-services value 3).
 `InspectBackup` also returns the exact committed live `restore_revision`. Inspection
 is an observation; eligibility is independently rechecked at replacement.
 
@@ -310,3 +310,15 @@ identity. A valid older same-server image at a reserved path, a replaced publish
 image, or a legacy image without a claim is preserved and reports recovery-required;
 none can complete the pending job. A crash after rename retains the original
 claim and exact bytes across restart without recopying the live database.
+
+
+### Restore and optional user-service control
+
+Authenticated user-service native intent and effects share the original server
+lifecycle gate with managed restore. An in-flight install/start/stop/remove
+therefore prevents restore publication; restore holding the gate prevents a
+new service control from crossing its old-epoch boundary. The unchanged private
+service records remain outside the restored database, and the original service
+wrapper respects the resulting durable product Stop after joined exit. No
+login registration or service controller may infer explicit Start or session
+Resume from replacement. See the [user-service contract](cmds-delidev-user-services-contract.md).

@@ -63,6 +63,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SystemServiceGetUserServiceProcedure is the fully-qualified name of the SystemService's
+	// GetUserService RPC.
+	SystemServiceGetUserServiceProcedure = "/delidev.v1.SystemService/GetUserService"
+	// SystemServiceControlUserServiceProcedure is the fully-qualified name of the SystemService's
+	// ControlUserService RPC.
+	SystemServiceControlUserServiceProcedure = "/delidev.v1.SystemService/ControlUserService"
 	// SystemServiceGetStatusProcedure is the fully-qualified name of the SystemService's GetStatus RPC.
 	SystemServiceGetStatusProcedure = "/delidev.v1.SystemService/GetStatus"
 	// SystemServiceGetOverviewProcedure is the fully-qualified name of the SystemService's GetOverview
@@ -414,6 +420,8 @@ const (
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
 type SystemServiceClient interface {
+	GetUserService(context.Context, *connect.Request[v1.GetUserServiceRequest]) (*connect.Response[v1.GetUserServiceResponse], error)
+	ControlUserService(context.Context, *connect.Request[v1.ControlUserServiceRequest]) (*connect.Response[v1.ControlUserServiceResponse], error)
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
 	GetOverview(context.Context, *connect.Request[v1.GetOverviewRequest]) (*connect.Response[v1.GetOverviewResponse], error)
 	StopServer(context.Context, *connect.Request[v1.StopServerRequest]) (*connect.Response[v1.StopServerResponse], error)
@@ -442,6 +450,18 @@ func NewSystemServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	systemServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SystemService").Methods()
 	return &systemServiceClient{
+		getUserService: connect.NewClient[v1.GetUserServiceRequest, v1.GetUserServiceResponse](
+			httpClient,
+			baseURL+SystemServiceGetUserServiceProcedure,
+			connect.WithSchema(systemServiceMethods.ByName("GetUserService")),
+			connect.WithClientOptions(opts...),
+		),
+		controlUserService: connect.NewClient[v1.ControlUserServiceRequest, v1.ControlUserServiceResponse](
+			httpClient,
+			baseURL+SystemServiceControlUserServiceProcedure,
+			connect.WithSchema(systemServiceMethods.ByName("ControlUserService")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.GetStatusResponse](
 			httpClient,
 			baseURL+SystemServiceGetStatusProcedure,
@@ -537,6 +557,8 @@ func NewSystemServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // systemServiceClient implements SystemServiceClient.
 type systemServiceClient struct {
+	getUserService      *connect.Client[v1.GetUserServiceRequest, v1.GetUserServiceResponse]
+	controlUserService  *connect.Client[v1.ControlUserServiceRequest, v1.ControlUserServiceResponse]
 	getStatus           *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
 	getOverview         *connect.Client[v1.GetOverviewRequest, v1.GetOverviewResponse]
 	stopServer          *connect.Client[v1.StopServerRequest, v1.StopServerResponse]
@@ -552,6 +574,16 @@ type systemServiceClient struct {
 	listBackupCreations *connect.Client[v1.ListBackupCreationsRequest, v1.ListBackupCreationsResponse]
 	restoreBackup       *connect.Client[v1.RestoreBackupRequest, v1.RestoreBackupResponse]
 	getBackupRestore    *connect.Client[v1.GetBackupRestoreRequest, v1.GetBackupRestoreResponse]
+}
+
+// GetUserService calls delidev.v1.SystemService.GetUserService.
+func (c *systemServiceClient) GetUserService(ctx context.Context, req *connect.Request[v1.GetUserServiceRequest]) (*connect.Response[v1.GetUserServiceResponse], error) {
+	return c.getUserService.CallUnary(ctx, req)
+}
+
+// ControlUserService calls delidev.v1.SystemService.ControlUserService.
+func (c *systemServiceClient) ControlUserService(ctx context.Context, req *connect.Request[v1.ControlUserServiceRequest]) (*connect.Response[v1.ControlUserServiceResponse], error) {
+	return c.controlUserService.CallUnary(ctx, req)
 }
 
 // GetStatus calls delidev.v1.SystemService.GetStatus.
@@ -631,6 +663,8 @@ func (c *systemServiceClient) GetBackupRestore(ctx context.Context, req *connect
 
 // SystemServiceHandler is an implementation of the delidev.v1.SystemService service.
 type SystemServiceHandler interface {
+	GetUserService(context.Context, *connect.Request[v1.GetUserServiceRequest]) (*connect.Response[v1.GetUserServiceResponse], error)
+	ControlUserService(context.Context, *connect.Request[v1.ControlUserServiceRequest]) (*connect.Response[v1.ControlUserServiceResponse], error)
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
 	GetOverview(context.Context, *connect.Request[v1.GetOverviewRequest]) (*connect.Response[v1.GetOverviewResponse], error)
 	StopServer(context.Context, *connect.Request[v1.StopServerRequest]) (*connect.Response[v1.StopServerResponse], error)
@@ -655,6 +689,18 @@ type SystemServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSystemServiceHandler(svc SystemServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	systemServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SystemService").Methods()
+	systemServiceGetUserServiceHandler := connect.NewUnaryHandler(
+		SystemServiceGetUserServiceProcedure,
+		svc.GetUserService,
+		connect.WithSchema(systemServiceMethods.ByName("GetUserService")),
+		connect.WithHandlerOptions(opts...),
+	)
+	systemServiceControlUserServiceHandler := connect.NewUnaryHandler(
+		SystemServiceControlUserServiceProcedure,
+		svc.ControlUserService,
+		connect.WithSchema(systemServiceMethods.ByName("ControlUserService")),
+		connect.WithHandlerOptions(opts...),
+	)
 	systemServiceGetStatusHandler := connect.NewUnaryHandler(
 		SystemServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -747,6 +793,10 @@ func NewSystemServiceHandler(svc SystemServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/delidev.v1.SystemService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SystemServiceGetUserServiceProcedure:
+			systemServiceGetUserServiceHandler.ServeHTTP(w, r)
+		case SystemServiceControlUserServiceProcedure:
+			systemServiceControlUserServiceHandler.ServeHTTP(w, r)
 		case SystemServiceGetStatusProcedure:
 			systemServiceGetStatusHandler.ServeHTTP(w, r)
 		case SystemServiceGetOverviewProcedure:
@@ -785,6 +835,14 @@ func NewSystemServiceHandler(svc SystemServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedSystemServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSystemServiceHandler struct{}
+
+func (UnimplementedSystemServiceHandler) GetUserService(context.Context, *connect.Request[v1.GetUserServiceRequest]) (*connect.Response[v1.GetUserServiceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SystemService.GetUserService is not implemented"))
+}
+
+func (UnimplementedSystemServiceHandler) ControlUserService(context.Context, *connect.Request[v1.ControlUserServiceRequest]) (*connect.Response[v1.ControlUserServiceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SystemService.ControlUserService is not implemented"))
+}
 
 func (UnimplementedSystemServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SystemService.GetStatus is not implemented"))
