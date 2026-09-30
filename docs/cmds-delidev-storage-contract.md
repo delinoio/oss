@@ -344,7 +344,10 @@ original immutable assignment(s), Worker instance/revision/digest and durable
 Worker journals. It inspects existing publication/removal/restoration namespaces;
 it can finish only already claimed removals against their original inventories.
 It never recreates a snapshot, repeats a source rename or republishes restoration.
-Changed/foreign contents preserve uncertainty and bytes. Recovery itself may be
+Changed/foreign contents preserve uncertainty and bytes. Even when both original
+and claimed names are absent, cleanup/deletion recovery requires the matching
+synchronized removal intent; filesystem absence alone never proves removal or
+confirmed removed-byte accounting. Recovery itself may be
 reconciled through a bounded eight-claim lineage after another interruption.
 Original jobs and snapshots remain retained; successful reconciliation atomically
 settles their observed outcome and paused workspace state.

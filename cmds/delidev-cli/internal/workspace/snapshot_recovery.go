@@ -54,6 +54,15 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 	if domain.Decode(raw, &intent) != nil || intent.Version != 1 || intent.OperationID != r.OperationID || intent.SessionID != r.Preparation.SessionID || intent.SnapshotID != r.SnapshotID || intent.Action != r.Action {
 		return ResultUncertain()
 	}
+	if partial {
+		exists, err := storageExists(path)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+	}
 	current, err := walkSnapshot(ctx, path, "", nil)
 	if err != nil {
 		return err
@@ -165,10 +174,12 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if original.Action != StorageCleanup || !snapshotExists {
 				return result, ResultUncertain()
 			}
+			// Absence alone cannot prove this operation removed the source. The
+			// original synchronized intent remains mandatory after the last unlink.
+			if err := m.confirmRemoval(ctx, original, removal, true); err != nil {
+				return result, err
+			}
 			if removed {
-				if err := m.confirmRemoval(ctx, original, removal, true); err != nil {
-					return result, err
-				}
 				if err := removeSnapshotTree(ctx, removal); err != nil {
 					return result, ResultUncertain()
 				}
@@ -231,13 +242,18 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if original.SnapshotMetadata == nil || original.SnapshotMetadata.ID != original.SnapshotID || original.SnapshotMetadata.SHA256 != original.SnapshotDigest {
 				return result, ResultUncertain()
 			}
+			// Absence alone cannot prove this operation removed the source. The
+			// original synchronized intent remains mandatory after the last unlink.
+			if err := m.confirmRemoval(ctx, original, removal, true); err != nil {
+				return result, err
+			}
 			if removed {
-				if err := m.confirmRemoval(ctx, original, removal, true); err != nil {
-					return result, err
-				}
 				if err := removeSnapshotTree(ctx, removal); err != nil {
 					return result, ResultUncertain()
 				}
+			}
+			if err := security.SyncParent(removal); err != nil {
+				return result, ResultUncertain()
 			}
 			if err := security.SyncParent(m.snapshotPath(original.SnapshotID)); err != nil {
 				return result, ResultUncertain()

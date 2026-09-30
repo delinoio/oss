@@ -586,3 +586,31 @@ func TestSnapshotRejectsNestedGitAdministration(t *testing.T) {
 		})
 	}
 }
+
+func TestSnapshotAbsentRemovalRecoveryRequiresOriginalIntent(t *testing.T) {
+	for _, action := range []StorageAction{StorageCleanup, StorageDelete} {
+		t.Run(string(action), func(t *testing.T) {
+			m := manager(t)
+			prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+			manifest, err := m.Prepare(context.Background(), prepare)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StorageCreate, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
+			created := storageDo(t, m, input)
+			input.Action, input.PreviewDigest, input.SnapshotDigest, input.SnapshotMetadata = action, created.PreviewDigest, created.Snapshot.SHA256, created.Snapshot
+			disappeared := m.snapshotPath(input.SnapshotID)
+			if action == StorageCleanup {
+				disappeared = filepath.Join(m.Root, "workspaces", string(prepare.SessionID))
+			}
+			// Model interruption before intent publication followed by external
+			// loss. No private namespace claim or removal authority was retained.
+			if err := os.RemoveAll(disappeared); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := m.Storage(context.Background(), recoveryRequest(input)); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("unproven absence settled as removal", err)
+			}
+		})
+	}
+}

@@ -7,3 +7,5 @@ Follow the root and parent instructions and docs/cmds-delidev-workspace-contract
 - Retain private bounded cancellation/recovery journals and source data on incomplete outcomes. Logical removed bytes and retained snapshot cost remain distinct from measured free capacity. Tests use isolated temporary repositories and injected faults.
 
 - Failed unpublished restoration cleans only its original operation-owned staging independently of caller cancellation; unconfirmed scratch cleanup stays recovery-required.
+
+- Cleanup/deletion recovery requires the original synchronized removal intent even after both namespace names are absent; absence alone is never verified removal.
