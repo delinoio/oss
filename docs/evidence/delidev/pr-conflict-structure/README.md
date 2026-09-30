@@ -59,7 +59,7 @@ alone requires no project-index or ancestor-instruction change.
   relocated baseline declarations and reproducible generated output.
 - Descriptor graph comparison: all 320 original declarations retain their contents.
   Added tests prove FILE still rejects field type changes and removals after relocation.
-- API client build/typecheck and tests: passed (43 tests), including legacy generated
+- API client build/typecheck and tests: passed (44 tests), including legacy generated
   module and Connect Query imports.
 - DeliDev frontend `pnpm test`: passed, 84 Vitest files / 960 tests plus preparation,
   native-contract/widget fixtures and production web build. This is fixture evidence,
@@ -67,9 +67,9 @@ alone requires no project-index or ancestor-instruction change.
 - Storage tests: passed, including all 27 frozen layouts, fresh/upgrade DDL equality,
   existing backfills, backup/rollback failures and byte-preserved unknown v25 rejection.
 - CLI/server tests: passed after dispatch/authentication/lifecycle separation.
-- `pnpm ci:contracts`: passed; final count is recorded in the rollout validation update.
-- Full Go tests, race, vet and hosted PR checks are required before rollout; their final
-  results are recorded separately. Rust implementation was not modified.
+- `pnpm ci:contracts`: passed; 101 tests.
+- Full Go tests passed before the reflection follow-up; final race, vet and hosted PR
+  results are recorded on the structural PR before rollout. Rust implementation was not modified.
 
 `merge-experiment.json` records the disposable two-branch experiment. Provider and
 schedule feature branches each add separate evidence, a service RPC, integration
@@ -83,3 +83,12 @@ GitHub rulesets, required CI checks, and merge-queue policy are unchanged. Merge
 structural PR only after existing checks and review requirements pass. Verify main,
 then re-read and close only still-open PRs in the frozen allowlist. Preserve branches
 and linked issues. Record the resulting main commit and closure results separately.
+
+## Review follow-up
+
+The initial review identified that declaration re-exports alone left the legacy
+TypeScript file descriptor empty. Generated aggregate reflection views now retain
+all original declarations and ordering in TypeScript and Go, with direct enumeration
+and registry reconstruction tests. TypeScript retains canonical declaration object
+identity; Go builds its aggregate view without duplicate global registration. The
+two-branch merge/regeneration experiment passes with these views enabled.

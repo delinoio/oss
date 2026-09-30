@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { createRegistry, createFileRegistry } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { GetStatusRequestSchema, ResourceSchema, SystemCapability, SystemService } from "../src/gen/delidev/v1/delidev_pb.js";
+import { GetStatusRequestSchema, ResourceSchema, SystemCapability, SystemService, file_delidev_v1_delidev } from "../src/gen/delidev/v1/delidev_pb.js";
 import { getStatus } from "../src/gen/delidev/v1/delidev-SystemService_connectquery.js";
 import { ResourceSchema as CurrentResourceSchema } from "../src/gen/delidev/v1/common_pb.js";
 import { SystemService as CurrentSystemService } from "../src/gen/delidev/v1/system_pb.js";
@@ -14,4 +16,18 @@ describe("historical generated imports", () => {
     expect(SystemCapability.SESSION_FORWARDING_V1).toBe(2);
     expect(SystemCapability.USER_SERVICES_V1).toBe(3);
   });
+});
+
+it("retains the legacy aggregate descriptor for reflection registries", () => {
+  const registry = createRegistry(file_delidev_v1_delidev);
+  expect(registry.getMessage("delidev.v1.Resource")).toBe(ResourceSchema);
+  expect(registry.getService("delidev.v1.SystemService")).toBe(SystemService);
+  const reconstructed = createFileRegistry(file_delidev_v1_delidev.proto, name => file_delidev_v1_delidev.dependencies.find(file => file.proto.name === name));
+  expect(reconstructed.getMessage("delidev.v1.Resource")?.field.id.number).toBe(1);
+  expect(reconstructed.getService("delidev.v1.SystemService")?.method.getStatus.output.typeName).toBe("delidev.v1.GetStatusResponse");
+  const layout = JSON.parse(readFileSync(new URL("../../../scripts/delidev/proto-layout.json", import.meta.url), "utf8"));
+  for (const [kind, actual] of [["message", file_delidev_v1_delidev.messages], ["enum", file_delidev_v1_delidev.enums], ["service", file_delidev_v1_delidev.services]] as const) {
+    const expected = Object.entries(layout.declarations).filter(([, value]) => (value as { kind: string }).kind === kind).map(([name]) => name);
+    expect(actual.map(value => value.name)).toEqual(expected);
+  }
 });

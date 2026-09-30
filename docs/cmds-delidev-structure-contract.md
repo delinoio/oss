@@ -87,3 +87,14 @@ Shared authentication, Worker permissions, account selection, title/usage attrib
 resource deletion and subagent/session lifecycle changes require explicit review
 against the latest main contract. Regenerate bindings after composing schema changes;
 never accept one PR's generated file or migration number merely to resolve a conflict.
+
+## Legacy reflection compatibility
+
+The legacy TypeScript `file_delidev_v1_delidev` export aggregates canonical split-file
+messages, enums and services in the original order. Both direct enumeration and
+registry construction from its descriptor proto retain the complete schema. The Go
+`File_delidev_v1_delidev_proto` export likewise retains an aggregate reflection view
+without registering duplicate global symbols. Physical descriptor ownership follows
+the explicit split-file layout; canonical runtime type registration remains unique.
+These views are generated from service descriptors at runtime so an independent
+service addition does not rewrite a shared serialized descriptor blob.
