@@ -64,6 +64,9 @@ stdin. Output/reattach accepts `--epoch`, `--after` and `--follow`; follow emits
 versioned JSON byte frames with Base64 data and canonical decimal-string
 sequences, preserving partial UTF-8 and uint64 precision. Without follow, it
 returns one observation, which can be a metadata heartbeat.
+Parsed follow streams preserve caller cancellation and caller deadlines without
+the ordinary 30-second CLI command limit. Non-follow observations retain that
+bounded command deadline, including explicit `--follow=false`.
 
 On macOS the default shell comes from the effective native account's `UserShell`
 directory-service field. Linux reads that account's passwd shell through owned

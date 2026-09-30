@@ -14,6 +14,31 @@ import (
 	"golang.org/x/term"
 )
 
+type terminalOutputOptions struct {
+	id, epoch string
+	after     uint64
+	follow    bool
+}
+
+func parseTerminalOutput(action string, args []string) (terminalOutputOptions, error) {
+	var value terminalOutputOptions
+	f := flags("session terminal " + action)
+	f.StringVar(&value.id, "id", "", "terminal ID")
+	f.StringVar(&value.epoch, "epoch", "", "last output epoch")
+	f.Uint64Var(&value.after, "after", 0, "last acknowledged output sequence")
+	f.BoolVar(&value.follow, "follow", false, "stream versioned JSON frames until exit/disconnection")
+	err := parse(f, args)
+	return value, err
+}
+
+func followsTerminalOutput(args []string) bool {
+	if len(args) < 2 || args[0] != "terminal" || (args[1] != "output" && args[1] != "reattach") {
+		return false
+	}
+	value, err := parseTerminalOutput(args[1], args[2:])
+	return err == nil && value.follow
+}
+
 func sessionTerminalCommand(ctx context.Context, c client, o options, args []string, streams IO) (any, error) {
 	if len(args) == 0 {
 		return nil, domain.Fail(domain.MissingInput, "A terminal operation is required.", "Use create, list, inspect, input, resize, output, reattach or close.")
@@ -119,13 +144,11 @@ func sessionTerminalCommand(ctx context.Context, c client, o options, args []str
 		}
 		return resourceJSON(response.Msg.Resource), nil
 	case "output", "reattach":
-		epoch := f.String("epoch", "", "last output epoch")
-		after := f.Uint64("after", 0, "last acknowledged output sequence")
-		follow := f.Bool("follow", false, "stream versioned JSON frames until exit/disconnection")
-		if err := parse(f, args[1:]); err != nil {
+		output, err := parseTerminalOutput(action, args[1:])
+		if err != nil {
 			return nil, err
 		}
-		stream, err := c.terminals.WatchTerminalOutput(ctx, request(c, &pb.WatchTerminalOutputRequest{TerminalId: *id, Epoch: *epoch, AfterSequence: *after}))
+		stream, err := c.terminals.WatchTerminalOutput(ctx, request(c, &pb.WatchTerminalOutputRequest{TerminalId: output.id, Epoch: output.epoch, AfterSequence: output.after}))
 		if err != nil {
 			return nil, rpc.ClientError(err)
 		}
@@ -135,7 +158,7 @@ func sessionTerminalCommand(ctx context.Context, c client, o options, args []str
 		for stream.Receive() {
 			message := stream.Msg()
 			latest = map[string]any{"epoch": message.Epoch, "sequence": strconv.FormatUint(message.Sequence, 10), "data": message.Data, "gap": message.Gap, "heartbeat": message.Heartbeat, "terminal": resourceJSON(message.Terminal)}
-			if !*follow {
+			if !output.follow {
 				return latest, nil
 			}
 			if err := encoder.Encode(envelope{Version: 1, Result: latest}); err != nil {
