@@ -455,12 +455,12 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 				if w.RequestID != request {
 					return v, deletionConflict()
 				}
-				return v, s.persistSessionDeletionAck(ctx, v, w)
+				return v, s.persistSessionDeletionAck(ctx, v, w, true)
 			}
 			v.Workers[i].Acknowledged = true
 			v.Workers[i].RequestID = request
 			v.Revision++
-			return v, s.persistSessionDeletionAck(ctx, v, v.Workers[i])
+			return v, s.persistSessionDeletionAck(ctx, v, v.Workers[i], false)
 		}
 	}
 	return v, domain.Fail(domain.PermissionDenied, "This Worker does not own the deletion obligation.", "Reconnect the original paired Worker.")
@@ -560,7 +560,7 @@ func (s *Store) RestoreSessionDeletionIntents(ctx context.Context, server domain
 		if e == nil {
 			for _, w := range v.Workers {
 				if w.Acknowledged {
-					if e = sessionDeletionAckReceipt(ctx, tx, v, w); e != nil {
+					if _, e = sessionDeletionAckReceipt(ctx, tx, v, w); e != nil {
 						break
 					}
 				}
@@ -652,14 +652,20 @@ func (s *Store) SessionDeletionRecoveryRequired() bool {
 
 // The external acknowledgement precedes its SQL receipt. Recovery reconstructs
 // only that same metadata receipt; it never reauthorizes filesystem work.
-func (s *Store) persistSessionDeletionAck(ctx context.Context, v SessionDeletion, w SessionDeletionWorker) error {
+func (s *Store) persistSessionDeletionAck(ctx context.Context, v SessionDeletion, w SessionDeletionWorker, replay bool) error {
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
 		return storageError(e)
 	}
 	defer tx.Rollback()
-	if e := sessionDeletionAckReceipt(ctx, tx, v, w); e != nil {
+	existing, e := sessionDeletionAckReceipt(ctx, tx, v, w)
+	if e != nil {
 		return e
+	}
+	// Both the external acknowledgment and its exact actor/work-bound receipt
+	// already exist. Observation must not acquire new filesystem write authority.
+	if replay && existing {
+		return nil
 	}
 	// An atomic rename can succeed before directory synchronization fails.
 	// Fence unrelated receipts until recovery reserves this original UUID.
@@ -673,30 +679,32 @@ func (s *Store) persistSessionDeletionAck(ctx context.Context, v SessionDeletion
 	s.deletionFault = false
 	return nil
 }
-func sessionDeletionAckReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion, w SessionDeletionWorker) error {
+
+// sessionDeletionAckReceipt returns whether an exact receipt already existed.
+func sessionDeletionAckReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion, w SessionDeletionWorker) (bool, error) {
 	digest, e := mutationDigest(w.RequestID, "session.delete.ack", struct {
 		Server, Session, Deletion, Device, Machine domain.ID
 		Work                                       string
 	}{v.ServerID, v.SessionID, v.ID, w.Work.DeviceID, w.Work.MachineID, w.Work.Digest()})
 	if e != nil {
-		return e
+		return false, e
 	}
 	var existing string
 	e = tx.QueryRowContext(ctx, "SELECT digest FROM receipts WHERE id=?", w.RequestID).Scan(&existing)
 	if e == nil {
 		if existing != digest {
-			return deletionConflict()
+			return false, deletionConflict()
 		}
-		return nil
+		return true, nil
 	}
 	if !errors.Is(e, sql.ErrNoRows) {
-		return storageError(e)
+		return false, storageError(e)
 	}
 	ref, _ := json.Marshal(struct {
 		ID domain.ID `json:"id"`
 	}{v.ID})
 	_, e = tx.ExecContext(ctx, "INSERT INTO receipts(id,digest,result,created_at) VALUES(?,?,?,?)", w.RequestID, digest, ref, v.AcceptedAt.UnixMilli())
-	return storageError(e)
+	return false, storageError(e)
 }
 
 func sessionDeletionReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion) error {

@@ -43,3 +43,17 @@ while preserving an unrelated clean image.
 ./cmds/delidev-cli/internal/store -run 'SessionDeletion|ManagedBackupInspection'
 -count=1` passed on 2026-09-30 (17.745 seconds of package test time). These are
 managed-image race fixtures, not physical free-space or native acceptance evidence.
+
+## Read-only acknowledged report replay
+
+A previously acknowledged report with the exact actor/work-bound SQL receipt now
+returns without rewriting the external journal or changing its revision. The
+fixture pins the journal's native identity, bytes and an old modification time to
+detect an identical atomic rewrite, rejects a conflicting receipt, then removes
+the SQL receipt and verifies reconstruction of the original digest without a new
+acknowledgment revision. Original live-Worker authorization remains required.
+
+`GOCACHE=/tmp/delidev-1171-gocache GOMAXPROCS=4 go test -race -p 2
+./cmds/delidev-cli/internal/store -run SessionDeletion -count=1` passed on
+2026-09-30 (11.641 seconds of package test time). These are temporary durable-state
+fixtures, not native/account acceptance.

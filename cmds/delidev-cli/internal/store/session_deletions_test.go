@@ -124,7 +124,8 @@ func TestSessionDeletionPurgesGraphBackupsAndSurvivesDatabaseRollback(t *testing
 	}
 }
 
-func TestSessionDeletionRequiresOriginalOfflineWorkerAcknowledgment(t *testing.T) {
+func sessionDeletionWorkerFixture(t *testing.T) (*Store, context.Context, context.Context, domain.ID, SessionDeletion) {
+	t.Helper()
 	s, _ := openTest(t)
 	owner := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
 	server, machine, device, instance := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
@@ -161,25 +162,31 @@ func TestSessionDeletionRequiresOriginalOfflineWorkerAcknowledgment(t *testing.T
 	if e != nil || len(v.Workers) != 1 {
 		t.Fatal(v, e)
 	}
-	if _, e := s.PurgeDeletedSession(owner, sr.ID); e == nil {
+	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: device, MachineID: machine})
+	return s, owner, worker, instance, v
+}
+
+func TestSessionDeletionRequiresOriginalOfflineWorkerAcknowledgment(t *testing.T) {
+	s, owner, worker, instance, v := sessionDeletionWorkerFixture(t)
+	session := v.SessionID
+	if _, e := s.PurgeDeletedSession(owner, session); e == nil {
 		t.Fatal("completed offline cleanup")
 	}
-	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: device, MachineID: machine})
 	report := domain.NewID()
-	if _, e := s.AcknowledgeSessionDeletion(worker, sr.ID, v.ID, v.RequestID, instance, v.Workers[0].Work.Digest()); e == nil {
+	if _, e := s.AcknowledgeSessionDeletion(worker, session, v.ID, v.RequestID, instance, v.Workers[0].Work.Digest()); e == nil {
 		t.Fatal("acknowledgement borrowed an unrelated request receipt")
 	}
-	if _, e := s.AcknowledgeSessionDeletion(worker, sr.ID, v.ID, report, domain.NewID(), v.Workers[0].Work.Digest()); e == nil {
+	if _, e := s.AcknowledgeSessionDeletion(worker, session, v.ID, report, domain.NewID(), v.Workers[0].Work.Digest()); e == nil {
 		t.Fatal("foreign instance acknowledged")
 	}
-	v, e = s.AcknowledgeSessionDeletion(worker, sr.ID, v.ID, report, instance, v.Workers[0].Work.Digest())
+	v, e := s.AcknowledgeSessionDeletion(worker, session, v.ID, report, instance, v.Workers[0].Work.Digest())
 	if e != nil || !v.Workers[0].Acknowledged {
 		t.Fatal(v, e)
 	}
-	if _, e := s.AcknowledgeSessionDeletion(worker, sr.ID, v.ID, report, instance, v.Workers[0].Work.Digest()); e != nil {
+	if _, e := s.AcknowledgeSessionDeletion(worker, session, v.ID, report, instance, v.Workers[0].Work.Digest()); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := s.PurgeDeletedSession(owner, sr.ID); e != nil {
+	if _, e := s.PurgeDeletedSession(owner, session); e != nil {
 		t.Fatal(e)
 	}
 }
@@ -411,5 +418,67 @@ func TestSessionDeletionBackupScanRejectsNewAndReplacedImages(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSessionDeletionAcknowledgmentReplayIsReadOnly(t *testing.T) {
+	s, _, worker, instance, v := sessionDeletionWorkerFixture(t)
+	report, digest := domain.NewID(), v.Workers[0].Work.Digest()
+	v, e := s.AcknowledgeSessionDeletion(worker, v.SessionID, v.ID, report, instance, digest)
+	if e != nil {
+		t.Fatal(e)
+	}
+	path := s.sessionDeletionPath(v.SessionID)
+	beforeBytes, e := os.ReadFile(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	// A distinct retained timestamp makes an otherwise identical atomic rewrite
+	// observable on every supported platform, without permission assumptions.
+	oldTime := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+	if e := os.Chtimes(path, oldTime, oldTime); e != nil {
+		t.Fatal(e)
+	}
+	before, e := os.Stat(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	replayed, e := s.AcknowledgeSessionDeletion(worker, v.SessionID, v.ID, report, instance, digest)
+	if e != nil || replayed.Revision != v.Revision || s.SessionDeletionRecoveryRequired() {
+		t.Fatal("exact acknowledgment replay changed state", replayed, e)
+	}
+	after, e := os.Stat(path)
+	if e != nil || !sameBackup(before, after) {
+		t.Fatal("exact acknowledgment replay rewrote journal", e)
+	}
+	afterBytes, e := os.ReadFile(path)
+	if e != nil || string(beforeBytes) != string(afterBytes) {
+		t.Fatal("exact acknowledgment replay changed journal", e)
+	}
+	var originalDigest string
+	if e := s.db.QueryRow("SELECT digest FROM receipts WHERE id=?", report).Scan(&originalDigest); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.db.Exec("UPDATE receipts SET digest='different' WHERE id=?", report); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.AcknowledgeSessionDeletion(worker, v.SessionID, v.ID, report, instance, digest); e == nil {
+		t.Fatal("unrelated receipt adopted for acknowledged report")
+	}
+	if s.SessionDeletionRecoveryRequired() {
+		t.Fatal("rejected replay fenced unrelated access")
+	}
+	// An older restored database may lack this receipt while the synchronized
+	// external acknowledgment survives. It must reconstruct the exact receipt.
+	if _, e := s.db.Exec("DELETE FROM receipts WHERE id=?", report); e != nil {
+		t.Fatal(e)
+	}
+	recovered, e := s.AcknowledgeSessionDeletion(worker, v.SessionID, v.ID, report, instance, digest)
+	if e != nil || recovered.Revision != v.Revision || !recovered.Workers[0].Acknowledged {
+		t.Fatal("lost SQL receipt was not recovered", recovered, e)
+	}
+	var recoveredDigest string
+	if e := s.db.QueryRow("SELECT digest FROM receipts WHERE id=?", report).Scan(&recoveredDigest); e != nil || recoveredDigest != originalDigest {
+		t.Fatal("reconstructed receipt changed ownership", e)
 	}
 }

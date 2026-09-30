@@ -113,3 +113,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Reapplying permanent deletion intent must preserve existing paused session revisions and events when no new transition is needed.
 
 - Permanent session deletion must bind its final backup inventory to the exact images inspected without session content under the backup publication gate. Preserve new/replaced images as pending until a fresh classification pass.
+
+- Exact acknowledged Worker deletion-report retries with a matching actor/work-bound SQL receipt are read-only. Preserve original metadata and reject conflicting receipts; reconstruct a missing SQL receipt through the original synchronized-intent recovery path.

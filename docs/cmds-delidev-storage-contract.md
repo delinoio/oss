@@ -195,7 +195,10 @@ A separate authenticated Worker polling/report lane survives an interrupted
 primary assignment stream. Work binds the original paired device/machine and
 immutable assignment instance/revision/hash; reports additionally require a live
 current instance and exact plan digest. One retained report UUID survives process
-replacement and lost acknowledgements. Cleanup tombstones native admission,
+replacement and lost acknowledgements. Exact acknowledged report retries reuse
+the matching actor/work-bound receipt without rewriting the external journal or
+changing its revision. Missing SQL receipts still recover from the original
+synchronized acknowledgement; conflicting receipts are rejected. Cleanup tombstones native admission,
 joins original publication owners through final journal/report publication on
 both primary and auxiliary lanes, reconciles exact retained process indexes,
 and acquires the same workspace lock as preparation/execution/reads. Missing,
