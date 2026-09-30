@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -30,6 +31,64 @@ func claimedForkExecutionFixture(t *testing.T) *continuationFixture {
 	f.thread = domain.ID(f.input.Fork.NativeThreadID)
 	f.grant(t)
 	return f
+}
+
+func TestSessionForkExecutionRejectsForeignThreadAndInheritedTurnAtomically(t *testing.T) {
+	for _, stage := range []domain.ExecutionEventKind{domain.ExecutionThreadBound, domain.ExecutionInputAccepted} {
+		t.Run(string(stage), func(t *testing.T) {
+			f := claimedForkExecutionFixture(t)
+			ctx := context.Background()
+			bad := domain.ExecutionEvent{Version: 1, ExecutionID: f.input.ExecutionID, Kind: stage, NativeThreadID: string(f.thread)}
+			if stage == domain.ExecutionThreadBound {
+				bad.Sequence, bad.NativeThreadID = 1, string(domain.NewID())
+				bad.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}
+			} else {
+				f.publish(t, domain.ExecutionThreadBound, 1, "")
+				bad.Sequence, bad.NativeTurnID = 2, string(f.input.Fork.NativeTurnID)
+			}
+			child, err := store.Decode[domain.Session](f.refresh(t))
+			if err != nil || child.Fork == nil {
+				t.Fatal("missing published fork metadata", err)
+			}
+			refs := []struct {
+				kind domain.Kind
+				id   domain.ID
+			}{
+				{domain.SessionKind, f.input.SessionID},
+				{domain.QueueKind, f.input.InputID},
+				{domain.JobKind, domain.ID(f.job.Id)},
+				{domain.SessionKind, child.Fork.SourceSessionID},
+			}
+			before := make([]store.Record, len(refs))
+			for i, ref := range refs {
+				before[i], err = f.service.Store.Get(ctx, ref.kind, ref.id)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			raw, _ := json.Marshal(bad)
+			_, err = f.workerClient.PublishExecution(ctx, ownerRequest(f.workerIdentity, &pb.PublishExecutionRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, EventJson: raw}))
+			if domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
+				t.Fatal("fork publication accepted foreign or inherited native ownership", err)
+			}
+			for i, ref := range refs {
+				after, err := f.service.Store.Get(ctx, ref.kind, ref.id)
+				if err != nil || after.Revision != before[i].Revision || !bytes.Equal(after.Data, before[i].Data) {
+					t.Fatal("rejected native identity changed session, input or job ownership", ref.kind, err)
+				}
+			}
+			// Rejection must not poison the original valid thread/new-turn path.
+			if stage == domain.ExecutionThreadBound {
+				f.publish(t, domain.ExecutionThreadBound, 1, "")
+			}
+			f.publish(t, domain.ExecutionInputAccepted, 2, "")
+			f.finish(t, domain.ExecutionSucceeded)
+			completed, err := store.Decode[domain.Session](f.refresh(t))
+			if err != nil || completed.Execution == nil || completed.Execution.NativeThreadID != string(f.input.Fork.NativeThreadID) || completed.Execution.NativeTurnID != string(f.turn) || completed.PendingInputs != 0 || !completed.Execution.CleanupVerified {
+				t.Fatal("valid fork thread/fresh turn failed after rejected publication", err)
+			}
+		})
+	}
 }
 
 func TestSessionForkFirstExecutionRecoversLostReportFromForkRuntime(t *testing.T) {

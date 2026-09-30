@@ -65,6 +65,12 @@ Keep original account/connection and configuration even after current Agent edit
 current eligibility failures retain input instead of rerouting. Child metadata
 exposes its source/boundary link; source transcript records remain source-owned.
 
+First-child execution publication must bind the exact native child thread from
+the immutable fork assignment. Its accepted new input must use a fresh turn,
+never the inherited last source turn. Check these identities before changing
+progress or queue accounting; rejected publications leave source, child, queue
+and original job records unchanged.
+
 ## Storage
 
 ### Native and workspace ownership
