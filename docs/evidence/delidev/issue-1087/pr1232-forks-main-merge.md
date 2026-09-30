@@ -1,0 +1,5 @@
+# PR #1232: session-fork main reconciliation
+
+Merged main commit `6c749670727b30679e722821846bc8dc00f5ac32` into the protected-browser branch without rebasing. The session action row retains both the capability-gated Codex Fork action and the Browser panel toggle. The CLI/server instructions and protocol/client contracts retain both independent domain requirements. Existing service-owned browser messages consume no fork allocation or migration.
+
+Regenerated bindings from the composed schemas with `pnpm proto:check`; generation succeeded. Git LFS integrity and frontend asset preparation succeeded. The generated DeliDev client build and frontend typecheck succeeded. The fork/browser/files/diff component selection passed all 28 tests across four files. The protocol/structure CI contract selection passed all six tests. These checks verify composition, not actual Codex native fork or browser platform acceptance. Broader required validation follows the independent review repairs in this pass.

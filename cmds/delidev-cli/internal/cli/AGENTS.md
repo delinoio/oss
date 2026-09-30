@@ -38,6 +38,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - `session delete --id ID --revision N --confirm [--wait]` and `session deletion --id ID` share authenticated Connect semantics. Preserve original UUID/revision and accepted progress after uncertain reads or cancellation; waiting cannot resubmit deletion or report pending cleanup as success. Follow `docs/cmds-delidev-storage-contract.md`.
 
+- `session fork` uses authenticated Fork/GetSessionFork and preserves accepted job/request identities on bounded wait failure. Keep dispatch in `dispatch_session.go`, retain the two-minute Worker bound with a 145-second command deadline, and never replay creation while observing a job. Follow `docs/cmds-delidev-forks-contract.md`.
+
 - Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
 
 - `session switch-account --id ID --revision N --account-id ID` invokes only the explicit owner/client Connect operation. Gate support with the typed status capability, preserve exact request identities, and leave the selected session paused until explicit Resume.

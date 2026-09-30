@@ -171,3 +171,12 @@ Issue #1100 generates the native accounting profile and unit enums with the exis
 ## Browser client
 
 [Protected browser ownership and cleanup](cmds-delidev-browser-contract.md) use the service-owned `BrowserService`, typed profile/state/capability models and generated `BrowserQuery` descriptors. Existing shared enum/field numbers and future migration reservations remain unchanged. Browser messages carry ownership metadata only, never native paths or browsing content.
+
+## Codex fork clients (#1092)
+
+Generated messages, the `ForkWorkspace`/server capability enums and the existing
+`SessionQuery` namespace now expose `forkSession` and `getSessionFork`. The
+[fork contract](cmds-delidev-forks-contract.md) keeps native paths and creation
+logic in Go. Preserve exact uncertain requests; observe accepted operations by
+job ID instead of issuing another mutation. Desktop connection memory retains
+its controller through navigation and separates acceptance from child publication.

@@ -372,7 +372,7 @@ deletion enforcement, historical quarantine, bounds and recovery evidence limits
 
 `SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
-System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3` and `PERMANENT_SESSION_DELETION_V1 = 9`; managed restore adds reserved `MANAGED_BACKUP_RESTORE_V1 = 7` and native accounting adds reserved `NATIVE_ACCOUNTING_V1 = 4`. `GetStatus` advertises all six independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3` and `PERMANENT_SESSION_DELETION_V1 = 9`; managed restore adds reserved `MANAGED_BACKUP_RESTORE_V1 = 7` and native accounting adds reserved `NATIVE_ACCOUNTING_V1 = 4`. `GetStatus` advertises each implemented capability independently, including stopped-Codex account switching and same-account Codex Fork. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 
@@ -414,3 +414,14 @@ Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, 
 ## Browser API
 
 [Protected browser ownership and cleanup](cmds-delidev-browser-contract.md) use the service-owned `BrowserService`, typed profile/state/capability models and generated `BrowserQuery` descriptors. Existing shared enum/field numbers and future migration reservations remain unchanged. Browser messages carry ownership metadata only, never native paths or browsing content.
+
+## Codex session forks (#1092)
+
+`SessionService.ForkSession` accepts owner/paired-client mutation identity, exact
+source revision/native turn, child name and closed `ForkWorkspace`. The dedicated
+write-only Local proof is never ordinary receipt material. `GetSessionFork` reads
+the original job and optional published child; an accepted job is not a child.
+`SystemCapability.CODEX_SESSION_FORK_V1` is additive. Ordinary Worker credentials
+remain excluded from these product methods and complete their original job via
+existing authenticated `WatchWork`/`ReportWork`. See the
+[fork contract](cmds-delidev-forks-contract.md). No destructive migration occurs.

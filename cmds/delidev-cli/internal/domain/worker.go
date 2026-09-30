@@ -82,6 +82,7 @@ const (
 	RecoverWorkspaceJob     JobType = "recover-workspace"
 	HarnessDiscoveryJob     JobType = "harness-discovery"
 	ExecuteSessionJob       JobType = "execute-session"
+	ForkSessionJob          JobType = "fork-session"
 	GenerateSessionTitleJob JobType = "generate-session-title"
 )
 
@@ -120,7 +121,7 @@ type Job struct {
 }
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{CreateBackupJob, DeleteBackupJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, GenerateSessionTitleJob}, j.Type) {
+	if !slices.Contains([]JobType{CreateBackupJob, DeleteBackupJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {
