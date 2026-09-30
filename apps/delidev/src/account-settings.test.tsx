@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -57,8 +58,7 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
     setProviderSearch={callbacks.setProviderSearch}
     setProviderFilter={callbacks.setProviderFilter}
     providerSearchLoading={false}
-    providerSearchHasMore={false}
-    loadMoreProviders={callbacks.loadMoreProviders}
+    providerPicker={{ ready: true, loaded: true, fetching: false, pageToken: "", nextPageToken: "", retry: vi.fn(), next: callbacks.loadMoreProviders, first: vi.fn() }}
     subscriptionProviderResources={[]}
     subscriptionProviderManagement={<button type="button">Add native subscription provider</button>}
     openApiProviders={callbacks.openApiProviders}
@@ -67,7 +67,7 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
     deleteAccount={callbacks.deleteAccount}
     {...overrides}
   />;
-  return { providerId, provider, providerOption, resources, list, save, connect, client, callbacks, view, settings };
+  return { providerId, provider, providerOption, resources, list, save, connect, other, client, callbacks, view, settings };
 }
 
 it("uses server-side account type and provider filters and keeps the split view disabled without its capability", async () => {
@@ -113,14 +113,19 @@ it("locks settings navigation while the API account wizard is open", async () =>
   await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(false));
 });
 
-it("opens the guided API account flow with the provider selected by the inventory action", async () => {
+it("opens the exact inventory action once under Strict Mode and rerender without writes", async () => {
   const value = fixture();
-  render(value.view(value.settings(AccountSettingsSection.Api, {
-    startApiWizard: { key: "provider-add-1", providerId: value.providerId },
-  })));
+  const props = { startApiWizard: { key: "provider-add-1", providerId: value.providerId, provider: value.providerOption }, providers: [] };
+  const view = render(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api, props))}</StrictMode>);
   expect(await screen.findByRole("heading", { name: "Add API account" })).toBeTruthy();
-  expect((screen.getByRole("radio", { name: "API provider" }) as HTMLInputElement).checked).toBe(true);
-  expect((screen.getByRole("button", { name: "Continue to account" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByRole("heading", { name: "Connect your account" })).toBeTruthy();
+  expect(screen.getByLabelText("Account name")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Back to API accounts" }));
+  view.rerender(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api, props))}</StrictMode>);
+  expect(screen.queryByRole("heading", { name: "Connect your account" })).toBeNull();
+  expect(value.other).not.toHaveBeenCalled();
+  expect(value.save).not.toHaveBeenCalled();
+  expect(value.connect).not.toHaveBeenCalled();
 });
 
 it("creates an API account once, clears the key at submit, connects without auto-validation, and retries the exact uncertain connection", async () => {
@@ -132,8 +137,7 @@ it("creates an API account once, clears the key at submit, connects without auto
   const value = fixture({ save, connect, providerId });
   render(value.view(value.settings(AccountSettingsSection.Api)));
   fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
-  fireEvent.click(screen.getByLabelText("API provider"));
-  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
   fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Work key" } });
   const key = screen.getByLabelText("API key");
   fireEvent.change(key, { target: { value: "fixture-only-secret" } });
@@ -151,6 +155,7 @@ it("creates an API account once, clears the key at submit, connects without auto
   expect(new TextDecoder().decode((connect.mock.calls[0][0] as unknown as { apiKey: Uint8Array }).apiKey)).toBe("fixture-only-secret");
   expect(screen.getByRole("status").textContent).toContain("validation required");
   expect(value.client.getMutationCache().getAll()).toHaveLength(0);
+  expect(value.other).not.toHaveBeenCalled();
 });
 
 it("accepts current disconnected metadata on a replay without restoring the old connection or revision", async () => {
@@ -165,8 +170,7 @@ it("accepts current disconnected metadata on a replay without restoring the old 
   const value = fixture({ save, connect, providerId });
   render(value.view(value.settings(AccountSettingsSection.Api)));
   fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
-  fireEvent.click(screen.getByLabelText("API provider"));
-  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
   fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Peer changed" } });
   fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-only-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
@@ -183,14 +187,16 @@ it("accepts current disconnected metadata on a replay without restoring the old 
   expect(screen.getByText(/Connected · health unverified · validation required/)).toBeTruthy();
 });
 
-it("rechecks provider authentication before account creation and clears the submitted key on mismatch", async () => {
+it.each([
+  { change: "authentication", authentication: "bearer", enabled: true },
+  { change: "enabled state", authentication: "api-key", enabled: false },
+])("rechecks provider $change before account creation and clears the submitted key on mismatch", async ({ authentication, enabled }) => {
   const providerId = newRequestId();
-  const changedProvider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Changed provider", protocol: "openai-responses", authentication: "bearer", endpoint: "https://api.example.test/v1", enabled: true }), id: providerId });
+  const changedProvider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Changed provider", protocol: "openai-responses", authentication, endpoint: "https://api.example.test/v1", enabled }), id: providerId });
   const value = fixture({ providerId, currentProvider: changedProvider });
   render(value.view(value.settings(AccountSettingsSection.Api)));
   fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
-  fireEvent.click(screen.getByLabelText("API provider"));
-  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
   fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Current provider only" } });
   const key = screen.getByLabelText("API key");
   fireEvent.change(key, { target: { value: "fixture-only-secret" } });
@@ -209,8 +215,7 @@ it("retries a lost account-create acknowledgment exactly and requires key re-ent
   const value = fixture({ save, providerId });
   render(value.view(value.settings(AccountSettingsSection.Api)));
   fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
-  fireEvent.click(screen.getByRole("radio", { name: "API provider" }));
-  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
   fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Replayed create" } });
   fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-only-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
@@ -234,8 +239,7 @@ it("uses explicit keyless connection, sends no key bytes, and keeps subscription
   const value = fixture({ resources: [provider], save, connect, providerId });
   render(value.view(value.settings(AccountSettingsSection.Api, { providers: [summary], eligibleProviders: [summary] })));
   fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
-  fireEvent.click(screen.getByRole("radio", { name: "Loopback" }));
-  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  fireEvent.click(screen.getByRole("button", { name: "Loopback Local endpoint" }));
   expect(screen.queryByLabelText("API key")).toBeNull();
   expect(screen.getByText("Connect to this local endpoint on the selected server.")).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Local endpoint" } });
@@ -256,8 +260,7 @@ it("does not auto-connect after a hidden keyed create completes late", async () 
   const accepted = create(ResourceSchema, { ...account, documentJson: encode({ ...JSON.parse(new TextDecoder().decode(account.documentJson)), provider_id: value.providerId }) });
   const view = render(value.view(value.settings(AccountSettingsSection.Api)));
   fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
-  fireEvent.click(screen.getByLabelText("API provider"));
-  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
   fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Late key" } });
   fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-only-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
@@ -326,4 +329,82 @@ it("retries a lost subscription metadata acknowledgment byte-for-byte without st
   expect(save.mock.calls[0][0]).toEqual(save.mock.calls[1][0]);
   expect(connect).not.toHaveBeenCalled();
   expect(screen.getByText(/Subscription login is not implemented yet/)).toBeTruthy();
+});
+
+
+it("renders ordered native provider actions, enters once without writes, and returns focus to the exact button", async () => {
+  const value = fixture();
+  const names = ["OpenAI", "Anthropic", "OpenRouter", "Vercel AI Gateway", "xAI", "DeepSeek"];
+  const providers = names.map((displayName) => {
+    const provider = resource(EntityKind.PROVIDER, { name: displayName, authentication: "bearer", protocol: "openai-chat", endpoint: "https://api.example.test/v1" });
+    return { ...value.providerOption, providerId: provider.id, provider, displayName };
+  });
+  const props = { providers: [], eligibleProviders: providers };
+  const view = render(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api, props))}</StrictMode>);
+  fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
+  expect(screen.getByRole("heading", { name: "Choose an API provider" })).toBe(window.document.activeElement);
+  const choices = window.document.querySelector(".account-provider-choices")!;
+  expect(Array.from(choices.querySelectorAll("button strong"), (element) => element.textContent)).toEqual(names);
+  expect(screen.queryByRole("searchbox")).toBeNull();
+  expect(screen.queryByRole("radio")).toBeNull();
+  expect(screen.queryByRole("button", { name: /Continue|More providers|Next page/ })).toBeNull();
+  expect(screen.queryByText(/Step [12] of/)).toBeNull();
+  for (const button of choices.querySelectorAll("button")) {
+    expect(button.getAttribute("type")).toBe("button");
+    expect(button.hasAttribute("aria-pressed")).toBe(false);
+    expect(button.hasAttribute("aria-selected")).toBe(false);
+  }
+  expect(value.save).not.toHaveBeenCalled();
+  expect(value.connect).not.toHaveBeenCalled();
+  expect(value.other).not.toHaveBeenCalled();
+  const button = screen.getByRole("button", { name: "OpenRouter API key" });
+  fireEvent.click(button);
+  fireEvent.click(button);
+  expect(screen.getByRole("heading", { name: "Connect your account" })).toBe(window.document.activeElement);
+  expect(screen.getByText("OpenRouter", { selector: "strong" })).toBeTruthy();
+  view.rerender(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api, props))}</StrictMode>);
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  expect(screen.getByRole("button", { name: "OpenRouter API key" })).toBe(window.document.activeElement);
+  fireEvent.click(screen.getByRole("button", { name: "OpenRouter API key" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to provider" }));
+  expect(screen.getByRole("button", { name: "OpenRouter API key" })).toBe(window.document.activeElement);
+  expect(value.other).not.toHaveBeenCalled();
+  expect(value.save).not.toHaveBeenCalled();
+  expect(value.connect).not.toHaveBeenCalled();
+});
+
+it.each([
+  { label: "loading", picker: { loaded: false, ready: false, fetching: true }, message: "Loading providers…", next: false, first: false, open: false, retry: false },
+  { label: "permission", picker: { loaded: false, ready: false, error: new ConnectError("Denied", Code.PermissionDenied) }, message: "Provider inventory access is denied", next: false, first: false, open: false, retry: true },
+  { label: "unavailable", picker: { loaded: false, ready: false, error: new ConnectError("Failed", Code.Unavailable) }, message: "The DeliDev request could not complete", next: false, first: false, open: false, retry: true },
+  { label: "empty first", picker: {}, message: "Enable an API provider", next: false, first: false, open: true, retry: false },
+  { label: "empty with continuation", picker: { nextPageToken: "page-2" }, message: "No enabled API providers on this page", next: true, first: false, open: false, retry: false },
+  { label: "empty later", picker: { pageToken: "page-2" }, message: "No enabled API providers on this page", next: false, first: true, open: false, retry: false },
+  { label: "missing capabilities", picker: { ready: false }, message: "Update the server", next: false, first: false, open: false, retry: false },
+])("distinguishes $label provider state without writes or invented empty success", ({ picker, message, next, first, open, retry }) => {
+  const value = fixture();
+  const retryRead = vi.fn();
+  render(value.view(value.settings(AccountSettingsSection.Api, { eligibleProviders: [], providerPicker: { ready: true, loaded: true, fetching: false, pageToken: "", nextPageToken: "", retry: retryRead, next: vi.fn(), first: vi.fn(), ...picker } })));
+  fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
+  expect(screen.getByText(new RegExp(message))).toBeTruthy();
+  expect(Boolean(screen.queryByRole("button", { name: "Next page" }))).toBe(next);
+  expect(Boolean(screen.queryByRole("button", { name: "First page" }))).toBe(first);
+  expect(Boolean(screen.queryByRole("button", { name: "Open API Providers" }))).toBe(open);
+  if (retry) { fireEvent.click(screen.getByRole("button", { name: "Retry providers" })); expect(retryRead).toHaveBeenCalledTimes(1); }
+  expect(value.save).not.toHaveBeenCalled();
+  expect(value.connect).not.toHaveBeenCalled();
+});
+
+it("labels stale provider results and excludes disabled, unsaved and subscription choices", () => {
+  const value = fixture();
+  const invalid = [
+    { ...value.providerOption, providerId: newRequestId(), enabled: false },
+    { ...value.providerOption, providerId: "" },
+    { ...value.providerOption, providerId: newRequestId(), provider: resource(EntityKind.PROVIDER, { protocol: "native-subscription", authentication: "subscription" }) },
+  ];
+  render(value.view(value.settings(AccountSettingsSection.Api, { eligibleProviders: [value.providerOption, ...invalid], providerPicker: { ready: true, loaded: true, fetching: false, error: new ConnectError("Unavailable", Code.Unavailable), pageToken: "", nextPageToken: "", retry: vi.fn(), next: vi.fn(), first: vi.fn() } })));
+  fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
+  expect(screen.getByText(/last successfully loaded providers/)).toBeTruthy();
+  expect(window.document.querySelectorAll(".account-provider-action")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Open API Providers" })).toBeNull();
 });

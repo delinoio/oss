@@ -26,9 +26,10 @@ it("configures a real Go server through the settings forms and explicitly valida
   fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));
   await screen.findByRole("heading", { name: "Owned local API" });
   fireEvent.click(screen.getByRole("button", { name: "API Accounts" }));
-  fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
-  fireEvent.click(await screen.findByRole("radio", { name: "Owned local API" }));
-  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  const addAccount = screen.getByRole("button", { name: "Add API account" });
+  await waitFor(() => expect((addAccount as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(addAccount);
+  fireEvent.click(await screen.findByRole("button", { name: "Owned local API Local endpoint" }));
   change("Account name", "Owned keyless account");
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
   await screen.findByRole("heading", { name: "Owned keyless account" });
