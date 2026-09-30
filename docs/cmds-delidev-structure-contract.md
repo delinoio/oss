@@ -26,7 +26,9 @@ TypeScript import paths; generated code is never resolved by choosing a merge si
 Regenerate from the reconciled source schema.
 
 The numeric allocation ledger binds each new enum member or existing-message field
-to its original PR and a unique number. Existing main assignments are immutable.
+to its original PR, or its owning issue when no implementation PR exists yet, and
+a unique number. Shared consumers are recorded explicitly. Existing main
+assignments are immutable.
 Reservations do not advertise capability support or activate implementation.
 New allocations must be established on main before dependent feature branches use
 them. Existing shared message semantics still require explicit composition.
@@ -90,6 +92,12 @@ Shared authentication, Worker permissions, account selection, title/usage attrib
 resource deletion and subagent/session lifecycle changes require explicit review
 against the latest main contract. Regenerate bindings after composing schema changes;
 never accept one PR's generated file or migration number merely to resolve a conflict.
+
+The planned shared native-compaction boundary for #1093, #1202 and #1203 reserves
+EntityKind 32, SystemCapability 15, WorkerCapability 5 and SessionChange field 9.
+It uses the generic durable entity/job/receipt boundary and allocates no migration
+in this prerequisite. No native profile or RPC is activated; see the
+[compaction contract](cmds-delidev-compaction-contract.md).
 
 ## Legacy reflection compatibility
 
