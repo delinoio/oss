@@ -193,7 +193,9 @@ launches a shell.
 Creation supports the Worker's default shell or an absolute override. Each
 terminal offers line input, Ctrl+C/Ctrl+D bytes, resize, output reattachment and
 close. Creation/control use the connection-owned retained mutation registry;
-an uncertain retry preserves the original request and revision.
+an uncertain retry preserves the original request and revision. Input focus returns when controls become available after a
+pending input or resize. Metadata polling does not refocus an already available
+input.
 Creation retains its single accepted resource for direct selection and attachment
 even when the current 50-record history page omits it.
 

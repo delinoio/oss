@@ -179,3 +179,45 @@ it("gates initial reads, polling and manual refresh on advertised terminal suppo
     release({ capabilities: [] }); view.unmount(); client.clear();
   }
 });
+
+it.each([TerminalAction.INPUT, TerminalAction.RESIZE])("restores input focus after a pending terminal control %s", async (action) => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 4n, documentJson: encode({ state: "running" }) });
+  let acknowledge = () => {};
+  const pending = new Promise<void>((resolve) => { acknowledge = resolve; });
+  const controlTerminal = vi.fn(async () => { await pending; return { terminal }; });
+  let releaseStream = () => {};
+  const held = new Promise<void>((resolve) => { releaseStream = resolve; });
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [terminal] }) });
+    router.service(TerminalService, { controlTerminal, watchTerminalOutput: async function* () {
+      yield { epoch: newRequestId(), sequence: 0n, heartbeat: true, terminal };
+      await held;
+    } });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} close={() => {}} /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
+    const input = await screen.findByRole("textbox", { name: "Terminal input" }) as HTMLTextAreaElement;
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    fireEvent.change(input, { target: { value: "fixture line" } });
+    fireEvent.click(screen.getByRole("button", { name: action === TerminalAction.INPUT ? "Send line" : "Resize terminal" }));
+    await waitFor(() => expect(input.disabled).toBe(true));
+    // jsdom retains disabled focus; model the browser's focus loss explicitly.
+    const columns = screen.getByRole("spinbutton", { name: "Terminal columns" });
+    columns.focus();
+    expect(document.activeElement).not.toBe(input);
+    await act(async () => acknowledge());
+    await waitFor(() => expect(input.disabled).toBe(false));
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect(controlTerminal).toHaveBeenCalledTimes(1);
+    // A metadata poll must not steal focus while controls remain available.
+    columns.focus();
+    await act(async () => { await client.invalidateQueries(); });
+    expect(document.activeElement).toBe(columns);
+  } finally {
+    acknowledge(); view.unmount(); releaseStream(); client.clear();
+  }
+});

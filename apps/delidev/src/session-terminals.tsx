@@ -65,7 +65,6 @@ function TerminalView({ resource, refresh }: { resource: Resource; refresh: () =
   const cursor = useRef({ epoch: "", afterSequence: 0n });
   const buffer = useRef(new TerminalText());
   const input = useRef<HTMLTextAreaElement>(null);
-  const focusedInput = useRef(false);
   const terminal = resource.revision > observed.revision ? resource : observed;
   const data = document(terminal);
   const control = useRetainedMutation(`terminal-control:${resource.id}`, TerminalQuery.controlTerminal, (value, request) => { if (value.terminal) setObserved(value.terminal); if (request.action === TerminalAction.INPUT) setDraft(""); refresh(); });
@@ -98,10 +97,7 @@ function TerminalView({ resource, refresh }: { resource: Resource; refresh: () =
   // Keep the draft's original UTF-8 bytes; only append that explicit control.
   const lineInput = new TextEncoder().encode(draft + "\r");
   useEffect(() => {
-    if (!inputBlocked && !focusedInput.current) {
-      focusedInput.current = true;
-      input.current?.focus();
-    }
+    if (!inputBlocked) input.current?.focus();
   }, [inputBlocked]);
   const send = (action: TerminalAction, input = new Uint8Array()) => void control.send({ mutation: { id: terminal.id, expectedRevision: terminal.revision, requestId: newRequestId() }, action, input, rows: action === TerminalAction.RESIZE ? rows : 0, columns: action === TerminalAction.RESIZE ? columns : 0 });
   return <section aria-label="Attached terminal">
