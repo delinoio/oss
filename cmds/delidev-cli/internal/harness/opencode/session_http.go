@@ -16,6 +16,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	// login, provider switch, fork, deletion or prompt retry is available here.
 	valid := method == http.MethodPost && path == "/session" && s.creation != nil
 	valid = valid || s.runtimeRead && s.creation == nil && method == http.MethodGet && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent") && len(body) == 0
+	valid = valid || s.reconciliationRead && method == http.MethodGet && len(body) == 0 && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent")
 	valid = valid || s.projectRead && method == http.MethodGet && len(body) == 0 && (path == "/project/current" || path == "/session?limit=2")
 	valid = valid || s.historyRead != nil && method == http.MethodGet && path == s.historyRead.path && len(body) == 0
 	valid = valid || s.checkpointRead && method == http.MethodGet && len(body) == 0 && (path == "/session?limit=2" || path == "/permission" || path == "/question" || path == "/session/status")
@@ -91,6 +92,9 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	if err != nil || len(raw) > maxHTTPBody {
 		return nil, response.StatusCode, sessionProblem()
 	}
+	if err := s.accountReconciliationRead(raw); err != nil {
+		return nil, response.StatusCode, err
+	}
 	if response.StatusCode == http.StatusNoContent {
 		if len(raw) != 0 || len(response.Header.Values("Content-Type")) != 0 {
 			return nil, response.StatusCode, sessionProblem()
@@ -123,4 +127,16 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 		}
 	}
 	return raw, response.StatusCode, nil
+}
+
+// Called under the session gate. Count actual bodies across all repeated reads,
+// including configuration, predecessor pages and canonicalized-away whitespace.
+func (s *sessionAPI) accountReconciliationRead(raw []byte) error {
+	if s.reconciliation == ReconciliationReading {
+		if len(raw) > maxObservedBytes-s.reconciliationReadBytes {
+			return eventBound()
+		}
+		s.reconciliationReadBytes += len(raw)
+	}
+	return nil
 }

@@ -299,7 +299,7 @@ The original live Stop composer now joins its once-claimed native abort, bounded
 Native interruption, acknowledged cancellation during native retry backoff, native outcome and product Stop/Archive are independently retained. Retry backoff notifications cannot grant a new provider request or ordinary retry authority. Archive waits for terminal and owned cleanup, and a completed version-1 report leaves dispatch paused without a continuation checkpoint. A lost publication acknowledgment permits only exact outbox replay and cannot revive the blocked composer. Registered native fixtures exercise these integrations; production public dispatch, complete Worker control scheduling, owner-only cleanup recovery and continuation remain unfinished.
 
 ### Public OpenCode first execution
-The original first-dispatch transaction now accepts OpenCode `1.18.32` with verified `opencode-http` installation evidence, a current validated Chat Completions API account and the exact default native Build/Plan selection. The Worker shares complete immutable selection validation, independently verifies native effective settings and executes the original accepted input under its workspace lease. Unsupported explicit options, continuation profiles, multiple repository roots and Windows General Chat do not consume routing or queued input. Every existing account/model/Agent/project/Worker/preparation check remains active.
+The original first-dispatch transaction now accepts OpenCode `1.18.32` with verified `opencode-http` installation evidence, a current validated Chat Completions API account and the exact default native Build/Plan selection. The Worker shares complete immutable selection validation, independently verifies native effective settings and executes the original accepted input under its workspace lease. Unsupported explicit options, continuation profiles and repository roots without their separately proved profiles do not consume routing or queued input. Windows General Chat uses the dedicated native/global filesystem root profile in the harness contract. Every existing account/model/Agent/project/Worker/preparation check remains active.
 
 The same owner/client first Resume and automatic ready-session dispatch produce one immutable original job. Native creation and stored-input acceptance, transcript/usage/interactions, direct replies, targeted Stop/Archive and owned cleanup report through the existing authenticated outbound Worker flow. Version-1 completion remains paused and cannot authorize another input, process-replacement continuation or recovery via a Codex checkpoint. Actual Execute/Plan loopback evidence and the precise remaining platform/account limits are recorded in the evidence ledger.
 
@@ -566,3 +566,17 @@ The following source-backed notes were relocated from the project index at `12b3
 Uncertain question/approval response delivery now automatically inspects the original native conversation and exact retained turn/input scope after retaining the original delivery observation. Already observed exact live proof uses its original queued durable publication; history/closure alone never manufactures acceptance or permits a resend. Native pause and earlier recovery remain independent. Lost-event historical reconstruction and safe surviving-process reattachment remain required.
 
 Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
+
+### Windows OpenCode General Chat (issue #1205)
+
+The existing first-dispatch and FIFO/Resume APIs admit the pinned Windows global
+profile under the same immutable account/model/settings and owned-workspace
+gates. Native `/` metadata remains separate from independently derived canonical
+filesystem ownership throughout initialization, original events, new private
+native checkpoint version 2 and read-only completed-report recovery. Existing
+Worker/report version 2 and public schemas/commands stay unchanged. Missing or
+changed root evidence refuses replacement without consuming another native
+input; recovery never starts native work and stays paused until explicit Resume.
+The [harness contract](cmds-delidev-harness-contract.md#windows-opencode-general-chat-root-profile-issue-1205)
+owns exact root, isolation, Plan-policy, version-1 compatibility and native-evidence
+requirements.

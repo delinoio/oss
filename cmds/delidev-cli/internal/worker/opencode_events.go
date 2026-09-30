@@ -9,9 +9,9 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
 )
 
-// OpenCodeEventPublisher composes one original uninterrupted event stream. An
-// unimplemented family blocks terminal publication instead of disappearing from
-// an apparently complete transcript. Native cleanup/reporting remains separate.
+// OpenCodeEventPublisher composes original native arrivals and immutable facts
+// from the harness's same-process reconciliation. An unimplemented family blocks
+// terminal publication; native cleanup/reporting remains separate.
 type OpenCodeEventPublisher struct {
 	mu                  sync.Mutex
 	api                 *opencode.OwnedAPI
@@ -83,7 +83,23 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 
 // The composer lock is held across both immediate and deferred publication.
 func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o opencode.Observation) error {
-	if domain.NativeIdentity(o.EventID).Validate(domain.OpenCode, domain.NativeEventIdentity) != nil || c.seen[o.EventID] || len(c.seen) >= 65536 {
+	if o.EventID == "" {
+		// Use the private, already verified read proof itself. Caller mutations
+		// of a typed snapshot cannot change the fact being published.
+		frozen, err := o.Freeze()
+		if err != nil {
+			return c.fail(err)
+		}
+		o, err = frozen.Thaw()
+		if err != nil {
+			return c.fail(err)
+		}
+	}
+	publicationKey, keyErr := o.PublicationKey()
+	if keyErr == nil && o.EventID == "" && c.seen[publicationKey] {
+		return nil
+	}
+	if keyErr != nil || c.seen[publicationKey] || len(c.seen) >= 65536 {
 		return c.fail(publicationUncertain())
 	}
 	text, err := c.text.PublishObservation(ctx, o)
@@ -160,7 +176,7 @@ func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o openc
 			c.problem = &value
 		}
 	}
-	c.seen[o.EventID] = true
+	c.seen[publicationKey] = true
 	return nil
 }
 
@@ -228,7 +244,7 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 	if err != nil {
 		return fail(err)
 	}
-	if !progress.SettledObserved || !progress.TerminalObserved || !progress.UserSeen || !progress.InputPartSeen || !progress.IdleNotification || progress.Status != opencode.NativeStatusIdle || progress.NeedsRecovery || progress.SessionID != b.thread || progress.MessageID != b.turn || progress.RequestID != b.reference.InputRequestID {
+	if !progress.SettledObserved || !progress.TerminalObserved || !progress.UserSeen || !progress.InputPartSeen || !(progress.IdleNotification || progress.IdleReconciled) || progress.Status != opencode.NativeStatusIdle || progress.NeedsRecovery || progress.SessionID != b.thread || progress.MessageID != b.turn || progress.RequestID != b.reference.InputRequestID {
 		return fail(publicationUncertain())
 	}
 	var history opencode.HistoryObservation

@@ -108,12 +108,13 @@ func (c *OpenCodeTextPublisher) PublishObservation(ctx context.Context, observat
 	if _, err := b.readClaims(); err != nil {
 		return false, err
 	}
-	if domain.NativeIdentity(observation.EventID).Validate(domain.OpenCode, domain.NativeEventIdentity) != nil || c.seen[observation.EventID] || len(c.seen) >= 65536 {
+	publicationKey, keyErr := observation.PublicationKey()
+	if keyErr != nil || c.seen[publicationKey] || len(c.seen) >= 65536 {
 		return false, publicationUncertain()
 	}
 	defer func() {
 		if returned == nil && handled {
-			c.seen[observation.EventID] = true
+			c.seen[publicationKey] = true
 		}
 	}()
 	switch observation.Kind {
