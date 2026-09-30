@@ -208,29 +208,44 @@ func TestWorkspaceSnapshotFaithfullyRestoresEveryRepository(t *testing.T) {
 	}
 }
 func TestSnapshotSecondRepositoryDiskFailurePreservesAllSources(t *testing.T) {
-	m := manager(t)
-	input, _ := snapshotRequest(t, m, true)
-	input.Action = StorageCreate
-	input.SnapshotID = domain.NewID()
-	second := string(input.Manifest.Repositories[1].ID)
-	reachedSecond := false
-	m.storageCopyFault = func(path string) error {
-		if filepath.Base(path) == second {
-			reachedSecond = true
-			return snapshotDiskFullError()
-		}
-		return nil
-	}
-	if _, err := m.Storage(context.Background(), input); !reachedSecond || domain.SafeError(err).Code != domain.ResourceExhausted {
-		t.Fatal("disk full did not retain a typed capacity problem", err)
-	}
-	for _, repo := range input.Manifest.Repositories {
-		if _, err := os.ReadFile(filepath.Join(repo.Path, "tracked.txt")); err != nil {
-			t.Fatal("a source was removed", err)
-		}
-	}
-	if _, err := os.Lstat(m.snapshotPath(input.SnapshotID)); !os.IsNotExist(err) {
-		t.Fatal("partial snapshot published")
+	for _, action := range []StorageAction{StorageCreate, StorageCleanup} {
+		t.Run(string(action), func(t *testing.T) {
+			m := manager(t)
+			input, _ := snapshotRequest(t, m, true)
+			preview := storageDo(t, m, input)
+			input.Action = action
+			input.OperationID = domain.NewID()
+			input.SnapshotID = domain.NewID()
+			if action == StorageCleanup {
+				input.PreviewDigest = preview.PreviewDigest
+			}
+			second := string(input.Manifest.Repositories[1].ID)
+			reachedSecond := false
+			m.storageCopyFault = func(path string) error {
+				if filepath.Base(path) == second {
+					reachedSecond = true
+					return snapshotDiskFullError()
+				}
+				return nil
+			}
+			if _, err := m.Storage(context.Background(), input); !reachedSecond || domain.SafeError(err).Code != domain.ResourceExhausted {
+				t.Fatal("disk full did not retain a typed capacity problem", err)
+			}
+			for _, repo := range input.Manifest.Repositories {
+				if _, err := os.ReadFile(filepath.Join(repo.Path, "tracked.txt")); err != nil {
+					t.Fatal("a source was removed", err)
+				}
+			}
+			// Compare the complete files and Git state, including both repositories,
+			// so cleanup cannot silently mutate surviving sources before it fails.
+			_, sourceBytes, digest, err := m.storageObservation(context.Background(), input)
+			if err != nil || sourceBytes != preview.SourceBytes || digest != preview.PreviewDigest {
+				t.Fatal("disk exhaustion changed original workspace or Git data", err)
+			}
+			if _, err := os.Lstat(m.snapshotPath(input.SnapshotID)); !os.IsNotExist(err) {
+				t.Fatal("partial snapshot published")
+			}
+		})
 	}
 }
 func TestSnapshotCancellationStalePreviewAndDestinationConflict(t *testing.T) {

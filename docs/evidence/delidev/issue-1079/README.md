@@ -14,7 +14,13 @@ Authenticated owner/client RPC and CLI operations provide preview, snapshot crea
 - All 102 repository contract tests pass.
 - API client build/typecheck and all 44 tests pass, retaining generated service and historical compatibility imports.
 
-Full Go race/vet, generated-source freshness and platform cross-compilation outcomes will be recorded after their current runs complete.
+- The strengthened second-repository disk-full regression passes for both explicit snapshot creation and preview-bound manual cleanup, comparing the complete original workspace/Git digest and byte count afterward (`go test -race -timeout=5m ./cmds/delidev-cli/internal/workspace -run TestSnapshotSecondRepositoryDiskFailurePreservesAllSources`; 189.377s under concurrent host load).
+- `go vet ./cmds/delidev-cli/...` passes.
+- Complete root `pnpm proto:check` passes, including regenerated-source freshness.
+- Workspace test binaries cross-compile for Windows amd64 and Linux arm64. This is compilation evidence only.
+- `git lfs fsck` passes. Generated API-client `dist` output is removed.
+
+The required full `go test -race -p 2 -timeout=30m ./cmds/delidev-cli/...` run is still in progress. Its CLI package has reported a workspace-file reader timeout in `TestCLISessionAcceptanceQueueAndArchive` (171.685s package time); an isolated rerun and a source-only current-main comparison are in progress. No full-suite success or regression classification is claimed yet.
 
 ## Evidence limits
 
