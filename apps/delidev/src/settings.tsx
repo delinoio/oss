@@ -76,7 +76,7 @@ enum SettingsGroup { AiAgents = "AI & agents", Workspace = "Workspace", System =
 
 const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
   [SettingsCategory.Backups]: { label: "Backups", description: "Inspect managed database images and follow durable creation and deletion jobs on the selected server.", area: SettingsArea.Backups },
-  [SettingsCategory.SubscriptionAccounts]: { label: "AI Subscription", description: "Existing subscription account metadata is managed here; subscription login is not available.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
+  [SettingsCategory.SubscriptionAccounts]: { label: "AI Subscription", description: "Manage your subscriptions and connect more accounts.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.ApiAccounts]: { label: "AI API Keys", description: "Manage AI API keys and keyless local connections. Connection and health are separate states.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.Providers]: { label: "API Providers", description: "Provider availability is saved on the selected server.", kind: EntityKind.PROVIDER, area: SettingsArea.Configuration },
   [SettingsCategory.Models]: { label: "Models", description: "Saved on the selected server.", kind: EntityKind.MODEL, area: SettingsArea.Configuration },
@@ -122,6 +122,37 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
   return <svg className="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={settingsIcons[category]} /></svg>;
 }
 
+function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: () => void; preview: () => void; remove: () => void }) {
+  const data = document(row);
+  let name = resourceName(row);
+  // Unsupported schemas stay non-actionable. Only bounded inert name text is
+  // projected within the Agent name's 256-byte UTF-8 limit for identifying the
+  // row; it never enters an editor or request.
+  // Remove this projection once the shared document parser supports that schema.
+  if (row.schemaVersion !== 1 && row.documentJson.byteLength <= 1 << 20) {
+    try {
+      const display = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(row.documentJson)));
+      const projectedName = text(display.name) || text(display.alias);
+      // Check code units first so malformed large values never allocate an
+      // equally large UTF-8 buffer merely to validate display text.
+      if (projectedName.length <= 256 && new TextEncoder().encode(projectedName).byteLength <= 256) name = projectedName || name;
+    } catch { /* Malformed display text keeps the existing unnamed fallback. */ }
+  }
+  return <article className="settings-agent-row">
+    <div className="settings-agent-details">
+      <h3>{name}</h3>
+      {text(data.health) ? <p>Status: {text(data.health)}</p> : null}
+      {text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}
+      <small>{row.id}</small>
+    </div>
+    <div className="actions settings-agent-actions">
+      <button type="button" disabled={row.schemaVersion !== 1} aria-label={`Edit ${name}`} onClick={edit}>Edit</button>
+      <button type="button" disabled={row.schemaVersion !== 1} aria-label={`Preview routing for ${name}`} onClick={preview}>Preview routing</button>
+      <button type="button" disabled={row.schemaVersion !== 1} aria-label={`Delete ${name}`} onClick={remove}>Delete</button>
+    </div>
+  </article>;
+}
+
 interface SettingsProps { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
 export function Settings({ visible = true, ...props }: SettingsProps) {
   const client = useQueryClient();
@@ -142,8 +173,10 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
   const [providerSearch, setProviderSearch] = useState("");
   const [providerFilterPage, setProviderFilterPage] = useState("");
   const [providerChoicePage, setProviderChoicePage] = useState("");
+  const [subscriptionProviderPage, setSubscriptionProviderPage] = useState("");
   const [startApiWizard, setStartApiWizard] = useState<{ key: string; providerId: string; provider?: AccountProviderSummary }>();
   const [accountProviderHint, setAccountProviderHint] = useState<AccountProviderSummary>();
+  const subscriptionFilters = useRef<{ providerId: string; search: string; hint?: AccountProviderSummary }>({ providerId: "", search: "" });
   const [childWorkflows, setChildWorkflows] = useState<ReadonlySet<SettingsWorkflow>>(() => new Set());
   const [focusNewProjectName, setFocusNewProjectName] = useState(false);
   const handledDestination = useRef<SettingsEntryDestination | undefined>(undefined);
@@ -156,6 +189,7 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
   const isAccountCategory = isApiAccounts || isSubscriptionAccounts;
   const isApiProviders = selectedCategory === SettingsCategory.Providers;
   const isModels = selectedCategory === SettingsCategory.Models;
+  const isAgentWorkers = selectedCategory === SettingsCategory.AgentWorkers;
   const isProjects = selectedCategory === SettingsCategory.Projects;
   const hasSpecializedPanel = isAccountCategory || isApiProviders || isModels;
   const hasOverlay = Boolean(editing || account || deleting || routing || machine || device || pricing);
@@ -165,6 +199,9 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
     : selected.description;
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration && !hasSpecializedPanel });
   const accountInventory = useQuery(ProviderQuery.listProviderInventory, { query: providerSearch, enabledOnly: false, pageSize: 50, pageToken: providerFilterPage }, { enabled: visible && area === SettingsArea.Configuration && isAccountCategory });
+  // API inventory deliberately omits native subscription metadata. Read its
+  // existing bounded resource pages separately; this grants no lifecycle support.
+  const subscriptionProviderInventory = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.PROVIDER, pageSize: 50, pageToken: subscriptionProviderPage } }, { enabled: visible && isSubscriptionAccounts && !hasOverlay });
   const eligibleInventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 50, pageToken: providerChoicePage }, { enabled: visible && area === SettingsArea.Configuration && isApiAccounts });
   const providerPicker: AccountProviderPicker = { ready: Boolean(eligibleInventory.data && providerInventoryReady(eligibleInventory.data.capabilities) && eligibleInventory.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER)), loaded: Boolean(eligibleInventory.data), fetching: eligibleInventory.isFetching, error: eligibleInventory.error, pageToken: providerChoicePage, nextPageToken: eligibleInventory.data?.nextPageToken ?? "", retry: () => { void eligibleInventory.refetch(); }, next: () => setProviderChoicePage(eligibleInventory.data?.nextPageToken ?? ""), first: () => setProviderChoicePage("") };
   const providerPresets = useQuery(ProviderQuery.listProviderPresets, {}, { enabled: visible && area === SettingsArea.Configuration && isAccountCategory });
@@ -234,30 +271,38 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
   }, [destinationConsumed, editing, entryDestination, kind, visible, workflowProtected]);
   const projectNameFocused = useCallback(() => setFocusNewProjectName(false), []);
   const chooseCategory = (category: SettingsCategory) => {
+    if (isSubscriptionAccounts) subscriptionFilters.current = { providerId: accountProviderID, search: providerSearch, hint: accountProviderHint };
+    if (category === SettingsCategory.SubscriptionAccounts) {
+      const retained = subscriptionFilters.current;
+      setAccountProviderID(retained.providerId); setProviderSearch(retained.search); setAccountProviderHint(retained.hint);
+    } else if (category === SettingsCategory.ApiAccounts) {
+      // Preserve the existing API entry behavior; subscription filters have
+      // separate opening-local ownership and cannot leak into the API list.
+      setAccountProviderID(""); setProviderSearch(""); setAccountProviderHint(undefined);
+    }
     setSelectedCategory(category);
     if (settingsCategories[category].area === SettingsArea.Configuration) {
       setPage("");
-      if (category === SettingsCategory.ApiAccounts || category === SettingsCategory.SubscriptionAccounts) {
-        setAccountProviderID("");
-        setAccountProviderHint(undefined);
-        setProviderSearch("");
-      }
     }
   };
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
   const providerEntrySummary = (entry?: ProviderInventoryEntry) => entry ? providerSummary(entry) : undefined;
-  const subscriptionProviders = accountProviders.map((entry) => entry.provider).filter((resource): resource is Resource => {
+  const subscriptionProviders = (subscriptionProviderInventory.data?.resources ?? []).filter((resource): resource is Resource => {
     if (!resource) return false;
     const data = document(resource);
     return data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "";
   });
+  const subscriptionProviderSummaries: AccountProviderSummary[] = subscriptionProviders.map((provider) => ({ providerId: provider.id, provider, displayName: resourceName(provider), enabled: document(provider).enabled !== false, keyGuidance: "", documentationUrl: "" }));
+  const subscriptionAccountProviders = [...new Map([...accountProviders, ...subscriptionProviderSummaries.filter((provider) => provider.displayName.toLowerCase().includes(providerSearch.toLowerCase()))].map((provider) => [provider.providerId, provider])).values()];
   const subscriptionProviderManagement = <section className="subscription-provider-management">
     <p>Only native subscription providers with subscription authentication and an empty endpoint are available for subscription account metadata.</p>
     <button type="button" onClick={() => setEditing({ kind: EntityKind.PROVIDER, initialData: { ...newConfiguration(EntityKind.PROVIDER), protocol: "native-subscription", authentication: "subscription", endpoint: "", discovery: false }, key: newRequestId(), subscriptionOnly: true })}>Add native subscription provider</button>
-    <Problem error={accountInventory.error} />
+    <Problem error={subscriptionProviderInventory.error} />
+    {subscriptionProviderInventory.error ? <button type="button" onClick={() => void subscriptionProviderInventory.refetch()}>Retry subscription providers</button> : null}
     {subscriptionProviders.map((provider) => <article className="result" key={provider.id}><h4>{resourceName(provider)}</h4><p>Native subscription · no endpoint · subscription login unavailable</p><div className="actions"><button type="button" disabled={provider.schemaVersion !== 1} onClick={() => setEditing({ kind: EntityKind.PROVIDER, initial: provider, key: newRequestId(), subscriptionOnly: true })}>Edit subscription provider</button><button type="button" disabled={provider.schemaVersion !== 1} onClick={() => setDeleting(provider)}>Delete subscription provider</button></div></article>)}
-    {accountInventory.isLoading ? <p role="status">Loading subscription providers…</p> : null}
-    {!accountInventory.isLoading && subscriptionProviders.length === 0 ? <p>No eligible subscription provider configurations are available yet.</p> : null}
+    {subscriptionProviderInventory.isLoading ? <p role="status">Loading subscription providers…</p> : null}
+    {subscriptionProviderInventory.data && !subscriptionProviderInventory.error && subscriptionProviders.length === 0 ? <p>No eligible subscription providers on this page.</p> : null}
+    {subscriptionProviderPage || subscriptionProviderInventory.data?.nextPageToken ? <nav className="settings-pages" aria-label="Subscription provider pages"><button type="button" disabled={categoryLocked || !subscriptionProviderPage || subscriptionProviderInventory.isFetching} onClick={() => setSubscriptionProviderPage("")}>First subscription provider page</button><button type="button" disabled={categoryLocked || !subscriptionProviderInventory.data?.nextPageToken || subscriptionProviderInventory.isFetching} onClick={() => setSubscriptionProviderPage(subscriptionProviderInventory.data!.nextPageToken)}>Next subscription provider page</button></nav> : null}
   </section>;
   return <Modal title="Settings" close={close} visible={visible} layout={ModalLayout.FullWindow}>
     <div className="settings-workspace">
@@ -278,8 +323,9 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
             {settingsGroups.map((group) => <optgroup label={group.label} key={group.label}>{group.categories.map((category) => <option key={category} value={category}>{settingsCategories[category].label}</option>)}</optgroup>)}
           </select>
         </label>
+        <div className={isAgentWorkers ? "settings-agent-column" : undefined}>
         {area !== SettingsArea.Diagnostics ? <div className="settings-category-heading">
-          <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1><p>{categoryDescription}</p></div>
+          <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : null}<p className={isAgentWorkers ? "settings-agent-scope" : undefined}>{categoryDescription}</p></div>
           {configurationList ? <div className="settings-toolbar">
             <button type="button" onClick={() => void result.refetch()}>Refresh settings</button>
             {editableKinds.includes(kind) && (kind !== EntityKind.SETTINGS || result.data?.resources.length === 0)
@@ -297,25 +343,30 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
             {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority ? <div hidden={kind !== EntityKind.DEVICE || Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} /></div> : null}
             <div hidden={!isApiAccounts || hasOverlay}>
-              <AccountSettings section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={accountTypeFilteringReady} accountTypeFilteringProblem={accountInventory.error} providerIdFilter={accountProviderID} clearProviderFilter={() => { setAccountProviderID(""); setAccountProviderHint(undefined); }} setProviderFilter={(providerId, provider) => { setAccountProviderID(providerId); setAccountProviderHint(provider); setPage(""); }} providers={accountProviders} eligibleProviders={eligibleProviders} providerSearch={providerSearch} setProviderSearch={setProviderSearch} providerSearchLoading={accountInventory.isFetching} providerSearchError={accountInventory.error} providerPicker={providerPicker} providerFilterHasMore={Boolean(accountInventory.data?.nextPageToken)} loadMoreProviderFilters={() => setProviderFilterPage(accountInventory.data?.nextPageToken ?? "")} subscriptionProviderResources={accountProviders.map((provider) => provider.provider)} subscriptionProviderManagement={subscriptionProviderManagement} openApiProviders={() => { setSelectedCategory(SettingsCategory.Providers); setPage(""); }} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} startApiWizard={startApiWizard} providerHint={accountProviderHint} />
+              <AccountSettings section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={accountTypeFilteringReady} accountTypeFilteringProblem={accountInventory.error} accountTypeFilteringLoading={accountInventory.isLoading} retryAccountCapabilities={() => { void accountInventory.refetch(); }} providerIdFilter={accountProviderID} clearProviderFilter={() => { setAccountProviderID(""); setAccountProviderHint(undefined); }} setProviderFilter={(providerId, provider) => { setAccountProviderID(providerId); setAccountProviderHint(provider); setPage(""); }} providers={accountProviders} eligibleProviders={eligibleProviders} providerSearch={providerSearch} setProviderSearch={setProviderSearch} providerSearchLoading={accountInventory.isFetching} providerSearchError={accountInventory.error} providerPicker={providerPicker} providerFilterHasMore={Boolean(accountInventory.data?.nextPageToken)} loadMoreProviderFilters={() => setProviderFilterPage(accountInventory.data?.nextPageToken ?? "")} subscriptionProviderResources={accountProviders.map((provider) => provider.provider)} subscriptionProviderManagement={subscriptionProviderManagement} openApiProviders={() => { setSelectedCategory(SettingsCategory.Providers); setPage(""); }} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} startApiWizard={startApiWizard} providerHint={accountProviderHint} />
             </div>
             <div hidden={!isSubscriptionAccounts || hasOverlay}>
-              <AccountSettings section={AccountSettingsSection.Subscription} active={visible && isSubscriptionAccounts && !hasOverlay} accountTypeFilteringReady={accountTypeFilteringReady} accountTypeFilteringProblem={accountInventory.error} providerIdFilter={accountProviderID} clearProviderFilter={() => { setAccountProviderID(""); setAccountProviderHint(undefined); }} setProviderFilter={(providerId, provider) => { setAccountProviderID(providerId); setAccountProviderHint(provider); setPage(""); }} providers={accountProviders} eligibleProviders={eligibleProviders} providerSearch={providerSearch} setProviderSearch={setProviderSearch} providerSearchLoading={accountInventory.isFetching} providerSearchError={accountInventory.error} providerPicker={providerPicker} providerFilterHasMore={Boolean(accountInventory.data?.nextPageToken)} loadMoreProviderFilters={() => setProviderFilterPage(accountInventory.data?.nextPageToken ?? "")} subscriptionProviderResources={accountProviders.map((provider) => provider.provider)} subscriptionProviderManagement={subscriptionProviderManagement} openApiProviders={() => { setSelectedCategory(SettingsCategory.Providers); setPage(""); }} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} providerHint={accountProviderHint} />
+              <AccountSettings section={AccountSettingsSection.Subscription} active={visible && isSubscriptionAccounts && !hasOverlay} accountTypeFilteringReady={accountTypeFilteringReady} accountTypeFilteringProblem={accountInventory.error} accountTypeFilteringLoading={accountInventory.isLoading} retryAccountCapabilities={() => { void accountInventory.refetch(); }} providerIdFilter={accountProviderID} clearProviderFilter={() => { setAccountProviderID(""); setAccountProviderHint(undefined); }} setProviderFilter={(providerId, provider) => { setAccountProviderID(providerId); setAccountProviderHint(provider); setPage(""); }} providers={subscriptionAccountProviders} eligibleProviders={eligibleProviders} providerSearch={providerSearch} setProviderSearch={setProviderSearch} providerSearchLoading={accountInventory.isFetching} providerSearchError={accountInventory.error} providerPicker={providerPicker} providerFilterHasMore={Boolean(accountInventory.data?.nextPageToken)} loadMoreProviderFilters={() => setProviderFilterPage(accountInventory.data?.nextPageToken ?? "")} subscriptionProviderResources={subscriptionProviders} subscriptionProviderManagement={subscriptionProviderManagement} openApiProviders={() => { setSelectedCategory(SettingsCategory.Providers); setPage(""); }} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} providerHint={accountProviderHint} />
             </div>
             {pricing ? <ModelPricing model={pricing} active={visible} close={() => { setPricing(undefined); void client.invalidateQueries({ refetchType: "active" }); }} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={() => { setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={editing.kind ?? kind} initial={editing.initial} initialData={editing.initialData} subscriptionOnly={editing.subscriptionOnly} active={visible} saved={done} cancel={() => setEditing(undefined)} focusName={focusNewProjectName} nameFocused={projectNameFocused} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setAccountProviderID(providerID); setAccountProviderHint(provider); setProviderSearch(entry.displayName); setPage(""); }} addAccount={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setAccountProviderID(providerID); setAccountProviderHint(provider); setStartApiWizard({ key: newRequestId(), providerId: providerID, provider }); setPage(""); }} deleteCustom={setDeleting} /> : isModels ? <ActiveModelSettings active={visible && isModels} createModel={() => setEditing({ kind: EntityKind.MODEL, key: newRequestId() })} editModel={(initial) => setEditing({ kind: EntityKind.MODEL, initial, key: newRequestId() })} priceModel={setPricing} /> : hasSpecializedPanel ? null : <>
               {result.isPending && !result.data ? <p role="status">Loading {selected.label.toLowerCase()}…</p> : null}
               <Problem error={result.error} />
               {result.error && result.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded results.</p> : null}
-              {isProjects ? <ProjectList resources={result.data?.resources ?? []} edit={(row) => setEditing({ initial: row, key: newRequestId() })} remove={setDeleting} /> : result.data?.resources.map((row) => { const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</h3>{kind === EntityKind.DEVICE ? <DeviceDetails resource={row} currentDeviceId={currentDeviceId} /> : null}{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small>{kind === EntityKind.REPOSITORY ? <><RepositoryGitHubAccess selected={row} active={visible && area === SettingsArea.Configuration} /><RepositoryGitHubItems selected={row} active={visible && area === SettingsArea.Configuration} /></> : null}<div className="actions">{kind === EntityKind.DEVICE && row.id === currentDeviceId ? <p>This desktop client cannot revoke its own registration.</p> : null}{kind === EntityKind.DEVICE && data.revoked === false && row.id !== currentDeviceId ? <button disabled={row.schemaVersion !== 1} onClick={() => setDevice(row)}>Revoke {resourceName(row)}</button> : null}{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}>Delete {resourceName(row)}</button> : null}{kind === EntityKind.MODEL ? <button disabled={row.schemaVersion !== 1} onClick={() => setPricing(row)}>Token pricing</button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>Preview routing</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>Inspect installed harnesses</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}</div></article>; })}
-              {isProjects
+              <div className={isAgentWorkers && result.data?.resources.length ? "settings-agent-list" : undefined}>
+              {isProjects ? <ProjectList resources={result.data?.resources ?? []} edit={(row) => setEditing({ initial: row, key: newRequestId() })} remove={setDeleting} /> : result.data?.resources.map((row) => { if (isAgentWorkers) return <AgentWorkerRow key={row.id} row={row} edit={() => setEditing({ initial: row, key: newRequestId() })} preview={() => setRouting(row)} remove={() => setDeleting(row)} />; const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</h3>{kind === EntityKind.DEVICE ? <DeviceDetails resource={row} currentDeviceId={currentDeviceId} /> : null}{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small>{kind === EntityKind.REPOSITORY ? <><RepositoryGitHubAccess selected={row} active={visible && area === SettingsArea.Configuration} /><RepositoryGitHubItems selected={row} active={visible && area === SettingsArea.Configuration} /></> : null}<div className="actions">{kind === EntityKind.DEVICE && row.id === currentDeviceId ? <p>This desktop client cannot revoke its own registration.</p> : null}{kind === EntityKind.DEVICE && data.revoked === false && row.id !== currentDeviceId ? <button disabled={row.schemaVersion !== 1} onClick={() => setDevice(row)}>Revoke {resourceName(row)}</button> : null}{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}>Delete {resourceName(row)}</button> : null}{kind === EntityKind.MODEL ? <button disabled={row.schemaVersion !== 1} onClick={() => setPricing(row)}>Token pricing</button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>Preview routing</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>Inspect installed harnesses</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}</div></article>; })}
+              </div>
+              {isAgentWorkers && successfulEmptyFirstPage
+                ? <section className="settings-agent-empty" aria-label="No agent workers yet"><div className="settings-agent-icon-tile" aria-hidden="true"><SettingsIcon category={SettingsCategory.AgentWorkers} /></div><h2>No agent workers yet</h2><p>Define a harness, model, accounts, and instructions, then reuse them in new sessions.</p></section>
+                : isProjects
                 ? successfulEmptyFirstPage ? <section className="project-empty" aria-label="No projects yet"><div className="project-empty-icon"><SettingsIcon category={SettingsCategory.Projects} /></div><h2>No projects yet</h2><p>Group repositories and choose which Agent Workers and AI accounts a project can use.</p><p>Choose New Project to get started.</p></section>
                   : result.data?.resources.length === 0 && !result.error ? <p>No projects on this page.</p> : null
                 : kind === EntityKind.PROVIDER && page === "" && result.data?.resources.length === 0 && !result.error && !result.data.nextPageToken
                 ? <section className="provider-empty" aria-label="No providers yet"><SettingsIcon category={SettingsCategory.Providers} /><h2>No providers yet</h2><p>Add a provider to configure your models and AI accounts.</p></section>
-                : result.data?.resources.length === 0 ? <p>{kind === EntityKind.PROVIDER ? "No providers on this page." : "No saved entries."}</p> : null}
+                : result.data?.resources.length === 0 ? <p>{isAgentWorkers ? "No agent workers on this page." : kind === EntityKind.PROVIDER ? "No providers on this page." : "No saved entries."}</p> : null}
               {!hidePagination ? <nav className="settings-pages" aria-label="Settings pages"><button type="button" disabled={!page || result.isFetching} onClick={() => setPage("")}>First page</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>Next page</button></nav> : null}
             </>}
           </div>
+        </div>
         </div>
         </div>
       </section>

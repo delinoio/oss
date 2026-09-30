@@ -1,10 +1,10 @@
 import { create } from "@bufbuild/protobuf";
-import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
 import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
@@ -12,17 +12,18 @@ import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string }; readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
+function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
   const inspect = vi.fn(async (_request: unknown) => ({ job: resources.find((row) => row.kind === EntityKind.JOB) }));
   const connect = vi.fn(async (_request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT) }));
   const disconnect = vi.fn(async (_request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT) }));
+  const list = vi.fn((request: ListResourcesRequest) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }));
   const transport = createRouterTransport((router) => {
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
-    router.service(ResourceService, { listResources: (request) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }), getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
+    router.service(ResourceService, { listResources: list, getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
     router.service(AccountService, { getAccountStatus: (request) => ({ account: resources.find((row) => row.id === request.id) }), connectAccount: connect, disconnectAccount: disconnect });
     router.service(ProviderService, {
       listProviderPresets: () => ({ presetsJson: encode(options.presets ?? [{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }),
@@ -35,9 +36,210 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const view = (children: React.ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider>;
-  return { resources, save, remove, preview, inspect, connect, disconnect, client, view };
+  return { resources, save, remove, preview, inspect, connect, disconnect, client, transport, list, view };
 }
 function input(value: unknown) { return value as { mutation: { requestId: string; expectedRevision: bigint }; documentJson: Uint8Array }; }
+
+it("renders the Agent-only empty inventory after the first read succeeds", async () => {
+  let resolve!: (result: { resources: Resource[] }) => void;
+  const pending = new Promise<{ resources: Resource[] }>((done) => { resolve = done; });
+  const value = fixture([], { readResources: (kind) => kind === EntityKind.AGENT ? pending : { resources: [] } });
+  render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  expect(screen.getByRole("status").textContent).toBe("Loading agent workers…");
+  expect(screen.queryByRole("region", { name: "No agent workers yet" })).toBeNull();
+  resolve({ resources: [] });
+  const panel = await screen.findByRole("region", { name: "No agent workers yet" });
+  expect(screen.getAllByRole("heading", { level: 1, name: "Agent Workers" })).toHaveLength(1);
+  expect(screen.getByText("Reusable configurations for your agents.")).toBeTruthy();
+  expect(screen.getByText("Saved on the selected server.")).toBeTruthy();
+  expect(within(panel).getByRole("heading", { name: "No agent workers yet" })).toBeTruthy();
+  expect(within(panel).getByText("Define a harness, model, accounts, and instructions, then reuse them in new sessions.")).toBeTruthy();
+  expect(panel.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  expect(within(panel).queryByRole("button")).toBeNull();
+  expect(screen.getAllByRole("button", { name: "New Agent Worker" })).toHaveLength(1);
+  expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled(); expect(value.preview).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  expect(screen.getByRole("heading", { level: 1, name: "Instructions" }).closest(".settings-agent-column")).toBeNull();
+  expect(screen.queryByText("Reusable configurations for your agents.")).toBeNull();
+});
+
+it.each([Code.PermissionDenied, Code.Unavailable])("keeps an initial Agent read failure %s distinct from empty inventory", async (code) => {
+  const value = fixture([], { readResources: (kind) => { if (kind === EntityKind.AGENT) throw new ConnectError("Synthetic read failure", code); return { resources: [] }; } });
+  render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "No agent workers yet" })).toBeNull();
+  expect(screen.queryByText("Refresh failed. Showing the last successfully loaded results.")).toBeNull();
+  expect(screen.queryByText("No agent workers on this page.")).toBeNull();
+});
+
+it.each([true, false])("preserves Agent opaque pages when the first page is empty: %s", async (firstEmpty) => {
+  const agent = resource(EntityKind.AGENT, { name: "Paged Agent" });
+  const value = fixture([agent], { readResources: (kind, token) => kind === EntityKind.AGENT ? { resources: token || firstEmpty ? [] : [agent], nextPageToken: token ? "" : "agent-page-2" } : { resources: [] } });
+  render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  if (firstEmpty) await screen.findByText("No agent workers on this page.");
+  else await screen.findByRole("heading", { name: "Paged Agent" });
+  expect(screen.queryByRole("region", { name: "No agent workers yet" })).toBeNull();
+  const first = screen.getByRole("button", { name: "First page" }) as HTMLButtonElement;
+  expect(first.disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByText("No agent workers on this page.");
+  await waitFor(() => expect(first.disabled).toBe(false));
+  expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(first);
+  if (!firstEmpty) await screen.findByRole("heading", { name: "Paged Agent" });
+  await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.AGENT)).toHaveLength(3));
+  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.AGENT).map(([request]) => request.filter)).toEqual([
+    expect.objectContaining({ kind: EntityKind.AGENT, pageSize: 50, pageToken: "" }),
+    expect.objectContaining({ kind: EntityKind.AGENT, pageSize: 50, pageToken: "agent-page-2" }),
+    expect.objectContaining({ kind: EntityKind.AGENT, pageSize: 50, pageToken: "" }),
+  ]);
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([true, false])("retains cached Agent results through a failed refresh, empty: %s", async (empty) => {
+  const agent = resource(EntityKind.AGENT, { name: "Cached Agent" });
+  let reject!: (error: ConnectError) => void, refresh = false;
+  const pending = new Promise<{ resources: Resource[] }>((_resolve, fail) => { reject = fail; });
+  const value = fixture([agent], { readResources: (kind) => kind === EntityKind.AGENT ? refresh ? pending : { resources: empty ? [] : [agent] } : { resources: [] } });
+  render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  if (empty) await screen.findByRole("region", { name: "No agent workers yet" });
+  else await screen.findByRole("heading", { name: "Cached Agent" });
+  refresh = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.AGENT)).toHaveLength(2));
+  const cachedRow = empty ? undefined : screen.getByRole("heading", { name: "Cached Agent" });
+  expect(screen.queryByText("Loading agent workers…")).toBeNull();
+  reject(new ConnectError("Refresh unavailable", Code.Unavailable));
+  await screen.findByRole("alert");
+  expect(screen.getByRole("status").textContent).toBe("Refresh failed. Showing the last successfully loaded results.");
+  expect(screen.queryByRole("region", { name: "No agent workers yet" })).toBeNull();
+  if (cachedRow) expect(screen.getByRole("heading", { name: "Cached Agent" })).toBe(cachedRow);
+  expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
+});
+
+it("keeps Agent row content inert and actions scoped to exact supported configurations", async () => {
+  const name = `<b>${"LongAgent".repeat(40)}</b>`;
+  const agent = resource(EntityKind.AGENT, { name, harness: "codex", health: "saved" });
+  const future = create(ResourceSchema, { ...resource(EntityKind.AGENT, { name: "Future Agent" }), schemaVersion: 2 });
+  const value = fixture([agent, future]);
+  render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  const heading = await screen.findByRole("heading", { name });
+  const panel = heading.closest(".settings-agent-list")!;
+  expect(panel.querySelectorAll(".settings-agent-row")).toHaveLength(2);
+  const row = within(heading.closest("article")!);
+  expect(row.getByText(agent.id)).toBeTruthy();
+  expect(row.getByText("Harness: codex")).toBeTruthy(); expect(row.getByText("Status: saved")).toBeTruthy();
+  expect(heading.querySelector("b")).toBeNull();
+  expect(row.getAllByRole("button").map((button) => button.textContent)).toEqual(["Edit", "Preview routing", "Delete"]);
+  const futureRow = within(screen.getByRole("heading", { name: "Future Agent" }).closest("article")!);
+  expect(futureRow.getByText(future.id)).toBeTruthy();
+  expect(futureRow.queryByText(/Harness:|Status:/)).toBeNull();
+  for (const button of futureRow.getAllByRole("button")) { expect((button as HTMLButtonElement).disabled).toBe(true); fireEvent.click(button); }
+  expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled(); expect(value.preview).not.toHaveBeenCalled();
+  fireEvent.click(row.getByRole("button", { name: `Preview routing for ${name}` }));
+  await waitFor(() => expect(value.preview).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id }), expect.anything()));
+  fireEvent.click(screen.getByRole("button", { name: "Back to Agent Workers" }));
+  fireEvent.click(screen.getByRole("button", { name: `Edit ${name}` }));
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(name);
+  expect(screen.queryByRole("button", { name: "New Agent Worker" })).toBeNull();
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  fireEvent.click(screen.getByRole("button", { name: `Delete ${name}` }));
+  expect(screen.getByText("Schedules using this configuration will be disabled for future runs. Already accepted sessions are retained.")).toBeTruthy();
+  expect(value.remove).not.toHaveBeenCalled();
+});
+
+it.each([
+  { field: "name", projected: "a".repeat(256), valid: true },
+  { field: "name", projected: "a".repeat(257), valid: false },
+  { field: "alias", projected: "😀".repeat(64), valid: true },
+  { field: "alias", projected: "😀".repeat(65), valid: false },
+  { field: "name", projected: "a".repeat(512 << 10), valid: false },
+  { field: "alias", projected: "a".repeat(512 << 10), valid: false },
+] as const)("bounds an unsupported Agent's $field display text before duplicating labels, valid: $valid", async ({ field, projected, valid }) => {
+  const future = create(ResourceSchema, { ...resource(EntityKind.AGENT, { [field]: projected }), schemaVersion: 2 });
+  const value = fixture([future]);
+  render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  const name = valid ? projected : "Unnamed";
+  const heading = await screen.findByRole("heading", { name });
+  expect(heading.textContent).toBe(name);
+  const row = within(heading.closest("article")!);
+  expect(row.getByText(future.id)).toBeTruthy();
+  for (const label of [`Edit ${name}`, `Preview routing for ${name}`, `Delete ${name}`]) {
+    expect((row.getByRole("button", { name: label }) as HTMLButtonElement).disabled).toBe(true);
+  }
+  expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled(); expect(value.preview).not.toHaveBeenCalled();
+});
+
+it("keeps the original Agent deletion revision and retry request within its opening", async () => {
+  const agent = resource(EntityKind.AGENT, { name: "Retained Agent" }, 7n), value = fixture([agent]);
+  value.remove.mockRejectedValueOnce(new ConnectError("Acknowledgment lost", Code.Unavailable));
+  render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete Retained Agent" }));
+  expect(value.remove).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry the same deletion" }));
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(2));
+  expect(value.remove.mock.calls[1][0]).toEqual(value.remove.mock.calls[0][0]);
+  expect(value.remove.mock.calls[0][0]).toMatchObject({ kind: EntityKind.AGENT, mutation: { id: agent.id, expectedRevision: 7n } });
+});
+
+it("retains an Agent draft at its captured revision when a peer changes the entry", async () => {
+  const model = resource(EntityKind.MODEL, { name: "Fixture Model" });
+  const agent = resource(EntityKind.AGENT, { name: "Original Agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } }, 3n);
+  const value = fixture([agent, model]);
+  render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  await screen.findByRole("button", { name: "Edit Original Agent" });
+  value.resources[0] = create(ResourceSchema, { ...agent, revision: 4n });
+  fireEvent.click(screen.getByRole("button", { name: "Edit Original Agent" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Retained draft" } });
+  expect(await screen.findByText("This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving.")).toBeTruthy();
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained draft");
+  expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("retains exact Agent save bytes and navigation locks through reflow and reconnect", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "Fixture Provider", enabled: true });
+  const model = resource(EntityKind.MODEL, { name: "Fixture Model", provider_id: provider.id });
+  const agent = resource(EntityKind.AGENT, { name: "Original Agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } }, 3n);
+  const value = fixture([agent, model, provider], { readModelSearch: () => ({ models: [model], providers: [provider] }) });
+  value.save.mockRejectedValueOnce(new ConnectError("Acknowledgment unavailable", Code.Unavailable));
+  const view = render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit Original Agent" }));
+  const name = screen.getByRole("textbox", { name: "Name" });
+  fireEvent.change(name, { target: { value: "Retained draft" } });
+  await screen.findByRole("option", { name: "Fixture Model" });
+  fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: model.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await screen.findByRole("button", { name: "Retry the same configuration" });
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Instructions" }) as HTMLButtonElement).disabled).toBe(true);
+  const replacementSave = vi.fn();
+  const replacement: Transport = { ...value.transport, unary: (...args) => { if (args[0].name === "SaveConfiguration") replacementSave(); return value.transport.unary(...args); } };
+  view.rerender(<TransportProvider transport={replacement}><QueryClientProvider client={value.client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent(window, new Event("resize"));
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect((name as HTMLInputElement).value).toBe("Retained draft");
+  expect(value.save).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same configuration" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(replacementSave).toHaveBeenCalledTimes(1);
+  expect(value.save.mock.calls[1][0]).toEqual(value.save.mock.calls[0][0]);
+  expect(input(value.save.mock.calls[0][0]).mutation).toMatchObject({ id: agent.id, expectedRevision: 3n });
+  expect(JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson))).toEqual({ name: "Retained draft", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } });
+});
 
 it("pages native subscription providers independently of active API providers", async () => {
   const subscriptions = Array.from({ length: 51 }, (_, index) => resource(EntityKind.PROVIDER, { name: `Subscription ${String(index + 1).padStart(2, "0")}`, protocol: "native-subscription", authentication: "subscription" }));
