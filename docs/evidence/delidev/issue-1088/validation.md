@@ -41,22 +41,57 @@ consumed icon LFS object was hydrated before validation. Required API-client
   exact creation retry/reattachment, keyboard focus, byte input and resize, using
   one Vitest worker. The added UI fixture carries schema version 1 and compares
   decoded byte values across JavaScript realms.
-- Linux amd64 and arm64 CLI builds and process test binaries: cross-compiled
+- Linux and Windows amd64/arm64 CLI builds and process test binaries: cross-compiled
   successfully with `CGO_ENABLED=0`, `go build -p 1` and `go test -p 1 -c`.
   Foreign test binaries were not executed.
 - Initial broad parallel validation exposed a native cleanup timeout and
   desktop fixture/readiness timeouts under simultaneous native/Go/frontend
-  test load. These initial runs are not passing evidence. Full bounded reruns
-  are not passing evidence. Final broad reruns and the unchanged-main comparison
-  are recorded after completion.
+  test load. These initial runs are not passing evidence. The final broad runs
+  and independent follow-up outcomes are detailed below.
+- Desktop package dry runs: eight checks passed. Desktop launch/asset checks:
+  16 passed. Swift widget fixtures and the production frontend build passed.
+  Repository-generated desktop/API-client `dist` directories were removed.
 
 ## Broad-suite status
 
-The bounded full Go race run has observed existing CLI session-acceptance and
-Grok/OpenCode discovery cleanup/probe timeouts. The single-worker full desktop
-run has observed App and Settings integration timeouts. The final package/test
-counts and unchanged-main comparison are still being collected. These runs must
-not be represented as passing or as conclusively proven baseline failures.
+`VITEST_MAX_WORKERS=1 GOMAXPROCS=2 pnpm test` in `apps/delidev` finished with
+960 passed and three failed tests across 85 files. The failures were the App
+notification/import draft-close timeout and Settings preferences/pricing
+integration waits. All three new terminal UI checks passed. The later package,
+launch, widget and build stages were run independently because the unit failures
+short-circuited the combined command. These results do not make the full desktop
+suite passing; its three failures have not been independently reproduced on main.
+
+The required root race command was launched as
+`GOMAXPROCS=2 go test -race -p 2 -timeout=20m ./cmds/delidev-cli/...`.
+The CLI acceptance fixture and three Grok/OpenCode discovery cases failed.
+All four reproduced in a disposable unchanged-main checkout at
+`74701b8948694e2bf8f8ba6d07e596c2d2f358a7` with race instrumentation,
+`-p 1 -timeout=5m -count=1` and the exact test-name selection. That establishes
+baseline failures for those four cases only. The temporary baseline checkout was
+removed after its checks. The full race run subsequently hit 20-minute timeouts
+in the unchanged Claude and Codex harness packages; remaining packages are still
+running at this record's publication. The full run is failing, not passing.
+
+A separate exact-prefix terminal run with `-race -p 1 -timeout=5m -count=1`
+passed the server, Worker, store and CLI packages, including all-three-capability
+negotiation and duplicate rejection. It failed native descendant cleanup and
+Local/multi-repository Worktree directory verification. An isolated recheck of
+those two cases also failed. Three earlier isolated cleanup runs passed, but that
+success does not resolve the later failures. General Chat, native TTY/resize,
+receipt/replay, byte-stream/gap, Stop/Archive and sibling-cleanup fixtures remain
+retained coverage; their presence must not be substituted for a fully passing
+native suite. Native verification is unresolved and needs follow-up on a clean
+host or additional diagnosis. No timeout, ownership or workspace validation was
+weakened to manufacture passing results.
+
+## PR maintenance
+
+Non-draft PR [#1173](https://github.com/delinoio/oss/pull/1173) targets main and
+retains `Closes #1088`. Its five-minute heartbeat is active as
+`maintain-delidev-pr-1173` in the owning chat. The first maintenance pass found
+mergeable Git history with pending CI and running Codex review; that is not CI
+success or review approval. Evidence-only pushes invalidate earlier head checks.
 
 ## Evidence limits
 
