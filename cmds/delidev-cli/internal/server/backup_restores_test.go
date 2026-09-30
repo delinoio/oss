@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -21,13 +22,105 @@ func TestStatusPreservesForwardingAndRestoreCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 != 2 || pb.SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1 != 3 || pb.SystemCapability_SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1 != 7 {
+	if pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 != 2 || pb.SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1 != 3 || pb.SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1 != 4 || pb.SystemCapability_SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1 != 7 || pb.SystemCapability_SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1 != 9 {
 		t.Fatal("published forwarding/service capability or additive restore number changed")
 	}
-	for _, capability := range []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1, pb.SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1, pb.SystemCapability_SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1} {
+	for _, capability := range []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1, pb.SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1, pb.SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1, pb.SystemCapability_SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1, pb.SystemCapability_SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1} {
 		if !slices.Contains(status.Msg.Capabilities, capability) {
 			t.Fatal("supported capability was not advertised", capability)
 		}
+	}
+}
+
+func TestBackupRestorePreservesOriginalGrokAccountingAndCurrentDeletion(t *testing.T) {
+	for _, deleted := range []bool{false, true} {
+		name := "retained"
+		if deleted {
+			name = "deleted"
+		}
+		t.Run(name, func(t *testing.T) {
+			f, terminal := grokServerTerminalFixture(t, true)
+			f.publish(t, terminal)
+			f.reportCompletion(t, grokCompletion(f, terminal.Sequence))
+			profile := pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1
+			before := grokAccountingSummary(t, f, profile)
+			if len(before.Totals.Accounting) != 1 {
+				t.Fatal("fixture has no original verified accounting")
+			}
+			ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+			s := f.service.Store
+			if err := s.BindIdentity(ctx, f.service.Identity.ServerID); err != nil {
+				t.Fatal(err)
+			}
+			backup, err := s.Backup(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inspection, err := s.InspectBackup(ctx, backup, f.service.Identity.ServerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if deleted {
+				// Exercise the shared tombstone/cascade boundary with a unit
+				// produced by the authenticated original completion path.
+				_, err = s.Mutate(ctx, domain.NewID(), "fixture.delete-accounting-session", nil, func(tx *store.Tx) (any, error) {
+					r, err := tx.Get(domain.SessionKind, f.input.SessionID)
+					if err != nil {
+						return nil, err
+					}
+					return nil, tx.Delete(r.Kind, r.ID, r.Revision)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.service.executionAuthority.close()
+			f.http.Close()
+			revision, err := s.RestoreRevision(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := store.BackupRestoreInput{Backup: inspection.Backup, SHA256: inspection.SHA256, ServerID: f.service.Identity.ServerID, Actor: domain.Principal{Type: domain.OwnerDevice}, ExpectedRevision: revision}
+			if _, _, err := s.RestoreBackup(ctx, domain.NewID(), input); err != nil {
+				t.Fatal(err)
+			}
+			root := s.Root()
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := store.Open(ctx, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			selection := domain.UsageSelection{From: time.Now().UTC().Add(-time.Hour), Until: time.Now().UTC().Add(time.Hour), AccountingProfile: domain.NativeUnitsV1Accounting}
+			if err := reopened.Read(ctx, func(tx *store.Tx) error {
+				got, err := tx.UsageSummary(selection)
+				if err != nil {
+					return err
+				}
+				if deleted {
+					if len(got.Totals.Accounting) != 0 || len(got.Groups) != 0 {
+						t.Fatal("restore revived deleted native accounting")
+					}
+				} else if len(got.Totals.Accounting) != 1 || got.Totals.Accounting[0].Units != 1 || got.Totals.Accounting[0].KnownTotal != "16" {
+					t.Fatal("restore lost or duplicated original accounting")
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if !deleted {
+				r, err := reopened.Get(ctx, domain.SessionKind, f.input.SessionID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				session, err := store.Decode[domain.Session](r)
+				if err != nil || session.Dispatch != domain.DispatchPaused || session.Recovery != domain.NeedsRecovery || !reflect.DeepEqual(session.Execution.GrokTerminal, terminal.GrokTerminal) {
+					t.Fatal("restore changed original native proof or unpaused execution", err)
+				}
+			}
+		})
 	}
 }
 

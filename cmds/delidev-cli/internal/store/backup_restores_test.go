@@ -570,7 +570,7 @@ func TestBackupRestoreMigratesOnlyPrivateCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := image.Exec("DROP TABLE backup_deletions; PRAGMA user_version=23"); err != nil {
+	if _, err := historicalSchema(image, "023-titles"); err != nil {
 		t.Fatal(err)
 	}
 	image.Close()
