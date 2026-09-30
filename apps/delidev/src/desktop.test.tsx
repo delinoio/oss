@@ -58,7 +58,8 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
   const value = savedFixture();
   render(<Desktop />);
   await screen.findByText("Your sessions, in one place");
-  expect(screen.getByText("Remote fixture")).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Remote fixture Server/ })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /Remote fixture Server/ }));
   expect(bridge.createTransport).toHaveBeenCalledWith(expect.objectContaining({ origin: value.profile.endpoint }));
   expect(value.status).toHaveBeenCalled();
   expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action", "notification_permission"].includes(command))).toBe(true);
@@ -120,13 +121,13 @@ it("refreshes a window label without replacing transport or open settings and ig
   const original = bridge.invoke.getMockImplementation()!;
   bridge.invoke.mockImplementation(async (command: string) => command === "connection_context" ? { ...value.profile, revision: 3, name: "Renamed window" } : original(command));
   await act(async () => changed());
-  await screen.findByText("Renamed window");
+  await screen.findByRole("button", { name: /Renamed window Server/ });
   expect(screen.getByRole("dialog", { name: "Settings" })).toBeTruthy();
   expect(bridge.createTransport).toHaveBeenCalledTimes(1);
   expect(bridge.invoke.mock.calls.filter(([command]) => command === "connect_saved")).toHaveLength(1);
   bridge.invoke.mockImplementation(async (command: string) => command === "connection_context" ? { ...value.profile, revision: 2, name: "Older result" } : original(command));
   await act(async () => changed());
-  expect(screen.getByText("Renamed window")).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Renamed window Server/ })).toBeTruthy();
   expect(screen.queryByText("Older result")).toBeNull();
   view.unmount();
   await waitFor(() => expect(unlisten).toHaveBeenCalledOnce());

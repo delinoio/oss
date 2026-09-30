@@ -8,10 +8,12 @@ export function connectionQueryClient() {
       if (pruning || (event.type !== "observerRemoved" && !(event.type === "updated" && ["success", "error"].includes(event.action.type)))) return;
       pruning = true;
       try {
-        // Current screens own a fixed number of bounded pages. Retain at most
+        // Ordinary query payloads own bounded pages. Home separately retains
+        // connection-owned navigation projections, never full Resource documents.
+        // Retain at most
         // eight additional inactive pages. Never remove a just-added query
         // before its observer attaches or its first result is committed.
-        const inactive = client.getQueryCache().getAll().filter((query) => query.getObserversCount() === 0).sort((a, b) => a.state.dataUpdatedAt - b.state.dataUpdatedAt);
+        const inactive = client.getQueryCache().getAll().filter((query) => query.getObserversCount() === 0 && query.state.fetchStatus !== "fetching").sort((a, b) => a.state.dataUpdatedAt - b.state.dataUpdatedAt);
         for (const query of inactive.slice(0, Math.max(0, inactive.length - 8))) client.removeQueries({ queryKey: query.queryKey, exact: true });
       } finally { pruning = false; }
     });
