@@ -86,7 +86,7 @@ it("shows the complete grouped navigation once and keeps its selected category i
   const value = fixture([]);
   render(value.view(<Settings visible close={() => {}} />));
   const navigation = screen.getByRole("navigation", { name: "Settings categories" });
-  const labels = ["AI Subscription Accounts", "API Accounts", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Execution Workers", "Paired devices", "Server preferences", "Integrations", "Diagnostics", "Notifications", "Import / Export", "Backups"];
+  const labels = ["AI Subscription Accounts", "AI API Keys", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Execution Workers", "Paired devices", "Server preferences", "Integrations", "Diagnostics", "Notifications", "Import / Export", "Backups"];
   const values = ["subscription-accounts", "api-accounts", "providers", "models", "agent-workers", "instructions", "projects", "repositories", "execution-workers", "paired-devices", "server-preferences", "integrations", "diagnostics", "notifications", "transfer", "backups"];
   expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI & agents", "Workspace", "System"]);
   expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
@@ -108,11 +108,37 @@ it("keeps API provider accounts optional when none are connected", async () => {
   const provider = resource(EntityKind.PROVIDER, { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true, preset_id: "openai" });
   const value = fixture([], { providerEntries: [create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OPENAI, providerId: provider.id, displayName: "OpenAI", enabled: true, totalAccounts: 0n, connectedAccounts: 0n, provider, accountCountsAvailable: true })] });
   render(value.view(<Settings visible close={() => {}} />));
-  expect(await screen.findByText(/Accounts: 0 connected · 0 total/)).toBeTruthy();
+  expect(await screen.findByText(/Entries: 0 connected · 0 total/)).toBeTruthy();
   expect(screen.queryByText("Account required")).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Add account" }));
-  expect(await screen.findByRole("button", { name: "Continue to account" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
+  expect(await screen.findByRole("button", { name: "Continue to details" })).toBeTruthy();
+  expect((screen.getByRole("radio", { name: "OpenAI" }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Back to AI API Keys" }));
+  fireEvent.click(screen.getByRole("button", { name: "Models" }));
+  expect(await screen.findByText("You can add models manually. Connect an entry in AI API Keys only when you want to discover models automatically.")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "New Model" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("opens AI API Keys from both navigation controls with unchanged category identity", async () => {
+  const value = fixture([], { providerEntries: [] });
+  render(value.view(<Settings visible close={() => {}} />));
+  const categorySelect = screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement;
+  const option = within(categorySelect).getByRole("option", { name: "AI API Keys" }) as HTMLOptionElement;
+  expect(option.value).toBe("api-accounts");
+  fireEvent.change(categorySelect, { target: { value: "api-accounts" } });
+  expect(await screen.findByText("No AI API key entries. Add an entry for an enabled API provider. Keyless local providers do not require a key.")).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1, name: "AI API Keys" })).toBeTruthy();
+  expect(screen.getByText("Manage AI API keys and keyless local connections. Connection and health are separate states.")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "AI API Keys settings" })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Filter entries by provider" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "AI Subscription Accounts" }));
+  expect(await screen.findByText("No subscription accounts are configured.")).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Filter accounts by provider" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
+  expect(categorySelect.value).toBe("api-accounts");
+  fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
+  expect(screen.getByRole("button", { name: "Back to AI API Keys" })).toBeTruthy();
 });
 
 it("still reports a real provider inventory read failure", async () => {
@@ -154,10 +180,10 @@ it("uses server-owned preset key guidance and inert documentation in the API acc
     presets: [{ id: "openai", provider: { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", discovery: true }, key_guidance: "Create a project key for the selected workspace.", documentation: "https://developers.openai.com/api/reference/overview" }],
   });
   render(value.view(<Settings visible close={() => {}} />));
-  fireEvent.click(await screen.findByRole("button", { name: "API Accounts" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Add API account" }));
+  fireEvent.click(await screen.findByRole("button", { name: "AI API Keys" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add AI API key" }));
   fireEvent.click(await screen.findByRole("radio", { name: "OpenAI" }));
-  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue to details" }));
   fireEvent.click(screen.getByText("Where to get an API key"));
   expect(screen.getByText("Create a project key for the selected workspace.")).toBeTruthy();
   expect(screen.getByText("https://developers.openai.com/api/reference/overview")).toBeTruthy();
@@ -191,12 +217,62 @@ it("preserves server-owned account observations during a preference edit", async
   const account = resource(EntityKind.ACCOUNT, observed, 7n);
   const value = fixture([account, provider]);
   render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} initial={account} active saved={() => {}} cancel={() => {}} />));
-  fireEvent.change(screen.getByRole("textbox", { name: "Account alias" }), { target: { value: "Renamed" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save AI account" }));
+  expect(screen.getByRole("heading", { name: "Edit entry" })).toBeTruthy();
+  expect(screen.getByRole("checkbox", { name: "Enable this entry" })).toBeTruthy();
+  expect(screen.getByRole("checkbox", { name: "Exclude from automatic entry selection" })).toBeTruthy();
+  expect(screen.getByRole("checkbox", { name: "Notify when entry quota recovers" })).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox", { name: "Entry name" }), { target: { value: "Renamed" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save entry" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const request = input(value.save.mock.calls[0][0]);
   expect(request.mutation.expectedRevision).toBe(7n);
   expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...observed, alias: "Renamed" });
+});
+
+it("preserves subscription editor, connection and deletion terminology and aliases", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "Subscription provider", protocol: "native-subscription", authentication: "subscription", endpoint: "" });
+  const account = resource(EntityKind.ACCOUNT, { alias: "API account chosen by user", provider_id: provider.id, type: "subscription", health: "disconnected" });
+  const value = fixture([account, provider]);
+  const editor = render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} initial={account} active saved={() => {}} cancel={() => {}} />));
+  expect(screen.getByRole("heading", { name: "Edit AI account" })).toBeTruthy();
+  expect((screen.getByLabelText("Account alias") as HTMLInputElement).value).toBe("API account chosen by user");
+  expect(screen.getByRole("checkbox", { name: "Enable this account" })).toBeTruthy();
+  expect(screen.getByRole("checkbox", { name: "Exclude from automatic account selection" })).toBeTruthy();
+  expect(screen.getByRole("checkbox", { name: "Notify when account quota recovers" })).toBeTruthy();
+  editor.unmount();
+  const connection = render(value.view(<AccountConnection initial={account} active close={() => {}} />));
+  expect(screen.getByRole("heading", { name: "API account chosen by user" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Back to accounts" })).toBeTruthy();
+  expect(screen.getByText(/Subscription login is not implemented yet/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Connect/ })).toBeNull();
+  connection.unmount();
+  render(value.view(<ConfigurationDeletion initial={account} deleted={() => {}} close={() => {}} />));
+  expect(screen.getByRole("heading", { name: "Delete API account chosen by user?" })).toBeTruthy();
+  expect(screen.getByText("Disconnect the account and finish credential cleanup before deleting it.")).toBeTruthy();
+});
+
+it("uses API entry disconnection and deletion copy with the original revision and exact retry", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "Hosted provider", authentication: "bearer", enabled: true });
+  const account = resource(EntityKind.ACCOUNT, { alias: "Work account alias", provider_id: provider.id, type: "api", health: "unverified", connection: { id: newRequestId(), authentication: "bearer" }, validation: { state: "failed", problem: { message: "Server account diagnostic", guidance: "Server account guidance" } } }, 9n);
+  const value = fixture([account, provider]);
+  const connection = render(value.view(<AccountConnection initial={account} active close={() => {}} />));
+  expect(screen.getByRole("button", { name: "Validate connection" })).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("Server account diagnostic Server account guidance");
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+  expect(screen.getByText(/Disconnecting cancels this entry's active executions/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm disconnection" }));
+  await waitFor(() => expect(value.disconnect).toHaveBeenCalledTimes(1));
+  expect(value.disconnect.mock.calls[0][0]).toMatchObject({ mutation: { id: account.id, expectedRevision: 9n } });
+  connection.unmount();
+  value.remove.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
+  render(value.view(<ConfigurationDeletion initial={account} deleted={() => {}} close={() => {}} />));
+  expect(screen.getByRole("heading", { name: "Delete entry Work account alias?" })).toBeTruthy();
+  expect(screen.getByText("Disconnect the entry and finish credential cleanup before deleting it.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry the same deletion" }));
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(2));
+  expect(value.remove.mock.calls[0][0]).toEqual(value.remove.mock.calls[1][0]);
+  expect(value.remove.mock.calls[0][0]).toMatchObject({ kind: EntityKind.ACCOUNT, mutation: { id: account.id, expectedRevision: 9n } });
 });
 
 it("blocks stale settings writes without erasing the staged instructions", async () => {
@@ -219,7 +295,7 @@ it("retains a secret only for its exact uncertain connection and excludes it fro
   const key = screen.getByLabelText("API key");
   await waitFor(() => expect((key as HTMLInputElement).disabled).toBe(false));
   fireEvent.change(key, { target: { value: "fixture-only-secret" } });
-  fireEvent.click(screen.getByRole("button", { name: "Connect account" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connect API key" }));
   const retry = await screen.findByRole("button", { name: "Retry the same connection" });
   expect((key as HTMLInputElement).value).toBe("");
   expect(JSON.stringify(value.client.getQueryCache().getAll().map((query) => query.queryKey))).not.toContain("fixture-only-secret");

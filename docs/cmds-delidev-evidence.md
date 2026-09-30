@@ -3548,3 +3548,44 @@ alpha coverage differs from the enlarged source by at most 0.008 percentage
 points. No production signing, notarization, publication or installed Dock
 appearance is claimed. Generated desktop/client `dist` directories were removed
 after verification.
+
+### 2026-09-30 — AI API Keys presentation (#1135)
+
+Inspected freshly fetched `main` at
+`2e89b18f6c09c91e1ec052880dbfcbba3a4dd120`; its API-specific Settings,
+wizard and provider entry points retained the prior API Accounts wording.
+Issue #1135 updates the live presentation and scoped contracts to AI API Keys
+and entry nouns while retaining the stable `api-accounts` category, all 16
+categories, Account documents, RPC/CLI names and connection authority. Shared
+edit, connection and deletion copy changes only for `type: "api"`; subscription
+and mixed routing/selection terms, user aliases and server diagnostics remain.
+Keyless failures provide local-endpoint retry guidance without requesting a key.
+
+Validation on macOS arm64 used the frozen root workspace installation and
+`pnpm prepare:assets` in `apps/delidev`; the exact source icon hydrated from the
+local LFS cache and passed the existing size/digest/PNG preflight. The complete
+`pnpm test` command in `apps/delidev` passed TypeScript, all 953 frontend tests
+across 74 files, eight package-verifier tests, sixteen desktop-launch/asset tests,
+the isolated native widget fixtures and the ordinary production frontend build.
+Coverage includes both navigation controls and unchanged category IDs/order,
+API/subscription server-side filters and provider cursors, provider-selected
+creation, secret masking/clearing and exact uncertain retries, retained revisions
+and cleanup requests, independent validation/discovery, keyless failures,
+subscription editor/connection/deletion wording, aliases and original server
+observation diagnostics. The existing real-Go integration workflow still creates
+and explicitly validates a keyless connection without credential input.
+
+A temporary credential-free static fixture rendered the actual Settings
+components and production CSS in Chrome on macOS. The fixed development port
+46311 was already occupied, so that process was preserved; a separate static QA
+preview used an ephemeral loopback port. Chrome's native zoom control confirmed
+200%. Desktop and compact layouts were inspected at 900×800 and 640×800 CSS
+pixels respectively (1800×1600 and 1280×1600 viewport overrides before zoom).
+The title, description, actions, filters, empty state, Provider → Details wizard
+and Entry name field wrapped without horizontal overflow. Keyboard traversal
+showed the existing 3px blue focus outline on the provider filter; the entry input
+also retained a visible focus outline. Temporary zoom/viewport overrides were
+restored, and fixture sources, preview and generated repository-owned `dist`
+output were removed after inspection. This is browser/component layout evidence,
+not packaged CEF, Windows/Linux installation, real hosted-provider or inference
+acceptance. Historical evidence above remains unchanged.

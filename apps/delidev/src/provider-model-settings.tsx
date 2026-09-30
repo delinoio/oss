@@ -115,18 +115,18 @@ export function ApiProviderSettings({
   const noEnabledProviders = Boolean(activeInventory.data && providerInventoryReady(activeInventory.data.capabilities) && activeInventory.data.entries.length === 0 && !activeInventory.data.nextPageToken);
   const row = (entry: ProviderInventoryEntry) => {
     const customCopy = presetData(entry, presets);
-    const accountState = entry.accountCountsAvailable ? `${entry.connectedAccounts.toString()} connected · ${entry.totalAccounts.toString()} total` : "Account counts unavailable";
+    const accountState = entry.accountCountsAvailable ? `${entry.connectedAccounts.toString()} connected · ${entry.totalAccounts.toString()} total` : "Entry counts unavailable";
     return <article className="result provider-row" key={providerIdentity(entry)}>
       <div className="provider-row-heading"><div><h4>{entry.displayName}</h4><p>{entry.presetId === ProviderPresetId.UNSPECIFIED ? "Custom API provider" : local.includes(entry) ? "Local API server" : "Preset"}</p></div><ProviderToggle entry={entry} presets={presets} changed={changed} refresh={result.refetch} /></div>
-      <p>Accounts: {accountState}. Connection state is separate from provider validation and model compatibility.</p>
-      {!entry.enabled && entry.totalAccounts > 0n ? <p>Turning this provider off preserves its accounts, credentials, models and history.</p> : null}
+      <p>Entries: {accountState}. Connection state is separate from provider validation and model compatibility.</p>
+      {!entry.enabled && entry.totalAccounts > 0n ? <p>Turning this provider off preserves its entries, credentials, models and history.</p> : null}
       <div className="actions">
         <button type="button" disabled={!entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
           if (!entry.providerId) return;
           if (entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.enabled) addAccount(entry.providerId, entry);
           else manageAccounts(entry.providerId, entry);
-        }}>{!entry.accountCountsAvailable || entry.totalAccounts > 0n ? "Manage accounts" : "Add account"}</button>
-        {entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled && entry.providerId ? <span>Turn on this provider to add an account.</span> : null}
+        }}>{!entry.accountCountsAvailable || entry.totalAccounts > 0n ? "Manage AI API Keys" : "Add AI API key"}</button>
+        {entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled && entry.providerId ? <span>Turn on this provider to add an entry.</span> : null}
         {entry.presetId === ProviderPresetId.UNSPECIFIED && entry.provider ? <><button type="button" onClick={() => editCustom(entry.provider!)}>Edit custom provider</button><button type="button" onClick={() => deleteCustom(entry.provider!)}>Delete custom provider</button></> : null}
         {entry.presetId !== ProviderPresetId.UNSPECIFIED ? <button type="button" disabled={!customCopy} onClick={() => { if (!customCopy) return; const copy: Document = { ...customCopy, enabled: true }; delete copy.preset_id; createCustom(copy); }}>Create custom copy</button> : null}
       </div>
@@ -137,7 +137,7 @@ export function ApiProviderSettings({
     <div className="search-form"><label>Search API providers<input value={query} maxLength={256} onChange={(event) => setQuery(event.target.value)} /></label><button className="primary" type="button" disabled={!ready} onClick={() => createCustom()}>Custom provider</button></div>
     {result.isFetching && result.data ? <p role="status">Refreshing provider state. Displayed switches show the last confirmed server state.</p> : null}
     <Problem error={result.error || activeInventory.error || presetsQuery.error} />
-    {!result.error && result.data && !ready ? <p role="alert">This server does not report the provider activation, active model filtering and account provider filtering capabilities required here. Update the server before changing provider or model settings.</p> : null}
+    {!result.error && result.data && !ready ? <p role="alert">This server does not report the provider activation, active model filtering and entry provider filtering capabilities required here. Update the server before changing provider or model settings.</p> : null}
     {result.isLoading ? <p role="status">Loading provider inventory…</p> : null}
     {ready && !query && noEnabledProviders ? <p className="notice">No API providers are enabled. Turn on a preset or create a custom provider to start new work.</p> : null}
     {ready && presetsMain.length ? <section><h3>Presets</h3>{presetsMain.map(row)}</section> : null}
@@ -178,7 +178,7 @@ export function ActiveModelSettings({ active, createModel, editModel, priceModel
     {!inventory.error && inventory.data && !ready ? <p role="alert">This server does not report the required provider and active-model filtering capabilities. Update the server before using model settings.</p> : null}
     {models.isFetching && models.data ? <p role="status">Refreshing active provider models.</p> : null}
     {ready && enabledProviders.length === 0 ? <p className="notice">No API providers are enabled. Turn on a provider in API Providers.</p> : null}
-    {ready && enabledProviders.length > 0 && providerInventoryComplete && accountCountsKnown && connectedAccounts === 0n && !models.data?.models.length ? <p className="notice">You can add models manually. Connect an API account only when you want to discover models automatically.</p> : null}
+    {ready && enabledProviders.length > 0 && providerInventoryComplete && accountCountsKnown && connectedAccounts === 0n && !models.data?.models.length ? <p className="notice">You can add models manually. Connect an entry in AI API Keys only when you want to discover models automatically.</p> : null}
     {ready && [...grouped.entries()].map(([providerID, entries]) => <section key={providerID} aria-label={`Models from ${resourceName(providers.get(providerID))}`}>
       <h3>{resourceName(providers.get(providerID))}</h3>
       {entries.map((model) => {
