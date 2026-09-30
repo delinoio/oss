@@ -92,6 +92,9 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	if err != nil || len(raw) > maxHTTPBody {
 		return nil, response.StatusCode, sessionProblem()
 	}
+	if err := s.accountReconciliationRead(raw); err != nil {
+		return nil, response.StatusCode, err
+	}
 	if response.StatusCode == http.StatusNoContent {
 		if len(raw) != 0 || len(response.Header.Values("Content-Type")) != 0 {
 			return nil, response.StatusCode, sessionProblem()
@@ -124,4 +127,16 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 		}
 	}
 	return raw, response.StatusCode, nil
+}
+
+// Called under the session gate. Count actual bodies across all repeated reads,
+// including configuration, predecessor pages and canonicalized-away whitespace.
+func (s *sessionAPI) accountReconciliationRead(raw []byte) error {
+	if s.reconciliation == ReconciliationReading {
+		if len(raw) > maxObservedBytes-s.reconciliationReadBytes {
+			return eventBound()
+		}
+		s.reconciliationReadBytes += len(raw)
+	}
+	return nil
 }

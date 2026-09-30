@@ -200,17 +200,30 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 		if err := inspectManagedConfig(managed); err != nil {
 			return err
 		}
+		readOriginal := func(path, credential string, expected int) ([]byte, error) {
+			raw, err := readHTTP(ctx, client, origin, path, credential, expected)
+			if err == nil {
+				err = api.accountReconciliationRead(raw)
+			}
+			return raw, err
+		}
 		for _, credential := range []string{"", "incorrect-" + password} {
-			if _, err := readHTTP(ctx, client, origin, "/global/health", credential, http.StatusUnauthorized); err != nil {
+			if _, err := readOriginal("/global/health", credential, http.StatusUnauthorized); err != nil {
 				return err
 			}
 		}
-		health, err := readHTTP(ctx, client, origin, "/global/health", password, http.StatusOK)
-		if err != nil || validateHealth(health) != nil {
+		health, err := readOriginal("/global/health", password, http.StatusOK)
+		if err != nil {
+			return err
+		}
+		if validateHealth(health) != nil {
 			return incompatible()
 		}
-		global, err := readHTTP(ctx, client, origin, "/global/config", password, http.StatusOK)
-		if err != nil || validateEmptyConfig(global) != nil {
+		global, err := readOriginal("/global/config", password, http.StatusOK)
+		if err != nil {
+			return err
+		}
+		if validateEmptyConfig(global) != nil {
 			return incompatible()
 		}
 		return nil

@@ -142,14 +142,15 @@ type sessionAPI struct {
 	permissionRestore   *interactionHTTPAttempt
 	todoRead            bool
 
-	reconciliation       ReconciliationState
-	reconciliationMu     sync.Mutex
-	reconciliationCancel context.CancelFunc
-	reconciliationDenied bool
-	reconciliationRead   bool
-	verifyStreamOwner    func(context.Context) error
-	recovered            []inputObservation
-	recoveredObserver    *inputObserver
+	reconciliation          ReconciliationState
+	reconciliationMu        sync.Mutex
+	reconciliationCancel    context.CancelFunc
+	reconciliationDenied    bool
+	reconciliationRead      bool
+	reconciliationReadBytes int
+	verifyStreamOwner       func(context.Context) error
+	recovered               []inputObservation
+	recoveredObserver       *inputObserver
 }
 
 type sessionCreation struct {

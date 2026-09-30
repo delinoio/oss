@@ -125,7 +125,7 @@ func (f *reconciliationFixture) RoundTrip(r *http.Request) (*http.Response, erro
 			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(strings.Repeat("x", maxHTTPBody+1)))}, nil
 		}
 		response, err := f.historyFixture.RoundTrip(r)
-		if err == nil && f.change == "changing" && r.URL.Path == "/session/"+fixtureSessionID+"/message" && r.URL.Query().Get("before") == "" {
+		if err == nil && (f.change == "changing" || f.change == "padded-changing") && r.URL.Path == "/session/"+fixtureSessionID+"/message" && r.URL.Query().Get("before") == "" {
 			raw, _ := io.ReadAll(response.Body)
 			_ = response.Body.Close()
 			var page []map[string]json.RawMessage
@@ -142,6 +142,11 @@ func (f *reconciliationFixture) RoundTrip(r *http.Request) (*http.Response, erro
 			page[0]["parts"], _ = json.Marshal(parts)
 			raw, _ = json.Marshal(page)
 			response.Body = io.NopCloser(strings.NewReader(string(raw)))
+		}
+		if err == nil && f.change == "padded-changing" {
+			raw, _ := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			response.Body = io.NopCloser(strings.NewReader(string(raw) + strings.Repeat(" ", maxHTTPBody-len(raw))))
 		}
 		return response, err
 	}
@@ -421,6 +426,20 @@ func TestEventReconciliationChangingHistoryExhaustsOriginalDeadline(t *testing.T
 	}
 	if f.api.session.observer.parts["prt_000000000066ABCDEFGHIJKLMN"].text != "prefix" {
 		t.Fatal("unsettled snapshots changed the published prefix")
+	}
+}
+
+func TestEventReconciliationCountsRepeatedWireBytesBeforeCanonicalization(t *testing.T) {
+	f := newReconciliationFixture(t)
+	f.change = "padded-changing"
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	value, err := f.api.Next(ctx)
+	if err == nil || domain.SafeError(err).Code != domain.ResourceExhausted || value.Kind != "" || f.reads.Load() < 2 || len(f.api.session.recovered) != 0 {
+		t.Fatal("canonicalization hid an exhausted aggregate native-read budget", err)
+	}
+	if f.api.session.observer.parts["prt_000000000066ABCDEFGHIJKLMN"].text != "prefix" || f.opened.Load() != 1 {
+		t.Fatal("exhausted reads changed published facts or granted another cycle")
 	}
 }
 

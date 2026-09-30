@@ -131,6 +131,7 @@ func (s *sessionAPI) reconcileEvents(ctx context.Context, old *eventStream, o *i
 		return o.interruption(ctx)
 	}
 	s.reconciliation = ReconciliationReading
+	s.reconciliationReadBytes = 0
 	bounded, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	stopLifetime := context.AfterFunc(old.parent, cancel)
@@ -171,15 +172,11 @@ func (s *sessionAPI) reconcileEvents(ctx context.Context, old *eventStream, o *i
 	s.events = stream
 	var previous []byte
 	var events []NativeEvent
-	eventBytes, readBytes := 0, 0
+	eventBytes := 0
 	for bounded.Err() == nil {
 		snapshot, raw, err := s.readReconciliationSnapshot(bounded)
 		if err != nil {
 			return err
-		}
-		readBytes += len(raw)
-		if readBytes > maxObservedBytes {
-			return eventBound()
 		}
 		stream.mu.Lock()
 		for len(stream.queue) > 0 {
@@ -311,7 +308,10 @@ func (s *sessionAPI) readReconciliationSnapshot(ctx context.Context) (reconcilia
 		return result, nil, err
 	}
 	receipt, err := s.readStoredInput(ctx)
-	if err != nil || !receipt.Recorded {
+	if err != nil {
+		return result, nil, err
+	}
+	if !receipt.Recorded {
 		return result, nil, sessionUncertain()
 	}
 	total, parts := 0, 0
