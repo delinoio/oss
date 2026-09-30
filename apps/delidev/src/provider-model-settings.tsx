@@ -176,10 +176,12 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
   const accountCountsKnown = enabledProviders.every((entry) => entry.accountCountsAvailable);
   const providerInventoryComplete = Boolean(inventory.data && !inventory.data.nextPageToken);
   const noEnabledProviders = enabledProviders.length === 0 && providerInventoryComplete;
-  const successfulEmpty = ready && models.data?.models.length === 0 && !inventory.error && !models.error;
-  const emptyFirstPage = successfulEmpty && !query && !page && !noEnabledProviders;
+  // Retained data describes this scope's last successful result; a refresh
+  // failure does not replace it. Initial failures have no model data.
+  const hasEmptyResults = ready && models.data?.models.length === 0;
+  const emptyFirstPage = hasEmptyResults && !query && !page && !noEnabledProviders;
   const knownZeroAccounts = enabledProviders.length > 0 && providerInventoryComplete && accountCountsKnown && connectedAccounts === 0n;
-  const hidePagination = successfulEmpty && !page && !models.data?.nextPageToken;
+  const hidePagination = hasEmptyResults && !page && !models.data?.nextPageToken;
   const providers = new Map((models.data?.providers ?? []).map((provider) => [provider.id, provider]));
   const grouped = new Map<string, Resource[]>();
   for (const model of models.data?.models ?? []) {
@@ -209,7 +211,7 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
       <span className="models-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7h10v10H7zM9 3v4m6-4v4M9 17v4m6-4v4M3 9h4m-4 6h4m10-6h4m-4 6h4" /></svg></span>
       <h2>No models yet</h2><p>Add models manually using New Model.</p>
       {knownZeroAccounts ? <div className="models-account-guidance"><p>You can add models without an API account.</p><p>Connect an account only for automatic model discovery.</p></div> : null}
-    </section> : successfulEmpty ? <p className="models-empty-message">{noEnabledProviders ? "No API providers are enabled. Turn on a provider in API Providers." : page ? "No models on this page." : "No models match this search."}</p> : null}
+    </section> : hasEmptyResults ? <p className="models-empty-message">{noEnabledProviders ? "No API providers are enabled. Turn on a provider in API Providers." : page ? "No models on this page." : "No models match this search."}</p> : null}
     {ready && [...grouped.entries()].map(([providerID, entries]) => <section className="models-provider-group" key={providerID} aria-label={`Models from ${resourceName(providers.get(providerID))}`}>
       <h3>{resourceName(providers.get(providerID))}</h3>
       <div className="models-rows">{entries.map((model) => {

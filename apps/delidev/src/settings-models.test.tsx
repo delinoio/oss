@@ -351,3 +351,27 @@ it("labels native-name fallback and keeps model rows when only inventory refresh
   expect(value.search.mock.calls.length).toBe(count);
   expect(value.save).not.toHaveBeenCalled(); expect(value.price).not.toHaveBeenCalled();
 });
+
+it.each(["unfiltered", "search", "later", "providers"].flatMap((scope) => ["inventory", "models"].map((read) => ({ scope, read }))))("retains cached $scope emptiness when the $read refresh fails", async ({ scope, read }) => {
+  const value = fixture();
+  const entries = scope === "providers" ? [] : [value.entry];
+  value.inventory.mockResolvedValue(create(ListProviderInventoryResponseSchema, { entries, capabilities }));
+  value.search.mockImplementation(async (request) => create(SearchModelsResponseSchema, { models: [], providers: [value.provider], nextPageToken: scope === "later" && !request.pageToken ? "model-page-2" : "" }));
+  render(value.view()); openModels();
+  const message = scope === "providers" ? "No API providers are enabled. Turn on a provider in API Providers." : scope === "search" ? "No models match this search." : scope === "later" ? "No models on this page." : "No models yet";
+  if (scope !== "providers") await screen.findByRole("heading", { name: "No models yet" });
+  if (scope === "search") fireEvent.change(searchInput(), { target: { value: "missing-fixture" } });
+  if (scope === "later") fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+  await screen.findByText(message);
+  if (read === "inventory") value.inventory.mockRejectedValue(new ConnectError("Cached inventory refresh failed", Code.Unavailable));
+  else value.search.mockRejectedValue(new ConnectError("Cached model refresh failed", Code.Unavailable));
+  const otherReads = read === "inventory" ? value.search.mock.calls.length : value.inventory.mock.calls.length;
+  await act(async () => { await value.client.refetchQueries({ predicate: (query) => JSON.stringify(query.queryKey).includes(read === "inventory" ? '\"enabledOnly\":true' : '\"enabledProvidersOnly\":true') }); });
+  await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(screen.getByLabelText(read === "inventory" ? "Provider inventory read failure" : "Model search read failure")).toBeTruthy();
+  if (scope === "later") expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false);
+  else expect(screen.queryByRole("navigation", { name: "Model pages" })).toBeNull();
+  expect(read === "inventory" ? value.search.mock.calls.length : value.inventory.mock.calls.length).toBe(otherReads);
+  expect(value.save).not.toHaveBeenCalled(); expect(value.price).not.toHaveBeenCalled();
+});
