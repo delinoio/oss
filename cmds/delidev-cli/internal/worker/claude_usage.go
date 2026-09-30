@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
@@ -28,6 +29,26 @@ func (c *ClaudeContentPublisher) PublishUsageObservation(ctx context.Context, o 
 		native := o.Content[0]
 		if native.Usage == nil {
 			return false, nil
+		}
+		if native.ParentToolID != "" {
+			// The runner also visits this root adapter after child publication.
+			// Ignore only the exact acknowledged child usage; a child tag alone
+			// cannot bypass original ownership or turn root content into a child.
+			if !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || !c.seen[o.NativeID] {
+				return true, b.block()
+			}
+			for _, child := range c.children {
+				if child.ParentToolID != native.ParentToolID || child.Source != domain.ClaudeContentSource || child.SourceID != o.NativeID {
+					continue
+				}
+				model, acknowledged := c.childUsageModels[child.NativeID]
+				usage, err := claude.SubagentProviderUsage(native.Usage)
+				if !acknowledged || model.sourceID != o.NativeID || model.model != native.Model || err != nil || !reflect.DeepEqual(usage, child.Usage) || native.Model != "" && (child.ObservedModel == nil || native.Model != *child.ObservedModel) {
+					return true, b.block()
+				}
+				return false, nil
+			}
+			return true, b.block()
 		}
 		owner, ok := c.messages[native.MessageID]
 		if !ok || !c.seen[o.NativeID] || owner.state != domain.MessageStreaming || native.ParentToolID != "" || native.Model != b.publisher.input.Configuration.NativeModel {

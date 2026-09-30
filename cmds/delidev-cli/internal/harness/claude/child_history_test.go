@@ -11,7 +11,7 @@ import (
 func childHistoryFixture(t *testing.T) (domain.ID, string, []map[string]any, map[string]any, ChildHistoryBinding, []HistoryMessageProof) {
 	t.Helper()
 	session, workspace, main, _ := historyFixture(t)
-	binding := ChildHistoryBinding{TaskID: "native-child-task", ToolID: "toolu_original_agent", AgentType: "general-purpose"}
+	binding := ChildHistoryBinding{TaskID: "native-child-task", ToolID: "toolu_original_agent", AgentType: "general-purpose", Description: "Private original child description", SpawnDepth: 1}
 	records := main[1:4]
 	proofs := []HistoryMessageProof{}
 	for _, record := range records {
@@ -43,6 +43,7 @@ func TestChildHistoryBindsOriginalTaskAndKeepsUnforwardedContentExplicit(t *test
 	}
 	first, _ := VerifyChildTranscript(context.Background(), raw, sidecar, session, workspace, binding, proofs)
 	metadata["description"] = "Updated private native description"
+	binding.Description = metadata["description"].(string)
 	sidecar, _ = json.Marshal(metadata)
 	second, err := VerifyChildTranscript(context.Background(), raw, sidecar, session, workspace, binding, proofs)
 	if err != nil || first.MetadataSHA256 == second.MetadataSHA256 || first.Transcript != second.Transcript {
@@ -54,7 +55,7 @@ func TestChildHistoryBindsOriginalTaskAndKeepsUnforwardedContentExplicit(t *test
 }
 
 func TestChildHistoryRejectsChangedOwnershipAndDetachedProofs(t *testing.T) {
-	for _, name := range []string{"foreign-agent", "missing-agent", "root-record", "foreign-tool", "foreign-type", "missing-description", "zero-depth", "deep-root", "parent-null", "foreign-parent", "missing-parent", "case-alias", "unknown-metadata", "foreign-proof-tool", "main-proof", "main-marker", "changed-payload", "detached-proof", "missing-file", "truncated", "duplicate-metadata", "metadata-limit"} {
+	for _, name := range []string{"foreign-agent", "missing-agent", "root-record", "foreign-tool", "foreign-type", "missing-description", "changed-description", "changed-nested-depth", "zero-depth", "deep-root", "parent-null", "foreign-parent", "missing-parent", "case-alias", "unknown-metadata", "foreign-proof-tool", "main-proof", "main-marker", "changed-payload", "detached-proof", "missing-file", "truncated", "duplicate-metadata", "metadata-limit"} {
 		t.Run(name, func(t *testing.T) {
 			session, workspace, records, metadata, binding, proofs := childHistoryFixture(t)
 			switch name {
@@ -68,6 +69,11 @@ func TestChildHistoryRejectsChangedOwnershipAndDetachedProofs(t *testing.T) {
 				metadata["toolUseId"] = "other"
 			case "foreign-type":
 				metadata["agentType"] = "other"
+			case "changed-description":
+				metadata["description"] = "Changed native description"
+			case "changed-nested-depth":
+				binding.ParentAgentID, binding.SpawnDepth = "original", 2
+				metadata["parentAgentId"], metadata["spawnDepth"] = "original", 3
 			case "missing-description":
 				delete(metadata, "description")
 			case "zero-depth":
@@ -140,6 +146,31 @@ func TestChildHistoryCancellationReturnsNoEvidence(t *testing.T) {
 	observation, err := VerifyChildTranscript(ctx, historyJSONL(t, records), sidecar, session, workspace, binding, proofs)
 	if err == nil || observation != (ChildTranscriptObservation{}) {
 		t.Fatal("canceled child verification returned evidence")
+	}
+}
+
+func TestChildHistoryProjectsOnlySelectedAncestry(t *testing.T) {
+	session, workspace, records, metadata, binding, proofs := childHistoryFixture(t)
+	sibling := map[string]any{}
+	for key, value := range records[2] {
+		sibling[key] = value
+	}
+	sibling["uuid"], sibling["parentUuid"] = string(domain.NewID()), records[0]["uuid"]
+	sibling["message"] = map[string]any{"role": "assistant", "id": "sibling-response", "model": "sibling-model", "content": []any{map[string]any{"type": "text", "text": "Abandoned output"}}, "usage": map[string]any{"input_tokens": 9, "output_tokens": 8}}
+	leaf := map[string]any{}
+	for key, value := range records[0] {
+		leaf[key] = value
+	}
+	leaf["uuid"], leaf["parentUuid"] = string(domain.NewID()), records[2]["uuid"]
+	leaf["message"] = map[string]any{"role": "user", "content": "Selected context"}
+	records = append(records, sibling, leaf)
+	sidecar, _ := json.Marshal(metadata)
+	observed, err := VerifyChildTranscript(context.Background(), historyJSONL(t, records), sidecar, session, workspace, binding, proofs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.Transcript.LeafID != leaf["uuid"] || observed.Output == nil || observed.Output.NativeMessageID == "sibling-response" || observed.ObservedModel != nil && *observed.ObservedModel == "sibling-model" || observed.Usage != nil && observed.Usage.Output != nil && *observed.Usage.Output == "8" {
+		t.Fatal("abandoned child branch supplied selected output/model/usage")
 	}
 }
 

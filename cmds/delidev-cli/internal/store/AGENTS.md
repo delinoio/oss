@@ -119,3 +119,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Exact acknowledged Worker deletion-report retries with a matching actor/work-bound SQL receipt are read-only. Preserve original metadata and reject conflicting receipts; reconstruct a missing SQL receipt through the original synchronized-intent recovery path.
 
 - Permanent session erasure removes PR activity through each original remediation attempt source, including reservation records without row-level session binding. Redact the validated shared attempt and its index without emitting a new business activity transition; preserve unrelated PR history, original reservation provenance and lifetime counters.
+
+- Native subagent observations follow `docs/cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
+
+- Validate subagent native ownership with one bounded complete-batch query before writes. Do not rescan large source-coverage JSON separately for every child; preserve cross-execution conflict detection without a schema migration.

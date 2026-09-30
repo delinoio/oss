@@ -5,6 +5,7 @@ import "slices"
 type ExecutionEventKind string
 
 const (
+	ExecutionSubagentObserved           ExecutionEventKind = "subagent-observed"
 	ExecutionGrokTextObserved           ExecutionEventKind = "grok-text-observed"
 	ExecutionGrokUsageObserved          ExecutionEventKind = "grok-usage-observed"
 	ExecutionClaudeProgressObserved     ExecutionEventKind = "claude-progress-observed"
@@ -175,6 +176,7 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
+	Subagents          []SubagentObservation              `json:"subagents,omitempty"`
 	GrokUserMessageID  ID                                 `json:"grok_user_message_id,omitempty"`
 	GrokStop           *GrokStopObservation               `json:"grok_stop,omitempty"`
 	GrokTerminal       *GrokTextTerminal                  `json:"grok_terminal,omitempty"`
@@ -219,6 +221,9 @@ type ExecutionEvent struct {
 }
 
 func (e ExecutionEvent) Validate() error {
+	if e.Kind != ExecutionSubagentObserved && e.Subagents != nil {
+		return invalidSubagent()
+	}
 	if e.Version != 1 || e.Sequence == 0 || e.Sequence > MaxExecutionEvents {
 		return Fail(InvalidArgument, "Invalid execution event version or sequence.", "Publish the next bounded normalized event.")
 	}
@@ -237,6 +242,15 @@ func (e ExecutionEvent) Validate() error {
 		return invalidGrokContent()
 	}
 	switch e.Kind {
+	case ExecutionSubagentObserved:
+		if len(e.Subagents) == 0 || len(e.Subagents) > 128 {
+			return invalidSubagent()
+		}
+		for _, child := range e.Subagents {
+			if child.Validate() != nil {
+				return invalidSubagent()
+			}
+		}
 	case ExecutionGrokTextObserved:
 		if e.GrokText == nil || e.GrokText.Validate(e.NativeThreadID) != nil {
 			return invalidGrokContent()
@@ -441,6 +455,7 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
+	Subagents              SubagentState               `json:"subagents,omitempty"`
 	GrokUserMessageID      ID                          `json:"grok_user_message_id,omitempty"`
 	GrokStop               *GrokStopObservation        `json:"grok_stop,omitempty"`
 	GrokTerminal           *GrokTextTerminal           `json:"grok_terminal,omitempty"`

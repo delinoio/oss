@@ -15,7 +15,7 @@ func dispatchSession(ctx context.Context, c client, o options, rest []string, st
 		return emit(value, err), true
 	}
 	if len(rest) > 0 && rest[0] != "get" && rest[0] != "inspect" && rest[0] != "snapshot" {
-		if rest[0] != "list" {
+		if rest[0] != "list" && rest[0] != "subagents" {
 			ensureRequest(&o)
 		}
 		value, err := sessionCommand(ctx, c, o, rest, streams)

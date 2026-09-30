@@ -12,6 +12,8 @@ The native crate is a root workspace member. Its optional `desktop-host` feature
 One server owner can connect multiple paired desktop clients. The initial prerequisite checklist links to saved settings without installing a harness or overriding existing setup. Automated readiness checks remain pending.
 
 ## Interfaces and Contracts
+The session Subagents disclosure follows the [child observation contract](cmds-delidev-subagents-contract.md). Require the typed server capability; use generated Connect Query resource reads with bounded pages and revision-driven refresh. Display exact child/parent/root and source identities, independent status, requested versus observed model, partial recent output and unavailable telemetry. Preserve exact nullable decimal counters and original native usage strings without additive billing. Only refresh/page actions are offered; parent completion does not finish descendants or grant native controls.
+
 - Use `@delinoio/delidev-api-client` and generated service-specific `@connectrpc/connect-query` descriptors for direct authenticated Connect RPC. No Rust agent traffic proxy or duplicate eligibility/routing engine is permitted.
 - Preserve independent outcome, Archive, dispatch and recovery states. Actions use original resource revisions and stable request IDs; uncertain retries reuse the original immutable request, never another mutation identity. Restore cannot imply Resume.
 - Keep connection-owned drafts mounted across supporting-surface navigation. Settings-local drafts live only within their current opening, as specified below. Settings is an accessible modal with Escape, contained focus and focus restoration. Workspace icons have explicit accessible names in addition to appearance.

@@ -9,7 +9,7 @@ import (
 )
 
 func TestClaudeFailedCheckpointStillRequiresOriginalNativeEOFProof(t *testing.T) {
-	for _, scenario := range []string{"eligible", "aborted-stream", "aborted-tools", "background-requested", "unfinished-tool", "unfinished-callback", "unsettled-callback"} {
+	for _, scenario := range []string{"eligible", "aborted-stream", "aborted-tools", "background-requested", "unfinished-tool", "unfinished-callback", "unsettled-callback", "live-child", "closed-child"} {
 		t.Run(scenario, func(t *testing.T) {
 			c, _, command, idle := claudeTerminalFixture(t)
 			// Retain the original acknowledged failed result, command and idle.
@@ -44,6 +44,15 @@ func TestClaudeFailedCheckpointStillRequiresOriginalNativeEOFProof(t *testing.T)
 				c.interactions[domain.NewID()] = claudePublishedInteraction{}
 			case "unsettled-callback":
 				c.interactions[domain.NewID()] = claudePublishedInteraction{closed: true}
+			case "live-child", "closed-child":
+				// The settled-failure profile cannot promote an observed child
+				// tree, even after every child has reached a terminal status.
+				status := domain.SubagentRunning
+				if scenario == "closed-child" {
+					status = domain.SubagentCompleted
+				}
+				nativeID := string(domain.NewID())
+				c.children = map[string]domain.SubagentObservation{nativeID: {ID: domain.NewID(), NativeID: nativeID, ParentID: string(c.binding.journal.SessionID), Status: status}}
 			}
 			got, err := c.RetainCompletion(ctx, &claude.APISession{}, completion)
 			if scenario == "eligible" {

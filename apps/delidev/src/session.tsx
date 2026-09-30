@@ -1,3 +1,4 @@
+import { Subagents } from "./subagents";
 import { NativeGrokText, NativeGrokUser } from "./native-grok";
 import { SessionFiles } from "./session-files";
 import { SessionDiff } from "./session-diff";
@@ -232,7 +233,7 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
     {object(data.problem).message ? <p className="notice">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p> : null}
     {session ? <StartupRejection session={session} /> : null}
     <Problem error={control.error} />{control.uncertain ? <button onClick={control.retry} disabled={control.busy}>Retry the same control request</button> : null}
-    {session ? <><SessionTools resource={session} changed={setAcknowledged} /><SessionPullRequests key={id} session={session} /><ExecutionConfiguration resource={session} /><NativeUsage session={session} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></> : null}
+    {session ? <><SessionTools resource={session} changed={setAcknowledged} /><SessionPullRequests key={id} session={session} /><ExecutionConfiguration resource={session} /><NativeUsage session={session} /><Subagents key={id} sessionId={id} revision={session.revision.toString()} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></> : null}
     <details className="requests" open={requests.some((r) => readDocument(r).closure === "open")}><summary>Agent requests · {requests.length} on this page</summary><Problem error={interactions.error} />
       {requests.map((row) => <Interaction key={row.id} resource={row} refresh={() => void interactions.refetch()} />)}
       <nav aria-label="Request pages"><button disabled={!interactionPage || interactions.isFetching} onClick={() => setInteractionPage("")}>First page</button><button disabled={!interactions.data?.nextPageToken || interactions.isFetching} onClick={() => setInteractionPage(interactions.data!.nextPageToken)}>Next page</button></nav>

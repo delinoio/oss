@@ -47,3 +47,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Permanent session deletion uses owner/client Connect mutations and original-job reads plus an independent owning-Worker cleanup lane under `docs/cmds-delidev-storage-contract.md`. Join maintenance at shutdown. Forward cleanup reports remain admissible during deletion, while session controls, new copies and native socket authority are closed; final purge requires independently confirmed original peers.
 
 - Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.
+
+- Native subagent observations follow `docs/cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
+
+- Preserve each child’s original explicit requested model and reject Claude-only task/tool metadata on Codex batches. Check historical native/product/execution ownership once for the complete batch before publication; keep atomic rejection and source-specific nullable usage.

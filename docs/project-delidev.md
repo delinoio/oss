@@ -30,6 +30,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Portable configuration](cmds-delidev-configuration-transfer-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
+- [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
