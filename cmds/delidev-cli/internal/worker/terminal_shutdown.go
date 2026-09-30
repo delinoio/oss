@@ -42,7 +42,25 @@ func (m *terminalManager) saveShutdown(id domain.ID, result terminal.Result) err
 func (m *terminalManager) shutdownLoss(a terminal.Assignment) (bool, error) {
 	raw, err := security.ReadPrivate(m.shutdownPath(a.ID), terminalOperationJournalMaxBytes)
 	if errors.Is(err, os.ErrNotExist) {
-		return false, nil // Older Workers have no shutdown observation.
+		// Abrupt termination can abandon an unacknowledged output suffix before
+		// shutdown writes any observation. Only positive original pre-native or
+		// joined creation evidence can establish that no bytes were lost.
+		if pending := a.Terminal.Pending; pending != nil && pending.Action == domain.TerminalCreate {
+			if !pending.Claimed {
+				return false, nil
+			}
+			raw, err := security.ReadPrivate(m.journalPath(pending.ID), terminalOperationJournalMaxBytes)
+			var create terminalOperationJournal
+			if err == nil && domain.Decode(raw, &create) == nil && create.TerminalID == a.ID && create.OperationID == pending.ID && create.InstanceID == a.Terminal.OwnerInstanceID && create.InstanceID.Validate() == nil {
+				if create.Phase == terminalPrepared || create.Phase == terminalClaimed {
+					return false, nil
+				}
+				if create.Phase == terminalFinished && create.Result != nil && create.Result.Validate() == nil && create.Result.CleanupVerified {
+					return create.Result.OutputLost, nil
+				}
+			}
+		}
+		return true, nil
 	}
 	var record terminalShutdownRecord
 	if err != nil || domain.Decode(raw, &record) != nil || record.TerminalID != a.ID || record.OwnerInstanceID != a.Terminal.OwnerInstanceID || record.OwnerInstanceID.Validate() != nil || record.Result.Validate() != nil || (record.Result.State != domain.TerminalExited && record.Result.State != domain.TerminalUncertain) {

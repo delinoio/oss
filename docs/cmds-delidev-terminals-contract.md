@@ -154,7 +154,11 @@ observation before cancelling output, then retains its joined native result
 before dropping the live entry. A replacement reads that observation only for
 an independently claimed close; it carries loss monotonically but still
 reconciles the original process index, never borrowing cleanup authority from
-the shutdown record. Terminal reports share a 64 KiB JSON limit
+the shutdown record. A missing shutdown observation conservatively marks output
+loss when the terminal may have run, including abrupt Worker death and older
+Workers. Original unclaimed/pre-native creation proof excludes impossible
+output, while an independently joined creation result retains its own loss
+fact. Missing shutdown or process evidence never proves cleanup. Terminal reports share a 64 KiB JSON limit
 between Worker and server, covering both accepted 4,096-byte paths even under
 worst-case six-byte JSON escaping. Journal reads and writes share a 68 KiB
 envelope bound that reserves room for ownership metadata around a maximum-sized

@@ -499,7 +499,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Windows global OpenCode runtime context must also be a canonical local-drive directory before launch. Refuse UNC/device/root-relative contexts during initialization, including Build, rather than discovering incompatible runtime ownership only at Plan comparison or native checkpoint retention.
 
-- Terminal shutdown synchronizes original terminal/instance-bound output loss before cancellation and retains the joined outcome. Replacement close claims may carry that loss, but must independently reconcile original process ownership; shutdown observations grant no create/input/resize or spontaneous report authority.
+- Terminal shutdown synchronizes original terminal/instance-bound output loss before cancellation and retains the joined outcome. Replacement close claims may carry that loss, but must independently reconcile original process ownership; shutdown observations grant no create/input/resize or spontaneous report authority. Missing shutdown observations conservatively mark output loss for terminals that may have run; only the original positive pre-native or joined creation proof can exclude that loss.
 
 - Confirmed terminal reports synchronize a reported phase before local retirement. Only independently verified cleanup may retire completed scopes, the empty original owner index, its released recovery lock and shutdown observation. Retain original evidence for uncertainty or unacknowledged results; retry interrupted acknowledged retirement locally without replaying any RPC or native operation.
 
