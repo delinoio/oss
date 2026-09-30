@@ -144,7 +144,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, err
 	}
-	childManifest, err := manager.Prepare(ctx, childPreparation)
+	childManifest, err := manager.PrepareFork(ctx, childPreparation, workspaceSnapshot)
 	if err != nil {
 		return nil, err
 	}

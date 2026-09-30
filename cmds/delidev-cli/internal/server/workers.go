@@ -420,7 +420,7 @@ func workerProblem(detail *pb.ErrorDetail) *domain.Error {
 	// classification and our own messages; never forward paths or native stderr.
 	code := domain.Code(detail.Code)
 	switch code {
-	case domain.InvalidArgument, domain.NotFound, domain.PermissionDenied, domain.Unavailable, domain.MissingInput, domain.Unsupported, domain.RecoveryRequired, domain.ResourceExhausted, domain.Canceled:
+	case domain.InvalidArgument, domain.NotFound, domain.Conflict, domain.PermissionDenied, domain.Unavailable, domain.MissingInput, domain.Unsupported, domain.RecoveryRequired, domain.ResourceExhausted, domain.Canceled:
 	default:
 		code = domain.Internal
 	}

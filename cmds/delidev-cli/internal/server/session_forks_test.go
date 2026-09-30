@@ -201,3 +201,30 @@ func TestSessionForkRejectsActiveSourceAndInvalidCompletion(t *testing.T) {
 		t.Fatal("unknown cleanup lost uncertainty")
 	}
 }
+
+func TestSessionForkFailedCopyReleasesSourceWithoutPublishingChild(t *testing.T) {
+	f, request, accepted := acceptedForkFixture(t)
+	before := f.refresh(t)
+	job, _ := forkClaimFixture(t, f, accepted.Job.Id)
+	_, err := f.workerClient.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Problem: &pb.ErrorDetail{Code: string(domain.Conflict)}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := sessionClient(f.accountFixture).GetSessionFork(context.Background(), ownerRequest(f.identity, &pb.GetSessionForkRequest{JobId: job.Id}))
+	if err != nil || observed.Msg.Session != nil {
+		t.Fatal("failed copy published a child", err)
+	}
+	var state domain.Job
+	if domain.Decode(observed.Msg.Job.DocumentJson, &state) != nil || state.State != domain.JobFailed || state.Problem == nil || state.Problem.Code != domain.Conflict {
+		t.Fatal("definite copy failure retained an uncertain job")
+	}
+	after := f.refresh(t)
+	if !bytes.Equal(before.Data, after.Data) || before.Revision != after.Revision {
+		t.Fatal("failed fork changed source session")
+	}
+	request.Mutation.RequestId = string(domain.NewID())
+	retry, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, request))
+	if err != nil || retry.Msg.Job.Id == job.Id {
+		t.Fatal("verified failed copy retained the source reservation", err)
+	}
+}

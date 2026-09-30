@@ -116,3 +116,24 @@ before compilation and hooks. No migration or destructive backup was needed.
 Repository-owned generated `dist` directories are removed before publication;
 logs, fixture state, downloaded native binaries and generated output are not
 committed. No Rust source changed, so root Cargo tests were not required.
+
+## PR #1176 review repair: pre-native copy drift
+
+On 2026-09-30, starting from published head
+`45faee5eb7768ba1d39a709aaf5dfb3f9b0bf087`, preparation now distinguishes
+verified copy drift from native/process/cleanup uncertainty. The original
+pre-copy snapshot is checked before ready publication and native creation;
+known drift rolls back all owned copies. Unknown Git process cleanup, failed
+rollback and post-native drift retain uncertainty. Worker reports preserve the
+closed conflict classification, and a verified failed job releases its source
+reservation without publishing a child or changing source state.
+
+- `go test -race ./cmds/delidev-cli/internal/workspace ./cmds/delidev-cli/internal/server -run '^Test(Fork|SessionFork)' -count=1` passed both packages.
+  The new deterministic real-Git barrier covers file, HEAD and index drift before
+  the first copy and after the first of two copies, complete owned-directory and
+  Git-registration cleanup, preserved source edits, and retained cleanup-pending
+  uncertainty when rollback fails. The barrier uses a POSIX shell and skips on
+  Windows; this macOS run does not establish Windows native acceptance.
+- `GOMAXPROCS=4 go test -race ./cmds/delidev-cli/internal/server -run '^TestSessionForkFailedCopyReleasesSourceWithoutPublishingChild$' -count=1` passed after the Worker report classification change.
+  It checks the definite failed job, absent child, unchanged source and successful
+  acceptance of a fresh fork request after reservation release.

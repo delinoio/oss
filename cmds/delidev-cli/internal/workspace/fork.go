@@ -22,8 +22,9 @@ const maxForkEntries = 100000
 // ForkSnapshot is private read-only evidence held across workspace preparation
 // and the native fork. A filesystem edit during either operation invalidates it.
 type ForkSnapshot struct {
-	copies []forkCopy
-	git    Git
+	copies        []forkCopy
+	git           Git
+	requestDigest string
 }
 
 func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, request PrepareRequest) (*ForkSnapshot, error) {
@@ -32,7 +33,7 @@ func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, requ
 	}
 	git := m.Git
 	git.OwnerID, git.readOnly = request.SessionID, true
-	snapshot := &ForkSnapshot{git: git}
+	snapshot := &ForkSnapshot{git: git, requestDigest: preparationDigest(request)}
 	paths := []string{source.PrimaryPath}
 	if source.Type != domain.GeneralChat {
 		paths = nil
@@ -51,8 +52,11 @@ func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, requ
 		copy := forkCopy{source: path, tree: digest, git: source.Type != domain.GeneralChat}
 		if copy.git {
 			head, err := git.run(ctx, path, "rev-parse", "--verify", "HEAD")
-			if err != nil || strings.TrimSpace(string(head)) != request.Repositories[i].Base.Name {
-				return nil, ResultUncertain()
+			if err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(string(head)) != request.Repositories[i].Base.Name {
+				return nil, forkSnapshotChanged()
 			}
 			_, index, err := forkIndex(ctx, git, path)
 			if err != nil {
@@ -64,6 +68,21 @@ func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, requ
 		snapshot.copies = append(snapshot.copies, copy)
 	}
 	return snapshot, nil
+}
+
+// PrepareFork verifies the original pre-copy observation before publishing a
+// ready workspace. At this point no native fork has been sent, so a detected
+// mismatch can use ordinary owned preparation rollback. Git process/cleanup
+// uncertainty keeps its RecoveryRequired classification and retained journal.
+func (m *Manager) PrepareFork(ctx context.Context, request PrepareRequest, snapshot *ForkSnapshot) (Manifest, error) {
+	if snapshot == nil || request.ForkSourceID == "" || snapshot.requestDigest != preparationDigest(request) {
+		return Manifest{}, ResultUncertain()
+	}
+	return m.prepare(ctx, request, snapshot)
+}
+
+func forkSnapshotChanged() error {
+	return domain.Fail(domain.Conflict, "The fork workspace changed during snapshot copying.", "Wait for source edits to finish, then request a new fork after verified cleanup.")
 }
 
 func (s *ForkSnapshot) Verify(ctx context.Context, child Manifest) error {
@@ -215,7 +234,7 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 		defer opened.Close()
 		actual, err := opened.Stat()
 		if err != nil || !os.SameFile(before, actual) || before.Mode() != actual.Mode() {
-			return ResultUncertain()
+			return forkSnapshotChanged()
 		}
 		if before.IsDir() {
 			if target != "" && name != "." {
@@ -273,8 +292,11 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 				writer = io.MultiWriter(hash, output)
 			}
 			count, err := io.Copy(writer, forkReader{ctx, io.LimitReader(opened, before.Size()+1)})
-			if err != nil || count != before.Size() {
-				return ResultUncertain()
+			if err != nil {
+				return domain.SafeError(err)
+			}
+			if count != before.Size() {
+				return forkSnapshotChanged()
 			}
 			if output != nil {
 				// Creation obeys the process umask; restore the original regular
@@ -289,7 +311,7 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 		}
 		after, err := root.Lstat(name)
 		if err != nil || !os.SameFile(before, after) || before.Mode() != after.Mode() || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
-			return ResultUncertain()
+			return forkSnapshotChanged()
 		}
 		return nil
 	}
@@ -332,12 +354,15 @@ func forkIndex(ctx context.Context, git Git, checkout string) (string, []byte, e
 	defer f.Close()
 	actual, err := f.Stat()
 	if err != nil || !os.SameFile(info, actual) {
-		return "", nil, ResultUncertain()
+		return "", nil, forkSnapshotChanged()
 	}
 	raw, err := io.ReadAll(forkReader{ctx, io.LimitReader(f, info.Size()+1)})
 	after, statErr := os.Lstat(index)
-	if err != nil || statErr != nil || !os.SameFile(info, after) || !info.ModTime().Equal(after.ModTime()) || int64(len(raw)) != info.Size() {
-		return "", nil, ResultUncertain()
+	if err != nil {
+		return "", nil, domain.SafeError(err)
+	}
+	if statErr != nil || !os.SameFile(info, after) || !info.ModTime().Equal(after.ModTime()) || int64(len(raw)) != info.Size() {
+		return "", nil, forkSnapshotChanged()
 	}
 	// Split indexes have external shared-index dependencies. Their exact native
 	// ownership needs its own adapter; never copy an incomplete index silently.
@@ -367,27 +392,42 @@ func copyForkRepository(ctx context.Context, git Git, source, target, commit str
 
 func (c forkCopy) verify(ctx context.Context, git Git) error {
 	digest, err := scanForkTree(ctx, c.source, "", c.git)
-	if err != nil || digest != c.tree {
-		return ResultUncertain()
+	if err != nil {
+		return err
+	}
+	if digest != c.tree {
+		return forkSnapshotChanged()
 	}
 	childDigest, err := scanForkTree(ctx, c.target, "", c.git)
-	if err != nil || childDigest != c.tree {
-		return ResultUncertain()
+	if err != nil {
+		return err
+	}
+	if childDigest != c.tree {
+		return forkSnapshotChanged()
 	}
 	if c.git {
 		head, err := git.run(ctx, c.source, "rev-parse", "--verify", "HEAD")
-		if err != nil || strings.TrimSpace(string(head)) != c.head {
-			return ResultUncertain()
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(head)) != c.head {
+			return forkSnapshotChanged()
 		}
 		_, raw, err := forkIndex(ctx, git, c.source)
+		if err != nil {
+			return err
+		}
 		index := sha256.Sum256(raw)
-		if err != nil || hex.EncodeToString(index[:]) != c.index {
-			return ResultUncertain()
+		if hex.EncodeToString(index[:]) != c.index {
+			return forkSnapshotChanged()
 		}
 		_, raw, err = forkIndex(ctx, git, c.target)
+		if err != nil {
+			return err
+		}
 		index = sha256.Sum256(raw)
-		if err != nil || hex.EncodeToString(index[:]) != c.index {
-			return ResultUncertain()
+		if hex.EncodeToString(index[:]) != c.index {
+			return forkSnapshotChanged()
 		}
 	}
 	return nil

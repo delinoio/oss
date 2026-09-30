@@ -186,6 +186,10 @@ func (r PrepareRequest) validateStructure() error {
 	return nil
 }
 func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest, error) {
+	return m.prepare(ctx, request, nil)
+}
+
+func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnapshot *ForkSnapshot) (Manifest, error) {
 	if err := request.validate(); err != nil {
 		return Manifest{}, err
 	}
@@ -230,6 +234,11 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 			return Manifest{}, domain.Fail(domain.RecoveryRequired, "This session already owns a different workspace preparation.", "Inspect its recorded workspace; never overwrite an existing checkout.")
 		}
 		if old.State == Ready {
+			if forkSnapshot != nil {
+				// A fresh fork cannot adopt a prior workspace whose native side
+				// effects are not proved by this preparation attempt.
+				return old, ResultUncertain()
+			}
 			if err := m.verify(old); err != nil {
 				return old, err
 			}
@@ -391,6 +400,11 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 		}
 	}
 	manifest.State = Ready
+	if forkSnapshot != nil {
+		if err := forkSnapshot.Verify(ctx, manifest); err != nil {
+			return failed(err)
+		}
+	}
 	if err := write(); err != nil {
 		return failed(domain.SafeError(err))
 	}

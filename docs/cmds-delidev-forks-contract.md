@@ -98,7 +98,13 @@ workspace manifest and exact native request are independently bound. Current
 source revision and authority are checked again when claiming and publishing.
 The ordinary synchronized Worker journal precedes native creation; a started
 operation is never retried after reconnect. Definite pre-native/copy failures may
-settle failed without a child. Unknown creation or cleanup remains uncertain,
+settle failed without a child. File, HEAD and index drift detected before native
+creation must roll back every verified owned copy and release the source job
+reservation only after cleanup succeeds. Keep the original pre-copy observation
+through preparation so changes before the first copy are also rejected before
+native creation. Unproved Git process ownership or failed cleanup remains
+uncertain; the same drift detected after native creation remains uncertain.
+Unknown creation or cleanup remains uncertain,
 retains the private runtime/workspace and holds the source reservation for
 operator investigation. No source execution claim is advanced by inspection.
 
