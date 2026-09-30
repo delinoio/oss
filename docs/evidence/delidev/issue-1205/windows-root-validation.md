@@ -20,6 +20,10 @@ containing it; native Windows execution was not performed.
   Windows Plan's relative exception uses the original native process/runtime
   cwd drive, including a different workspace drive. The fresh environment
   excludes per-drive cwd entries; server/renderer cwd is not an operand.
+- The Windows global runtime must also be drive-qualified locally before native
+  launch. Build now refuses UNC/device/root-relative runtime contexts during
+  preparation, rather than waiting for Plan or version-2 checkpoint retention.
+  A Windows unit test covers this refusal without inspecting a UNC location.
 - New Windows global native checkpoints use private version 2 with both roots.
   First dispatch, FIFO, explicit Resume and read-only completed-report recovery
   compare independent manifest roots with the original checkpoint. Existing
@@ -57,6 +61,7 @@ execution on Windows still requires the installed native fixture below.
 | `go test -race -p 1 ./cmds/delidev-cli/internal/harness/opencode ./cmds/delidev-cli/internal/worker ./cmds/delidev-cli/internal/server -run 'OpenCode\|GlobalRoot' -count=1 -timeout=20m` | Passed: OpenCode 26.273s, Worker 361.126s, server 180.096s. Installed native tests remain opt-in/skipped. |
 | Serial full OpenCode `go test -race -p 1 ./cmds/delidev-cli/internal/harness/opencode -count=1 -timeout=15m` | Failed in unchanged `TestProbeOwnsAuthenticatedServerAndCleanup` trailing/warning/stderr cases (cleanup or initialization classification under local load). No other test failure or race report appeared in that run. |
 | `go fmt ./...` and `git diff --check` | Passed. |
+| After main reconciliation and the early runtime guard: `GOMAXPROCS=2 go test -race -p 1 ./cmds/delidev-cli/internal/harness/opencode -run 'GlobalRoot\|HistoricalV1' -count=1 -timeout=10m` | Passed in 5.611s on macOS. The Windows-only runtime test remains unexecuted. Fresh Windows amd64 OpenCode test cross-compilation passed. |
 
 Two fixed synthetic original checkpoints were serialized with the inspected
 base's version-1 struct and checked against current serialization before fixing

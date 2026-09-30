@@ -1585,7 +1585,9 @@ from a global root. Its exact native identity and canonical filesystem boundary
 are separate facts. Windows global filesystem inspection uses the independently
 derived drive-qualified root of the actual workspace, never `/`, `/path`, a
 native assistant message or a checkpoint-proposed path. UNC/device roots and
-arbitrary aliases have no new support.
+arbitrary aliases have no new support. The original native runtime must also be
+drive-qualified locally; refuse other runtime contexts before Build/Plan launch,
+not only when computing Plan rules or retaining a checkpoint.
 
 Before initialization and every existing instruction/configuration recheck,
 require canonical existing workspace/boundary directories and inspect every

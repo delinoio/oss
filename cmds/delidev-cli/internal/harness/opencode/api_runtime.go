@@ -72,6 +72,12 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 		return nil, nil, incompatible()
 	}
 	root := filepath.Dir(config.Probe.Home)
+	// The new checkpoint profile also requires a local drive-qualified native
+	// runtime. Refuse UNC/device/relative contexts before Build can launch;
+	// waiting for Plan rules or checkpoint retention would reject too late.
+	if scope.windowsGlobal() && (!filepath.IsAbs(root) || filesystemBoundary(root) == "") {
+		return nil, nil, sessionInvalid()
+	}
 	if directoryContains(root, config.Workspace) || directoryContains(config.Workspace, root) || !validWorkspaceReferences(config.References, config.Workspace, root) || len(config.References) > 0 && (scope.kind != gitWorkspaceRoot || scope.native != config.Workspace) {
 		return nil, nil, sessionInvalid()
 	}

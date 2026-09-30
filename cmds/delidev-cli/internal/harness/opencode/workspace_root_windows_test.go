@@ -60,6 +60,19 @@ func TestWindowsGlobalRequiresOriginalGlobalProjectIdentity(t *testing.T) {
 	}
 }
 
+func TestWindowsGlobalRefusesUnsupportedRuntimeContextBeforeInitialization(t *testing.T) {
+	c := globalRootConfig(t)
+	for _, root := range []string{`C:relative`, `\\server\share\runtime`, `\\?\C:\runtime`} {
+		changed := c
+		changed.Probe.Home = filepath.Join(root, "opencode")
+		changed.Probe.Process.Cwd = root
+		// In particular, no UNC read or write is needed to refuse this context.
+		if _, _, err := prepareAPISession(changed); err == nil {
+			t.Fatal("unsupported runtime reached native initialization")
+		}
+	}
+}
+
 func TestManualNativeWindowsOpenCodeDifferentDrivePlan(t *testing.T) {
 	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" || os.Getenv("DELIDEV_NATIVE_OPENCODE_WINDOWS_WORKSPACE_PARENT") == "" {
 		t.Skip("opt-in installed pinned binary and writable workspace parent on another local drive")
