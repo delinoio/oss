@@ -89,25 +89,28 @@ export class NavigationChain {
       const pages: NavigationPage[] = stage === ReadStage.Additional || retryOnly ? [...previous.pages] : [];
       const retryIndex = retryOnly ? pages.findIndex((page) => page.token === token) : -1;
       const seen = new Set((retryOnly ? pages.slice(0, Math.max(0, retryIndex)) : pages).map((page) => page.token));
-      // Refresh only the number of already accepted ranges. It must never
-      // discover an unseen trailing range, even if the inventory changes.
-      const count = stage === ReadStage.Refresh && !retryOnly ? previous.pages.length : 1;
+      // Refresh the accepted request tokens verbatim. Changed boundaries,
+      // including a formerly exhausted tail, require explicit Reload list.
+      const refreshing = stage === ReadStage.Refresh && !retryOnly;
+      const count = refreshing ? previous.pages.length : 1;
       for (let index = 0; index < count; index++) {
+        const acceptedPage = refreshing ? previous.pages[index] : retryOnly ? pages[retryIndex] : undefined;
+        if (refreshing) currentToken = acceptedPage!.token;
         const batch = await reader(currentToken, controller.signal);
         if (!this.active || generation !== this.generation || controller.signal.aborted) return;
+        if ((refreshing || retryOnly) && (!acceptedPage || batch.nextPageToken !== acceptedPage.nextPageToken)) {
+          console.warn("delidev.home_navigation.read_failed", { stage, classification: FailureCode.CursorExpired });
+          this.publish({ ...previous, loading: undefined, error: { stage, token: currentToken, failure: { code: FailureCode.CursorExpired, message: "The loaded list boundaries changed.", guidance: "Reload this list to accept a new chain." } } });
+          return;
+        }
         seen.add(currentToken);
         if (batch.nextPageToken && seen.has(batch.nextPageToken)) {
           console.warn("delidev.home_navigation.read_failed", { stage, classification: "non-advancing-continuation" });
           this.publish({ ...previous, loading: undefined, error: { stage, token: currentToken, stalled: true, failure: { code: FailureCode.Internal, message: "The list continuation did not advance.", guidance: "Reload this list to resume navigation." } } });
           return;
         }
-        if (retryOnly) {
-          if (retryIndex < 0 || batch.nextPageToken !== pages[retryIndex].nextPageToken) {
-            this.publish({ ...previous, loading: undefined, error: { stage, token: currentToken, failure: { code: FailureCode.CursorExpired, message: "The loaded list boundaries changed.", guidance: "Reload this list to accept a new chain." } } });
-            return;
-          }
-          pages[retryIndex] = { ...batch, token: currentToken };
-        } else pages.push({ ...batch, token: currentToken });
+        if (retryOnly) pages[retryIndex] = { ...batch, token: currentToken };
+        else pages.push({ ...batch, token: currentToken });
         if (!batch.nextPageToken) break;
         currentToken = batch.nextPageToken;
       }

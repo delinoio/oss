@@ -99,3 +99,45 @@ it("refreshes only accepted ranges atomically, retaining previous rows on failur
   expect(chain.getSnapshot().error?.stage).toBe(ReadStage.Refresh);
   chain.suspend(); await chain.refresh(reader); expect(reader).toHaveBeenCalledTimes(4);
 });
+
+
+it.each([
+  { firstNext: "shifted-next", lastNext: "", reads: [""] },
+  { firstNext: "", lastNext: "", reads: [""] },
+  { firstNext: "accepted-next", lastNext: "new-tail", reads: ["", "accepted-next"] },
+])("requires explicit reload when refresh boundaries drift: $firstNext/$lastNext", async ({ firstNext, lastNext, reads }) => {
+  const chain = new NavigationChain(); chain.activate();
+  const first = row(), second = row(), replacement = row();
+  const original: NavigationReader = async (token) => ({ rows: [token ? second : first], nextPageToken: token ? "" : "accepted-next" });
+  await chain.refresh(original); await chain.append(original);
+  const accepted = chain.getSnapshot();
+  const shifted = vi.fn<NavigationReader>(async (token) => ({ rows: [replacement], nextPageToken: token ? lastNext : firstNext }));
+  await chain.refresh(shifted);
+  expect(shifted.mock.calls.map(([token]) => token)).toEqual(reads);
+  expect(chain.getSnapshot().rows).toEqual([first, second]);
+  expect(chain.getSnapshot().pages).toBe(accepted.pages);
+  expect(chain.getSnapshot().nextPageToken).toBe("");
+  expect(chain.getSnapshot().error?.failure.code).toBe(FailureCode.CursorExpired);
+  expect(chain.getSnapshot().error?.stage).toBe(ReadStage.Refresh);
+  await chain.append(shifted); await chain.refresh(shifted); await chain.retry(shifted);
+  expect(shifted).toHaveBeenCalledTimes(reads.length);
+  await chain.reload(async (token) => { expect(token).toBe(""); return { rows: [replacement], nextPageToken: "reload-next" }; });
+  expect(chain.getSnapshot().rows).toEqual([replacement]);
+  expect(chain.getSnapshot().nextPageToken).toBe("reload-next");
+  expect(chain.getSnapshot().error).toBeUndefined();
+});
+
+it("retries only the failed accepted refresh range while keeping its boundaries", async () => {
+  const chain = new NavigationChain(); chain.activate();
+  const first = row(), second = row(), replacement = row();
+  const original: NavigationReader = async (token) => ({ rows: [token ? second : first], nextPageToken: token ? "tail" : "accepted-next" });
+  await chain.refresh(original); await chain.append(original);
+  await chain.refresh(async (token) => { if (token) throw new ConnectError("Offline", Code.Unavailable); return { rows: [replacement], nextPageToken: "accepted-next" }; });
+  const retry = vi.fn<NavigationReader>(async () => ({ rows: [replacement], nextPageToken: "tail" }));
+  await chain.retry(retry);
+  expect(retry.mock.calls.map(([token]) => token)).toEqual(["accepted-next"]);
+  expect(chain.getSnapshot().rows).toEqual([first, replacement]);
+  expect(chain.getSnapshot().pages.map(({ token }) => token)).toEqual(["", "accepted-next"]);
+  expect(chain.getSnapshot().nextPageToken).toBe("tail");
+  expect(chain.getSnapshot().error).toBeUndefined();
+});
