@@ -20,9 +20,7 @@ func TestSubagentPublicationReplayAndLateCompletionAfterParent(t *testing.T) {
 	f.registerGrant(t)
 	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
 	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
-	a := domain.SubagentObservation{ID: domain.NewID(), NativeID: string(domain.NewID()), ParentID: string(f.thread), Status: domain.SubagentRunning, Source: domain.CodexCollaborationSource, SourceID: "spawn-one"}
-	count := "100"
-	a.Usage = &domain.SubagentUsage{Scope: domain.SubagentCumulativeUsage, Total: &count}
+	a := domain.SubagentObservation{ID: domain.NewID(), NativeID: string(domain.NewID()), ParentID: string(f.thread), Status: domain.SubagentRunning, Source: domain.CodexHistorySource, SourceID: "native-one", Usage: codexSubagentUsage()}
 	b := a
 	b.ID = domain.NewID()
 	b.NativeID = string(domain.NewID())
@@ -178,9 +176,8 @@ func TestSubagentOverlappingUsageCannotEnterRootLedger(t *testing.T) {
 	rootUsage.ObservationID = domain.NewID()
 	rootUsage.Usage = &domain.NativeTokenUsage{Total: reportedCounts(100), Last: reportedCounts(100)}
 	f.publish(t, rootUsage)
-	overlapping := "100"
 	child := f.event(domain.ExecutionSubagentObserved, 4)
-	child.Subagents = []domain.SubagentObservation{{ID: domain.NewID(), NativeID: string(domain.NewID()), ParentID: string(f.thread), Status: domain.SubagentRunning, Source: domain.CodexHistorySource, SourceID: "native-child-usage", Usage: &domain.SubagentUsage{Scope: domain.SubagentCumulativeUsage, Total: &overlapping}}}
+	child.Subagents = []domain.SubagentObservation{{ID: domain.NewID(), NativeID: string(domain.NewID()), ParentID: string(f.thread), Status: domain.SubagentRunning, Source: domain.CodexHistorySource, SourceID: "native-child-usage", Usage: codexSubagentUsage()}}
 	f.publish(t, child)
 	rows, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.UsageKind, SessionID: f.input.SessionID, Limit: 10})
 	if err != nil || len(rows) != 1 {

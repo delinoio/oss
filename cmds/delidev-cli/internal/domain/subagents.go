@@ -187,14 +187,8 @@ func (o SubagentObservation) Validate() error {
 		}
 	}
 	if u := o.Usage; u != nil {
-		if u.Scope != SubagentCumulativeUsage && u.Scope != SubagentResponseUsage {
+		if u.validateNative(o.Source) != nil {
 			return invalidSubagent()
-		}
-		if u.NativeReport != "" {
-			var report map[string]json.RawMessage
-			if len(u.NativeReport) > 64<<10 || Decode([]byte(u.NativeReport), &report) != nil || report == nil {
-				return invalidSubagent()
-			}
 		}
 		for _, count := range []*string{u.Total, u.Input, u.Output} {
 			if count == nil {

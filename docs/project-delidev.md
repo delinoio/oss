@@ -65,6 +65,7 @@ owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
 - Go owns business logic; clients use authenticated Connect and preserve exact request/revision identities.
 - Local and remote operation preserve original native ownership, explicit authorization, credential isolation and uncertainty.
 - Each original Claude Agent/Task parent tool owns at most one observed child across Worker composition and atomic server publication, including after that child's completion. Clients retain the original hierarchy without child controls; see the [subagent contract](cmds-delidev-subagents-contract.md).
+- Shared Worker/server validation closes every supplied child usage report to its native source schema and requires exact nullable normalized counter parity before atomic publication. Native report bytes remain unchanged and independent reports remain non-additive; unavailable usage cannot be supplied without its original report. See the [subagent contract](cmds-delidev-subagents-contract.md).
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.
 - PR activity preserves immutable source/version/actor metadata across Go, generated clients, CLI and desktop. Attempt success cannot establish verified handling; only a dedicated original verification source can project that outcome.

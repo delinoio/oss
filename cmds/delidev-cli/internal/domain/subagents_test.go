@@ -71,7 +71,7 @@ func TestSubagentTreeRejectsForeignCyclicAndReusedIdentitiesAtomically(t *testin
 func TestSubagentUsageKeepsUnavailableAndExactOverlappingCounters(t *testing.T) {
 	total := "18446744073709551615"
 	model := "requested-only"
-	v := SubagentObservation{ID: NewID(), NativeID: "child", ParentID: "root", Status: SubagentRunning, Source: ClaudeTaskSource, SourceID: "task-start", RequestedModel: &model, Usage: &SubagentUsage{Scope: SubagentCumulativeUsage, Total: &total}}
+	v := SubagentObservation{ID: NewID(), NativeID: "child", ParentID: "root", Status: SubagentRunning, Source: ClaudeTaskSource, SourceID: "task-start", RequestedModel: &model, Usage: &SubagentUsage{Scope: SubagentCumulativeUsage, Total: &total, NativeReport: `{"total_tokens":18446744073709551615,"tool_uses":0,"duration_ms":1}`}}
 	if v.Validate() != nil || v.ObservedModel != nil || v.Output != nil || v.Usage.Input != nil {
 		t.Fatal("missing observations were fabricated")
 	}
