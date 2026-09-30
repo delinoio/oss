@@ -147,6 +147,10 @@ Post-merge checks completed against the combined source before its merge commit:
 - `pnpm proto:check` passed, including generated-source freshness and compatibility
   against the updated main.
 - `pnpm ci:contracts` passed all 113 tests (7.300s).
+- On merge commit `7b5862c711e72caad223114b904cbc4a4ad09de3`,
+  `pnpm --dir packages/delidev-api-client build`, `typecheck`, and `test`
+  passed (all 44 tests across four files; 3.77s). The generated client `dist`
+  directory was removed afterward.
 
 These post-merge focused checks do not relabel the full-run failures above or
 establish complete native/platform acceptance. New CI remains required for the
