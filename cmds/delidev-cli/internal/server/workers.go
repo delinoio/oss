@@ -67,6 +67,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1:
+			capabilities = append(capabilities, domain.RepositoryInspectionMetadataV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1:
 			capabilities = append(capabilities, domain.SessionForwardingV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1:
@@ -75,8 +77,12 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported an unknown native capability.", "Upgrade the Worker and report only verified capability identifiers."), correlation)
 		}
 	}
-	if len(capabilities) > 2 || (len(capabilities) == 2 && capabilities[0] == capabilities[1]) {
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported a duplicate native capability.", "Report each verified capability once."), correlation)
+	seenCapabilities := map[domain.WorkerCapability]bool{}
+	for _, capability := range capabilities {
+		if seenCapabilities[capability] {
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported a duplicate capability.", "Report each verified capability once."), correlation)
+		}
+		seenCapabilities[capability] = true
 	}
 	input := struct {
 		Machine, Instance domain.ID
@@ -154,7 +160,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "worker attached", "machine_id", machine, "instance_id", instance, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID)})
+	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1}})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
@@ -561,6 +567,20 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 					if err := domain.Text(ref, "default reference", 4096, true); err != nil {
 						return nil, err
 					}
+				}
+				machineRecord, err := tx.Get(domain.MachineKind, machine)
+				if err != nil {
+					return nil, err
+				}
+				machineValue, err := store.Decode[domain.Machine](machineRecord)
+				if err != nil {
+					return nil, err
+				}
+				if output.GitHubRepositories != nil && !slices.Contains(machineValue.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
+					return nil, domain.Fail(domain.InvalidArgument, "Repository metadata was not negotiated.", "Reattach a compatible Worker before reporting enrichment.")
+				}
+				if err := output.ValidateGitHubRepositories(); err != nil {
+					return nil, err
 				}
 				var expected domain.RepositoryInspectionInput
 				if err := domain.Decode(job.Input, &expected); err != nil {

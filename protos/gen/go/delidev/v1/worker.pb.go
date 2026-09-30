@@ -24,9 +24,10 @@ const (
 type WorkerCapability int32
 
 const (
-	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED               WorkerCapability = 0
-	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 WorkerCapability = 1
-	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1     WorkerCapability = 2
+	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                       WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1         WorkerCapability = 1
+	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1             WorkerCapability = 2
+	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1 WorkerCapability = 3
 )
 
 // Enum value maps for WorkerCapability.
@@ -35,11 +36,13 @@ var (
 		0: "WORKER_CAPABILITY_UNSPECIFIED",
 		1: "WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1",
 		2: "WORKER_CAPABILITY_SESSION_FORWARDING_V1",
+		3: "WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1",
 	}
 	WorkerCapability_value = map[string]int32{
-		"WORKER_CAPABILITY_UNSPECIFIED":               0,
-		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1": 1,
-		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":     2,
+		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1":         1,
+		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":             2,
+		"WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1": 3,
 	}
 )
 
@@ -848,11 +851,12 @@ func (x *AttachWorkerRequest) GetCapabilities() []WorkerCapability {
 }
 
 type AttachWorkerResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Machine       *Resource              `protobuf:"bytes,1,opt,name=machine,proto3" json:"machine,omitempty"`
-	ServerId      string                 `protobuf:"bytes,2,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                       protoimpl.MessageState `protogen:"open.v1"`
+	Machine                     *Resource              `protobuf:"bytes,1,opt,name=machine,proto3" json:"machine,omitempty"`
+	ServerId                    string                 `protobuf:"bytes,2,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
+	SupportedWorkerCapabilities []WorkerCapability     `protobuf:"varint,3,rep,packed,name=supported_worker_capabilities,json=supportedWorkerCapabilities,proto3,enum=delidev.v1.WorkerCapability" json:"supported_worker_capabilities,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
 }
 
 func (x *AttachWorkerResponse) Reset() {
@@ -897,6 +901,13 @@ func (x *AttachWorkerResponse) GetServerId() string {
 		return x.ServerId
 	}
 	return ""
+}
+
+func (x *AttachWorkerResponse) GetSupportedWorkerCapabilities() []WorkerCapability {
+	if x != nil {
+		return x.SupportedWorkerCapabilities
+	}
+	return nil
 }
 
 type WatchWorkRequest struct {
@@ -2148,10 +2159,11 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\vinstance_id\x18\x03 \x01(\tR\n" +
 	"instanceId\x12\x18\n" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12@\n" +
-	"\fcapabilities\x18\x05 \x03(\x0e2\x1c.delidev.v1.WorkerCapabilityR\fcapabilities\"c\n" +
+	"\fcapabilities\x18\x05 \x03(\x0e2\x1c.delidev.v1.WorkerCapabilityR\fcapabilities\"\xc5\x01\n" +
 	"\x14AttachWorkerResponse\x12.\n" +
 	"\amachine\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\amachine\x12\x1b\n" +
-	"\tserver_id\x18\x02 \x01(\tR\bserverId\"R\n" +
+	"\tserver_id\x18\x02 \x01(\tR\bserverId\x12`\n" +
+	"\x1dsupported_worker_capabilities\x18\x03 \x03(\x0e2\x1c.delidev.v1.WorkerCapabilityR\x1bsupportedWorkerCapabilities\"R\n" +
 	"\x10WatchWorkRequest\x12\x1d\n" +
 	"\n" +
 	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1f\n" +
@@ -2250,11 +2262,12 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"instanceId\"l\n" +
 	"\x1cWatchForwardRequestsResponse\x12\x1c\n" +
 	"\theartbeat\x18\x01 \x01(\bR\theartbeat\x12.\n" +
-	"\aforward\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aforward*\x93\x01\n" +
+	"\aforward\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aforward*\xcc\x01\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
 	"+WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1\x10\x01\x12+\n" +
-	"'WORKER_CAPABILITY_SESSION_FORWARDING_V1\x10\x022\xde\n" +
+	"'WORKER_CAPABILITY_SESSION_FORWARDING_V1\x10\x02\x127\n" +
+	"3WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1\x10\x032\xde\n" +
 	"\n" +
 	"\rWorkerService\x12k\n" +
 	"\x14WatchForwardRequests\x12'.delidev.v1.WatchForwardRequestsRequest\x1a(.delidev.v1.WatchForwardRequestsResponse0\x01\x12h\n" +
@@ -2336,52 +2349,53 @@ var file_delidev_v1_worker_proto_depIdxs = []int32{
 	33, // 8: delidev.v1.RegisterExecutionRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 9: delidev.v1.AttachWorkerRequest.capabilities:type_name -> delidev.v1.WorkerCapability
 	34, // 10: delidev.v1.AttachWorkerResponse.machine:type_name -> delidev.v1.Resource
-	34, // 11: delidev.v1.WatchAuxiliaryWorkResponse.job:type_name -> delidev.v1.Resource
-	34, // 12: delidev.v1.WatchWorkResponse.job:type_name -> delidev.v1.Resource
-	19, // 13: delidev.v1.WatchWorkResponse.question_response:type_name -> delidev.v1.QuestionResponseControl
-	18, // 14: delidev.v1.WatchWorkResponse.steer_input:type_name -> delidev.v1.SteerInputControl
-	20, // 15: delidev.v1.WatchWorkResponse.approval_response:type_name -> delidev.v1.ApprovalResponseControl
-	33, // 16: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
-	1,  // 17: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
-	34, // 18: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
-	34, // 19: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
-	33, // 20: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
-	34, // 21: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
-	34, // 22: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
-	34, // 23: delidev.v1.WatchForwardRequestsResponse.forward:type_name -> delidev.v1.Resource
-	31, // 24: delidev.v1.WorkerService.WatchForwardRequests:input_type -> delidev.v1.WatchForwardRequestsRequest
-	27, // 25: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
-	29, // 26: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
-	12, // 27: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	14, // 28: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	15, // 29: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
-	21, // 30: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	23, // 31: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	25, // 32: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
-	10, // 33: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
-	8,  // 34: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
-	4,  // 35: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
-	6,  // 36: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
-	2,  // 37: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
-	32, // 38: delidev.v1.WorkerService.WatchForwardRequests:output_type -> delidev.v1.WatchForwardRequestsResponse
-	28, // 39: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
-	30, // 40: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
-	13, // 41: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	17, // 42: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	16, // 43: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
-	22, // 44: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	24, // 45: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	26, // 46: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
-	11, // 47: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
-	9,  // 48: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
-	5,  // 49: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
-	7,  // 50: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
-	3,  // 51: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
-	38, // [38:52] is the sub-list for method output_type
-	24, // [24:38] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	0,  // 11: delidev.v1.AttachWorkerResponse.supported_worker_capabilities:type_name -> delidev.v1.WorkerCapability
+	34, // 12: delidev.v1.WatchAuxiliaryWorkResponse.job:type_name -> delidev.v1.Resource
+	34, // 13: delidev.v1.WatchWorkResponse.job:type_name -> delidev.v1.Resource
+	19, // 14: delidev.v1.WatchWorkResponse.question_response:type_name -> delidev.v1.QuestionResponseControl
+	18, // 15: delidev.v1.WatchWorkResponse.steer_input:type_name -> delidev.v1.SteerInputControl
+	20, // 16: delidev.v1.WatchWorkResponse.approval_response:type_name -> delidev.v1.ApprovalResponseControl
+	33, // 17: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
+	1,  // 18: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
+	34, // 19: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
+	34, // 20: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
+	33, // 21: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
+	34, // 22: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
+	34, // 23: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
+	34, // 24: delidev.v1.WatchForwardRequestsResponse.forward:type_name -> delidev.v1.Resource
+	31, // 25: delidev.v1.WorkerService.WatchForwardRequests:input_type -> delidev.v1.WatchForwardRequestsRequest
+	27, // 26: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
+	29, // 27: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
+	12, // 28: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	14, // 29: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	15, // 30: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
+	21, // 31: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	23, // 32: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	25, // 33: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
+	10, // 34: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
+	8,  // 35: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
+	4,  // 36: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
+	6,  // 37: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
+	2,  // 38: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
+	32, // 39: delidev.v1.WorkerService.WatchForwardRequests:output_type -> delidev.v1.WatchForwardRequestsResponse
+	28, // 40: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
+	30, // 41: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
+	13, // 42: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	17, // 43: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	16, // 44: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
+	22, // 45: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	24, // 46: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	26, // 47: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
+	11, // 48: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
+	9,  // 49: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
+	5,  // 50: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
+	7,  // 51: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
+	3,  // 52: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
+	39, // [39:53] is the sub-list for method output_type
+	25, // [25:39] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_worker_proto_init() }

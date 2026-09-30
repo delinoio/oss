@@ -23,10 +23,11 @@ import (
 const MaxGitOutput = 4 << 20
 
 type Inspection struct {
-	Root        string            `json:"root"`
-	Name        string            `json:"name"`
-	Remotes     []string          `json:"remotes"`
-	DefaultRefs map[string]string `json:"default_refs"`
+	Root               string                      `json:"root"`
+	Name               string                      `json:"name"`
+	Remotes            []string                    `json:"remotes"`
+	DefaultRefs        map[string]string           `json:"default_refs"`
+	GitHubRepositories map[string]GitHubRepository `json:"github_repositories,omitempty"`
 }
 type Git struct {
 	Executable    string
@@ -173,6 +174,9 @@ func (g Git) Inspect(ctx context.Context, path string) (Inspection, error) {
 		}
 		if strings.ContainsAny(remote, " /\\:\r\n") || strings.HasPrefix(remote, "-") {
 			return Inspection{}, domain.Fail(domain.InvalidArgument, "A Git remote has an unsupported name.", "Rename the remote to an unambiguous name before using this checkout.")
+		}
+		if len(result.Remotes) >= 128 || domain.Text(remote, "remote name", 256, true) != nil {
+			return Inspection{}, domain.Fail(domain.ResourceExhausted, "Git remote metadata exceeds its bound.", "Reduce the remote metadata.")
 		}
 		result.Remotes = append(result.Remotes, remote)
 		symbolic, exit, err := g.runCommand(ctx, root, "symbolic-ref", "--quiet", "refs/remotes/"+remote+"/HEAD")

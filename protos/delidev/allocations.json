@@ -465,14 +465,16 @@
       "members": {
         "WORKER_CAPABILITY_UNSPECIFIED": 0,
         "WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1": 1,
-        "WORKER_CAPABILITY_SESSION_FORWARDING_V1": 2
+        "WORKER_CAPABILITY_SESSION_FORWARDING_V1": 2,
+        "WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1": 3
       }
     },
     "AttachWorkerResponse": {
       "kind": "message",
       "members": {
         "machine": 1,
-        "server_id": 2
+        "server_id": 2,
+        "supported_worker_capabilities": 3
       }
     },
     "WatchWorkRequest": {
