@@ -304,6 +304,102 @@ Schedules have a dedicated desktop surface that remains mounted across navigatio
 
 Pause/resume changes future scheduling only. Run now explicitly confirms one independent occurrence, works while paused under ordinary server eligibility, and retains the original request after uncertain acknowledgment without enabling the future timer. Accepted occurrences are shown independently from native execution and current session state. Delete confirms future configuration removal, while the independent paginated history remains visible, refreshable and accessible by retained schedule ID. Every configuration/control mutation uses its captured revision, and stale edits preserve their draft. History and status reads do not replay side effects.
 
+### New schedule creation (issue #1152)
+
+The creation presentation owns `apps/delidev/src/schedule-creation.tsx` and
+`apps/delidev/src/schedule-creation.css`; shared schedule state and mutations
+remain in the existing schedule editor.
+
+Only creation without an initial resource uses the one-page Task, Execution and
+Repeat schedule presentation. Editing, list/detail/history, the icon rail,
+context pane and scheduling operations retain their existing contracts. At CSS
+viewport widths of at least 1280px, center a grid capped at 1080px, with Task then
+Execution in a flexible left column, a 320px Repeat column, and a 24px gap. Below
+1280px use Task -> Execution -> Repeat. The main-content creation form owns a
+scrolling body and a separate white, top-bordered persistent action row; its
+actual wrapped height reserves space without covering errors, pagination, final
+controls or focus outlines. Keep scrolling at 960×640, narrow effective widths
+and 200% zoom. Use existing system fonts and tokens, white 12px-radius cards,
+24px card padding, 8px controls of at least 40px, 28px page title, 18px section
+headings and 14px labels. Static creation-scoped CSS preserves the strict
+production `style-src 'self'`, dependencies and native geometry.
+
+The heading is **New schedule**, with **Set up a recurring task for your
+project.** Required Task fields are Schedule name, Project and Scheduled prompt;
+name/prompt placeholders are **e.g. Weekday code review** and **Describe what the
+agent should do on each run...**. The multiline prompt resizes vertically.
+Execution requires explicit Agent Worker and execution-machine choices with
+visible catalog loading, empty-page, permission/authentication, connection and
+cached-refresh failure states. Preserve bounded paging and exact off-page or
+unavailable selections without fallback. Selectors share a row only when their
+available width permits. Native Workspace and Execution mode radio groups offer
+Worktree/Local computer and Execute/Plan, with ordinary checked/keyboard
+semantics. Local disables only arbitrary execution-machine choice. Selection
+and new Local submission each acquire fresh proof for the exact selected
+connection/machine; proof never enters form state, queries or documents.
+
+Worktree exposes an initially collapsed **Starting reference overrides**
+disclosure with **Using saved project references**, or the override count. Keep
+its complete existing explanation, repositories, reference types/fields,
+addition/edit/removal, uniqueness and 1000-entry ceiling. Collapse keeps its
+contents and drafts mounted; invalid hidden required references reopen for
+focus. Changing Project or selecting Local clears overrides. Local omits this
+read/form path and explains shared checkouts without fetch or starting overrides.
+
+Frequency is an internal enum, never a definition field: Daily, Weekdays,
+Weekly, Custom cron. Defaults remain paused, Worktree, Execute, Overlap,
+Weekdays 09:00, `0 9 * * 1-5` and explicit `UTC`. Preset Time is required
+minute-resolution `HH:mm`; Weekly additionally selects exactly one weekday,
+first Monday, retained when leaving/returning. For valid hour `h` and minute `m`,
+Daily emits `m h * * *`, Weekdays `m h * * 1-5`, Weekly `m h * * d` (Sunday 0,
+Monday 1), with decimal numbers without leading zeros. Preset switches retain
+time. Custom exposes the original required 512-character Cron expression and
+five-field guidance; switching to Custom preserves the existing expression
+exactly. Custom -> preset imports only the time from exact canonical generated
+numeric forms above, including valid numeric weekday 0–6; its weekday never
+replaces the separately retained Weekly weekday. Arbitrary, padded or otherwise
+noncanonical expressions use the last valid preset time, or 09:00 when absent.
+No general parser, browser timezone substitution or client calendar validation
+is introduced. Empty/invalid Time remains a visible draft, blocks submission and
+cannot silently submit the last valid Cron. Preset summaries show frequency,
+time, entered timezone and actual Cron only when Time is valid; Custom shows raw
+Cron/timezone without natural-language interpretation. These are selection
+summaries, not execution-eligibility proof. Display **Next run is calculated by
+the server after saving.** The server retains all calendar/timezone, DST and
+absolute next-UTC authority.
+
+Retain Overlap independent sessions, Skip new occurrences while prior work is
+active, and FIFO Wait until confirmed cleanup. **Enable future scheduled runs**
+is unchecked by default with paused-creation guidance. Explain continued server
+scheduling after desktop closure and skipped offline due instants without a
+catch-up burst. The action row shows Paused/Enabled on creation plus workspace
+and mode, secondary Cancel and primary Create schedule. Cancel ends creation and
+returns to the list guidance without a write; acknowledgment enters schedule
+details. Local verification, saving and uncertainty lock mutable fields and
+Cancel; uncertainty also disables Create and exposes **Retry the same schedule**
+using its original retained definition bytes, token, request ID and revision.
+Definite errors permit draft correction. Preserve 1 MiB definition, 256 KiB UTF-8
+prompt and existing field bounds, retaining the previous valid draft on overflow.
+Every save remains strict schema-v1 editable definition only, empty resource ID
+and revision `0n` for creation, with one mutation identity and existing owner/client
+authorization. Frequency, time, weekday, disclosure and resolved/server-owned
+metadata never serialize; no RPC, storage schema or migration changes.
+
+Preserve all creation authoring state, including raw Custom input, time/weekday
+and disclosure, across global navigation, Settings and same-identity reconnect;
+connection replacement clears it. Inactive reads suspend. Existing schedule
+replacement locks remain active while editing/in-flight/uncertain. Focus Schedule
+name once on the first active fresh entry; retained entry, refetch and responsive
+changes cannot steal focus. Required labels, native radios, disclosure expanded
+state, visible focus, status/error announcements and Task -> Execution -> Repeat
+-> actions focus order stay accessible. The existing compact native drawer keeps
+focus containment, Escape/Close and opener restoration without remounting drafts.
+No new motion, telemetry, prompt/token/account logging, feature flag or server
+capability gate is added. Ordinary frontend/native packaging and compatible
+ScheduleService servers retain the same definition boundary. Record actual
+platform/viewport/zoom native acceptance and unavailable platforms separately
+from component checks in the evidence ledger.
+
 ### Session selection and recovery
 Session creation uses paginated project/Agent/Worker selectors with no first-option fallback, retains configured-empty Agent restrictions, and bounds the first prompt to 256 KiB UTF-8 before state retention. The first-message textarea keeps a visible keyboard focus indicator. Disable Project selection while Local Worker proof or session creation is pending or uncertain so the displayed selection remains aligned with the retained request. Project sessions allow independent starting overrides by repository without changing saved base references. General Chat clears project/Git selection and uses the selected Worker's isolated directory. Explicit Local creation reads this computer’s original paired Worker proof through the native boundary and keeps existing checkouts as-is.
 
