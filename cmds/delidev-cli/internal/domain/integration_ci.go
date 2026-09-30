@@ -110,12 +110,13 @@ const (
 )
 
 type CIRequirementResult struct {
-	RulesetID     string   `json:"ruleset_id"`
-	Context       string   `json:"context"`
-	IntegrationID *string  `json:"integration_id,omitempty"`
-	State         CIState  `json:"state"`
-	Reason        CIReason `json:"reason"`
-	ResultNodeIDs []string `json:"result_node_ids"`
+	Workflow      *RequiredWorkflowReference `json:"workflow,omitempty"`
+	RulesetID     string                     `json:"ruleset_id"`
+	Context       string                     `json:"context"`
+	IntegrationID *string                    `json:"integration_id,omitempty"`
+	State         CIState                    `json:"state"`
+	Reason        CIReason                   `json:"reason"`
+	ResultNodeIDs []string                   `json:"result_node_ids"`
 }
 type RequiredCIResult struct {
 	Source       EvaluatedCommitSource `json:"source"`
@@ -125,13 +126,16 @@ type RequiredCIResult struct {
 	Requirements []CIRequirementResult `json:"requirements"`
 }
 type PullRequestCI struct {
-	Rules              PullRequestRules `json:"rules"`
-	Head               CIRollup         `json:"head"`
-	TestMerge          *CIRollup        `json:"test_merge,omitempty"`
-	NativeMergeability string           `json:"native_mergeability"`
-	InMergeQueue       bool             `json:"in_merge_queue"`
-	MergeQueue         *CIMergeQueue    `json:"merge_queue,omitempty"`
-	Result             RequiredCIResult `json:"result"`
+	// Nil means this optional complete inventory is unavailable or unobserved;
+	// historical proofs and ordinary status-check evaluation remain compatible.
+	WorkflowRuns       []CIRequiredWorkflowRun `json:"workflow_runs,omitempty"`
+	Rules              PullRequestRules        `json:"rules"`
+	Head               CIRollup                `json:"head"`
+	TestMerge          *CIRollup               `json:"test_merge,omitempty"`
+	NativeMergeability string                  `json:"native_mergeability"`
+	InMergeQueue       bool                    `json:"in_merge_queue"`
+	MergeQueue         *CIMergeQueue           `json:"merge_queue,omitempty"`
+	Result             RequiredCIResult        `json:"result"`
 }
 
 func ciResultState(v CIContext) CIState {
@@ -288,6 +292,21 @@ func (v PullRequestCI) Evaluate(item RepositoryItem) RequiredCIResult {
 				result.State, result.Reason = CIUnknown, CIUnsupportedRule
 			}
 		case "creation", "update", "deletion", "required_linear_history", "required_deployments", "required_signatures", "pull_request", "non_fast_forward", "commit_message_pattern", "commit_author_email_pattern", "committer_email_pattern", "branch_name_pattern", "tag_name_pattern", "file_path_restriction", "max_file_path_length", "file_extension_restriction", "max_file_size":
+		case "workflows":
+			if rule.RequiredWorkflows == nil {
+				result.State, result.Reason = CIUnknown, CIUnsupportedRule
+				continue
+			}
+			if rule.RequiredWorkflows.UnknownParameters {
+				result.State, result.Reason = CIUnknown, CIUnsupportedRule
+			}
+			for _, ref := range rule.RequiredWorkflows.Workflows {
+				required := workflowRequirement(rule, ref, v, result.Source)
+				result.Requirements = append(result.Requirements, required)
+				if ciPriority(required.State) > ciPriority(result.State) {
+					result.State, result.Reason = required.State, required.Reason
+				}
+			}
 		default:
 			result.State, result.Reason = CIUnknown, CIUnsupportedRule
 		}
@@ -299,6 +318,18 @@ func (v PullRequestCI) Validate(item RepositoryItem) error {
 	raw, err := json.Marshal(v)
 	if err != nil || len(raw) > MaxCIEvidenceBytes {
 		return invalidPRObservation()
+	}
+	if v.WorkflowRuns != nil {
+		if v.TestMerge == nil || len(v.WorkflowRuns) > MaxCIContexts {
+			return invalidPRObservation()
+		}
+		seen := map[string]bool{}
+		for _, run := range v.WorkflowRuns {
+			if run.Validate(v.TestMerge.CommitSHA) != nil || seen[run.NodeID] || seen[run.SuiteNodeID] {
+				return invalidPRObservation()
+			}
+			seen[run.NodeID], seen[run.SuiteNodeID] = true, true
+		}
 	}
 	if v.Rules.Validate(item) != nil || v.Head.Validate(item.HeadSHA) != nil || v.TestMerge != nil && (v.TestMerge.Validate(v.TestMerge.CommitSHA) != nil || v.TestMerge.CommitSHA == item.HeadSHA) {
 		return invalidPRObservation()

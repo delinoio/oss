@@ -2759,6 +2759,66 @@
       "member": "WORKER_CAPABILITY_SESSION_TERMINALS_V1",
       "oldBranchNumber": 3,
       "number": 4
+    },
+    {
+      "issue": 1203,
+      "sharedIssues": [
+        1093,
+        1202
+      ],
+      "kind": "enum",
+      "declaration": "EntityKind",
+      "member": "ENTITY_KIND_COMPACTION",
+      "number": 32
+    },
+    {
+      "issue": 1203,
+      "sharedIssues": [
+        1093,
+        1202
+      ],
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
+      "number": 15
+    },
+    {
+      "issue": 1203,
+      "sharedIssues": [
+        1093,
+        1202
+      ],
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
+      "number": 5
+    },
+    {
+      "issue": 1203,
+      "sharedIssues": [
+        1093,
+        1202
+      ],
+      "kind": "message",
+      "declaration": "SessionChange",
+      "member": "compaction_job",
+      "number": 9
+    },
+    {
+      "pr": 1193,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1",
+      "oldBranchNumber": 5,
+      "number": 6
+    },
+    {
+      "pr": 1193,
+      "kind": "message",
+      "declaration": "AttachWorkerResponse",
+      "member": "supported_worker_capabilities",
+      "oldBranchNumber": 3,
+      "number": 3
     }
   ]
 }

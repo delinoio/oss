@@ -195,9 +195,21 @@ func (c *Client) queryPRObservation(ctx context.Context, token []byte, repositor
 		if err != nil {
 			return result, err
 		}
+		if err := c.readRequiredWorkflows(ctx, token, repository, item, &observed, *rules); err != nil {
+			return result, err
+		}
 		repeated, err := c.readCIInventory(ctx, token, repository, item)
 		if err != nil {
 			return result, err
+		}
+		if err := c.readRequiredWorkflows(ctx, token, repository, item, &repeated, *rules); err != nil {
+			return result, err
+		}
+		// Both optional inventories must be complete to retain workflow proof.
+		// A local enrichment budget or admission failure makes that family
+		// unavailable without discarding independently repeated ordinary checks.
+		if observed.WorkflowRuns == nil || repeated.WorkflowRuns == nil {
+			observed.WorkflowRuns, repeated.WorkflowRuns = nil, nil
 		}
 		if !reflect.DeepEqual(observed, repeated) {
 			return result, domain.Fail(domain.Conflict, "CI results changed during the read.", "Refresh the complete PR CI evidence; no mixed result was published.")
@@ -214,6 +226,17 @@ func (c *Client) queryPRObservation(ctx context.Context, token []byte, repositor
 		final, err := c.readCIInventory(ctx, token, repository, item)
 		if err != nil {
 			return result, err
+		}
+		// Retained workflow proof must also survive the final bracket. If this
+		// optional read is unavailable, drop that entire family as in the first
+		// two reads; ordinary queue/check evidence still has to agree exactly.
+		if observed.WorkflowRuns != nil {
+			if err := c.readRequiredWorkflows(ctx, token, repository, item, &final, *currentRules); err != nil {
+				return result, err
+			}
+			if final.WorkflowRuns == nil {
+				observed.WorkflowRuns = nil
+			}
 		}
 		if !reflect.DeepEqual(observed, final) {
 			return result, domain.Fail(domain.Conflict, "CI evidence changed during the final evaluation read.", "Refresh the complete current PR evidence.")

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
@@ -140,6 +141,16 @@ type sessionAPI struct {
 	restoredAlways      uint32
 	permissionRestore   *interactionHTTPAttempt
 	todoRead            bool
+
+	reconciliation          ReconciliationState
+	reconciliationMu        sync.Mutex
+	reconciliationCancel    context.CancelFunc
+	reconciliationDenied    bool
+	reconciliationRead      bool
+	reconciliationReadBytes int
+	verifyStreamOwner       func(context.Context) error
+	recovered               []inputObservation
+	recoveredObserver       *inputObserver
 }
 
 type sessionCreation struct {
@@ -299,6 +310,9 @@ func (s *sessionAPI) create(ctx context.Context, request domain.ID, settings Ses
 	}
 	s.creation.acknowledged = true
 	identity, err := validateSession(raw, s.cwd, s.creation, true)
+	if err == nil && !s.validRootProject(identity) {
+		err = sessionProblem()
+	}
 	if err != nil {
 		s.problem = sessionProblem()
 		s.diagnostic(ctx, CreateSessionMutation, err, "phase", "native-identity")
@@ -487,4 +501,8 @@ func (s *sessionAPI) readStoredInput(ctx context.Context) (InputReceipt, error) 
 	}
 	s.input.receipt.Recorded = true
 	return s.input.receipt, nil
+}
+
+func (s *sessionAPI) validRootProject(identity sessionIdentity) bool {
+	return s.apiProfile == nil || s.apiProfile.WorkspaceRoot == nil || !s.apiProfile.WorkspaceRoot.windowsGlobal() || identity.project == "global"
 }
