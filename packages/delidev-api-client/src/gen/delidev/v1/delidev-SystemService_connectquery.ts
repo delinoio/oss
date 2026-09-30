@@ -5,6 +5,16 @@
 import { SystemService } from "./delidev_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SystemService.GetUserService
+ */
+export const getUserService = SystemService.method.getUserService;
+
+/**
+ * @generated from rpc delidev.v1.SystemService.ControlUserService
+ */
+export const controlUserService = SystemService.method.controlUserService;
+
+/**
  * @generated from rpc delidev.v1.SystemService.GetStatus
  */
 export const getStatus = SystemService.method.getStatus;

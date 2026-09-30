@@ -55,6 +55,8 @@ Each project must have one project index document and one or more domain contrac
 - [Portable configuration](cmds-delidev-configuration-transfer-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
 - [Worker-owned session terminals](cmds-delidev-terminals-contract.md)
+
+- [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)

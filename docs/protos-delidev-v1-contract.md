@@ -92,8 +92,9 @@ current referenced records. Regenerate Go, TypeScript and Connect Query bindings
 together; no output bytes enter durable events or mutation receipts.
 
 Forwarding retains its merged `ENTITY_KIND_FORWARD = 27` and system/Worker
-capability value `2`. Terminals use the separate additive entity value `28`
-and capability value `3`; neither feature may reinterpret the other's wire
+capability value `2`. User services retain system capability value `3`.
+Terminals use the separate additive entity value `28`, system capability value
+`4` and Worker capability value `3`; no feature may reinterpret another's wire
 values. Regenerate all bindings from this combined canonical schema.
 
 ## Storage
@@ -348,6 +349,12 @@ counts without replaying acceptance or filesystem work. Regenerate Go, TypeScrip
 and Connect Query bindings together.
 
 Provider activation adds an owner/client-only `ProviderService.ListProviderInventory`, closed capability/preset enums, account-list-only `ListResourcesRequest.provider_id`, and additive `SearchModels.enabled_providers_only`. Omitted model filtering preserves existing behavior. Provider enabled and preset provenance remain optional fields in the canonical provider JSON document for legacy compatibility. Inventory capabilities let clients detect older servers that ignore filters; Workers cannot read it. See [provider activation](cmds-delidev-provider-activation-contract.md), and regenerate Go messages/Connect handlers and TypeScript Connect Query bindings together.
+
+### Current-user services
+
+`SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
+
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1` and the merged `SESSION_FORWARDING_V1 = 2`; the additive `USER_SERVICES_V1` uses `3`. `GetStatus` advertises all three independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 

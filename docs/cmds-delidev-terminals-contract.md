@@ -24,8 +24,10 @@ disconnect and reattach without replacing the shell.
 
 ## Interfaces and Contracts
 
-The server advertises `SYSTEM_CAPABILITY_SESSION_TERMINALS_V1`; the Worker must
-advertise `WORKER_CAPABILITY_SESSION_TERMINALS_V1`. Creation requires a ready
+The server advertises `SYSTEM_CAPABILITY_SESSION_TERMINALS_V1` with value 4;
+the Worker must advertise `WORKER_CAPABILITY_SESSION_TERMINALS_V1` with value 3.
+These independent enum spaces preserve the merged user-service system value 3.
+Creation requires a ready
 original workspace, current Worker instance/lease and current session revision.
 The terminal retains the session/project, machine, original Worker instance and
 claimed paired device. Input and resize require the current running terminal,

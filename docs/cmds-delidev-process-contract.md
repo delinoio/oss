@@ -57,3 +57,7 @@ Ordinary pipe launches retain their explicit inherited handle list, and both
 launch modes retain suspended creation with atomic Job Object assignment.
 
 Focused macOS arm64 process fixtures exercise an actual interactive `/bin/sh`, TTY detection, resize, multibyte bytes, natural exit and owned descendant cleanup. Windows cross-compilation does not establish native ConPTY acceptance.
+
+## Optional user-service controllers
+
+Optional user-service controllers use process-birth observation for identity checking but do not reuse execution-scope signaling or change harness ownership. Their independent foreground exclusivity, durable Stop and registration cleanup are defined in the [user-service contract](cmds-delidev-user-services-contract.md). Service-controller exit is not per-session cleanup proof.
