@@ -423,6 +423,34 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-schedule-row > button { width: 100%; min-height: 36px; padding: 5px 7px; border-color: transparent; background: transparent; text-align: left; }
 .sidebar-schedule-row > button[aria-current="true"] { background: #e2e5e9; }
 .sidebar-schedule-row > p { margin: 2px 5px 0; color: #5b6577; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+/* Schedules presentation stays within its existing mounted sidebar surface. */
+.schedules-sidebar :focus-visible { outline-offset: -3px; }
+.schedules-sidebar > h2 { margin: 4px 4px 12px; font-weight: 600; }
+.schedules-sidebar .sidebar-action { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 16px; }
+.schedules-sidebar .sidebar-icon { width: 16px; height: 16px; }
+.schedules-sidebar .sidebar-filter-options { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0 0 12px; padding: 4px; border-radius: 8px; background: #e9ecf1; }
+.schedules-sidebar .sidebar-filter-options > button { min-width: 0; min-height: 36px; padding: 4px 2px; border: 0; border-radius: 6px; text-align: center; line-height: 1.4; overflow-wrap: anywhere; }
+.schedules-sidebar .sidebar-filter-options > button[aria-pressed="true"] { color: #17499f; background: white; }
+.schedules-sidebar label { min-width: 0; margin: 0; color: #5b6577; font-weight: 500; }
+.schedules-sidebar input, .schedules-sidebar select { min-width: 0; }
+.schedules-sidebar .resource-choice .actions { flex-wrap: wrap; margin-top: 8px; }
+.schedules-sidebar .sidebar-list-heading { flex-wrap: wrap; gap: 8px; margin: 20px 0 8px; padding-top: 12px; border-top: 1px solid #d8dee8; }
+.schedules-sidebar .sidebar-list-heading h3 { color: #202632; font-size: 12px; letter-spacing: normal; text-transform: none; font-weight: 600; overflow-wrap: anywhere; }
+.schedules-sidebar .sidebar-list-heading button { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px; border-color: transparent; background: transparent; font-size: 12px; }
+.schedules-sidebar .sidebar-schedule-row { min-width: 0; padding: 0; }
+.schedules-sidebar .sidebar-schedule-row > button { display: grid; gap: 4px; min-width: 0; padding: 12px 8px; border: 0; border-radius: 6px; overflow-wrap: anywhere; }
+.schedules-sidebar .sidebar-schedule-row > button[aria-current="true"] { color: #202632; background: #e7efff; }
+.schedules-sidebar .schedule-row-title { font-size: 13px; font-weight: 600; line-height: 1.4; }
+.schedules-sidebar .schedule-row-state, .schedules-sidebar .schedule-row-next { min-width: 0; color: #5b6577; font-size: 11px; line-height: 1.45; }
+.schedules-sidebar .schedule-row-next > span { display: block; }
+.schedules-sidebar .schedules-empty { display: flex; align-items: flex-start; gap: 8px; margin: 16px 8px; }
+.schedules-sidebar .schedules-pages { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+.schedules-sidebar .schedules-pages > button { border-color: transparent; background: transparent; }
+.schedules-sidebar .schedules-history-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 12px 8px; border: 0; border-top: 1px solid #d8dee8; border-radius: 0; background: transparent; text-align: left; overflow-wrap: anywhere; }
+.schedules-sidebar .schedules-history-chevron { transform: rotate(-90deg); }
+.schedules-sidebar .schedules-history-toggle[aria-expanded="true"] .schedules-history-chevron { transform: rotate(0); }
+.schedules-sidebar .sidebar-form { gap: 12px; padding: 8px 0 0; }
+.schedules-sidebar .sidebar-form > button { margin: 0; }
 .schedule-page { min-height: 100%; }
 
 /* PR presentation follows the active surface without replacing controllers or affecting neighboring contexts. */
