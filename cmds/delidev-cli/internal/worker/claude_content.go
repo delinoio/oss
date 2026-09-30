@@ -353,6 +353,14 @@ func (c *ClaudeContentPublisher) commitHead() {
 			child.Usage = prior.Usage
 		}
 		c.children[item.child.NativeID] = child
+		if item.child.Source == domain.ClaudeTaskSource {
+			// Reserve the original native task event only with its acknowledged
+			// child receipt, including a lost-ack replay of that same receipt.
+			if c.binding.progressSeen == nil {
+				c.binding.progressSeen = map[string]bool{}
+			}
+			c.binding.progressSeen[item.child.SourceID] = true
+		}
 		delete(c.childUsageModels, item.child.NativeID)
 		if item.childUsageModel != nil {
 			if c.childUsageModels == nil {
