@@ -4,6 +4,8 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -38,11 +40,16 @@ type prGitScope struct {
 }
 
 type PRGitTool struct {
-	manager     *Manager
-	scope       prGitScope
-	path        string
-	raw         []byte
-	environment []string
+	manager             *Manager
+	scope               prGitScope
+	path                string
+	raw                 []byte
+	environment         []string
+	bridge              *prGitBridge
+	configurationDigest string
+	localName           string
+	localEmail          string
+	proofKey            [32]byte
 }
 
 func toolFailure() error {
@@ -73,17 +80,6 @@ func originalPRGitEnvironment() []string {
 	slices.Sort(out)
 	return out
 }
-func delegatedPRGitEnvironment() []string {
-	out := []string{}
-	for _, entry := range os.Environ() {
-		name, value, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(name, prGitEnvironmentPrefix) && name != prGitEnvironmentPrefix+"SCOPE" {
-			out = append(out, strings.TrimPrefix(name, prGitEnvironmentPrefix)+"="+value)
-		}
-	}
-	slices.Sort(out)
-	return out
-}
 func environmentDigest(env []string) string { raw, _ := json.Marshal(env); return hashTool(raw) }
 func toolName() string {
 	if runtime.GOOS == "windows" {
@@ -94,8 +90,8 @@ func toolName() string {
 
 // The native launcher is the existing executable with a fixed private entry
 // point. No shell or second argument parse is involved, including on Windows.
-// Original Git lookup context is passed under a private prefix and restored
-// only by that entry point; the harness HOME/account environment stays private.
+// The launcher is only an authenticated local client. Original Git lookup
+// and authentication context remains in the independently owned Worker bridge.
 func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.PRFixExecution, input PrepareRequest, manifest Manifest) (_ *PRGitTool, returnedErr error) {
 	phase := prGitPreflightPhase
 	defer func() {
@@ -149,6 +145,18 @@ func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.
 		}
 		return nil, domain.Fail(domain.MissingInput, "The execution Worker lacks PR Git push access.", "Prepare native Git write authentication on this Worker; the server lookup PAT cannot be substituted.")
 	}
+	configuration, err := git.run(ctx, path, "config", "--null", "--show-origin", "--list")
+	if err != nil {
+		return nil, err
+	}
+	name, err := git.run(ctx, path, "config", "--get", "user.name")
+	if err != nil {
+		return nil, domain.Fail(domain.MissingInput, "The Worker Git commit identity is missing.", "Configure an explicit native Git user name and email on this Worker.")
+	}
+	email, err := git.run(ctx, path, "config", "--get", "user.email")
+	if err != nil || domain.Text(trimGit(name), "Git user name", 1024, true) != nil || domain.Text(trimGit(email), "Git user email", 1024, true) != nil || strings.ContainsAny(trimGit(name)+trimGit(email), "\r\n") {
+		return nil, domain.Fail(domain.MissingInput, "The Worker Git commit identity is invalid.", "Configure a bounded native Git user name and email on this Worker.")
+	}
 	phase = prGitPublicationPhase
 	dir := filepath.Join(l.manager.Root, "pr-git", string(l.claim.ExecutionID))
 	if err := security.PrivateDir(filepath.Dir(dir)); err != nil {
@@ -201,15 +209,21 @@ func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.
 	if err := security.WriteAtomic(scopePath, raw); err != nil {
 		return nil, err
 	}
+	tool := &PRGitTool{manager: l.manager, scope: scope, path: scopePath, raw: raw, environment: environment, configurationDigest: hashTool(configuration), localName: trimGit(name), localEmail: trimGit(email)}
+	if _, err := rand.Read(tool.proofKey[:]); err != nil {
+		return nil, toolFailure()
+	}
+	tool.bridge, err = startPRGitBridge(ctx, tool)
+	if err != nil {
+		return nil, err
+	}
 	l.manager.Logger.InfoContext(ctx, "manual_pr_git_ready", "attempt_id", selection.AttemptID, "execution_id", l.claim.ExecutionID)
-	return &PRGitTool{manager: l.manager, scope: scope, path: scopePath, raw: raw, environment: environment}, nil
+	return tool, nil
 }
 func (t *PRGitTool) Environment(env []string) []string {
 	out := slices.Clone(env)
 	out = append(out, prGitEnvironmentPrefix+"SCOPE="+t.path)
-	for _, entry := range t.environment {
-		out = append(out, prGitEnvironmentPrefix+entry)
-	}
+	out = append(out, prGitEnvironmentPrefix+"ENDPOINT="+t.bridge.endpoint, prGitEnvironmentPrefix+"TOKEN="+t.bridge.token)
 	for i, entry := range out {
 		key, value, ok := strings.Cut(entry, "=")
 		if ok && strings.EqualFold(key, "PATH") {
@@ -240,7 +254,7 @@ func loadPRGitScope(path string) (prGitScope, []byte, error) {
 	return scope, raw, nil
 }
 func (s prGitScope) git(environment []string) Git {
-	return Git{Executable: s.GitExecutable, ProcessRoot: filepath.Join(s.Root, "processes"), OwnerID: s.Claim.JobID, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), readOnly: true, Timeout: 2 * time.Minute, HooksDir: filepath.Join(s.Root, "disabled-hooks"), environment: environment}
+	return Git{Executable: s.GitExecutable, ProcessRoot: filepath.Join(s.Root, "processes"), OwnerID: s.Claim.JobID, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), readOnly: true, Timeout: 2 * time.Minute, HooksDir: filepath.Join(s.Root, "empty-hooks"), environment: environment}
 }
 func (s prGitScope) addresses() (string, string) {
 	t := s.Selection.Target
@@ -294,15 +308,17 @@ func (s prGitScope) validateArgs(args []string) error {
 // RunPRGit is called only by the private native launcher. The harness supplies
 // literal argv and decides when to commit/push; no server or Go controller
 // initiates publication. The original native process owner contains this child.
-func RunPRGit(ctx context.Context, path string, args []string, stdout io.Writer) error {
-	scope, _, err := loadPRGitScope(path)
-	if err != nil {
-		return err
+func (t *PRGitTool) runOwned(ctx context.Context, args []string, stdout io.Writer) error {
+	path := t.path
+	_, rawScope, err := loadPRGitScope(path)
+	if err != nil || !bytes.Equal(rawScope, t.raw) {
+		return toolFailure()
 	}
+	scope := t.scope
 	if err := scope.validateArgs(args); err != nil {
 		return err
 	}
-	environment := delegatedPRGitEnvironment()
+	environment := t.environment
 	if environmentDigest(environment) != scope.EnvironmentDigest {
 		return toolFailure()
 	}
@@ -315,6 +331,9 @@ func RunPRGit(ctx context.Context, path string, args []string, stdout io.Writer)
 		return err
 	}
 	git := scope.git(environment)
+	if err := t.requireConfiguration(ctx, git); err != nil {
+		return err
+	}
 	target := scope.Selection.Target
 	base, head := scope.addresses()
 	if args[0] == "push" {
@@ -350,10 +369,8 @@ func RunPRGit(ctx context.Context, path string, args []string, stdout io.Writer)
 		if err != nil {
 			return toolFailure()
 		}
-		claim := struct {
-			SelectionDigest string `json:"selection_digest"`
-			Head            string `json:"head"`
-		}{scope.Selection.Digest(), result}
+		claim := prGitPushClaim{SelectionDigest: scope.Selection.Digest(), Head: result}
+		claim.MAC = t.pushMAC(claim)
 		raw, _ = json.Marshal(claim)
 		_, writeErr := f.Write(raw)
 		syncErr := f.Sync()
@@ -363,6 +380,12 @@ func RunPRGit(ctx context.Context, path string, args []string, stdout io.Writer)
 		}
 	}
 	command := []string{"-C", scope.RepositoryPath, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + git.HooksDir, "-c", "http.followRedirects=false"}
+	if args[0] != "push" && args[0] != "fetch" {
+		// Local edits/filters/signing never receive native authentication lookup
+		// context. Only the closed network operations use the retained identity.
+		environment = t.localEnvironment()
+		command = append(command, "-c", "user.name="+t.localName, "-c", "user.email="+t.localEmail, "-c", "commit.gpgSign=false")
+	}
 	command = append(command, args...)
 	bounded, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -401,6 +424,9 @@ func (t *PRGitTool) VerifyPush(ctx context.Context) (p domain.PRPushProof) {
 		return p
 	}
 	git := scope.git(t.environment)
+	if t.requireConfiguration(ctx, git) != nil {
+		return p
+	}
 	_, head := scope.addresses()
 	target := scope.Selection.Target
 	raw, err = git.run(ctx, scope.RepositoryPath, "rev-parse", "--verify", "HEAD^{commit}")
@@ -415,11 +441,8 @@ func (t *PRGitTool) VerifyPush(ctx context.Context) (p domain.PRPushProof) {
 		}
 		return p
 	}
-	var claim struct {
-		SelectionDigest string `json:"selection_digest"`
-		Head            string `json:"head"`
-	}
-	if err != nil || domain.Decode(claimRaw, &claim) != nil || claim.SelectionDigest != p.SelectionDigest || claim.Head != result || result == target.HeadSHA || !canonicalCommit(result) {
+	var claim prGitPushClaim
+	if err != nil || domain.Decode(claimRaw, &claim) != nil || claim.SelectionDigest != p.SelectionDigest || !hmac.Equal([]byte(claim.MAC), []byte(t.pushMAC(claim))) || claim.Head != result || result == target.HeadSHA || !canonicalCommit(result) {
 		return p
 	}
 	if git.requirePRBranch(ctx, scope.RepositoryPath, head, target.HeadRef, result) != nil {
@@ -501,3 +524,42 @@ func readPRExecutable(path string) ([]byte, error) {
 	}
 	return raw, nil
 }
+
+func (t *PRGitTool) requireConfiguration(ctx context.Context, git Git) error {
+	raw, err := git.run(ctx, t.scope.RepositoryPath, "config", "--null", "--show-origin", "--list")
+	if err != nil {
+		return err
+	}
+	if hashTool(raw) != t.configurationDigest {
+		t.manager.Logger.WarnContext(ctx, "manual_pr_git_scope_rejected", "attempt_id", t.scope.Selection.AttemptID, "execution_id", t.scope.Claim.ExecutionID, "phase", "git-configuration", "code", domain.Conflict)
+		return prWorkspaceChanged()
+	}
+	return nil
+}
+
+type prGitPushClaim struct {
+	SelectionDigest string `json:"selection_digest"`
+	Head            string `json:"head"`
+	MAC             string `json:"mac"`
+}
+
+func (t *PRGitTool) pushMAC(claim prGitPushClaim) string {
+	claim.MAC = ""
+	raw, _ := json.Marshal(claim)
+	mac := hmac.New(sha256.New, t.proofKey[:])
+	mac.Write(raw)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+func (t *PRGitTool) localEnvironment() []string {
+	out := []string{}
+	for _, entry := range t.environment {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL":
+			out = append(out, entry)
+		}
+	}
+	home := filepath.Join(filepath.Dir(t.path), "local-home")
+	return append(out, "HOME="+home, "USERPROFILE="+home, "XDG_CONFIG_HOME="+home, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never", "GIT_OPTIONAL_LOCKS=0")
+}
+func (t *PRGitTool) Close() error { return t.bridge.close() }

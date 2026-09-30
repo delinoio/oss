@@ -137,3 +137,30 @@ fixture failures. These are not a green native suite, and the unchanged-primary
 control established only the specifically recorded App/Grok timing failures.
 The separately repeated manual-fix race fixtures pass after the coalescing
 repair. No Go data-race warning has been observed in the retained logs so far.
+
+## Review repair: separately owned Git authentication
+
+The first review correctly identified that reversible prefixed native lookup
+variables let a shell-capable harness bypass the client bridge. Native
+configuration/authentication now remains in the independently owned Worker
+process. The harness receives only an authenticated closed loopback capability.
+The Worker pins original scope/configuration and executable bytes, isolates local
+commands from native authentication, retains the explicit native commit identity,
+authenticates push claims with a private memory-only key, and cancels/joins the
+bounded bridge before proof. Restart cannot reconstruct a lost capability/key.
+
+`go test -p 1 ./cmds/delidev-cli/internal/workspace
+-run '^TestPRGitToolForkPush' -count=1 -timeout=10m` passed (98.100 seconds) after
+the ownership change. It additionally rejects mutable scope substitution,
+forged push claims, command replay after closure and native lookup variables in
+the harness environment. `go vet -p 1 ./cmds/delidev-cli/internal/workspace
+./cmds/delidev-cli/internal/worker` passed. These are isolated real-Git fixtures,
+not a claim of OS isolation for an explicitly full-access harness or live account
+acceptance.
+
+The initial broad race run crossed a base merge while its package inputs were
+already snapshotted. Its later Activity-related build failures are therefore a
+mixed-source validation limitation, not evidence about the merged source build.
+It also timed out in the existing Grok package. A fresh immutable-source broad
+run is required after the review and dispatch repairs finish; no full Go pass is
+claimed from the initial run.

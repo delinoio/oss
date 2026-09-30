@@ -58,6 +58,9 @@ exec %s "$@"
 		t.Fatal(err)
 	}
 	defer lease.Close()
+	root := manifest.Repositories[0].Path
+	gitTest(t, root, "config", "user.name", "PR fixture")
+	gitTest(t, root, "config", "user.email", "fixture@example.invalid")
 	selection := domain.PRFixExecution{AttemptID: domain.NewID(), Target: *f.request.Repositories[0].PRTarget, Strategy: domain.RebaseConflictStrategy}
 	os.WriteFile(f.marker, []byte("deny-push"), 0600)
 	if _, err := lease.PreparePRGitTool(context.Background(), selection, f.request, manifest); domain.SafeError(err).Code != domain.MissingInput {
@@ -68,11 +71,15 @@ exec %s "$@"
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer tool.Close()
 	if p := tool.VerifyPush(context.Background()); p.State != domain.PRPushUnchanged {
 		t.Fatal("native success without push", p.State)
 	}
 	for _, entry := range tool.Environment(nil) {
 		name, value, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, prGitEnvironmentPrefix) && !slices.Contains([]string{prGitEnvironmentPrefix + "SCOPE", prGitEnvironmentPrefix + "ENDPOINT", prGitEnvironmentPrefix + "TOKEN"}, name) {
+			t.Fatal("native lookup context reached harness", name)
+		}
 		if strings.HasPrefix(name, prGitEnvironmentPrefix) {
 			t.Setenv(name, value)
 		}
@@ -81,9 +88,6 @@ exec %s "$@"
 	if err := RunPRGit(context.Background(), tool.path, []string{"delidev-target"}, &plan); err != nil || !strings.Contains(plan.String(), "fixture-author/fork-repo.git") {
 		t.Fatal("fork command plan", err)
 	}
-	root := manifest.Repositories[0].Path
-	gitTest(t, root, "config", "user.name", "PR fixture")
-	gitTest(t, root, "config", "user.email", "fixture@example.invalid")
 	os.WriteFile(filepath.Join(root, "fix.txt"), []byte("isolated fix\n"), 0600)
 	for _, args := range [][]string{{"add", "fix.txt"}, {"commit", "-m", "controlled fix"}} {
 		if err := RunPRGit(context.Background(), tool.path, args, &bytes.Buffer{}); err != nil {
@@ -92,10 +96,25 @@ exec %s "$@"
 	}
 	push := tool.scope.commandPlan()["push_argv"].([]string)
 	gitTest(t, root, "config", "url.https://example.invalid/.pushInsteadOf", tool.scope.commandPlan()["push_argv"].([]string)[3])
-	if err := RunPRGit(context.Background(), tool.path, push, &bytes.Buffer{}); domain.SafeError(err).Code != domain.MissingInput {
+	if err := RunPRGit(context.Background(), tool.path, push, &bytes.Buffer{}); err == nil {
 		t.Fatal("push-only rewrite accepted", err)
 	}
 	gitTest(t, root, "config", "--unset-all", "url.https://example.invalid/.pushInsteadOf")
+
+	// Forging mutable private metadata supplies no Worker-owned push proof.
+	claimPath := filepath.Join(filepath.Dir(tool.path), "push.json")
+	os.WriteFile(claimPath, []byte(`{"selection_digest":"`+selection.Digest()+`","head":"`+f.next+`","mac":"forged"}`), 0600)
+	if p := tool.VerifyPush(context.Background()); p.State != domain.PRPushUncertain {
+		t.Fatal("forged claim supplied proof", p.State)
+	}
+	os.Remove(claimPath)
+	alteredScope := slices.Clone(tool.raw)
+	alteredScope = bytes.Replace(alteredScope, []byte("fixture-author"), []byte("foreign-author"), 1)
+	os.WriteFile(tool.path, alteredScope, 0600)
+	if err := RunPRGit(context.Background(), tool.path, []string{"status"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("changed scope supplied command authority")
+	}
+	os.WriteFile(tool.path, tool.raw, 0600)
 
 	gitTest(t, f.fork, "update-ref", "refs/heads/feature", f.next)
 	if err := RunPRGit(context.Background(), tool.path, push, &bytes.Buffer{}); err == nil {
@@ -113,6 +132,12 @@ exec %s "$@"
 	}
 	if err := RunPRGit(context.Background(), tool.path, push, &bytes.Buffer{}); err == nil {
 		t.Fatal("push replay accepted")
+	}
+	if err := tool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunPRGit(context.Background(), tool.path, []string{"status"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("closed bridge accepted native command")
 	}
 	altered := append(slices.Clone(push), "--force")
 	if tool.scope.validateArgs(altered) == nil {

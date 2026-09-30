@@ -100,6 +100,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err != nil {
 			return nil, err
 		}
+		defer func() {
+			if err := prGit.Close(); err != nil {
+				output, returned = nil, err
+			}
+		}()
 	}
 	// The private runtime is retained for native resume/reconciliation. Never
 	// inherit an existing directory after an interrupted first execution.
@@ -306,6 +311,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		var push *domain.PRPushProof
 		if prGit != nil {
+			if err := prGit.Close(); err != nil {
+				return nil, err
+			}
 			bounded, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			proof := prGit.VerifyPush(bounded)
 			cancel()
