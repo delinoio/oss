@@ -12,7 +12,7 @@ describe("tray read projection", () => {
     const result = traySummary(value, false, usage, undefined);
     expect(result.overview?.active_sessions).toBe("9007199254740993");
     expect(result.overview?.pending_interactions).toBe("0");
-    expect(result.usage).toEqual({ known_tokens: "0", incomplete: true });
+    expect(result.usage).toEqual({ known_tokens: "0", incomplete: true, estimates: [] });
     usage.totals!.total!.knownTotal = "90071992547409930000";
     expect(traySummary(value, false, usage, undefined).usage?.known_tokens).toBe("90071992547409930000");
     usage.untilUnixMs++;
@@ -34,6 +34,20 @@ describe("tray read projection", () => {
     const stale = traySummary(value, true, undefined, accounts);
     expect(stale.overview?.stale).toBe(true);
     expect(stale.accounts?.entries[0].windows[0].state).toBe(TrayQuotaState.Stale);
+  });
+  it("preserves separate exact currency estimates and rejects malformed currency graphs", () => {
+    const value = overview();
+    const usage = create(GetUsageSummaryResponseSchema, { fromUnixMs: value.todayFromUnixMs, untilUnixMs: value.todayUntilUnixMs, coverage: UsageCoverage.OBSERVED_ROOT_RESPONSES, estimates: { currencies: [
+      { currency: "USD", knownAmount: "0.000000001" }, { currency: "KRW", knownAmount: "9007199254740993.000" }, { currency: "EUR", knownAmount: "" },
+    ] } });
+    expect(traySummary(value, false, usage, undefined).usage?.estimates).toEqual([
+      { currency: "USD", known_amount: "0.000000001" }, { currency: "KRW", known_amount: "9007199254740993.000" }, { currency: "EUR", known_amount: null },
+    ]);
+    usage.estimates!.currencies[2].currency = "USD";
+    expect(traySummary(value, false, usage, undefined).usage).toBeNull();
+    usage.estimates!.currencies[2].currency = "EUR";
+    usage.estimates!.currencies[0].knownAmount = "1e-9";
+    expect(traySummary(value, false, usage, undefined).usage).toBeNull();
   });
 });
 

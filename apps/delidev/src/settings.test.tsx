@@ -12,7 +12,7 @@ import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError } = {}) {
+function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string }; readProviderInventory?: (pageToken: string) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -22,15 +22,15 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
   const transport = createRouterTransport((router) => {
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
-    router.service(ResourceService, { listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }), getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
+    router.service(ResourceService, { listResources: (request) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }), getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
     router.service(AccountService, { getAccountStatus: (request) => ({ account: resources.find((row) => row.id === request.id) }), connectAccount: connect, disconnectAccount: disconnect });
     router.service(ProviderService, {
       listProviderPresets: () => ({ presetsJson: encode(options.presets ?? [{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }),
-      listProviderInventory: () => {
+      listProviderInventory: (request) => {
         if (options.providerInventoryError) throw options.providerInventoryError;
-        return { entries: options.providerEntries ?? [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ...(options.providerEntries ? [ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] : [])] };
+        return options.readProviderInventory?.(request.pageToken) ?? ({ entries: options.providerEntries ?? [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ...(options.providerEntries ? [ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] : [])] });
       },
-      searchModels: () => ({ models: [], providers: [] }),
+      searchModels: (request) => options.readModelSearch?.(request.pageToken) ?? ({ models: [], providers: [] }),
     });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
@@ -38,6 +38,49 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
   return { resources, save, remove, preview, inspect, connect, disconnect, client, view };
 }
 function input(value: unknown) { return value as { mutation: { requestId: string; expectedRevision: bigint }; documentJson: Uint8Array }; }
+
+it("pages native subscription providers independently of active API providers", async () => {
+  const subscriptions = Array.from({ length: 51 }, (_, index) => resource(EntityKind.PROVIDER, { name: `Subscription ${String(index + 1).padStart(2, "0")}`, protocol: "native-subscription", authentication: "subscription" }));
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
+  const value = fixture(subscriptions, {
+    readResources: (_kind, pageToken) => pageToken ? { resources: [subscriptions[50]] } : { resources: subscriptions.slice(0, 50), nextPageToken: "subscription-page-2" },
+    readProviderInventory: (pageToken) => ({ entries: [], capabilities, ...(pageToken ? {} : { nextPageToken: "active-api-page-2" }) }),
+  });
+  render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} active saved={() => {}} cancel={() => {}} />));
+  await screen.findByRole("option", { name: "Subscription 50" });
+  expect(screen.queryByRole("option", { name: "Subscription 51" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "More subscription providers" }));
+  await screen.findByRole("option", { name: "Subscription 51" });
+  expect((screen.getByRole("button", { name: "More API providers" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("keeps model-search cursors out of provider inventory requests", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "API provider", enabled: true });
+  const firstModel = resource(EntityKind.MODEL, { name: "First model", provider_id: provider.id });
+  const secondModel = resource(EntityKind.MODEL, { name: "Second model", provider_id: provider.id });
+  const providerEntry = create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.UNSPECIFIED, providerId: provider.id, displayName: "API provider", enabled: true, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true, provider });
+  const inventoryTokens: string[] = [];
+  const searchTokens: string[] = [];
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
+  const value = fixture([provider], {
+    providerEntries: [providerEntry],
+    readProviderInventory: (pageToken) => {
+      inventoryTokens.push(pageToken);
+      if (pageToken) throw new ConnectError("Provider inventory received another query's cursor", Code.InvalidArgument);
+      return { entries: [providerEntry], capabilities };
+    },
+    readModelSearch: (pageToken) => {
+      searchTokens.push(pageToken);
+      return pageToken ? { models: [secondModel], providers: [provider] } : { models: [firstModel], providers: [provider], nextPageToken: "model-page-2" };
+    },
+  });
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />));
+  await screen.findByRole("option", { name: "First model" });
+  fireEvent.click(screen.getByRole("button", { name: "More choices" }));
+  await screen.findByRole("option", { name: "Second model" });
+  expect(searchTokens).toEqual(["", "model-page-2"]);
+  expect(inventoryTokens.every((pageToken) => pageToken === "")).toBe(true);
+});
 
 it("shows the complete grouped navigation once and keeps its selected category in sync", async () => {
   const value = fixture([]);
@@ -76,6 +119,32 @@ it("still reports a real provider inventory read failure", async () => {
   const value = fixture([], { providerInventoryError: new ConnectError("Inventory unavailable", Code.Unavailable) });
   render(value.view(<Settings visible close={() => {}} />));
   expect(await screen.findByRole("alert")).toBeTruthy();
+});
+
+it("retains the exact first-activation retry after inventory reveals the saved preset", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true, enabled: true, preset_id: "ollama" });
+  let entry = create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, accountCountsAvailable: true });
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
+  const value = fixture([provider], { readProviderInventory: () => ({ entries: [entry], capabilities }) });
+  value.save.mockImplementationOnce(async () => {
+    entry = create(ProviderInventoryEntrySchema, { ...entry, providerId: provider.id, provider, enabled: true });
+    throw new ConnectError("Activation acknowledgment lost", Code.Unavailable);
+  });
+  render(value.view(<Settings visible close={() => {}} />));
+  const originalSwitch = await screen.findByRole("switch", { name: "Turn on Local provider" });
+  fireEvent.click(originalSwitch);
+  const savedSwitch = await screen.findByRole("switch", { name: "Turn off Local provider" });
+  expect(savedSwitch).toBe(originalSwitch);
+  expect((savedSwitch as HTMLButtonElement).disabled).toBe(true);
+  expect(value.save).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Models" }));
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry the same change" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[1][0]).toEqual(value.save.mock.calls[0][0]);
+  expect(input(value.save.mock.calls[1][0]).mutation).toMatchObject({ id: "", expectedRevision: 0n });
+  await waitFor(() => expect((screen.getByRole("switch", { name: "Turn off Local provider" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByRole("button", { name: "Retry the same change" })).toBeNull();
 });
 
 it("uses server-owned preset key guidance and inert documentation in the API account wizard", async () => {
