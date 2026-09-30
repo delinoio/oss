@@ -1174,7 +1174,6 @@ impl BrowserHost {
         let started = Instant::now();
         self.finish_forgotten(started)?;
         let mut first_failure = None;
-        let mut processed = 0;
         let cursor_path = self.root.join("removal-cursor.json");
         let mut paths = fs::read_dir(self.root.join("removals"))
             .map_err(|_| NativeFailure::StorageUnavailable)?
@@ -1190,7 +1189,7 @@ impl BrowserHost {
             let next = paths.partition_point(|path| path <= &after);
             paths.rotate_left(next);
         }
-        for path in paths {
+        for (processed, path) in paths.into_iter().enumerate() {
             if processed >= 64 || started.elapsed() >= Duration::from_secs(45) {
                 tracing::warn!(
                     operation = "browser_removal",
@@ -1199,7 +1198,6 @@ impl BrowserHost {
                 );
                 break;
             }
-            processed += 1;
             let mut removal: Removal = read_json(&path)?;
             removal.record.validate()?;
             canonical_id(&removal.request_id)?;
