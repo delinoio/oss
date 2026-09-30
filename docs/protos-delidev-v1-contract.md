@@ -374,6 +374,8 @@ Generate Go and TypeScript/Connect Query sources together and follow the
 
 Issue #1142's replacement implementation uses the allocations originally implemented in closed, unmerged PR #1193: `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 5` and `AttachWorkerResponse.supported_worker_capabilities = 3`. The allocation ledger reserves both meanings before dependent implementation, preserving Worker values 3 and 4 for their existing owners. The original issue's proposed value 3 cannot replace an existing reservation.
 
+Each reservation uses the kind of its existing declaration (`enum` or `message`); a message-field addition is recorded as `message`, not a separate field declaration kind. The allocation check validates this against the baseline declaration.
+
 This reservation changes no schema, generated binding, capability advertisement, runtime negotiation or inspection behavior. Merge it into main before publishing the dependent repository-registration implementation, as required by `docs/cmds-delidev-structure-contract.md`.
 
 Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).

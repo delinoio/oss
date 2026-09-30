@@ -33,7 +33,10 @@ test('current wire numbers match immutable assignments and future reservations',
   const ledger = JSON.parse(readFileSync(join(root, 'protos/delidev/allocations.json'), 'utf8'));
   const expected = structuredClone(ledger.baseline);
   for (const item of ledger.reservations) {
-    const members = expected[item.declaration].members;
+    const declaration = expected[item.declaration];
+    assert.ok(declaration, `${item.declaration} must have a baseline declaration`);
+    assert.equal(item.kind, declaration.kind, `${item.declaration} reservation kind must match its declaration`);
+    const members = declaration.members;
     for (const [name, number] of Object.entries(members)) if (number === item.number) assert.equal(name, item.member, 'a number cannot acquire a second meaning');
     if (Object.hasOwn(members, item.member)) assert.equal(members[item.member], item.number);
     members[item.member] = item.number;
