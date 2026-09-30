@@ -412,6 +412,9 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-filter-options { display: grid; gap: 4px; margin-block: 8px 12px; }
 .sidebar-filter-options > button { width: 100%; border-color: transparent; background: transparent; text-align: left; }
 .sidebar-filter-options > button[aria-pressed="true"] { color: #17499f; background: #e7efff; font-weight: 600; }
+/* Grow only the visible Activity outlet in the existing scroll column. Its
+   surface fills unused height without shrinking overflowing filter content. */
+.sidebar-surface-outlet:has(> .activity-sidebar:not([hidden])) { display: flex; flex-direction: column; flex: 1 0 auto; }
 /* The pane already contributes 12px and its scroll outlet 1px on the right.
    Add only the remaining inset here; keep all other surfaces and shell intact. */
 .activity-sidebar { flex: 1 0 auto; padding: 8px 3px 24px 4px; background: #f8f9fb; color: #202632; }
