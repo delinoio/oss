@@ -3798,3 +3798,126 @@ Generated desktop/client `dist` output is removed after verification. No Rust
 source or native service registration is changed or exercised in this merge.
 Real remote Worker, native desktop visual, native service login and release
 acceptance remain separate, and the pushed head requires fresh CI and review.
+
+### App-icon 20% enlargement (2026-09-30)
+
+The owner approved a uniform 1.2× enlargement of the existing app icon, keeping
+its colored ribbon, gradient, proportions and transparent background/central
+cutout. The source was hydrated from the exact local LFS object
+`88a91d0ea8462b0b8d59d53d212a4f4030f99a2775eb733b38be8234b077364f`
+(585,665 bytes). One Lanczos SRT transform around `(627, 627)`, with scale 1.2,
+zero rotation and a transparent virtual canvas, preserves the 1254×1254 RGBA8
+canvas. The approved artwork is baked into the source rather than enlarged
+again during platform export. No frontend/Rust code, bundle configuration,
+public interface or in-app button size changed.
+
+The final source is 788,603 bytes with SHA-256
+`1100564e6a9a977c89aeb273c12297f5434850b0954f9e0e83e10ca0b2cf9d53`;
+its existing exact-path LFS attribute and `icon-source@2x.png` density marker
+remain intact. Its nonzero-alpha bounds change from `(257, 175, 1058, 1071)` to
+`(183, 84, 1145, 1160)`, remaining inside the canvas. Mean alpha coverage changes
+from 31.9858% to 46.0668%, consistent with the 1.44× area increase.
+
+Each final Windows ICO frame (16, 24, 32, 48, 64 and 256px) was exported from the
+enlarged source and decoded again after packaging. The 256px ICO pixels match
+the native PNG exactly. Every export retains near-opaque ribbon interiors,
+transparent background and central-cutout samples, and graded edge alpha;
+mean alpha coverage differs from the new source by at most 0.131 percentage
+points. Representative transformed interior colors differ by at most one
+8-bit channel value. Light, dark and checkerboard before/after composites and
+both-theme frame contact sheets were visually inspected without visible
+clipping or color/edge damage. These checks establish asset appearance, not
+Windows/Linux installed-shell acceptance.
+
+The existing asset-preparation and package-verifier suites pass all 18 tests.
+The two repository LFS asset contracts also pass, including after the new source
+pointer was committed. The first macOS dry run stopped at sandbox denial of the
+Go build cache; the same existing command was retried with the required access.
+`pnpm bundle:macos-dry-run` then passed on macOS arm64: native executable and Go
+sidecar, CEF resources/helpers, widget extensions, macOS 13 metadata, notices and
+ad-hoc signatures were verified. The generated `DeliDev.icns` contains the
+required 512-point Retina entry (1024×1024 pixels) and a 256×256 entry; their mean
+alpha coverage differs from the enlarged source by at most 0.008 percentage
+points. No production signing, notarization, publication or installed Dock
+appearance is claimed. Generated desktop/client `dist` directories were removed
+after verification.
+
+### Issue #1134 shorter AI Subscription category (2026-09-30)
+
+The shared Settings category label is now exactly **AI Subscription** in the
+sidebar, heading and compact option. Its `subscription-accounts` value, all
+16 categories and their order, account filtering, help text, mutation locks and
+retained workflows remain unchanged. No CSS, font, icon, API, schema, backend or
+dependency change is included. Current naming is synchronized in the desktop
+rules, project index and desktop/account contracts; historical evidence above
+retains its original wording. The desktop category inventory also now records
+the existing sixteenth Backups category rather than the stale count of fifteen.
+
+The existing empty-Settings navigation test now checks all 16 compact option
+labels and values, every sidebar selection and heading, and compact selection
+back to `subscription-accounts` with its exact AI Subscription text/current
+state. The first validation attempt stopped at a new test query's unsupported
+TypeScript option; it was corrected before the full successful run. `pnpm test`
+from `apps/delidev` passes typed-client generation, type checking, all 74 Vitest
+files / 948 tests, all 8 package-verifier and 16 asset/launcher cases, native
+Swift widget fixtures and the production build. `git diff --check` and
+`git lfs fsck` pass.
+
+Native visual smoke used the unchanged pinned CEF development launcher on
+macOS 26.6.2 arm64, with a separately built ad-hoc bundle, temporary private app
+and server state, and a separately paired loopback server. The existing server
+on port 46310 was not changed. At 100% zoom, manually resized native content
+viewports of 960×640 and 1440×900 both show the selected label on one line in the
+unchanged 240px navigation pane, with the matching heading and unchanged API
+Accounts label. The 2× captures measure 1920×1344 and 2880×1864 including the
+32px native title bar. The first isolated build encountered a relocated CMake
+cache in the copied build output; removing that temporary generated cache
+allowed the normal launcher to build, sign and run successfully.
+
+A separate temporary browser fixture reused the real Settings component,
+production styles and the existing test's in-memory Connect fixture. At
+720×640 CSS pixels and 100% zoom, the compact selector displays the exact new
+label and retains its value and heading. Chrome's native zoom control confirms
+200%; a 1440×900 viewport override then measures 720×450 CSS pixels. Compact
+selection between API Accounts and AI Subscription updates the corresponding
+heading; the selector and Close control remain within the viewport, with no
+horizontal overflow or visibly clipped focus outline. These are browser
+responsive/zoom checks, distinct from the two native CEF checks: the native host
+has a 960px minimum width, and its keyboard shortcuts did not expose working
+page zoom. Windows/Linux runtime, production signing and release/publication
+acceptance are not established by this copy change.
+
+Temporary browser fixtures and generated desktop/client `dist` directories
+were removed after validation. The isolated app received Quit; its remaining
+CEF processes required task-scoped termination during cleanup. The temporary
+server was explicitly stopped. No user credentials or hosted inference were
+used.
+
+### PR #1127 base merge: enlarged icon and Settings label (2026-09-30)
+
+The terminal branch integrates main revision
+`1399d131dcd5ef205f5be02b17073936b21f31c7`, retaining its approved 20% icon
+enlargement and shared AI Subscription label unchanged. The evidence-ledger
+conflict preserves both complete incoming records and all terminal-branch
+history, including unsuccessful attempts and later successful validation.
+Desktop rules, project index and contracts retain the icon, Settings and
+terminal ownership boundaries together. The incoming Settings implementation,
+regression fixture and three icon assets match main exactly.
+
+The 788,603-byte, 1254×1254 source icon is hydrated and matches its exact LFS
+SHA-256 `1100564e6a9a977c89aeb273c12297f5434850b0954f9e0e83e10ca0b2cf9d53`.
+Asset preflight and `git lfs fsck` pass. An initial preflight invocation at the
+repository root could not resolve the app-local script; the command succeeds
+from its owning desktop directory. The first complete desktop validation also
+passes, but directory-specific runtime selection uses Node 26 for child tools.
+Repeating the entire command with Node 24.20.0 explicitly selected passes all
+75 files / 950 frontend tests, client build and type checking, eight package
+verifier cases, 16 asset/launcher cases, native Swift widget fixtures and the
+production frontend build. All 95 repository contract checks pass.
+
+Generated desktop/client `dist` output is removed after verification. No Go,
+Rust, protocol or generated-client source changes in this merge, so backend
+suites are not repeated and their complete prior evidence remains above.
+Incoming native icon/Settings smoke records remain historical evidence from
+main; this merge performs no new native desktop visual, remote Worker or
+release acceptance. Its pushed head requires fresh hosted checks and review.
