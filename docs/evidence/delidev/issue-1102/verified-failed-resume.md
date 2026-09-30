@@ -43,8 +43,8 @@ unsettled callback and unproved child/background histories remain excluded.
 - Passed `go vet ./cmds/delidev-cli/...`.
 - Root `pnpm install --frozen-lockfile` succeeded and installed linked-worktree
   hooks. Real administrator and async-commit-hook embed assets were generated
-  before repository-wide Go formatting; generated dist output will be removed
-  after verification.
+  before repository-wide Go formatting; all generated repository-owned dist output was removed
+  after both Go formatting hooks passed.
 
 ## Evidence limits
 
