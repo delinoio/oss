@@ -135,3 +135,26 @@ it("expires visible observations without requests and stops its one-shot timer w
     expect(vi.getTimerCount()).toBe(0);
   } finally { rendered.unmount(); vi.useRealTimers(); }
 });
+
+
+it.each([Operation.Uncertain, Operation.CleanupPending, Operation.Failed])("blocks an original %s retry while the sibling account operation is busy", (state) => {
+  const first = row(), retry = vi.fn();
+  const rendered = render(view([first]));
+  for (const owner of ["refresh", "disconnection"] as const) {
+    const retained = { state, retry }, busy = { state: Operation.Busy };
+    const pending = owner === "refresh" ? { refreshOperation: retained, disconnectOperation: busy } : { refreshOperation: busy, disconnectOperation: retained };
+    rendered.rerender(view([{ ...first, ...pending }]));
+    const button = screen.getByRole("button", { name: `Retry original ${owner}` }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(retry).toHaveBeenCalledTimes(owner === "refresh" ? 0 : 1);
+    const settled = owner === "refresh" ? { refreshOperation: retained } : { disconnectOperation: retained };
+    rendered.rerender(view([{ ...first, ...settled }]));
+    const available = screen.getByRole("button", { name: `Retry original ${owner}` }) as HTMLButtonElement;
+    expect(available.disabled).toBe(false);
+    fireEvent.click(available);
+  }
+  expect(retry).toHaveBeenCalledTimes(2);
+  expect(first.refresh).not.toHaveBeenCalled();
+  expect(first.disconnect).not.toHaveBeenCalled();
+});

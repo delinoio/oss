@@ -111,11 +111,11 @@ function operationBlocked(operation?: SubscriptionOperation) {
   return operation !== undefined && [SubscriptionOperationState.Busy, SubscriptionOperationState.Uncertain, SubscriptionOperationState.CleanupPending].includes(operation.state);
 }
 
-function OperationNotice({ label, operation }: { label: string; operation?: SubscriptionOperation }) {
+function OperationNotice({ label, operation, retryBlocked = false }: { label: string; operation?: SubscriptionOperation; retryBlocked?: boolean }) {
   if (!operation || operation.state === SubscriptionOperationState.Ready) return null;
   return <div className="subscription-operation" role={operation.state === SubscriptionOperationState.Failed ? "alert" : "status"}>
     <p>{label}: {operation.state === SubscriptionOperationState.Busy ? "In progress" : operation.state === SubscriptionOperationState.Uncertain ? "Result not confirmed" : operation.state === SubscriptionOperationState.CleanupPending ? "Credential cleanup pending" : "Failed"}{operation.message ? ` · ${operation.message}` : ""}</p>
-    {operation.state !== SubscriptionOperationState.Busy && operation.retry ? <button type="button" onClick={operation.retry}>Retry original {label.toLowerCase()}</button> : null}
+    {operation.state !== SubscriptionOperationState.Busy && operation.retry ? <button type="button" disabled={retryBlocked} onClick={operation.retry}>Retry original {label.toLowerCase()}</button> : null}
   </div>;
 }
 
@@ -127,6 +127,7 @@ function SubscriptionRow({ account, now, unavailable }: { account: SubscriptionA
   const menuButton = useRef<HTMLButtonElement>(null);
   const disconnectButton = useRef<HTMLButtonElement>(null);
   const blocked = operationBlocked(account.refreshOperation) || operationBlocked(account.disconnectOperation);
+  const retryBlocked = account.refreshOperation?.state === SubscriptionOperationState.Busy || account.disconnectOperation?.state === SubscriptionOperationState.Busy;
   const canRefresh = Boolean(account.refresh) && account.connection === SubscriptionConnectionState.Connected && !blocked;
   const canDisconnect = Boolean(account.disconnect) && account.connection === SubscriptionConnectionState.Connected && !blocked;
   const closeMenu = () => { setMenu(false); menuButton.current?.focus(); };
@@ -149,8 +150,8 @@ function SubscriptionRow({ account, now, unavailable }: { account: SubscriptionA
       </div>
     </div>
     {account.windows.length > 2 ? <button className="subscription-extra-windows" type="button" aria-expanded={details} aria-controls={detailsId} onClick={() => setDetails(!details)}>{details ? "Hide" : "Show"} all {account.windows.length} quota windows</button> : null}
-    <OperationNotice label="Refresh" operation={account.refreshOperation} />
-    <OperationNotice label="Disconnection" operation={account.disconnectOperation} />
+    <OperationNotice label="Refresh" operation={account.refreshOperation} retryBlocked={retryBlocked} />
+    <OperationNotice label="Disconnection" operation={account.disconnectOperation} retryBlocked={retryBlocked} />
     {confirm ? <div className="subscription-confirmation" role="group" aria-label={`Confirm disconnection of ${account.alias}`} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeConfirm(); } }}>
       <p>Disconnect {account.alias}? Its credentials will be removed and active executions canceled. Account preferences and history are preserved. Other accounts stay connected.</p>
       <div className="actions"><button type="button" disabled={!canDisconnect} onClick={() => { setConfirm(false); account.disconnect?.(); disconnectButton.current?.focus(); }}>Confirm disconnection</button><button type="button" onClick={closeConfirm}>Keep account connected</button></div>
