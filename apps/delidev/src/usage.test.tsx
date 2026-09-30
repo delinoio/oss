@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, UsageTimeGranularity, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
+import { AccountingUnitKind, EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, UsageTimeGranularity, UsageAccountingProfile, UsageTotalsSchema, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
 import { encode } from "./documents";
 
@@ -40,6 +40,7 @@ it("shows exact known subtotals, missing fields and separate unavailable costs",
   fireEvent.click(within(table).getByRole("button", { name: "Retained session" }));
   expect(f.open).toHaveBeenCalledWith(f.ids.session);
   expect(f.read.mock.calls[0][0].fromUnixMs).toBe(0n);
+  expect(f.read.mock.calls[0][0].accountingProfile).toBe(UsageAccountingProfile.NATIVE_UNITS_V1);
 });
 
 it("applies filters explicitly and preserves a draft across navigation", async () => {
@@ -58,6 +59,71 @@ it("applies filters explicitly and preserves a draft across navigation", async (
   fireEvent.change(screen.getByLabelText(/^Until \(/), { target: { value: "2026-09-24T10:00" } });
   fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await screen.findByRole("alert"); expect(f.read).toHaveBeenCalledTimes(2);
+});
+
+it.each([false, true])("keeps native-only groups and models out of response views with mixed responses=%s", async (mixed) => {
+  const f = fixture();
+  const native = create(GetUsageSummaryResponseSchema, { groups: [{ sessionId: newRequestId(), sessionName: "Grok-only session", accountId: f.ids.account, providerId: f.ids.provider, modelId: newRequestId(), modelName: "Grok-only model", totals: { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] } }] }).groups[0];
+  f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
+  f.data.groups[0].totals = create(UsageTotalsSchema, { responses: 1, total: { unavailableResponses: 1 }, accounting: [{ kind: AccountingUnitKind.CODEX_RESPONSE, units: 1, unavailableUnits: 1 }] });
+  f.data.totals = create(UsageTotalsSchema, { responses: mixed ? 1 : 0, total: mixed ? { unavailableResponses: 1 } : undefined, accounting: [...(mixed ? f.data.groups[0].totals.accounting : []), ...native.totals!.accounting] });
+  f.data.groups = mixed ? [f.data.groups[0], native] : [native];
+  f.data.analytics = create(UsageAnalyticsSchema, {
+    granularity: UsageTimeGranularity.DAY, timeZone: "UTC",
+    days: [{ fromUnixMs: f.data.fromUnixMs, untilUnixMs: f.data.untilUnixMs, totals: f.data.totals }],
+    models: f.data.groups.map(({ providerId, providerName, modelId, modelName, totals }) => ({ providerId, providerName, modelId, modelName, totals })),
+  });
+  render(f.view());
+  await screen.findByText("Incomplete coverage");
+  const responseSection = screen.getByRole("region", { name: "Session, model and account details" });
+  expect(within(responseSection).queryByText("Grok-only session")).toBeNull();
+  if (mixed) {
+    expect(within(responseSection).getByRole("table")).toBeTruthy();
+    expect(within(responseSection).getByText("Retained session")).toBeTruthy();
+    expect(within(responseSection).getByText(/1 responses · 1 unavailable/)).toBeTruthy();
+  } else {
+    expect(within(responseSection).queryByRole("table")).toBeNull();
+    expect(within(responseSection).getByText(/No exact response usage is recorded/)).toBeTruthy();
+  }
+  const responseChart = screen.getByRole("region", { name: "By model / API" });
+  fireEvent.click(within(responseChart).getByRole("button", { name: "View data" }));
+  const responseModelTable = within(responseChart).getByRole("table");
+  expect(within(responseModelTable).queryByText("Grok-only model")).toBeNull();
+  expect(within(responseModelTable).queryByText(native.modelId)).toBeNull();
+  expect(within(responseModelTable).getAllByRole("row")).toHaveLength(mixed ? 2 : 1);
+  if (mixed) expect(within(responseModelTable).getByText("Original model")).toBeTruthy();
+  const nativeSection = screen.getByRole("region", { name: "Verified Grok closed inputs" });
+  expect(within(nativeSection).getByText("Grok-only session")).toBeTruthy();
+  const nativeModelTable = within(nativeSection).getByRole("table", { name: "Verified Grok inputs by model" });
+  expect(within(nativeModelTable).getByText("Grok-only model")).toBeTruthy();
+  expect(f.data.analytics.models).toHaveLength(mixed ? 2 : 1);
+});
+
+it("explains separate response and Grok completion times across a day boundary", async () => {
+  const f = fixture();
+  const start = f.data.fromUnixMs;
+  const day = 86_400_000n;
+  const response = create(UsageTotalsSchema, { responses: 1, total: { knownTotal: "16", measuredResponses: 1 }, accounting: [{ kind: AccountingUnitKind.CODEX_RESPONSE, units: 1, knownTotal: "16", measuredUnits: 1 }] });
+  const closedInput = create(UsageTotalsSchema, { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] });
+  const totals = create(UsageTotalsSchema, { ...response, accounting: [...response.accounting, ...closedInput.accounting] });
+  f.data.untilUnixMs = start + day * 2n;
+  f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
+  f.data.totals = totals;
+  f.data.groups[0].totals = totals;
+  f.data.analytics = create(UsageAnalyticsSchema, {
+    granularity: UsageTimeGranularity.DAY, timeZone: "UTC",
+    days: [{ fromUnixMs: start, untilUnixMs: start + day, totals: response }, { fromUnixMs: start + day, untilUnixMs: start + day * 2n, totals: closedInput }],
+    models: [{ providerId: f.ids.provider, modelId: f.ids.model, totals }],
+  });
+  render(f.view());
+  await screen.findByText("Incomplete coverage");
+  const applied = screen.getByRole("group", { name: "Applied conditions" });
+  expect(within(applied).getByText(/^Response times show when the server first retained each response/)).toBeTruthy();
+  const nativeSection = screen.getByRole("region", { name: "Verified Grok closed inputs" });
+  expect(within(nativeSection).getByText(/Grok input times use the server's first retention of verified completion after confirmed cleanup/)).toBeTruthy();
+  expect(within(nativeSection).getByText(/Filters and daily buckets use that time/)).toBeTruthy();
+  const nativeDays = within(nativeSection).getByRole("table", { name: "Daily verified Grok inputs (UTC)" }).querySelectorAll("time");
+  expect([...nativeDays].map((time) => time.dateTime)).toEqual([new Date(Number(start + day)).toISOString(), new Date(Number(start + day * 2n)).toISOString()]);
 });
 
 it("labels a new applied time scope while its result is still loading", async () => {
