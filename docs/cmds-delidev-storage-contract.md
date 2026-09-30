@@ -304,7 +304,9 @@ snapshot outside that root. A fresh mutable inventory never grants deletion
 authority. Claimed contents are compared against that pinned inventory; a mismatch
 restores the whole source name without replacement when possible, otherwise
 retains both the claim and recovery uncertainty. Cancellation is rechecked after intent persistence immediately before the
-namespace claim. Verification precedes bounded anchored deletion and directory synchronization. A second
+namespace claim. After verification, a separate synchronized metadata-only claim
+binds the original intent digest before any unlink. An intent persisted before
+the namespace transition cannot prove that removal ever began. Verification precedes bounded anchored deletion and directory synchronization. A second
 repository copy failure or cancellation cannot remove either original repository.
 Failures after a namespace transition retain recovery uncertainty and private
 copies. Cancellation/failure after verified snapshot publication but before source
@@ -332,7 +334,9 @@ recoverable copy; restore it first. Deletion claims and verifies the snapshot vi
 the same immutable removal-intent boundary and retains historical metadata with
 `deleted=true`. Removal inventories remain private through uncertain reporting.
 Only a matching terminal server acknowledgment followed by the synchronized
-Worker reported journal permits retirement of that original intent. Direct
+Worker reported journal permits retirement of that original intent and its
+matching verified claim. Retirement synchronizes claim removal before intent
+removal so interrupted acknowledgment cleanup can retry safely. Direct
 failed/canceled operations also retire their intent once acknowledged; uncertain
 reports and failed recovery attempts retain the predecessor intent. Successful
 explicit recovery can retire an interrupted cleanup before snapshot publication
@@ -360,7 +364,8 @@ it can finish only already claimed removals against their original inventories.
 It never recreates a snapshot, repeats a source rename or republishes restoration.
 Changed/foreign contents preserve uncertainty and bytes. Even when both original
 and claimed names are absent, cleanup/deletion recovery requires the matching
-synchronized removal intent; filesystem absence alone never proves removal or
+synchronized removal intent and its separately retained verified namespace claim;
+filesystem absence or a pre-transition intent alone never proves removal or
 confirmed removed-byte accounting. Recovery itself may be
 reconciled through a bounded eight-claim lineage after another interruption.
 Original jobs and snapshots remain retained; successful reconciliation atomically

@@ -119,6 +119,7 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 				job, resource, result = makeJob(input)
 			}
 			intent := filepath.Join(manager.Root, "storage-removal-intents", string(original.OperationID)+".json")
+			claimPath := filepath.Join(manager.Root, "storage-removal-claims", string(original.OperationID)+".json")
 			accepted := job
 			accepted.State = domain.JobUncertain
 			ack := proto.Clone(resource).(*pb.Resource)
@@ -129,6 +130,9 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 			}
 			if _, err := os.Stat(intent); err != nil {
 				t.Fatal("uncertain server report retired evidence", err)
+			}
+			if _, err := os.Stat(claimPath); err != nil {
+				t.Fatal("uncertain server report retired verified claim", err)
 			}
 			accepted.State, accepted.Output = domain.JobSucceeded, result.Output
 			ack.DocumentJson, _ = json.Marshal(accepted)
@@ -155,6 +159,9 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 			}
 			if _, err := os.Stat(intent); !os.IsNotExist(err) {
 				t.Fatal("acknowledged intent retained", err)
+			}
+			if _, err := os.Stat(claimPath); !os.IsNotExist(err) {
+				t.Fatal("acknowledged verified claim retained", err)
 			}
 			entries, err := os.ReadDir(filepath.Join(manager.Root, "storage-removal-retirements"))
 			if err != nil || len(entries) != 0 {

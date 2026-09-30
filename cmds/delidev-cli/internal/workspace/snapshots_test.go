@@ -4,6 +4,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -614,6 +615,90 @@ func TestSnapshotAbsentRemovalRecoveryRequiresOriginalIntent(t *testing.T) {
 				t.Fatal("unproven absence settled as removal", err)
 			}
 		})
+	}
+}
+
+func TestSnapshotAbsentRemovalRecoveryRequiresVerifiedClaim(t *testing.T) {
+	for _, action := range []StorageAction{StorageCleanup, StorageDelete} {
+		t.Run(string(action), func(t *testing.T) {
+			m := manager(t)
+			prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+			manifest, err := m.Prepare(context.Background(), prepare)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StorageCreate, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
+			created := storageDo(t, m, input)
+			input.Action, input.PreviewDigest, input.SnapshotDigest, input.SnapshotMetadata = action, created.PreviewDigest, created.Snapshot.SHA256, created.Snapshot
+			disappeared := m.snapshotPath(input.SnapshotID)
+			if action == StorageCleanup {
+				disappeared = filepath.Join(m.Root, "workspaces", string(prepare.SessionID))
+			}
+			if err := m.retainRemovalIntent(context.Background(), input, disappeared); err != nil {
+				t.Fatal(err)
+			}
+			// The crash precedes rename and inventory confirmation. External loss
+			// cannot turn a synchronized pre-transition intent into a native claim.
+			if err := os.RemoveAll(disappeared); err != nil {
+				t.Fatal(err)
+			}
+			result, err := m.Storage(context.Background(), recoveryRequest(input))
+			if domain.SafeError(err).Code != domain.RecoveryRequired || result.RemovedSourceBytes != 0 {
+				t.Fatal("pre-transition intent granted successful removal", err)
+			}
+			if _, err := os.Stat(m.removalClaimPath(input.OperationID)); !os.IsNotExist(err) {
+				t.Fatal("absence manufactured a verified claim", err)
+			}
+		})
+	}
+}
+
+func TestSnapshotRemovalClaimBindsOriginalIntent(t *testing.T) {
+	m := manager(t)
+	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := m.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StoragePreview, Preparation: prepare, Manifest: manifest}
+	preview := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest
+	storageDo(t, m, input)
+	path := m.removalClaimPath(input.OperationID)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, changedDigest := range []bool{false, true} {
+		var claim storageRemovalClaim
+		if domain.Decode(raw, &claim) != nil {
+			t.Fatal("invalid original claim")
+		}
+		if changedDigest {
+			claim.IntentDigest = strings.Repeat("a", 64)
+		} else {
+			claim.Reference.OperationID = domain.NewID()
+		}
+		changed, _ := json.Marshal(claim)
+		if err := os.WriteFile(path, changed, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.Storage(context.Background(), recoveryRequest(input)); domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatal("foreign claim granted recovery", err)
+		}
+		if err := m.RetireStorageRemoval(context.Background(), removalReference(input)); domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatal("foreign claim granted retirement", err)
+		}
+		if _, err := os.Stat(m.removalIntentPath(input.OperationID)); err != nil {
+			t.Fatal("foreign claim retired original inventory", err)
+		}
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	result := storageDo(t, m, recoveryRequest(input))
+	if result.RecoveredJobState != domain.JobSucceeded {
+		t.Fatal("original verified claim did not reconcile completion")
 	}
 }
 

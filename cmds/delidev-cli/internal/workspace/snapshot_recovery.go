@@ -26,6 +26,51 @@ type storageRemovalIntent struct {
 	Inventory      snapshotInventory `json:"inventory"`
 }
 
+// Persist this only after the private namespace and its original inventory have
+// been verified, before any unlink. An intent alone precedes native ownership.
+type storageRemovalClaim struct {
+	Version      uint32                  `json:"version"`
+	Reference    StorageRemovalReference `json:"reference"`
+	IntentDigest string                  `json:"intent_digest"`
+}
+
+const maxStorageRemovalClaim = 4096
+
+func (m *Manager) removalClaimPath(id domain.ID) string {
+	return filepath.Join(m.Root, "storage-removal-claims", string(id)+".json")
+}
+
+func removalReference(r StorageRequest) StorageRemovalReference {
+	return StorageRemovalReference{OperationID: r.OperationID, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, Action: r.Action}
+}
+
+func removalClaimMatches(raw []byte, ref StorageRemovalReference, intent []byte) bool {
+	var claim storageRemovalClaim
+	sum := sha256.Sum256(intent)
+	return domain.Decode(raw, &claim) == nil && claim.Version == 1 && claim.Reference == ref && claim.IntentDigest == hex.EncodeToString(sum[:])
+}
+
+func (m *Manager) retainRemovalClaim(ctx context.Context, r StorageRequest, intent []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	path := m.removalClaimPath(r.OperationID)
+	if raw, err := security.ReadPrivate(path, maxStorageRemovalClaim); err == nil {
+		if !removalClaimMatches(raw, removalReference(r), intent) {
+			return ResultUncertain()
+		}
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ResultUncertain()
+	}
+	sum := sha256.Sum256(intent)
+	raw, err := json.Marshal(storageRemovalClaim{Version: 1, Reference: removalReference(r), IntentDigest: hex.EncodeToString(sum[:])})
+	if err != nil || len(raw) > maxStorageRemovalClaim {
+		return ResultUncertain()
+	}
+	return security.WriteAtomic(path, raw)
+}
+
 func (m *Manager) removalIntentPath(id domain.ID) string {
 	return filepath.Join(m.Root, "storage-removal-intents", string(id)+".json")
 }
@@ -67,6 +112,9 @@ func (m *Manager) retainRemovalIntent(ctx context.Context, r StorageRequest, pat
 	return security.WriteAtomic(m.removalIntentPath(r.OperationID), raw)
 }
 func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path string, partial bool) error {
+	if path != filepath.Join(m.Root, "workspace-removals", string(r.OperationID)) {
+		return ResultUncertain()
+	}
 	raw, err := security.ReadPrivate(m.removalIntentPath(r.OperationID), maxSnapshotManifest)
 	if err != nil {
 		return ResultUncertain()
@@ -90,6 +138,10 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 			return err
 		}
 		if !exists {
+			claim, err := security.ReadPrivate(m.removalClaimPath(r.OperationID), maxStorageRemovalClaim)
+			if err != nil || !removalClaimMatches(claim, removalReference(r), raw) {
+				return ResultUncertain()
+			}
 			return nil
 		}
 	}
@@ -122,7 +174,7 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 			}
 		}
 	}
-	return nil
+	return m.retainRemovalClaim(ctx, r, raw)
 }
 func storageExists(path string) (bool, error) {
 	info, err := os.Lstat(path)
@@ -210,7 +262,8 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 				return result, ResultUncertain()
 			}
 			// Absence alone cannot prove this operation removed the source. The
-			// original synchronized intent remains mandatory after the last unlink.
+			// original synchronized intent and verified claim remain mandatory after
+			// the last unlink, including interruption before the namespace transition.
 			if err := m.confirmRemoval(ctx, original, removal, true); err != nil {
 				return result, err
 			}
@@ -278,7 +331,8 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 				return result, ResultUncertain()
 			}
 			// Absence alone cannot prove this operation removed the source. The
-			// original synchronized intent remains mandatory after the last unlink.
+			// original synchronized intent and verified claim remain mandatory after
+			// the last unlink, including interruption before the namespace transition.
 			if err := m.confirmRemoval(ctx, original, removal, true); err != nil {
 				return result, err
 			}
@@ -327,21 +381,42 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	path := m.removalIntentPath(ref.OperationID)
-	if err := security.PrivateDir(filepath.Dir(path)); err != nil {
-		return err
+	path, claimPath := m.removalIntentPath(ref.OperationID), m.removalClaimPath(ref.OperationID)
+	for _, artifact := range []string{path, claimPath} {
+		if err := security.PrivateDir(filepath.Dir(artifact)); err != nil {
+			return err
+		}
 	}
 	raw, err := security.ReadPrivate(path, maxSnapshotManifest)
+	intentExists := err == nil
 	if err == nil {
 		var intent storageRemovalIntent
 		if domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != ref.OperationID || intent.SessionID != ref.SessionID || intent.SnapshotID != ref.SnapshotID || intent.Action != ref.Action {
 			return ResultUncertain()
 		}
-		if err := os.Remove(path); err != nil {
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ResultUncertain()
+	}
+	claim, err := security.ReadPrivate(claimPath, maxStorageRemovalClaim)
+	if err == nil {
+		if !intentExists || !removalClaimMatches(claim, ref, raw) {
+			return ResultUncertain()
+		}
+		// Retire and synchronize the smaller proof first. Interrupted retirement
+		// can safely retry with the acknowledged original intent still present.
+		if err := os.Remove(claimPath); err != nil {
 			return err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return ResultUncertain()
+	}
+	if err := security.SyncParent(claimPath); err != nil {
+		return err
+	}
+	if intentExists {
+		if err := os.Remove(path); err != nil {
+			return err
+		}
 	}
 	return security.SyncParent(path)
 }
