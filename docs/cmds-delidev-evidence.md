@@ -3347,3 +3347,41 @@ checking, packaging/launcher checks, native Swift fixtures and the production
 build. Generated desktop/client `dist` output was removed after verification.
 No new Rust, Go, protocol or platform acceptance changes were made; the repaired
 hosted CI result remains pending after the push.
+
+### Local desktop permission guidance and recovery (2026-09-30)
+
+The real macOS desktop showed local connection and registration permission
+errors. Its bundled CLI reproduced `permission_denied` because the existing
+user-owned, non-symlink default data directory had mode 0755. The privacy check
+requires owner-only access; the earlier UI incorrectly described this as files
+being inaccessible to their owner.
+
+With explicit user authorization, only that directory was changed to 0700 after
+checking its opened identity and owner. The retained legacy `delidev.db` was
+preserved byte-for-byte and kept its original file mode; its read-only schema
+inspection showed only `auth_states`, separate from the current server's
+`state.sqlite`. Start or connect then opened the actual desktop session surface,
+and Check desktop registration reported authorized. No database reset, legacy
+conversion or revoked-client recovery was performed.
+
+Local connection and registration now share accurate device/ownership/privacy
+guidance, including macOS/Linux directory 0700 and file 0600 modes and explicit
+data preservation. Native error codes, RPCs and Go security enforcement remain
+unchanged. Component regressions cover denied startup and denied registration
+inspection with or without a prior revoked observation, rejecting automatic
+startup/recovery and stale replacement actions.
+
+The existing Go security suite passed, including rejection of shared directory
+permissions and symlinks without changing their permissions. Focused desktop
+and registration component checks passed 2 files / 16 tests, including all
+three new permission-denial cases. Type checking, native packaging/launcher
+fixtures, Swift widget fixtures and the production frontend build also passed.
+
+The first full `pnpm test` overlapped other local test/build activity and showed
+existing backup, tray and settings timeout failures; only its identified
+process group was stopped before rerunning with one Vitest worker. That full
+sequential run completed 74 files / 948 tests: 72 files / 939 tests passed,
+while unchanged `App.test.tsx` had seven five-second timeouts and unchanged
+`settings.integration.test.tsx` had two missing-control waits. These failed
+runs are retained as failures, not full-suite acceptance; no production
+behavior or test time limit was changed to conceal them.
