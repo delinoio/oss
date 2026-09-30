@@ -160,8 +160,9 @@ The immutable row retains the original report UUID-v7 receipt, job, input and
 input request, source response observation, terminal/closure/history proof,
 completion cursor and assignment-time account/connection/provider/model/version.
 A unique kind/execution/input key prevents duplicate units, and source receipts
-replay once across restarts. First server retention time drives half-open filters
-and day buckets. Session deletion cascades the derived row; Archive and current
+replay once across restarts. First server retention of verified completion after
+confirmed cleanup drives native half-open filters and day buckets; response
+observations separately retain their own first-retention time. Session deletion cascades the derived row; Archive and current
 configuration edits retain its original attribution. No native source identities,
 history digests, prompt or credential enter aggregate RPCs or logs.
 

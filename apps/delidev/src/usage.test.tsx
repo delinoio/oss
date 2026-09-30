@@ -99,6 +99,33 @@ it.each([false, true])("keeps native-only groups and models out of response view
   expect(f.data.analytics.models).toHaveLength(mixed ? 2 : 1);
 });
 
+it("explains separate response and Grok completion times across a day boundary", async () => {
+  const f = fixture();
+  const start = f.data.fromUnixMs;
+  const day = 86_400_000n;
+  const response = create(UsageTotalsSchema, { responses: 1, total: { knownTotal: "16", measuredResponses: 1 }, accounting: [{ kind: AccountingUnitKind.CODEX_RESPONSE, units: 1, knownTotal: "16", measuredUnits: 1 }] });
+  const closedInput = create(UsageTotalsSchema, { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] });
+  const totals = create(UsageTotalsSchema, { ...response, accounting: [...response.accounting, ...closedInput.accounting] });
+  f.data.untilUnixMs = start + day * 2n;
+  f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
+  f.data.totals = totals;
+  f.data.groups[0].totals = totals;
+  f.data.analytics = create(UsageAnalyticsSchema, {
+    granularity: UsageTimeGranularity.DAY, timeZone: "UTC",
+    days: [{ fromUnixMs: start, untilUnixMs: start + day, totals: response }, { fromUnixMs: start + day, untilUnixMs: start + day * 2n, totals: closedInput }],
+    models: [{ providerId: f.ids.provider, modelId: f.ids.model, totals }],
+  });
+  render(f.view());
+  await screen.findByText("Incomplete coverage");
+  const applied = screen.getByRole("group", { name: "Applied conditions" });
+  expect(within(applied).getByText(/^Response times show when the server first retained each response/)).toBeTruthy();
+  const nativeSection = screen.getByRole("region", { name: "Verified Grok closed inputs" });
+  expect(within(nativeSection).getByText(/Grok input times use the server's first retention of verified completion after confirmed cleanup/)).toBeTruthy();
+  expect(within(nativeSection).getByText(/Filters and daily buckets use that time/)).toBeTruthy();
+  const nativeDays = within(nativeSection).getByRole("table", { name: "Daily verified Grok inputs (UTC)" }).querySelectorAll("time");
+  expect([...nativeDays].map((time) => time.dateTime)).toEqual([new Date(Number(start + day)).toISOString(), new Date(Number(start + day * 2n)).toISOString()]);
+});
+
 it("labels a new applied time scope while its result is still loading", async () => {
   const f = fixture(); render(f.view());
   await screen.findByText("Incomplete coverage");
