@@ -67,3 +67,45 @@ func TestSubagentClaudeOriginalTaskReplayLateOutputAndNestedOwnership(t *testing
 		t.Fatal("parent completed running nested child", err)
 	}
 }
+
+func TestSubagentClaudeRootUsageRejectsChangedAcknowledgedChild(t *testing.T) {
+	for _, name := range []string{"session", "input", "turn", "acceptance", "event", "parent", "model", "usage"} {
+		t.Run(name, func(t *testing.T) {
+			c, rpc, start := claudeToolFixture(t, "", "Agent")
+			start.Kind, start.Content, start.NativeID = claude.TaskObserved, nil, string(domain.NewID())
+			tool, kind, description, agent := "tool_original_one", claude.LocalAgentTask, "Original child", "general-purpose"
+			start.Task = &claude.NativeTaskObservation{Kind: claude.TaskStarted, ID: "original_child", ToolID: &tool, Type: &kind, Description: &description, SubagentType: &agent}
+			if _, err := c.PublishTaskObservation(context.Background(), start); err != nil {
+				t.Fatal(err)
+			}
+			input := int64(1)
+			content := claudeContentObservation(c, claude.ContentEvent{Kind: claude.ProviderMessageStarted, ParentToolID: tool, Usage: &claude.ProviderUsage{Input: &input}})
+			if _, err := c.PublishObservation(context.Background(), content); err != nil {
+				t.Fatal(err)
+			}
+			before := len(rpc.events)
+			switch name {
+			case "session":
+				content.SessionID = domain.NewID()
+			case "input":
+				content.InputID = domain.NewID()
+			case "turn":
+				content.TurnID = string(domain.NewID())
+			case "acceptance":
+				content.Accepted = false
+			case "event":
+				content.NativeID = string(domain.NewID())
+			case "parent":
+				content.Content[0].ParentToolID = "foreign-tool"
+			case "model":
+				content.Content[0].Model = "changed-model"
+			case "usage":
+				changed := int64(2)
+				content.Content[0].Usage = &claude.ProviderUsage{Input: &changed}
+			}
+			if _, err := c.PublishUsageObservation(context.Background(), content); err == nil || c.binding.stage != claudeBindingBlocked || len(rpc.events) != before {
+				t.Fatal("changed child report bypassed root ownership or published usage", err)
+			}
+		})
+	}
+}
