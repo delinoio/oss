@@ -42,4 +42,4 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Generated SessionQuery permanent-deletion acceptance/status and Worker cleanup queries preserve original UUIDs, BigInt revisions, pending removal and unknown reclaimed bytes. Generate through the canonical split schema and compatibility pass; no client-side ownership decisions or automatic mutation replay. Follow `docs/cmds-delidev-storage-contract.md`.
 
-- Native context and manual compaction use the generated SessionService declarations and closed SessionContextCapability values in `docs/cmds-delidev-compaction-contract.md`. Preserve raw bounded observation JSON, exact uint64 mutation revisions and UUID-v7 retry identity; never infer utilization or action success from an outer envelope.
+- Native context and manual compaction use the generated SessionService declarations and closed SessionContextCapability values in `docs/cmds-delidev-claude-compaction-contract.md`. Preserve raw bounded observation JSON, exact uint64 mutation revisions and UUID-v7 retry identity; never infer utilization or action success from an outer envelope.

@@ -1582,5 +1582,5 @@ The independent issue-1093 composition adds owner/client context reads and a
 durable manual action after a verified successful Claude 2.1.236 API boundary.
 Its action result, cleanup, history checkpoint and failure/Resume rules remain
 separate from conversation outcomes and the existing automatic observation family.
-See [the owning compaction contract](cmds-delidev-compaction-contract.md); earlier
+See [the owning compaction contract](cmds-delidev-claude-compaction-contract.md); earlier
 private/manual and automatic-only evidence scopes above retain their qualifications.

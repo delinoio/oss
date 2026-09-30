@@ -228,7 +228,7 @@ separate from the conversation execution UUID, and remove its native replacement
 runtime and retained `compaction-checkpoints` file through this same ownership and
 completed-proof inventory. Deletion closes action authority and waits for its
 original job/process/workspace owners; unrelated session checkpoints are preserved.
-See the [compaction contract](cmds-delidev-compaction-contract.md).
+See the [compaction contract](cmds-delidev-claude-compaction-contract.md).
 
 Only after every original Worker acknowledgement does one SQLite transaction
 remove the session and its scoped inputs, transcripts, tools, interactions,

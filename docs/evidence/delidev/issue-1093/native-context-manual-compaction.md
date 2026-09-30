@@ -3,7 +3,7 @@
 Implementation branch: `kdy1/delidev-1093-compaction`, based on
 `74701b8948694e2bf8f8ba6d07e596c2d2f358a7` (`origin/main`).
 Recorded on 2026-09-30; this record covers the independent public action
-composition in [the owning contract](../../../cmds-delidev-compaction-contract.md).
+composition in [the owning contract](../../../cmds-delidev-claude-compaction-contract.md).
 
 The change is additive existing-schema JSON, RPCs and generated clients. It adds no
 SQL migration and does not rewrite legacy history or automatic compaction records.

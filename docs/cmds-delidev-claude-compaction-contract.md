@@ -1,4 +1,4 @@
-# DeliDev native context and manual compaction contract
+# DeliDev Claude native context and manual compaction contract
 
 ## Scope
 
@@ -10,6 +10,15 @@ projection in `internal/server/session_context.go`. Session RPC declarations sta
 in `protos/delidev/v1/session.proto`; generated Go, TypeScript and Connect Query
 bindings follow the canonical pipeline. Existing automatic compaction publication
 and native manual-action/history validation remain independent owners.
+
+The separate shared-compaction reservation PR #1215 proposes identifiers and a
+common contract for issues #1093, #1202 and #1203. This Claude implementation adds
+no existing-message field or shared enum member, consumes none of that PR's
+reserved numbers, and introduces no migration. Its session-owned context enum
+does not advertise support for another harness. Before any later shared activation,
+establish those reservations on main and compose this profile's operation,
+action/job identity, eligibility and checkpoint proof with that common contract.
+The dedicated Claude contract path preserves the planned common document's owner.
 
 ## Runtime and Language
 

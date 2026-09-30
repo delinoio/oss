@@ -38,4 +38,4 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - `session delete --id ID --revision N --confirm [--wait]` and `session deletion --id ID` share authenticated Connect semantics. Preserve original UUID/revision and accepted progress after uncertain reads or cancellation; waiting cannot resubmit deletion or report pending cleanup as success. Follow `docs/cmds-delidev-storage-contract.md`.
 
-- Provide `session context --id` and `session compact --id --revision` through the authenticated Connect APIs in `docs/cmds-delidev-compaction-contract.md`. Context is read-only; compaction retains the supplied UUID-v7 request identity and returns the durable job without claiming native success.
+- Provide `session context --id` and `session compact --id --revision` through the authenticated Connect APIs in `docs/cmds-delidev-claude-compaction-contract.md`. Context is read-only; compaction retains the supplied UUID-v7 request identity and returns the durable job without claiming native success.
