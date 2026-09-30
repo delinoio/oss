@@ -43,6 +43,7 @@ type prGitScope struct {
 
 type PRGitTool struct {
 	manager             *Manager
+	lease               *ExecutionLease
 	scope               prGitScope
 	path                string
 	raw                 []byte
@@ -217,7 +218,7 @@ func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.
 	if err := security.WriteAtomic(scopePath, raw); err != nil {
 		return nil, err
 	}
-	tool := &PRGitTool{manager: l.manager, scope: scope, path: scopePath, raw: raw, environment: environment, configurationDigest: hashTool(configuration), preparation: input, manifest: manifest, localName: trimGit(name), localEmail: trimGit(email)}
+	tool := &PRGitTool{manager: l.manager, lease: l, scope: scope, path: scopePath, raw: raw, environment: environment, configurationDigest: hashTool(configuration), preparation: input, manifest: manifest, localName: trimGit(name), localEmail: trimGit(email)}
 	if _, err := rand.Read(tool.proofKey[:]); err != nil {
 		return nil, toolFailure()
 	}
@@ -434,6 +435,12 @@ func (t *PRGitTool) VerifyPush(ctx context.Context) (p domain.PRPushProof) {
 		t.manager.Logger.InfoContext(ctx, "manual_pr_git_verified", "attempt_id", t.scope.Selection.AttemptID, "execution_id", t.scope.Claim.ExecutionID, "state", p.State)
 	}()
 	p = domain.PRPushProof{Version: 1, AttemptID: t.scope.Selection.AttemptID, ExecutionID: t.scope.Claim.ExecutionID, SelectionDigest: t.scope.Selection.Digest(), State: domain.PRPushUncertain, PreviousHead: t.scope.Selection.Target.HeadSHA, ObservedAt: time.Now().UTC()}
+	// Client exit alone cannot prove that local helpers stopped mutating Git.
+	// Join the original native owner before any push-proof read, retaining the
+	// active lease needed to validate scope; final Close rechecks before release.
+	if t.lease == nil || t.lease.ReconcileNative(ctx) != nil {
+		return p
+	}
 	scope, raw, err := loadPRGitScope(t.path)
 	if err != nil || string(raw) != string(t.raw) {
 		return p

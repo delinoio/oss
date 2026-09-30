@@ -315,6 +315,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				return nil, err
 			}
 			bounded, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			// VerifyPush first joins the original native process owner while the
+			// lease remains active; lease.Close is the later release boundary.
 			proof := prGit.VerifyPush(bounded)
 			cancel()
 			push = &proof

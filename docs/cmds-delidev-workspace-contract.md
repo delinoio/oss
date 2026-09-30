@@ -191,6 +191,12 @@ administration. Current commits may advance under continuation identity checks;
 replacement directories, symlinks or administration cannot borrow native
 authentication or publication proof.
 
+After native-client and bridge closure, push verification independently
+reconciles the original native process owner before its first Git observation.
+This barrier retains the active workspace claim and OS lock; final lease closure
+rechecks ownership before recording cleanup and releasing them. Missing or
+changed process evidence leaves push proof uncertain without observing Git.
+
 The manual Git launcher's local capability connects only to a canonical
 `127.0.0.1` listener owned by the original Worker. It carries no reversible Git
 authentication context. The Worker keeps immutable scope/configuration and a
