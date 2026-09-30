@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"io/fs"
@@ -423,20 +424,28 @@ func cleanupExecutionAuthentication(home string, latest, original []byte) error 
 	// Native history is retained for resume. Check the bounded original tree
 	// rather than claiming credential cleanup merely from auth.json absence.
 	var needles [][]byte
+	defer func() {
+		for _, n := range needles {
+			clear(n)
+		}
+	}()
 	for _, raw := range [][]byte{original, latest} {
 		b, _, err := subscription.Parse(raw)
 		if err != nil {
 			return err
 		}
 		for _, v := range []string{b.Tokens.ID, b.Tokens.Access, b.Tokens.Refresh} {
-			needles = append(needles, []byte(v))
+			plain := []byte(v)
+			needles = append(needles, plain)
+			// Retained native files may encode credentials. Cleanup must reject
+			// padded and unpadded standard/URL Base64 copies as well as raw tokens.
+			for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+				encoded := make([]byte, encoding.EncodedLen(len(plain)))
+				encoding.Encode(encoded, plain)
+				needles = append(needles, encoded)
+			}
 		}
 	}
-	defer func() {
-		for _, n := range needles {
-			clear(n)
-		}
-	}()
 	root, err := os.OpenRoot(home)
 	if err != nil {
 		return subscription.Invalid()

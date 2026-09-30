@@ -487,3 +487,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Uncertain protected execution completion must also escape ordinary job-error reporting, retain its started claim journal and close/join the primary work lane. Independent workspace cleanup failures cannot erase that uncertainty; server stream loss fences the original execution lease before another account grant.
 
 - Install managed execution credential cleanup at the auth-file write boundary, before publisher/registration failure paths, including predecessor runtimes. Remove and synchronize only owned authentication after confirmed native closure or before any native ownership; unconfirmed startup/closure retains its recovery lease.
+
+- Retained managed native history must pass the bounded cleanup scan for both raw tokens and padded/unpadded standard/URL Base64 copies before confirming credential removal. Retain original history and uncertain ownership when that scan fails.
