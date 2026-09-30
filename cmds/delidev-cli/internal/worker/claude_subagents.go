@@ -3,6 +3,7 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"strconv"
 
@@ -20,7 +21,33 @@ func (c *ClaudeContentPublisher) publishChild(ctx context.Context, o domain.Suba
 		return c.binding.block()
 	}
 	o.Tools = next[o.NativeID].Tools
-	c.queue = []claudeContentCommit{{event: domain.ExecutionEvent{Kind: domain.ExecutionSubagentObserved, Subagents: []domain.SubagentObservation{o}}, child: &o, childUsageModel: usageModel}}
+	var historyDigest *[sha256.Size]byte
+	if o.Source == domain.ClaudeHistorySource {
+		// The verifier rechecks the file and current sidecar on every read. Only
+		// the selected native leaf's projected telemetry belongs to this source;
+		// unrelated file/sidecar changes cannot manufacture another receipt.
+		raw, err := json.Marshal(struct {
+			Output *domain.SubagentOutput
+			Model  *string
+			Usage  *domain.SubagentUsage
+		}{o.Output, o.ObservedModel, o.Usage})
+		if err != nil {
+			return c.binding.block()
+		}
+		digest := sha256.Sum256(raw)
+		key := claudeChildHistorySource{o.NativeID, o.SourceID, digest}
+		if _, exists := c.childHistorySources[key]; exists {
+			if logger := c.binding.publisher.config.Logger; logger != nil {
+				logger.InfoContext(ctx, "claude_child_history_already_published", "job_id", c.binding.journal.JobID)
+			}
+			return nil
+		}
+		if len(c.childHistorySources) >= 65536 {
+			return c.binding.block()
+		}
+		historyDigest = &digest
+	}
+	c.queue = []claudeContentCommit{{event: domain.ExecutionEvent{Kind: domain.ExecutionSubagentObserved, Subagents: []domain.SubagentObservation{o}}, child: &o, childUsageModel: usageModel, childHistoryDigest: historyDigest}}
 	return c.drain(ctx)
 }
 

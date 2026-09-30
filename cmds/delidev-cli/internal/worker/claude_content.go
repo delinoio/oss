@@ -18,7 +18,13 @@ type claudeChildUsageModel struct {
 	model    string
 }
 
+type claudeChildHistorySource struct {
+	child, leaf string
+	digest      [32]byte
+}
+
 type claudeContentCommit struct {
+	childHistoryDigest *[32]byte
 	childUsageModel    *string
 	child              *domain.SubagentObservation
 	tasksNext          *domain.ClaudeTasksState
@@ -39,6 +45,7 @@ type claudeContentCommit struct {
 // Its caller must reconcile child and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
+	childHistorySources        map[claudeChildHistorySource]struct{}
 	childUsageModels           map[string]claudeChildUsageModel
 	children                   map[string]domain.SubagentObservation
 	childTools                 map[string]string
@@ -337,6 +344,12 @@ func (c *ClaudeContentPublisher) commitHead() {
 			c.childTools = map[string]string{}
 		}
 		child := *item.child
+		if item.childHistoryDigest != nil {
+			if c.childHistorySources == nil {
+				c.childHistorySources = map[claudeChildHistorySource]struct{}{}
+			}
+			c.childHistorySources[claudeChildHistorySource{child.NativeID, child.SourceID, *item.childHistoryDigest}] = struct{}{}
+		}
 		prior := c.children[child.NativeID]
 		// Receipt bytes describe only the current source. Retain last available
 		// observations locally only after acknowledgment, as the server does.
