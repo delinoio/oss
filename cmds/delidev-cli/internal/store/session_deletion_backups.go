@@ -113,5 +113,5 @@ func (s *Store) finishSessionBackupScan(ctx context.Context, classified map[doma
 	if len(retained) != 0 {
 		return domain.SessionDeletionPending()
 	}
-	return nil
+	return s.checkRestoreImagesRetired(ctx)
 }
