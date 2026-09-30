@@ -3385,3 +3385,25 @@ while unchanged `App.test.tsx` had seven five-second timeouts and unchanged
 `settings.integration.test.tsx` had two missing-control waits. These failed
 runs are retained as failures, not full-suite acceptance; no production
 behavior or test time limit was changed to conceal them.
+
+A separate retry of those two unchanged files with the original time limits
+passed 46 of 48 tests. The notification/import draft test still hit its
+five-second limit, and the singleton server-preferences fixture still missed
+`Edit Server preferences`. The focused permission checks remain fully passing;
+the two unrelated failures remain explicit validation limitations. Detailed
+outputs are in `/tmp/delidev-permissions-frontend-serial.log`,
+`/tmp/delidev-permissions-retry.log` and
+`/tmp/delidev-permissions-focused.log` on the validation host.
+
+The native host build passed, and `pnpm dev:desktop` built and ad-hoc signed its
+CEF app bundle in this worktree. Its own log recorded local-server supervision
+as Ready and a clean runtime/controller exit. No separately attributable
+`local_connect` completion appeared in that bundle's log; the connected and
+authorized UI observations therefore do not establish rebuilt-bundle full
+connection acceptance when other DeliDev bundles share the same app identity.
+The user then explicitly requested no further execution. No additional app or
+test was launched, and process inspection confirmed this worktree's desktop
+and launcher had exited. Final read-only checks confirmed the legacy database
+hash and file mode were unchanged and the data directory remained 0700.
+Generated desktop/client `dist` outputs were removed. This records macOS local
+recovery and build evidence only, not Windows/Linux or release acceptance.
