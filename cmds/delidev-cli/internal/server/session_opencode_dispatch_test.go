@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"runtime"
 	"testing"
 	"time"
 
@@ -11,11 +10,6 @@ import (
 )
 
 func TestOpenCodeFirstDispatchRetainsExactNativeSelection(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		// General Chat dispatch is intentionally gated until its Windows
-		// native root identity profile is verified.
-		t.Skip("OpenCode General Chat has no verified Windows root identity")
-	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
 		t.Run(string(mode), func(t *testing.T) {
 			f := newFirstDispatchFixtureForHarness(t, domain.OpenCode, mode)
@@ -44,7 +38,7 @@ func TestOpenCodeFirstDispatchRetainsExactNativeSelection(t *testing.T) {
 }
 
 func TestOpenCodeFirstDispatchRefusalDoesNotConsumeRoutingOrInput(t *testing.T) {
-	for _, failure := range []string{"effort", "subagent-model", "subagent-effort", "concurrency", "review-model", "service-tier", "version", "protocol", "validation", "worker-stale", "provider-protocol", "windows-global"} {
+	for _, failure := range []string{"effort", "subagent-model", "subagent-effort", "concurrency", "review-model", "service-tier", "version", "protocol", "validation", "worker-stale", "provider-protocol"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newFirstDispatchFixtureForHarness(t, domain.OpenCode)
 			switch failure {
@@ -100,9 +94,6 @@ func TestOpenCodeFirstDispatchRefusalDoesNotConsumeRoutingOrInput(t *testing.T) 
 						r, m, err := activeMachine(tx, f.selection.MachineID)
 						if err != nil {
 							return nil, err
-						}
-						if failure == "windows-global" {
-							m.OS = "windows"
 						}
 						for i := range m.Installations {
 							v := &m.Installations[i]

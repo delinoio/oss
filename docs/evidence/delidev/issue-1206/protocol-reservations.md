@@ -4,6 +4,8 @@ This file records the initial prerequisite validation. The later
 [main reconciliation](main-reconciliation-2026-09-30.md) preserves these historical
 results and moves the pending discovery capabilities to server 16 and Worker 6
 after main established the compaction allocations.
+The [subsequent reconciliation](main-reconciliation-2026-09-30-1146.md) retains
+server 16 and moves the pending Worker capability to 7.
 
 ## Inspected baseline and scope
 

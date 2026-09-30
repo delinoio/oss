@@ -34,7 +34,7 @@ observation controls or canonical model registration.
 ## Interfaces and Contracts
 
 Reserve `SystemCapability.SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 16`
-and `WorkerCapability.WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 6` in
+and `WorkerCapability.WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 7` in
 `protos/delidev/allocations.json`. Neither member is activated in this prerequisite
 change. The [structure contract](cmds-delidev-structure-contract.md) requires these
 shared reservations to reach main before dependent implementation. Pending

@@ -156,7 +156,7 @@ export function NewSession({ active, ownsActivation, activation, readLocalWorker
             <div className="new-session-toolbar">
               <div className="new-session-selectors">
                 <ResourceChoice label="Agent Worker" kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} change={setAgent} />
-                <ResourceChoice label="Execution Worker" kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={Boolean(project) && workspace === Workspace.Local} required change={setMachine} />
+                <ResourceChoice label="Runs on" resourceLabel="Runner Device" kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={Boolean(project) && workspace === Workspace.Local} required change={setMachine} />
                 <label className="new-session-mode">Mode<select value={mode} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>Execute</option><option value={Mode.Plan}>Plan</option></select></label>
               </div>
               <div className="new-session-submit-row">

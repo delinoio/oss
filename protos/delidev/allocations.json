@@ -2805,6 +2805,22 @@
       "number": 9
     },
     {
+      "pr": 1193,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1",
+      "oldBranchNumber": 5,
+      "number": 6
+    },
+    {
+      "pr": 1193,
+      "kind": "message",
+      "declaration": "AttachWorkerResponse",
+      "member": "supported_worker_capabilities",
+      "oldBranchNumber": 3,
+      "number": 3
+    },
+    {
       "pr": 1212,
       "kind": "enum",
       "declaration": "SystemCapability",
@@ -2818,7 +2834,7 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
       "oldBranchNumber": 5,
-      "number": 6
+      "number": 7
     }
   ]
 }
