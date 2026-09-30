@@ -5,10 +5,12 @@ import { useMutation, useQuery as useNativeQuery, useQueryClient } from "@tansta
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { InboxQuery, InboxService } from "@delinoio/delidev-api-client";
 import { NativeNotificationPermission as Permission, NativeNotificationProblem as Reason, NotificationPump, notificationReadiness, notificationReady } from "./notifications";
+import { useSettingsOpening } from "./settings-lifetime";
 
 const readinessKey = ["native-notification-readiness"] as const;
 function useReadiness(active = true) {
-  return useNativeQuery({ queryKey: readinessKey, queryFn: async () => notificationReadiness(await invoke("notification_permission")), enabled: active && isTauri(), staleTime: 15000, refetchInterval: 30000, refetchIntervalInBackground: true, retry: false });
+  const opening = useSettingsOpening();
+  return useNativeQuery({ queryKey: opening ? [...opening.queryKey, ...readinessKey] : readinessKey, queryFn: async () => notificationReadiness(await (opening ? opening.native(() => invoke("notification_permission")) : invoke("notification_permission"))), enabled: active && isTauri(), staleTime: 15000, refetchInterval: 30000, refetchIntervalInBackground: true, retry: false });
 }
 
 export function NotificationPresentation() {
@@ -34,8 +36,13 @@ export function NotificationPresentation() {
 
 export function NativeNotificationSettings({ active }: { active: boolean }) {
   const client = useQueryClient();
+  const opening = useSettingsOpening();
   const readiness = useReadiness(active);
-  const request = useMutation({ mutationFn: async () => notificationReadiness(await invoke("request_notification_permission")), retry: false, gcTime: 0, onSuccess: (value) => client.setQueryData(readinessKey, value) });
+  const request = useMutation({ mutationFn: async () => notificationReadiness(await (opening ? opening.native(() => invoke("request_notification_permission")) : invoke("request_notification_permission"))), retry: false, gcTime: 0, meta: opening?.mutationMeta, onSuccess: (value) => {
+    if (opening?.disposed) return;
+    if (opening) client.setQueryData([...opening.queryKey, ...readinessKey], value);
+    client.setQueryData(readinessKey, value);
+  } });
   if (!isTauri()) return <p>Open DeliDev on your desktop to manage native notifications.</p>;
   const value = readiness.data;
   const unavailable = value?.problem === Reason.BundleRequired ? "Native notifications require the installed DeliDev app bundle." : value?.problem === Reason.ActionsUnavailable ? "This desktop notification service cannot open notification actions." : value?.problem === Reason.Capacity ? "The native notification limit is reached for this app process. Requests remain in the inbox; restart DeliDev to clear its native presentation state." : "Native notification service is unavailable.";
