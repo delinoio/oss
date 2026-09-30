@@ -15,8 +15,12 @@ contexts and children. Native presentation is distinct from product RPC.
 The server and CLI use Go. React 19.2.8 uses generated Connect Query bindings.
 Rust uses the existing immutable Tauri CEF revision without changing its pin.
 Trusted app documents remain incognito. External content uses a separate CEF
-request context and raw native child, without Tauri scripts, scheme factories,
-IPC handlers, app permissions or client authorization headers.
+request context and raw native child, without Tauri initialization scripts, scheme
+factories, browser-side IPC handlers, app permissions or client authorization
+headers. The pinned runtime installs a shared JavaScript message stub in renderer
+pages; the external child's client rejects every process message, so that stub has
+no product or native authority. Do not attach a Tauri browser client to an external
+child.
 
 ## Users and Operators
 

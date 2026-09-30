@@ -1322,6 +1322,10 @@ fn create(
     Ok(())
 }
 cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<Cef>,profile:String,request:ViewRequest,policy:Arc<Mutex<Policy>>,}impl Client{
+ // The pinned runtime installs a renderer-wide JavaScript message stub. Raw
+ // external children have no Tauri browser-side handler: reject every process
+ // message here so that stub cannot acquire product/native authority.
+ fn on_process_message_received(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_source_process:ProcessId,_message:Option<&mut ProcessMessage>)->i32{0}
  fn life_span_handler(&self)->Option<LifeSpanHandler>{Some(ExternalLife::new(Arc::clone(&self.host),self.app.clone(),self.profile.clone(),self.request.clone()))}
  fn request_handler(&self)->Option<RequestHandler>{Some(ExternalRequests::new(self.policy.clone()))}
  fn display_handler(&self)->Option<DisplayHandler>{Some(ExternalDisplay::new(Arc::clone(&self.host),self.profile.clone(),self.request.clone()))}
