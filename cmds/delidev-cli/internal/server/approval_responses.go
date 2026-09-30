@@ -39,7 +39,7 @@ func (s *Service) acceptApprovalResponse(tx *store.Tx, responseID, interactionID
 	// The Codex branch additionally accounts for its pinned native wrapper;
 	// prepare its exact response before acceptance, not after the
 	// Worker has claimed a response that cannot fit on the native wire.
-	if value.OpenCode == nil && value.Claude == nil {
+	if value.Grok == nil && value.OpenCode == nil && value.Claude == nil {
 		if _, err := codex.PrepareApprovalResponse(value.Approval, input); err != nil {
 			return store.Record{}, err
 		}
@@ -49,7 +49,7 @@ func (s *Service) acceptApprovalResponse(tx *store.Tx, responseID, interactionID
 }
 
 func (s *Service) approvalResponseScope(tx *store.Tx, r store.Record, value domain.ExecutionInteraction) (store.ExecutionGrant, error) {
-	if value.Type != domain.NativeApprovalInteraction || (value.Claude == nil && value.OpenCode == nil && (value.Approval == nil || value.Approval.Validate() != nil)) || (value.OpenCode != nil && value.OpenCode.Validate(value.Type, value.NativeRequestID) != nil) || (value.Claude != nil && (value.OpenCode != nil || value.Approval != nil || value.Questions != nil || value.Claude.Validate(value.Type, value.NativeRequestID, value.NativeItemID) != nil)) {
+	if value.Type != domain.NativeApprovalInteraction || (value.Grok != nil && (value.Claude != nil || value.OpenCode != nil || value.Approval != nil || value.Questions != nil || value.Grok.Validate(value.Type, value.NativeRequestID, value.NativeItemID) != nil)) || (value.Grok == nil && value.Claude == nil && value.OpenCode == nil && (value.Approval == nil || value.Approval.Validate() != nil)) || (value.OpenCode != nil && value.OpenCode.Validate(value.Type, value.NativeRequestID) != nil) || (value.Claude != nil && (value.OpenCode != nil || value.Approval != nil || value.Questions != nil || value.Claude.Validate(value.Type, value.NativeRequestID, value.NativeItemID) != nil)) {
 		return store.ExecutionGrant{}, executionEventConflict()
 	}
 	grant, err := s.interactionResponseScope(tx, r, value)

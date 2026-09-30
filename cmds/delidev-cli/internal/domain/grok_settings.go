@@ -55,3 +55,16 @@ func (c ExecutionConfiguration) GrokModeForInput(mode SessionMode) (GrokMode, er
 	}
 	return GrokDefaultMode, nil
 }
+
+func (c ExecutionConfiguration) GrokFirstInputContext(mode SessionMode) (uint64, error) {
+	if _, err := c.GrokModeForInput(mode); err != nil {
+		return 0, err
+	}
+	if c.GrokContext == nil {
+		return 0, Fail(Unsupported, "Grok Build needs explicit model context metadata.", "Select a model with an explicit context window.")
+	}
+	if err := c.GrokContext.Validate(); err != nil {
+		return 0, err
+	}
+	return c.GrokContext.Tokens, nil
+}

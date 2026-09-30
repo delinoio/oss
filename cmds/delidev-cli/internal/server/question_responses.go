@@ -5,6 +5,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/grok"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
@@ -33,13 +34,18 @@ func (s *Service) acceptQuestionResponse(tx *store.Tx, responseID, interactionID
 	if err := input.ValidateInteraction(value); err != nil {
 		return store.Record{}, err
 	}
+	if value.Grok != nil {
+		if err := grok.ValidatePublicQuestion(value.Grok, *input.Grok); err != nil {
+			return store.Record{}, err
+		}
+	}
 	if _, err := s.questionResponseScope(tx, r, value); err != nil {
 		return store.Record{}, err
 	}
 	// The Codex branch additionally accounts for its pinned native wrapper;
 	// check its size before acceptance, not after the
 	// Worker has claimed a response that cannot fit on the native wire.
-	if value.OpenCode == nil && value.Claude == nil {
+	if value.Grok == nil && value.OpenCode == nil && value.Claude == nil {
 		if err := codex.ValidateQuestionResponseSize(codex.QuestionAnswers{Answers: input.Answers}); err != nil {
 			return store.Record{}, err
 		}

@@ -119,3 +119,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Exact acknowledged Worker deletion-report retries with a matching actor/work-bound SQL receipt are read-only. Preserve original metadata and reject conflicting receipts; reconstruct a missing SQL receipt through the original synchronized-intent recovery path.
 
 - Permanent session erasure removes PR activity through each original remediation attempt source, including reservation records without row-level session binding. Redact the validated shared attempt and its index without emitting a new business activity transition; preserve unrelated PR history, original reservation provenance and lifetime counters.
+
+- Grok typed tool observations and interactions use existing Resource JSON storage and scoped bounded reads; preserve publication sequence, exact original native ownership and original request contents in Session/Inbox projections. Close SQL row readers before nested resource reads, and bound complete retained journals without truncation. Derived search projection or native restoration requires independent typed ownership; tool paths and descriptors remain inert.
