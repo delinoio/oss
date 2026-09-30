@@ -6,6 +6,7 @@ import { document, encode, object, resourceName, text, type Document } from "./d
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import { GitHubTokenForm } from "./github-opening";
+import { useSettingsOpening } from "./settings-lifetime";
 
 enum TokenKind { FineGrained = "fine-grained", Classic = "classic" }
 type MutationIdentity = { id: string; expectedRevision: bigint; requestId: string };
@@ -43,7 +44,8 @@ function IntegrationConnection({ initial, active, close }: { initial: Resource; 
   const [tokenError, setTokenError] = useState<unknown>();
   const [problem, setProblem] = useState<Document>();
   const [confirm, setConfirm] = useState(false);
-  const replace = useMutation(IntegrationQuery.replaceIntegrationToken, { retry: false, gcTime: 0 });
+  const opening = useSettingsOpening();
+  const replace = useMutation(IntegrationQuery.replaceIntegrationToken, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
   const changed = (row?: Resource) => { if (row) setAcknowledged(row); void result.refetch(); };
   const validate = useRetainedMutation(`integration-validate:${initial.id}`, IntegrationQuery.validateIntegrationProfile, (reply) => { changed(reply.profile); setProblem(problemDocument(reply.problemJson)); });
   const remove = useRetainedMutation(`integration-delete:${initial.id}`, IntegrationQuery.deleteIntegrationProfile, (reply) => { setConfirm(false); setProblem(problemDocument(reply.problemJson)); if (reply.deleted) close(); else changed(reply.profile); });

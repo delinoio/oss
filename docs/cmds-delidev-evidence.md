@@ -3825,3 +3825,56 @@ used.
 Merged the immutable fetched `main` revision `1399d131dcd5ef205f5be02b17073936b21f31c7` into the Grok branch from `edf77f79d1a03f0efc4d1834cbbe99e9924893fa`. Only this append-only evidence ledger conflicted; both histories and the existing implemented Grok status are retained. The upstream shared AI Subscription label, stable `subscription-accounts` identifier, exact sidebar/heading/compact-selector parity and complete 16-category contract remain intact. Grok interactions and the previously enlarged icon are unchanged.
 
 Normal Node `24.20.0` frontend `pnpm test` passes all 76 files/973 tests, generated-client build/type checking, eight package verifier cases, 16 asset/launcher cases, native Swift widget fixtures and production build (`/tmp/delidev-1125-label-merge-frontend.log`, 34.58 seconds for the pipeline). Public-docs build/content/routes and all 95 CI contract cases pass. All 14 LFS payloads are hydrated and match their committed sizes/digests. No Go, Rust, protocol or generated-client source changed, so the full passing Go race suite at `5f7f5bb0` and final icon inspection at `edf77f79` retain their original attribution and were not repeated. No additional native Settings/window, account, platform or release acceptance is claimed. Generated repository-owned `dist` output is removed after verification, and the pushed head requires fresh CI and review.
+
+### Settings opening disposal (issue #1138, 2026-09-30)
+
+- Ordinary Settings entry now starts at the first SubscriptionAccounts category.
+  Close, dialog cancel/Escape and navigation away discard the entire opening,
+  including editors, filters/pages, account wizard secrets, confirmations, local
+  job tracking and uncertain retry UI. Targeted New Project/Repositories entries
+  remain explicit; deferred destinations are cleared on close.
+- A fresh opening-owned transport and mutation registry abort supported client
+  waits, reject late outcomes and prevent follow-up requests. Tagged native/Connect
+  cache cleanup preserves the connection QueryClient and sibling exact retries.
+  Strict Mode replay creates a fresh generation; same-identity transport replacement
+  preserves an open editor and uses the latest authenticated transport.
+- Generated-router regressions deliberately ignore cancellation and settle reads
+  and writes late. A fixture commits before delaying acknowledgment; fresh reads
+  observe that resource without replay or rollback. Tests also cover late native
+  Worker/permission callbacks, repeated cache cleanup, sibling uncertain requests,
+  Close/cancel opener restoration, targeted entries, tray navigation and preserved
+  session/composer state.
+- Package-local `pnpm test` passed: 75 Vitest files / 960 tests, 8 package-verifier
+  fixtures, 16 launcher/asset fixtures, native Swift widget fixtures, TypeScript
+  checking and production frontend build. The first sandboxed attempt could not
+  access the Go build cache; the permitted unsandboxed run passed with temporary
+  server/Worker fixtures and no external account or inference. The source icon
+  was hydrated from its existing exact-path LFS cache and its SHA-256/size remained
+  identical. Generated frontend/client `dist` output is removed before delivery.
+- Native smoke ran the unchanged pinned CEF launcher on macOS 26.6.2 arm64 in a
+  separately built ad-hoc bundle, with private app/cache state and a paired
+  disposable loopback server. Ordinary entry selected AI Subscription. An unsaved
+  custom-provider name was discarded by Escape; focus returned to Settings and
+  reopening selected AI Subscription, with an empty new provider editor. Close
+  discarded a second draft and restored the same opener. New Project opened and
+  focused its targeted editor; Escape restored New Project, and the next ordinary
+  entry cleared that destination and selected AI Subscription. No Save was used.
+  Native Tab/Shift-Tab boundary traversal visited the dialog's last disclosure,
+  document focus and Close, without reaching background controls. The 3440×2168
+  2× native capture showed the full Settings surface and focused Close control.
+- The copied native build cache required removal of temporary relocated CMake
+  caches. The initial launch collided with the existing app's CEF cache; private
+  cache/home context resolved it. The disposable server initially rejected the
+  renderer origin; restarting that server with the exact `http://tauri.localhost`
+  allowlist established the saved connection. Existing app/server state was not
+  modified. The fixture received Quit, remaining CEF processes were terminated
+  by their exact temporary bundle path, and the temporary server was stopped.
+  Generated desktop/client `dist` directories were removed. Windows/X11 runtime,
+  responsive resizing/zoom, production signing and release acceptance remain
+  unverified for this revision; earlier copy-only geometry evidence is separate.
+
+### PR #1125 Settings-lifetime main conflict repair (2026-09-30)
+
+Merged the immutable fetched `main` revision `12b33a2accafe55b39da9bae2fba1acf310b265b` into the Grok branch from `83bcf40443c3b40cc0ba1fd6740657908e121c08`. The App notification/import regression and this append-only ledger conflicted. The two editor lifecycles remain independent tests, now asserting the issue #1138 close/reopen disposal policy and explicit repository entry. Both evidence histories and the implemented Grok status are preserved. Opening-scoped transport/cache isolation, sibling session/composer retention, exact within-opening retries, and the original 1,200 ms save-acknowledgment / 600 ms profile-read regression fixture remain intact; no product deadline or global test limit changed.
+
+Normal Node `24.20.0` frontend `pnpm test` passes all 77 files/985 tests, generated-client build/type checking, eight package verifier cases, 16 asset/launcher cases, native Swift widget fixtures and production build (`/tmp/delidev-1125-settings-lifetime-merge-frontend.log`, 37.98 seconds for the pipeline). Public-docs validation and all 95 CI contract cases pass. All 14 consumed LFS payloads match their committed sizes/digests. Go, Rust, protocol, generated-client source and icon bytes are unchanged: the complete Go race pass at `5f7f5bb0` and final icon inspection at `edf77f79` keep their original attribution and were not repeated. No fresh native Settings/Escape/focus, real-account, platform, signing or release acceptance is claimed. Generated repository-owned `dist` output is removed after validation; the pushed head requires fresh remote CI and review.
