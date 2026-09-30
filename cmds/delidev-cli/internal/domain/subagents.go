@@ -272,7 +272,16 @@ func ApplySubagents(prior SubagentState, root string, batch []SubagentObservatio
 		return nil, invalidSubagent()
 	}
 	live := 0
+	parentTools := map[string]string{}
 	for native, owner := range next {
+		if owner.ParentToolID != "" {
+			// Claude Agent/Task content identifies its child by the original
+			// parent tool. Keep that claim unique even after child completion.
+			if prior, claimed := parentTools[owner.ParentToolID]; claimed && prior != native {
+				return nil, invalidSubagent()
+			}
+			parentTools[owner.ParentToolID] = native
+		}
 		if !owner.Status.Terminal() {
 			live++
 		}
