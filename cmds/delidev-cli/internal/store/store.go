@@ -589,6 +589,9 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 		if err := t.StopForwards(id, ""); err != nil {
 			return err
 		}
+		if err := t.deleteSessionPRActivity(id); err != nil {
+			return err
+		}
 	}
 	if kind == domain.ModelKind {
 		model, err := Decode[domain.Model](r)

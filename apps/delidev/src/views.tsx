@@ -8,6 +8,7 @@ import { document, text } from "./documents";
 import { Problem } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
 import { SidebarSurface, useCloseSidebarDrawer, useSidebarDrawerOpen } from "./sidebar-context";
+import { ActivityPRDetails } from "./activity-pr-source";
 
 export enum Surface { Sessions = "sessions", NewSession = "new-session", PullRequests = "pull-requests", Usage = "usage", Schedules = "schedules", Activity = "activity", Inbox = "inbox", Search = "search" }
 function Pager({ page, next, setPage, busy }: { page: string; next?: string; setPage: (value: string) => void; busy: boolean }) {
@@ -74,7 +75,7 @@ export function Activity({ active, open }: { active: boolean; open: (id: string)
     <div className="actions"><button className="primary" onClick={() => apply(draft)}>Apply filters</button><button onClick={() => { setDraft(emptyActivity); apply(emptyActivity); }}>Reset</button></div>
   </SidebarSurface>
   <section hidden={!active} className="page"><header><h2>Activity</h2><button disabled={result.isFetching} onClick={() => { setPage(""); void result.refetch(); }}>Refresh</button></header><Problem error={result.error} />{result.isFetching ? <p role="status">Loading activity…</p> : null}{result.error && result.data ? <p className="notice">The refresh failed. These are the last activity rows for this scope.</p> : null}
-    {result.data?.entries.map((entry) => <article className="result" key={entry.id}><strong>{ActivityKind[entry.kind]?.toLowerCase().replaceAll("_", " ")}</strong><p><time dateTime={new Date(Number(entry.observedAtUnixMs)).toISOString()}>{new Date(Number(entry.observedAtUnixMs)).toLocaleString()}</time></p>{entry.sessionId ? <button onClick={() => open(entry.sessionId)}>Open session</button> : <p>Waiting or skipped occurrence</p>}{entry.accountId ? <small>Account {entry.accountId}</small> : null}</article>)}
+    {result.data?.entries.map((entry) => <article className="result" key={entry.id}><strong>{ActivityKind[entry.kind]?.toLowerCase().replaceAll("_", " ")}</strong><p><time dateTime={new Date(Number(entry.observedAtUnixMs)).toISOString()}>{new Date(Number(entry.observedAtUnixMs)).toLocaleString()}</time></p>{entry.pullRequest ? <ActivityPRDetails target={entry.pullRequest} revision={entry.sourceRevision} active={active} /> : null}{entry.sessionId ? <button onClick={() => open(entry.sessionId)}>Open session</button> : !entry.pullRequest ? <p>Waiting or skipped occurrence</p> : null}{entry.accountId ? <small>Account {entry.accountId}</small> : null}</article>)}
     {result.data?.entries.length === 0 ? <p>{page ? "No further activity on this page." : "No activity yet."}</p> : null}<Pager page={page} setPage={setPage} next={result.data?.nextPageToken} busy={result.isFetching} />
   </section></>;
 }
