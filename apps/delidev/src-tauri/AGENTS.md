@@ -42,6 +42,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Retain asynchronous raw-child creation failure only for its exact profile, generation and reservation. Native state polling and ordinary controls must surface the typed failure until explicit presentation retry; stale creation failures must not poison replacements or hide tracked removal.
 
+- Initial native geometry/host failures in the after-created callback follow the same exact failure retention before requesting child closure. The close callback clears the child handle without clearing that failure; an explicit replacement presentation starts fresh.
+
 - Shared-profile tab replacement must attempt every affected child even when an earlier creation fails. Retain each exact view's failure and return the first failure only after all replacements have been attempted.
 
 - Replace shared browser children only when their selected tab identity changes. Closing a background tab or selecting the current tab preserves page state, navigation history, pending creation and exact retained failure.

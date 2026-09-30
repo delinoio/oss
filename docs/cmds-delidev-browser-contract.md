@@ -79,6 +79,9 @@ Asynchronous request-context child creation failures are retained for the exact
 presentation and surfaced by native state polling. Ordinary controls return that
 typed failure until explicit Retry creates a new presentation; stale failures
 cannot poison its replacement, and tracked removal remains visible separately.
+Initial host/geometry failures after child acceptance use that same exact failure
+retention before requesting asynchronous closure. The close callback releases the
+child handle without erasing its typed failure, so state polling still offers Retry.
 When a shared-profile tab operation replaces multiple children, every affected
 window receives a creation attempt even if another attempt fails. Each failure
 is retained against its exact view; the initiating command returns the first

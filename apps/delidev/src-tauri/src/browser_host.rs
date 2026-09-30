@@ -1042,6 +1042,21 @@ impl BrowserHost {
         state.exit_when_ready()
     }
 
+    fn finish_child_created(
+        &self,
+        profile: &str,
+        request: &ViewRequest,
+        result: Result<()>,
+        close_child: impl FnOnce(),
+    ) {
+        // Initial native geometry can fail after the child has been accepted.
+        // Retain its exact failure before asynchronous closure clears the handle.
+        if let Err(code) = self.creation_completed(profile, request, result) {
+            close_child();
+            tracing::warn!(operation = "browser_geometry", ?code);
+        }
+    }
+
     pub fn status(&self, window: &str, profile: &str, view_id: &str) -> Result<BrowserState> {
         let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         if state
@@ -1814,10 +1829,9 @@ cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<Cef
 cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<Cef>,profile:String,request:ViewRequest,}impl LifeSpanHandler{
  fn on_after_created(&self,browser:Option<&mut Browser>){
    let Some(b)=browser else{return};
-   if let Err(code)=self.host.child_created(&self.profile,&self.request,b){
-     let _=hide_browser(b,&self.request);
-     tracing::warn!(operation="browser_geometry",?code);
-   }
+   self.host.finish_child_created(&self.profile,&self.request,
+     self.host.child_created(&self.profile,&self.request,b),
+     ||{let _=hide_browser(b,&self.request);});
  }
  fn on_before_popup(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_popup_id:i32,_target_url:Option<&CefString>,_target_frame_name:Option<&CefString>,_target_disposition:WindowOpenDisposition,_user_gesture:i32,_popup_features:Option<&PopupFeatures>,_window_info:Option<&mut WindowInfo>,_client:Option<&mut Option<Client>>,_settings:Option<&mut BrowserSettings>,_extra_info:Option<&mut Option<DictionaryValue>>,_no_javascript_access:Option<&mut i32>)->i32{1}
  fn on_before_close(&self,_browser:Option<&mut Browser>){
@@ -2676,6 +2690,61 @@ mod tests {
                 .unwrap()
                 .removal_pending
         );
+    }
+
+    #[test]
+    fn after_created_geometry_failure_survives_the_close_callback_and_retry() {
+        let (_temp, host, record, view_id, request) = active_storage_fixture();
+        host.state.lock().unwrap().live = 1;
+        // The controlled geometry result models an already accepted native child.
+        // Its close adapter observes the retained failure before delivering CEF's
+        // separate close callback; neither callback uses a real renderer here.
+        host.finish_child_created(
+            &record.id,
+            &request,
+            Err(NativeFailure::SidecarFailed),
+            || {
+                assert!(matches!(
+                    host.status("fixture", &record.id, &view_id),
+                    Err(NativeFailure::SidecarFailed)
+                ));
+                host.child_closed(&request);
+            },
+        );
+        assert_eq!(host.state.lock().unwrap().live, 0);
+        assert!(matches!(
+            host.status("fixture", &record.id, &view_id),
+            Err(NativeFailure::SidecarFailed)
+        ));
+        assert_eq!(
+            host.prepare_control("fixture", &record.id, &view_id, Action::Reload, None, None),
+            Err(NativeFailure::SidecarFailed)
+        );
+
+        let replacement = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &replacement).unwrap();
+        let mut newer = request.clone();
+        newer.generation += 1;
+        host.state.lock().unwrap().views.insert(
+            "fixture".into(),
+            View {
+                profile: record.id.clone(),
+                generation: newer.generation,
+                request: newer,
+                browser: None,
+                failure: None,
+                creation_pending: false,
+                closing: false,
+                view_id: replacement.clone(),
+            },
+        );
+        host.finish_child_created(
+            &record.id,
+            &request,
+            Err(NativeFailure::SidecarFailed),
+            || {},
+        );
+        assert!(host.status("fixture", &record.id, &replacement).is_ok());
     }
 
     #[test]
