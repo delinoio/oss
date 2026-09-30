@@ -101,10 +101,10 @@ type ToolJournal struct {
 
 func NewToolJournal(session domain.ID, prompt string, mode domain.GrokMode, planPathValue string) (*ToolJournal, error) {
 	observer, err := newMixedTools(session, prompt)
-	if err != nil || !mode.Valid() {
+	if err != nil || !mode.Valid() || planPathValue != "" && !retainedPlanLocator.valid(planPathValue) {
 		return nil, incompatible()
 	}
-	observer.plans = &planObserver{session: session, prompt: prompt, path: planPathValue, mode: NativeMode(mode), tools: map[string]planToolState{}, arrivals: map[domain.ID]bool{}, requests: map[string]bool{}}
+	observer.plans = &planObserver{session: session, prompt: prompt, path: planPathValue, pathPolicy: retainedPlanLocator, mode: NativeMode(mode), tools: map[string]planToolState{}, arrivals: map[domain.ID]bool{}, requests: map[string]bool{}}
 	observer.files.plans = observer.plans
 	observer.questions.mode = NativeMode(mode)
 	return &ToolJournal{observer: observer, session: session, prompt: prompt, requests: map[domain.ID]mixedToolFact{}}, nil
@@ -138,7 +138,7 @@ func (j *ToolJournal) Observe(value domain.GrokToolEvent) error {
 	// The original native plan locator is inert comparison data. It is selected
 	// once by the independently observed entry result, never used for file I/O.
 	if u := value.Payload.Update; u != nil && u.Output != nil && u.Output.Entered != nil && j.observer.plans.path == "" {
-		if !planPath(u.Output.Entered.Path) {
+		if !retainedPlanLocator.valid(u.Output.Entered.Path) {
 			return incompatible()
 		}
 		j.observer.plans.path = u.Output.Entered.Path

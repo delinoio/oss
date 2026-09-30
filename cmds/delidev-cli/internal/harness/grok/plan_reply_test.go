@@ -46,24 +46,28 @@ func fixturePlanningInput(root, workspace, mode string, request domain.ID, input
 }
 
 func rewritePlanningPath(v any, path string) any {
+	return rewritePlanningLocator(v, "/fixture/plan.md", path)
+}
+
+func rewritePlanningLocator(v any, original, path string) any {
 	switch value := v.(type) {
 	case string:
 		// The fixture also embeds a JSON-encoded tool argument string. Decode it
 		// before replacing paths so Windows separators remain valid JSON escapes.
 		var nested any
 		if json.Unmarshal([]byte(value), &nested) == nil {
-			if encoded, err := json.Marshal(rewritePlanningPath(nested, path)); err == nil {
+			if encoded, err := json.Marshal(rewritePlanningLocator(nested, original, path)); err == nil {
 				return string(encoded)
 			}
 		}
-		return strings.ReplaceAll(value, "/fixture/plan.md", path)
+		return strings.ReplaceAll(value, original, path)
 	case map[string]any:
 		for key, item := range value {
-			value[key] = rewritePlanningPath(item, path)
+			value[key] = rewritePlanningLocator(item, original, path)
 		}
 	case []any:
 		for i, item := range value {
-			value[i] = rewritePlanningPath(item, path)
+			value[i] = rewritePlanningLocator(item, original, path)
 		}
 	}
 	return v
