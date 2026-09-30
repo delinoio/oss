@@ -962,3 +962,20 @@ Delivery remains visibly unconfirmed until the original native resolution/result
 ### PR handling in Activity
 
 The existing Activity page displays immutable problem observation/dismissal, attempt-state and dedicated verified-handled metadata with the original PR, actor, version and source references. Failure, uncertainty and successful attempts remain distinct; success never implies handling. The original source disclosure uses two independent disposable authenticated ResourceQuery reads only after explicit inspection. It checks the retained set/source/version scope, labels recorded versus current revisions and exposes no collection, dismissal, resumption or execution control. Closing or leaving Activity disposes the reads; returning requires a new explicit inspection. Verification creation remains a separate production verifier requirement; timeline fixtures do not establish real-account/native remediation acceptance.
+
+## Codex Fork presentation (#1092)
+
+The completed-session action is gated by `CODEX_SESSION_FORK_V1` and the absence
+of retained fork-origin metadata. A completed child remains ineligible for another
+fork in the initial root-only native profile. A mounted
+connection controller retains its name/workspace draft, exact uncertain request
+and accepted job through conversation navigation; Escape hides the modal without
+losing that operation. The name input receives focus. A changed source revision
+requires discarding the fresh draft and inspecting the new boundary. Default
+workspace copying is independent; offer explicit Local sharing only for a Local
+source with fresh same-machine Worker proof. Managed Worktree sources retain only
+the independent workspace choice, preserving the child after parent deletion. Poll `GetSessionFork` only by the accepted job ID, stop automatic
+polling on terminal/uncertain state and offer explicit refresh. Open the child
+only after verified publication. The [fork contract](cmds-delidev-forks-contract.md)
+keeps Go ownership and current eligibility authoritative. Component tests do not
+establish native desktop or other-platform acceptance.

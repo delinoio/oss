@@ -25,19 +25,31 @@ type deletionWorkspaceProof struct {
 // DeleteOwnedWorkspace holds the same lock as preparation, execution and reads.
 // Its external proof retains the original manifest across a crash during Git
 // worktree removal. Local paths are never traversed or deleted.
-func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, removeCopies func() error) error {
+func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, removeCopies func() error) (returned error) {
+	stage := "validate"
+	defer func() {
+		if m.Logger != nil {
+			code := domain.Code("")
+			if returned != nil {
+				code = domain.SafeError(returned).Code
+			}
+			m.Logger.InfoContext(ctx, "workspace_deletion_finished", "session_id", w.SessionID, "stage", stage, "code", code)
+		}
+	}()
 	if w.Validate() != nil {
 		return domain.SessionDeletionPending()
 	}
 	if e := m.initialize(); e != nil {
 		return e
 	}
+	stage = "session-lock"
 	lock, e := security.TryLock(filepath.Join(m.Root, "locks", string(w.SessionID)+".lock"))
 	if e != nil {
 		return domain.SessionDeletionPending()
 	}
 	defer lock.Close()
 	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
+	stage = "retained-proof"
 	proofPath := filepath.Join(m.Root, "session-deletions", string(w.SessionID)+"-workspace.json")
 	proof := deletionWorkspaceProof{Version: 1, Digest: w.Digest()}
 	b, e := security.ReadPrivate(proofPath, 1<<20)
@@ -64,6 +76,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 			return e
 		}
 	}
+	stage = "owned-manifest"
 	if proof.Manifest != nil {
 		manifest := *proof.Manifest
 		if manifest.SessionID != w.SessionID || manifest.MachineID != w.MachineID || !slices.Contains(w.PreparationDigests, manifest.InputDigest) {
@@ -81,6 +94,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		// Only a present owned process index can prove termination. General Chat
 		// preparation itself launches no Git child. Other original job processes
 		// are independently reconciled by the Worker before this callback.
+		stage = "owned-processes"
 		processRoot := filepath.Join(m.Root, "processes", string(w.SessionID))
 		if _, e := os.Lstat(processRoot); e == nil {
 			if e := process.ReconcileOwnerContext(ctx, git.ProcessRoot, w.SessionID); e != nil {
@@ -89,6 +103,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		} else if !errors.Is(e, os.ErrNotExist) {
 			return domain.SessionDeletionPending()
 		}
+		stage = "repository-ownership"
 		for i := len(manifest.Repositories) - 1; i >= 0; i-- {
 			repo := manifest.Repositories[i]
 			if manifest.Type == domain.Local {
@@ -107,6 +122,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 				}
 				// Positive common-directory and linked-administration comparison
 				// protects an unrelated replacement at the expected managed path.
+				stage = "git-common-identity"
 				source, e := git.run(ctx, repo.Source, "rev-parse", "--path-format=absolute", "--git-common-dir")
 				if e != nil {
 					return e
@@ -122,6 +138,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 			} else if !errors.Is(e, os.ErrNotExist) {
 				return domain.SessionDeletionPending()
 			}
+			stage = "git-registration"
 			list, e := git.run(ctx, repo.Source, "worktree", "list", "--porcelain", "-z")
 			if e != nil {
 				return e
@@ -132,6 +149,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 					present = true
 				}
 			}
+			stage = "git-removal"
 			if present {
 				if _, e := git.run(ctx, repo.Source, "worktree", "remove", "--force", "--", repo.Path); e != nil {
 					return e
@@ -141,6 +159,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 			}
 		}
 	}
+	stage = "workspace-removal"
 	if !proof.Removed {
 		// The manifest was persisted outside the directory before removal. Missing
 		// paths on recovery therefore preserve the exact original deletion intent.
@@ -157,6 +176,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	} else if _, e := os.Lstat(root); !errors.Is(e, os.ErrNotExist) {
 		return domain.SessionDeletionPending()
 	}
+	stage = "copy-removal"
 	if e := removeCopies(); e != nil {
 		return e
 	}

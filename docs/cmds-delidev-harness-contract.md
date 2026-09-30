@@ -1626,6 +1626,20 @@ The exclusive `grok_tools_terminal` kind `closed-first-tools` retains original `
 
 The retained prior implementation and validation evidence is recorded in `docs/evidence/delidev/issue-1091/public-grok-interactions.md`. Fresh replacement validation is recorded independently in `docs/evidence/delidev/issue-1091/replacement-public-grok-2026-09-30.md`; the foreign Plan locator repair has its own `docs/evidence/delidev/issue-1091/maintenance-foreign-plan-locators-2026-09-30.md` record. These records do not replace the full project acceptance boundary.
 
+## Native Codex Fork (#1092)
+
+The [fork contract](cmds-delidev-forks-contract.md) adds `thread/fork` for pinned
+Codex 0.151.0. Read-only source inspection requires completed legacy root history,
+no goal, no native queue, exact last-turn input digests and a private rollout
+returned by native metadata. The child uses a fresh home, remapped cwd/roots,
+inclusive `lastTurnId`, `excludeTurns` and `deferGoalContinuation`. Compare the
+complete bounded native turn prefix, new identity, original parent link, idle
+state and immutable effective policy/defaults. No user input is replayed.
+Native creation uses an unregistered relay token with no inference authority;
+the first explicit child turn receives its ordinary fresh grant. Completed
+text/reasoning histories are supported; tool/rich/child histories are rejected
+until their inherited auxiliary state has its own verified adapter.
+
 ### Codex portable full-history account boundary
 
 Explicit stopped API account selection uses the existing exact predecessor checkpoint, original history root, native thread Resume and complete latest-turn/settings verification. The checkpoint is read against the preceding assignment's original account/connection; the successor registration and checkpoint use the newly selected scope. No old bearer is reused. The pinned HTTP-only provider configuration (`supports_websockets=false`) is revalidated before Resume and input. Official [Codex 0.151.0 request construction](https://github.com/openai/codex/blob/rust-v0.151.0/codex-rs/core/src/client.rs) separates full Responses input from the process-local WebSocket previous-response cache. The server independently requires prior full-history use and forbids account-bound selectors on every switched request; native source inspection alone is not execution evidence. The controlled native CLI fixture checks complete ordered history across A-to-B process replacement and rejects response/conversation identifiers without reading user credentials. See the sessions contract and [issue #1097 evidence](evidence/delidev/issue-1097/stopped-account-switch.md) for admission and acceptance limits.
