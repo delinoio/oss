@@ -27,7 +27,9 @@ child. Provider/account authorities remain the original immutable selection.
 
 Owner/paired clients use authenticated `SessionService.ForkSession` and
 `session fork`. A UUID-v7 request, exact source revision and completed native
-turn identify the immutable boundary. Acceptance creates one durable Worker job;
+turn identify the immutable boundary. Only an original root session is eligible;
+reject a published forked child before accepting another job, even after that
+child completes its own turn. Acceptance creates one durable Worker job;
 the child is published only after both native history and every workspace are
 verified and native process cleanup is independently confirmed. Exact receipt
 replay observes the original job/child without repeating native side effects.

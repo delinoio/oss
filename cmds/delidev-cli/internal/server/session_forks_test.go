@@ -228,3 +228,44 @@ func TestSessionForkFailedCopyReleasesSourceWithoutPublishingChild(t *testing.T)
 		t.Fatal("verified failed copy retained the source reservation", err)
 	}
 }
+
+func TestSessionForkRejectsPublishedChildAfterItsOwnCompletedTurn(t *testing.T) {
+	f, _, accepted := acceptedForkFixture(t)
+	job, input := forkClaimFixture(t, f, accepted.Job.Id)
+	result := forkResultFixture(t, input)
+	raw, _ := json.Marshal(result)
+	if _, err := f.workerClient.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: raw})); err != nil {
+		t.Fatal(err)
+	}
+	published, err := sessionClient(f.accountFixture).GetSessionFork(context.Background(), ownerRequest(f.identity, &pb.GetSessionForkRequest{JobId: job.Id}))
+	if err != nil || published.Msg.Session == nil {
+		t.Fatal("missing published child", err)
+	}
+	// Continue the actual published child on its own native history. Its valid
+	// completed execution otherwise meets the ordinary source eligibility rules.
+	f.change.Session = published.Msg.Session
+	f.thread = domain.ID(result.NativeThreadID)
+	f.enqueue(t, "Finish the child's own turn", domain.ExecuteMode)
+	f.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
+	f.claim(t)
+	f.complete(t, domain.ExecutionSucceeded)
+	f.control(t, pb.SessionAction_SESSION_ACTION_STOP)
+	before := f.refresh(t)
+	var child domain.Session
+	if domain.Decode(before.Data, &child) != nil || child.Fork == nil || child.Execution == nil || !child.Execution.CleanupVerified || child.Outcome != domain.ExecutionSucceeded {
+		t.Fatal("fixture did not complete the published child")
+	}
+	beforeJobs, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.JobKind, SessionID: before.ID, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(before.ID), ExpectedRevision: before.Revision}, ExpectedTurnId: child.Execution.NativeTurnID, Name: "Unsupported grandchild"}
+	if _, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, request)); domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
+		t.Fatal("completed child accepted another fork", err)
+	}
+	afterJobs, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.JobKind, SessionID: before.ID, Limit: 100})
+	after := f.refresh(t)
+	if err != nil || len(afterJobs) != len(beforeJobs) || after.Revision != before.Revision || !bytes.Equal(after.Data, before.Data) {
+		t.Fatal("refusal accepted work or changed the child", err)
+	}
+}

@@ -43,3 +43,22 @@ it("retains exact fork retry and accepted job while navigation changes, publishi
  await waitFor(() => expect(open).toHaveBeenCalledWith(child.id));
  expect(fork).toHaveBeenCalledTimes(2);
 });
+
+
+it("offers a completed root but refuses a completed forked child", async () => {
+  const completed = { name: "Completed", workspace: "general-chat", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "codex" } }, execution: { native_turn_id: newRequestId(), cleanup_verified: true } };
+  const root = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode(completed) });
+  const child = create(ResourceSchema, { ...root, id: newRequestId(), documentJson: encode({ ...completed, fork: { source_session_id: root.id, native_thread_id: newRequestId() } }) });
+  const fork = vi.fn();
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.CODEX_SESSION_FORK_V1] }) });
+    router.service(SessionService, { forkSession: fork });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const view = (source: typeof root) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  const rendered = render(view(root));
+  await screen.findByRole("button", { name: "Fork session" });
+  rendered.rerender(view(child));
+  expect(screen.queryByRole("button", { name: "Fork session" })).toBeNull();
+  expect(fork).not.toHaveBeenCalled();
+});

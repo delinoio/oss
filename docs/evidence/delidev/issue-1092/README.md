@@ -137,3 +137,23 @@ reservation without publishing a child or changing source state.
 - `GOMAXPROCS=4 go test -race ./cmds/delidev-cli/internal/server -run '^TestSessionForkFailedCopyReleasesSourceWithoutPublishingChild$' -count=1` passed after the Worker report classification change.
   It checks the definite failed job, absent child, unchanged source and successful
   acceptance of a fresh fork request after reservation release.
+
+## PR #1176 review repair: root-only acceptance and presentation
+
+Starting from the copy-drift repair, a real public-RPC fixture published one
+child, resumed it with a new input, and reported that child's own successful
+turn and verified cleanup. Before the eligibility change,
+`TestSessionForkRejectsPublishedChildAfterItsOwnCompletedTurn` failed because the
+server accepted another fork job. Acceptance now rejects retained fork-origin
+metadata before durable work, and the desktop hides the action for such children.
+The regression also checks that refusal leaves child bytes, revision and job
+inventory unchanged.
+
+- `GOMAXPROCS=4 go test -race ./cmds/delidev-cli/internal/server -run '^TestSessionFork' -count=1` passed.
+- In `apps/delidev`, generated-client build, `pnpm typecheck` and
+  `pnpm exec vitest run src/session-fork.test.tsx --maxWorkers=1` passed (two tests).
+  The component fixture first observes the eligible root action, then verifies
+  that an otherwise completed child has no action and sends no mutation.
+
+These fixtures establish Go/Connect and presentation behavior with reported
+native state; they do not add installed-native or cross-platform acceptance.

@@ -12,7 +12,7 @@ import { Modal, Problem } from "./ui";
 const Context = createContext<((source: Resource) => void) | undefined>(undefined);
 const settled = (resource: Resource) => {
   const data = document(resource), execution = object(data.execution), initial = object(data.initial_execution);
-  return resource.schemaVersion === 1 && data.archive === "active" && data.recovery === "none" && data.outcome === "succeeded" && !data.active_execution_id && !data.pending_steer_id && execution.cleanup_verified === true && !execution.unconfirmed_responses && !object(execution.waiting).user_input && !object(execution.waiting).approval && text(execution.native_turn_id) && object(initial.configuration).harness === "codex";
+  return resource.schemaVersion === 1 && data.fork === undefined && data.archive === "active" && data.recovery === "none" && data.outcome === "succeeded" && !data.active_execution_id && !data.pending_steer_id && execution.cleanup_verified === true && !execution.unconfirmed_responses && !object(execution.waiting).user_input && !object(execution.waiting).approval && text(execution.native_turn_id) && object(initial.configuration).harness === "codex";
 };
 
 export function SessionForkAction({ source }: { source: Resource }) {

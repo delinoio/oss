@@ -723,7 +723,9 @@ Local connection and registration permission guidance distinguishes device autho
 
 ## Codex Fork presentation (#1092)
 
-The completed-session action is gated by `CODEX_SESSION_FORK_V1`. A mounted
+The completed-session action is gated by `CODEX_SESSION_FORK_V1` and the absence
+of retained fork-origin metadata. A completed child remains ineligible for another
+fork in the initial root-only native profile. A mounted
 connection controller retains its name/workspace draft, exact uncertain request
 and accepted job through conversation navigation; Escape hides the modal without
 losing that operation. The name input receives focus. A changed source revision
