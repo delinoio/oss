@@ -92,7 +92,7 @@ func TestClaudeRecoveryRequiresExplicitOriginalComparison(t *testing.T) {
 	if evidence.Validate(r) != nil {
 		t.Fatal("original completion lost Claude comparison")
 	}
-	for _, scenario := range []string{"implicit", "codex", "opencode", "missing", "mixed", "claim-version", "protocol", "executable", "model", "effort", "permission", "instructions", "instructions-uppercase", "request", "first-history", "thread", "failed", "stopped", "multiple-inputs"} {
+	for _, scenario := range []string{"implicit", "codex", "opencode", "missing", "mixed", "claim-version", "protocol", "executable", "model", "effort", "permission", "instructions", "instructions-uppercase", "request", "first-history", "thread", "stopped", "multiple-inputs"} {
 		t.Run(scenario, func(t *testing.T) {
 			next, native := r, *r.Claude
 			next.Claude = &native
@@ -129,8 +129,6 @@ func TestClaudeRecoveryRequiresExplicitOriginalComparison(t *testing.T) {
 				next.HistoryExecutionID = NewID()
 			case "thread":
 				next.Completion.NativeThreadID = NativeIdentity(NewID())
-			case "failed":
-				next.Completion.Outcome = ExecutionFailed
 			case "stopped":
 				next.Completion.Outcome = ExecutionStopped
 			case "multiple-inputs":
@@ -140,6 +138,10 @@ func TestClaudeRecoveryRequiresExplicitOriginalComparison(t *testing.T) {
 				t.Fatal("incomplete or foreign Claude recovery accepted")
 			}
 		})
+	}
+	r.Completion.Outcome, evidence.Completion.Outcome = ExecutionFailed, ExecutionFailed
+	if r.Validate() != nil || evidence.Validate(r) != nil {
+		t.Fatal("settled failed outcome lost comparison-only recovery")
 	}
 	r.Claude.ClaimVersion, r.HistoryExecutionID = 2, NewID()
 	if r.Validate() != nil || evidence.Validate(r) != nil {

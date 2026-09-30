@@ -48,6 +48,8 @@
   },
   "go-test": {
     "paths": [
+      "scripts/ci/go-test.mjs",
+      "scripts/ci/go-test.test.mjs",
       ".npmrc",
       ".nvmrc",
       "apps/devhud-admin/**",
