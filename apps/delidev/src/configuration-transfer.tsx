@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { document, items, object, text, type Document } from "./documents";
 import { ResourceChoice, TextField } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
+import { useSettingsOpening } from "./settings-lifetime";
 import { JobState } from "./jobs";
 import { Problem } from "./ui";
 
@@ -95,8 +96,9 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const alive = useRef(false), generation = useRef(0), gate = useRef(false);
   const exportText = useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
-  const exportRead = useMutation(ConfigurationQuery.exportConfiguration, { retry: false, gcTime: 0 });
-  const previewRead = useMutation(ConfigurationQuery.previewConfigurationImport, { retry: false, gcTime: 0 });
+  const opening = useSettingsOpening();
+  const exportRead = useMutation(ConfigurationQuery.exportConfiguration, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
+  const previewRead = useMutation(ConfigurationQuery.previewConfigurationImport, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
   useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++; }; }, []);
   const mutation = useRetainedMutation("configuration-import", ConfigurationQuery.applyConfigurationImport, (result) => {
     setReport({ state: "unknown" });

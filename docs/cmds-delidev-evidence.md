@@ -3921,3 +3921,78 @@ suites are not repeated and their complete prior evidence remains above.
 Incoming native icon/Settings smoke records remain historical evidence from
 main; this merge performs no new native desktop visual, remote Worker or
 release acceptance. Its pushed head requires fresh hosted checks and review.
+
+### Settings opening disposal (issue #1138, 2026-09-30)
+
+- Ordinary Settings entry now starts at the first SubscriptionAccounts category.
+  Close, dialog cancel/Escape and navigation away discard the entire opening,
+  including editors, filters/pages, account wizard secrets, confirmations, local
+  job tracking and uncertain retry UI. Targeted New Project/Repositories entries
+  remain explicit; deferred destinations are cleared on close.
+- A fresh opening-owned transport and mutation registry abort supported client
+  waits, reject late outcomes and prevent follow-up requests. Tagged native/Connect
+  cache cleanup preserves the connection QueryClient and sibling exact retries.
+  Strict Mode replay creates a fresh generation; same-identity transport replacement
+  preserves an open editor and uses the latest authenticated transport.
+- Generated-router regressions deliberately ignore cancellation and settle reads
+  and writes late. A fixture commits before delaying acknowledgment; fresh reads
+  observe that resource without replay or rollback. Tests also cover late native
+  Worker/permission callbacks, repeated cache cleanup, sibling uncertain requests,
+  Close/cancel opener restoration, targeted entries, tray navigation and preserved
+  session/composer state.
+- Package-local `pnpm test` passed: 75 Vitest files / 960 tests, 8 package-verifier
+  fixtures, 16 launcher/asset fixtures, native Swift widget fixtures, TypeScript
+  checking and production frontend build. The first sandboxed attempt could not
+  access the Go build cache; the permitted unsandboxed run passed with temporary
+  server/Worker fixtures and no external account or inference. The source icon
+  was hydrated from its existing exact-path LFS cache and its SHA-256/size remained
+  identical. Generated frontend/client `dist` output is removed before delivery.
+- Native smoke ran the unchanged pinned CEF launcher on macOS 26.6.2 arm64 in a
+  separately built ad-hoc bundle, with private app/cache state and a paired
+  disposable loopback server. Ordinary entry selected AI Subscription. An unsaved
+  custom-provider name was discarded by Escape; focus returned to Settings and
+  reopening selected AI Subscription, with an empty new provider editor. Close
+  discarded a second draft and restored the same opener. New Project opened and
+  focused its targeted editor; Escape restored New Project, and the next ordinary
+  entry cleared that destination and selected AI Subscription. No Save was used.
+  Native Tab/Shift-Tab boundary traversal visited the dialog's last disclosure,
+  document focus and Close, without reaching background controls. The 3440×2168
+  2× native capture showed the full Settings surface and focused Close control.
+- The copied native build cache required removal of temporary relocated CMake
+  caches. The initial launch collided with the existing app's CEF cache; private
+  cache/home context resolved it. The disposable server initially rejected the
+  renderer origin; restarting that server with the exact `http://tauri.localhost`
+  allowlist established the saved connection. Existing app/server state was not
+  modified. The fixture received Quit, remaining CEF processes were terminated
+  by their exact temporary bundle path, and the temporary server was stopped.
+  Generated desktop/client `dist` directories were removed. Windows/X11 runtime,
+  responsive resizing/zoom, production signing and release acceptance remain
+  unverified for this revision; earlier copy-only geometry evidence is separate.
+
+### PR #1127 base merge: Settings opening disposal (2026-09-30)
+
+The terminal branch integrates main revision
+`12b33a2accafe55b39da9bae2fba1acf310b265b`, retaining the complete issue #1138
+Settings lifetime implementation and regressions. The ledger conflict preserves
+all terminal maintenance history and the full incoming implementation/native
+smoke record. Scoped desktop rules and contracts retain the new opening-scoped
+Settings policy alongside connection-owned session/terminal workflows. Settings
+has a nested mutation registry and scoped transport/cache cleanup; terminal
+controls continue to use the surrounding connection registry. The existing
+delayed real-server GitHub-profile acknowledgment fixture is also retained.
+
+Under explicitly selected Node 24.20.0, complete `apps/delidev` `pnpm test`
+passes all 76 files / 962 frontend tests, client build and type checking, eight
+package-verifier cases, 16 asset/launcher cases, native Swift widget fixtures
+and the production frontend build. This includes ignored-cancellation/late
+outcome, Strict Mode, same-identity reconnect, sibling exact retry and terminal
+regressions. All 95 repository contract checks, asset preflight, `git lfs fsck`
+and `git diff --check` pass. No test deadline or production behavior is changed
+during conflict resolution.
+
+Generated desktop/client `dist` output is removed after verification. No Go,
+Rust, protocol or generated-client source changes in this merge, so their
+complete previous evidence remains recorded without repeating unchanged suites.
+Incoming native Settings smoke is historical evidence from main; this merge
+performs no new native desktop visual, remote Worker or release acceptance.
+The pushed merge requires fresh CI and review evidence.
