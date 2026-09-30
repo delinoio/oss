@@ -109,3 +109,31 @@ The native CEF menu/shortcuts did not expose a working zoom control, so 200%
 native zoom remains unverified. Actual Windows and Ubuntu X11 sessions were
 unavailable on this macOS host. No fixture result is presented as acceptance
 on those platforms.
+
+## First PR maintenance: base conflict
+
+PR [#1188](https://github.com/delinoio/oss/pull/1188) initially conflicted after
+main advanced to `7f356266fc195b1880ffac66a93dadab5c5a2df7`. The conflict was in
+`apps/delidev/AGENTS.md`; the resolution preserves both Integrations and the
+new Diagnostics ownership rules. The merge also preserves main's AI API Keys
+terminology and Diagnostics shell composition. No presentation implementation
+was replaced to resolve the instructions conflict.
+
+- Generated-client build and `pnpm typecheck`: **passed**.
+- `pnpm exec vitest run src/integrations.test.tsx src/github-opening.test.tsx
+  src/settings.test.tsx src/doctor.test.tsx --maxWorkers=2`: **86 passed** on
+  the combined tree, including all 22 Integrations tests.
+- `VITEST_MAX_WORKERS=2 pnpm test`: **1,012 passed, 1 failed, 2 skipped** out
+  of 1,015 tests; **82 files passed, 3 failed**. The workspace fixture could
+  not find its owned Worker option. The configuration and usage fixture suites
+  failed during Go build setup, which reported missing standard-library
+  packages under the Go 1.26.8 toolchain and missing shared Go build-cache
+  files. A subsequent `go version` still reported `go1.26.8 darwin/arm64`.
+  This is an observed local setup failure, not a clean full-suite result.
+  No global toolchain/cache or test deadline was changed by this work.
+- The remaining packaging (8), desktop-launch/asset (16), widget and frontend
+  build stages were executed separately again: **passed**.
+
+The PR remains subject to current-head CI/review; earlier review/check results
+do not approve this merge revision. The original native/zoom limits above
+remain unchanged.
