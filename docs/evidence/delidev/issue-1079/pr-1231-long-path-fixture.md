@@ -14,8 +14,10 @@ restoration identity regression. The retained job log is
 
 Starting from `2c8adc716`, the temporary source explicitly enables
 `core.longpaths` for initial preparation and then disables it before storage,
-as before. All restored-store checks, source-offline behavior, subsequent
-recovery/deletion checks and the final source-configuration assertion remain.
+as before. All restored-store identity, subsequent recovery/deletion checks
+and the final source-configuration assertion remain. This particular fixture
+does not disconnect the original source; source-offline restoration has separate
+regressions in the preceding records.
 The fixture also retains structured preparation diagnostics in a private file,
 emitting them only on failure. No production deadline or Git profile changes.
 
