@@ -58,8 +58,10 @@ timeout returns the original job and cannot cancel or repeat Fork.
 Private scope paths are CLI/Worker inputs and never part of public RPC rollout
 selection. A copied child starts paused and requires a new queued input plus
 explicit Resume. Its first turn resumes the child checkpoint, and subsequent
-FIFO/Resume uses the child's verified completion on the same new history. Keep
-original account/connection and configuration even after current Agent edits;
+FIFO/Resume uses the child's verified completion on the same new history. Bind
+lost-report recovery to that fork runtime for the first child execution;
+the fresh execution ID identifies the original report rather than its native home.
+Keep original account/connection and configuration even after current Agent edits;
 current eligibility failures retain input instead of rerouting. Child metadata
 exposes its source/boundary link; source transcript records remain source-owned.
 

@@ -63,3 +63,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Codex fork Local sharing is limited to original Local manifests with no parent-owned checkouts. Reject managed Worktree sharing before job acceptance and again before Worker native inspection/preparation and server publication; parent deletion retains those paths. Independent Worktree copying remains available. Follow `docs/cmds-delidev-forks-contract.md`.
 
 - First fork-child dispatch uses the same stale/future Worker-instance checks as ordinary initial and continuation dispatch, with only the existing one-second future tolerance. A rejected clock observation cannot consume queued input, publish execution work or mark an empty Resume ready.
+
+- First fork-child lost-report recovery derives `HistoryExecutionID` from the immutable assignment's fork runtime, independently of the fresh execution/report ID. Preserve the original thread, accepted input, terminal outcome and paused recovery gates; later continuations retain their independently assigned history identity.
