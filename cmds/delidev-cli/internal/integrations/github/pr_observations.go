@@ -209,6 +209,15 @@ func (c *Client) queryPRObservation(ctx context.Context, token []byte, repositor
 		if rules.Digest != currentRules.Digest {
 			return result, domain.Fail(domain.Conflict, "Active CI rules changed during the read.", "Refresh the PR CI evaluation explicitly.")
 		}
+		// Recheck every inventory after the final rule read. REST PR head/base
+		// equality cannot detect entry into, removal from or reordering in a queue.
+		final, err := c.readCIInventory(ctx, token, repository, item)
+		if err != nil {
+			return result, err
+		}
+		if !reflect.DeepEqual(observed, final) {
+			return result, domain.Fail(domain.Conflict, "CI evidence changed during the final evaluation read.", "Refresh the complete current PR evidence.")
+		}
 		observed.Rules = *rules
 		observed.Result = observed.Evaluate(item)
 		if observed.Validate(item) != nil {
