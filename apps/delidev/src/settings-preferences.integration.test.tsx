@@ -42,4 +42,3 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   expect(document(latest[0])).toEqual({ ...defaults, default_routing: "priority", automatic_fetch: false });
 }, 15000);
 
-
