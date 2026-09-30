@@ -5,12 +5,35 @@ import { SessionService, SystemService, newRequestId } from "@delinoio/delidev-a
 import { Desktop } from "./desktop";
 import { SavedConnectionState, type SavedConnection } from "./saved-connections";
 import { LocalWorkerAction, LocalWorkerState } from "./local-worker-controls";
+import { LocalServerState } from "./local-server";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn(), createTransport: vi.fn(), listen: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: bridge.listen }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: bridge.invoke }));
 vi.mock("@delinoio/delidev-api-client", async (original) => ({ ...await original<typeof import("@delinoio/delidev-api-client")>(), createDeliDevTransport: (...args: unknown[]) => bridge.createTransport(...args) }));
 beforeEach(() => { bridge.invoke.mockReset(); bridge.createTransport.mockReset(); bridge.listen.mockReset().mockResolvedValue(() => {}); });
+it("keeps permission-denied local startup explicit without attempting registration recovery", async () => {
+  bridge.invoke.mockImplementation(async (command: string) => {
+    if (command === "connection_context") return null;
+    if (command === "local_server_status") return { state: LocalServerState.Blocked, attempts: 1, retry_ms: 60000, failure: "permission-denied" };
+    if (command === "connect_local") throw "permission-denied";
+    throw new Error("Unexpected native authority");
+  });
+  render(<Desktop />);
+  const start = await screen.findByRole("button", { name: "Start or connect" });
+  expect(bridge.invoke.mock.calls.some(([command]) => command === "connect_local")).toBe(false);
+  fireEvent.click(start);
+  const problem = await screen.findByRole("alert");
+  expect(problem.textContent).toContain("selected device is authorized");
+  expect(problem.textContent).toContain("accessible only to you");
+  expect(problem.textContent).toContain("0700 for private directories and 0600 for private files");
+  expect(problem.textContent).toContain("Preserve existing data");
+  expect(bridge.invoke.mock.calls.filter(([command]) => command === "connect_local")).toHaveLength(1);
+  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "local_server_status", "connect_local"].includes(command))).toBe(true);
+  expect(bridge.createTransport).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Re-register this desktop" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Continue desktop recovery" })).toBeNull();
+});
 function savedFixture() {
   const profile: SavedConnection = { version: 1, revision: 1, id: newRequestId(), name: "Remote fixture", endpoint: "https://fixture.example.test", server_id: newRequestId(), device_id: newRequestId(), pairing_id: newRequestId(), state: SavedConnectionState.Paired, created_at: "2026-09-25T00:00:00Z" };
   const connection = { endpoint: profile.endpoint, server_id: profile.server_id, device_id: profile.device_id, token: "private-native-fixture-token" };

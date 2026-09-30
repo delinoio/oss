@@ -3490,6 +3490,66 @@ This repair changes no Rust sources and adds no real-account, remote-TLS,
 native desktop or supported-platform acceptance. Generated repository-owned
 `dist` output is removed after validation and commit-hook preparation.
 
+### Local desktop permission guidance and recovery (2026-09-30)
+
+The real macOS desktop showed local connection and registration permission
+errors. Its bundled CLI reproduced `permission_denied` because the existing
+user-owned, non-symlink default data directory had mode 0755. The privacy check
+requires owner-only access; the earlier UI incorrectly described this as files
+being inaccessible to their owner.
+
+With explicit user authorization, only that directory was changed to 0700 after
+checking its opened identity and owner. The retained legacy `delidev.db` was
+preserved byte-for-byte and kept its original file mode; its read-only schema
+inspection showed only `auth_states`, separate from the current server's
+`state.sqlite`. Start or connect then opened the actual desktop session surface,
+and Check desktop registration reported authorized. No database reset, legacy
+conversion or revoked-client recovery was performed.
+
+Local connection and registration now share accurate device/ownership/privacy
+guidance, including macOS/Linux directory 0700 and file 0600 modes and explicit
+data preservation. Native error codes, RPCs and Go security enforcement remain
+unchanged. Component regressions cover denied startup and denied registration
+inspection with or without a prior revoked observation, rejecting automatic
+startup/recovery and stale replacement actions.
+
+The existing Go security suite passed, including rejection of shared directory
+permissions and symlinks without changing their permissions. Focused desktop
+and registration component checks passed 2 files / 16 tests, including all
+three new permission-denial cases. Type checking, native packaging/launcher
+fixtures, Swift widget fixtures and the production frontend build also passed.
+
+The first full `pnpm test` overlapped other local test/build activity and showed
+existing backup, tray and settings timeout failures; only its identified
+process group was stopped before rerunning with one Vitest worker. That full
+sequential run completed 74 files / 948 tests: 72 files / 939 tests passed,
+while unchanged `App.test.tsx` had seven five-second timeouts and unchanged
+`settings.integration.test.tsx` had two missing-control waits. These failed
+runs are retained as failures, not full-suite acceptance; no production
+behavior or test time limit was changed to conceal them.
+
+A separate retry of those two unchanged files with the original time limits
+passed 46 of 48 tests. The notification/import draft test still hit its
+five-second limit, and the singleton server-preferences fixture still missed
+`Edit Server preferences`. The focused permission checks remain fully passing;
+the two unrelated failures remain explicit validation limitations. Detailed
+outputs are in `/tmp/delidev-permissions-frontend-serial.log`,
+`/tmp/delidev-permissions-retry.log` and
+`/tmp/delidev-permissions-focused.log` on the validation host.
+
+The native host build passed, and `pnpm dev:desktop` built and ad-hoc signed its
+CEF app bundle in this worktree. Its own log recorded local-server supervision
+as Ready and a clean runtime/controller exit. No separately attributable
+`local_connect` completion appeared in that bundle's log; the connected and
+authorized UI observations therefore do not establish rebuilt-bundle full
+connection acceptance when other DeliDev bundles share the same app identity.
+The user then explicitly requested no further execution. No additional app or
+test was launched, and process inspection confirmed this worktree's desktop
+and launcher had exited. Final read-only checks confirmed the legacy database
+hash and file mode were unchanged and the data directory remained 0700.
+Generated desktop/client `dist` outputs were removed. This records macOS local
+recovery and build evidence only, not Windows/Linux or release acceptance.
+
 ### Desktop source-icon LFS preparation (2026-09-30)
 
 The ordinary macOS development entry point reproduced `Invalid PNG signature`
@@ -3585,4 +3645,37 @@ Cargo/upstream constraints. No Go, Rust or protobuf sources changed in this
 merge, and their previously recorded broad-suite limitations remain visible.
 No new real-account, native launch, provisioned widget or other-platform
 acceptance is claimed. Generated desktop/client `dist` output was removed
+after validation.
+
+### Permission-guidance PR merge verification (2026-09-30)
+
+PR #1132 merged main at `da93cb9b9`, retaining both the permission-guidance and
+source-icon preparation policies and their complete evidence records. The
+merged tree passed package-local `pnpm test`: all 74 frontend files / 948 tests,
+typed-client generation and type checking, all 8 package-verifier and 16
+asset/launcher cases, native Swift widget fixtures and the production frontend
+build. The permission-denial regressions are included in that successful run;
+the earlier failed attempts remain recorded above. No test deadline or product
+behavior changed during conflict resolution. Generated desktop/client `dist`
+output was removed. This verification does not add native application or
+release acceptance evidence.
+
+### PR #1108 permission-guidance conflict repair (2026-09-30)
+
+Merged main revision `66206911e1bf901032de9d0cac373eefaae9ab39`, which
+clarifies local startup and registration permission errors. The two
+conflicted documentation files retain every line from both prior branch
+versions in order, preserving native accounting, forwarding, asset preparation,
+permission guidance and all earlier failed and successful validation evidence.
+The imported frontend source and three new permission-denial regressions match
+main exactly; no additional runtime change was needed for conflict resolution.
+
+The complete desktop `pnpm test` command passed under Node 24.21.0 / pnpm
+10.26.2 with one Vitest worker: 75 files / 954 tests, typed-client generation,
+type checking, eight package-verifier cases, all 16 asset/launcher cases,
+native Swift widget fixtures and the production frontend build. There are no
+Go, Rust or protobuf source changes in this merge. Earlier broad-suite and
+real-account/native-platform acceptance limitations remain recorded; the
+permission-guidance tests do not establish a native permission repair or
+registration recovery. Generated desktop/client `dist` output was removed
 after validation.
