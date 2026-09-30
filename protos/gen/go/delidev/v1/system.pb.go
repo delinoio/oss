@@ -30,6 +30,7 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 SystemCapability = 2
 	// Optional current-user registrations on the server computer, never remote Workers.
 	SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1              SystemCapability = 3
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1          SystemCapability = 4
 	SystemCapability_SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1 SystemCapability = 9
 	SystemCapability_SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1      SystemCapability = 6
 )
@@ -41,6 +42,7 @@ var (
 		1: "SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1",
 		2: "SYSTEM_CAPABILITY_SESSION_FORWARDING_V1",
 		3: "SYSTEM_CAPABILITY_USER_SERVICES_V1",
+		4: "SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1",
 		9: "SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1",
 		6: "SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1",
 	}
@@ -49,6 +51,7 @@ var (
 		"SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1":           1,
 		"SYSTEM_CAPABILITY_SESSION_FORWARDING_V1":         2,
 		"SYSTEM_CAPABILITY_USER_SERVICES_V1":              3,
+		"SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1":          4,
 		"SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1": 9,
 		"SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1":      6,
 	}
@@ -2442,12 +2445,13 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\aservice\x18\x01 \x01(\v2\x17.delidev.v1.UserServiceR\aservice\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed*\x9a\x02\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed*\xc6\x02\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1\x10\x01\x12+\n" +
 	"'SYSTEM_CAPABILITY_SESSION_FORWARDING_V1\x10\x02\x12&\n" +
-	"\"SYSTEM_CAPABILITY_USER_SERVICES_V1\x10\x03\x123\n" +
+	"\"SYSTEM_CAPABILITY_USER_SERVICES_V1\x10\x03\x12*\n" +
+	"&SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1\x10\x04\x123\n" +
 	"/SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1\x10\t\x12.\n" +
 	"*SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1\x10\x06*\x84\x01\n" +
 	"\x13BackupDeletionState\x12%\n" +
