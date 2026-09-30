@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -58,26 +60,35 @@ func cleanupSettledRestoreImages(ctx context.Context, root string, reserved map[
 			}
 			continue
 		}
-		if err := security.CheckPrivateDir(migration); err != nil {
-			return storageError(err)
-		}
-		directory, err := os.Open(migration)
+		entries, err := restoreMigrationInventory(migration)
 		if err != nil {
-			return storageError(err)
+			return err
 		}
-		entries, err := directory.ReadDir(SchemaVersion + 1)
-		directory.Close()
-		if err != nil && !errors.Is(err, io.EOF) || len(entries) > SchemaVersion {
-			return backupUnavailable()
+		expected := map[domain.ID]backupPublication{}
+		if v.MigrationImages != nil {
+			for _, image := range v.MigrationImages.Images {
+				expected[image.Backup.ID] = image
+			}
 		}
 		for _, entry := range entries {
-			if !strings.HasSuffix(entry.Name(), ".sqlite") || domain.ID(strings.TrimSuffix(entry.Name(), ".sqlite")).Validate() != nil {
+			id := domain.ID(strings.TrimSuffix(entry.Name(), ".sqlite"))
+			claim, owned := expected[id]
+			// A legacy journal has no independent ownership proof for retained
+			// migration images. Never adopt its current bytes during recovery.
+			if !owned {
 				return backupUnavailable()
 			}
-			if err := validateBackup(ctx, filepath.Join(migration, entry.Name()), &v.Input.ServerID); err != nil {
+			path := filepath.Join(migration, entry.Name())
+			actual, err := fingerprintBackupPublication(ctx, path, id)
+			if err != nil || !reflect.DeepEqual(actual, claim) {
+				return backupUnavailable()
+			}
+			if err := validateBackup(ctx, path, &v.Input.ServerID); err != nil {
 				return err
 			}
 		}
+		// Missing pinned files are allowed only as interrupted cleanup: every
+		// remaining file must still match its original synchronized receipt.
 		if err := removeRestoreArtifact(ctx, root, migration); err != nil {
 			return err
 		}
@@ -119,4 +130,56 @@ func removeRestoreArtifact(ctx context.Context, root, path string) error {
 		return backupUnavailable()
 	}
 	return security.RemoveOwnedTree(ctx, canonical, filepath.Join(canonical, relative))
+}
+
+// Record migration-copy ownership before synchronizing the prepared journal.
+// Same-server validity alone cannot identify the image this invocation created.
+func fingerprintRestoreMigrationImages(ctx context.Context, root string, server domain.ID) (*restoreMigrationImages, error) {
+	path := filepath.Join(root, "backups")
+	entries, err := restoreMigrationInventory(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	images := &restoreMigrationImages{}
+	for _, entry := range entries {
+		id := domain.ID(strings.TrimSuffix(entry.Name(), ".sqlite"))
+		file := filepath.Join(path, entry.Name())
+		if err := validateBackup(ctx, file, &server); err != nil {
+			return nil, err
+		}
+		claim, err := fingerprintBackupPublication(ctx, file, id)
+		if err != nil {
+			return nil, err
+		}
+		images.Images = append(images.Images, claim)
+	}
+	return images, nil
+}
+
+func restoreMigrationInventory(path string) ([]os.DirEntry, error) {
+	if err := security.CheckPrivateDir(path); err != nil {
+		return nil, storageError(err)
+	}
+	directory, err := os.Open(path)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	entries, err := directory.ReadDir(SchemaVersion + 1)
+	closeErr := directory.Close()
+	if err != nil && !errors.Is(err, io.EOF) || len(entries) > SchemaVersion {
+		return nil, backupUnavailable()
+	}
+	if closeErr != nil {
+		return nil, storageError(closeErr)
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".sqlite") || domain.ID(strings.TrimSuffix(entry.Name(), ".sqlite")).Validate() != nil {
+			return nil, backupUnavailable()
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	return entries, nil
 }

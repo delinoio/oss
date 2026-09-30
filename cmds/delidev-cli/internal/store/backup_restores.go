@@ -37,18 +37,23 @@ type BackupRestoreInput struct {
 	Actor            domain.Principal `json:"actor"`
 }
 
+type restoreMigrationImages struct {
+	Images []backupPublication `json:"images"`
+}
+
 // The journal and immutable safety image live outside replaceable SQLite. They
 // bind the exact request, current authorization/deletions and both publication
 // outcomes. No credential payload or Worker filesystem is imported.
 type BackupRestore struct {
-	Version         uint32             `json:"version"`
-	RequestID       domain.ID          `json:"request_id"`
-	Input           BackupRestoreInput `json:"input"`
-	State           BackupRestoreState `json:"state"`
-	CreatedAt       time.Time          `json:"created_at"`
-	OriginalSHA256  string             `json:"original_sha256"`
-	CandidateSHA256 string             `json:"candidate_sha256"`
-	SafetySHA256    string             `json:"safety_sha256"`
+	Version         uint32                  `json:"version"`
+	RequestID       domain.ID               `json:"request_id"`
+	Input           BackupRestoreInput      `json:"input"`
+	State           BackupRestoreState      `json:"state"`
+	CreatedAt       time.Time               `json:"created_at"`
+	OriginalSHA256  string                  `json:"original_sha256"`
+	CandidateSHA256 string                  `json:"candidate_sha256"`
+	SafetySHA256    string                  `json:"safety_sha256"`
+	MigrationImages *restoreMigrationImages `json:"migration_images,omitempty"`
 }
 
 func restoreQuarantined() error {
@@ -182,6 +187,18 @@ func readRestore(path string) (BackupRestore, error) {
 	}
 	if v.Version != 1 || v.RequestID.Validate() != nil || v.CreatedAt.IsZero() || v.Input.validate() != nil || !validBackupDigest(v.OriginalSHA256) || !validBackupDigest(v.CandidateSHA256) || !validBackupDigest(v.SafetySHA256) {
 		return v, backupUnavailable()
+	}
+	if v.MigrationImages != nil {
+		if len(v.MigrationImages.Images) > SchemaVersion {
+			return v, backupUnavailable()
+		}
+		seen := map[domain.ID]bool{}
+		for _, image := range v.MigrationImages.Images {
+			if image.Version != 1 || image.Backup.ID.Validate() != nil || image.Backup.Bytes == 0 || image.Backup.Bytes > uint64(MaxBackupInspectionBytes) || image.Backup.ModifiedAt.IsZero() || !validBackupDigest(image.SHA256) || seen[image.Backup.ID] {
+				return v, backupUnavailable()
+			}
+			seen[image.Backup.ID] = true
+		}
 	}
 	switch v.State {
 	case RestorePrepared, RestorePublished, RestoreCompleted, RestoreRolledBack:
@@ -410,11 +427,15 @@ func (s *Store) restoreBackupWithBarrier(ctx context.Context, request domain.ID,
 	if err := migrateRestoreImage(ctx, stage, dir); err != nil {
 		return result, false, err
 	}
+	migrationImages, err := fingerprintRestoreMigrationImages(ctx, dir, in.ServerID)
+	if err != nil {
+		return result, false, err
+	}
 	safety := filepath.Join(dir, "safety.sqlite")
 	if err := vacuumPrivate(ctx, s.db, safety); err != nil {
 		return result, false, err
 	}
-	result = BackupRestore{Version: 1, RequestID: request, Input: in, State: RestorePrepared, CreatedAt: time.Now().UTC()}
+	result = BackupRestore{Version: 1, RequestID: request, Input: in, State: RestorePrepared, CreatedAt: time.Now().UTC(), MigrationImages: migrationImages}
 	if err := prepareRestoreImage(ctx, stage, safety, result); err != nil {
 		return result, false, err
 	}

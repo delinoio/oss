@@ -364,9 +364,13 @@ it is not an accepted restore and cannot be blindly resumed.
 
 After the active barrier is durably retired and the completed SQLite marker is
 validated, startup removes the receipt-owned safety, candidate and staging-migration
-images under exclusive process ownership before serving. Exact fingerprints,
+images under exclusive process ownership before serving. The prepared external
+journal pins each staging-migration copy's original UUID, metadata and SHA-256,
+with a bounded unique inventory captured before publication. Exact fingerprints,
 private paths and original server identity are checked first; changed or unexpected
-images remain recovery-required. A retry finishes directory synchronization after
+images remain recovery-required. Legacy journals without this inventory cannot
+adopt retained migration copies from their current bytes; empty or already-removed
+copy directories still permit synchronized cleanup. A retry finishes directory synchronization after
 an interrupted unlink. Metadata-only journals remain reserved for exact retries.
 Unaccepted staging is preserved; any remaining restore database image blocks the
 final permanent-session backup acknowledgement. The selected source backup is
