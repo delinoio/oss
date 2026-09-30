@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, TerminalService, TerminalAction, SystemService, SystemCapability, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
@@ -129,5 +129,53 @@ it("attaches to the accepted creation beyond the first full history page", async
     expect(screen.getByText("new original terminal")).toBeTruthy();
   } finally {
     view.unmount(); release(); client.clear();
+  }
+});
+
+it("gates initial reads, polling and manual refresh on advertised terminal support", async () => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  let capabilities: SystemCapability[] = [];
+  let statusPending = true;
+  let release = (_value: { capabilities: SystemCapability[] }) => {};
+  const pending = new Promise<{ capabilities: SystemCapability[] }>((resolve) => { release = resolve; });
+  const getStatus = vi.fn(async () => statusPending ? await pending : { capabilities });
+  const listResources = vi.fn(() => ({ resources: [] }));
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus });
+    router.service(ResourceService, { listResources });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} close={() => {}} /></MutationIntents></TransportProvider></QueryClientProvider>);
+  const waitForPoll = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 1100)); });
+  try {
+    await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(1));
+    const refresh = screen.getByRole("button", { name: "Refresh terminals" }) as HTMLButtonElement;
+    expect(refresh.disabled).toBe(true);
+    fireEvent.click(refresh);
+    await waitForPoll();
+    expect(listResources).not.toHaveBeenCalled();
+    statusPending = false;
+    await act(async () => release({ capabilities: [] }));
+    await waitForPoll();
+    expect(refresh.disabled).toBe(true);
+    fireEvent.click(refresh);
+    expect(listResources).not.toHaveBeenCalled();
+    expect(screen.getByText("Waiting for a server that supports session terminals.")).toBeTruthy();
+    capabilities = [SystemCapability.SESSION_TERMINALS_V1];
+    await act(async () => { await client.invalidateQueries(); });
+    await waitFor(() => expect(listResources).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(refresh.disabled).toBe(false));
+    fireEvent.click(refresh);
+    await waitFor(() => expect(listResources).toHaveBeenCalledTimes(2));
+    capabilities = [];
+    // Refresh only status to avoid requesting one more supported history page.
+    await act(async () => { await client.invalidateQueries({ predicate: (query) => query.queryKey.some((part) => typeof part === "object" && part !== null && "methodName" in part && part.methodName === "GetStatus") }); });
+    await waitFor(() => expect(refresh.disabled).toBe(true));
+    const calls = listResources.mock.calls.length;
+    await waitForPoll();
+    fireEvent.click(refresh);
+    expect(listResources).toHaveBeenCalledTimes(calls);
+  } finally {
+    release({ capabilities: [] }); view.unmount(); client.clear();
   }
 });

@@ -28,14 +28,14 @@ export function SessionTerminals({ session, close }: { session: Resource; close:
   const [selected, setSelected] = useState("");
   const [createdTerminal, setCreatedTerminal] = useState<Resource>();
   const [page, setPage] = useState("");
-  const list = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.TERMINAL, sessionId: session.id, pageToken: page, pageSize: 50 } }, { retry: false, refetchInterval: 1000 });
-  const create = useRetainedMutation(`terminal-create:${session.id}`, TerminalQuery.createTerminal, (value) => { if (value.terminal) { setCreatedTerminal(value.terminal); setSelected(value.terminal.id); } setPage(""); void list.refetch(); });
   const status = useQuery(SystemQuery.getStatus, {});
   const supported = status.data?.capabilities.includes(SystemCapability.SESSION_TERMINALS_V1) ?? false;
+  const list = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.TERMINAL, sessionId: session.id, pageToken: page, pageSize: 50 } }, { enabled: supported, retry: false, refetchInterval: 1000 });
+  const create = useRetainedMutation(`terminal-create:${session.id}`, TerminalQuery.createTerminal, (value) => { if (value.terminal) { setCreatedTerminal(value.terminal); setSelected(value.terminal.id); } setPage(""); if (supported) void list.refetch(); });
   const blocked = !supported || create.busy || create.uncertain || text(document(session).archive) !== "active";
   // The accepted resource can be beyond the first history page. Retain just
   // that one selection so creation immediately attaches to the original shell.
-  const resource = list.data?.resources.find((value) => value.id === selected) ?? (createdTerminal?.id === selected ? createdTerminal : undefined);
+  const resource = supported ? list.data?.resources.find((value) => value.id === selected) ?? (createdTerminal?.id === selected ? createdTerminal : undefined) : undefined;
   return <aside className="session-files" aria-label="Session terminals">
     <header><h3>Terminals</h3><button onClick={close}>Hide terminals</button></header>
     <p>Terminals run on this session's Worker in its primary workspace. Agent Stop preserves them. Archive closes their owned processes.</p>
@@ -45,10 +45,10 @@ export function SessionTerminals({ session, close }: { session: Resource; close:
     </form>
     {!supported ? <p role="status">Waiting for a server that supports session terminals.</p> : null}
     <Problem error={create.error} />{create.uncertain ? <button disabled={create.busy} onClick={create.retry}>Retry the same terminal creation</button> : null}
-    <Problem error={list.error} /><button disabled={list.isFetching} onClick={() => void list.refetch()}>Refresh terminals</button>
-    <ul>{list.data?.resources.map((value, index) => <li key={value.id}><button aria-pressed={selected === value.id} onClick={() => setSelected(value.id)}>Terminal {index + 1} · {text(document(value).state)}</button></li>)}</ul>
-    <nav aria-label="Terminal history pages"><button disabled={!page} onClick={() => { setPage(""); setSelected(""); }}>First page</button><button disabled={!list.data?.nextPageToken} onClick={() => { setPage(list.data!.nextPageToken); setSelected(""); }}>Next page</button></nav>
-    {resource ? <TerminalView key={resource.id} resource={resource} refresh={() => void list.refetch()} /> : null}
+    <Problem error={supported ? list.error : undefined} /><button disabled={!supported || list.isFetching} onClick={() => { if (supported) void list.refetch(); }}>Refresh terminals</button>
+    <ul>{supported ? list.data?.resources.map((value, index) => <li key={value.id}><button aria-pressed={selected === value.id} onClick={() => setSelected(value.id)}>Terminal {index + 1} · {text(document(value).state)}</button></li>) : null}</ul>
+    <nav aria-label="Terminal history pages"><button disabled={!supported || !page} onClick={() => { setPage(""); setSelected(""); }}>First page</button><button disabled={!supported || !list.data?.nextPageToken} onClick={() => { setPage(list.data!.nextPageToken); setSelected(""); }}>Next page</button></nav>
+    {resource ? <TerminalView key={resource.id} resource={resource} refresh={() => { if (supported) void list.refetch(); }} /> : null}
   </aside>;
 }
 

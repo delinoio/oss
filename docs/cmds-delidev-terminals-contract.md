@@ -27,6 +27,9 @@ disconnect and reattach without replacing the shell.
 The server advertises `SYSTEM_CAPABILITY_SESSION_TERMINALS_V1` with value 14;
 the Worker must advertise `WORKER_CAPABILITY_SESSION_TERMINALS_V1` with value 4.
 These independent enum spaces preserve the merged user-service system value 3.
+Desktop history reads, polling, manual refresh and selection wait for advertised
+system terminal support. Unknown or unsupported status shows its capability
+notice without terminal requests or cached terminal errors.
 Creation requires a ready
 original workspace, current Worker instance/lease and current session revision.
 The terminal retains the session/project, machine, original Worker instance and
