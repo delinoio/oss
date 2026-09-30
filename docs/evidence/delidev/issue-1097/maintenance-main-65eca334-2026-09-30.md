@@ -75,3 +75,13 @@ Installed Codex A-to-B acceptance remains unverified after the two recorded
 initialization failures. No installed-native, hosted-account, subscription,
 platform-release or billing evidence is added by these checks. Repository-owned
 `dist` outputs are removed after validation and commits.
+
+## Committed-source result
+
+Merge commit `1666d9250453a901c4bd64a1d2a28b8e569f03da` has parents equal to
+the preceding published head and inspected main above. Root Lefthook Go formatting
+passed. A complete post-commit `pnpm proto:check` passed formatting/lint, breaking
+comparison and forced Turbo regeneration with no tracked or untracked generated
+source drift. The final repair inventory had no Codex threads and no failing
+reported checks; it still described the preceding published head. This repair
+is pushed once, and new-head CI/review evidence remains pending after the push.
