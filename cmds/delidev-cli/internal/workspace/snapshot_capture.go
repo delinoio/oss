@@ -49,7 +49,11 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 		}
 		return false
 	}
-	copied, err := walkSnapshot(ctx, root, filepath.Join(staging, "workspace"), skip)
+	// Reserve bounded manifest and config-rewrite headroom before writing any
+	// payload. Git config can add core.worktree/core.bare in two copied files;
+	// 256 bytes per repository bounds those additions without touching sources.
+	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256*uint64(len(r.Manifest.Repositories)), entries: MaxSnapshotEntries}
+	copied, err := walkSnapshotBudget(ctx, root, filepath.Join(staging, "workspace"), skip, MaxSnapshotEntries, &budget)
 	if err != nil {
 		return empty, err
 	}
@@ -57,7 +61,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 		return empty, ResultUncertain()
 	}
 	for _, repo := range r.Manifest.Repositories {
-		if err := m.copySnapshotGit(ctx, r.Preparation.SessionID, repo, filepath.Join(staging, "workspace", string(repo.ID))); err != nil {
+		if err := m.copySnapshotGitBudget(ctx, r.Preparation.SessionID, repo, filepath.Join(staging, "workspace", string(repo.ID)), &budget); err != nil {
 			return empty, err
 		}
 	}
@@ -105,6 +109,11 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 }
 
 func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo PreparedRepository, target string) error {
+	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256, entries: MaxSnapshotEntries}
+	return m.copySnapshotGitBudget(ctx, session, repo, target, &budget)
+}
+
+func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, repo PreparedRepository, target string, budget *snapshotCopyBudget) error {
 	if m.storageCopyFault != nil {
 		if err := m.storageCopyFault(target); err != nil {
 			return err
@@ -154,7 +163,12 @@ func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo P
 	skipCommon := func(path string) bool {
 		return path == "worktrees" || strings.HasPrefix(path, "worktrees/") || (!sameNativePath(common, admin) && (path == "logs" || strings.HasPrefix(path, "logs/") || adminFiles[path]))
 	}
-	commonInventory, err := walkSnapshot(ctx, common, filepath.Join(target, ".git"), skipCommon)
+	// The copied Git root appears in the final workspace inventory although
+	// walking its contents excludes the root itself.
+	if err := budget.take(0); err != nil {
+		return err
+	}
+	commonInventory, err := walkSnapshotBudget(ctx, common, filepath.Join(target, ".git"), skipCommon, MaxSnapshotEntries, budget)
 	if err != nil {
 		return err
 	}
@@ -163,7 +177,7 @@ func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo P
 	}
 	if !sameNativePath(common, admin) {
 		skipAdmin := func(path string) bool { return path == "commondir" || path == "gitdir" || path == "locked" }
-		if _, err := walkSnapshot(ctx, admin, filepath.Join(target, ".git"), skipAdmin, true); err != nil {
+		if _, err := walkSnapshotBudget(ctx, admin, filepath.Join(target, ".git"), skipAdmin, MaxSnapshotEntries, budget, true); err != nil {
 			return err
 		}
 	}

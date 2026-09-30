@@ -373,7 +373,13 @@ The authenticated owning Worker performs five-minute cancellable operations
 under the existing session lock after independently reconciling process ownership
 and rejecting active execution claims. One private manifest covers the complete
 ordered repository set or General Chat directory. Bounds are 8 GiB, 8,192 entries
-and an 8 MiB private manifest, with bounded 128 KiB copying. Published snapshot
+and an 8 MiB private manifest, with bounded 128 KiB copying. One shared remaining
+byte/entry budget applies during workspace and independent Git-store copying.
+Capture conservatively reserves the full 8 MiB manifest allowance plus 256 bytes
+per repository for copied Git config rewrites before copying payloads; this bounded
+headroom can reject data close to 8 GiB even when its final metadata would be smaller.
+Git roots count once, overlapping administration directories count only when new,
+and excess or growing-file bytes never enter the copied payload. Published snapshot
 inventory is capped at 4,096 entries. Removal intents separately allow the two
 snapshot wrapper entries (`workspace` and `snapshot.json`) beyond a complete
 8,192-entry workspace, without admitting unexpected root content or increasing

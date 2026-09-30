@@ -44,6 +44,22 @@ type snapshotInventory struct {
 	Bytes   uint64          `json:"bytes"`
 }
 
+// One copy budget spans the workspace and every independent Git store. Reused
+// administration directories consume no additional entry during an overlay.
+type snapshotCopyBudget struct {
+	bytes   uint64
+	entries int
+}
+
+func (b *snapshotCopyBudget) take(size uint64) error {
+	if b.entries == 0 || size > b.bytes {
+		return domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+	}
+	b.entries--
+	b.bytes -= size
+	return nil
+}
+
 func snapshotUnsupported() error {
 	return domain.Fail(domain.Unsupported, "The workspace cannot be copied faithfully.", "Remove unsupported special files or external Git object/configuration dependencies before retrying; source files were preserved.")
 }
@@ -56,6 +72,10 @@ func walkSnapshot(ctx context.Context, source, destination string, skip func(str
 }
 
 func walkSnapshotEntries(ctx context.Context, source, destination string, skip func(string) bool, entryLimit int, merge ...bool) (snapshotInventory, error) {
+	return walkSnapshotBudget(ctx, source, destination, skip, entryLimit, nil, merge...)
+}
+
+func walkSnapshotBudget(ctx context.Context, source, destination string, skip func(string) bool, entryLimit int, budget *snapshotCopyBudget, merge ...bool) (snapshotInventory, error) {
 	var inventory snapshotInventory
 	rootInfo, err := os.Lstat(source)
 	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
@@ -122,7 +142,15 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 					return ResultUncertain()
 				}
 				if target != "" {
-					if err := os.Mkdir(target, 0700); err != nil && !(len(merge) > 0 && merge[0] && os.IsExist(err)) {
+					_, existsErr := os.Lstat(target)
+					reused := len(merge) > 0 && merge[0] && existsErr == nil
+					if budget != nil && !reused {
+						if err := budget.take(0); err != nil {
+							child.Close()
+							return err
+						}
+					}
+					if err := os.Mkdir(target, 0700); err != nil && !reused {
 						child.Close()
 						return err
 					}
@@ -152,6 +180,11 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 					return err
 				}
 				if target != "" {
+					if budget != nil {
+						if err := budget.take(0); err != nil {
+							return err
+						}
+					}
 					if err := createSnapshotSymlink(link, target, entry.LinkKind); err != nil {
 						return err
 					}
@@ -174,6 +207,12 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 				var output *os.File
 				writer := io.Writer(hash)
 				if target != "" {
+					if budget != nil {
+						if err := budget.take(uint64(before.Size())); err != nil {
+							file.Close()
+							return err
+						}
+					}
 					output, err = os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 					if err != nil {
 						file.Close()
@@ -181,7 +220,7 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 					}
 					writer = io.MultiWriter(hash, output)
 				}
-				// LimitReader also bounds a file growing after the metadata observation.
+				// Read one extra byte to detect growth after the metadata observation.
 				buffer := make([]byte, 128<<10)
 				remaining := before.Size() + 1
 				var copied int64
@@ -191,6 +230,12 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 					}
 					n, readErr := file.Read(buffer[:min(int64(len(buffer)), remaining)])
 					if n > 0 {
+						// The extra probe detects growth without writing bytes beyond
+						// the reservation made before opening the destination.
+						if copied+int64(n) > before.Size() {
+							err = ResultUncertain()
+							break
+						}
 						var written int
 						written, err = writer.Write(buffer[:n])
 						copied += int64(written)
