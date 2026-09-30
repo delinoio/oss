@@ -1,0 +1,81 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+service ResourceService {
+  rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse);
+  rpc WatchEvents(WatchEventsRequest) returns (stream WatchEventsResponse);
+}
+
+message Filter {
+  EntityKind kind = 1;
+  string session_id = 2;
+  string project_id = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+}
+
+message GetResourceRequest {
+  EntityKind kind = 1;
+  string id = 2;
+}
+
+message GetResourceResponse {
+  Resource resource = 1;
+}
+
+message ListResourcesRequest {
+  Filter filter = 1;
+  // Provider and account-type filters apply only to paginated resource lists.
+  // Snapshots and event streams intentionally retain their existing scope.
+  string provider_id = 2;
+  AccountTypeFilter account_type = 3;
+}
+
+enum AccountTypeFilter {
+  ACCOUNT_TYPE_FILTER_UNSPECIFIED = 0;
+  ACCOUNT_TYPE_FILTER_API = 1;
+  ACCOUNT_TYPE_FILTER_SUBSCRIPTION = 2;
+}
+
+message ListResourcesResponse {
+  repeated Resource resources = 1;
+  string next_page_token = 2;
+}
+
+message GetSnapshotRequest {
+  Filter filter = 1;
+}
+
+message GetSnapshotResponse {
+  repeated Resource resources = 1;
+  string cursor = 2;
+}
+
+message WatchEventsRequest {
+  string cursor = 1;
+  string session_id = 2;
+}
+
+enum EventAction {
+  EVENT_ACTION_UNSPECIFIED = 0;
+  EVENT_ACTION_CREATED = 1;
+  EVENT_ACTION_UPDATED = 2;
+  EVENT_ACTION_DELETED = 3;
+}
+
+message WatchEventsResponse {
+  string cursor = 1;
+  string id = 2;
+  string entity_id = 3;
+  EntityKind kind = 4;
+  string session_id = 5;
+  uint64 revision = 6;
+  EventAction action = 7;
+  string time = 8;
+}

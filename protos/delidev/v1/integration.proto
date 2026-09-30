@@ -1,0 +1,186 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Server-owned read-only integration profiles are separate from AI Accounts.
+service IntegrationService {
+  rpc SaveIntegrationProfile(SaveIntegrationProfileRequest) returns (SaveIntegrationProfileResponse);
+  rpc ReplaceIntegrationToken(ReplaceIntegrationTokenRequest) returns (ReplaceIntegrationTokenResponse);
+  rpc ValidateIntegrationProfile(ValidateIntegrationProfileRequest) returns (ValidateIntegrationProfileResponse);
+  rpc DeleteIntegrationProfile(DeleteIntegrationProfileRequest) returns (DeleteIntegrationProfileResponse);
+  rpc InspectRepositoryIntegration(InspectRepositoryIntegrationRequest) returns (InspectRepositoryIntegrationResponse);
+  rpc QueryRepositoryIntegration(QueryRepositoryIntegrationRequest) returns (QueryRepositoryIntegrationResponse);
+  rpc GetGitHubTokenForm(GetGitHubTokenFormRequest) returns (GetGitHubTokenFormResponse);
+  rpc RefreshPullRequestProblems(RefreshPullRequestProblemsRequest) returns (RefreshPullRequestProblemsResponse);
+  rpc ListPullRequestProblems(ListPullRequestProblemsRequest) returns (ListPullRequestProblemsResponse);
+  rpc DismissPullRequestProblem(DismissPullRequestProblemRequest) returns (DismissPullRequestProblemResponse);
+  rpc ListPullRequestRemediationAttempts(ListPullRequestRemediationAttemptsRequest) returns (ListPullRequestRemediationAttemptsResponse);
+  rpc ResumePullRequestRemediation(ResumePullRequestRemediationRequest) returns (ResumePullRequestRemediationResponse);
+}
+
+message RefreshPullRequestProblemsRequest {
+  string request_id = 1;
+  string repository_id = 2;
+  string number = 3;
+  // Unspecified preserves the original published-feedback collection.
+  PullRequestProblemCollectionKind kind = 4;
+}
+
+enum PullRequestProblemCollectionKind {
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_UNSPECIFIED = 0;
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_FEEDBACK = 1;
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_CI = 2;
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_CONFLICT = 3;
+}
+
+message RefreshPullRequestProblemsResponse {
+  Resource problem_set = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message ListPullRequestProblemsRequest {
+  // Stable GitHub numeric identities, independent of local repository aliases.
+  string remote_repository_id = 1;
+  string pull_request_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListPullRequestProblemsResponse {
+  // Absent when this remote PR has no retained inventory.
+  Resource problem_set = 1;
+  repeated Resource problems = 2;
+  string next_page_token = 3;
+}
+
+message DismissPullRequestProblemRequest {
+  Mutation mutation = 1;
+  string content_version = 2;
+}
+
+message DismissPullRequestProblemResponse {
+  Resource problem = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message ListPullRequestRemediationAttemptsRequest {
+  string remote_repository_id = 1;
+  string pull_request_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListPullRequestRemediationAttemptsResponse {
+  Resource problem_set = 1;
+  repeated Resource attempts = 2;
+  string next_page_token = 3;
+}
+
+message ResumePullRequestRemediationRequest {
+  // The original retained PR set, never a session or queued input.
+  Mutation mutation = 1;
+}
+
+message ResumePullRequestRemediationResponse {
+  Resource problem_set = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+enum GitHubTokenAccess {
+  GIT_HUB_TOKEN_ACCESS_UNSPECIFIED = 0;
+  GIT_HUB_TOKEN_ACCESS_SELECTED_REPOSITORIES = 1;
+  GIT_HUB_TOKEN_ACCESS_PUBLIC_REPOSITORIES = 2;
+  GIT_HUB_TOKEN_ACCESS_PRIVATE_REPOSITORIES = 3;
+}
+
+message GetGitHubTokenFormRequest {
+  string profile_id = 1;
+  uint64 expected_revision = 2;
+  GitHubTokenAccess access = 3;
+}
+
+message GetGitHubTokenFormResponse {
+  uint32 schema_version = 1;
+  // Non-secret official form configuration, never a token or access grant.
+  bytes document_json = 2;
+}
+
+message SaveIntegrationProfileRequest {
+  Mutation mutation = 1;
+  uint32 schema_version = 2;
+  // Closed editable definition only; no connection, identity or credential fields.
+  bytes document_json = 3;
+}
+
+message SaveIntegrationProfileResponse {
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message ReplaceIntegrationTokenRequest {
+  Mutation mutation = 1;
+  // Write-only bounded PAT bytes. Never retained in a receipt or response.
+  bytes token = 2;
+}
+
+message ReplaceIntegrationTokenResponse {
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  // A committed change can require native cleanup or validation retry.
+  bytes problem_json = 4;
+}
+
+message ValidateIntegrationProfileRequest {
+  Mutation mutation = 1;
+}
+
+message ValidateIntegrationProfileResponse {
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bytes problem_json = 4;
+}
+
+message DeleteIntegrationProfileRequest {
+  Mutation mutation = 1;
+}
+
+message DeleteIntegrationProfileResponse {
+  // Present only while native deletion remains pending.
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bool deleted = 4;
+  bytes problem_json = 5;
+}
+
+message InspectRepositoryIntegrationRequest {
+  // Selects the repository's explicitly configured profile, never a fallback.
+  string repository_id = 1;
+}
+
+message InspectRepositoryIntegrationResponse {
+  uint32 schema_version = 1;
+  // Fresh scoped endpoint-access observations, not persistent authorization.
+  bytes document_json = 2;
+}
+
+message QueryRepositoryIntegrationRequest {
+  string repository_id = 1;
+  uint32 schema_version = 2;
+  // Strict read-only query; repository/profile authority comes from server state.
+  bytes query_json = 3;
+}
+
+message QueryRepositoryIntegrationResponse {
+  uint32 schema_version = 1;
+  bytes document_json = 2;
+}

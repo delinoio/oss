@@ -1,0 +1,247 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+message ErrorDetail {
+  string code = 1;
+  string guidance = 2;
+  string cause = 3;
+  string correlation_id = 4;
+}
+
+service WorkerService {
+  rpc WatchForwardRequests(WatchForwardRequestsRequest) returns (stream WatchForwardRequestsResponse);
+  rpc WatchWorkspaceReads(WatchWorkspaceReadsRequest) returns (stream WatchWorkspaceReadsResponse);
+  rpc ReportWorkspaceRead(ReportWorkspaceReadRequest) returns (ReportWorkspaceReadResponse);
+  rpc AttachWorker(AttachWorkerRequest) returns (AttachWorkerResponse);
+  rpc WatchWork(WatchWorkRequest) returns (stream WatchWorkResponse);
+  // An independent lane. Older Workers remain primary-only.
+  rpc WatchAuxiliaryWork(WatchAuxiliaryWorkRequest) returns (stream WatchAuxiliaryWorkResponse);
+  rpc ReportWork(ReportWorkRequest) returns (ReportWorkResponse);
+  rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
+  rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
+  rpc RegisterExecution(RegisterExecutionRequest) returns (RegisterExecutionResponse);
+  rpc PublishExecution(PublishExecutionRequest) returns (PublishExecutionResponse);
+  rpc ClaimQuestionResponse(ClaimQuestionResponseRequest) returns (ClaimQuestionResponseResponse);
+  rpc ClaimApprovalResponse(ClaimApprovalResponseRequest) returns (ClaimApprovalResponseResponse);
+  rpc ClaimSteerInput(ClaimSteerInputRequest) returns (ClaimSteerInputResponse);
+}
+
+message ClaimSteerInputRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+}
+
+message ClaimSteerInputResponse {
+  Resource steer = 1;
+  Resource input = 2;
+  bool replayed = 3;
+}
+
+message ClaimQuestionResponseRequest {
+  // Exact original interaction revision and durable Worker claim request ID.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+  string response_id = 5;
+}
+
+message ClaimQuestionResponseResponse {
+  // Only the owning live Worker receives the retained non-secret response.
+  Resource interaction = 1;
+  bool replayed = 2;
+}
+
+message ClaimApprovalResponseRequest {
+  // Exact original interaction revision and durable Worker claim request ID.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+  string response_id = 5;
+}
+
+message ClaimApprovalResponseResponse {
+  // Only the owning live Worker receives the retained non-secret response.
+  Resource interaction = 1;
+  bool replayed = 2;
+}
+
+message PublishExecutionRequest {
+  // Immutable claimed job/revision, with a durable event request identity.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  // Closed normalized event, never a raw native extension or credential.
+  bytes event_json = 4;
+}
+
+message PublishExecutionResponse {
+  uint64 acknowledged_sequence = 1;
+  bool replayed = 2;
+}
+
+message RegisterExecutionRequest {
+  // Exact claimed execution job/revision and durable registration request ID.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  // SHA-256 of the Worker-generated private execution token, never its value.
+  bytes credential_digest = 4;
+}
+
+message RegisterExecutionResponse {
+  // Fixed relative path on the already-paired authenticated server origin.
+  string proxy_path = 1;
+  bool replayed = 2;
+}
+
+message AttachWorkerRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string version = 4;
+  repeated WorkerCapability capabilities = 5;
+}
+
+enum WorkerCapability {
+  WORKER_CAPABILITY_UNSPECIFIED = 0;
+  WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 = 1;
+  WORKER_CAPABILITY_SESSION_FORWARDING_V1 = 2;
+}
+
+message AttachWorkerResponse {
+  Resource machine = 1;
+  string server_id = 2;
+}
+
+message WatchWorkRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+
+message WatchAuxiliaryWorkRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+
+message WatchAuxiliaryWorkResponse {
+  Resource job = 1;
+  bool heartbeat = 2;
+  string cancel_job_id = 3;
+  bool cancel_requested = 4;
+}
+
+message WatchWorkResponse {
+  Resource job = 1;
+  bool heartbeat = 2;
+  // Bound to the included immutable assignment; no native operation may start.
+  bool cancel_requested = 3;
+  // A separate control for a previously delivered assignment on this stream.
+  string cancel_job_id = 4;
+  // Metadata-only control for the active assignment, independent of job order.
+  QuestionResponseControl question_response = 5;
+  SteerInputControl steer_input = 6;
+  ApprovalResponseControl approval_response = 7;
+}
+
+message SteerInputControl {
+  string job_id = 1;
+  string steer_id = 2;
+  uint64 revision = 3;
+}
+
+message QuestionResponseControl {
+  string job_id = 1;
+  string interaction_id = 2;
+  string response_id = 3;
+  uint64 revision = 4;
+}
+
+message ApprovalResponseControl {
+  string job_id = 1;
+  string interaction_id = 2;
+  string response_id = 3;
+  uint64 revision = 4;
+}
+
+message ReportWorkRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  bytes output_json = 4;
+  ErrorDetail problem = 5;
+}
+
+message ReportWorkResponse {
+  Resource job = 1;
+  bool replayed = 2;
+}
+
+message InspectRepositoryRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  string path = 3;
+  string preferred_remote = 4;
+}
+
+message InspectRepositoryResponse {
+  Resource job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message DiscoverHarnessesRequest {
+  // Machine identity and optimistic revision, plus durable request identity.
+  Mutation mutation = 1;
+  // Omit to refresh existing selections. Otherwise replace all selections with
+  // the closed ExecutableSelections document; omitted harnesses use Worker PATH.
+  bytes selections_json = 2;
+  // Validate the installed native protocol without login, inference, or sessions.
+  bool verify_protocol = 3;
+}
+
+message DiscoverHarnessesResponse {
+  Resource machine = 1;
+  Resource job = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+
+message WatchWorkspaceReadsRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+
+message WatchWorkspaceReadsResponse {
+  bool heartbeat = 1;
+  // Closed workspace.ReadRequest; one outstanding observation per machine.
+  bytes request_json = 2;
+}
+
+message ReportWorkspaceReadRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+  string read_id = 3;
+  bytes document_json = 4;
+  // Code only. Worker diagnostic text never crosses this boundary.
+  string problem_code = 5;
+}
+
+message ReportWorkspaceReadResponse {}
+
+message WatchForwardRequestsRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+
+message WatchForwardRequestsResponse {
+  bool heartbeat = 1;
+  Resource forward = 2;
+}

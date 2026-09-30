@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- Use service-specific schema files and preserve the compatibility `delidev.proto` import. Shared numeric additions must match `allocations.json`; reservations do not advertise support. Run the normal generated-source pipeline and never hand-edit generated output. The exact declaration-relocation map preserves FILE compatibility checks without suppressing semantic changes.
+
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - DeliDev system capabilities retain wire values `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, and `USER_SERVICES_V1 = 3`. Never reuse a merged capability number for another meaning; advertise independent capabilities together and regenerate Go/TypeScript from the schema.
