@@ -119,3 +119,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Exact acknowledged Worker deletion-report retries with a matching actor/work-bound SQL receipt are read-only. Preserve original metadata and reject conflicting receipts; reconstruct a missing SQL receipt through the original synchronized-intent recovery path.
 
 - Permanent session erasure removes PR activity through each original remediation attempt source, including reservation records without row-level session binding. Redact the validated shared attempt and its index without emitting a new business activity transition; preserve unrelated PR history, original reservation provenance and lifetime counters.
+
+- Protected browser registration and account deletion compose through bounded paired-client Device metadata under schema 24. Register one account profile per server/device, publish Device events and actor-bound receipts atomically, and mark all offline/revoked device obligations before account deletion. Session erasure and Archive preserve shared profiles. Follow `docs/cmds-delidev-browser-contract.md`.

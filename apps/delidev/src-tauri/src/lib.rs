@@ -21,9 +21,11 @@ const OUTPUT_LIMIT: u64 = 128 << 10;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
 
+pub mod browser;
 mod connections;
 pub use connections::{
-    RemovedConnections, SavedConnection, SavedConnectionState, canonical_id, connection_origin,
+    RemovalMetadata, RemovedConnections, SavedConnection, SavedConnectionState, canonical_id,
+    connection_origin,
 };
 
 mod desktop_recovery;
@@ -125,6 +127,7 @@ pub struct Connector {
     executable: PathBuf,
     root: PathBuf,
     gate: Mutex<()>,
+    command_timeout: Duration,
     listen: String,
     exiting: AtomicBool,
 }
@@ -168,6 +171,7 @@ impl Connector {
             executable,
             root,
             gate: Mutex::new(()),
+            command_timeout: COMMAND_TIMEOUT,
             listen: "127.0.0.1:46310".into(),
             exiting: AtomicBool::new(false),
         })
@@ -379,7 +383,7 @@ impl Connector {
             }
             match child.try_wait() {
                 Ok(Some(status)) => break Ok(status),
-                Ok(None) if started.elapsed() < COMMAND_TIMEOUT => {
+                Ok(None) if started.elapsed() < self.command_timeout => {
                     thread::sleep(Duration::from_millis(25))
                 }
                 Ok(None) => break Err(NativeFailure::TimedOut),
