@@ -16,7 +16,7 @@ The session Subagents disclosure follows the [child observation contract](cmds-d
 
 - Use `@delinoio/delidev-api-client` and generated service-specific `@connectrpc/connect-query` descriptors for direct authenticated Connect RPC. No Rust agent traffic proxy or duplicate eligibility/routing engine is permitted.
 - Preserve independent outcome, Archive, dispatch and recovery states. Actions use original resource revisions and stable request IDs; uncertain retries reuse the original immutable request, never another mutation identity. Restore cannot imply Resume.
-- Keep drafts mounted across settings and supporting-surface navigation. Settings is an accessible modal with Escape, contained focus and focus restoration. Workspace icons have explicit accessible names in addition to appearance.
+- Keep connection-owned drafts mounted across supporting-surface navigation. Settings-local drafts live only within their current opening, as specified below. Settings is an accessible modal with Escape, contained focus and focus restoration. Workspace icons have explicit accessible names in addition to appearance.
 - Conversation content is inert text. Never render native content as HTML, execute a returned command or open arbitrary links automatically. Transcript tools/artifacts remain distinguishable from user/assistant text.
 - Search, activity and inbox use bounded pages. Inbox reading and answering remain separate. Unknown/unsupported native capabilities are explicit and cannot enable an emulated action.
 - Native initialization, local server lifetime, protected pairing, tray, notification/widget, signed update and session-side-app requirements must each have implementation and actual platform evidence before desktop completion is claimed.
@@ -33,9 +33,11 @@ Require `AUTOMATIC_TITLES_V1` from `GetStatus` before enabling creation. Missing
 Session detail and loaded sidebar rows show server-owned automatic title state and safe reason. They never infer state from a local request or overwrite the status with cached selection. Manual session names remain ordinary names.
 
 ### Contextual desktop navigation
-The desktop shell uses a shared 52px icon rail beside a 288px context pane; at viewport widths up to and including 1,100px, only the pane contracts to 256px. Preserve the native 960×640 minimum. The rail order is Sessions, Pull requests, Usage, Schedules, Activity, with Settings at the bottom. DeliDev remains static text; Inbox and Search stay in its header and select their own context surface without selecting a rail item. Sidebar-only styling must not alter the conversation/composer, title bar, or right-side panels. The rail and groups remain keyboard-operable with visible focus, descriptive names/tooltips, and reduced-motion-safe status graphics.
+The desktop shell uses a shared 52px icon rail beside a 288px context pane; at viewport widths up to and including 1,100px, only the pane contracts to 256px. Preserve the native 960×640 minimum. The rail order is Sessions, Pull requests, Usage, Schedules, Activity, with Settings at the bottom. DeliDev remains static, left-aligned text. The header Inbox bell and Search magnifier appear only in the home area (`Surface.Sessions`, including welcome and selected detail, and `Surface.NewSession`). Other destinations render no action group, buttons, disabled controls or placeholders. Keep the 34px minimum header height, bell-then-magnifier order, 34×34px targets, 18px decorative SVGs, 2px action gap, `#5b6577` foreground and existing hover/focus treatment; hiding actions must not move the heading, pane content or rail. Accessible button names remain exactly **Inbox** and **Search**. Their existing callbacks select the corresponding context surface without selecting a rail item; Sessions returns to the retained conversation or welcome. Sidebar-only styling must not alter the conversation/composer, title bar, or right-side panels. The rail and groups remain keyboard-operable with visible focus, descriptive names/tooltips, and reduced-motion-safe status graphics.
 
 Below 760 CSS pixels, retain the rail and show a purpose-named **Open …** control in the main area. It opens one native modal drawer beside the rail with a visible Close action, Escape handling, contained focus, background inertness and focus restoration to the opener. Keep the same surface controllers and query observers while switching between pane and drawer placement; filter edits alone do not close the drawer. Selection, opening a destination, explicit Apply/Reset/Search/Load and schedule selection close it. If the viewport becomes wide while open, close modal mode without dropping state and focus the corresponding visible navigation control. Reflow without clipping at 200% zoom.
+
+Only header-origin navigation transfers focus after the destination DOM commit and drawer close. Consume a pending destination in the parent synchronous layout effect: wide viewports focus `#main` with `preventScroll`, allowing the existing subsequent first-entry Search query autofocus to win; compact viewports focus the persistent **Open inbox filters** or **Open search filters** opener. First compact Search query autofocus still waits for explicitly opening its drawer. Evaluate the current `(max-width: 759px)` media query at handoff, discard superseded navigation/Settings intent, and never schedule a competing later autofocus frame or focus an inert/closed destination. Ordinary rail, tray and notification navigation retain their existing focus behavior. Visibility depends only on surface, including loading, empty, denied, offline and cached-refresh states; controllers, query instances, filters, cursors, per-surface scroll, selected session, composer and New session drafts remain connection-scoped memory. Hiding actions introduces no Web Storage, extra reads/writes, feature flag, API/schema change or telemetry. Issue #1149 supersedes only the previous globally visible header-action rule. Verification and native coverage limits are recorded in its [independent evidence record](evidence/delidev/issue-1149/home-sidebar-actions.md); the historical ledger remains frozen under the current structure contract.
 
 ### Project-grouped session sidebar
 The Sessions and New Session contexts share the same project-grouped session lists and cursors, preserving loaded rows and selection while the composer is open. Sidebar-only styling must not alter the conversation/composer, title bar, or right-side panels. The rail and groups remain keyboard-operable with visible focus, descriptive names/tooltips, and reduced-motion-safe status graphics.
@@ -66,7 +68,11 @@ Schedules keeps New schedule, All schedules/Enabled/Paused, Project, bounded sch
 ### Standalone Pull requests
 The Pull requests rail item selects `Surface.PullRequests`; it does not open Settings. The sidebar shows one bounded 50-resource repository catalog page with independent First/Next pagination and exact local UUIDs. Selecting a row alone is a local authenticated catalog/resource read and must not query GitHub. The initial state has no selected repository. Load remains disabled for missing integration/profile mappings, GitHub owner/name or supported schema and shows configuration guidance.
 
-State (Open by default), bounded plain title/body terms and PR page size 20 are drafts until explicit **Load pull requests**. Retain capacity-recovery choices 1/5/10/20, First/Next, detail/back and deliberate refresh. Changed repository selection immediately clears previous content; changed filters leave the existing result labeled with its last applied conditions. Reuse validated PR detail, diff, Checks, statuses, rules, required CI, feedback, reviewer verification and retained problem/remediation history. Do not add cross-repository aggregation, GitHub query syntax, new writes or execution capabilities. Repository settings opens the existing mounted Settings instance at Repositories through its current readiness/deferred-entry workflow.
+State (Open by default), bounded plain title/body terms and PR page size 20 are drafts until explicit **Load pull requests**. Retain capacity-recovery choices 1/5/10/20, First/Next, detail/back and deliberate refresh. Changed repository selection immediately clears previous content; changed filters leave the existing result labeled with its last applied conditions. Reuse validated PR detail, diff, Checks, statuses, rules, required CI, feedback, reviewer verification and retained problem/remediation history. Do not add cross-repository aggregation, GitHub query syntax, new writes or execution capabilities. Repository settings targets Repositories in the current Settings opening through its existing readiness/deferred-entry workflow, creating a fresh opening when Settings was closed. Never restore abandoned Settings-local drafts.
+
+Issue #1155 scopes the approved sidebar presentation to `Surface.PullRequests` on the existing sidebar root. Keep the same rail, pane, portal, controller/query instances, drawer and independent middle/footer scrolling regions; the footer retains its 35% maximum. Order the content as Pull requests, Repositories with Refresh, glyph/name/full wrapping UUID rows or the decorative folder empty block, First/Next, a divided Query options section for the selected repository, and the full-width secondary Repository settings action. A successful empty catalog page says exactly **No repositories on this page.**, never that the entire catalog is empty. Preserve page-scoped loading/failure/cached-refresh states. Selected rows retain `aria-pressed` and pale blue `#e7efff`; decorative outline SVGs are accessibility-hidden. Explicit-load guidance remains visible with both empty and selected states.
+
+Use the existing system font, 17px semibold titles, 13px body/control text, 12px sentence-case headings and metadata, 16px horizontal pane insets, 8/12/16/24px spacing and 8px control corners. Primary text is `#202632`, muted text `#5b6577`, borders `#d8dee8`, primary accent `#2563d8` and selected fill `#e7efff` on the existing off-white pane. Inputs and Load remain at least 40px high; Load pull requests is the only solid blue primary sidebar action. Existing inline server/registration/saved-server controls use a 36px minimum action-row height and expand for wrapping labels, status, errors, confirmations and recovery guidance. New footer overrides exclude every nested dialog and its contents, including when the outer pane itself is the responsive dialog; standard modal typography, controls and geometry remain unchanged. Preserve each control's owning visibility, authorization and retry contract. This presentation does not implement adjacent header/control-relocation work or restore controls removed by those owning changes. Other contexts, main content/composer and native window behavior retain their existing styling.
 
 When Pull requests becomes inactive, cancel and remove its disposable GitHub observation/history reads. Returning restores control selections and shows Pending PR actions before any Load. Retain only target IDs and confirmation identity/revision in connection state; keep immutable mutation requests in the bounded existing registry. Exact receipt retries remain available without reconstructing payloads from a new result or forcing a GitHub read. Never keep full GitHub response documents solely to preserve a read. Unsent confirmations cannot authorize a new mutation without fresh matching evidence. Only unsent drafts/confirmations may be canceled; pending, in-flight or uncertain actions cannot be cleared by navigation or repository/PR replacement.
 
@@ -167,7 +173,62 @@ Provider, model, AI account, Agent Worker and instruction-template forms use gen
 
 Each edit captures its original resource revision and full document. Server-owned account observations and model discovery provenance are preserved. A peer revision change blocks a new save while retaining the draft; an uncertain save retries only its original request. Edits and exact uncertain requests remain available within the current Settings opening across category and responsive layout changes. Closing discards them, including when an accepted save may still complete on the server. Forms cap complete documents at 1 MiB and instruction content at 128 KiB UTF-8 before retention, and selectors retain one bounded page with an explicit selected identity outside that page.
 
-Settings is a full-window presentation inside the existing native modal and fills the webview content viewport below the native title bar. It covers the ordinary app sidebar without resizing, maximizing, or entering OS fullscreen; all other modal callers keep the standard dialog layout. Its fixed 64px header contains the Settings title and an accessible Close Settings action with an Esc hint. At desktop widths, the grouped 240px navigation pane and flexible content pane scroll independently. The groups and 16 categories appear once in this order: AI & agents (AI Subscription, API Accounts, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Execution Workers), and System (Paired devices, Server preferences, Integrations, Diagnostics, Notifications, Import / Export, Backups). Below 760 CSS pixels, the sidebar is visually removed and replaced by a labeled native select with the same groups and selection; category panels stay mounted across selection and responsive changes. Content padding is 40px, reduced to 24px below 1100px. The shell must reflow at 200% zoom without clipping controls or focus outlines.
+### Agent Worker core and optional presentation
+
+Issue #1158 owns only the shared Agent Worker create/edit form. The existing
+Settings shell, category copy, navigation and native geometry stay unchanged.
+The form follows the approved V1 text specification: left-aligned, at most 800
+CSS px wide, with a 20px-equivalent title, 16px section headings, 14px labels and
+13px explanations in scalable units. Core settings uses 24px padding, 16px field
+gaps, 44px controls, 8px control radii and a 12px panel radius with the existing
+system font and light-neutral/blue tokens. Name occupies a full row, Harness and
+Model share equal columns, and permissions remain below their divider. Only Name
+and Model show required markers, retaining their accessible names and validation.
+The creation subtitle is “Configure the essentials, then customize only what you
+need.” Default permission guidance is “Uses the harness default. Review permissions
+before execution.” Native permission/incompatibility explanations and explicit
+clearing remain authoritative.
+
+Four native `details` disclosures start closed for both create and edit, may open
+independently and retain mounted controls and queries throughout the opening:
+
+| Order | Section | Summary and retained fields |
+| --- | --- | --- |
+| 1 | Reasoning | Current `effort`, or Native default when absent/empty; no normalization |
+| 2 | Accounts & routing | Account count plus explicit routing or Server default when inherited; ordered weighted accounts and all add/move/remove operations |
+| 3 | Instructions | Template count; all ordered reference operations |
+| 4 | Native harness options | Defaults only for absent/empty known fields or concurrency 0 with no unknown keys; otherwise Customized, explicitly identifying unknown options as retained |
+
+When accounts are empty, “Can be saved without accounts; execution requires an
+eligible account.” stays visible outside the closed disclosure. This is information,
+not an error or readiness grant. Unsupported selections remain explicit, harness
+switches preserve values, and all unknown document/link/option fields survive save.
+Collapsed sections expose Needs attention for read or validation problems, while
+expanded selectors retain sanitized detailed diagnostics. Loading, successful
+empty current pages (including continuation), permission/authentication failure,
+connection failure and cached prior choices after failed refresh remain distinct;
+a failed read never becomes an empty inventory or a new verification.
+
+Disclosures use native keyboard semantics and remove closed contents from the tab
+order without unmounting them. Invalid hidden inputs open their section before
+focus, preserving unrelated fields. Below 640 CSS px of available **form width**,
+Harness and Model use one column. Text, identifiers and action buttons wrap, focus
+outlines stay visible, and the Cancel edit / Save Agent Worker footer follows normal
+scrolling with Cancel before Save. The exact uncertain retry remains explicit.
+Existing locks, revision conflicts, accepted jobs, bounded selectors/provider gating,
+complete-document limits and byte-identical request retries remain unchanged.
+
+Close, Escape/native cancel and navigation away still dispose the entire Settings
+opening under #1138/#1150, with no abandoned request restoration/replay or late
+updates to replacement openings. Same-identity reconnect retains the active editor.
+This ordinary UI rollout has no API, schema, default, dependency, migration, backend
+deployment, polling, execution, logging or feature-flag change. Component/browser
+checks and supported-platform native acceptance are recorded separately in the
+[issue #1158 evidence](evidence/delidev/issue-1158/agent-settings.md).
+
+### Settings shell and opening lifetime
+
+Settings is a full-window presentation inside the existing native modal and fills the webview content viewport below the native title bar. It covers the ordinary app sidebar without resizing, maximizing, or entering OS fullscreen; all other modal callers keep the standard dialog layout. Its fixed 64px header contains the Settings title and an accessible Close Settings action with an Esc hint. At desktop widths, the grouped 240px navigation pane and flexible content pane scroll independently. The groups and 16 categories appear once in this order: AI & agents (AI Subscription, AI API Keys, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Execution Workers), and System (Paired devices, Server preferences, Integrations, Diagnostics, Notifications, Import / Export, Backups). Below 760 CSS pixels, the sidebar is visually removed and replaced by a labeled native select with the same groups and selection; category panels stay mounted across selection and responsive changes. Content padding is 40px, reduced to 24px below 1100px. The shell must reflow at 200% zoom without clipping controls or focus outlines.
 
 The shared AI Subscription category label is exactly the same in the sidebar, category heading and compact selector. Its category ID remains `subscription-accounts`; the selected English label fits on one line in the existing 240px sidebar at 100% zoom without changes to layout, font or icon styling.
 
@@ -177,13 +238,28 @@ Each opening owns a fresh mounted component tree, mutation registry and authenti
 
 Every category has one visible category title and its existing scope/help description above its content. Configuration list toolbars keep Refresh settings and any eligible existing New action together at the upper right; detailed editors retain their existing explicit save/cancel/back actions. Devices and Execution Workers do not gain a generic create action, and Server preferences remains a revision-bound singleton. Providers has one New Provider action and, only after a successful empty first-page read, the single bordered “No providers yet” panel. Initial loading and initial read errors do not render that empty state or enable create. A cached result remains visible during refresh; a refresh error shows its sanitized correlated failure and a stale-results notice. Pagination is hidden only for a successful empty first page with no continuation token; an empty later page still offers First page. Query staleness alone is not a read failure.
 
+GitHub Integrations uses the approved issue #1147 content hierarchy within this shell. Its description is “Manage GitHub profiles for repository access. AI accounts are configured separately.” One left-aligned GitHub panel, at most 1040 CSS pixels wide, contains the provider heading, Refresh, bounded profile rows and exactly one New GitHub profile action. Only a successful empty first page without a continuation or read failure moves that action into first-profile guidance with three static informational steps. Loading, initial failure, cached refresh/failure and empty continuation/later pages remain distinct; create keeps its original eligibility before read success and paging keeps its original opaque cursor and 50-resource size.
+
+Rows and Manage display Token storage and Identity validation separately, including pending denial, unsupported versions, unknown observations and original check time/identity when provided. Neither identity verification nor token storage claims repository capability. Create/rename forms are bounded to 760 CSS pixels, focus the name only on first visible entry, and keep token type/owner immutable after creation. Manage separates explicit token connection, identity validation and confirmed deletion. Its empty password field disables submission and never reveals stored tokens. Full official-form guidance remains mounted inside a native disclosure; toggling alone cannot query or open a form. New unconnected profiles explain token creation by default; connected profiles initially collapse it. Existing exact uncertain identities, decimal revisions, PAT clearing, operation/navigation guards and the common Settings opening lifecycle remain authoritative. Use scoped CSP-compatible CSS, decorative vectors, wrapping metadata/actions and stacked steps; preserve shell spacing, category selection and native modal focus/close behavior. See the [integration contract](cmds-delidev-integrations-contract.md) for authority and operation ordering.
+
 Settings-specific colors and system fonts are scoped to this modal and remain CSP-compatible: white content, pale-gray navigation, 8px control radii, a 12px empty-panel radius, 40px minimum controls, decorative outline icons and non-color selected-state semantics. Do not add a route, native window, dependency, external asset, inline-style exception, public API, persisted schema, storage, authorization, credential, polling or migration change. Component tests do not establish native geometry or keyboard containment; record native desktop smoke evidence separately, including platform and viewport, and report unsupported/unavailable platforms without claiming acceptance.
 
 Account metadata editing is separate from credential connection, validation, catalog refresh and disconnection. API-key input is password-masked, limited to the server's printable ASCII contract, and cleared on submission or hiding the form. Its wire bytes can remain only in the bounded opening-scoped exact pending request after uncertainty; completed React Query mutation variables are released. Keys never enter read keys, logs or browser persistence. Keyless connection requires the selected provider's explicit keyless configuration. Subscription configuration never implies implemented login or inherited system credentials.
 
-Account settings separate **AI Subscription** and **API Accounts** presentation sections while continuing to query the existing Account resource. Each section sends the server-side account-type selector; provider-row links add the exact provider ID. Filtering must happen before pagination, and cursors must remain scoped to the exact account type and provider. The desktop requires the provider activation, active-model filter, account-provider filter and explicit account-type-filter capability markers before enabling split lists or the guided API account flow. It must never fall back to a mixed list, client-page filtering or an inferred all-enabled provider inventory. The API provider inventory's Add account action opens the two-step wizard with that enabled provider selected. The wizard rechecks the fresh provider identity, authentication, protocol, endpoint and enabled state before saving account metadata and before an explicit credential connection; it never validates or discovers models automatically. API connection, validation, health, quota, exhaustion and credential cleanup remain distinct states. Navigation stays locked during account creation, settings and connection workflows, with exact uncertain requests retained for deliberate retry. Subscription login remains unavailable; existing subscription configurations and metadata remain manageable without a login action. The collapsed subscription-provider section permits only native-subscription protocol, subscription authentication and an empty endpoint.
+Account settings separate **AI Subscription** and **AI API Keys** presentation sections while continuing to query the existing Account resource. Each section sends the server-side account-type selector; provider-row links add the exact provider ID. Filtering must happen before pagination, and cursors must remain scoped to the exact account type and provider. The desktop requires the provider activation, active-model filter, account-provider filter and explicit account-type-filter capability markers before enabling split lists or the guided API account flow. It must never fall back to a mixed list, client-page filtering or an inferred all-enabled provider inventory. The API provider inventory’s Add AI API key action opens the entry form directly with that exact enabled saved provider entry, consuming each deliberate event key once. The wizard rechecks the fresh provider identity, authentication, protocol, endpoint and enabled state before saving account metadata and before an explicit credential connection; it never validates or discovers models automatically. API connection, validation, health, quota, exhaustion and credential cleanup remain distinct states. Navigation stays locked during account creation, settings and connection workflows, with exact uncertain requests retained for deliberate retry. Subscription login remains unavailable; existing subscription configurations and metadata remain manageable without a login action. The collapsed subscription-provider section permits only native-subscription protocol, subscription authentication and an empty endpoint.
 
-API account creation is a content-level Provider → Account flow inside Settings. Only the provider inventory's enabled API entries may be selected. The Account step keeps alias, a masked transient key only when required, and collapsed existing account preferences; keyless entries require an explicit connect action and retain server-relative localhost meaning. Creation is followed by a fresh provider read immediately before one explicit connection attempt, with the created account retained after connection failure. Manage/Done navigation stays disabled while that provider check is in flight. Exact uncertain create/connect requests use their original identities and revisions, visible keys clear at submission, and hiding or changing provider revokes late automatic connection continuations. Validation and discovery remain separate explicit actions and connection does not prove readiness.
+Issue #1145 replaces the creation picker’s search, radios, selected markers, numbered steps and Continue with native provider action buttons. Choose an API provider / Select a provider to connect your entry. precedes one server-ordered page of enabled saved API entries. The picker requests `query: ""`, `enabledOnly: true`, `pageSize: 50` and its own cursor, independent of AI API Keys’ Search providers/filter and API Providers’ search. Both account and picker inventories must retain all four capability gates; no generic resource page or credential inference can supply eligibility. Direct-entry details remain disabled while either inventory lacks the gates, and become unavailable again if those capabilities are lost. The clicked UUID and complete summary/Resource are retained as one bounded hint even when the account-filter page does not contain that provider. The clicked snapshot remains authoritative across unrelated inventory refreshes; the existing fresh provider checks validate or reject its contract before writes.
+
+The creation card retains a 760 CSS px maximum width, 20px padding at every width, 12px radius, white background and 1px `#d8dee8` border. The picker’s internal content uses two equal columns at 560px or wider and one below that threshold, with 12px gaps. Neutral native `button type="button"` cards have 88px minimum height, 16px padding and 9px radius; each shows a bold exact provider name, muted API key or Local endpoint method and decorative chevron. No selected/pressed semantics, invented logos or inferred OAuth availability are used. System fonts, text `#202632`, muted `#5b6577` and focus/accent `#2563d8` remain scoped to this workflow; the narrow subscription-form padding rule remains separate.
+
+A deliberate click, Enter or Space opens the existing entry form immediately and focuses its step heading. Back/Change retains the picker page and restores the original provider-button focus. Next page exists only with a continuation token; First page exists on later pages, including a successful empty later page. Reads remain bounded without whole-inventory accumulation. Retry preserves the exact query/cursor. Loading, typed permission denial, read failure/Retry and stale cached results remain explicit. Open API Providers is offered only for a successful empty first page without continuation; empty pages with continuation keep Next and cannot imply globally empty inventory. Restoration, rerender, Strict Mode replay and provider navigation cannot create/connect/validate/discover or start authentication. Closing follows the opening-disposal policy above.
+
+Entry-name/key validation, password masking and transient key clearing, collapsed preferences (`enabled=true`, `exclude_automatic=false`, `recovery_notifications=true`), explicit keyless connection and server-relative localhost guidance remain unchanged. Fresh provider checks precede metadata save and connection; one save is followed by one deliberate connection, with saved-account retention on connection failure, unverified health, separate validation/discovery, original request/revision retries, navigation locks and late-continuation guards. Browser/component fixtures and native/provider acceptance are recorded separately in [issue #1145 evidence](evidence/delidev/issue-1145/provider-picker.md).
+
+
+API entry creation is a content-level Provider → Details flow inside Settings. Only the provider inventory's enabled API entries may be selected. The Details step keeps alias, a masked transient key only when required, and collapsed existing account preferences; keyless entries require an explicit connect action and retain server-relative localhost meaning. Creation is followed by a fresh provider read immediately before one explicit connection attempt, with the created account retained after connection failure. Manage/Done navigation stays disabled while that provider check is in flight. Exact uncertain create/connect requests use their original identities and revisions, visible keys clear at submission, and hiding or changing provider revokes late automatic connection continuations. Validation and discovery remain separate explicit actions and connection does not prove readiness.
+
+The `api-accounts` category presents **AI API Keys** in the sidebar, compact selector and page title, with the description “Manage AI API keys and keyless local connections. Connection and health are separate states.” API-authored list, wizard, preference, loading, stale/error and accessible copy uses **entry**: Add AI API key, Back to AI API Keys, Manage AI API Keys, Filter entries by provider, Entry name, Choose an API provider and Connect your entry. Issue #1145 supersedes the prior Continue to details control and numbered step marker with direct provider actions. Its empty state is “No AI API key entries. Add an entry for an enabled API provider. Keyless local providers do not require a key.” The masked secret remains API key; keyed and keyless actions are Connect API key and Connect local endpoint, followed by separate Validate connection, Disconnect and Manage connection actions. Keyless failures never ask for a key. Shared editor, field, connection and deletion components apply entry terminology only to Account documents with `type: "api"`; preserve subscription/mixed account terminology, aliases, server diagnostics and all stored/RPC/CLI identities. This presentation ships in the ordinary desktop frontend build with no migration, flag, new logging or backend/native change. Verification is recorded under [issue #1135](evidence/delidev/issue-1135/verification.md).
 
 Connection starts unverified. Validation and model discovery show their independent server observations; only explicit actions invoke them. Disconnection describes cancellation and credential removal, and presents accepted state separately from pending credential/Worker cleanup. A retained removal marker retries its original request ID and expected revision, never the newer account revision. Unsupported or unsafe revision encoding disables that retry instead of guessing.
 
@@ -203,6 +279,8 @@ Paired-device settings explicitly issue single-use client or manually installed 
 Read the original pairing resource before allowing disclosure, poll only while this area is active and expose unavailable/mismatched observations. The document uses the original pinned endpoint/server/pairing IDs and is hidden until explicit reveal. A read-only textarea supports explicit select/copy without automatic clipboard access. Hide it whenever the area closes and clear the retained raw code after observed consumption or expiry. A consumed/expired grant cannot be revived by a later stale read. Explicit discard clears the window's copy, with an explanation that an issued grant remains usable until consumed/expired; closing the server window also loses this memory-only copy. This is independent of existing paired-device revocation. Cross-computer reachability and remote TLS remain deployment prerequisites.
 
 Diagnostics uses the direct read-only doctor RPC, only while selected or after explicit refresh. Decode at most 1 MiB of strict UTF-8 and display known fields as inert text. The version-2 [diagnostics contract](cmds-delidev-diagnostics-contract.md) distinguishes running server/platform/protocol/schema, separately sampled database/WAL/logical/filesystem sizes, retained resource counts, Worker connection and installation observations, and exact account credential read classifications. Preserve decimal-string integer precision with BigInt. Show missing measurements as unavailable, explicit 50-record partial inventory notices, and superseded connections independently of successful reads. A failed refresh labels retained observations; unsupported/malformed reports establish no health. Legacy reports retain only their original bounded fields and an explicit missing-capacity/protected-store notice. Owner credential availability, store decryptability, provider readiness, protocol handshake and cleanup are separate facts. No repair, login, harness probe or inference starts from this screen.
+
+The approved issue #1144 Diagnostics hierarchy, record-local disclosures and responsive presentation are owned by the [Diagnostics presentation contract](apps-delidev-diagnostics-contract.md). Its state is local to the existing Settings opening; category navigation retains disclosures, while actual Close, Escape or navigation away disposes them.
 
 ### Local execution proof
 The main-only `local_worker_proof` command is read-only infrastructure. It invokes Go inspection for the fixed `desktop-client` and CLI-owned `worker` subdirectories, checks exact server/endpoint parity, validates the private credential's canonical Worker/machine/token shape and returns only the proof needed by a Local product mutation. It accepts no renderer path, command or chosen machine. Missing, foreign or malformed registration fails without pairing, starting or replacing a Worker; Worker bootstrap/lifecycle uses its separate explicit native control boundary.
@@ -227,6 +305,102 @@ Execution-Worker settings show platform, last observation, exact selected/resolv
 Schedules have a dedicated desktop surface that remains mounted across navigation. Creation/editing sends only the strict editable definition: prompt, project, Agent, Worker, input mode, cron, explicit IANA timezone, overlap policy and optional per-repository starting overrides. Defaults are paused Worktree schedules. The server alone computes next UTC due times, skips offline instants, applies overlap/skip/FIFO wait and resolves execution authority. Existing Local definitions can be edited with their unchanged authenticated Worker; new/relocated Local schedules require fresh private proof from this computer's paired Worker through the native boundary. The UI never accepts a supplied UUID as origin proof.
 
 Pause/resume changes future scheduling only. Run now explicitly confirms one independent occurrence, works while paused under ordinary server eligibility, and retains the original request after uncertain acknowledgment without enabling the future timer. Accepted occurrences are shown independently from native execution and current session state. Delete confirms future configuration removal, while the independent paginated history remains visible, refreshable and accessible by retained schedule ID. Every configuration/control mutation uses its captured revision, and stale edits preserve their draft. History and status reads do not replay side effects.
+
+### New schedule creation (issue #1152)
+
+The creation presentation owns `apps/delidev/src/schedule-creation.tsx` and
+`apps/delidev/src/schedule-creation.css`; shared schedule state and mutations
+remain in the existing schedule editor.
+
+Only creation without an initial resource uses the one-page Task, Execution and
+Repeat schedule presentation. Editing, list/detail/history, the icon rail,
+context pane and scheduling operations retain their existing contracts. At CSS
+viewport widths of at least 1280px, center a grid capped at 1080px, with Task then
+Execution in a flexible left column, a 320px Repeat column, and a 24px gap. Below
+1280px use Task -> Execution -> Repeat. The main-content creation form owns a
+scrolling body and a separate white, top-bordered persistent action row; its
+actual wrapped height reserves space without covering errors, pagination, final
+controls or focus outlines. Keep scrolling at 960×640, narrow effective widths
+and 200% zoom. Use existing system fonts and tokens, white 12px-radius cards,
+24px card padding, 8px controls of at least 40px, 28px page title, 18px section
+headings and 14px labels. Static creation-scoped CSS preserves the strict
+production `style-src 'self'`, dependencies and native geometry.
+
+The heading is **New schedule**, with **Set up a recurring task for your
+project.** Required Task fields are Schedule name, Project and Scheduled prompt;
+name/prompt placeholders are **e.g. Weekday code review** and **Describe what the
+agent should do on each run...**. The multiline prompt resizes vertically.
+Execution requires explicit Agent Worker and execution-machine choices with
+visible catalog loading, empty-page, permission/authentication, connection and
+cached-refresh failure states. Preserve bounded paging and exact off-page or
+unavailable selections without fallback. Selectors share a row only when their
+available width permits. Native Workspace and Execution mode radio groups offer
+Worktree/Local computer and Execute/Plan, with ordinary checked/keyboard
+semantics. Local disables only arbitrary execution-machine choice. Selection
+and new Local submission each acquire fresh proof for the exact selected
+connection/machine; proof never enters form state, queries or documents.
+
+Worktree exposes an initially collapsed **Starting reference overrides**
+disclosure with **Using saved project references**, or the override count. Keep
+its complete existing explanation, repositories, reference types/fields,
+addition/edit/removal, uniqueness and 1000-entry ceiling. Collapse keeps its
+contents and drafts mounted; invalid hidden required references reopen for
+focus. Changing Project or selecting Local clears overrides. Local omits this
+read/form path and explains shared checkouts without fetch or starting overrides.
+
+Frequency is an internal enum, never a definition field: Daily, Weekdays,
+Weekly, Custom cron. Defaults remain paused, Worktree, Execute, Overlap,
+Weekdays 09:00, `0 9 * * 1-5` and explicit `UTC`. Preset Time is required
+minute-resolution `HH:mm`; Weekly additionally selects exactly one weekday,
+first Monday, retained when leaving/returning. For valid hour `h` and minute `m`,
+Daily emits `m h * * *`, Weekdays `m h * * 1-5`, Weekly `m h * * d` (Sunday 0,
+Monday 1), with decimal numbers without leading zeros. Preset switches retain
+time. Custom exposes the original required 512-character Cron expression and
+five-field guidance; switching to Custom preserves the existing expression
+exactly. Custom -> preset imports only the time from exact canonical generated
+numeric forms above, including valid numeric weekday 0–6; its weekday never
+replaces the separately retained Weekly weekday. Arbitrary, padded or otherwise
+noncanonical expressions use the last valid preset time, or 09:00 when absent.
+No general parser, browser timezone substitution or client calendar validation
+is introduced. Empty/invalid Time remains a visible draft, blocks submission and
+cannot silently submit the last valid Cron. Preset summaries show frequency,
+time, entered timezone and actual Cron only when Time is valid; Custom shows raw
+Cron/timezone without natural-language interpretation. These are selection
+summaries, not execution-eligibility proof. Display **Next run is calculated by
+the server after saving.** The server retains all calendar/timezone, DST and
+absolute next-UTC authority.
+
+Retain Overlap independent sessions, Skip new occurrences while prior work is
+active, and FIFO Wait until confirmed cleanup. **Enable future scheduled runs**
+is unchecked by default with paused-creation guidance. Explain continued server
+scheduling after desktop closure and skipped offline due instants without a
+catch-up burst. The action row shows Paused/Enabled on creation plus workspace
+and mode, secondary Cancel and primary Create schedule. Cancel ends creation and
+returns to the list guidance without a write; acknowledgment enters schedule
+details. Local verification, saving and uncertainty lock mutable fields and
+Cancel; uncertainty also disables Create and exposes **Retry the same schedule**
+using its original retained definition bytes, token, request ID and revision.
+Definite errors permit draft correction. Preserve 1 MiB definition, 256 KiB UTF-8
+prompt and existing field bounds, retaining the previous valid draft on overflow.
+Every save remains strict schema-v1 editable definition only, empty resource ID
+and revision `0n` for creation, with one mutation identity and existing owner/client
+authorization. Frequency, time, weekday, disclosure and resolved/server-owned
+metadata never serialize; no RPC, storage schema or migration changes.
+
+Preserve all creation authoring state, including raw Custom input, time/weekday
+and disclosure, across global navigation, Settings and same-identity reconnect;
+connection replacement clears it. Inactive reads suspend. Existing schedule
+replacement locks remain active while editing/in-flight/uncertain. Focus Schedule
+name once on the first active fresh entry; retained entry, refetch and responsive
+changes cannot steal focus. Required labels, native radios, disclosure expanded
+state, visible focus, status/error announcements and Task -> Execution -> Repeat
+-> actions focus order stay accessible. The existing compact native drawer keeps
+focus containment, Escape/Close and opener restoration without remounting drafts.
+No new motion, telemetry, prompt/token/account logging, feature flag or server
+capability gate is added. Ordinary frontend/native packaging and compatible
+ScheduleService servers retain the same definition boundary. Record actual
+platform/viewport/zoom native acceptance and unavailable platforms separately
+from component checks in the evidence ledger.
 
 ### Session selection and recovery
 Session creation uses paginated project/Agent/Worker selectors with no first-option fallback, retains configured-empty Agent restrictions, and bounds the first prompt to 256 KiB UTF-8 before state retention. The first-message textarea keeps a visible keyboard focus indicator. Disable Project selection while Local Worker proof or session creation is pending or uncertain so the displayed selection remains aligned with the retained request. Project sessions allow independent starting overrides by repository without changing saved base references. General Chat clears project/Git selection and uses the selected Worker's isolated directory. Explicit Local creation reads this computer’s original paired Worker proof through the native boundary and keeps existing checkouts as-is.
@@ -604,7 +778,7 @@ entries through navigation. Each successful directly observed revision refreshes
 the image inventory; reads stop while hidden and uncertain acceptance retries
 still use only their original request.
 
-The **API Providers** and **Models** settings content follows [provider activation](cmds-delidev-provider-activation-contract.md). Validate all required inventory capabilities before enabling these workflows; render server-derived exact account counts and bounded results, and use active-only model queries for display and new selections. Zero accounts is a valid provider state: keep Add account optional and show no account-required error or notice. Models allow manual registration without an account and explain that automatic discovery requires a connected account. Real request failures remain visible. Off references remain explicit and retained. Switches use exact revision-bound intents and resolve uncertain outcomes from the same request; no optimistic state is authority. This feature does not implement Settings shell geometry or the account wizard.
+The **API Providers** and **Models** settings content follows [provider activation](cmds-delidev-provider-activation-contract.md). Validate all required inventory capabilities before enabling these workflows; render server-derived exact account counts and bounded results, and use active-only model queries for display and new selections. Zero accounts is a valid provider state: keep Add AI API key optional and show no account-required error or notice. Models allow manual registration without an account and explain that automatic discovery requires a connected entry in AI API Keys. Real request failures remain visible. Off references remain explicit and retained. Switches use exact revision-bound intents and resolve uncertain outcomes from the same request; no optimistic state is authority. This feature does not implement Settings shell geometry or the account wizard.
 
 ## Preserved project-index implementation notes
 
@@ -721,3 +895,7 @@ Managed backup creation, inventory, integrity inspection and durable permanent i
 Local desktop registration now has explicit owner-verified revoked-client recovery and a current-client revocation guard in the app. The CLI/native boundary retains the original revoked identity and private pairing history, uses a separate candidate and exact durable retry, and preserves server sessions/settings and independent Workers. It does not add automatic repair, remote saved-profile recovery, a new RPC or database migration; see the CLI and desktop contracts and evidence ledger.
 
 Local connection and registration permission guidance distinguishes device authorization, ownership and owner-only filesystem access, including macOS/Linux private modes. Permission failures never establish revocation or authorize automatic repair; existing data remains preserved under the desktop contract.
+
+### PR handling in Activity
+
+The existing Activity page displays immutable problem observation/dismissal, attempt-state and dedicated verified-handled metadata with the original PR, actor, version and source references. Failure, uncertainty and successful attempts remain distinct; success never implies handling. The original source disclosure uses two independent disposable authenticated ResourceQuery reads only after explicit inspection. It checks the retained set/source/version scope, labels recorded versus current revisions and exposes no collection, dismissal, resumption or execution control. Closing or leaving Activity disposes the reads; returning requires a new explicit inspection. Verification creation remains a separate production verifier requirement; timeline fixtures do not establish real-account/native remediation acceptance.
