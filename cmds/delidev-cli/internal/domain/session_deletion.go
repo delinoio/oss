@@ -38,7 +38,7 @@ func (w SessionDeletionWork) Validate() error {
 			return SessionDeletionPending()
 		}
 	}
-	ids := make([]ID, 0, len(w.Copies))
+	seen := make(map[ID]bool, len(w.Copies))
 	for _, c := range w.Copies {
 		if c.Revision == 0 || c.InstanceID.Validate() != nil || !deletionHash(c.Digest) || (c.ExecutionID != "" && c.ExecutionID.Validate() != nil) {
 			return SessionDeletionPending()
@@ -48,10 +48,12 @@ func (w SessionDeletionWork) Validate() error {
 		default:
 			return SessionDeletionPending()
 		}
-		ids = append(ids, c.JobID)
-	}
-	if UniqueIDs(ids) != nil {
-		return SessionDeletionPending()
+		// Deletion plans have their own 4,096-copy bound; the general linked-ID
+		// helper intentionally caps unrelated product links at 1,000.
+		if c.JobID.Validate() != nil || seen[c.JobID] {
+			return SessionDeletionPending()
+		}
+		seen[c.JobID] = true
 	}
 	for _, d := range w.PreparationDigests {
 		if !deletionHash(d) {

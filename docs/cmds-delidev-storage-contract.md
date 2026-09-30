@@ -188,7 +188,8 @@ but no fresh execution, preparation, response or recovery is admitted. Startup
 reapplies intent before listeners, reconstructs reference-only receipts and
 repurges an older database when removal had committed. Obligations are never
 evicted: 4,096 sessions and 4,096 original jobs per session are explicit bounds;
-one immutable plan is capped at 1 MiB. Unknown ownership fails closed.
+Each plan validates UUID uniqueness across the full 4,096-job capacity independently
+of the general 1,000-link bound; one immutable plan is capped at 1 MiB. Unknown ownership fails closed.
 
 A separate authenticated Worker polling/report lane survives an interrupted
 primary assignment stream. Work binds the original paired device/machine and
