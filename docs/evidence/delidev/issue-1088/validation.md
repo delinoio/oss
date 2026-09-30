@@ -17,6 +17,8 @@ it does not emulate full-screen VT applications.
 
 ## Validation, 2026-09-30
 
+Implementation revision: `15bc792c3` (evidence-only updates follow this revision).
+
 All commands use the isolated issue worktree and temporary fixture state. No
 user provider account or paired production Worker is used. The desktop's
 consumed icon LFS object was hydrated before validation. Required API-client
@@ -31,10 +33,30 @@ consumed icon LFS object was hydrated before validation. Required API-client
   passed using `GOMAXPROCS=2 go test -race -p 1 -timeout=90s
   ./cmds/delidev-cli/internal/process -run TestTerminalCloseJoinsOwnedDescendants
   -count=3 -v`.
+- Root `GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/...`: passed.
+- Root `pnpm proto:check`: passed lint, semantic breaking comparison and complete
+  regeneration without tracked or untracked generated-source drift.
+- Root `pnpm ci:contracts`: passed all 102 checks.
+- Desktop focused terminal tests: passed all three checks for split UTF-8, gaps,
+  exact creation retry/reattachment, keyboard focus, byte input and resize, using
+  one Vitest worker. The added UI fixture carries schema version 1 and compares
+  decoded byte values across JavaScript realms.
+- Linux amd64 and arm64 CLI builds and process test binaries: cross-compiled
+  successfully with `CGO_ENABLED=0`, `go build -p 1` and `go test -p 1 -c`.
+  Foreign test binaries were not executed.
 - Initial broad parallel validation exposed a native cleanup timeout and
   desktop fixture/readiness timeouts under simultaneous native/Go/frontend
   test load. These initial runs are not passing evidence. Full bounded reruns
-  and protocol freshness checks are recorded below after completion.
+  are not passing evidence. Final broad reruns and the unchanged-main comparison
+  are recorded after completion.
+
+## Broad-suite status
+
+The bounded full Go race run has observed existing CLI session-acceptance and
+Grok/OpenCode discovery cleanup/probe timeouts. The single-worker full desktop
+run has observed App and Settings integration timeouts. The final package/test
+counts and unchanged-main comparison are still being collected. These runs must
+not be represented as passing or as conclusively proven baseline failures.
 
 ## Evidence limits
 
