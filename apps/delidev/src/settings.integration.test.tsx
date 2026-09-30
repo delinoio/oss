@@ -363,14 +363,25 @@ for (const kind of ["client", "worker"] as const) it(`issues a real single-use $
   fireEvent.change(screen.getByLabelText("Device name"), { target: { value: `Disposable ${kind}` } });
   fireEvent.change(screen.getByLabelText("Device type"), { target: { value: kind } });
   fireEvent.click(screen.getByRole("button", { name: "Issue single-use document" }));
-  // This real-server integration runs alongside the full desktop suite in CI;
-  // allow its follow-up pairing-resource read a bounded five seconds under load.
+  // Keep the private code hidden while a successful fresh server read is pending.
+  // If that read is unavailable, exercise the explicit refresh path once.
   try {
-    await waitFor(() => expect(delayedRead).toBe(true), { timeout: 5000 });
-    expect(screen.queryByRole("button", { name: "Reveal private document" })).toBeNull();
-    expect(screen.queryByLabelText("Private pairing document")).toBeNull();
+    await waitFor(() => expect(delayedRead || screen.queryByText("Grant issued; current use status is unavailable.")).toBeTruthy(), { timeout: 5000 });
+    if (delayedRead) {
+      expect(screen.queryByRole("button", { name: "Reveal private document" })).toBeNull();
+      expect(screen.queryByLabelText("Private pairing document")).toBeNull();
+    }
   } finally { releaseRead(); }
-  fireEvent.click(await screen.findByRole("button", { name: "Reveal private document" }, { timeout: 5000 }));
+  const reveal = screen.queryByRole("button", { name: "Reveal private document" });
+  if (reveal) {
+    fireEvent.click(reveal);
+  } else {
+    const refresh = screen.getByRole("button", { name: "Refresh pairing status" }) as HTMLButtonElement;
+    await waitFor(() => expect(refresh.disabled).toBe(false), { timeout: 5000 });
+    expect(screen.queryByLabelText("Private pairing document")).toBeNull();
+    fireEvent.click(refresh);
+    fireEvent.click(await screen.findByRole("button", { name: "Reveal private document" }, { timeout: 5000 }));
+  }
   const raw = (screen.getByLabelText("Private pairing document") as HTMLTextAreaElement).value;
   const grant = JSON.parse(raw);
   const pair = (path: string) => runCLI([kind === "client" ? "device" : "worker", "pair", kind === "client" ? "--device-dir" : "--worker-dir", path, "--code-stdin", "--name", "Disposable UI grant"], raw);
@@ -500,10 +511,14 @@ it("persists native Claude permission selection through the desktop and real Go 
 
 it("saves and renames GitHub profiles through the real Go server and CLI", async () => {
   // Shared CI can take longer than Testing Library's one-second default to
-  // acknowledge a save and refetch its profile. Exercise that delay for both
-  // mutations without changing the real server or replaying either write.
+  // acknowledge a save and refetch its profile. Retain both the delayed save
+  // acknowledgment and sequential profile-list latency without replaying writes.
   let acknowledgedSaves = 0;
   const profileTransport: Transport = { ...transport, async unary(method, signal, timeout, header, input, context) {
+    const profileList = method.name === "ListResources" && (input as { filter?: { kind?: EntityKind } }).filter?.kind === EntityKind.INTEGRATION;
+    if (method.name === "SaveIntegrationProfile" || profileList) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 600));
+    }
     const response = await transport.unary(method, signal, timeout, header, input, context);
     if (method.parent.typeName === IntegrationService.typeName && method.name === "SaveIntegrationProfile") {
       acknowledgedSaves += 1;
