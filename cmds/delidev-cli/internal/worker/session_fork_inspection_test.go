@@ -69,3 +69,43 @@ func TestSessionForkInspectionCannotClaimFailedRuntimeRemoval(t *testing.T) {
 		t.Fatal("cleanup failure replaced an unrelated entry", err)
 	}
 }
+
+func TestSessionForkPreNativeFailureOwnership(t *testing.T) {
+	for _, scenario := range []struct {
+		name     string
+		phase    forkRuntimePhase
+		code     domain.Code
+		retained bool
+	}{
+		{"workspace-rejected", forkRuntimeUnused, domain.Conflict, false},
+		{"unjoined-inspection", forkSourceInspectionUnproved, domain.RecoveryRequired, true},
+		{"possible-native-child", forkChildNativePossible, domain.RecoveryRequired, true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			home := filepath.Join(t.TempDir(), "runtime")
+			if _, err := harness.PrivateRuntimeEnvironment(home); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(home, "codex", "retained-state")
+			if err := os.WriteFile(marker, []byte("owned state"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			failure := domain.Fail(domain.Conflict, "Workspace preparation rejected.", "")
+			if scenario.phase == forkChildNativePossible {
+				failure = executionCheckpointUncertain()
+			}
+			if err := finishForkPreNativeFailure(home, scenario.phase, failure); domain.SafeError(err).Code != scenario.code {
+				t.Fatal("failure lost its cleanup/uncertainty classification", err)
+			}
+			raw, err := os.ReadFile(marker)
+			if scenario.retained && (err != nil || string(raw) != "owned state") {
+				t.Fatal("unproved or possible native state was removed", err)
+			}
+			if !scenario.retained {
+				if _, err := os.Lstat(home); !os.IsNotExist(err) {
+					t.Fatal("definite pre-native workspace failure leaked its runtime", err)
+				}
+			}
+		})
+	}
+}

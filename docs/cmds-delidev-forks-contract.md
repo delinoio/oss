@@ -147,6 +147,12 @@ confirm absence before returning a definite rejection; failed removal or unjoine
 inspection retains uncertainty. Successful inspection keeps the runtime for the
 original native creation attempt.
 
+Every later pre-native workspace rejection applies the same unused-runtime
+cleanup after joined source inspection and independently verified owned-copy
+rollback. Disable this removal authority before attempting to open the native
+child process: possible child state and unjoined inspection always remain
+retained. Log only the closed runtime phase and stable failure code.
+
 The product never selects a rollout path. Native metadata selects one exact
 regular Worker-private `sessions/*.jsonl` file, with canonical rooted accesses,
 link/special-file refusal, immutable byte proof and before/after identity checks.

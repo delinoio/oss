@@ -21,6 +21,14 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
+type forkRuntimePhase string
+
+const (
+	forkRuntimeUnused            forkRuntimePhase = "unused"
+	forkSourceInspectionUnproved forkRuntimePhase = "source-inspection-unproved"
+	forkChildNativePossible      forkRuntimePhase = "child-native-possible"
+)
+
 type ForkCheckpoint struct {
 	Version             uint32                       `json:"version"`
 	JobID               domain.ID                    `json:"job_id"`
@@ -123,20 +131,33 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, executionCheckpointUncertain()
 	}
+	phase := forkRuntimeUnused
+	defer func() {
+		if returned != nil {
+			output = nil
+			returned = finishForkPreNativeFailure(home, phase, returned)
+			logger.InfoContext(ctx, "session_fork_failure_ownership", "job_id", owner, "runtime_phase", phase, "code", domain.SafeError(returned).Code)
+		}
+	}()
 	sourceHome := filepath.Join(root, string(historyID), "codex")
 	sourceEnv, err := replaceCodexHome(append([]string(nil), env...), sourceHome)
 	if err != nil {
 		return nil, err
 	}
 	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: manifest.PrimaryPath, Env: sourceEnv, Logger: logger}
+	phase = forkSourceInspectionUnproved
 	sourceClient, err := codex.Open(ctx, codex.Config{Mode: codex.ThreadProtocol, Version: codex.SupportedVersion, Home: sourceHome, Process: processConfig})
 	if err != nil {
 		return nil, err
 	}
 	source, inspectErr := sourceClient.InspectForkSource(ctx, checkpoint.Native)
 	closeErr := sourceClient.Close()
-	if err := finishForkSourceInspection(home, inspectErr, closeErr); err != nil {
-		return nil, err
+	if closeErr != nil {
+		return nil, executionCheckpointUncertain()
+	}
+	phase = forkRuntimeUnused
+	if inspectErr != nil {
+		return nil, inspectErr
 	}
 	childPreparation, err := manager.ForkPreparation(ctx, manifest, input.ChildSessionID, input.Workspace)
 	if err != nil {
@@ -173,6 +194,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	}
 	// This random credential is deliberately unregistered. Fork has no provider
 	// inference authority; only the later ordinary execution can register a grant.
+	// From this attempt onward the runtime may contain native child state. Even
+	// an Open failure cannot justify deleting it through pre-native rollback.
+	phase = forkChildNativePossible
 	client, err := codex.Open(ctx, codex.Config{Mode: codex.ThreadProtocol, Version: codex.SupportedVersion, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig})
 	if err != nil {
 		return nil, executionCheckpointUncertain()
@@ -205,7 +229,20 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	return json.Marshal(domain.ForkJobResult{Version: 1, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: input.Completion.NativeTurnID, CheckpointDigest: executionInputDigest(raw), Preparation: mustForkJSON(childPreparation), Manifest: mustForkJSON(childManifest), CleanupVerified: true})
 }
 
-// No native child or workspace has been created at this boundary. A rejected
+// Every pre-native validation/preparation return shares this guard. Workspace
+// rollback remains independently owned by PrepareFork; possible native children
+// and unjoined source inspection must never borrow unused-runtime removal proof.
+func finishForkPreNativeFailure(home string, phase forkRuntimePhase, returned error) error {
+	if returned == nil || phase == forkChildNativePossible {
+		return returned
+	}
+	if phase != forkRuntimeUnused {
+		return executionCheckpointUncertain()
+	}
+	return finishForkSourceInspection(home, returned, nil)
+}
+
+// No native child has been created at this boundary. A rejected
 // source must not leave an unused runtime behind, but an unjoined inspection
 // process or unconfirmed removal still prevents a fresh fork attempt.
 func finishForkSourceInspection(home string, inspectErr, closeErr error) error {
