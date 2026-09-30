@@ -61,7 +61,8 @@ Root `cargo test` with canonical temporary paths and the pinned CEF cache failed
 in the unchanged Clibox wait tests
 `proxy_and_log_environment_cannot_expose_or_redirect_requests` and
 `tls_dependency_errors_and_ca_overrides_are_isolated_and_redacted`: both observed
-`dns_configuration` while expecting `tls_certificate`. The browser native checks
+`dns_configuration`; the first expected a successful exit and the second expected
+`tls_certificate`. The browser native checks
 passed independently. These unrelated failures remain visible and were not
 worked around by changing their assertions.
 
