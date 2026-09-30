@@ -2759,6 +2759,22 @@
       "member": "WORKER_CAPABILITY_SESSION_TERMINALS_V1",
       "oldBranchNumber": 3,
       "number": 4
+    },
+    {
+      "pr": 1193,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1",
+      "oldBranchNumber": 5,
+      "number": 5
+    },
+    {
+      "pr": 1193,
+      "kind": "field",
+      "declaration": "AttachWorkerResponse",
+      "member": "supported_worker_capabilities",
+      "oldBranchNumber": 3,
+      "number": 3
     }
   ]
 }

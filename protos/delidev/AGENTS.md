@@ -117,3 +117,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Generated legacy Go and TypeScript descriptor exports must retain aggregate reflection contents while the actual schema file ownership follows the declaration relocation manifest. Do not register duplicate runtime symbols or commit a serialized aggregate that creates a new per-feature merge hotspot.
 
 - Permanent deletion adds owner/client SessionService acceptance/status and independent owning-Worker cleanup RPCs. Shared job/state messages belong to common.proto; exclusive request/response types belong to their service file. Preserve `PERMANENT_SESSION_DELETION_V1 = 9` from allocations.json alongside merged capabilities, exact uint64 revisions, pending acknowledgements and unknown reclaimed bytes. Follow `docs/cmds-delidev-storage-contract.md` and regenerate bindings.
+
+- Issue #1142 reserves repository-inspection metadata Worker value 5 and attachment-response support field 3, originally implemented in closed PR #1193. Keep them allocation-only until the dependent implementation; do not advertise support from a reservation. Follow the protocol and structure contracts.

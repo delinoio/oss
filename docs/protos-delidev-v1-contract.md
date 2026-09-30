@@ -369,3 +369,9 @@ only original session/deletion IDs, plan digest and retained request UUID. No
 paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
+
+## Repository inspection metadata allocation prerequisite
+
+Issue #1142's replacement implementation uses the allocations originally implemented in closed, unmerged PR #1193: `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 5` and `AttachWorkerResponse.supported_worker_capabilities = 3`. The allocation ledger reserves both meanings before dependent implementation, preserving Worker values 3 and 4 for their existing owners. The original issue's proposed value 3 cannot replace an existing reservation.
+
+This reservation changes no schema, generated binding, capability advertisement, runtime negotiation or inspection behavior. Merge it into main before publishing the dependent repository-registration implementation, as required by `docs/cmds-delidev-structure-contract.md`.
