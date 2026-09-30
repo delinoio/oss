@@ -23,28 +23,36 @@ func restoredDirectoryIdentity(root string, manifest Manifest) (string, error) {
 	}
 	identities := make([]string, 0, len(paths))
 	for _, path := range paths {
-		before, err := os.Lstat(path)
-		if err != nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 {
-			return "", ResultUncertain()
-		}
-		canonical, err := filepath.EvalSymlinks(path)
-		if err != nil || canonical != path {
-			return "", ResultUncertain()
-		}
-		file, err := os.Open(path)
+		identity, err := directoryPathIdentity(path)
 		if err != nil {
-			return "", ResultUncertain()
-		}
-		opened, statErr := file.Stat()
-		identity, identityErr := directoryFileIdentity(file)
-		file.Close()
-		after, namedErr := os.Lstat(path)
-		if statErr != nil || identityErr != nil || namedErr != nil || !os.SameFile(before, opened) || !os.SameFile(opened, after) || after.Mode()&os.ModeSymlink != 0 {
-			return "", ResultUncertain()
+			return "", err
 		}
 		identities = append(identities, identity)
 	}
 	raw, _ := json.Marshal(identities)
 	digest := sha256.Sum256(raw)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+func directoryPathIdentity(path string) (string, error) {
+	before, err := os.Lstat(path)
+	if err != nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 {
+		return "", ResultUncertain()
+	}
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil || canonical != path {
+		return "", ResultUncertain()
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", ResultUncertain()
+	}
+	opened, statErr := file.Stat()
+	identity, identityErr := directoryFileIdentity(file)
+	file.Close()
+	after, namedErr := os.Lstat(path)
+	if statErr != nil || identityErr != nil || namedErr != nil || !os.SameFile(before, opened) || !os.SameFile(opened, after) || after.Mode()&os.ModeSymlink != 0 {
+		return "", ResultUncertain()
+	}
+	return identity, nil
 }

@@ -83,6 +83,7 @@ type Manager struct {
 	storageRestoreCopyFault     func(string) error
 	storageBeforeRestorePublish func(string)
 	storageBeforeRemovalClaim   func()
+	storageBeforeRemovalUnlink  func(string)
 	storageAfterSnapshot        func()
 	Root                        string
 	Git                         Git

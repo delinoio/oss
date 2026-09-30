@@ -29,6 +29,7 @@ type storageRemovalIntent struct {
 // Persist this only after the private namespace and its original inventory have
 // been verified, before any unlink. An intent alone precedes native ownership.
 type storageRemovalClaim struct {
+	RootIdentity string                  `json:"root_identity"`
 	Version      uint32                  `json:"version"`
 	Reference    StorageRemovalReference `json:"reference"`
 	IntentDigest string                  `json:"intent_digest"`
@@ -47,7 +48,7 @@ func removalReference(r StorageRequest) StorageRemovalReference {
 func removalClaimMatches(raw []byte, ref StorageRemovalReference, intent []byte) bool {
 	var claim storageRemovalClaim
 	sum := sha256.Sum256(intent)
-	return domain.Decode(raw, &claim) == nil && claim.Version == 1 && claim.Reference == ref && claim.IntentDigest == hex.EncodeToString(sum[:])
+	return domain.Decode(raw, &claim) == nil && claim.Version == 2 && claim.RootIdentity != "" && claim.Reference == ref && claim.IntentDigest == hex.EncodeToString(sum[:])
 }
 
 func (m *Manager) retainRemovalClaim(ctx context.Context, r StorageRequest, intent []byte) error {
@@ -63,8 +64,12 @@ func (m *Manager) retainRemovalClaim(ctx context.Context, r StorageRequest, inte
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return ResultUncertain()
 	}
+	identity, err := directoryPathIdentity(filepath.Join(m.Root, "workspace-removals", string(r.OperationID)))
+	if err != nil {
+		return ResultUncertain()
+	}
 	sum := sha256.Sum256(intent)
-	raw, err := json.Marshal(storageRemovalClaim{Version: 1, Reference: removalReference(r), IntentDigest: hex.EncodeToString(sum[:])})
+	raw, err := json.Marshal(storageRemovalClaim{Version: 2, RootIdentity: identity, Reference: removalReference(r), IntentDigest: hex.EncodeToString(sum[:])})
 	if err != nil || len(raw) > maxStorageRemovalClaim {
 		return ResultUncertain()
 	}
@@ -268,7 +273,7 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 				return result, err
 			}
 			if removed {
-				if err := removeSnapshotTree(ctx, removal); err != nil {
+				if err := m.removeClaimedSnapshotTree(ctx, original, removal, true); err != nil {
 					return result, ResultUncertain()
 				}
 			}
@@ -342,7 +347,7 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 				return result, err
 			}
 			if removed {
-				if err := removeSnapshotTree(ctx, removal); err != nil {
+				if err := m.removeClaimedSnapshotTree(ctx, original, removal, true); err != nil {
 					return result, ResultUncertain()
 				}
 			}

@@ -337,7 +337,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 				}
 				return result, ResultUncertain()
 			}
-			if err := removeSnapshotTree(ctx, removal); err != nil {
+			if err := m.removeClaimedSnapshotTree(ctx, r, removal, false); err != nil {
 				return result, ResultUncertain()
 			}
 			result.RemovedSourceBytes = result.SourceBytes
@@ -438,7 +438,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if err := m.confirmRemoval(ctx, r, removal, false); err != nil {
 				return result, ResultUncertain()
 			}
-			if err := removeSnapshotTree(ctx, removal); err != nil {
+			if err := m.removeClaimedSnapshotTree(ctx, r, removal, false); err != nil {
 				return result, ResultUncertain()
 			}
 			metadata.Deleted = true

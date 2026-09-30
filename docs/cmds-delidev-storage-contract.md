@@ -551,7 +551,15 @@ restores the whole source name without replacement when possible, otherwise
 retains both the claim and recovery uncertainty. Cancellation is rechecked after intent persistence immediately before the
 namespace claim. After verification, a separate synchronized metadata-only claim
 binds the original intent digest before any unlink. An intent persisted before
-the namespace transition cannot prove that removal ever began. Verification precedes bounded anchored deletion and directory synchronization. A second
+the namespace transition cannot prove that removal ever began. Version-2 claims additionally bind the claimed native root identity. Legacy
+claims cannot authorize new unlink. Bounded anchored deletion selects only
+original pinned entries and rechecks regular-file hashes/size/mode, symlink text/
+kind and named/opened identity immediately before unlink. New entries are never
+selected, and atomic empty-directory removal refuses remaining unknown contents.
+Changes during removal retain the claim, remaining bytes and recovery uncertainty;
+partial recovery checks the same intent and root identity. Scratch cleanup keeps
+its separate operation-owned enumeration. Verification and directory
+synchronization remain mandatory. A second
 repository copy failure or cancellation cannot remove either original repository.
 Failures after a namespace transition retain recovery uncertainty and private
 copies. Cancellation/failure after verified snapshot publication but before source
