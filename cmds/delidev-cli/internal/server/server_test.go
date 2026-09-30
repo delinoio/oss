@@ -84,6 +84,23 @@ func TestRealConnectAuthenticationOriginsAndRedaction(t *testing.T) {
 	if response.Header().Get("X-Delidev-Correlation-Id") == "" {
 		t.Fatal("missing correlation")
 	}
+	capabilities := map[pb.SystemCapability]bool{}
+	for _, capability := range response.Msg.Capabilities {
+		if capabilities[capability] {
+			t.Fatalf("duplicate wire capability: %v", capability)
+		}
+		capabilities[capability] = true
+	}
+	// Preserve main's forwarding value and negotiate stopped-account selection
+	// independently; both branches originally introduced numeric value 2.
+	for wire, name := range map[pb.SystemCapability]string{
+		2: "SYSTEM_CAPABILITY_SESSION_FORWARDING_V1",
+		3: "SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1",
+	} {
+		if !capabilities[wire] || wire.String() != name {
+			t.Fatalf("missing or reinterpreted capability %d: %s", wire, wire.String())
+		}
+	}
 	raw, _ := json.Marshal(response.Msg)
 	if bytes.Contains(raw, []byte(identity.Token)) {
 		t.Fatal("status leaked owner token")

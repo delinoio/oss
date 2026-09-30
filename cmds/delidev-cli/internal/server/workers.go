@@ -67,13 +67,15 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1:
+			capabilities = append(capabilities, domain.SessionForwardingV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1:
 			capabilities = append(capabilities, domain.AutomaticTitlesCodexV1)
 		default:
 			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported an unknown native capability.", "Upgrade the Worker and report only verified capability identifiers."), correlation)
 		}
 	}
-	if len(capabilities) > 1 {
+	if len(capabilities) > 2 || (len(capabilities) == 2 && capabilities[0] == capabilities[1]) {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported a duplicate native capability.", "Report each verified capability once."), correlation)
 	}
 	input := struct {

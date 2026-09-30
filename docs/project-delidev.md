@@ -41,6 +41,7 @@ The desktop shell combines the issue #1044 project-grouped session sidebar and b
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Saved client connections](cmds-delidev-connections-contract.md)
+- [Session development-server forwarding](cmds-delidev-forwarding-contract.md)
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
@@ -286,3 +287,5 @@ attribution; new execution requires explicit Resume and a fresh scoped grant.
 Subscription/provider/model switching and automatic fallback remain excluded.
 See the sessions/proxy contracts and evidence ledger for the controlled native
 A-to-B result and unperformed desktop/real-account/platform acceptance.
+
+Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
