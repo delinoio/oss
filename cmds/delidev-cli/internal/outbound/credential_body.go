@@ -15,12 +15,15 @@ import (
 // delaying unrelated stream data. This finite literal/JSON/Base64 guard cannot
 // detect arbitrary transformations performed by a hostile proxy.
 type credentialBody struct {
-	body     io.ReadCloser
-	patterns [][]byte
-	pending  []byte
-	mu       sync.Mutex
-	failed   bool
-	eof      bool
+	body          io.ReadCloser
+	patterns      [][]byte
+	shortPatterns [][]byte
+	previous      byte
+	hasPrevious   bool
+	pending       []byte
+	mu            sync.Mutex
+	failed        bool
+	eof           bool
 }
 
 func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential) *credentialBody {
@@ -29,11 +32,15 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential) *credential
 		candidates := []string{value, base64.StdEncoding.EncodeToString([]byte(value)), base64.RawStdEncoding.EncodeToString([]byte(value))}
 		for _, candidate := range candidates {
 			encoded, _ := json.Marshal(candidate)
-			// Short credentials still match exact JSON values. Arbitrary one-byte
-			// substring rejection would make valid usernames unusable in any JSON.
 			g.patterns = append(g.patterns, bytes.Clone(encoded))
-			if len(candidate) >= 8 {
-				g.patterns = append(g.patterns, []byte(candidate), bytes.Clone(encoded[1:len(encoded)-1]))
+			for _, form := range [][]byte{[]byte(candidate), encoded[1 : len(encoded)-1]} {
+				if len(form) >= 8 {
+					g.patterns = append(g.patterns, bytes.Clone(form))
+				} else {
+					// Short forms match complete byte tokens, including plaintext
+					// SSE values. Substring matching would reject unrelated words.
+					g.shortPatterns = append(g.shortPatterns, bytes.Clone(form))
+				}
 			}
 		}
 	}
@@ -41,10 +48,35 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential) *credential
 
 	return g
 }
+
+// Headers are complete independent values; response reads also carry the last
+// emitted byte and withhold an unresolved right boundary until another read/EOF.
 func (g *credentialBody) contains(raw []byte) bool {
+	return g.containsBounded(raw, true, 0, false)
+}
+func credentialTokenByte(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '_' || b == '-' || b >= 0x80
+}
+func (g *credentialBody) containsBounded(raw []byte, ended bool, previous byte, hasPrevious bool) bool {
 	for _, p := range g.patterns {
 		if bytes.Contains(raw, p) {
 			return true
+		}
+	}
+	for _, pattern := range g.shortPatterns {
+		for offset := 0; offset < len(raw); {
+			index := bytes.Index(raw[offset:], pattern)
+			if index < 0 {
+				break
+			}
+			start := offset + index
+			end := start + len(pattern)
+			left := start == 0 && (!hasPrevious || !credentialTokenByte(previous)) || start > 0 && !credentialTokenByte(raw[start-1])
+			right := end == len(raw) && ended || end < len(raw) && !credentialTokenByte(raw[end])
+			if left && right {
+				return true
+			}
+			offset = start + 1
 		}
 	}
 	return false
@@ -53,6 +85,15 @@ func (g *credentialBody) retainedPrefix() int {
 	retained := 0
 	for _, pattern := range g.patterns {
 		for n := min(len(pattern)-1, len(g.pending)); n > retained; n-- {
+			if bytes.Equal(g.pending[len(g.pending)-n:], pattern[:n]) {
+				retained = n
+				break
+			}
+		}
+	}
+	// Retain even a complete short form until its right boundary is known.
+	for _, pattern := range g.shortPatterns {
+		for n := min(len(pattern), len(g.pending)); n > retained; n-- {
 			if bytes.Equal(g.pending[len(g.pending)-n:], pattern[:n]) {
 				retained = n
 				break
@@ -75,7 +116,8 @@ func (g *credentialBody) Read(p []byte) (int, error) {
 		n, err := g.body.Read(buf)
 		g.pending = append(g.pending, buf[:n]...)
 		clear(buf)
-		if g.contains(g.pending) {
+		g.eof = err == io.EOF
+		if g.containsBounded(g.pending, g.eof, g.previous, g.hasPrevious) {
 			clear(g.pending)
 			g.pending = nil
 			g.failed = true
@@ -97,6 +139,9 @@ func (g *credentialBody) Read(p []byte) (int, error) {
 		return 0, io.EOF
 	}
 	n := copy(p, g.pending[:available])
+	if n > 0 {
+		g.previous, g.hasPrevious = p[n-1], true
+	}
 	copy(g.pending, g.pending[n:])
 	clear(g.pending[len(g.pending)-n:])
 	g.pending = g.pending[:len(g.pending)-n]
@@ -111,5 +156,9 @@ func (g *credentialBody) Close() error {
 	for _, p := range g.patterns {
 		clear(p)
 	}
+	for _, p := range g.shortPatterns {
+		clear(p)
+	}
+	g.previous, g.hasPrevious = 0, false
 	return err
 }
