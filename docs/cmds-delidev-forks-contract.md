@@ -149,7 +149,9 @@ original native creation attempt.
 
 Every later pre-native workspace rejection applies the same unused-runtime
 cleanup after joined source inspection and independently verified owned-copy
-rollback. Disable this removal authority before attempting to open the native
+rollback. A `RecoveryRequired` workspace result may leave owned copies without
+attempting rollback and cannot authorize runtime removal, even before native
+creation. Disable this removal authority before attempting to open the native
 child process: possible child state and unjoined inspection always remain
 retained. Log only the closed runtime phase and stable failure code.
 

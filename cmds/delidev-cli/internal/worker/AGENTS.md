@@ -488,7 +488,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Rejected Codex fork-source inspection must remove its proven-unused fresh runtime after confirmed source-process closure, synchronize the parent and verify absence before a definite failure releases the reservation. Unjoined inspection or unconfirmed removal remains uncertain; successful inspection retains its runtime for the original native creation.
 
-- Apply the same unused-runtime cleanup to all later pre-native fork workspace rejections after joined source inspection and independently confirmed owned-copy rollback. Revoke removal authority before attempting the child-native process; unknown inspection or possible native child state remains retained. Log closed phases and stable codes only.
+- Apply the same unused-runtime cleanup to all later pre-native fork workspace rejections after joined source inspection and independently confirmed owned-copy rollback. A `RecoveryRequired` workspace result provides no rollback proof and retains the runtime even before native creation. Revoke removal authority before attempting the child-native process; unknown inspection or possible native child state remains retained. Log closed phases and stable codes only.
 
 - Codex fork Local sharing is limited to original Local manifests with no parent-owned checkouts. Reject managed Worktree sharing before job acceptance and again before Worker native inspection/preparation and server publication; parent deletion retains those paths. Independent Worktree copying remains available. Follow `docs/cmds-delidev-forks-contract.md`.
 

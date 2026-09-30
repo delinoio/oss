@@ -69,12 +69,14 @@ func TestSessionForkPreNativeFailureOwnership(t *testing.T) {
 	for _, scenario := range []struct {
 		name     string
 		phase    forkRuntimePhase
+		failure  domain.Code
 		code     domain.Code
 		retained bool
 	}{
-		{"workspace-rejected", forkRuntimeUnused, domain.Conflict, false},
-		{"unjoined-inspection", forkSourceInspectionUnproved, domain.RecoveryRequired, true},
-		{"possible-native-child", forkChildNativePossible, domain.RecoveryRequired, true},
+		{"workspace-rejected", forkRuntimeUnused, domain.Conflict, domain.Conflict, false},
+		{"workspace-rollback-unproved", forkRuntimeUnused, domain.RecoveryRequired, domain.RecoveryRequired, true},
+		{"unjoined-inspection", forkSourceInspectionUnproved, domain.Conflict, domain.RecoveryRequired, true},
+		{"possible-native-child", forkChildNativePossible, domain.RecoveryRequired, domain.RecoveryRequired, true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			home := filepath.Join(t.TempDir(), "runtime")
@@ -86,7 +88,7 @@ func TestSessionForkPreNativeFailureOwnership(t *testing.T) {
 				t.Fatal(err)
 			}
 			failure := domain.Fail(domain.Conflict, "Workspace preparation rejected.", "")
-			if scenario.phase == forkChildNativePossible {
+			if scenario.failure == domain.RecoveryRequired {
 				failure = executionCheckpointUncertain()
 			}
 			if err := finishForkPreNativeFailure(home, scenario.phase, failure); domain.SafeError(err).Code != scenario.code {

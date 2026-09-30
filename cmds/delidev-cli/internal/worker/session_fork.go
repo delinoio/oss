@@ -232,8 +232,10 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 // Every pre-native validation/preparation return shares this guard. Workspace
 // rollback remains independently owned by PrepareFork; possible native children
 // and unjoined source inspection must never borrow unused-runtime removal proof.
+// PrepareFork can retain owned copies on RecoveryRequired without attempting
+// rollback, so even an unused native runtime must remain with that evidence.
 func finishForkPreNativeFailure(home string, phase forkRuntimePhase, returned error) error {
-	if returned == nil || phase == forkChildNativePossible {
+	if returned == nil || phase == forkChildNativePossible || domain.SafeError(returned).Code == domain.RecoveryRequired {
 		return returned
 	}
 	if phase != forkRuntimeUnused {
