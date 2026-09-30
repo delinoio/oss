@@ -20,6 +20,17 @@ const maxQueuedEventBytes = 8 << 20
 const maxEventIdentities = 65536
 const eventIdleLimit = 30 * time.Second
 
+type streamFailure uint8
+
+const (
+	streamTransport streamFailure = iota
+	streamInvalid
+	streamCapacity
+	streamCanceled
+	streamOwnerLost
+	streamDisposed
+)
+
 // NativeEvent is a private native transport observation, never a product event.
 // The original JSON event ID is not an SSE replay cursor. Properties require a
 // separate typed observer before publication, completion or interaction use.
@@ -32,6 +43,7 @@ type NativeEvent struct {
 type eventStream struct {
 	mu        sync.Mutex
 	ctx       context.Context
+	parent    context.Context
 	body      io.ReadCloser
 	cancel    context.CancelFunc
 	closeOnce sync.Once
@@ -47,6 +59,8 @@ type eventStream struct {
 	logger    *slog.Logger
 	owner     domain.ID
 	closing   bool
+	failure   streamFailure
+	failedAt  time.Time
 }
 
 func eventProblem() *domain.Error {
@@ -69,7 +83,21 @@ func (s *sessionAPI) openEvents(ctx context.Context) (*eventStream, error) {
 		return nil, err
 	}
 	s.eventAttempt = true
+	stream, err := s.connectEvents(ctx, ctx, nil)
+	if err != nil {
+		s.problem = domain.SafeError(err)
+		return nil, err
+	}
+	s.events = stream
+	return stream, nil
+}
+
+// Called under the session gate. A replacement listener receives the complete
+// original identity inventory; native event IDs never become replay cursors.
+func (s *sessionAPI) connectEvents(ctx, readyContext context.Context, seen map[string]bool) (*eventStream, error) {
 	streamCtx, cancel := context.WithCancel(ctx)
+	stopWaiting := context.AfterFunc(readyContext, cancel)
+	defer stopWaiting()
 	request, err := http.NewRequestWithContext(streamCtx, http.MethodGet, s.origin+"/event", nil)
 	if err != nil {
 		cancel()
@@ -97,12 +125,14 @@ func (s *sessionAPI) openEvents(ctx context.Context) (*eventStream, error) {
 		s.problem = eventProblem()
 		return nil, s.problem
 	}
-	stream := &eventStream{ctx: streamCtx, body: response.Body, cancel: cancel, queue: make(chan NativeEvent, maxQueuedEvents), done: make(chan struct{}), seen: map[string]bool{}, last: time.Now(), cwd: s.cwd, alive: s.alive, logger: s.logger, owner: s.owner}
-	s.events = stream
+	if seen == nil {
+		seen = map[string]bool{}
+	}
+	stream := &eventStream{ctx: streamCtx, parent: ctx, body: response.Body, cancel: cancel, queue: make(chan NativeEvent, maxQueuedEvents), done: make(chan struct{}), seen: seen, last: time.Now(), cwd: s.cwd, alive: s.alive, logger: s.logger, owner: s.owner}
 	go stream.run(streamCtx)
 	// The original connected record proves this listener was registered before
 	// the caller may submit input. Its event ID remains in the deduplication set.
-	ready, err := stream.Next(streamCtx)
+	ready, err := stream.Next(readyContext)
 	if err != nil || ready.Kind != ServerConnectedEvent {
 		stream.Close()
 		s.problem = eventProblem()
@@ -121,10 +151,21 @@ func (s *eventStream) status() *domain.Error {
 }
 
 func (s *eventStream) fail(problem *domain.Error) {
+	kind := streamTransport
+	if problem.Code == domain.Unsupported {
+		kind = streamInvalid
+	} else if problem.Code == domain.ResourceExhausted {
+		kind = streamCapacity
+	}
+	s.failAs(problem, kind)
+}
+
+func (s *eventStream) failAs(problem *domain.Error, kind streamFailure) {
 	s.mu.Lock()
 	report := s.problem == nil && !s.closing
 	if s.problem == nil {
 		s.problem = problem
+		s.failure, s.failedAt = kind, time.Now()
 	}
 	s.mu.Unlock()
 	if report && s.logger != nil {
@@ -140,7 +181,7 @@ func (s *eventStream) Close() {
 	s.mu.Lock()
 	s.closing = true
 	s.mu.Unlock()
-	s.fail(unavailable())
+	s.failAs(unavailable(), streamCanceled)
 	<-s.done
 }
 
@@ -176,14 +217,18 @@ func (s *eventStream) run(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				s.fail(unavailable())
+				s.failAs(unavailable(), streamCanceled)
 				return
 			case now := <-ticker.C:
 				s.mu.Lock()
 				stale := now.Sub(s.last) >= eventIdleLimit
 				s.mu.Unlock()
-				if stale || s.alive() != nil {
-					s.fail(unavailable())
+				if s.alive() != nil {
+					s.failAs(unavailable(), streamOwnerLost)
+					return
+				}
+				if stale {
+					s.failAs(unavailable(), streamTransport)
 					return
 				}
 			}
@@ -302,7 +347,9 @@ func (s *eventStream) accept(raw []byte) *domain.Error {
 		return eventBound()
 	}
 	if event.Kind == ServerInstanceDisposedEvent || event.Kind == GlobalDisposedEvent {
-		return unavailable()
+		// accept holds mu; retain the disposal category before run closes.
+		s.problem, s.failure, s.failedAt = unavailable(), streamDisposed, time.Now()
+		return s.problem
 	}
 	return nil
 }

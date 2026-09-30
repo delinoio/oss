@@ -29,6 +29,11 @@ func (p *nativeAPIProfile) writeInstructions() error {
 }
 
 func (p *nativeAPIProfile) inspectInstructions() error {
+	if p.WorkspaceRoot != nil {
+		if err := p.WorkspaceRoot.inspect(); err != nil {
+			return err
+		}
+	}
 	if err := p.ProjectConfig.inspect(); err != nil {
 		return err
 	}
