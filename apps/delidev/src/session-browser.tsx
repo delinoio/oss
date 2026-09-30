@@ -85,8 +85,9 @@ export function SessionBrowser({ session, accountId, close }: { session: Resourc
         finally { opening = false; if (queued) { queued = false; void update(); } }
       } else {
         if (geometry === lastBounds) return;
-        resizing = true; lastBounds = geometry;
-        try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId: presentation.current, action: BrowserAction.Resize, bounds: area })); if (!disposed) setState(result); } catch { if (!disposed) setFailure("The browser view could not be updated."); }
+        resizing = true;
+        const viewId = presentation.current;
+        try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId, action: BrowserAction.Resize, bounds: area })); if (!disposed && opened && presentation.current === viewId) { lastBounds = geometry; setState(result); } } catch { lastBounds = ""; if (!disposed) setFailure("The browser view could not be updated."); }
         finally { resizing = false; if (queued) { queued = false; void update(); } }
       }
     };

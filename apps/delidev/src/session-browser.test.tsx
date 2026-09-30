@@ -52,6 +52,27 @@ it("rejects deleted or foreign profiles before native presentation",async()=>{
  const f=fixture();f.profile.accountId=newRequestId();render(<f.View />);await open();await screen.findByText("Browser profile ownership is unavailable. Refresh the session.");expect(native).not.toHaveBeenCalled();
  expect(()=>browserProfile({...f.profile,accountId:f.accountId,state:BrowserProfileState.REMOVAL_PENDING,deletionRequestId:newRequestId()},f.accountId)).toThrow();
 });
+it("retries identical geometry after a failed native resize and caches only success", async () => {
+  const f = fixture();
+  let top = 100, attempts = 0;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => ({ x: 100, y: top, left: 100, top, width: 300, height: 200, right: 400, bottom: top + 200, toJSON: () => ({}) }));
+  native.mockImplementation(async (_operation, args) => {
+    if (args.action === "resize" && ++attempts === 1) throw new Error("transient native resize failure");
+    return f.local;
+  });
+  render(<f.View />);
+  await open();
+  await screen.findByRole("button", { name: /Tab 1/ });
+  top = 125;
+  fireEvent.resize(window);
+  await screen.findByText("The browser view could not be updated.");
+  fireEvent.resize(window);
+  await waitFor(() => expect(attempts).toBe(2));
+  const resizes = native.mock.calls.filter(([, args]) => args.action === "resize");
+  expect(resizes[1][1]).toEqual(resizes[0][1]);
+  await act(async () => { fireEvent.resize(window); });
+  expect(attempts).toBe(2);
+});
 it("closes only the earlier instance when its native open resolves after replacement",async()=>{
  const f=fixture();let finish!:(value:typeof f.local)=>void;native.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}));render(<f.View />);await open();await waitFor(()=>expect(native).toHaveBeenCalledTimes(1));const first=native.mock.calls[0][1];
  fireEvent.click(screen.getByRole("button",{name:"Retry native view"}));await waitFor(()=>expect(native.mock.calls.filter(([op])=>op==="open_browser")).toHaveLength(2));const second=native.mock.calls.filter(([op])=>op==="open_browser")[1][1];

@@ -74,6 +74,9 @@ fails. Stale opens, controls and cleanup cannot replace a newer panel instance.
 The persistent closed compact sidebar dialog and open nonmodal wide sidebar
 region do not block browser presentation. Visible dialogs, hidden panels and
 clipped geometry cannot leave an external child above app UI.
+Only successful native geometry updates become the panel's last applied bounds;
+a failed resize clears that cache so later callbacks retry identical geometry
+for the current presentation.
 Closing the panel releases its view, retaining its request context/profile.
 Profile directory traversal, tab reads, URL policy preparation and durable writes
 run on serialized storage workers without holding the native state lock during
