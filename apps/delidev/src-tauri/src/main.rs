@@ -796,7 +796,15 @@ async fn open_browser(
         Some(saved_binding(&window, &windows)?)
     };
     let scope = binding.as_ref().map(|b| b.profile.clone());
-    host.reserve(window.label(), &view_id)?;
+    let reservation_host = Arc::clone(host.inner());
+    let label = window.label().to_string();
+    let reservation_view = view_id.clone();
+    let (send, receive) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let _ = send.send(reservation_host.reserve(&label, &reservation_view));
+    })
+    .map_err(|_| NativeFailure::SidecarFailed)?;
+    receive.await.map_err(|_| NativeFailure::SidecarFailed)??;
     let connector = Arc::clone(connector.inner());
     let scope_copy = scope.clone();
     let record = tauri::async_runtime::spawn_blocking(move || {

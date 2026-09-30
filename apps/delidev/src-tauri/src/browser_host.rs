@@ -135,8 +135,8 @@ impl BrowserHost {
         })
     }
 
-    // Reserve before the asynchronous authority read. Older completions and
-    // cleanup calls cannot replace a later presentation instance.
+    // UI loop only: release the superseded child before asynchronous authority
+    // reads can fail. Removing its view also rejects late creation callbacks.
     pub fn reserve(&self, window: &str, view_id: &str) -> Result<()> {
         canonical_id(view_id)?;
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
@@ -144,6 +144,13 @@ impl BrowserHost {
             return Err(NativeFailure::Stopped);
         }
         state.reservations.insert(window.into(), view_id.into());
+        let previous = state.views.remove(window);
+        drop(state);
+        if let Some(browser) = previous.and_then(|view| view.browser)
+            && let Some(host) = browser.host()
+        {
+            host.close_browser(1);
+        }
         Ok(())
     }
 
@@ -1558,6 +1565,45 @@ mod tests {
         drop(storage);
         assert_eq!(worker.join().unwrap(), Err(NativeFailure::Stopped));
         assert!(host.state.lock().unwrap().profiles.is_empty());
+    }
+
+    #[test]
+    fn failed_retry_releases_old_view_before_authority_or_storage_work() {
+        let (_temp, host, record) = storage_fixture();
+        let original = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &original).unwrap();
+        host.state.lock().unwrap().views.insert(
+            "fixture".into(),
+            View {
+                profile: record.id.clone(),
+                generation: 1,
+                request: ViewRequest {
+                    window: "fixture".into(),
+                    parent: 0,
+                    bounds: Bounds {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 100.0,
+                        height: 100.0,
+                    },
+                    scale: 1.0,
+                    tab: uuid::Uuid::now_v7().to_string(),
+                    generation: 1,
+                },
+                browser: None,
+                view_id: original,
+            },
+        );
+        let replacement = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &replacement).unwrap();
+        assert!(host.state.lock().unwrap().views.is_empty());
+        assert!(
+            host.prepare_open("fixture", &replacement, None, record, "javascript:alert(1)")
+                .is_err()
+        );
+        let state = host.state.lock().unwrap();
+        assert!(state.views.is_empty());
+        assert_eq!(state.reservations.get("fixture"), Some(&replacement));
     }
 
     #[test]

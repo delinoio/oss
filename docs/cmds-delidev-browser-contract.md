@@ -67,8 +67,11 @@ The session Browser button opens a side panel while retaining the conversation
 and unsent composer. The user selects an HTTP(S) address before registration;
 there is no automatic provider login or implicit external navigation. Back,
 Forward, Reload and bounded local tab controls use trusted native commands. A
-native presentation UUID is reserved before asynchronous authorization; stale
-opens, controls and cleanup cannot replace a newer panel instance. The persistent closed compact sidebar dialog and open nonmodal wide sidebar
+native presentation UUID is reserved on the UI loop before asynchronous
+authorization. Reservation releases the previous raw child and invalidates its
+pending creation, even when the replacement authority read or storage preparation
+fails. Stale opens, controls and cleanup cannot replace a newer panel instance.
+The persistent closed compact sidebar dialog and open nonmodal wide sidebar
 region do not block browser presentation. Visible dialogs, hidden panels and
 clipped geometry cannot leave an external child above app UI.
 Closing the panel releases its view, retaining its request context/profile.
