@@ -55,6 +55,7 @@ enum SystemCapability {
   // Optional current-user registrations on the server computer, never remote Workers.
   SYSTEM_CAPABILITY_USER_SERVICES_V1 = 3;
   SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1 = 9;
+  SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1 = 11;
 }
 
 message StopServerRequest {

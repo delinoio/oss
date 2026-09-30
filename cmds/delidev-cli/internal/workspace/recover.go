@@ -301,6 +301,16 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 		}
 	}
 	identity := workspaceIdentity{PrimaryPath: manifest.PrimaryPath, Repositories: []repositoryIdentity{}}
+	var restored *restoreBinding
+	if raw, err := security.ReadPrivate(m.restoreBindingPath(input.SessionID), 4096); err == nil {
+		var binding restoreBinding
+		if domain.Decode(raw, &binding) != nil || binding.Version != 1 || binding.SessionID != input.SessionID || binding.SnapshotID.Validate() != nil || binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || input.Type == domain.Local {
+			return "", ResultUncertain()
+		}
+		restored = &binding
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", ResultUncertain()
+	}
 	git := m.Git
 	git.OwnerID = owner
 	for _, repo := range manifest.Repositories {
@@ -319,6 +329,21 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 			if err != nil || trimGit(branch) == "" || (validation == preparationIdentity && trimGit(branch) != "HEAD") {
 				return "", ResultUncertain()
 			}
+		}
+		if restored != nil {
+			// Explicit restoration changed physical Git administration, never native
+			// conversation ownership. Only the private snapshot-bound transition may
+			// retain the original logical identity used by a closed predecessor.
+			expected := filepath.Join(repo.Path, ".git")
+			info, err := os.Lstat(expected)
+			if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return "", ResultUncertain()
+			}
+			prepared, err := git.revParseFields(ctx, repo.Path, 2, "--git-common-dir", "--absolute-git-dir")
+			if err != nil || !sameNativePath(prepared[0], expected) || !sameNativePath(prepared[1], expected) {
+				return "", ResultUncertain()
+			}
+			continue
 		}
 		source, err := git.run(ctx, repo.Source, "rev-parse", "--path-format=absolute", "--git-common-dir")
 		if err != nil {
@@ -363,6 +388,9 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 		if !found {
 			return "", ResultUncertain()
 		}
+	}
+	if restored != nil {
+		return restored.OriginalIdentity, nil
 	}
 	raw, err := json.Marshal(identity)
 	if err != nil {

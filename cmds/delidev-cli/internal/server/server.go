@@ -41,6 +41,7 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
+	delidevv1connect.UnimplementedWorkspaceStorageServiceHandler
 	userServiceOptions userservice.ServerOptions
 	userServiceBackend userservice.Backend
 	delidevv1connect.UnimplementedSystemServiceHandler

@@ -17,6 +17,7 @@ import (
 )
 
 type client struct {
+	storage       delidevv1connect.WorkspaceStorageServiceClient
 	transport     *http.Transport
 	system        delidevv1connect.SystemServiceClient
 	resources     delidevv1connect.ResourceServiceClient
@@ -98,6 +99,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
 	return client{
 		transport: transport, endpoint: endpoint, token: token,
+		storage:       delidevv1connect.NewWorkspaceStorageServiceClient(httpClient, endpoint, opts...),
 		inbox:         delidevv1connect.NewInboxServiceClient(httpClient, endpoint, opts...),
 		schedules:     delidevv1connect.NewScheduleServiceClient(httpClient, endpoint, opts...),
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),
