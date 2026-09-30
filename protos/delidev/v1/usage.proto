@@ -24,6 +24,7 @@ message GetUsageSummaryRequest {
   bool general_chat = 8;
   UsageTimeGranularity granularity = 9;
   string time_zone = 10;
+  UsageAccountingProfile accounting_profile = 11;
 }
 
 enum UsageTimeGranularity {
@@ -31,6 +32,27 @@ enum UsageTimeGranularity {
   USAGE_TIME_GRANULARITY_DAY = 1;
 }
 
+enum UsageAccountingProfile {
+  // Preserve legacy response-only fields and counts.
+  USAGE_ACCOUNTING_PROFILE_UNSPECIFIED = 0;
+  USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1 = 1;
+}
+enum AccountingUnitKind {
+  ACCOUNTING_UNIT_KIND_UNSPECIFIED = 0;
+  ACCOUNTING_UNIT_KIND_CODEX_RESPONSE = 1;
+  ACCOUNTING_UNIT_KIND_GROK_CLOSED_INPUT = 2;
+}
+message AccountingTotals {
+  AccountingUnitKind kind = 1;
+  uint32 units = 2;
+  // Only independently supplied totals. Empty is unavailable; "0" is measured.
+  string known_total = 3;
+  uint32 measured_units = 4;
+  uint32 unavailable_units = 5;
+  // Grok units cannot be priced or contribute to estimated budgets.
+  UsageCostState actual_cost = 6;
+  UsageCostState estimated_cost = 7;
+}
 message UsageMeasure {
   // Empty is unavailable. "0" is measured zero. Decimal integer, never float.
   string known_total = 1;
@@ -46,6 +68,9 @@ message UsageTotals {
   UsageMeasure output = 5;
   UsageMeasure reasoning_output = 6;
   UsageMeasure total = 7;
+  // Present only for explicitly negotiated native accounting; never summed
+  // across unit kinds or added to the legacy response counters above.
+  repeated AccountingTotals accounting = 8;
 }
 
 message UsageAnalyticsDay {
@@ -113,6 +138,7 @@ message GetUsageSummaryResponse {
   EstimateTotals estimates = 9;
   repeated PricingUsage pricing = 10;
   UsageAnalytics analytics = 11;
+  UsageAccountingProfile accounting_profile = 12;
 }
 
 // User-declared token prices only. No rate or result establishes actual spend.

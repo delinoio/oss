@@ -128,3 +128,64 @@ Grok `1.0.41` now publishes its original `response_completed` counters in a dist
 The original outbox receipt deduplicates publication; equal counters on separately observed ordered responses remain separate observations. The server stores response usage, any text-span closure and next ordinal atomically, and refuses reused resource identities or ordinal regression without partial state. These resources do not enter normalized response totals, token-price estimates, actual charges, budgets or account-wide reporting. Context estimates, original input aggregates and auxiliary native calls are separate and must not be added or substituted. The desktop reads the exact original session/execution/harness/version/thread/prompt observation, preserves full integer precision and explicit missing total/cost, and displays unavailable on mixed or mismatched records. Authenticated CLI Resource reads expose the retained typed records; logs omit counts and content.
 
 The closed first-text Grok terminal additionally retains the original input aggregate in the execution's `grok_terminal`: the same five counters, reported total, single model call/turn, API duration and original terminal elapsed time. These are validated against the independent native RPC/turn/prompt triplet and already published response counters. Preserve each reported integer without computing total arithmetic or adding the overlapping response observation. Terminal totals do not enter normalized billing, pricing or budget ledgers, do not cover unreported auxiliary requests and do not turn a response observation into actual cost. Desktop completion details disclose this input aggregate separately from the existing individual-response view.
+
+### Negotiated native accounting (issue #1100)
+
+`NATIVE_UNITS_V1` is an explicit `GetUsageSummary` accounting profile, advertised
+by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed in the response. Omission
+preserves response-only fields, counts, groups and coverage. CLI callers select
+`usage summary --accounting-profile native-units-v1`, optionally with the existing
+DAY/timezone and attribution filters, and reject an unnegotiated response. The
+additive `UsageTotals.accounting` inventory preserves `CodexResponse` and
+`GrokClosedInput` as distinct unit kinds in overall, daily, model and session /
+account / provider / model totals. Codex entries project the already retained
+exact response ledger; no legacy raw observations are reinterpreted. Legacy
+response charts, ranking, Other, estimated-cost breakdown and
+`accepted_executions_without_response` retain their response-only meanings. The
+complete model inventory also includes Grok-only groups; Grok totals are exposed
+separately and never added to a Codex response subtotal.
+
+Schema 25 adds `native_accounting` without historical backfill, after the same
+synchronized pre-migration backup. A Grok unit is inserted only in the original
+verified `ReportWork` transaction, together with session/job/event/receipt state,
+after its acknowledged successful first-text terminal and independent owned
+workspace cleanup. It requires original closed user-input digest / native turn,
+matching retained response observation, native closure identity and closed-history
+digest. Legacy terminals without that original user proof, interrupted partial
+text, pre-text interruption, success racing accepted Stop or Archive before
+completion retention, and incomplete cleanup produce no unit. The completion
+transaction requires a successful product outcome and no original job
+cancellation, including controls accepted after native success but before the
+cleanup report. Native success and verified cleanup remain independently
+retained; later controls never remove an already committed accounting unit.
+The existing live Worker history comparison rejects altered native
+history before terminal publication; receipt recovery never repeats native work.
+
+The immutable row retains the original report UUID-v7 receipt, job, input and
+input request, source response observation, terminal/closure/history proof,
+completion cursor and assignment-time account/connection/provider/model/version.
+A unique kind/execution/input key prevents duplicate units, and source receipts
+replay once across restarts. First server retention of verified completion after
+confirmed cleanup drives native half-open filters and day buckets; response
+observations separately retain their own first-retention time. Session deletion cascades the derived row; Archive and current
+configuration edits retain its original attribution. No native source identities,
+history digests, prompt or credential enter aggregate RPCs or logs.
+
+Only the independently supplied closed-input total is aggregated. Its canonical
+unsigned decimal string preserves the complete uint64 range, and arbitrary-
+precision sums can exceed that range. Explicit zero is measured; absent units
+cannot mean zero. Response input/output/cache/reasoning dimensions stay separately
+available through existing session usage reads and are never summed with this
+total. Their pinned inclusivity cannot establish billable categories: Grok actual
+cost, pricing and estimated-budget contribution remain unavailable. No price
+snapshot, response estimate, lifetime estimate update or token budget is created.
+Codex pricing and lifetime budgets keep their existing behavior.
+
+All sources together share the existing 25,000-unit, 500-group/model, two-second
+and 2 MiB binary/JSON response bounds; unknown profiles and retained corruption
+fail without partial output. Completion logging adds a bounded unit count only.
+The desktop requests this profile in its existing Connect Query, checks the
+response echo and displays a separate Grok summary with exact daily/model/session
+semantic tables and original attribution. An older server retains the existing
+response views and receives explicit update guidance; the renderer never computes
+or prices native aggregates.
