@@ -6,12 +6,15 @@ All authentication fixtures use synthetic JWT/token material, temporary private 
 
 ## Checks executed on the replacement
 
+Implementation revision: `39ce1b5014a5f219a1c7904340ffc1d8a4e777f9` (documentation-only follow-ups retain this source revision).
+
 - `go test ./cmds/delidev-cli/... -run 'Subscription|Managed|Bundle' -count=1`: passed, including protected Connect/SQLite lifecycle, concurrent leases, cancellation/revocation, bundle rotation, lost write-back, native process fixtures and execution authentication cleanup.
 - `go vet ./cmds/delidev-cli/...`: passed.
 - API client `pnpm test`: 44 tests passed. The first run hit the integration fixture's two-minute Go build deadline during concurrent machine compilation; the warmed-cache retry passed all four test files.
 - API client `pnpm typecheck`: passed.
-- `pnpm proto:generate` and `pnpm proto:lint`: passed after applying Buf's canonical import order. Full protocol compatibility/freshness validation is pending.
+- `pnpm proto:check`: passed, including Buf formatting/lint, FILE/package breaking compatibility against the fetched baseline, allocation-compatible capability value 3, and generated-source freshness.
 - `go fmt ./...`: passed after explicitly generating both Go embedded app asset prerequisites.
+- `GOMAXPROCS=2 go test -race -p 2 ./cmds/delidev-cli/internal/server ./cmds/delidev-cli/internal/worker ./cmds/delidev-cli/internal/harness/codex ./cmds/delidev-cli/internal/subscription ./cmds/delidev-cli/internal/cli -run 'Subscription|Managed|Bundle' -count=1`: all five packages passed, including capability coexistence and duplicate rejection.
 - Required full `go test -race ./cmds/delidev-cli/...`: running; no full-suite pass is claimed at this checkpoint.
 
 ## Acceptance limits
