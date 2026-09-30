@@ -3,11 +3,12 @@ package cli
 
 import (
 	"flag"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
 func DefaultDataDir() (string, error) {

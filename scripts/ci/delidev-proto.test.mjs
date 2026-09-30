@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,4 +54,26 @@ test('current wire numbers match immutable assignments and future reservations',
     const actual = Object.fromEntries((found.get(name)[declaration.kind === 'enum' ? 'value' : 'field'] ?? []).map(field => [field.name, field.number]));
     for (const [member, number] of Object.entries(declaration.members)) assert.equal(actual[member], number, `${name}.${member}`);
   }
+});
+
+test('FILE comparison still rejects semantic changes after explicit relocation', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'delidev-breaking-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const old = { file: [{ name: 'old.proto', package: 'fixture.v1', syntax: 'proto3', messageType: [{ name: 'Known', field: [{ name: 'value', number: 1, label: 'LABEL_OPTIONAL', type: 'TYPE_STRING', jsonName: 'value' }] }] }] };
+  const projected = relocateBaseline(old, { legacyFile: 'old.proto', declarations: { Known: { kind: 'message', file: 'known.proto' } } });
+  const baseline = join(directory, 'baseline.json');
+  const current = join(directory, 'current.json');
+  writeFileSync(baseline, JSON.stringify(projected));
+  const buf = fileURLToPath(new URL('../../node_modules/@bufbuild/buf/bin/buf', import.meta.url));
+  const compare = descriptor => {
+    writeFileSync(current, JSON.stringify(descriptor));
+    return execFileSync(process.execPath, [buf, 'breaking', current, '--against', baseline, '--config', JSON.stringify({ version: 'v2', breaking: { use: ['FILE'] } })], { encoding: 'utf8', stdio: 'pipe' });
+  };
+  assert.doesNotThrow(() => compare(projected));
+  const changed = structuredClone(projected);
+  changed.file.find(file => file.name === 'known.proto').messageType[0].field[0].type = 'TYPE_INT32';
+  assert.throws(() => compare(changed), error => error.status !== 0 && /previously|changed|type/i.test(String(error.stdout) + String(error.stderr)));
+  const removed = structuredClone(projected);
+  removed.file.find(file => file.name === 'known.proto').messageType[0].field = [];
+  assert.throws(() => compare(removed), error => error.status !== 0 && /deleted|reserved|field/i.test(String(error.stdout) + String(error.stderr)));
 });

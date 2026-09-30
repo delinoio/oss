@@ -1,0 +1,209 @@
+[
+  {
+    "declaration": "SystemCapability",
+    "conflictingOriginalNumber": 4,
+    "existingMainMembers": [],
+    "pending": [
+      {
+        "pr": 1108,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1",
+        "oldBranchNumber": 4,
+        "number": 4
+      },
+      {
+        "pr": 1112,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1",
+        "oldBranchNumber": 4,
+        "number": 5
+      },
+      {
+        "pr": 1113,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1",
+        "oldBranchNumber": 4,
+        "number": 6
+      },
+      {
+        "pr": 1114,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1",
+        "oldBranchNumber": 4,
+        "number": 7
+      },
+      {
+        "pr": 1121,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1",
+        "oldBranchNumber": 4,
+        "number": 11
+      },
+      {
+        "pr": 1127,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_SESSION_TERMINALS_V1",
+        "oldBranchNumber": 4,
+        "number": 14
+      }
+    ]
+  },
+  {
+    "declaration": "GetUsageSummaryRequest",
+    "conflictingOriginalNumber": 11,
+    "existingMainMembers": [],
+    "pending": [
+      {
+        "pr": 1108,
+        "kind": "message",
+        "declaration": "GetUsageSummaryRequest",
+        "member": "accounting_profile",
+        "oldBranchNumber": 11,
+        "number": 11
+      },
+      {
+        "pr": 1115,
+        "kind": "message",
+        "declaration": "GetUsageSummaryRequest",
+        "member": "accounting_profile",
+        "oldBranchNumber": 11,
+        "number": 11
+      }
+    ]
+  },
+  {
+    "declaration": "GetUsageSummaryResponse",
+    "conflictingOriginalNumber": 12,
+    "existingMainMembers": [],
+    "pending": [
+      {
+        "pr": 1108,
+        "kind": "message",
+        "declaration": "GetUsageSummaryResponse",
+        "member": "accounting_profile",
+        "oldBranchNumber": 12,
+        "number": 12
+      },
+      {
+        "pr": 1115,
+        "kind": "message",
+        "declaration": "GetUsageSummaryResponse",
+        "member": "native_accounting",
+        "oldBranchNumber": 12,
+        "number": 13
+      }
+    ]
+  },
+  {
+    "declaration": "EntityKind",
+    "conflictingOriginalNumber": 28,
+    "existingMainMembers": [],
+    "pending": [
+      {
+        "pr": 1113,
+        "kind": "enum",
+        "declaration": "EntityKind",
+        "member": "ENTITY_KIND_NETWORK_PROFILE",
+        "oldBranchNumber": 28,
+        "number": 28
+      },
+      {
+        "pr": 1127,
+        "kind": "enum",
+        "declaration": "EntityKind",
+        "member": "ENTITY_KIND_TERMINAL",
+        "oldBranchNumber": 28,
+        "number": 31
+      }
+    ]
+  },
+  {
+    "declaration": "SystemCapability",
+    "conflictingOriginalNumber": 2,
+    "existingMainMembers": [
+      "SYSTEM_CAPABILITY_SESSION_FORWARDING_V1"
+    ],
+    "pending": [
+      {
+        "pr": 1115,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_NATIVE_INPUT_ACCOUNTING_V1",
+        "oldBranchNumber": 2,
+        "number": 8
+      },
+      {
+        "pr": 1116,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1",
+        "oldBranchNumber": 2,
+        "number": 9
+      },
+      {
+        "pr": 1117,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_REQUEST_DIAGNOSTICS_V1",
+        "oldBranchNumber": 2,
+        "number": 10
+      },
+      {
+        "pr": 1122,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1",
+        "oldBranchNumber": 2,
+        "number": 12
+      },
+      {
+        "pr": 1126,
+        "kind": "enum",
+        "declaration": "SystemCapability",
+        "member": "SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1",
+        "oldBranchNumber": 2,
+        "number": 13
+      }
+    ]
+  },
+  {
+    "declaration": "EntityKind",
+    "conflictingOriginalNumber": 27,
+    "existingMainMembers": [
+      "ENTITY_KIND_FORWARD"
+    ],
+    "pending": [
+      {
+        "pr": 1122,
+        "kind": "enum",
+        "declaration": "EntityKind",
+        "member": "ENTITY_KIND_SUBAGENT",
+        "oldBranchNumber": 27,
+        "number": 30
+      }
+    ]
+  },
+  {
+    "declaration": "WorkerCapability",
+    "conflictingOriginalNumber": 2,
+    "existingMainMembers": [
+      "WORKER_CAPABILITY_SESSION_FORWARDING_V1"
+    ],
+    "pending": [
+      {
+        "pr": 1124,
+        "kind": "enum",
+        "declaration": "WorkerCapability",
+        "member": "WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1",
+        "oldBranchNumber": 2,
+        "number": 3
+      }
+    ]
+  }
+]

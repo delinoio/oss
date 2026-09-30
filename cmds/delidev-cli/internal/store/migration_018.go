@@ -4,6 +4,7 @@ package store
 import (
 	"context"
 	"database/sql"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 

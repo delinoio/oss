@@ -4,12 +4,13 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 )
 
 func start(ctx context.Context, o options, args []string, streams IO) (any, error) {

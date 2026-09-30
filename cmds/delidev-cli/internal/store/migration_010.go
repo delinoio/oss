@@ -4,8 +4,9 @@ package store
 import (
 	"context"
 	"database/sql"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
 func migration010(ctx context.Context, tx *sql.Tx, original int) error {

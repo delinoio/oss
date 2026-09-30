@@ -2,16 +2,17 @@
 package server
 
 import (
-	"connectrpc.com/connect"
 	"context"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
-	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"connectrpc.com/connect"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 func (s *Service) Handler(origins []string, loopback bool) http.Handler {

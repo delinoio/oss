@@ -2,9 +2,10 @@
 package server
 
 import (
+	"net/http"
+
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
-	"net/http"
 )
 
 func (s *Service) rpcMux() *http.ServeMux {

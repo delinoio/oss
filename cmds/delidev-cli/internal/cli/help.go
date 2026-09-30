@@ -2,9 +2,10 @@
 package cli
 
 import (
-	"golang.org/x/term"
 	"io"
 	"os"
+
+	"golang.org/x/term"
 )
 
 const help = `DeliDev 0.1.0 (unreleased)

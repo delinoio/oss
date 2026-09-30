@@ -3,6 +3,7 @@ package cli
 
 import (
 	"encoding/json"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"

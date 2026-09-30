@@ -2,6 +2,11 @@
 package cli
 
 import (
+	"io"
+	"net/http"
+	"os"
+	"strings"
+
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -9,10 +14,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
-	"io"
-	"net/http"
-	"os"
-	"strings"
 )
 
 type client struct {

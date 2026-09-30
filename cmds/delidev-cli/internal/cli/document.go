@@ -2,9 +2,10 @@
 package cli
 
 import (
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"io"
 	"os"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
 func readDocument(path string, input io.Reader) ([]byte, error) {

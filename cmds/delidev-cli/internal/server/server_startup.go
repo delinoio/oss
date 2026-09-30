@@ -6,11 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,6 +14,12 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 )
 
 func LoadEndpoint(root string) (Endpoint, error) {
