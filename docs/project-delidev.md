@@ -5,7 +5,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 
 The 2026-09-28 partial implementation checkpoint was merged in PR #1041. On 2026-09-29 the owner resumed completion of all missing desktop/CLI/server/Worker features and automated tests, while keeping actual account/private-GitHub and platform distribution acceptance deferred. The owner selected the existing pinned Tauri CEF runtime for the desktop, preserving macOS 13 support; the shell now uses that runtime, while account browser profiles and native distribution acceptance remain separate work. Current verification and deferred acceptance are recorded in the [evidence ledger](cmds-delidev-evidence.md).
 
-The macOS `dev:desktop` entry point prepares the embedded frontend and Go sidecar, then uses the pinned Tauri CLI to assemble and run a CEF development bundle with ad-hoc signing. Executable-only Cargo compilation does not prepare the macOS Frameworks/helper layout. Argument forwarding, cancellation and local verification limits follow the [desktop contract](apps-delidev-desktop-contract.md).
+The macOS `dev:desktop` entry point validates/restores the source-icon LFS asset, prepares the embedded frontend, Go sidecar and widget extensions, then uses the pinned Tauri CLI to assemble and run a CEF development bundle with ad-hoc signing. The same asset preflight protects ordinary native builds and packaging, without replacing local edits or fetching unrelated assets. Executable-only Cargo compilation does not prepare the macOS Frameworks/helper layout. Argument forwarding, cancellation and local verification limits follow the [desktop contract](apps-delidev-desktop-contract.md).
 
 The current pull-request work additionally addresses issues #1056 and #1057: opt-in automatic titles use a separate, capability-negotiated title Worker lane, and the desktop starts sessions from a chat-first page while retaining the existing conversation surface. This increment does not claim completion of issue #964; native desktop visual and real-provider/account acceptance limits remain explicit in the evidence ledger.
 
@@ -287,5 +287,7 @@ attribution; new execution requires explicit Resume and a fresh scoped grant.
 Subscription/provider/model switching and automatic fallback remain excluded.
 See the sessions/proxy contracts and evidence ledger for the controlled native
 A-to-B result and unperformed desktop/real-account/platform acceptance.
+
+Local connection and registration permission guidance distinguishes device authorization, ownership and owner-only filesystem access, including macOS/Linux private modes. Permission failures never establish revocation or authorize automatic repair; existing data remains preserved under the desktop contract.
 
 Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
