@@ -115,3 +115,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Permanent session deletion must bind its final backup inventory to the exact images inspected without session content under the backup publication gate. Preserve new/replaced images as pending until a fresh classification pass.
 
 - Exact acknowledged Worker deletion-report retries with a matching actor/work-bound SQL receipt are read-only. Preserve original metadata and reject conflicting receipts; reconstruct a missing SQL receipt through the original synchronized-intent recovery path.
+
+- Permanent session erasure removes PR activity through each original remediation attempt source, including reservation records without row-level session binding. Redact the validated shared attempt and its index without emitting a new business activity transition; preserve unrelated PR history, original reservation provenance and lifetime counters.

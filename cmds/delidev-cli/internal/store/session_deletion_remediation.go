@@ -34,6 +34,9 @@ func (t *Tx) redactSessionRemediation(session domain.ID) error {
 		if e != nil {
 			return e
 		}
+		if e := t.purgeSessionAttemptActivity(id); e != nil {
+			return e
+		}
 		if v.State.Active() {
 			sr, set, e := t.GetPRProblemSet(v.SetID)
 			if e != nil {
@@ -49,12 +52,55 @@ func (t *Tx) redactSessionRemediation(session domain.ID) error {
 		}
 		v.SessionID, v.InputID, v.InputDigest, v.ExecutionID, v.StartupRejectionJobID = "", "", "", "", ""
 		v.StartedAt, v.FinishedAt, v.Outcome, v.State = nil, &t.now, "", domain.PRRemediationCanceled
-		if _, e := t.putPRRemediationAttempt(id, r.Revision, v); e != nil {
+		if e := v.Validate(); e != nil {
 			return e
+		}
+		// Erasure retires shared coordination metadata, not a remediation
+		// action. The ordinary attempt writer publishes activity on state
+		// changes; using it here would recreate a copy after its removal.
+		if _, e := t.Put(domain.ProblemKind, id, r.Revision, "", "", v); e != nil {
+			return e
+		}
+		if _, e := t.tx.ExecContext(t.ctx, "UPDATE pr_remediation_attempts SET state=?,input_id=NULL WHERE id=?", v.State, id); e != nil {
+			return storageError(e)
 		}
 		if _, e := t.tx.ExecContext(t.ctx, "UPDATE receipts SET result=? WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id=?)", []byte(`{"deleted":true}`), id); e != nil {
 			return storageError(e)
 		}
 	}
 	return nil
+}
+
+// Reservation activity predates session binding and has no session_id on its
+// row. Its immutable source reference still owns it through the original
+// attempt. Purge those copies before removing that attempt's session operands.
+func (t *Tx) purgeSessionAttemptActivity(attempt domain.ID) error {
+	for {
+		rows, e := t.tx.QueryContext(t.ctx, "SELECT id,kind,revision,session_id,project_id,X'',created_at,updated_at FROM entities WHERE kind='problem' AND json_extract(body,'$.type')='pull-request-activity' AND json_extract(body,'$.source_id')=? ORDER BY id LIMIT 200", attempt)
+		if e != nil {
+			return storageError(e)
+		}
+		records := []Record{}
+		for rows.Next() {
+			r, e := scan(rows)
+			if e != nil {
+				rows.Close()
+				return storageError(e)
+			}
+			records = append(records, r)
+		}
+		e = rows.Err()
+		rows.Close()
+		if e != nil {
+			return storageError(e)
+		}
+		for _, r := range records {
+			if e := t.deleteSessionRecord(r); e != nil {
+				return e
+			}
+		}
+		if len(records) < 200 {
+			return nil
+		}
+	}
 }

@@ -227,6 +227,43 @@ func TestSessionDeletionRetiresSharedRemediationOperandsWithoutRefundingCounters
 		t.Fatal(e)
 	}
 	before := f.chain(t)
+	set, e := Decode[domain.PRProblemSet](f.set)
+	if e != nil {
+		t.Fatal(e)
+	}
+	// These valid metadata fixtures model main's original reservation and
+	// bound activity, including the reservation with no row session binding.
+	activity := func(source domain.ID, revision uint64, action string) map[string]any {
+		return map[string]any{"version": 1, "type": "pull-request-activity", "action": action, "source_id": source, "source_revision": revision, "set_id": f.set.ID, "remote_repository_id": set.Target.RemoteRepositoryID, "pull_request_id": set.Target.PullRequestID, "number": set.Target.Number, "owner": set.Target.Owner, "name": set.Target.Name, "problems": bound.Problems, "actor": bound.Reserved}
+	}
+	ownedActivity := []domain.ID{}
+	var unrelatedActivity domain.ID
+	_, e = s.Mutate(ctx, domain.NewID(), "fixture.session-activity", nil, func(tx *Tx) (any, error) {
+		for _, scope := range []domain.ID{"", bound.SessionID} {
+			body := activity(a.ID, a.Revision, "remediation-attempt")
+			body["mode"] = bound.Mode
+			body["attempt_state"] = domain.PRRemediationBound
+			if scope == "" {
+				body["source_revision"] = a.Revision - 1
+				body["attempt_state"] = domain.PRRemediationReserved
+			}
+			id := domain.NewID()
+			if _, e := tx.Put(domain.ProblemKind, id, 0, scope, "", body); e != nil {
+				return nil, e
+			}
+			ownedActivity = append(ownedActivity, id)
+		}
+		problem, e := tx.Get(domain.ProblemKind, bound.Problems[0].ID)
+		if e != nil {
+			return nil, e
+		}
+		body := activity(problem.ID, problem.Revision, "problem-observed")
+		unrelatedActivity = domain.NewID()
+		return tx.Put(domain.ProblemKind, unrelatedActivity, 0, "", "", body)
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
 	session, e := s.Get(ctx, domain.SessionKind, bound.SessionID)
 	if e != nil {
 		t.Fatal(e)
@@ -240,6 +277,18 @@ func TestSessionDeletionRetiresSharedRemediationOperandsWithoutRefundingCounters
 	}
 	if _, e := s.PurgeDeletedSession(ctx, session.ID); e != nil {
 		t.Fatal(e)
+	}
+	for _, id := range ownedActivity {
+		if _, e := s.Get(ctx, domain.ProblemKind, id); e == nil {
+			t.Fatal("session attempt activity retained", id)
+		}
+	}
+	if _, e := s.Get(ctx, domain.ProblemKind, unrelatedActivity); e != nil {
+		t.Fatal("unrelated PR activity removed", e)
+	}
+	var retained int
+	if e := s.db.QueryRow("SELECT count(*) FROM entities WHERE kind='problem' AND json_extract(body,'$.type')='pull-request-activity' AND json_extract(body,'$.source_id')=?", a.ID).Scan(&retained); e != nil || retained != 0 {
+		t.Fatal("erasure published replacement attempt activity", retained, e)
 	}
 	after := f.chain(t)
 	if after.ActiveAttemptID != "" || before.Sequence != after.Sequence || before.AutomaticAttempts != after.AutomaticAttempts {

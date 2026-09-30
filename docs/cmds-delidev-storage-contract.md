@@ -230,7 +230,11 @@ records. Foreign-key cascades remove search/claim/index state; receipts touching
 removed resources are redacted and UUID/kind tombstones prevent stale publication.
 Shared PR remediation histories lose the deleted session's operands and retire
 coordination while preserving contiguous history and lifetime counters, without
-inventing a native outcome or refunding attempts. Secure-delete plus a successful
+inventing a native outcome or refunding attempts. Erasure removes original
+attempt-source PR activity, including reservation activity recorded before session
+binding. Redaction updates the validated shared attempt and its typed index
+without publishing replacement business activity; unrelated PR history remains.
+Secure-delete plus a successful
 WAL truncation must finish before database-removal acknowledgement. Existing
 schema-24 tables suffice; no destructive migration or fresh schema baseline is
 introduced.
