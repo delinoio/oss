@@ -10,17 +10,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const scheduleSchema = `
-CREATE INDEX schedule_due ON entities(json_extract(body,'$.definition.enabled'),json_extract(body,'$.next_run_at'),id) WHERE kind='schedule';
-CREATE UNIQUE INDEX occurrence_position ON entities(json_extract(body,'$.schedule_id'),json_extract(body,'$.sequence')) WHERE kind='occurrence';
-CREATE UNIQUE INDEX occurrence_cron_due ON entities(json_extract(body,'$.schedule_id'),json_extract(body,'$.due_at')) WHERE kind='occurrence' AND json_extract(body,'$.trigger')='cron';
-CREATE INDEX occurrence_pending ON entities(json_extract(body,'$.state'),json_extract(body,'$.schedule_id'),json_extract(body,'$.sequence'),id) WHERE kind='occurrence';
-CREATE INDEX session_schedule ON entities(json_extract(body,'$.schedule_origin.schedule_id'),id) WHERE kind='session';
-ALTER TABLE worker_instances ADD COLUMN available_since INTEGER NOT NULL DEFAULT 0;
-UPDATE worker_instances SET available_since=last_seen;
-PRAGMA user_version=11;
-`
-
 const MaxWaitingOccurrences = 1000
 
 func scheduleConflict() error {

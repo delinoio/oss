@@ -1,39 +1,77 @@
+// SPDX-License-Identifier: Apache-2.0
 package store
 
 import (
 	"context"
 	"database/sql"
-	"os"
-	"path/filepath"
-	"time"
-
+	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-const workerSchema = `
-CREATE TABLE credential_verifiers (
- digest BLOB PRIMARY KEY CHECK(length(digest)=32),
- device_id TEXT NOT NULL UNIQUE REFERENCES entities(id) ON DELETE CASCADE
-);
-CREATE TABLE pairing_verifiers (
- pairing_id TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
- digest BLOB NOT NULL UNIQUE CHECK(length(digest)=32)
-);
-CREATE TABLE worker_instances (
- machine_id TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
- instance_id TEXT NOT NULL, last_seen INTEGER NOT NULL
-);
-CREATE TABLE jobs (
- id TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
- machine_id TEXT NOT NULL, parent_id TEXT NOT NULL, state TEXT NOT NULL,
- accepted_at INTEGER NOT NULL
-);
-CREATE INDEX jobs_dispatch ON jobs(machine_id,state,accepted_at,id);
-CREATE INDEX jobs_parent ON jobs(parent_id,accepted_at,id);
-PRAGMA user_version=2;
-`
+type migrationDefinition struct {
+	version int
+	apply   func(context.Context, *sql.Tx, int) error
+}
 
+// Only implemented definitions belong here. Reservations are data, not migrations.
+var migrations = []migrationDefinition{
+	{2, migration002},
+	{3, migration003},
+	{4, migration004},
+	{5, migration005},
+	{6, migration006},
+	{7, migration007},
+	{8, migration008},
+	{9, migration009},
+	{10, migration010},
+	{11, migration011},
+	{12, migration012},
+	{13, migration013},
+	{14, migration014},
+	{15, migration015},
+	{16, migration016},
+	{17, migration017},
+	{18, migration018},
+	{19, migration019},
+	{20, migration020},
+	{21, migration021},
+	{22, migration022},
+	{23, migration023},
+	{24, migration024},
+}
+
+func validateMigrations(definitions []migrationDefinition) error {
+	if len(definitions) != SchemaVersion-1 {
+		return fmt.Errorf("migration sequence must reach schema %d", SchemaVersion)
+	}
+	for i, definition := range definitions {
+		if definition.version != i+2 || definition.apply == nil {
+			return fmt.Errorf("invalid migration at position %d", i)
+		}
+	}
+	return nil
+}
+func applyMigrations(ctx context.Context, tx *sql.Tx, original int) error {
+	if err := validateMigrations(migrations); err != nil {
+		return err
+	}
+	for _, definition := range migrations {
+		// Known pre-main variants require idempotent layout reconciliation even when
+		// their original version equals 22 or 23. Remove only if those inputs cease
+		// to be supported; intermediate user_version writes cannot identify them.
+		reconcile := (definition.version == 22 && original == 22) || (definition.version == 23 && original == 23)
+		if definition.version <= original && !reconcile {
+			continue
+		}
+		if err := definition.apply(ctx, tx, original); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version=%d", definition.version)); err != nil {
+			return storageError(err)
+		}
+	}
+	return nil
+}
 func migrate(ctx context.Context, db *sql.DB, root string) error {
 	var version int
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
@@ -53,220 +91,8 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 		return storageError(err)
 	}
 	defer tx.Rollback()
-	if version == 1 {
-		if _, err := tx.ExecContext(ctx, workerSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 3 {
-		if _, err := tx.ExecContext(ctx, catalogSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 4 {
-		if _, err := tx.ExecContext(ctx, sessionSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 5 {
-		if _, err := tx.ExecContext(ctx, jobControlSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 6 {
-		if _, err := tx.ExecContext(ctx, assignmentSchema); err != nil {
-			return storageError(err)
-		}
-		original := &Tx{tx: tx, ctx: ctx}
-		if err := original.preserveLegacyAssignments(); err != nil {
-			return err
-		}
-	}
-	if version < 7 {
-		if _, err := tx.ExecContext(ctx, executionSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 8 {
-		if _, err := tx.ExecContext(ctx, executionMessageSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 9 {
-		if _, err := tx.ExecContext(ctx, interactionSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 10 {
-		var legacyInbox int
-		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind='inbox'").Scan(&legacyInbox); err != nil {
-			return storageError(err)
-		}
-		if legacyInbox != 0 {
-			return domain.Fail(domain.RecoveryRequired, "Legacy state contains unrecognized inbox ownership.", "Preserve the database and backup; do not replace or merge unvalidated inbox entries.")
-		}
-		if _, err := tx.ExecContext(ctx, inboxSchema); err != nil {
-			return storageError(err)
-		}
-		backfill := &Tx{tx: tx, ctx: ctx, now: time.Now().UTC().Truncate(time.Millisecond), touched: map[domain.ID]bool{}}
-		if err := backfill.preserveLegacyInbox(); err != nil {
-			return err
-		}
-	}
-	if version < 11 {
-		var legacySchedules int
-		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind IN ('schedule','occurrence')").Scan(&legacySchedules); err != nil {
-			return storageError(err)
-		}
-		if legacySchedules != 0 {
-			return domain.Fail(domain.RecoveryRequired, "Legacy schedule ownership is unrecognized.", "Preserve the original database and pre-migration backup; do not infer execution authority from unvalidated records.")
-		}
-		if _, err := tx.ExecContext(ctx, scheduleSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 12 {
-		if _, err := tx.ExecContext(ctx, deletedConfigurationSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 13 {
-		if _, err := tx.ExecContext(ctx, searchSchema); err != nil {
-			return storageError(err)
-		}
-		if err := (&Tx{tx: tx, ctx: ctx}).backfillSearch(); err != nil {
-			return err
-		}
-	}
-	if version < 14 {
-		if _, err := tx.ExecContext(ctx, responseUsageSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 15 {
-		if _, err := tx.ExecContext(ctx, pricingSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 16 {
-		if _, err := tx.ExecContext(ctx, budgetSchema); err != nil {
-			return storageError(err)
-		}
-		if err := (&Tx{tx: tx, ctx: ctx}).backfillSessionEstimates(); err != nil {
-			return err
-		}
-	}
-	if version < 17 {
-		if _, err := tx.ExecContext(ctx, notificationSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 18 {
-		var legacyProblems int
-		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind='problem'").Scan(&legacyProblems); err != nil {
-			return storageError(err)
-		}
-		if legacyProblems != 0 {
-			return domain.Fail(domain.RecoveryRequired, "Legacy PR problem ownership is unrecognized.", "Preserve the original database and migration backup; no old evidence is reinterpreted.")
-		}
-		if _, err := tx.ExecContext(ctx, prProblemSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 19 {
-		if _, err := tx.ExecContext(ctx, prCIProblemSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 20 {
-		if _, err := tx.ExecContext(ctx, prRemediationSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	if version < 21 {
-		if _, err := tx.ExecContext(ctx, providerActivationSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	// Previous unmerged backup layouts used versions 21 and 22. Detect their
-	// retained deletion table before adding schema 23. Only the backup layout
-	// of version 22 still needs the hosted-provider defaults; main's version 22
-	// already applied them and must preserve subsequent explicit deletions.
-	var existingDeletionTable bool
-	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='backup_deletions')").Scan(&existingDeletionTable); err != nil {
-		return storageError(err)
-	}
-	if version == 21 && existingDeletionTable {
-		var providerIndex bool
-		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name='provider_preset_unique')").Scan(&providerIndex); err != nil {
-			return storageError(err)
-		}
-		if !providerIndex {
-			if _, err := tx.ExecContext(ctx, providerActivationSchema); err != nil {
-				return storageError(err)
-			}
-		}
-	}
-	if version < 22 || (version == 22 && existingDeletionTable) {
-		if err := seedHostedProviders(ctx, tx); err != nil {
-			return err
-		}
-	}
-	if !existingDeletionTable {
-		if _, err := tx.ExecContext(ctx, backupDeletionSchema); err != nil {
-			return storageError(err)
-		}
-	}
-	// Main and the unmerged backup branch both used schema 23. The title
-	// migration inspects its own column and creates only missing indexes and
-	// claim tables, preserving existing usage and one-time inference claims.
-	if err := applySessionTitleSchema(ctx, tx); err != nil {
+	if err := applyMigrations(ctx, tx, version); err != nil {
 		return err
-	}
-	if _, err := tx.ExecContext(ctx, "PRAGMA user_version=24;"); err != nil {
-		return storageError(err)
 	}
 	return storageError(tx.Commit())
-}
-
-// migrationBackup publishes only a validated, synchronized pre-migration image.
-// A killed writer can leave a .pending file, never a published .sqlite backup.
-func migrationBackup(ctx context.Context, db *sql.DB, root string) error {
-	// Back up even this additive migration. Destructive future migrations must
-	// retain the same pre-migration backup boundary and never reset on failure.
-	backup := filepath.Join(root, "backups", string(domain.NewID())+".sqlite")
-	pending := backup + ".pending"
-	defer os.Remove(pending)
-	private, err := os.OpenFile(pending, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
-		return storageError(err)
-	}
-	if err := private.Close(); err != nil {
-		return storageError(err)
-	}
-	if _, err := db.ExecContext(ctx, "VACUUM INTO ?", pending); err != nil {
-		return storageError(err)
-	}
-	if err := ValidateBackup(ctx, pending); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(pending, os.O_RDWR, 0)
-	if err != nil {
-		return storageError(err)
-	}
-	err = file.Sync()
-	closeErr := file.Close()
-	if err != nil {
-		return storageError(err)
-	}
-	if closeErr != nil {
-		return storageError(closeErr)
-	}
-	if err := os.Rename(pending, backup); err != nil {
-		return storageError(err)
-	}
-	if err := security.SyncParent(backup); err != nil {
-		return storageError(err)
-	}
-	return nil
 }

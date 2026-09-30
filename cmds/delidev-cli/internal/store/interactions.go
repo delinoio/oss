@@ -7,19 +7,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const interactionSchema = `
-CREATE TABLE execution_interactions (
- interaction_id TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
- session_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
- execution_id TEXT NOT NULL, native_thread_id TEXT NOT NULL, native_request_key TEXT NOT NULL,
- closure TEXT NOT NULL CHECK(closure IN ('open','native-closed','turn-ended')),
- question_bytes INTEGER NOT NULL CHECK(question_bytes > 0 AND question_bytes <= 524288),
- UNIQUE(execution_id,native_request_key)
-);
-CREATE INDEX execution_interaction_state ON execution_interactions(execution_id,closure);
-PRAGMA user_version=9;
-`
-
 // Interaction identity is independent of a tool's transcript identity: a tool
 // may own requests without creating a message, and closure is not completion.
 // The historical question_bytes column accounts for all typed request payloads;

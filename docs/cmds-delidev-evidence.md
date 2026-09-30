@@ -1,3 +1,5 @@
+> Historical ledger through main `12b33a2accaf`. Existing text and anchors are preserved. New implementation and validation records belong in [independent issue evidence](evidence/delidev/README.md); current behavior is owned by the domain contracts.
+
 # DeliDev implementation and evidence ledger
 
 Issue #964 is preserved in full in [requirements](cmds-delidev-requirements.md). This ledger distinguishes code, deterministic tests, and actual external/native evidence. It is not a reduction of the requirements.

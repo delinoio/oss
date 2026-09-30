@@ -1,0 +1,59 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+service DeviceService {
+  rpc CreatePairing(CreatePairingRequest) returns (CreatePairingResponse);
+  rpc PairDevice(PairDeviceRequest) returns (PairDeviceResponse);
+  rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+}
+
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  DEVICE_TYPE_CLIENT = 1;
+  DEVICE_TYPE_WORKER = 2;
+}
+
+message CreatePairingRequest {
+  string request_id = 1;
+  string name = 2;
+  DeviceType type = 3;
+  // SHA-256 of a locally generated 256-bit one-time code. Never the code itself.
+  bytes code_digest = 4;
+}
+
+message CreatePairingResponse {
+  Resource pairing = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message PairDeviceRequest {
+  string request_id = 1;
+  string pairing_id = 2;
+  string code = 3;
+  string device_id = 4;
+  bytes credential_digest = 5;
+  string machine_id = 6;
+  bytes machine_json = 7;
+}
+
+message PairDeviceResponse {
+  Resource device = 1;
+  Resource machine = 2;
+  string server_id = 3;
+  bool replayed = 4;
+}
+
+message RevokeDeviceRequest {
+  Mutation mutation = 1;
+}
+
+message RevokeDeviceResponse {
+  Resource device = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}

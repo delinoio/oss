@@ -9,15 +9,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const deletedConfigurationSchema = `
-CREATE TABLE deleted_project_policies (
- project_id TEXT PRIMARY KEY REFERENCES tombstones(id),
- revision INTEGER NOT NULL CHECK(revision>0),
- body BLOB NOT NULL CHECK(length(body)<=131072)
-);
-PRAGMA user_version=12;
-`
-
 // ProjectExecutionPolicy retains only the final non-secret selection limits.
 // Deleting configuration cannot broaden an existing session's permissions or
 // rewrite its execution snapshot, transcript, workspace or account selection.

@@ -1,0 +1,75 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+service ConfigurationService {
+  rpc ExportConfiguration(ExportConfigurationRequest) returns (ExportConfigurationResponse);
+  rpc PreviewConfigurationImport(PreviewConfigurationImportRequest) returns (PreviewConfigurationImportResponse);
+  rpc ApplyConfigurationImport(ApplyConfigurationImportRequest) returns (ApplyConfigurationImportResponse);
+  rpc SaveConfiguration(SaveConfigurationRequest) returns (SaveConfigurationResponse);
+  rpc DeleteConfiguration(DeleteConfigurationRequest) returns (DeleteConfigurationResponse);
+  rpc PreviewRouting(PreviewRoutingRequest) returns (PreviewRoutingResponse);
+}
+
+message SaveConfigurationRequest {
+  Mutation mutation = 1;
+  EntityKind kind = 2;
+  uint32 schema_version = 3;
+  bytes document_json = 4;
+}
+
+message SaveConfigurationResponse {
+  Resource resource = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  // Accepted asynchronous configuration validation. Inspect this job until done.
+  Resource job = 4;
+}
+
+message DeleteConfigurationRequest {
+  Mutation mutation = 1;
+  EntityKind kind = 2;
+}
+
+message DeleteConfigurationResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message PreviewRoutingRequest {
+  string agent_id = 1;
+  string project_id = 2;
+}
+
+message PreviewRoutingResponse {
+  bytes route_json = 1;
+}
+
+message ExportConfigurationRequest {}
+
+message ExportConfigurationResponse {
+  bytes document_json = 1;
+}
+
+message PreviewConfigurationImportRequest {
+  bytes selection_json = 1;
+}
+
+message PreviewConfigurationImportResponse {
+  bytes preview_json = 1;
+}
+
+message ApplyConfigurationImportRequest {
+  string request_id = 1;
+  bytes preview_json = 2;
+}
+
+message ApplyConfigurationImportResponse {
+  string request_id = 1;
+  bool replayed = 2;
+  bytes result_json = 3;
+}

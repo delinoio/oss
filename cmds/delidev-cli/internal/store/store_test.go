@@ -319,3 +319,39 @@ func TestErrorsAndEventsExcludeRawSecretCause(t *testing.T) {
 		t.Fatal("content in events")
 	}
 }
+
+func TestUnmergedVersion25LayoutsRequireRecoveryWithoutModification(t *testing.T) {
+	for _, ddl := range []string{
+		"CREATE TABLE native_accounting(source TEXT PRIMARY KEY, grok_usage BLOB)",
+		"CREATE TABLE native_accounting(session_id TEXT PRIMARY KEY, claude_cost INTEGER)",
+		"CREATE TABLE request_diagnostics(request_id TEXT PRIMARY KEY, details BLOB)",
+	} {
+		t.Run(ddl, func(t *testing.T) {
+			s, root := openTest(t)
+			if _, err := s.db.Exec(ddl + "; PRAGMA user_version=25"); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(root, "state.sqlite")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = Open(context.Background(), root)
+			assertCode(t, err, domain.RecoveryRequired)
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(before) != string(after) {
+				t.Fatal("unknown version-25 database changed")
+			}
+			backups, err := os.ReadDir(filepath.Join(root, "backups"))
+			if err != nil || len(backups) != 0 {
+				t.Fatal("unknown layout entered migration", backups, err)
+			}
+		})
+	}
+}

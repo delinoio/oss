@@ -435,7 +435,8 @@
       "protos/gen/go/delidev/**",
       "protos/gen/go/devhud/**",
       "scripts/check-proto-breaking.sh",
-      "turbo.json"
+      "turbo.json",
+      "scripts/delidev/**"
     ]
   },
   "devhud-admin": {

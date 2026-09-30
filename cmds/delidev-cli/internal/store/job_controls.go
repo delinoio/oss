@@ -4,13 +4,6 @@ import "github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 
 // Cancellation is separate from the immutable claimed job envelope. A control
 // must not change the assignment revision/digest used by Worker crash journals.
-const jobControlSchema = `
-CREATE TABLE job_cancellations (
- job_id TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
- requested_at INTEGER NOT NULL
-);
-PRAGMA user_version=5;
-`
 
 func (t *Tx) RequestJobCancellation(id domain.ID) error {
 	if t.readOnly {

@@ -1,0 +1,333 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Owner/client session acceptance and ordered input. Native execution and
+// interactions are separately capability-checked; acceptance is not dispatch.
+service SessionService {
+  rpc LinkSessionPullRequest(LinkSessionPullRequestRequest) returns (LinkSessionPullRequestResponse);
+  rpc UnlinkSessionPullRequest(UnlinkSessionPullRequestRequest) returns (UnlinkSessionPullRequestResponse);
+  rpc ReadSessionReviewContext(ReadSessionReviewContextRequest) returns (ReadSessionReviewContextResponse);
+  rpc ReadSessionWorkspace(ReadSessionWorkspaceRequest) returns (ReadSessionWorkspaceResponse);
+  rpc GetSessionBudget(GetSessionBudgetRequest) returns (GetSessionBudgetResponse);
+  rpc SetSessionBudget(SetSessionBudgetRequest) returns (SetSessionBudgetResponse);
+  rpc SteerQueuedInput(SteerQueuedInputRequest) returns (SteerQueuedInputResponse);
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc EnqueueInput(EnqueueInputRequest) returns (EnqueueInputResponse);
+  rpc EditQueuedInput(EditQueuedInputRequest) returns (EditQueuedInputResponse);
+  rpc RemoveQueuedInput(RemoveQueuedInputRequest) returns (RemoveQueuedInputResponse);
+  rpc ListQueue(ListQueueRequest) returns (ListQueueResponse);
+  rpc ControlSession(ControlSessionRequest) returns (ControlSessionResponse);
+  rpc RenameSession(RenameSessionRequest) returns (RenameSessionResponse);
+  rpc PrepareSessionWorkspace(PrepareSessionWorkspaceRequest) returns (PrepareSessionWorkspaceResponse);
+  rpc RecoverSessionExecution(RecoverSessionExecutionRequest) returns (RecoverSessionExecutionResponse);
+  rpc RecoverSessionWorkspace(RecoverSessionWorkspaceRequest) returns (RecoverSessionWorkspaceResponse);
+  rpc CreateLocalReviewComment(CreateLocalReviewCommentRequest) returns (CreateLocalReviewCommentResponse);
+  rpc EditLocalReviewComment(EditLocalReviewCommentRequest) returns (EditLocalReviewCommentResponse);
+  rpc DeleteLocalReviewComment(DeleteLocalReviewCommentRequest) returns (DeleteLocalReviewCommentResponse);
+  rpc SubmitLocalReview(SubmitLocalReviewRequest) returns (SubmitLocalReviewResponse);
+}
+
+message LinkSessionPullRequestRequest {
+  string request_id = 1;
+  string session_id = 2;
+  string repository_id = 3;
+  // Canonical decimal PR number. Stable provider identities are server-observed.
+  string number = 4;
+}
+
+message LinkSessionPullRequestResponse {
+  Resource association = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message UnlinkSessionPullRequestRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+}
+
+message UnlinkSessionPullRequestResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message ReadSessionReviewContextRequest {
+  string session_id = 1;
+  // Closed git-diff workspace query; only the owning Worker supplies bytes.
+  bytes query_json = 2;
+}
+
+message ReadSessionReviewContextResponse {
+  // Exact diff observation and validated ordinary Git file/line coordinates.
+  // Non-line changes expose file anchors only. No submission authority.
+  bytes document_json = 1;
+}
+
+message SteerQueuedInputRequest {
+  // Exact queue record revision; request_id also identifies the Steer attempt.
+  Mutation mutation = 1;
+  string session_id = 2;
+  string expected_execution_id = 3;
+  string expected_turn_id = 4;
+}
+
+message SteerQueuedInputResponse {
+  Resource steer = 1;
+  SessionChange change = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+
+message SessionChange {
+  Resource session = 1;
+  Resource input = 2;
+  string request_id = 3;
+  bool replayed = 4;
+  Resource workspace_job = 5;
+  Resource recovery_job = 6;
+  Resource execution_job = 7;
+  Resource execution_recovery_job = 8;
+}
+
+message CreateSessionRequest {
+  string request_id = 1;
+  // Closed domain.CreateSession schema, including exactly one Agent Worker.
+  bytes document_json = 2;
+  // Additional paired Worker credential loaded locally for explicit Local creation.
+  // Authentication input only: never retain in resources, jobs, receipts or logs.
+  string local_worker_token = 3;
+}
+
+message CreateSessionResponse {
+  SessionChange change = 1;
+}
+
+message ListSessionsRequest {
+  string project_id = 1;
+  bool include_archived = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListSessionsResponse {
+  repeated Resource sessions = 1;
+  string next_page_token = 2;
+}
+
+message EnqueueInputRequest {
+  string request_id = 1;
+  string session_id = 2;
+  // Closed domain.SessionInput schema. Mode is immutable after acceptance.
+  bytes document_json = 3;
+}
+
+message EnqueueInputResponse {
+  SessionChange change = 1;
+}
+
+message EditQueuedInputRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+  string prompt = 3;
+}
+
+message EditQueuedInputResponse {
+  SessionChange change = 1;
+}
+
+message RemoveQueuedInputRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+}
+
+message RemoveQueuedInputResponse {
+  SessionChange change = 1;
+}
+
+message ListQueueRequest {
+  string session_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListQueueResponse {
+  repeated Resource inputs = 1;
+  string next_page_token = 2;
+}
+
+enum SessionAction {
+  SESSION_ACTION_UNSPECIFIED = 0;
+  SESSION_ACTION_STOP = 1;
+  SESSION_ACTION_ARCHIVE = 2;
+  SESSION_ACTION_RESTORE = 3;
+  SESSION_ACTION_RESUME = 4;
+}
+
+message ControlSessionRequest {
+  Mutation mutation = 1;
+  SessionAction action = 2;
+}
+
+message ControlSessionResponse {
+  SessionChange change = 1;
+}
+
+message RenameSessionRequest {
+  Mutation mutation = 1;
+  string name = 2;
+}
+
+message RenameSessionResponse {
+  SessionChange change = 1;
+}
+
+message PrepareSessionWorkspaceRequest {
+  Mutation mutation = 1;
+}
+
+message PrepareSessionWorkspaceResponse {
+  SessionChange change = 1;
+}
+
+message RecoverSessionWorkspaceRequest {
+  Mutation mutation = 1;
+  // Explicitly permits rollback of an incomplete preparation, never a ready workspace.
+  bool cleanup = 2;
+}
+
+message RecoverSessionWorkspaceResponse {
+  SessionChange change = 1;
+}
+
+// Reconcile retained completion only; successful recovery leaves dispatch paused.
+message RecoverSessionExecutionRequest {
+  Mutation mutation = 1;
+  string expected_execution_id = 2;
+}
+
+message RecoverSessionExecutionResponse {
+  SessionChange change = 1;
+}
+
+message EstimatedCostBudget {
+  string currency = 1;
+  // Exact nonnegative decimal currency amount; never a token-count budget.
+  string threshold = 2;
+}
+
+enum BudgetState {
+  BUDGET_STATE_UNSPECIFIED = 0;
+  BUDGET_STATE_DISABLED = 1;
+  // Known evidence is below the threshold or unavailable. Never verified spend.
+  BUDGET_STATE_ALLOW_INCOMPLETE = 2;
+  BUDGET_STATE_THRESHOLD_REACHED = 3;
+}
+
+message BudgetEvidence {
+  string currency = 1;
+  string known_amount = 2;
+  uint64 complete_responses = 3;
+  uint64 partial_responses = 4;
+  uint64 unavailable_responses = 5;
+}
+
+message SessionBudgetView {
+  Resource session = 1;
+  EstimatedCostBudget budget = 2;
+  BudgetState state = 3;
+  // Entire retained session lifetime, independent of dashboard time filters.
+  BudgetEvidence selected_currency = 4;
+  uint64 unpriced_responses = 5;
+  uint64 other_currency_responses = 6;
+  UsageCoverage coverage = 7;
+}
+
+message GetSessionBudgetRequest {
+  string session_id = 1;
+}
+
+message GetSessionBudgetResponse {
+  SessionBudgetView view = 1;
+}
+
+message SetSessionBudgetRequest {
+  Mutation mutation = 1;
+  oneof change {
+    EstimatedCostBudget budget = 2;
+    // Must be true; omission cannot disable a budget.
+    bool remove = 3;
+  }
+}
+
+message SetSessionBudgetResponse {
+  // Current authorized state on receipt replay; no execution is authorized.
+  SessionBudgetView view = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+// Read-only observations do not enter the durable Worker execution queue.
+message ReadSessionWorkspaceRequest {
+  string session_id = 1;
+  bytes query_json = 2;
+}
+
+message ReadSessionWorkspaceResponse {
+  bytes document_json = 1;
+}
+
+message CreateLocalReviewCommentRequest {
+  string request_id = 1;
+  string session_id = 2;
+  // Closed query, expected diff revision, selection and comment body.
+  bytes document_json = 3;
+}
+
+message CreateLocalReviewCommentResponse {
+  Resource comment = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message EditLocalReviewCommentRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+  string body = 3;
+}
+
+message EditLocalReviewCommentResponse {
+  Resource comment = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message DeleteLocalReviewCommentRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+}
+
+message DeleteLocalReviewCommentResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message SubmitLocalReviewRequest {
+  string request_id = 1;
+  string session_id = 2;
+  // Selected exact comment revisions, mode and explicit stale selection.
+  bytes document_json = 3;
+}
+
+message SubmitLocalReviewResponse {
+  Resource submission = 1;
+  SessionChange change = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}

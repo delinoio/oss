@@ -170,7 +170,7 @@ func TestNotificationMigrationPreservesV16AndRollsBackConflict(t *testing.T) {
 			s, root := openTest(t)
 			id := notificationFixture(t, s, "pending")
 			if !conflict {
-				if _, err := s.db.Exec(dropNotificationFixtureSchema); err != nil {
+				if _, err := historicalSchema(s.db, "016"); err != nil {
 					t.Fatal(err)
 				}
 			}

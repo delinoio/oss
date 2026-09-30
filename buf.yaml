@@ -6,6 +6,11 @@ modules:
 lint:
   use:
     - STANDARD
+  # The historical DeliDev import path forwards existing users to split files.
+  # Remove this exception only when that public compatibility path is retired.
+  ignore_only:
+    IMPORT_NO_PUBLIC:
+      - protos/delidev/v1/delidev.proto
 
 breaking:
   use:

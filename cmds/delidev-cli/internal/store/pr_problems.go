@@ -8,25 +8,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const prProblemSchema = `
-CREATE TABLE pr_problem_sets (
- id TEXT NOT NULL UNIQUE REFERENCES entities(id) ON DELETE CASCADE,
- stable_key TEXT PRIMARY KEY CHECK(length(stable_key)=64)
-);
-CREATE TABLE pr_problem_records (
- id TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
- set_id TEXT NOT NULL REFERENCES pr_problem_sets(id),
- kind TEXT NOT NULL CHECK(kind='review-feedback'),
- native_node TEXT NOT NULL,
- content_version TEXT NOT NULL CHECK(length(content_version)=64),
- current INTEGER NOT NULL CHECK(current IN (0,1)),
- UNIQUE(set_id,kind,native_node,content_version)
-);
-CREATE INDEX pr_problem_current ON pr_problem_records(set_id,kind,current,id);
-CREATE INDEX pr_problem_history ON pr_problem_records(set_id,id);
-PRAGMA user_version=18;
-`
-
 func (t *Tx) prProblemActor() (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(t.ctx)
 	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {

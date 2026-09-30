@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: Apache-2.0
+import { createClient } from "@connectrpc/connect";
+import { TransportProvider } from "@connectrpc/connect-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { expect, it } from "vitest";
+import { EntityKind, ResourceService } from "@delinoio/delidev-api-client";
+import { Settings } from "./settings";
+import { MutationIntents } from "./mutation";
+import { document } from "./documents";
+import { useSettingsFixture } from "./settings-test-fixture";
+
+const fixture = useSettingsFixture();
+
+it("configures a real Go server through the settings forms and explicitly validates a private keyless provider", async () => {
+  const { transport, providerOrigin } = fixture;
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
+  const create = await screen.findByRole("button", { name: "Custom provider" });
+  await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(create);
+  change("Name", "Owned local API"); change("API base URL", providerOrigin); change("API protocol", "openai-chat"); change("Authentication", "keyless");
+  fireEvent.click(screen.getByRole("checkbox", { name: "Discover models automatically for connected accounts" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));
+  await screen.findByRole("heading", { name: "Owned local API" });
+  fireEvent.click(screen.getByRole("button", { name: "API Accounts" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add API account" }));
+  fireEvent.click(await screen.findByRole("radio", { name: "Owned local API" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue to account" }));
+  change("Account name", "Owned keyless account");
+  fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
+  await screen.findByRole("heading", { name: "Owned keyless account" });
+  const manageAccount = await screen.findByRole("button", { name: "Manage account" });
+  await waitFor(() => expect((manageAccount as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(manageAccount);
+  await screen.findByText("Health: unverified · Credential connected");
+  fireEvent.click(screen.getByRole("button", { name: "Validate account" }));
+  await screen.findByText("Health: ready · Credential connected");
+  fireEvent.click(screen.getByRole("button", { name: "Back to accounts" }));
+  fireEvent.click(screen.getByRole("button", { name: "Models" }));
+  const newModel = await screen.findByRole("button", { name: "New Model" });
+  await waitFor(() => expect((newModel as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(newModel);
+  await screen.findByLabelText("Native model ID");
+  const option = await screen.findByRole("option", { name: "Owned local API" }) as HTMLOptionElement;
+  change("Provider", (option as HTMLOptionElement).value); change("Native model ID", "fixture-model"); change("Display name", "Owned model");
+  fireEvent.click(screen.getByRole("checkbox", { name: "codex" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Model" }));
+  await screen.findByRole("heading", { name: "Owned model" });
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
+  change("Name", "Configured agent");
+  change("Model", (await screen.findByRole("option", { name: "Owned model" }) as HTMLOptionElement).value);
+  change("Add AI account", (await screen.findByRole("option", { name: "Owned keyless account · ready" }) as HTMLOptionElement).value);
+  fireEvent.click(screen.getAllByRole("button", { name: "Add selected" })[0]);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await screen.findByRole("heading", { name: "Configured agent" });
+  const agents = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.AGENT } });
+  expect(agents.resources).toHaveLength(1);
+  expect(document(agents.resources[0])).toMatchObject({ name: "Configured agent", harness: "codex", accounts: [{ weight: 1 }], options: { permission: "default" } });
+}, 30000);
+

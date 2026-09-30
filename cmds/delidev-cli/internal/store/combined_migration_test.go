@@ -33,7 +33,7 @@ func TestMigrationPreservesBothVersion23Layouts(t *testing.T) {
 					t.Fatal(err)
 				}
 				// Reconstruct the backup-only schema 23 before automatic titles existed.
-				if _, err := s.db.Exec(`DROP TABLE session_title_send_claims; DROP TABLE session_title_http_claims; DROP INDEX response_usage_purpose_time; ALTER TABLE response_usage DROP COLUMN purpose;`); err != nil {
+				if _, err := historicalSchema(s.db, "023"); err != nil {
 					t.Fatal(err)
 				}
 			} else {
@@ -48,7 +48,7 @@ func TestMigrationPreservesBothVersion23Layouts(t *testing.T) {
 				}); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := s.db.Exec("DROP TABLE backup_deletions"); err != nil {
+				if _, err := historicalSchema(s.db, "023-titles"); err != nil {
 					t.Fatal(err)
 				}
 			}

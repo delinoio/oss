@@ -17,15 +17,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-const backupDeletionSchema = `
-CREATE TABLE backup_deletions (
- backup_id TEXT PRIMARY KEY,
- job_id TEXT NOT NULL UNIQUE REFERENCES entities(id),
- request_id TEXT NOT NULL UNIQUE
-);
-PRAGMA user_version=23;
-`
-
 // BackupDeletionInput binds a previously inspected immutable image. Revision one
 // is its only live revision; accepting deletion irreversibly ends that lifetime.
 type BackupDeletionInput struct {

@@ -7,19 +7,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const executionMessageSchema = `
-CREATE TABLE execution_messages (
- session_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
- execution_id TEXT NOT NULL,
- native_thread_id TEXT NOT NULL, native_turn_id TEXT NOT NULL, native_item_id TEXT NOT NULL,
- message_id TEXT NOT NULL UNIQUE REFERENCES entities(id) ON DELETE CASCADE,
- state TEXT NOT NULL CHECK(state IN ('streaming','complete')),
- PRIMARY KEY(session_id,native_thread_id,native_turn_id,native_item_id)
-);
-CREATE INDEX execution_message_count ON execution_messages(execution_id,state);
-PRAGMA user_version=8;
-`
-
 // BindExecutionMessage prevents a replacement product ID from duplicating one
 // native item. Message/state/event/receipt publication shares its transaction.
 func (t *Tx) BindExecutionMessage(session, execution, message domain.ID, thread, turn, item string, state domain.MessageState) error {

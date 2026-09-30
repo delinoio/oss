@@ -8,23 +8,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const prRemediationSchema = `
-CREATE TABLE pr_remediation_attempts (
- id TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
- set_id TEXT NOT NULL REFERENCES pr_problem_sets(id),
- chain_id TEXT NOT NULL,
- sequence INTEGER NOT NULL CHECK(sequence BETWEEN 1 AND 10000),
- state TEXT NOT NULL CHECK(state IN ('reserved','bound','running','uncertain','finished','canceled')),
- input_id TEXT,
- UNIQUE(set_id,sequence),
- UNIQUE(input_id)
-);
-CREATE UNIQUE INDEX pr_remediation_active ON pr_remediation_attempts(set_id)
- WHERE state IN ('reserved','bound','running','uncertain');
-CREATE INDEX pr_remediation_history ON pr_remediation_attempts(set_id,sequence);
-PRAGMA user_version=20;
-`
-
 func prRemediationConflict() error {
 	return domain.Fail(domain.Conflict, "The PR remediation chain or execution ownership changed.", "Inspect the original attempt; do not create a second active fix or reset its attempt budget.")
 }

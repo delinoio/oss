@@ -7,21 +7,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const catalogSchema = `
-CREATE UNIQUE INDEX model_canonical ON entities(json_extract(body,'$.provider_id'),json_extract(body,'$.native_id')) WHERE kind='model';
-CREATE UNIQUE INDEX model_alias ON entities(json_extract(body,'$.alias')) WHERE kind='model' AND COALESCE(json_extract(body,'$.alias'),'')<>'';
-CREATE TABLE model_suppressions(provider_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,native_id TEXT NOT NULL,PRIMARY KEY(provider_id,native_id));
-CREATE INDEX model_native ON entities(json_extract(body,'$.native_id')) WHERE kind='model';
-CREATE INDEX model_display ON entities(json_extract(body,'$.provider_id'),COALESCE(json_extract(body,'$.order'),0),lower(json_extract(body,'$.name')),id) WHERE kind='model';
-CREATE INDEX event_kind_cursor ON events(kind,sequence);
-PRAGMA user_version=3;
-`
-
-const providerActivationSchema = `
-CREATE UNIQUE INDEX IF NOT EXISTS provider_preset_unique ON entities(json_extract(body,'$.preset_id'))
- WHERE kind='provider' AND json_type(body,'$.preset_id')='text' AND json_extract(body,'$.preset_id')<>'';
-PRAGMA user_version=21;
-`
 const recordColumns = "id,kind,revision,session_id,project_id,body,created_at,updated_at"
 
 func (t *Tx) ValidateModelIdentity(id domain.ID, model domain.Model) error {

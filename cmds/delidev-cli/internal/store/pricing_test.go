@@ -9,10 +9,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const dropPRProblemFixtureSchema = `DROP INDEX provider_preset_unique; DROP TABLE backup_deletions; DROP TABLE pr_remediation_attempts; DROP TABLE pr_problem_records; DROP TABLE pr_problem_ci_observations; DROP TABLE pr_problem_sets; `
-const dropNotificationFixtureSchema = dropPRProblemFixtureSchema + `DROP TABLE notification_deliveries; DROP TABLE notification_preferences; `
-const dropPricingFixtureSchema = dropNotificationFixtureSchema + `DROP TABLE session_estimate_totals; DROP TABLE response_estimates; DROP TABLE active_pricing; DROP TABLE pricing_versions; `
-
 func pricingFixture() domain.TokenPricing {
 	input, output := "2.5", "10"
 	return domain.TokenPricing{Currency: "USD", Source: "Explicit test source", AsOf: "2026-09-25", InputMode: domain.UniformInputPrice, InputPerMillion: &input, OutputPerMillion: &output, Exclusions: []string{"Token estimate only; provider fees excluded."}}

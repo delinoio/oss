@@ -1,5 +1,11 @@
 # DeliDev v1 Connect contract
 
+Source schemas are service-specific under `protos/delidev/v1`; shared types have
+one common owner. The historical `delidev.proto` forwards imports. Existing wire
+names and numbers remain unchanged. `protos/delidev/allocations.json` records main
+assignments and pending reservations without advertising unimplemented support.
+See the [structure contract](cmds-delidev-structure-contract.md).
+
 ## Scope
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 

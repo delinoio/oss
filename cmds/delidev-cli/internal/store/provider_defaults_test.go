@@ -118,7 +118,7 @@ func TestHostedProviderDefaultsMigrationPreservesSavedOffAndCustom(t *testing.T)
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.ExecContext(ctx, "PRAGMA user_version=21"); err != nil {
+	if _, err := historicalSchema(s.db, "021"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -182,6 +182,9 @@ func TestHostedProviderDefaultsMigrationRollsBackTogether(t *testing.T) {
 		if _, err := s.db.ExecContext(ctx, "DELETE FROM entities WHERE id=?", entry.ProviderID); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := historicalSchema(s.db, "021"); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := s.db.ExecContext(ctx, `CREATE TRIGGER reject_fixture_provider BEFORE INSERT ON entities WHEN NEW.kind='provider' AND json_extract(NEW.body,'$.preset_id')='anthropic' BEGIN SELECT RAISE(ABORT,'fixture rejection'); END; PRAGMA user_version=21;`); err != nil {
 		t.Fatal(err)

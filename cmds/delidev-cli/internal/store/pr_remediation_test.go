@@ -455,7 +455,7 @@ func TestPRRemediationV19MigrationPreservesOriginalEvidence(t *testing.T) {
 	s, root := openTest(t)
 	f := newRemediationStoreFixture(t, s)
 	before, _ := s.Get(context.Background(), domain.ProblemKind, f.set.ID)
-	if _, err := s.db.Exec("DROP INDEX provider_preset_unique; DROP TABLE backup_deletions; DROP TABLE pr_remediation_attempts; PRAGMA user_version=19;"); err != nil {
+	if _, err := historicalSchema(s.db, "019"); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
