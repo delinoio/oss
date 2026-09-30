@@ -296,6 +296,11 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if staged {
 				return result, ResultUncertain()
 			}
+			raw, err := security.ReadPrivate(m.restoreBindingPath(r.Preparation.SessionID), 4096)
+			var binding restoreBinding
+			if err != nil || domain.Decode(raw, &binding) != nil || binding.Version != 1 || !binding.Published || binding.OperationID != original.OperationID || binding.SessionID != r.Preparation.SessionID || binding.SnapshotID != original.SnapshotID || binding.SnapshotDigest != metadata.SHA256 || binding.ManifestDigest != manifestDigest(snapshot.Workspace) || binding.OriginalIdentity != snapshot.OriginalIdentity {
+				return result, ResultUncertain()
+			}
 			current, err := walkSnapshot(ctx, root, "", nil)
 			if err != nil || inventoryDigest(current) != inventoryDigest(snapshot.Inventory) {
 				return result, ResultUncertain()

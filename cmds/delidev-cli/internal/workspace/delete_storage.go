@@ -79,7 +79,9 @@ func (m *Manager) deletionRestoredWorkspace(ctx context.Context, w domain.Sessio
 		return false, nil
 	}
 	var binding restoreBinding
-	if err != nil || domain.Decode(raw, &binding) != nil || binding.Version != 1 || binding.SessionID != w.SessionID || binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || !slices.ContainsFunc(w.Copies, func(c domain.SessionDeletionCopy) bool { return c.SnapshotID == binding.SnapshotID }) {
+	if err != nil || domain.Decode(raw, &binding) != nil || binding.Version != 1 || !binding.Published || !digestValid(binding.SnapshotDigest) || binding.SessionID != w.SessionID || binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || !slices.ContainsFunc(w.Copies, func(c domain.SessionDeletionCopy) bool {
+		return c.Type == domain.WorkspaceStorageJob && c.JobID == binding.OperationID && c.SnapshotID == binding.SnapshotID
+	}) {
 		return false, domain.SessionDeletionPending()
 	}
 	// The original snapshot may already have been explicitly deleted after a

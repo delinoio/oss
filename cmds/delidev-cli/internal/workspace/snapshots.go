@@ -168,8 +168,11 @@ type snapshotManifest struct {
 }
 type restoreBinding struct {
 	Version          uint32    `json:"version"`
+	OperationID      domain.ID `json:"operation_id"`
 	SessionID        domain.ID `json:"session_id"`
 	SnapshotID       domain.ID `json:"snapshot_id"`
+	SnapshotDigest   string    `json:"snapshot_digest"`
+	Published        bool      `json:"published"`
 	ManifestDigest   string    `json:"manifest_digest"`
 	OriginalIdentity string    `json:"original_identity"`
 }
@@ -372,9 +375,9 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if err != nil || inventoryDigest(inventory) != inventoryDigest(snap.Inventory) {
 				return result, ResultUncertain()
 			}
-			binding := restoreBinding{Version: 1, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, ManifestDigest: manifestDigest(snap.Workspace), OriginalIdentity: snap.OriginalIdentity}
-			// Publish comparison authority before the workspace becomes visible. A crash
-			// leaves a gated, owned staging directory; never replay native execution.
+			binding := restoreBinding{Version: 1, OperationID: r.OperationID, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, SnapshotDigest: metadata.SHA256, ManifestDigest: manifestDigest(snap.Workspace), OriginalIdentity: snap.OriginalIdentity}
+			// Pending comparison metadata grants no publication authority. Invalidate
+			// an earlier restore before claiming this operation's destination.
 			raw, _ := json.Marshal(binding)
 			if err := security.WriteAtomic(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {
 				return result, err
@@ -382,8 +385,20 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if err := ctx.Err(); err != nil {
 				return result, err
 			}
+			if m.storageBeforeRestorePublish != nil {
+				m.storageBeforeRestorePublish(staging)
+			}
 			if err := renameStorage(staging, root); err != nil {
 				return result, err
+			}
+			restoreStaging = ""
+			// Only a synchronized successful no-replace publication may establish
+			// ownership. Matching foreign bytes or a missing staging tree cannot.
+			binding.Published = true
+			raw, _ = json.Marshal(binding)
+			if err := security.WriteAtomic(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {
+				m.Logger.Warn("restore_publication_proof_pending", "operation_id", r.OperationID, "code", domain.SafeError(err).Code)
+				return result, ResultUncertain()
 			}
 			if _, err := m.verifyWorkspaceIdentity(ctx, r.Preparation, r.Manifest, continuationIdentity); err != nil {
 				return result, ResultUncertain()

@@ -439,7 +439,12 @@ unpublished restoration removes only its operation-owned staging with an
 independent bounded cleanup context; unconfirmed scratch cleanup retains
 recovery-required ownership instead of settling a terminal failure. A private
 restore binding preserves the original logical workspace identity while allowing
-self-contained Git stores at that same path. This comparison does not manufacture
+self-contained Git stores at that same path. Its pending form grants no ownership;
+only the original operation/snapshot/hash-bound proof synchronized after successful
+no-replace publication permits restore recovery, restored execution identity or
+coordinated deletion. A matching foreign destination and absent scratch cannot
+prove publication. Lost proof preserves uncertainty without repeating the rename.
+This comparison does not manufacture
 native harness checkpoint or continuation support. Snapshot deletion requires an
 explicit owner/client request and cannot remove a stored workspace's only
 recoverable copy; restore it first. Deletion claims and verifies the snapshot via
