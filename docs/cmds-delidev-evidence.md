@@ -3623,8 +3623,7 @@ frontend build. `go vet ./cmds/delidev-cli/...`, `git lfs fsck` and
 `git diff --check` passed. The initial complete normal Go run passed the changed
 server package but failed the existing Worker cancellation/startup fixture;
 that fixture passed when rerun alone. An overlapping full race run also reported
-a CLI fixture failure. Complete-suite revalidation is recorded below when it
-finishes. All fixtures use temporary state; this copy change claims no new
+a CLI fixture failure. Complete-suite revalidation is recorded below. All fixtures use temporary state; this copy change claims no new
 installed-desktop, real-account or release acceptance.
 
 The PR's first maintenance pass merged main's issue #1134 AI Subscription
@@ -3635,3 +3634,12 @@ checks. The complete normal `go test ./cmds/delidev-cli/...` rerun and Go vet al
 passed. Parallel race validation reproduced the existing
 `TestCLISessionAcceptanceQueueAndArchive` workspace-reader `Unavailable`
 failure; the changed server package passed under the race detector.
+
+The complete `go test -race -p 1 -timeout 20m ./cmds/delidev-cli/...` run passed,
+including the CLI and workspace packages that failed during parallel attempts.
+The extended parallel run also completed the Grok package successfully; it
+exceeded the original ten-minute test timeout. The successful complete race
+run used one package at a time and a twenty-minute per-package timeout. The
+parallel failures above remain part of the validation record. Ordinary Go tests
+and vet passed again on the repaired source, and all generated repository
+`dist` directories created for validation and commit prerequisites were removed.
