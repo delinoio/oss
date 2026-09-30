@@ -77,3 +77,12 @@ passes all 53 tests in 66.84 seconds. A complete pipeline rerun is recorded belo
 
 The ordinary tray exit label is `Quit DeliDev`. Its detached-runtime lifetime is
 unchanged and remains documented in the internal desktop contract.
+
+## Main advancement
+
+Main advanced to `574c1a92c957fc741a723ff8123888dad32a2194` during validation,
+adding verified Grok native-input accounting (#1211) and shared compaction
+reservations (#1215). Both changes are merged intact. Instruction conflicts retain
+the new accounting/reservation rules alongside desktop startup rules; the prior
+Home lifecycle disclosure remains explicitly superseded by issue #1137. No
+protocol numbers or migration versions are reallocated by this change.
