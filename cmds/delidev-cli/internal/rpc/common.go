@@ -34,7 +34,11 @@ func WireKind(kind domain.Kind) pb.EntityKind {
 	return pb.EntityKind(pb.EntityKind_value["ENTITY_KIND_"+strings.ToUpper(string(kind))])
 }
 func Resource(record store.Record) *pb.Resource {
-	return &pb.Resource{Id: string(record.ID), Kind: WireKind(record.Kind), Revision: record.Revision, SessionId: string(record.SessionID), ProjectId: string(record.ProjectID), SchemaVersion: 1, DocumentJson: record.Data, CreatedAt: record.CreatedAt.Format(time.RFC3339Nano), UpdatedAt: record.UpdatedAt.Format(time.RFC3339Nano)}
+	document := record.Data
+	if record.Kind == domain.TerminalKind {
+		document = terminalResourceDocument(document)
+	}
+	return &pb.Resource{Id: string(record.ID), Kind: WireKind(record.Kind), Revision: record.Revision, SessionId: string(record.SessionID), ProjectId: string(record.ProjectID), SchemaVersion: 1, DocumentJson: document, CreatedAt: record.CreatedAt.Format(time.RFC3339Nano), UpdatedAt: record.UpdatedAt.Format(time.RFC3339Nano)}
 }
 func Error(err error, correlation string) error {
 	if err == nil {

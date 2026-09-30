@@ -29,7 +29,8 @@ type TerminalOperation struct {
 }
 
 // Output is an ephemeral, bounded byte stream, never a resource document.
-// Pending input is cleared after its once-only native operation is reported.
+// Pending input is private dispatch data, omitted from public resources and
+// cleared after its once-only native operation is reported.
 type Terminal struct {
 	OwnerInstanceID ID                 `json:"owner_instance_id"`
 	MachineID       ID                 `json:"machine_id"`

@@ -119,8 +119,13 @@ receipt transaction. No destructive migration or schema bump is required.
 There are at most eight live terminals per session, 128 retained terminal
 records per session and 32 live terminals per machine. States are `starting`,
 `running`, `exited`, `closed` and `uncertain`; cleanup is an independent fact.
-Pending input bytes exist only in the accepted operation until its outcome or
-close is committed. Mutation receipts retain references and input digests, not
+Pending input bytes exist only in the private accepted operation until its outcome
+or close is committed. Every public Resource projection omits `pending.input`,
+including mutation/receipt responses, generic inspect/list/snapshot reads, CLI
+results and output-stream metadata. Operation IDs, action, claim and pending state
+remain visible. Original authenticated Worker watch/claim assignments retain exact
+dispatch bytes, independently of the public projection. A malformed terminal
+document never falls back to its private bytes in a public resource. Mutation receipts retain references and input digests, not
 a second input or output copy. Terminal history is retained after cleanup.
 
 Worker-private synchronized operation journals retain original IDs, semantic

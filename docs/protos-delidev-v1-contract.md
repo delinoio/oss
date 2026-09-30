@@ -110,7 +110,10 @@ both accepted 4,096-byte native paths under worst-case JSON escaping. Worker
 problems require the terminal contract's closed native failure classification;
 the server substitutes its own bounded diagnostic text before persistence while
 receipt identity retains the original report bytes. Output carries epoch UUIDs, exact uint64 sequences,
-raw bytes, explicit gaps and metadata heartbeats. Terminal mutations return
+raw bytes, explicit gaps and metadata heartbeats. Terminal public Resources omit pending input bytes in mutation/receipt responses,
+generic reads/snapshots and output metadata; original authenticated Worker
+watch/claim assignments retain exact dispatch bytes. Operation IDs, pending
+state and original receipt digests remain intact. Terminal mutations return
 current referenced records. A replacement retries an exact original-instance
 `ReportTerminal` only to acknowledge an already-committed receipt under the same
 current device/machine and live terminal-capable lease; this receipt-only response

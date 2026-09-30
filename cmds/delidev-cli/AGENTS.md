@@ -16,6 +16,8 @@ Keep implementation evidence in independent files under `docs/evidence/delidev/i
 
 - Session terminals and native PTY/ConPTY ownership follow `docs/cmds-delidev-terminals-contract.md` and the process contract. Keep the shared terminal result JSON bound at 64 KiB and reserve 4 KiB more for operation journal ownership metadata. Keep shell selection Worker-owned with no fallback after invalid discovery or override; input/output/path/environment contents never enter logs or native ownership journals.
 
+- `internal/rpc.Resource` owns the common public resource projection. Terminal pending input bytes are private dispatch payloads: omit them from every mutation/read/snapshot/output-metadata resource without changing original Worker watch/claim assignments, operation IDs or pending-control state.
+
 Native session compaction for issues #1093, #1202 and #1203 follows the planned shared boundary in `docs/cmds-delidev-compaction-contract.md`. Its reservations must land on main before dependent implementation. Preserve original transcript/outcome, once-only native claims and independent history/cleanup verification; native acknowledgment never grants a successor checkpoint.
 
 - Codex fork Local sharing is limited to original Local manifests with no parent-owned checkouts. Reject managed Worktree sharing before job acceptance and again before Worker native inspection/preparation and server publication; parent deletion retains those paths. Independent Worktree copying remains available. Follow `docs/cmds-delidev-forks-contract.md`.
