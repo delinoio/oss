@@ -214,7 +214,9 @@ proof before any unlink, persists removal stages before deleting journals, and
 then retains only non-content digest/report tombstones. Filesystem traversal
 never follows links, checks original file identity, observes cancellation before
 each unlink and is capped at 100,000 entries per owned tree. A replaced root is
-preserved as uncertain. Cleanup retry never starts native work or resends input.
+preserved as uncertain. Cleanup retry never starts native work or resends input. Reusing a completed proof
+rechecks the full removal inventory, including process records/recovery locks and
+a bounded scan of matching title runtimes; a restored replacement stays pending.
 
 Only after every original Worker acknowledgement does one SQLite transaction
 remove the session and its scoped inputs, transcripts, tools, interactions,

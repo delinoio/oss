@@ -279,3 +279,66 @@ func TestSessionDeletionJoinsProductionFinalReportPublication(t *testing.T) {
 		t.Fatal("final journal was recreated after deletion", err)
 	}
 }
+
+func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	for _, kind := range []domain.JobType{domain.ExecuteSessionJob, domain.GenerateSessionTitleJob} {
+		copy := domain.SessionDeletionCopy{JobID: domain.NewID(), Type: kind, Revision: 1, Digest: w.Copies[0].Digest, InstanceID: w.Copies[0].InstanceID}
+		if kind == domain.ExecuteSessionJob {
+			copy.ExecutionID = domain.NewID()
+		}
+		if err := writeJSON(filepath.Join(c.Root, "jobs", string(copy.JobID)+".json"), journal{Version: 1, JobID: copy.JobID, InstanceID: copy.InstanceID, Revision: copy.Revision, Digest: copy.Digest, State: journalReported, ReportID: domain.NewID()}); err != nil {
+			t.Fatal(err)
+		}
+		w.Copies = append(w.Copies, copy)
+	}
+	proof, err := deleteSessionCopies(context.Background(), c, w)
+	if err != nil || !proof.Complete {
+		t.Fatal(proof, err)
+	}
+	job, execution, title := w.Copies[0], w.Copies[1], w.Copies[2]
+	paths := []string{
+		filepath.Join("processes", string(job.JobID), "restored.json"),
+		filepath.Join("processes", string(job.JobID)+".recovery.lock"),
+		filepath.Join("processes", string(w.SessionID), "restored.json"),
+		filepath.Join("processes", string(w.SessionID)+".recovery.lock"),
+		filepath.Join("title-runtimes", string(title.JobID)+"-restored", "content"),
+		filepath.Join("runtimes", string(execution.ExecutionID), "content"),
+		filepath.Join("jobs", string(job.JobID), "outbox"),
+		filepath.Join("jobs", string(job.JobID)+".json"),
+		filepath.Join("workspace-recovery", string(job.JobID)+".json"),
+		filepath.Join("execution-claims", string(w.SessionID)+".json"),
+		filepath.Join("execution-history", string(w.SessionID), "content"),
+		filepath.Join("pr-startup", string(w.SessionID), "content"),
+	}
+	for _, relative := range paths {
+		t.Run(relative, func(t *testing.T) {
+			path := filepath.Join(c.Root, relative)
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("restored private copy"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := deleteSessionCopies(context.Background(), c, w); err == nil {
+				t.Fatal("restored managed copy reused completion")
+			}
+			if data, err := os.ReadFile(path); err != nil || string(data) != "restored private copy" {
+				t.Fatal("replacement copy was removed", err)
+			}
+			// Remove only this test's restored copy and its empty directory. No
+			// cleanup replay is authorized to remove a replacement on its own.
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if filepath.Base(path) == "restored.json" || filepath.Base(path) == "content" || filepath.Base(path) == "outbox" {
+				if err := os.Remove(filepath.Dir(path)); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+	if again, err := deleteSessionCopies(context.Background(), c, w); err != nil || again.ReportID != proof.ReportID {
+		t.Fatal("unchanged completed proof failed after fixture cleanup", again, err)
+	}
+}

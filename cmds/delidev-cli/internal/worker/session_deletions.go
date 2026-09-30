@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -111,13 +110,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if proof.Complete {
 		// Completion is reusable only while its original copies remain absent.
 		// A replacement at a formerly owned path is never blindly removed.
-		paths := []string{filepath.Join(root, "workspaces", string(w.SessionID)), filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID))}
-		for _, copy := range w.Copies {
-			paths = append(paths, filepath.Join(root, "jobs", string(copy.JobID)), filepath.Join(root, "jobs", string(copy.JobID)+".json"), filepath.Join(root, "workspace-recovery", string(copy.JobID)+".json"))
-			if copy.ExecutionID != "" {
-				paths = append(paths, filepath.Join(root, "runtimes", string(copy.ExecutionID)))
-			}
+		paths, e := sessionDeletionCopyPaths(ctx, root, w)
+		if e != nil {
+			return proof, e
 		}
+		paths = append(paths, filepath.Join(root, "workspaces", string(w.SessionID)))
 		for _, path := range paths {
 			if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
@@ -200,35 +197,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				return e
 			}
 		}
-		for _, copy := range w.Copies {
-			paths := []string{filepath.Join(root, "jobs", string(copy.JobID)), filepath.Join(root, "jobs", string(copy.JobID)+".json"), filepath.Join(root, "workspace-recovery", string(copy.JobID)+".json"), filepath.Join(root, "processes", string(copy.JobID)), filepath.Join(root, "processes", string(copy.JobID)+".recovery.lock")}
-			if copy.ExecutionID != "" {
-				paths = append(paths, filepath.Join(root, "runtimes", string(copy.ExecutionID)))
-			}
-			if copy.Type == domain.GenerateSessionTitleJob {
-				f, e := os.Open(filepath.Join(root, "title-runtimes"))
-				if e == nil {
-					entries, e := f.ReadDir(4097)
-					f.Close()
-					if e != nil && !errors.Is(e, io.EOF) || len(entries) > 4096 {
-						return domain.SessionDeletionPending()
-					}
-					for _, entry := range entries {
-						if strings.HasPrefix(entry.Name(), string(copy.JobID)+"-") {
-							paths = append(paths, filepath.Join(root, "title-runtimes", entry.Name()))
-						}
-					}
-				} else if !errors.Is(e, os.ErrNotExist) {
-					return domain.SessionDeletionPending()
-				}
-			}
-			for _, path := range paths {
-				if e := removeSessionTree(ctx, root, path); e != nil {
-					return e
-				}
-			}
+		paths, e := sessionDeletionCopyPaths(ctx, root, w)
+		if e != nil {
+			return e
 		}
-		for _, path := range []string{filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock")} {
+		for _, path := range paths {
 			if e := removeSessionTree(ctx, root, path); e != nil {
 				return e
 			}
@@ -247,4 +220,52 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 // checkouts and shared browser/account profiles never enter this path list.
 func removeSessionTree(ctx context.Context, root, path string) error {
 	return security.RemoveOwnedTree(ctx, root, path)
+}
+
+// Removal and completed-proof replay share one inventory, including dynamic
+// title runtimes. A restored or replaced copy blocks acknowledgement; replay
+// never gains permission to delete it merely from the earlier completed proof.
+func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
+	paths := []string{filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock")}
+	titlePrefixes := map[string]bool{}
+	for _, copy := range w.Copies {
+		if e := ctx.Err(); e != nil {
+			return nil, domain.SafeError(e)
+		}
+		paths = append(paths, filepath.Join(root, "jobs", string(copy.JobID)), filepath.Join(root, "jobs", string(copy.JobID)+".json"), filepath.Join(root, "workspace-recovery", string(copy.JobID)+".json"), filepath.Join(root, "processes", string(copy.JobID)), filepath.Join(root, "processes", string(copy.JobID)+".recovery.lock"))
+		if copy.ExecutionID != "" {
+			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ExecutionID)))
+		}
+		if copy.Type == domain.GenerateSessionTitleJob {
+			titlePrefixes[string(copy.JobID)+"-"] = true
+		}
+	}
+	if len(titlePrefixes) == 0 {
+		return paths, nil
+	}
+	f, e := os.Open(filepath.Join(root, "title-runtimes"))
+	if errors.Is(e, os.ErrNotExist) {
+		return paths, nil
+	}
+	if e != nil {
+		return nil, domain.SessionDeletionPending()
+	}
+	defer f.Close()
+	entries, e := f.ReadDir(4097)
+	if e != nil && !errors.Is(e, io.EOF) || len(entries) > 4096 {
+		return nil, domain.SessionDeletionPending()
+	}
+	// Every validated UUID has the same canonical width. Match the exact job
+	// UUID plus separator, without scanning the directory once per title job.
+	prefixLength := len(w.SessionID) + 1
+	for _, entry := range entries {
+		if e := ctx.Err(); e != nil {
+			return nil, domain.SafeError(e)
+		}
+		name := entry.Name()
+		if len(name) >= prefixLength && titlePrefixes[name[:prefixLength]] {
+			paths = append(paths, filepath.Join(root, "title-runtimes", name))
+		}
+	}
+	return paths, nil
 }
