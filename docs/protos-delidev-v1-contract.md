@@ -13,6 +13,12 @@ ledger reservations only: no schema declaration, generated binding, RPC or
 capability advertisement is activated by the reservation change. The owning
 issue is recorded directly when no implementation PR exists yet.
 
+Issue #1206's pending [native Codex model observation contract](cmds-delidev-native-models-contract.md)
+reserves server capability 16 and Worker capability 7. Keep these out of active
+schemas and capability advertisements until a dependent implementation follows
+main-established allocations. No new RPC or generated binding is activated by
+the reservation prerequisite.
+
 ## Scope
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 

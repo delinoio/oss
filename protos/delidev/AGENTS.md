@@ -6,6 +6,8 @@
 
 - Allocation provenance uses exactly one original `pr` or owning `issue` when an implementation PR does not yet exist; record other issue consumers in `sharedIssues`. Preserve immutable numbers and identities when the implementation PR is later created.
 
+- Issue #1206 reserves `SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 16` and `WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 7` without activating either. Follow `docs/cmds-delidev-native-models-contract.md`; establish reservations on main before dependent implementation, preserve native observations separately from explicit manual registration, and keep subscription discovery typed unsupported until #1095's exclusive managed-account boundary is available.
+
 - PR activity activates only #1118's existing main reservations in `activity.proto`: ActivityKind 7–10, ActivityEntry.pull_request 15 and ListActivityResponse.capabilities 3. Keep typed metadata/actor/mode/state separate from private source content and independently verified handling. Regenerate service-owned bindings and compatibility facades together.
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
