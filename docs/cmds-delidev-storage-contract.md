@@ -303,7 +303,9 @@ copies. Cancellation/failure after verified snapshot publication but before sour
 removal also retains uncertainty: explicit recovery registers that same retained
 snapshot while settling the incomplete cleanup and preserving present sources. Terminal metadata and session state/events commit together after the
 owning Worker report; malformed reports retain uncertainty instead of authorizing
-Resume. Snapshots use the existing generic metadata schema; no database migration,
+Resume. Failed recovery outcomes also bind the original action: availability
+stays at its previous state, removed bytes remain zero, and required retained
+snapshot identity, digest and non-deleted metadata must validate before settlement. Snapshots use the existing generic metadata schema; no database migration,
 history reset or new pre-migration backup is needed.
 
 Restore is available only from the exact current cleanup snapshot of a stored

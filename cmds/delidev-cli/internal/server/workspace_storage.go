@@ -350,19 +350,32 @@ func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) 
 		if input.Recovery == nil || output.RecoveredJobID != input.Recovery.Original.OperationID || (output.RecoveredJobState != domain.JobSucceeded && output.RecoveredJobState != domain.JobFailed) || (output.WorkspaceState != domain.WorkspacePresent && output.WorkspaceState != domain.WorkspaceStored) {
 			return workspace.ResultUncertain()
 		}
-		if output.Snapshot != nil && (output.Snapshot.ID != input.SnapshotID || output.Snapshot.SessionID != output.SessionID || output.Snapshot.MachineID != output.MachineID || len(output.Snapshot.SHA256) != 64 || output.Snapshot.CreatedAt.IsZero() || output.Snapshot.SizeBytes > workspace.MaxSnapshotBytes || output.Snapshot.RepositoryCount != uint32(len(input.Manifest.Repositories))) {
-			return workspace.ResultUncertain()
-		}
-		if output.RecoveredJobState == domain.JobSucceeded {
-			observed := output
-			observed.Action = input.Recovery.Original.Action
-			observed.OperationID = input.Recovery.Original.OperationID
-			observed.RecoveredJobID = ""
-			observed.RecoveredJobState = ""
-			raw, err := json.Marshal(observed)
-			if err != nil || validateWorkspaceStorageResult(input.Recovery.Original, raw) != nil {
+		observed := output
+		expected := input.Recovery.Original
+		observed.Action = expected.Action
+		observed.OperationID = expected.OperationID
+		observed.RecoveredJobID = ""
+		observed.RecoveredJobState = ""
+		if output.RecoveredJobState == domain.JobFailed {
+			// Failure preserves the original availability and zero removal. The
+			// retained artifacts still require the same full metadata validation.
+			switch expected.Action {
+			case workspace.StoragePreview:
+			case workspace.StorageCreate, workspace.StorageCleanup:
+				expected.Action = workspace.StoragePreview
+				if observed.Snapshot != nil {
+					expected.Action = workspace.StorageCreate
+				}
+			case workspace.StorageInspect, workspace.StorageRestore, workspace.StorageDelete:
+				expected.Action = workspace.StorageInspect
+			default:
 				return workspace.ResultUncertain()
 			}
+			observed.Action = expected.Action
+		}
+		encoded, err := json.Marshal(observed)
+		if err != nil || validateWorkspaceStorageResult(expected, encoded) != nil {
+			return workspace.ResultUncertain()
 		}
 		return nil
 	}

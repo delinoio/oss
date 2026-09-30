@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -237,5 +238,111 @@ func TestWorkspaceStorageQueuedCancellationAndMalformedReport(t *testing.T) {
 	state, _ := store.Decode[domain.Session](f.sessionRecord())
 	if !state.WorkspaceAvailable() || state.Dispatch != domain.DispatchPaused {
 		t.Fatal("reconciliation lost paused live workspace")
+	}
+}
+
+func TestWorkspaceStorageFailedRecoveryValidatesOriginalAction(t *testing.T) {
+	for _, action := range []workspace.StorageAction{workspace.StoragePreview, workspace.StorageCreate, workspace.StorageCleanup, workspace.StorageInspect, workspace.StorageRestore, workspace.StorageDelete} {
+		t.Run(string(action), func(t *testing.T) {
+			session, machine, snapshot := domain.NewID(), domain.NewID(), domain.NewID()
+			original := workspace.StorageRequest{OperationID: domain.NewID(), Action: action, PreviousState: domain.WorkspacePresent, SnapshotID: snapshot, Preparation: workspace.PrepareRequest{SessionID: session, MachineID: machine}}
+			if action == workspace.StorageRestore {
+				original.PreviousState = domain.WorkspaceStored
+			}
+			output := workspace.StorageResult{Version: 1, OperationID: domain.NewID(), Action: workspace.StorageRecover, SessionID: session, MachineID: machine, CleanupVerified: true, RecoveredJobID: original.OperationID, RecoveredJobState: domain.JobFailed, WorkspaceState: original.PreviousState, PreviewDigest: strings.Repeat("b", 64)}
+			if action == workspace.StorageInspect || action == workspace.StorageRestore || action == workspace.StorageDelete {
+				original.SnapshotDigest = strings.Repeat("a", 64)
+				output.Snapshot = &workspace.SnapshotMetadata{ID: snapshot, SessionID: session, MachineID: machine, SHA256: original.SnapshotDigest, CreatedAt: time.Now().UTC()}
+			}
+			input := workspace.StorageRequest{OperationID: output.OperationID, Action: workspace.StorageRecover, SnapshotID: snapshot, Preparation: original.Preparation, Recovery: &workspace.StorageRecovery{Original: original}}
+			check := func(output workspace.StorageResult) error {
+				raw, _ := json.Marshal(output)
+				return validateWorkspaceStorageResult(input, raw)
+			}
+			if err := check(output); err != nil {
+				t.Fatal("valid preserved outcome rejected", err)
+			}
+			bad := output
+			bad.WorkspaceState = domain.WorkspaceStored
+			if output.WorkspaceState == domain.WorkspaceStored {
+				bad.WorkspaceState = domain.WorkspacePresent
+			}
+			if check(bad) == nil {
+				t.Fatal("failed action changed availability")
+			}
+			bad = output
+			bad.SourceBytes, bad.RemovedSourceBytes = 1, 1
+			if check(bad) == nil {
+				t.Fatal("failed action claimed removed bytes")
+			}
+			if output.Snapshot != nil {
+				bad = output
+				bad.Snapshot = nil
+				if check(bad) == nil {
+					t.Fatal("required retained snapshot omitted")
+				}
+				changed := *output.Snapshot
+				changed.SHA256 = strings.Repeat("c", 64)
+				bad = output
+				bad.Snapshot = &changed
+				if check(bad) == nil {
+					t.Fatal("retained snapshot digest changed")
+				}
+				changed = *output.Snapshot
+				changed.Deleted = true
+				bad.Snapshot = &changed
+				if check(bad) == nil {
+					t.Fatal("failed deletion claimed a deleted artifact")
+				}
+			}
+		})
+	}
+}
+
+func TestWorkspaceStorageFailedCleanupRecoveryCannotInventStoredCopy(t *testing.T) {
+	f := newStorageFixture(t)
+	preview, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.execute(preview.Msg.Job)
+	cleanup, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CLEANUP, "", preview.Msg.Job.Id, "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed := f.claim(cleanup.Msg.Job)
+	_, err = f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: claimed.Id, ExpectedRevision: claimed.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(domain.RecoveryRequired)}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assigned := f.claim(recovery.Msg.Job)
+	var job domain.Job
+	if domain.Decode(assigned.DocumentJson, &job) != nil {
+		t.Fatal("invalid assignment")
+	}
+	var input workspace.StorageRequest
+	if domain.Decode(job.Input, &input) != nil {
+		t.Fatal("invalid recovery input")
+	}
+	output, err := f.manager.Storage(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output.WorkspaceState = domain.WorkspaceStored
+	raw, _ := json.Marshal(output)
+	reported, err := f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: assigned.Id, ExpectedRevision: assigned.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), OutputJson: raw}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if domain.Decode(reported.Msg.Job.DocumentJson, &job) != nil || job.State != domain.JobUncertain {
+		t.Fatal("malformed recovery settled ownership")
+	}
+	state, err := store.Decode[domain.Session](f.sessionRecord())
+	if err != nil || state.Storage.State != domain.WorkspaceStorageUncertain || state.Storage.SnapshotID != "" {
+		t.Fatal("malformed recovery invented stored copy", err)
 	}
 }
