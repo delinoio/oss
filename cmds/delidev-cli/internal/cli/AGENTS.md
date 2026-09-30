@@ -33,3 +33,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Common parsing, authenticated clients, document input, and output envelopes belong to `arguments.go`, `client.go`, `document.go`, and `output.go`. Command-family dispatch belongs in `dispatch_<family>.go`; preserve request ID propagation and the generic resource fallback.
+
+- `session switch-account --id ID --revision N --account-id ID` invokes only the explicit owner/client Connect operation. Gate support with the typed status capability, preserve exact request identities, and leave the selected session paused until explicit Resume.

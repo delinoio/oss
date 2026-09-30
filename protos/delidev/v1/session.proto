@@ -8,6 +8,7 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc SwitchSessionAccount(SwitchSessionAccountRequest) returns (SwitchSessionAccountResponse);
   rpc LinkSessionPullRequest(LinkSessionPullRequestRequest) returns (LinkSessionPullRequestResponse);
   rpc UnlinkSessionPullRequest(UnlinkSessionPullRequestRequest) returns (UnlinkSessionPullRequestResponse);
   rpc ReadSessionReviewContext(ReadSessionReviewContextRequest) returns (ReadSessionReviewContextResponse);
@@ -330,4 +331,13 @@ message SubmitLocalReviewResponse {
   SessionChange change = 2;
   string request_id = 3;
   bool replayed = 4;
+}
+
+message SwitchSessionAccountRequest {
+  Mutation mutation = 1;
+  string account_id = 2;
+}
+
+message SwitchSessionAccountResponse {
+  SessionChange change = 1;
 }

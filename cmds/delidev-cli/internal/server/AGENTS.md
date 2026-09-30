@@ -41,3 +41,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Keep process startup/shutdown in `server_startup.go`, HTTP authorization in `server_http.go`, Connect registration in `server_routes.go`, and system status/capability responses in `server_status.go`. New service behavior belongs in its service file; preserve middleware and registration order.
+
+- Explicit stopped Codex API account selection follows the sessions/proxy contracts. Require exact terminal/cleanup/checkpoint evidence and current eligibility from the original candidate snapshot; retain revisioned selection history, pause until explicit Resume and never reroute automatically. Preserve original usage/assignments and read the predecessor checkpoint under its original account scope while creating a fresh successor grant. Missing or account-bound history cannot switch; every switched relay request independently rejects remote history references.

@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { createRegistry, createFileRegistry } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { GetStatusRequestSchema, ResourceSchema, SystemCapability, SystemService, file_delidev_v1_delidev } from "../src/gen/delidev/v1/delidev_pb.js";
+import { GetStatusRequestSchema, ResourceSchema, SystemCapability, SystemService, SessionService, SwitchSessionAccountRequestSchema, file_delidev_v1_delidev } from "../src/gen/delidev/v1/delidev_pb.js";
+import { switchSessionAccount } from "../src/gen/delidev/v1/delidev-SessionService_connectquery.js";
+import { SessionQuery } from "../src/index.js";
 import { getStatus } from "../src/gen/delidev/v1/delidev-SystemService_connectquery.js";
 import { ResourceSchema as CurrentResourceSchema } from "../src/gen/delidev/v1/common_pb.js";
 import { SystemService as CurrentSystemService } from "../src/gen/delidev/v1/system_pb.js";
@@ -15,6 +17,10 @@ describe("historical generated imports", () => {
     expect(SystemCapability.AUTOMATIC_TITLES_V1).toBe(1);
     expect(SystemCapability.SESSION_FORWARDING_V1).toBe(2);
     expect(SystemCapability.USER_SERVICES_V1).toBe(3);
+    expect(SystemCapability.STOPPED_CODEX_ACCOUNT_SWITCH_V1).toBe(5);
+    expect(SwitchSessionAccountRequestSchema.typeName).toBe("delidev.v1.SwitchSessionAccountRequest");
+    expect(switchSessionAccount).toBe(SessionService.method.switchSessionAccount);
+    expect(SessionQuery.switchSessionAccount).toBe(switchSessionAccount);
   });
 });
 

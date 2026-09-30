@@ -127,6 +127,9 @@ type Lease struct {
 	AuthorizeReference func(context.Context, ReferenceKind, string) error
 	ObserveReference   func(context.Context, ReferenceKind, string) error
 	BeforeSubmit       func(context.Context, Operation) error
+	// ObserveHistory records only full-history versus account-bound use before
+	// any provider side effect. It never retains request content or identifiers.
+	ObserveHistory func(context.Context, bool) error
 }
 
 type Authority interface {

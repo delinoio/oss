@@ -52,6 +52,17 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.
 
+Explicit stopped Codex API account selection for issue #1097 spans Go,
+authenticated Connect, CLI and generated clients. Original candidates,
+provider/model, terminal/cleanup and portable-history gates retain all prior
+attribution; new execution requires explicit Resume and a fresh scoped grant.
+Subscription/provider/model switching and automatic fallback remain excluded.
+See the [sessions contract](cmds-delidev-sessions-contract.md),
+[proxy contract](cmds-delidev-proxy-contract.md) and
+[issue #1097 evidence](evidence/delidev/issue-1097/stopped-account-switch.md)
+for the controlled native A-to-B result and unperformed
+desktop/real-account/platform acceptance.
+
 ## Change Policy
 Update the owning domain contract when behavior changes. Update this index only for ownership, its domain catalog or cross-domain invariants. Record each implementation/validation increment in its own `docs/evidence/delidev/issue-<number>/` file. A validation-only increment does not require editing this index or an AGENTS file.
 
