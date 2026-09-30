@@ -410,8 +410,34 @@ test("local CI commands are documented by repository contracts", () => {
   for (const command of ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:security", "test:adapters"]) assert.ok(project.includes(command), command);
 });
 
-test("native Go integration retains a bounded watchdog and serialized Windows package tests", () => {
-  assert.equal(namedStep(workflow.jobs["go-test"], "Run go test").run, "go test ${{ matrix.os == 'windows-latest' && '-p=1' || '' }} -timeout=20m ./...");
+test("Go validation retains full Unix suites and four independent native Windows shards", () => {
+  const job = workflow.jobs["go-test"];
+  assert.equal(job.strategy["fail-fast"], false);
+  assert.deepEqual(job.strategy.matrix, { include: [
+    { os: "ubuntu-latest", shard: "all", label: "ubuntu-latest" },
+    { os: "macos-latest", shard: "all", label: "macos-latest" },
+    ...["core", "server", "harness", "worker"].map((shard) => ({ os: "windows-latest", shard, label: `windows-latest, ${shard}` })),
+  ] });
+  assert.equal(job.name, "Go Test (${{ matrix.label }})");
+  assert.equal(job["runs-on"], "${{ matrix.os }}");
+  assert.equal(namedStep(job, "Run go test").run, "node scripts/ci/go-test.mjs --shard ${{ matrix.shard }}");
+  assert.equal(namedStep(job, "Checkout").with.lfs, true);
+  const embeds = namedStep(job, "Generate and verify embedded administrator assets");
+  for (const name of ["devhud-admin", "async-commit-hook"]) assert.ok(embeds.run.includes(`pnpm --filter ${name} build:embedded`));
+  assert.ok(job.steps.indexOf(embeds) < job.steps.indexOf(namedStep(job, "Run go test")));
+  assert.equal(step(job, "ci-go").with["cache-scope"], "${{ matrix.os == 'windows-latest' && format('go-test-{0}', matrix.shard) || '' }}");
+});
+
+test("scoped Go caches preserve default keys and restore shared main caches on first use", () => {
+  const action = load(readFileSync(`${root}/.github/actions/setup-ci-go/action.yml`, "utf8"));
+  assert.equal(action.inputs["cache-scope"].default, "");
+  assert.equal(action.inputs["cache-scope"].required, false);
+  const cache = step({ steps: action.runs.steps }, "restore");
+  const sharedPrefix = "ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-";
+  const scopedPrefix = "ci-go-v1${{ inputs.cache-scope != '' && format('-{0}', inputs.cache-scope) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-";
+  assert.equal(cache.with.key, `${scopedPrefix}\${{ hashFiles('go.mod', 'go.sum') }}`);
+  assert.deepEqual(cache.with["restore-keys"].trim().split("\n"), [scopedPrefix, sharedPrefix]);
+  assert.equal(action.outputs["cache-key"].value, "${{ steps.restore.outputs.cache-primary-key }}");
 });
 
 

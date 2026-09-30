@@ -74,3 +74,19 @@ Validation base: `0f6e33829fdd6b854d18e677c1e9f93d875f94dd`. Tested `settings-pr
 - The exact-path LFS icon was hydrated through `pnpm prepare:assets` before the frontend command. Generated app/client `dist` outputs are removed after validation.
 
 The successful frontend command does not establish real subscription authentication, packaged native desktop acceptance or a full DeliDev native-suite pass. The earlier native-suite failures and acceptance limits remain visible above; new-head CI and review after this repair are separate pending evidence.
+
+## Second main merge maintenance
+
+The original PR checkout was recovered at its recorded path from the existing, unclaimed issue branch, whose head matched published `bb4de7dd1f400ceea19a5ac66037d4494b7d14ca`. Main `36736923edfd9fcaa177a2c9594acea223e10bdf` was merged without rebasing. The only content conflict was the account lifecycle contract: the resolution preserves main's direct-entry AI API key creation and independent provider-picker contract alongside this PR's explicit CLI/protected Worker subscription support and unavailable desktop subscription login controls. Other main changes retain their original ownership and evidence.
+
+Executed on the merged tree using the isolated exact Go 1.26.8 toolchain:
+
+- `pnpm proto:check`: passed format/lint, breaking compatibility and generated freshness with the task-owned Go cache. Regeneration produced no unstaged generated-source changes.
+- The five-package focused `Subscription|Managed|Bundle` race command: all five packages passed.
+- `GOMAXPROCS=2 go test -p 2 ./protos/...` and `GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/...`: passed.
+- API-client `pnpm test` / `pnpm typecheck`: all 44 tests and typecheck passed. All six protocol/structure Node checks passed.
+- Required full frontend `pnpm test` was attempted twice. The first passed 1,105 tests and timed out the Settings disposal test at its five-second deadline. That test then passed in isolation (1.80-second test). The full retry passed 1,102 tests and failed `settings-configuration.integration.test.tsx`, `settings-devices.integration.test.tsx`, the provider-picker case in `settings.test.tsx`, and `tray-presentation.test.tsx` at their DOM/test waits. These default-concurrency command failures are retained; no unchanged-main comparison or blanket baseline classification is claimed.
+
+The complete frontend suite then passed with `pnpm exec vitest run --maxWorkers=2`: 88 files / 1,106 tests, retaining the original DOM and test deadlines. The subsequent `pnpm test:bundle-dry-run`, `pnpm test:desktop-launch`, `pnpm test:widget` and `pnpm build` all passed (eight packaging checks, sixteen launch/asset checks, widget fixtures and production output). This bounded run is recorded separately and is not presented as a successful unrestricted `pnpm test`. Frontend typecheck passed in both full-command attempts. No frontend test configuration or timeout was changed in this merge repair.
+
+The exact DeliDev LFS icon was hydrated before validation, and both Go UI embed prerequisites were generated for the merge commit hook. Complete native-suite and real-account acceptance limits above remain unresolved.
