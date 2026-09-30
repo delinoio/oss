@@ -2780,6 +2780,33 @@ neither a published nor pending image. Backup store/server race suites passed
 - Merged frontend `pnpm test` passes 71 files / 847 tests, typechecking and production build. Focused CLI desktop recovery, local pairing and account race tests pass, and `go vet ./cmds/delidev-cli/...` passes. This merge changes no Rust source and does not replace the previously recorded native/full-suite evidence limits.
 - Git LFS objects were hydrated and verified. Required generated embeds were built for Go checks and hooks; repository-owned generated `dist` directories are removed after validation.
 
+## 2026-09-29: PR #1061 latest-main merge and review repairs
+
+- Merged the latest `origin/main` (including PRs #1060 and #1067) while preserving the API-provider activation, account-type filtering, and project/session-scoped provider inventory behavior. The resolved merge keeps main's hosted provider defaults and schema v22 seed migration, desktop registration recovery, and all existing evidence records.
+- Managed CLI preset activation now records the canonical preset identity when activating an unnamed preset. A named copy clears that identity, so a provider already seeded by the hosted-provider migration is reported as an existing provider instead of silently creating a duplicate custom provider.
+- Provider model search now sends its signed continuation cursor only to `SearchModels`. Provider inventory receives a cursor only while the provider inventory surface is active. A regression test pages model search and verifies its second-page cursor never reaches inventory, while the existing account inventory pagination remains intact.
+- After also merging main's contextual navigation and Pull requests UI, `apps/delidev` `pnpm test` passed 72 test files / 852 tests, typechecking, and the production build. `go test -race -timeout 30m ./cmds/delidev-cli/internal/cli ./cmds/delidev-cli/internal/server ./cmds/delidev-cli/internal/store` and `go vet ./cmds/delidev-cli/...` passed. Root Proto lint, breaking-change, and fresh-generation checks passed during the provider activation merge.
+- Root `TMPDIR=/private/tmp cargo test --quiet` passed after the documented macOS prerequisite `cargo build -p pnport -p fspy_preload_unix --features fspy_preload_unix/pnport`; this also avoids the existing `/var` versus `/private/var` temporary-path fixture mismatch. The local Rust run emitted existing dead-code, CoreFoundation declaration, and unused Tauri patch warnings. Generated app/client `dist` output is removed after validation.
+- Validation is local macOS arm64 evidence. It does not claim Windows/Linux execution or broader full-issue acceptance.
+
+## 2026-09-29: PR #1061 CI repair validation
+
+- Merged the latest `origin/main` through `51a3767c` and retained the provider-activation repairs and session-title evidence. The review/CI repair changed only the real Settings integration fixture: after issuance, it still requires a fresh server read before revealing the private code, and now uses the existing explicit refresh action once if that first read reports the grant status as unavailable. The fixture then pairs with the exact issued document and verifies that a second use is rejected.
+- On macOS arm64 with the repository-pinned Node.js 24 runtime, `apps/delidev` `pnpm test` passed all 72 files and 860 tests, TypeScript checking, and the production build. Root `pnpm proto:check` passed lint, breaking-change, and fresh-generation checks. The earlier local fresh-generation failure was reproduced under Node.js 26 and did not recur under the repository-pinned Node.js 24 runtime.
+- `TMPDIR=/private/tmp cargo test --quiet` passed across the Rust workspace after building the macOS `pnport` and `fspy_preload_unix` injection artifacts required by its supervisor fixtures.
+- A follow-up review found that signed provider inventory cursors could outlive the switch from case-folded to exact-name ordering. The inventory cursor scope is now versioned so prior 24-hour cursors expire instead of being reinterpreted; a server regression fixture verifies a validly signed legacy cursor is rejected at the current provider/account epoch. Provider inventory server/store tests passed under `-race`, and `go vet ./cmds/delidev-cli/...` passed.
+- Generated repository-owned app/client `dist` output is removed after validation. This remains local macOS arm64 evidence and does not claim Windows/Linux execution or broader full-issue acceptance.
+- Merged `origin/main` through `86346ef3`, preserving the provider inventory regressions and current-main Settings navigation, pairing verification, backup, and native packaging changes. The resolved pairing fixture retains the gated fresh-read privacy assertion and refreshes once if the first read is unavailable.
+- On macOS arm64 with Node.js 24.20.0, `apps/delidev` `pnpm test` passed 74 files / 943 tests, all eight packaging dry-run tests, type checking, and the production build. CLI, server, store, and workspace Go package tests passed; `go vet ./cmds/delidev-cli/...` passed.
+- Root `TMPDIR=/private/tmp cargo test -- --test-threads=1` passed after building the macOS pnport/fspy injection prerequisites. Opt-in native sidecar and installed-renderer tests remain ignored by their declared requirements. `git lfs fsck` passed, and app/client generated `dist` directories were removed after validation.
+
+## 2026-09-30: PR #1061 first-activation retry verification
+
+- Reproduced the remaining first-activation acknowledgment-loss gap: after a virtual local preset became a saved provider in refreshed inventory, its UUID replaced the retained mutation key and enabled a new toggle while the original creation request remained uncertain.
+- Managed-preset rows and toggle intents now keep their preset identity across that transition. The regression fixture verifies the original switch survives, remains disabled, and offers the exact original request after navigating away and back; successful receipt replay clears uncertainty without replacing its empty creation ID or revision.
+- The focused regression failed before the change and passed afterward. With Node.js 24.20.0 on macOS arm64, `pnpm test` in `apps/delidev` passed 74 files / 944 tests, eight package dry-run tests, typechecking and the production build. `go test -race ./cmds/delidev-cli/internal/cli -run '^TestVersionedCLIMutationRevisionAndMissingInput$' -count=1` passed, independently confirming the existing managed CLI preset/custom-copy repair. `git lfs fsck` passed.
+- No Rust, protocol or backend implementation changed in this pass. Generated app/client `dist` output is removed after validation. Native desktop layout/keyboard and real provider/inference acceptance remain unverified; these fixtures do not close that evidence gap.
+
 ### PR #1063 atomic deletion claim repair (2026-09-29)
 
 Managed backup deletion moves the published image using a native atomic
@@ -3274,3 +3301,29 @@ The pre-merge PR head `cc176e8c` had 40 passing checks and five expected packagi
 skips. Those results do not validate this merge commit; hosted CI must rerun.
 Codex review remains unavailable because the connector reports an exhausted
 review quota, with no completed review or approval.
+
+### PR #1113 provider activation merge repair (2026-09-30)
+
+Merged `main` at `60770d06` after PR #1061 changed the provider activation
+instructions. The sole conflict was an appended CLI policy: retain both the
+versioned provider inventory cursor rule and the explicit server outbound
+profile rule. Provider activation, legacy preset compatibility, capability
+gating, inventory ordering and account-scope changes merge without source
+conflicts. The previously repaired GitHub profile fixture retains its combined
+latency checks and exact two-write assertion.
+
+On Node.js 24.20.0, `pnpm test` from `apps/delidev` passes all 74 frontend
+files / 945 tests, type checking, packaging/launcher checks, native Swift widget
+fixtures and the production build. Focused uncached Go race tests selected by
+`Provider|Catalog|ModelSearch|Network|VersionedCLI` pass in the CLI, server and
+store packages; this includes the provider compatibility/filtering and network
+profile/selection fixtures. `go vet -p=1 ./cmds/delidev-cli/...`,
+`pnpm proto:check` and all 95 `pnpm ci:contracts` checks pass. Required
+administrator and ach UI embeds are generated for the repository Go commit
+hook; generated repository `dist` directories are removed after verification.
+
+No Rust source changes are introduced by this merge. The earlier full-suite
+limitations remain recorded above; these focused checks do not establish a
+complete local Go race-suite or Rust workspace pass. The new merge head needs
+fresh hosted CI. Codex review quota exhaustion still supplies no completed
+review or approval, and no real-provider or platform acceptance is claimed.
