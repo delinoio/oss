@@ -320,9 +320,10 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 	return err
 }
 
-// No provider/native work runs here. Each bounded claim transaction commits an
-// immutable job for the outbound Worker stream, which revalidates real native
-// settings and filesystem/process ownership before it can send the assigned input.
+// Manual PR fixes perform bounded provider reads before their claim transaction.
+// Each claim commits an immutable job for the outbound Worker stream; only that
+// Worker revalidates native settings and filesystem/process ownership, executes
+// the harness and verifies its push. No native publication runs on the server.
 func (s *Service) runExecutionDispatch(parent context.Context) {
 	ctx := domain.WithPrincipal(parent, domain.Principal{Type: domain.OwnerDevice})
 	ticker := time.NewTicker(time.Second)
