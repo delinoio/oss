@@ -45,6 +45,13 @@ is not reported as passing. A serial retry (`GOMAXPROCS=2 go test -race -p 1 ./c
 also encountered the CLI creation-diff `unavailable` failure and was stopped after
 that confirmed failure; it is not a completed second full-suite run.
 
+An independent base-only CLI check (`GOMAXPROCS=2 go test -race -p 1
+./cmds/delidev-cli/internal/cli -run '^TestCLISessionAcceptanceQueueAndArchive$'
+-count=1`) failed in 105.505 seconds on the same unchanged base. It timed out at
+`session create --wait` before reaching the later diff assertion, so it supports
+an existing readiness/timing validation limitation but does not reproduce the
+specific creation-diff failure. No full-suite pass is inferred from this result.
+
 ## Limits
 
 Tests use isolated temporary SQLite, Git, process and socket fixtures without
