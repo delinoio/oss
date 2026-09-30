@@ -12,16 +12,17 @@
     "lint": "pnpm typecheck",
     "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && vitest run && pnpm test:bundle-dry-run && pnpm test:desktop-launch && pnpm test:widget && pnpm build",
     "test:unit": "vitest run",
+    "prepare:assets": "node scripts/prepare-assets.mjs",
     "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
     "prepare:widget": "node scripts/build-widget.mjs",
     "test:widget": "node scripts/test-widget.mjs",
-    "build:native": "pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && pnpm prepare:widget && cargo build --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop",
+    "build:native": "pnpm prepare:assets && pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && pnpm prepare:widget && cargo build --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop",
     "dev:desktop": "node scripts/run-desktop.mjs",
-    "bundle:native": "pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && pnpm prepare:widget && cargo run --manifest-path src-tauri/Cargo.toml --features cli --bin delidev-tauri-cli -- build --features desktop-host,custom-protocol,tauri/cef",
+    "bundle:native": "pnpm prepare:assets && pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && pnpm prepare:widget && cargo run --manifest-path src-tauri/Cargo.toml --features cli --bin delidev-tauri-cli -- build --features desktop-host,custom-protocol,tauri/cef",
     "bundle:macos-dry-run": "node scripts/bundle-macos-dry-run.mjs",
     "bundle:dry-run": "node scripts/bundle-native-dry-run.mjs",
     "test:bundle-dry-run": "node --test scripts/bundle-macos-dry-run.test.mjs scripts/native-package.test.mjs",
-    "test:desktop-launch": "node --test scripts/run-desktop.test.mjs"
+    "test:desktop-launch": "node --test scripts/run-desktop.test.mjs scripts/prepare-assets.test.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
