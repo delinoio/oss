@@ -5,6 +5,49 @@ import (
 	"testing"
 )
 
+func TestClaudeFailedContinuationRequiresCorrelatedNonAbortedSettledInput(t *testing.T) {
+	for _, change := range []string{"original", "aborted-stream", "aborted-tools", "outcome", "input", "permission-change", "permission-mismatch", "waiting", "unconfirmed", "pending-task", "background", "pending-compaction", "stop", "interruption", "denial"} {
+		t.Run(change, func(t *testing.T) {
+			input := NewID()
+			p := ExecutionProgress{InputID: input, Outcome: ExecutionFailed, Observed: ObservedExecutionSettings{ClaudePermission: ClaudePermissionDefault}, ClaudeTerminal: &ClaudeTerminalObservation{InputID: input, ResultNativeID: string(NewID()), CommandNativeID: string(NewID()), IdleNativeID: string(NewID()), Kind: ClaudeResultSuccess, Reason: ClaudeAPIError, Error: true, Command: ClaudeCommandCancelled}}
+			switch change {
+			case "aborted-stream":
+				p.ClaudeTerminal.Reason = ClaudeAbortedStreaming
+			case "aborted-tools":
+				p.ClaudeTerminal.Reason = ClaudeAbortedTools
+			case "outcome":
+				p.Outcome = ExecutionSucceeded
+			case "input":
+				p.ClaudeTerminal.InputID = NewID()
+			case "permission-change":
+				p.ClaudeProgress = &ClaudeProgressState{PermissionChanged: true}
+			case "permission-mismatch":
+				permission := ClaudePermissionPlan
+				p.ClaudeProgress = &ClaudeProgressState{Permission: &permission}
+			case "waiting":
+				p.Waiting.UserInput = true
+			case "unconfirmed":
+				p.UnconfirmedResponses = 1
+			case "pending-task":
+				p.ClaudeTasks = &ClaudeTasksState{Tasks: map[string]ClaudeTaskState{"pending": {}}}
+			case "background":
+				p.ClaudeTasks = &ClaudeTasksState{Background: []string{"background"}}
+			case "pending-compaction":
+				p.ClaudeCompaction = &ClaudeCompactionState{Pending: &ClaudeCompactionPending{}}
+			case "stop":
+				p.ClaudeStop = &ClaudeStopObservation{}
+			case "interruption":
+				p.ClaudeInterruption = &ClaudeInterruptionProgress{}
+			case "denial":
+				p.ClaudeDenial = &ClaudeDenialCompletion{}
+			}
+			if p.ClaudeContinuationBoundary(input) != (change == "original") {
+				t.Fatal("unproved failed input acquired continuation eligibility")
+			}
+		})
+	}
+}
+
 func originalClaudeQuestionContinuation(t *testing.T) (ExecutionInteraction, ExecutionMessage) {
 	t.Helper()
 	v := claudeResponseOriginal(true)
