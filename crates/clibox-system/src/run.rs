@@ -3338,25 +3338,54 @@ fn completed_process_group_running(group: u32) -> Result<bool> {
         if candidate == group {
             continue;
         }
-        let stat = match fs::read(entry.path().join("stat")) {
-            Ok(stat) => stat,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
-                // hidepid can deny unrelated process details. getpgid still
-                // lets us fail closed if the inaccessible PID belongs to the
-                // owned group, without rejecting unrelated entries.
-                if linux_process_group_matches(candidate, group)? {
-                    return Ok(true);
-                }
-                continue;
-            }
-            Err(error) => return Err(Failure::io(&error)),
-        };
-        if linux_process_group_member(&stat, group)? {
+        if linux_process_group_member_after_stat_read(
+            candidate,
+            group,
+            fs::read(entry.path().join("stat")),
+        )? {
             return Ok(true);
         }
     }
     Ok(false)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_process_group_member_after_stat_read(
+    pid: u32,
+    group: u32,
+    stat: io::Result<Vec<u8>>,
+) -> Result<bool> {
+    match stat {
+        Ok(stat) => linux_process_group_member(&stat, group),
+        // A process may disappear before open (ENOENT), or after open while
+        // /proc generates the stat contents (ESRCH). Neither is evidence of a
+        // live group member. Keep every other unknown inspection failure
+        // fatal; the owned leader remains unreaped throughout this scan.
+        Err(error)
+            if error.kind() == io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(libc::ESRCH) =>
+        {
+            Ok(false)
+        }
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+            // hidepid can deny unrelated process details. getpgid still
+            // lets us fail closed if the inaccessible PID belongs to the
+            // owned group, without rejecting unrelated entries.
+            linux_process_group_matches(pid, group)
+        }
+        Err(error) => {
+            tracing::error!(
+                operation = "run",
+                group,
+                pid,
+                raw_os_error = ?error.raw_os_error(),
+                error_kind = ?error.kind(),
+                stage = "group_member_stat_failed",
+                "run_cleanup"
+            );
+            Err(Failure::io(&error))
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -5472,6 +5501,52 @@ mod lifecycle_tests {
         assert_eq!(unsafe { libc::kill(relay, 0) }, -1);
         assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
         let _ = process.wait();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn process_group_scan_accepts_disappearance_after_stat_open() {
+        let group = unsafe { libc::getpgrp() } as u32;
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        // Hold a real procfs descriptor while the test reaps its own child.
+        // The directory existed at open, but generating stat now returns
+        // ESRCH rather than the ENOENT seen when disappearance precedes open.
+        let mut stat_file = fs::File::open(format!("/proc/{pid}/stat")).unwrap();
+        assert!(child.wait().unwrap().success());
+        let mut stat = Vec::new();
+        let error = stat_file.read_to_end(&mut stat).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(libc::ESRCH));
+
+        assert!(!linux_process_group_member_after_stat_read(pid, group, Err(error)).unwrap());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn process_group_scan_revalidates_inaccessible_group_members() {
+        let pid = std::process::id();
+        let group = unsafe { libc::getpgrp() } as u32;
+        assert!(group > 0);
+        let denied = || Err(io::Error::from(io::ErrorKind::PermissionDenied));
+
+        assert!(linux_process_group_member_after_stat_read(pid, group, denied()).unwrap());
+        assert!(!linux_process_group_member_after_stat_read(pid, group + 1, denied()).unwrap());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn process_group_scan_rejects_unknown_stat_failures() {
+        let error = linux_process_group_member_after_stat_read(
+            std::process::id(),
+            unsafe { libc::getpgrp() } as u32,
+            Err(io::Error::from_raw_os_error(libc::EIO)),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, Code::IoFailed);
     }
 
     #[cfg(any(target_os = "linux", test))]

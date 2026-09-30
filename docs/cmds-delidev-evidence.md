@@ -3841,3 +3841,45 @@ The imported prior native-bundle evidence is preserved as historical evidence;
 no new native package, installed-shell, production-signing or release acceptance
 is claimed. Fresh CI must evaluate the new merge head, while Codex's unchanged
 quota notice remains neither a completed review nor approval.
+
+### PR #1113 Linux process-status disappearance repair (2026-09-30)
+
+The [Ubuntu clibox consumer job 109724351562](https://github.com/delinoio/oss/actions/runs/36663884174/job/109724351562)
+at `1b3e873ca044884a56f9d037269d81e3b4d04f41` fails the foreground
+completion fixture's success assertion. Its terminal output was discarded, so
+the hosted log does not identify the runtime error. Preserve that output and
+numeric exit status in future failures, with no timeout or status relaxation.
+
+Investigation reproduces a concrete Linux cleanup race: opening a real
+test-owned `/proc/<pid>/stat` descriptor, reaping that process and then reading
+the descriptor returns `ESRCH` (numeric OS error 3). The previous completed-group
+scan accepts only `ENOENT` disappearance and therefore rejects this second
+disappearance case as an I/O failure. Accept both cases while retaining the
+unreaped owned leader, permission-denied group revalidation and fatal handling
+of other unknown inspection errors. Add redacted numeric diagnostics for those
+remaining errors and deterministic coverage for disappearance, inaccessible
+members and unknown failures. This repairs the reproduced race; it does not
+establish the original hosted failure's cause without fresh CI evidence.
+
+Before the behavior change, 500 isolated and 2,000 concurrent/CPU-constrained
+foreground completions pass in Linux arm64 Docker, followed by 1,000 completions
+with unrelated process churn. One full concurrent process suite fails a nested
+shell cleanup with a generic I/O diagnostic (45/46 pass); ten subsequent suites
+with status-read diagnostics pass all 46 tests. None identifies the hosted
+foreground fixture's error. A completed, unreaped child's group still accepts
+the relay in a direct Linux probe, so the earlier relay-setup hypothesis is not
+used as evidence or changed behavior. These container checks are Linux arm64
+evidence, not native hosted Ubuntu x64 acceptance.
+
+The real-procfs regression fails with the previous `ENOENT`-only handling
+(Cargo exit 101) and all three new cases pass with the repair. Final Linux
+arm64 Docker validation passes all six clibox crates (333 tests, none ignored),
+including the foreground process fixture. Linux all-target Clippy for clibox
+and clibox-system passes with warnings denied. Final root `cargo test --
+--test-threads=1` on macOS arm64 passes 2,065 tests with seven existing ignored
+fixtures. Formatting and whitespace checks pass. On Node.js 24.20.0, all 24
+npm launcher tests, the local macOS arm64 release build and offline installed
+npm/pnpm consumer smoke checks pass. All 95 repository contract fixtures pass.
+Repository-owned generated `dist` directories are absent after validation.
+Fresh hosted checks must confirm the pushed head; Codex's quota notice still
+does not supply a completed review or approval.
