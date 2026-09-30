@@ -302,8 +302,8 @@ func Run(ctx context.Context, args []string, streams IO) int {
 				}
 			}
 		}
-		if len(rest) > 0 && (rest[0] == "presets" || rest[0] == "discover" || presetCreate) {
-			if rest[0] != "presets" {
+		if len(rest) > 0 && (rest[0] == "presets" || rest[0] == "inventory" || rest[0] == "discover" || presetCreate) {
+			if rest[0] != "presets" && rest[0] != "inventory" {
 				ensureRequest(&o)
 			}
 			value, err := providerCatalog(ctx, c, o, rest)
@@ -493,11 +493,11 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		default:
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription."))
 		}
-		response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: f, ProviderId: *providerID, AccountType: selectedType}))
+		response, err := listWithProviderFilter(ctx, c, f, *providerID, selectedType)
 		if err != nil {
-			return emit(nil, rpc.ClientError(err))
+			return emit(nil, err)
 		}
-		return emit(map[string]any{"resources": resourcesJSON(response.Msg.Resources), "next_page_token": response.Msg.NextPageToken}, nil)
+		return emit(map[string]any{"resources": resourcesJSON(response.Resources), "next_page_token": response.NextPageToken}, nil)
 	case "get", "inspect":
 		if err := domain.ID(*id).Validate(); err != nil {
 			return emit(nil, err)
@@ -845,6 +845,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account disconnect --id ID --revision N
   account validate --id ID --revision N
   account status --id ID
+  account list [--provider-id ID] [--account-type api|subscription] [--limit N] [--page-token TOKEN]
   integration create --input FILE|-
   integration edit --id ID --revision N --input FILE|-
   integration replace-token --id ID --revision N --pat-stdin
@@ -863,9 +864,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   github pr remediation list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]
   github pr remediation resume --id SET_ID --revision N
   provider presets
+  provider inventory [--query TEXT] [--enabled-only] [--limit N] [--page-token TOKEN]
   provider create --preset PRESET [--name NAME]
+    --name creates an independent custom copy; --preset alone creates the managed preset
   provider discover --account-id ID --revision N
-  model search [--query TEXT] [--provider-id ID] [--include-hidden] [--limit N] [--page-token TOKEN]
+  model search [--query TEXT] [--provider-id ID] [--include-hidden] [--enabled-providers-only] [--limit N] [--page-token TOKEN]
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
   session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
