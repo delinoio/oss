@@ -343,7 +343,7 @@ Provider activation adds an owner/client-only `ProviderService.ListProviderInven
 
 `SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
-System capability wire values retain `AUTOMATIC_TITLES_V1 = 1` and the merged `SESSION_FORWARDING_V1 = 2`; the additive `USER_SERVICES_V1` uses `3`. `GetStatus` advertises all three independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3` and `PERMANENT_SESSION_DELETION_V1 = 9`; native accounting adds the reserved `NATIVE_ACCOUNTING_V1 = 4`. `GetStatus` advertises each independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 
@@ -375,3 +375,5 @@ Generate Go and TypeScript/Connect Query sources together and follow the
 Issue #1142's replacement implementation uses the allocations originally implemented in closed, unmerged PR #1193: `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 5` and `AttachWorkerResponse.supported_worker_capabilities = 3`. The allocation ledger reserves both meanings before dependent implementation, preserving Worker values 3 and 4 for their existing owners. The original issue's proposed value 3 cannot replace an existing reservation.
 
 This reservation changes no schema, generated binding, capability advertisement, runtime negotiation or inspection behavior. Merge it into main before publishing the dependent repository-registration implementation, as required by `docs/cmds-delidev-structure-contract.md`.
+
+Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).
