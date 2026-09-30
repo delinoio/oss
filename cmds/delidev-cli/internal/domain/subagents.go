@@ -172,7 +172,7 @@ func (o SubagentObservation) Validate() error {
 			return invalidSubagent()
 		}
 	}
-	if o.Output != nil && (Text(o.Output.NativeMessageID, "native output identity", 1024, true) != nil || Text(o.Output.Text, "native child output", MaxMessageText, false) != nil) {
+	if o.Output != nil && (!o.Output.Partial || Text(o.Output.NativeMessageID, "native output identity", 1024, true) != nil || Text(o.Output.Text, "native child output", MaxMessageText, false) != nil) {
 		return invalidSubagent()
 	}
 	if o.Output != nil {

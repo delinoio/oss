@@ -190,3 +190,46 @@ func TestSubagentOverlappingUsageCannotEnterRootLedger(t *testing.T) {
 		t.Fatal("overlapping child usage changed the parent report", err)
 	}
 }
+
+func TestSubagentNonPartialOutputRejectsWholePublication(t *testing.T) {
+	f := newPublicationFixture(t)
+	f.registerGrant(t)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+	first := domain.SubagentObservation{ID: domain.NewID(), NativeID: string(domain.NewID()), ParentID: string(f.thread), Status: domain.SubagentRunning, Source: domain.CodexCollaborationSource, SourceID: "original-spawn"}
+	second := first
+	second.ID, second.NativeID, second.SourceID = domain.NewID(), string(domain.NewID()), "original-child-output"
+	for _, output := range []string{
+		`{"native_message_id":"original-message","text":"recent subset"}`,
+		`{"native_message_id":"original-message","text":"recent subset","partial":false}`,
+	} {
+		t.Run(output, func(t *testing.T) {
+			second.Output = &domain.SubagentOutput{}
+			if err := json.Unmarshal([]byte(output), second.Output); err != nil {
+				t.Fatal(err)
+			}
+			event := f.event(domain.ExecutionSubagentObserved, 3)
+			event.Subagents = []domain.SubagentObservation{first, second}
+			if _, err := f.call(f.requestEvent(t, event)); connect.CodeOf(err) != connect.CodeAborted {
+				t.Fatal("non-partial output did not return an ownership conflict", err)
+			}
+			for _, child := range []domain.SubagentObservation{first, second} {
+				if _, err := f.service.Store.Get(context.Background(), domain.SubagentKind, child.ID); domain.SafeError(err).Code != domain.NotFound {
+					t.Fatal("rejected output partially retained a child", err)
+				}
+			}
+			record, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := store.Decode[domain.Session](record)
+			if err != nil || session.Execution.LastSequence != 2 || len(session.Execution.Subagents) != 0 {
+				t.Fatal("rejected output advanced execution ownership", err)
+			}
+		})
+	}
+	second.Output.Partial = true
+	event := f.event(domain.ExecutionSubagentObserved, 3)
+	event.Subagents = []domain.SubagentObservation{first, second}
+	f.publish(t, event)
+}
