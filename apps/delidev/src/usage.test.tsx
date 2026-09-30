@@ -61,13 +61,18 @@ it("applies filters explicitly and preserves a draft across navigation", async (
   await screen.findByRole("alert"); expect(f.read).toHaveBeenCalledTimes(2);
 });
 
-it.each([false, true])("keeps native-only groups out of response details with mixed responses=%s", async (mixed) => {
+it.each([false, true])("keeps native-only groups and models out of response views with mixed responses=%s", async (mixed) => {
   const f = fixture();
-  const native = create(GetUsageSummaryResponseSchema, { groups: [{ sessionId: newRequestId(), sessionName: "Grok-only session", accountId: f.ids.account, providerId: f.ids.provider, modelId: f.ids.model, totals: { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] } }] }).groups[0];
+  const native = create(GetUsageSummaryResponseSchema, { groups: [{ sessionId: newRequestId(), sessionName: "Grok-only session", accountId: f.ids.account, providerId: f.ids.provider, modelId: newRequestId(), modelName: "Grok-only model", totals: { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] } }] }).groups[0];
   f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
   f.data.groups[0].totals = create(UsageTotalsSchema, { responses: 1, total: { unavailableResponses: 1 }, accounting: [{ kind: AccountingUnitKind.CODEX_RESPONSE, units: 1, unavailableUnits: 1 }] });
   f.data.totals = create(UsageTotalsSchema, { responses: mixed ? 1 : 0, total: mixed ? { unavailableResponses: 1 } : undefined, accounting: [...(mixed ? f.data.groups[0].totals.accounting : []), ...native.totals!.accounting] });
   f.data.groups = mixed ? [f.data.groups[0], native] : [native];
+  f.data.analytics = create(UsageAnalyticsSchema, {
+    granularity: UsageTimeGranularity.DAY, timeZone: "UTC",
+    days: [{ fromUnixMs: f.data.fromUnixMs, untilUnixMs: f.data.untilUnixMs, totals: f.data.totals }],
+    models: f.data.groups.map(({ providerId, providerName, modelId, modelName, totals }) => ({ providerId, providerName, modelId, modelName, totals })),
+  });
   render(f.view());
   await screen.findByText("Incomplete coverage");
   const responseSection = screen.getByRole("region", { name: "Session, model and account details" });
@@ -80,7 +85,18 @@ it.each([false, true])("keeps native-only groups out of response details with mi
     expect(within(responseSection).queryByRole("table")).toBeNull();
     expect(within(responseSection).getByText(/No exact response usage is recorded/)).toBeTruthy();
   }
-  expect(within(screen.getByRole("region", { name: "Verified Grok closed inputs" })).getByText("Grok-only session")).toBeTruthy();
+  const responseChart = screen.getByRole("region", { name: "By model / API" });
+  fireEvent.click(within(responseChart).getByRole("button", { name: "View data" }));
+  const responseModelTable = within(responseChart).getByRole("table");
+  expect(within(responseModelTable).queryByText("Grok-only model")).toBeNull();
+  expect(within(responseModelTable).queryByText(native.modelId)).toBeNull();
+  expect(within(responseModelTable).getAllByRole("row")).toHaveLength(mixed ? 2 : 1);
+  if (mixed) expect(within(responseModelTable).getByText("Original model")).toBeTruthy();
+  const nativeSection = screen.getByRole("region", { name: "Verified Grok closed inputs" });
+  expect(within(nativeSection).getByText("Grok-only session")).toBeTruthy();
+  const nativeModelTable = within(nativeSection).getByRole("table", { name: "Verified Grok inputs by model" });
+  expect(within(nativeModelTable).getByText("Grok-only model")).toBeTruthy();
+  expect(f.data.analytics.models).toHaveLength(mixed ? 2 : 1);
 });
 
 it("labels a new applied time scope while its result is still loading", async () => {

@@ -94,6 +94,7 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
   };
   const data = result.data;
   const responseGroups = data?.groups.filter((group) => (group.totals?.responses ?? 0) > 0) ?? [];
+  const responseAnalytics = data?.analytics ? { ...data.analytics, models: data.analytics.models.filter((model) => (model.totals?.responses ?? 0) > 0) } : undefined;
   const appliedZone = data?.analytics?.timeZone || selection.timeZone;
   const conditions = appliedFilters(selection);
   const draftChanged = !sameFilters(draft, appliedDraft);
@@ -129,7 +130,7 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
       </section>
       <div className="usage-coverage"><strong>Incomplete coverage</strong><span>{data.coverage === UsageCoverage.OBSERVED_ROOT_RESPONSES ? "Observed root responses only. Missing, older, resumed-conversation, child and unsupported harness telemetry is unavailable, not zero." : "This server's telemetry coverage is unknown."}</span><span>{data.acceptedExecutionsWithoutResponse.toLocaleString()} accepted executions have no response usage recorded in this range. This does not establish zero actual usage.</span></div>
       {result.error ? <p className="usage-stale-indicator" role="status">Stale values from the last successful read</p> : null}
-      {data.analytics?.granularity === UsageTimeGranularity.DAY ? <UsageCharts analytics={data.analytics} timeZone={appliedZone} /> : <p className="usage-charts-unavailable" role="status">Daily and model charts are unavailable from this server version. Update the DeliDev server to view analytics; the current summary and detail data remain available.</p>}
+      {responseAnalytics?.granularity === UsageTimeGranularity.DAY ? <UsageCharts analytics={responseAnalytics} timeZone={appliedZone} /> : <p className="usage-charts-unavailable" role="status">Daily and model charts are unavailable from this server version. Update the DeliDev server to view analytics; the current summary and detail data remain available.</p>}
       <section className="usage-detail" aria-labelledby="usage-detail-title"><h2 id="usage-detail-title">Session, model and account details</h2>
         {responseGroups.length ? <div className="usage-table" role="region" aria-label="Session, model and account usage table; scroll horizontally to inspect all details" tabIndex={0}><table><caption>Known response subtotals with original session, project, account, API and model identities</caption><thead><tr><th scope="col">Session / project</th><th scope="col">Account</th><th scope="col">Model / API</th><th scope="col">Tokens</th><th scope="col">Token-price estimate</th></tr></thead><tbody>{responseGroups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${group.modelId}`}>
           <td><button type="button" onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><small>{group.sessionId}</small><p>{group.projectId ? group.projectName || `Project ${group.projectId}` : "General Chat"}</p>{group.projectId ? <small>{group.projectId}</small> : null}</td>
