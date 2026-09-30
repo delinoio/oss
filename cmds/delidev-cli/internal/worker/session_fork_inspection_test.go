@@ -57,17 +57,12 @@ func TestSessionForkInspectionRetainsUnprovedProcessAndAcceptedRuntime(t *testin
 }
 
 func TestSessionForkInspectionCannotClaimFailedRuntimeRemoval(t *testing.T) {
-	parent := filepath.Join(t.TempDir(), "not-a-directory")
-	if err := os.WriteFile(parent, []byte("retain this foreign entry"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	home, verifyRetained := sessionForkCleanupFailureFixture(t)
 	rejected := domain.Fail(domain.Unsupported, "Unsupported history.", "")
-	if err := finishForkSourceInspection(filepath.Join(parent, "runtime"), rejected, nil); domain.SafeError(err).Code != domain.RecoveryRequired {
+	if err := finishForkSourceInspection(home, rejected, nil); domain.SafeError(err).Code != domain.RecoveryRequired {
 		t.Fatal("failed runtime cleanup permitted a definite retry", err)
 	}
-	if raw, err := os.ReadFile(parent); err != nil || string(raw) != "retain this foreign entry" {
-		t.Fatal("cleanup failure replaced an unrelated entry", err)
-	}
+	verifyRetained()
 }
 
 func TestSessionForkPreNativeFailureOwnership(t *testing.T) {
