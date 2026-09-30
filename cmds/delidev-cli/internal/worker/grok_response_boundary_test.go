@@ -59,6 +59,7 @@ func newGrokReplyFixture(t *testing.T, mode string) *grokReplyFixture {
 			arrival := domain.NewID()
 			id := domain.InteractionRequestID{Kind: domain.InteractionTextID, Text: "original-native-file"}
 			v.ToolEvent.ArrivalID, v.ToolEvent.RequestID = arrival, &id
+			v.ToolEvent.ProposalJSON = string(row.Params)
 			digest, _ := grok.PublicRequestDigest(id)
 			sum := sha256.Sum256(row.Params)
 			v.Permission = &grok.FilePermissionOffer{ArrivalID: arrival, ToolID: *v.ToolEvent.Payload.Tool.ID, RequestDigest: digest, ProposalDigest: hex.EncodeToString(sum[:])}

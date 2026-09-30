@@ -33,7 +33,7 @@ type GrokInteractionRequest struct {
 }
 
 func (r GrokInteractionRequest) Validate(kind InteractionType, id InteractionRequestID, tool string) error {
-	if r.Version != GrokProtocolVersion || r.ObservationID.Validate() != nil || r.Event.ArrivalID.Validate() != nil || r.Event.RequestID == nil {
+	if r.Version != GrokProtocolVersion || r.ObservationID.Validate() != nil || r.Event.ArrivalID.Validate() != nil || r.Event.RequestID == nil || r.Event.ProposalJSON == "" {
 		return invalidInteraction()
 	}
 	original, e1 := id.Key()

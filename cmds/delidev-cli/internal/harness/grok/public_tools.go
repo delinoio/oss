@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -27,6 +29,7 @@ func publicToolEvent(event nativewire.Event, fact mixedToolFact) (*domain.GrokTo
 			id = domain.InteractionRequestID{Kind: domain.InteractionDecimalID, Decimal: key[2:]}
 		}
 		result.RequestID = &id
+		result.ProposalJSON = string(event.Params)
 	} else if event.Kind != nativewire.Notification || event.Token != "" {
 		return nil, incompatible()
 	}
@@ -90,13 +93,14 @@ func nativeToolPayload(payload domain.GrokToolPayload) ([]byte, error) {
 // sender, filesystem reader or restoration capability. Server publication runs
 // the same original validators independently against its retained typed prefix.
 type ToolJournal struct {
-	observer *mixedTools
-	session  domain.ID
-	prompt   string
-	bytes    int
-	events   int
-	requests map[domain.ID]mixedToolFact
-	last     mixedToolFact
+	observer  *mixedTools
+	session   domain.ID
+	prompt    string
+	bytes     int
+	events    int
+	requests  map[domain.ID]mixedToolFact
+	proposals map[domain.ID]string
+	last      mixedToolFact
 }
 
 func NewToolJournal(session domain.ID, prompt string, mode domain.GrokMode, planPathValue string) (*ToolJournal, error) {
@@ -107,13 +111,22 @@ func NewToolJournal(session domain.ID, prompt string, mode domain.GrokMode, plan
 	observer.plans = &planObserver{session: session, prompt: prompt, path: planPathValue, pathPolicy: retainedPlanLocator, mode: NativeMode(mode), tools: map[string]planToolState{}, arrivals: map[domain.ID]bool{}, requests: map[string]bool{}}
 	observer.files.plans = observer.plans
 	observer.questions.mode = NativeMode(mode)
-	return &ToolJournal{observer: observer, session: session, prompt: prompt, requests: map[domain.ID]mixedToolFact{}}, nil
+	return &ToolJournal{observer: observer, session: session, prompt: prompt, requests: map[domain.ID]mixedToolFact{}, proposals: map[domain.ID]string{}}, nil
 }
 func (j *ToolJournal) Observe(value domain.GrokToolEvent) error {
 	if j == nil || value.Payload.Session != j.session || j.events >= 4096 {
 		return incompatible()
 	}
 	raw, err := nativeToolPayload(value.Payload)
+	if value.ProposalJSON != "" {
+		var original domain.GrokToolPayload
+		if value.RequestID == nil || len(value.ProposalJSON) > nativewire.MaxFrame || !utf8.ValidString(value.ProposalJSON) || domain.Decode([]byte(value.ProposalJSON), &original) != nil || !reflect.DeepEqual(original, value.Payload) {
+			return incompatible()
+		}
+		// Run the original native validators against the retained bytes before
+		// deriving their digest. Re-serialization cannot prove a byte identity.
+		raw = []byte(value.ProposalJSON)
+	}
 	if err != nil || len(raw) > nativewire.MaxFrame || j.bytes+len(raw) > 4<<20 {
 		return incompatible()
 	}
@@ -160,6 +173,9 @@ func (j *ToolJournal) Observe(value domain.GrokToolEvent) error {
 	}
 	if event.Kind == nativewire.ServerRequest {
 		j.requests[event.Token] = fact
+		if value.ProposalJSON != "" {
+			j.proposals[event.Token] = fileDigest(raw)
+		}
 	}
 	j.last = fact
 	j.bytes += len(raw)
@@ -321,7 +337,7 @@ func (j *ToolJournal) ValidateRequest(request *domain.GrokInteractionRequest, to
 		return incompatible()
 	}
 	fact, ok := j.requests[request.Event.ArrivalID]
-	if !ok {
+	if !ok || j.proposals[request.Event.ArrivalID] == "" || j.proposals[request.Event.ArrivalID] != request.ProposalDigest {
 		return incompatible()
 	}
 	if p := fact.Plan; p != nil {

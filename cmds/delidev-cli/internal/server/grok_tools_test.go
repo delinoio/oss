@@ -11,6 +11,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -52,6 +53,7 @@ func publicGrokWriteFixture(t *testing.T, requestIDs ...domain.InteractionReques
 				native = requestIDs[0]
 			}
 			observation.ArrivalID, observation.RequestID = domain.NewID(), &native
+			observation.ProposalJSON = string(row.Params)
 		}
 		sequence++
 		event := f.event(domain.ExecutionGrokToolObserved, sequence)
@@ -69,12 +71,65 @@ func publicGrokWriteFixture(t *testing.T, requestIDs ...domain.InteractionReques
 			sequence++
 			event = f.event(domain.ExecutionInteractionRequested, sequence)
 			event.Interaction = &domain.ExecutionInteractionUpdate{ID: id, Type: domain.NativeApprovalInteraction, NativeRequestID: *observation.RequestID, NativeItemID: *payload.Tool.ID, Grok: request}
+			rejectChangedGrokProposal(t, f, event)
 			f.publish(t, event)
 			return f, rows[i+1:], id, sequence
 		}
 	}
 	t.Fatal("no original Write request")
 	return nil, nil, "", 0
+}
+
+func rejectChangedGrokProposal(t *testing.T, f *publicationFixture, event domain.ExecutionEvent) {
+	t.Helper()
+	raw, err := json.Marshal(event)
+	var changed domain.ExecutionEvent
+	if err != nil || domain.Decode(raw, &changed) != nil {
+		t.Fatal("original Grok request fixture", err)
+	}
+	changed.Interaction.Grok.ProposalDigest = strings.Repeat("0", 64)
+	before, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.call(f.requestEvent(t, changed)); err == nil {
+		t.Fatal("changed proposal digest admitted before native response")
+	}
+	if _, err := f.service.Store.Get(context.Background(), domain.InteractionKind, changed.Interaction.ID); err == nil {
+		t.Fatal("rejected proposal created an interaction")
+	}
+	after, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("rejected proposal changed retained session progress", err)
+	}
+}
+
+func TestGrokPublicLegacyProposalCannotAcquireReply(t *testing.T) {
+	f, _, id, _ := publicGrokWriteFixture(t)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.legacy-grok-proposal", "original", func(tx *store.Tx) (any, error) {
+		r, err := tx.Get(domain.InteractionKind, id)
+		if err != nil {
+			return nil, err
+		}
+		value, err := store.Decode[domain.ExecutionInteraction](r)
+		if err != nil {
+			return nil, err
+		}
+		value.Grok.Event.ProposalJSON = ""
+		return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, value)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, retained := readPublishedInteraction(t, f, id)
+	input := domain.ApprovalResponseInput{Grok: &domain.GrokApprovalResponse{Decision: domain.GrokAllowOnce}}
+	if _, err := acceptFixtureApproval(f, domain.NewID(), id, r.Revision, input); err == nil {
+		t.Fatal("typed-only historical proposal acquired a new reply")
+	}
+	_, after := readPublishedInteraction(t, f, id)
+	if !reflect.DeepEqual(retained, after) {
+		t.Fatal("rejected historical reply changed retained evidence")
+	}
 }
 func TestGrokPublicWriteAcceptanceResultAndLostReceipts(t *testing.T) {
 	for _, decision := range []domain.GrokFileDecision{domain.GrokAllowOnce, domain.GrokAllowSession, domain.GrokRejectOnce} {
@@ -254,6 +309,7 @@ func TestGrokPublicOriginalPlanQuestionsRevisionsAndTransitions(t *testing.T) {
 					id := domain.InteractionRequestID{Kind: domain.InteractionTextID, Text: fmt.Sprintf("original-plan-request-%d", i)}
 					v.RequestID = &id
 					v.ArrivalID = domain.NewID()
+					v.ProposalJSON = string(row.Params)
 				}
 				sequence++
 				event := f.event(domain.ExecutionGrokToolObserved, sequence)
@@ -287,6 +343,7 @@ func TestGrokPublicOriginalPlanQuestionsRevisionsAndTransitions(t *testing.T) {
 				sequence++
 				event = f.event(domain.ExecutionInteractionRequested, sequence)
 				event.Interaction = &domain.ExecutionInteractionUpdate{ID: id, Type: kind, NativeRequestID: *v.RequestID, NativeItemID: *payload.ToolID, Grok: request}
+				rejectChangedGrokProposal(t, f, event)
 				f.publish(t, event)
 				meta := &pb.Mutation{Id: string(id), ExpectedRevision: 2, RequestId: string(domain.NewID())}
 				if kind == domain.UserQuestionInteraction {

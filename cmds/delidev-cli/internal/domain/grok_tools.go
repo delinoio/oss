@@ -39,12 +39,15 @@ const (
 // preview/applied diffs, nullable multi-select, request namespaces and metadata.
 // It is inert evidence; neither a file path nor a tool descriptor grants access.
 type GrokToolEvent struct {
-	Method              GrokToolMethod        `json:"method"`
-	RequestID           *InteractionRequestID `json:"request_id,omitempty"`
-	ArrivalID           ID                    `json:"arrival_id,omitempty"`
-	Payload             GrokToolPayload       `json:"payload"`
-	InheritedPermission ID                    `json:"inherited_permission,omitempty"`
-	PlanOrigin          *GrokPlanOrigin       `json:"plan_origin,omitempty"`
+	Method    GrokToolMethod        `json:"method"`
+	RequestID *InteractionRequestID `json:"request_id,omitempty"`
+	ArrivalID ID                    `json:"arrival_id,omitempty"`
+	Payload   GrokToolPayload       `json:"payload"`
+	// Original request bytes bind the native proposal digest. A typed payload
+	// alone cannot preserve JSON member order, whitespace or escape spelling.
+	ProposalJSON        string          `json:"proposal_json,omitempty"`
+	InheritedPermission ID              `json:"inherited_permission,omitempty"`
+	PlanOrigin          *GrokPlanOrigin `json:"plan_origin,omitempty"`
 }
 type GrokPlanOrigin struct {
 	EntryToolID  string `json:"entry_tool_id"`

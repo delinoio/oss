@@ -50,7 +50,7 @@ func retainedGrokJournal(tx *store.Tx, input domain.ExecutionJobInput, thread, t
 
 func publishGrokTool(tx *store.Tx, input domain.ExecutionJobInput, sr store.Record, p *domain.ExecutionProgress, event domain.ExecutionEvent) error {
 	u := event.GrokTool
-	if u == nil || u.Validate() != nil || input.Continuation != nil || u.Observation.Payload.Session != domain.ID(event.NativeThreadID) || p.GrokToolObservations >= 4096 {
+	if u == nil || u.Validate() != nil || input.Continuation != nil || u.Observation.Payload.Session != domain.ID(event.NativeThreadID) || p.GrokToolObservations >= 4096 || u.Observation.RequestID != nil && u.Observation.ProposalJSON == "" {
 		return executionEventConflict()
 	}
 	if meta := u.Observation.Payload.Meta; meta != nil {

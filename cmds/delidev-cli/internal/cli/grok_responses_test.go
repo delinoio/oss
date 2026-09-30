@@ -38,7 +38,7 @@ func originalGrokCLIRequest(t *testing.T, fixture string, method domain.GrokTool
 		}
 		native := domain.InteractionRequestID{Kind: domain.InteractionTextID, Text: "original-native-cli"}
 		sum := sha256.Sum256(row.Params)
-		return domain.ExecutionInteraction{ExecutionID: domain.NewID(), NativeThreadID: string(p.Session), NativeTurnID: "e5833c4a-d764-4428-8bd8-6c2968a34b1b", NativeItemID: *tool, NativeRequestID: native, Type: kind, Closure: domain.InteractionOpen, Grok: &domain.GrokInteractionRequest{Version: domain.GrokProtocolVersion, ObservationID: domain.NewID(), Event: domain.GrokToolEvent{Method: method, RequestID: &native, ArrivalID: domain.NewID(), Payload: p}, RequestDigest: hex.EncodeToString(sum[:]), ProposalDigest: hex.EncodeToString(sum[:])}}
+		return domain.ExecutionInteraction{ExecutionID: domain.NewID(), NativeThreadID: string(p.Session), NativeTurnID: "e5833c4a-d764-4428-8bd8-6c2968a34b1b", NativeItemID: *tool, NativeRequestID: native, Type: kind, Closure: domain.InteractionOpen, Grok: &domain.GrokInteractionRequest{Version: domain.GrokProtocolVersion, ObservationID: domain.NewID(), Event: domain.GrokToolEvent{Method: method, RequestID: &native, ArrivalID: domain.NewID(), Payload: p, ProposalJSON: string(row.Params)}, RequestDigest: hex.EncodeToString(sum[:]), ProposalDigest: hex.EncodeToString(sum[:])}}
 	}
 	t.Fatal("request absent")
 	return domain.ExecutionInteraction{}

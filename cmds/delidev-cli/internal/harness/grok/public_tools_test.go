@@ -43,6 +43,17 @@ func TestPublicToolJournalRetainsForeignPlanLocator(t *testing.T) {
 					if domain.Decode(raw, &retained) != nil {
 						t.Fatal("retained JSON", i)
 					}
+					if retained.RequestID != nil {
+						var proposal any
+						if json.Unmarshal([]byte(retained.ProposalJSON), &proposal) != nil {
+							t.Fatal("original request JSON", i)
+						}
+						encoded, err := json.Marshal(rewritePlanningLocator(proposal, original.plans.path, locator))
+						if err != nil {
+							t.Fatal(err)
+						}
+						retained.ProposalJSON = string(encoded)
+					}
 					if u := retained.Payload.Update; u != nil && u.Output != nil && u.Output.Ready != nil {
 						var changed domain.GrokToolEvent
 						if domain.Decode(raw, &changed) != nil {

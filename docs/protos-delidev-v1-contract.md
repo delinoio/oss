@@ -385,6 +385,15 @@ Generate Go and TypeScript/Connect Query sources together and follow the
 
 ### Grok original tool and response Resource JSON
 
+Native request observations additionally retain `proposal_json`, the exact UTF-8
+native JSON parameter bytes as a string alongside their typed payload. The pure
+reducer requires the same complete payload, validates the original native request
+and computes its byte-based proposal SHA-256 before interaction publication.
+Notifications cannot carry this request-only evidence. Both representations fit
+the existing 512 KiB public event bound; native request bytes also consume the
+existing reducer aggregate bound. Missing historical bytes remain readable
+evidence but cannot authorize a new request or reply through re-serialization.
+
 Issue #1091 adds typed `grok-tool-observed`/`grok_tool`, exclusive `Interaction.grok`, question/approval response `input.grok`, native current-mode/order/response aggregate progress and the exclusive `grok_tools_terminal` Resource JSON variants. Original method/request-kind/arrival and exact decimal uint64 counters survive without float conversion. Grok numeric request IDs add `{kind: "decimal", decimal: "<original integer spelling>"}` within Resource JSON, preserving the native 19-digit optional-minus grammar and `-0` without narrowing; historical text/signed-number identities remain unchanged. Each interaction references its immutable earlier observation and original native proposal; Plan additionally binds original entry/Write/content digest/revision. Follow the harness contract for complete independent validation, bounds and evidence limits.
 
 Existing `RespondQuestion`, `RespondApproval`, owning-Worker response claims, metadata-only controls, delivery publications and exact receipt replay carry these variants. Accepted original tool results create the server-derived `native-grok-tool-result` evidence; a Worker cannot assert it through generic acceptance publication. Native Plan uses the original approval request and adds no common Plan gate. No protobuf service, generated binding, relational schema migration or Worker permission expansion is required. CLI `interaction respond` and `interaction approve` accept the same exclusive `{"grok": ...}` document through file/stdin after reading and validating the original interaction; credential stdin remains separate. Historical missing variants preserve existing bytes and do not gain this profile's authority.
