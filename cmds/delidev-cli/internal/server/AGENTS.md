@@ -65,6 +65,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - BrowserService profile operations require the original paired client, current transaction-time authority and exact UUID/revision receipts. Owner/Worker credentials cannot substitute a browser device; owner/client cleanup counts remain independent of account configuration removal. Confirmation attests to separately completed native cleanup and cannot replay native work. Follow `docs/cmds-delidev-browser-contract.md`.
 
+- Browser registration validates the session's continuation account, including a pending explicit account switch before Resume. The previous execution's account remains historical attribution and cannot authorize a new browser registration after that selection changes.
+
 - Codex fork Local sharing is limited to original Local manifests with no parent-owned checkouts. Reject managed Worktree sharing before job acceptance and again before Worker native inspection/preparation and server publication; parent deletion retains those paths. Independent Worktree copying remains available. Follow `docs/cmds-delidev-forks-contract.md`.
 
 - First fork-child dispatch uses the same stale/future Worker-instance checks as ordinary initial and continuation dispatch, with only the existing one-second future tolerance. A rejected clock observation cannot consume queued input, publish execution work or mark an empty Resume ready.

@@ -42,6 +42,10 @@ migration version is consumed.
   selected account, acting paired client and UUID-v7 request. A transaction
   verifies current session/account ownership and finds or creates one identity
   for the original server/device/account. It never accepts paths or browsing data.
+  Selection follows the latest retained continuation account change before Resume,
+  otherwise the current/initial execution account. The panel uses that same account
+  as its key and registration input, closing the prior presentation on a pending
+  switch without rewriting historical execution attribution or the unsent composer.
 - `GetBrowserProfile` and `ListBrowserProfiles` recheck paired authority. Lists
   filter the original device before pagination (default 50, maximum 200); signed
   cursors bind server and device. Foreign identities are indistinguishable from

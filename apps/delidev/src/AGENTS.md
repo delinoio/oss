@@ -556,6 +556,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Session browser UI follows `docs/cmds-delidev-browser-contract.md`. Require the generated browser capability and exact currently selected account, retain immutable uncertain registration requests, and bind every native open/control/cleanup to its presentation UUID. Keep the composer mounted and restore focus when the panel closes. Browser URLs and tabs remain native/device-local; never include them in RPC, query keys, logs, session messages, or workspace context. Hide native content while a modal or inert ancestor covers it, and require explicit retry after a native open failure. Account deletion displays tracked cleanup progress separately from the accepted configuration deletion.
 
+- Browser account selection follows the latest retained continuation account change before Resume, falling back to current/initial execution only when no selection change exists. Key the panel by that account so a pending switch closes the previous presentation while preserving the composer; historical execution attribution remains unchanged.
+
 - Browser presentation treats the retained closed compact sidebar dialog and open wide sidebar region as ordinary navigation. Hide the native child only for a currently visible dialog, hidden/inert ancestry or clipped geometry; reopening retains the original profile with a new presentation identity. Follow `docs/cmds-delidev-browser-contract.md`.
 
 - Cache browser geometry only after native resize succeeds for the current presentation. Clear failed geometry so identical subsequent layout callbacks can retry rather than leaving an external child at obsolete bounds.

@@ -118,6 +118,49 @@ func TestBrowserProfilesShareOnlyOriginalDeviceAccountAndServerAcrossRestart(t *
 		t.Fatal(differentServer, err)
 	}
 }
+
+func TestBrowserProfileFollowsPendingAccountSwitchBeforeResume(t *testing.T) {
+	f, nextAccount, _ := accountSwitchFixture(t, domain.FullNativeHistory, true)
+	device := domain.NewID()
+	doctorPut(t, f.service, domain.DeviceKind, device, 0, domain.Device{Type: domain.ClientDevice})
+	client := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.ClientDevice, DeviceID: device})
+	register := func(account string, revision uint64) (*connect.Response[pb.RegisterBrowserProfileResponse], error) {
+		return f.service.RegisterBrowserProfile(client, connect.NewRequest(&pb.RegisterBrowserProfileRequest{
+			Session: &pb.Mutation{Id: string(f.refresh(t).ID), ExpectedRevision: revision, RequestId: string(domain.NewID())}, AccountId: account,
+		}))
+	}
+	before := f.refresh(t)
+	original, _ := store.Decode[domain.Session](before)
+	previous, err := register(f.account.Id, before.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = sessionClient(f.accountFixture).SwitchSessionAccount(context.Background(), ownerRequest(f.identity, switchRequest(f, nextAccount, t))); err != nil {
+		t.Fatal(err)
+	}
+	selected := f.refresh(t)
+	paused, _ := store.Decode[domain.Session](selected)
+	if paused.Dispatch != domain.DispatchPaused || paused.ExecutionSelection() != original.ExecutionSelection() {
+		t.Fatal("fixture advanced execution before Resume")
+	}
+	if _, err = register(f.account.Id, selected.Revision); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal("previous execution account authorized a new browser registration", err)
+	}
+	if _, err = register(nextAccount.Id, before.Revision); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("stale session revision authorized the pending account", err)
+	}
+	next, err := register(nextAccount.Id, selected.Revision)
+	if err != nil || next.Msg.Profile.AccountId != nextAccount.Id || next.Msg.Profile.Id == previous.Msg.Profile.Id {
+		t.Fatal("pending selection did not receive its isolated profile", next, err)
+	}
+	if _, err = sessionClient(f.accountFixture).SwitchSessionAccount(context.Background(), ownerRequest(f.identity, switchRequest(f, f.account, t))); err != nil {
+		t.Fatal(err)
+	}
+	back, err := register(f.account.Id, f.refresh(t).Revision)
+	if err != nil || back.Msg.Profile.Id != previous.Msg.Profile.Id {
+		t.Fatal("latest switch did not restore the original account profile", back, err)
+	}
+}
 func TestBrowserProfileSessionClosureRetainsDataAndAccountCleanupWaitsForEveryDevice(t *testing.T) {
 	f := newBrowserFixture(t)
 	request := domain.NewID()

@@ -204,6 +204,12 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   const observed = live.resources.get(id);
   const session = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
   const data = readDocument(session);
+  // A paused account switch selects the next account without rewriting the
+  // preceding execution. Match the server's continuation selection immediately.
+  const accountChanges = items(data.account_changes);
+  const browserAccountId = accountChanges.length
+    ? text(object(accountChanges.at(-1)).account_id)
+    : text(object(data.current_execution).account_id) || text(object(data.initial_execution).initial_account_id);
   const titlePresentation = sessionTitlePresentation(data);
   const rows = useMemo(() => {
     // The stream records creation order. UUIDs from different Workers are not
@@ -252,5 +258,5 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
       <div className="actions"><label>Mode <select value={mode} disabled={locked} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>Execute</option><option value={Mode.Plan}>Plan</option></select></label><button className="primary" disabled={locked || !draft.trim() || text(data.archive) !== "active"}>Queue message</button></div>
       <Problem error={send.error} />{send.uncertain ? <button type="button" disabled={send.busy} onClick={send.retry}>Retry the same message</button> : null}
     </form>
-  </section>{panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={() => { setPanel(SessionPanel.Closed); filesButton.current?.focus(); }} /></div> : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={() => { setPanel(SessionPanel.Closed); diffButton.current?.focus(); }} /></div> : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${text(object(data.current_execution).account_id) || text(object(data.initial_execution).initial_account_id)}`} session={session} accountId={text(object(data.current_execution).account_id) || text(object(data.initial_execution).initial_account_id)} close={() => { setPanel(SessionPanel.Closed); browserButton.current?.focus(); }} /></div> : null}</div>;
+  </section>{panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={() => { setPanel(SessionPanel.Closed); filesButton.current?.focus(); }} /></div> : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={() => { setPanel(SessionPanel.Closed); diffButton.current?.focus(); }} /></div> : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={() => { setPanel(SessionPanel.Closed); browserButton.current?.focus(); }} /></div> : null}</div>;
 }

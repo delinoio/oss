@@ -79,7 +79,8 @@ func (s *Service) RegisterBrowserProfile(ctx context.Context, req *connect.Reque
 		if err != nil {
 			return nil, err
 		}
-		if session.ExecutionSelection().AccountID != identity.Account {
+		selectedAccount, _ := session.ContinuationAccount()
+		if selectedAccount != identity.Account {
 			return nil, domain.Fail(domain.PermissionDenied, "The browser account is not this session's selected account.", "Use the original currently selected AI account.")
 		}
 		if _, err = tx.Get(domain.AccountKind, identity.Account); err != nil {
