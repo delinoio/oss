@@ -219,3 +219,15 @@ or content removal. Waiting uses reads only and preserves accepted progress on
 cancellation or failure. Offline/uncertain Worker or backup cleanup stays pending;
 completion requires all managed copies confirmed removed and never invents
 reclaimed disk space. See the [storage contract](cmds-delidev-storage-contract.md).
+
+### Managed database restore commands
+
+`backup restore` uses owner/client `SystemService.RestoreBackup` with explicit
+confirmation, the complete original inspection and its exact live restore
+revision. Retain the UUID-v7 request across an uncertain response; `backup
+restore-status --id REQUEST-ID` reads the original external receipt after explicit
+server restart. Publication ends the original process and durably suppresses
+implicit `server ensure` recovery before replacement. Inspection or status never
+restores credentials, Worker files or historical execution. See the
+[storage contract](cmds-delidev-storage-contract.md) for settled ownership,
+permanent-deletion enforcement, bounded staging and startup recovery.
