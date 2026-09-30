@@ -510,6 +510,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Key managed-preset rows and activation intents by stable preset identity before and after first activation publishes its saved UUID. An inventory refresh or Settings navigation must preserve the exact uncertain request and disabled switch until its original acknowledgment is resolved; custom providers keep UUID-based identity.
 
+- Models list presentation follows the desktop contract and issue #1160: one 1040px-bounded column and title-aligned New Model action, 420px search, neutral successful-empty panel and complete provider-grouped metadata/actions. Keep search/cursor atomic and owned only by the current Settings opening; preserve permitted within-opening transitions and the #1138 close/reset policy. Distinguish loading, capability/authority failures, cached refresh failures and each empty-page scope. Read Retry repeats only its failed current read, never writes or traverses pages; account guidance requires complete nonempty inventory and exact known-zero counts. Preserve generated active-only queries, existing locks, cursor independence, unsupported-schema gates, CSP and shell geometry. Record browser/component and native evidence separately.
+
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.

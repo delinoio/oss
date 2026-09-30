@@ -541,6 +541,51 @@ dialog.modal-full-window::backdrop { background: transparent; }
 .provider-empty h2 { margin: 0 0 8px; color: #202632; font-size: 1.1rem; }
 .provider-empty p { max-width: 32rem; margin: 0; line-height: 1.5; }
 
+/* Models list presentation is scoped separately from Settings editors and other categories. */
+.models-list { width: 100%; max-width: 1040px; color: #202632; }
+.models-list p { line-height: 1.5; overflow-wrap: anywhere; }
+.models-list button { min-height: 40px; border-radius: 8px; white-space: normal; overflow-wrap: anywhere; }
+.models-header { align-items: flex-start; flex-wrap: wrap; gap: 24px; margin-bottom: 24px; }
+.models-header > div { min-width: 0; }
+.models-header h1 { margin: 0 0 8px; font-size: 28px; font-weight: 600; letter-spacing: -.025em; line-height: 1.2; }
+.models-header p { margin: 0; color: #5b6577; font-size: 14px; }
+.models-header button { flex-shrink: 0; }
+.models-search { width: min(420px, 100%); margin: 0 0 24px; gap: 8px; font-size: 14px; }
+.models-search-control { position: relative; display: block; min-width: 0; }
+.models-search-control svg { position: absolute; left: 12px; top: 12px; width: 16px; height: 16px; fill: none; stroke: #5b6577; stroke-width: 1.8; pointer-events: none; }
+.models-search-control input { min-height: 40px; padding: 8px 12px 8px 40px; }
+.models-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 320px; padding: 32px 24px; border: 1px solid #d8dee8; border-radius: 12px; background: #fff; text-align: center; }
+.models-empty-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 16px; border-radius: 12px; background: #f3f5f8; color: #5b6577; }
+.models-empty-icon svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.models-empty h2 { margin: 0 0 8px; font-size: 20px; font-weight: 600; }
+.models-empty p { margin: 0; color: #5b6577; font-size: 14px; }
+.models-account-guidance { margin-top: 24px; }
+.models-empty-message { margin: 0; padding: 24px; border: 1px solid #d8dee8; border-radius: 12px; color: #5b6577; }
+.models-provider-group { margin-bottom: 24px; }
+.models-provider-group h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.models-rows { border: 1px solid #d8dee8; border-radius: 12px; background: #fff; }
+.models-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px; }
+.models-row + .models-row { border-top: 1px solid #d8dee8; }
+.models-row-details { min-width: 0; flex: 1; }
+.models-row-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.models-row-heading h4 { min-width: 0; margin: 0; font-size: 16px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.models-status { padding: 0 8px; border: 1px solid #d8dee8; border-radius: 8px; color: #5b6577; background: #f3f5f8; font-size: 12px; line-height: 1.5; }
+.models-row p { margin: 0; color: #5b6577; font-size: 14px; }
+.models-identifiers { display: flex; flex-wrap: wrap; gap: 0 24px; }
+.models-identifiers p { min-width: 0; }
+.models-row-actions, .models-pages { display: flex; flex-wrap: wrap; gap: 8px; }
+.models-row-actions { flex: 0 1 auto; }
+.models-pages { margin-top: 16px; }
+.models-footnote { margin: 24px 0 0; color: #5b6577; font-size: 14px; }
+.models-read-problem { margin-bottom: 16px; }
+@media (max-width: 1099px) {
+  .models-row { flex-direction: column; align-items: stretch; gap: 16px; }
+}
+@media (max-width: 759px) {
+  .models-header { gap: 16px; }
+  .models-row { padding: 16px; }
+}
+
 @media (max-width: 1099px) {
   .settings-content { padding: 24px; }
 }
