@@ -370,7 +370,7 @@ enum RustiaComponent {
 
 ### CI Baseline
 
-Repository-wide quality CI is defined in `.github/workflows/CI.yml`. Go validation uses complete Linux/macOS suites and four Windows shards under the existing `go-test` job. Windows partitions the native `go list ./...` inventory exactly once and preserves `-p=1` per runner, with shard-scoped caches saved only after successful main validation. Every OS uses an explicit 20-minute per-package watchdog for native Git, shell and durable SQLite integration; this is not a product command timeout. Follow `docs/repository-workflow-contract.md` for shard ownership and measurement.
+Repository-wide quality CI is defined in `.github/workflows/CI.yml`. Go validation uses complete Linux/macOS suites and four Windows shards under the existing `go-test` job. Windows partitions the native `go list ./...` inventory exactly once, precompiles selected test binaries without running them at default compiler parallelism, then preserves `-p=1` for complete test execution per runner. Shard-scoped caches are saved only after successful main validation. Every OS uses an explicit 20-minute per-package watchdog for native Git, shell and durable SQLite integration; this is not a product command timeout. Follow `docs/repository-workflow-contract.md` for shard ownership and measurement.
 
 Coverage expectations:
 - `go-quality`: generates and validates the ignored administrator and ach UI bundles, then runs `go fmt ./...` (failing if formatting changes are applied) and `go vet ./...` on Ubuntu.
