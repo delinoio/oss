@@ -6,6 +6,13 @@ names and numbers remain unchanged. `protos/delidev/allocations.json` records ma
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 
+The [planned shared compaction contract](cmds-delidev-compaction-contract.md)
+reserves `EntityKind` 32, `SystemCapability` 15, `WorkerCapability` 5 and
+`SessionChange.compaction_job` 9 for issues #1093, #1202 and #1203. These are
+ledger reservations only: no schema declaration, generated binding, RPC or
+capability advertisement is activated by the reservation change. The owning
+issue is recorded directly when no implementation PR exists yet.
+
 ## Scope
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 
