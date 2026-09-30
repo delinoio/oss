@@ -381,4 +381,12 @@ Generate Go and TypeScript/Connect Query sources together and follow the
 
 `network.proto` owns NetworkService SaveNetworkProfile, DeleteNetworkProfile, SelectNetworkProfile, GetNetworkRoute and ExportWorkerNetworkMetadata. The pre-reserved `SERVER_OUTBOUND_PROXY_V1 = 6`, `NETWORK_PROFILE = 28` and `NETWORK_ROUTE = 29` values preserve every existing main assignment. Definition JSON and write-only credential bytes are separate. Actor-bound UUID-v7 receipts and exact revisions apply; Worker selections have independent desired generations. Export returns signed non-secret metadata only, never credential bytes or native application evidence. Follow [the network contract](cmds-delidev-network-contract.md).
 
+## Repository inspection metadata allocation prerequisite
+
+Closed, unmerged PR #1193 implemented repository metadata using Worker value 5 and attachment-response field 3. Main now reserves Worker values 3, 4 and 5 for other owners, including native compaction from issue #1203 at value 5. Issue #1142's replacement therefore reserves `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 6` and `AttachWorkerResponse.supported_worker_capabilities = 3`, retaining original-PR provenance. The original issue's proposed value 3 and the old branch's value 5 cannot replace existing main reservations.
+
+Each reservation uses the kind of its existing declaration (`enum` or `message`); a message-field addition is recorded as `message`, not a separate field declaration kind. The allocation check validates this against the baseline declaration.
+
+This reservation changes no schema, generated binding, capability advertisement, runtime negotiation or inspection behavior. Merge it into main before publishing the dependent repository-registration implementation, as required by `docs/cmds-delidev-structure-contract.md`.
+
 Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).

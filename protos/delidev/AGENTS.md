@@ -124,4 +124,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - NetworkService owns `v1/network.proto` and generated bindings under `docs/cmds-delidev-network-contract.md`. Activate only the pre-reserved EntityKind 28/29 and SystemCapability 6 values. Owner/client operations keep credentials write-only, revisions exact and server/Worker desired generations separate; Worker metadata exports carry no secrets or native application proof.
 
+- Issue #1142 reserves repository-inspection metadata Worker value 6 and attachment-response support field 3, retaining provenance from closed PR #1193 whose Worker value was 5. Main owns value 5 for native compaction. Reservation kinds must match the existing baseline declaration kind, including message-field additions. Keep them allocation-only until the dependent implementation; do not advertise support from a reservation. Follow the protocol and structure contracts.
+
 - The reserved native accounting capability is 4, usage request/response accounting_profile fields are 11/12 and UsageTotals.accounting is 8. Use the service-specific usage/system schemas and generated compatibility views; preserve distinct CodexResponse/GrokClosedInput kinds and legacy omission. Unknown profiles fail; native source proofs remain private and Grok costs unavailable.
