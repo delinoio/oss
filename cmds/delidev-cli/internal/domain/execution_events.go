@@ -454,6 +454,7 @@ type ExecutionProgress struct {
 	GrokCurrentMode        GrokMode                    `json:"grok_current_mode,omitempty"`
 	GrokLastNativeEvent    string                      `json:"grok_last_native_event,omitempty"`
 	GrokToolObservations   uint32                      `json:"grok_tool_observations,omitempty"`
+	NativeHistory          NativeHistoryMode           `json:"native_history,omitempty"`
 	GrokUserMessageID      ID                          `json:"grok_user_message_id,omitempty"`
 	GrokStop               *GrokStopObservation        `json:"grok_stop,omitempty"`
 	GrokToolsTerminal      *GrokToolsTerminal          `json:"grok_tools_terminal,omitempty"`

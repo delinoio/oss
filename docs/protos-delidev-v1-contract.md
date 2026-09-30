@@ -13,6 +13,12 @@ ledger reservations only: no schema declaration, generated binding, RPC or
 capability advertisement is activated by the reservation change. The owning
 issue is recorded directly when no implementation PR exists yet.
 
+Issue #1206's pending [native Codex model observation contract](cmds-delidev-native-models-contract.md)
+reserves server capability 16 and Worker capability 7. Keep these out of active
+schemas and capability advertisements until a dependent implementation follows
+main-established allocations. No new RPC or generated binding is activated by
+the reservation prerequisite.
+
 ## Scope
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 
@@ -382,6 +388,11 @@ Generate Go and TypeScript/Connect Query sources together and follow the
 Issue #1091 adds typed `grok-tool-observed`/`grok_tool`, exclusive `Interaction.grok`, question/approval response `input.grok`, native current-mode/order/response aggregate progress and the exclusive `grok_tools_terminal` Resource JSON variants. Original method/request-kind/arrival and exact decimal uint64 counters survive without float conversion. Grok numeric request IDs add `{kind: "decimal", decimal: "<original integer spelling>"}` within Resource JSON, preserving the native 19-digit optional-minus grammar and `-0` without narrowing; historical text/signed-number identities remain unchanged. Each interaction references its immutable earlier observation and original native proposal; Plan additionally binds original entry/Write/content digest/revision. Follow the harness contract for complete independent validation, bounds and evidence limits.
 
 Existing `RespondQuestion`, `RespondApproval`, owning-Worker response claims, metadata-only controls, delivery publications and exact receipt replay carry these variants. Accepted original tool results create the server-derived `native-grok-tool-result` evidence; a Worker cannot assert it through generic acceptance publication. Native Plan uses the original approval request and adds no common Plan gate. No protobuf service, generated binding, relational schema migration or Worker permission expansion is required. CLI `interaction respond` and `interaction approve` accept the same exclusive `{"grok": ...}` document through file/stdin after reading and validating the original interaction; credential stdin remains separate. Historical missing variants preserve existing bytes and do not gain this profile's authority.
+
+### Stopped Codex API account selection
+
+`SessionService.SwitchSessionAccount` is an additive owner/client-only mutation, capability-gated by `STOPPED_CODEX_ACCOUNT_SWITCH_V1` (wire value 5, allocated on main) in System status. Its `Mutation` binds the exact session revision/request and `account_id` selects an original candidate; actor-bound reference receipts return current `SessionChange`. Admission, historical attribution, full native history and explicit Resume follow the [sessions contract](cmds-delidev-sessions-contract.md). It performs no native side effect or automatic execution. Go, TypeScript and Connect Query bindings are generated from the service-owned schema; existing capabilities retain their wire values.
+
 ## Repository inspection metadata allocation prerequisite
 
 Closed, unmerged PR #1193 implemented repository metadata using Worker value 5 and attachment-response field 3. Main now reserves Worker values 3, 4 and 5 for other owners, including native compaction from issue #1203 at value 5. Issue #1142's replacement therefore reserves `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 6` and `AttachWorkerResponse.supported_worker_capabilities = 3`, retaining original-PR provenance. The original issue's proposed value 3 and the old branch's value 5 cannot replace existing main reservations.
