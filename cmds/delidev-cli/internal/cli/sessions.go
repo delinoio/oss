@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -172,9 +173,13 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 			return nil, rpc.ClientError(err)
 		}
 		return map[string]any{"sessions": resourcesJSON(response.Msg.Sessions), "next_page_token": response.Msg.NextPageToken}, nil
-	case "stop", "archive", "restore", "unarchive", "resume", "rename", "prepare", "recover-workspace", "recover-execution":
+	case "stop", "archive", "restore", "unarchive", "resume", "rename", "prepare", "recover-workspace", "recover-execution", "switch-account":
 		id := f.String("id", "", "")
 		revision := f.Uint64("revision", 0, "")
+		account := new(string)
+		if action == "switch-account" {
+			account = f.String("account-id", "", "eligible account from the original candidate snapshot")
+		}
 		wait := new(bool)
 		if action == "prepare" || action == "recover-workspace" || action == "recover-execution" {
 			wait = f.Bool("wait", false, "wait for the accepted Worker job within the command deadline")
@@ -198,6 +203,26 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 			return nil, domain.Fail(domain.MissingInput, "Session controls require an ID and current revision.", "Provide --id and --revision from session get.")
 		}
 		meta := &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}
+		if action == "switch-account" {
+			if err := domain.ID(*account).Validate(); err != nil {
+				return nil, err
+			}
+			if err := domain.ID(*id).Validate(); err != nil {
+				return nil, err
+			}
+			status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+			if err != nil {
+				return nil, rpc.ClientError(err)
+			}
+			if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1) {
+				return nil, domain.Fail(domain.Unsupported, "The server does not support stopped-session account switching.", "Update the DeliDev server before explicitly selecting another account.")
+			}
+			response, err := c.sessions.SwitchSessionAccount(ctx, request(c, &pb.SwitchSessionAccountRequest{Mutation: meta, AccountId: *account}))
+			if err != nil {
+				return nil, rpc.ClientError(err)
+			}
+			return sessionChangeJSON(response.Msg.Change), nil
+		}
 		if action == "recover-execution" {
 			if err := domain.ID(*execution).Validate(); err != nil {
 				return nil, err

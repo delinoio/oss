@@ -2819,6 +2819,22 @@
       "member": "supported_worker_capabilities",
       "oldBranchNumber": 3,
       "number": 3
+    },
+    {
+      "pr": 1212,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
+      "oldBranchNumber": 15,
+      "number": 16
+    },
+    {
+      "pr": 1212,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
+      "oldBranchNumber": 5,
+      "number": 7
     }
   ]
 }

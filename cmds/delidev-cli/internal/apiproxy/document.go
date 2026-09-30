@@ -153,13 +153,33 @@ func validateRequest(ctx context.Context, raw []byte, lease *Lease, op Operation
 	if stream && (op == ResponseCompact || op == MessageCountTokens) {
 		return false, domain.Fail(domain.Unsupported, "This native API operation does not stream.", "Use the operation's compatible native request.")
 	}
-	if op == ResponseCreate {
+	accountBound := false
+	if op == ResponseCreate || op == ResponseCompact {
+		// Responses item references are another form of provider-owned history.
+		// Preserve ordinary native full items and function-call identities, but
+		// never classify a remote item lookup as portable conversation content.
+		var items []json.RawMessage
+		if json.Unmarshal(object["input"], &items) == nil {
+			for _, rawItem := range items {
+				// An unrelated non-object must not hide another item's remote
+				// reference if a compatible provider accepts mixed input arrays.
+				var item map[string]json.RawMessage
+				if json.Unmarshal(rawItem, &item) != nil {
+					continue
+				}
+				var kind string
+				if json.Unmarshal(item["type"], &kind) == nil && kind == "item_reference" {
+					accountBound = true
+				}
+			}
+		}
 		for name, kind := range map[string]ReferenceKind{"previous_response_id": ResponseReference, "conversation": ConversationReference} {
 			value, ok := object[name]
 			value = bytes.TrimSpace(value)
 			if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 				continue
 			}
+			accountBound = true
 			var id string
 			if name == "conversation" && len(value) > 0 && value[0] == '{' {
 				var ref map[string]json.RawMessage
@@ -178,6 +198,11 @@ func validateRequest(ctx context.Context, raw []byte, lease *Lease, op Operation
 			if err := lease.AuthorizeReference(ctx, kind, id); err != nil {
 				return false, err
 			}
+		}
+	}
+	if (op == ResponseCreate || op == ResponseCompact) && lease.ObserveHistory != nil {
+		if err := lease.ObserveHistory(ctx, accountBound); err != nil {
+			return false, err
 		}
 	}
 	return stream, nil

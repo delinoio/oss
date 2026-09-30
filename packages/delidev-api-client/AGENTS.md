@@ -44,4 +44,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - DeliDev API clients export the generated SubscriptionService and closed managed Codex capability/action types. Keep authentication bundles out of Query keys, persistence, synchronization, errors and ordinary resource models. Public clients cannot invoke the protected Worker lane. Follow `docs/cmds-delidev-subscription-contract.md` and retain generation freshness checks.
 
+- Generated `SessionQuery.switchSessionAccount` preserves the exact session revision, UUID-v7 receipt and explicitly selected account. Gate availability with the typed System capability, retain uncertain requests without automatic mutation retries, and leave stopped-session compatibility/authorization in Go.
+
 - Generated UsageQuery consumers verify the NATIVE_UNITS_V1 echo before interpreting native accounting, preserve decimal totals and distinct unit kinds, and keep legacy response fields separate. Grok pricing and budget contribution remain unavailable.
