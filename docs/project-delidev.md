@@ -30,6 +30,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
+- [Diagnostics presentation](apps-delidev-diagnostics-contract.md)
 - [Saved client connections](cmds-delidev-connections-contract.md)
 - [Session development-server forwarding](cmds-delidev-forwarding-contract.md)
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
