@@ -170,7 +170,7 @@ it("ignores a late native Worker completion without refreshing or replacing the 
     return current;
   });
   const view = render(value.view(true, value.transport, control));
-  fireEvent.click(screen.getByRole("button", { name: "Execution Workers" }));
+  fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
   const start = await screen.findByRole("button", { name: "Start local Worker" });
   await waitFor(() => expect((start as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(start);
@@ -178,7 +178,7 @@ it("ignores a late native Worker completion without refreshing or replacing the 
   view.rerender(value.view(false, value.transport, control));
   current = { ...initial, state: LocalWorkerState.Exited };
   view.rerender(value.view(true, value.transport, control));
-  fireEvent.click(screen.getByRole("button", { name: "Execution Workers" }));
+  fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
   await screen.findByText("Worker controller exited. Existing session cleanup and recovery remain separate.");
   const reads = control.mock.calls.length;
   await act(async () => gate.resolve());

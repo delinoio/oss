@@ -376,6 +376,12 @@ func TestScheduleRPCReferencedDeletionDisablesAtomically(t *testing.T) {
 			}
 			if _, err := f.client.ControlSchedule(f.ctx, ownerRequest(f.service.Identity, &pb.ControlScheduleRequest{Mutation: acctMutation(current, domain.NewID()), Action: pb.ScheduleAction_SCHEDULE_ACTION_RESUME})); connect.CodeOf(err) != connect.CodeAborted {
 				t.Fatal("resume cleared disabling problem", err)
+			} else if failure := rpc.ClientError(err); failure.Guidance != "Edit its selected project, Agent Worker and Runner Device to clear the retained disabling problem." {
+				t.Fatal("resume lost Runner Device reconfiguration guidance", err)
+			}
+			afterResume := f.current(t, created.Id)
+			if afterResume.Revision != current.Revision || !bytes.Equal(afterResume.DocumentJson, current.DocumentJson) {
+				t.Fatal("rejected resume changed the retained disabling state")
 			}
 			if _, err := f.client.RunScheduleNow(f.ctx, ownerRequest(f.service.Identity, &pb.RunScheduleNowRequest{Mutation: acctMutation(current, domain.NewID())})); connect.CodeOf(err) != connect.CodeAborted {
 				t.Fatal("Run now bypassed disabling problem", err)

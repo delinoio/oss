@@ -79,7 +79,7 @@ const settingsCategories: Record<SettingsCategory, { label: string; description:
   [SettingsCategory.Instructions]: { label: "Instructions", description: "Saved on the selected server.", kind: EntityKind.TEMPLATE, area: SettingsArea.Configuration },
   [SettingsCategory.Projects]: { label: "Projects", description: "Saved on the selected server.", kind: EntityKind.PROJECT, area: SettingsArea.Configuration },
   [SettingsCategory.Repositories]: { label: "Repositories", description: "Saved on the selected server.", kind: EntityKind.REPOSITORY, area: SettingsArea.Configuration },
-  [SettingsCategory.ExecutionWorkers]: { label: "Execution Workers", description: "Saved on the selected server.", kind: EntityKind.MACHINE, area: SettingsArea.Configuration },
+  [SettingsCategory.ExecutionWorkers]: { label: "Runner Devices", description: "Saved on the selected server.", kind: EntityKind.MACHINE, area: SettingsArea.Configuration },
   [SettingsCategory.PairedDevices]: { label: "Paired devices", description: "Saved on the selected server.", kind: EntityKind.DEVICE, area: SettingsArea.Configuration },
   [SettingsCategory.ServerPreferences]: { label: "Server preferences", description: "Saved on the selected server.", kind: EntityKind.SETTINGS, area: SettingsArea.Configuration },
   [SettingsCategory.Integrations]: { label: "Integrations", description: "Named GitHub.com PAT profiles are separate from AI accounts. Each repository selects its profile explicitly.", area: SettingsArea.Integrations },
@@ -154,7 +154,7 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
   const hasSpecializedPanel = isAccountCategory || isApiProviders || isModels;
   const hasOverlay = Boolean(editing || account || deleting || routing || machine || device || pricing);
   const categoryDescription = kind === EntityKind.DEVICE
-    ? "Pair devices using a short-lived document. Local Worker registration is available in Execution Workers."
+    ? "Pair devices using a short-lived document. Local Worker registration is available in Runner Devices."
     : kind === EntityKind.MACHINE && !controlLocalWorker ? "Configure these entries through the DeliDev CLI."
     : selected.description;
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration && !hasSpecializedPanel });

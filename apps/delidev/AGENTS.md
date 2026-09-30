@@ -1,5 +1,9 @@
 # DeliDev desktop
 
+## Presentation naming
+
+- The New session machine selector has the exact visible label and accessible name `Runs on`. Its placeholder, inventory statuses and unavailable-selection fallback use `Runner Device`; other execution-device labels and user-facing messages use `Runner Device` / `Runner Devices`, including `Remediation Runner Device` and `Runner Device and harness`. This is presentation-only: preserve `Agent Worker`, generic technical Worker terminology, user-assigned names, CLI commands, structured logs/error codes, authorization, RPC/storage fields and the Settings category value `execution-workers`. Follow `docs/apps-delidev-desktop-contract.md`.
+
 ## Scoped DeliDev ownership
 
 Read the relevant owner before changing its behavior, including cross-domain consumers:

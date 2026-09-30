@@ -48,6 +48,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 
 ## Cross-Domain Invariants
 - Go owns business logic; clients use authenticated Connect and preserve exact request/revision identities.
+- Execution-device presentation follows the [desktop naming contract](apps-delidev-desktop-contract.md): New session uses `Runs on`, and other affected copy uses `Runner Device(s)`. Technical Worker names and stable CLI, RPC, storage and Settings identifiers retain their meanings.
 - Local and remote operation preserve original native ownership, explicit authorization, credential isolation and uncertainty.
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.

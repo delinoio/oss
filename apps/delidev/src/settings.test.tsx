@@ -86,7 +86,7 @@ it("shows the complete grouped navigation once and keeps its selected category i
   const value = fixture([]);
   render(value.view(<Settings visible close={() => {}} />));
   const navigation = screen.getByRole("navigation", { name: "Settings categories" });
-  const labels = ["AI Subscription", "API Accounts", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Execution Workers", "Paired devices", "Server preferences", "Integrations", "Diagnostics", "Notifications", "Import / Export", "Backups"];
+  const labels = ["AI Subscription", "API Accounts", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Runner Devices", "Paired devices", "Server preferences", "Integrations", "Diagnostics", "Notifications", "Import / Export", "Backups"];
   const values = ["subscription-accounts", "api-accounts", "providers", "models", "agent-workers", "instructions", "projects", "repositories", "execution-workers", "paired-devices", "server-preferences", "integrations", "diagnostics", "notifications", "transfer", "backups"];
   expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI & agents", "Workspace", "System"]);
   expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
@@ -346,7 +346,7 @@ it("retries an original checkout inspection and uses only its owning Worker's ca
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Repository" } });
   await screen.findByRole("option", { name: "Owned Worker" });
-  fireEvent.change(screen.getByLabelText("Execution Worker"), { target: { value: machine.id } });
+  fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: machine.id } });
   fireEvent.change(screen.getByLabelText("Absolute checkout path on this Worker"), { target: { value: "/alias/checkout" } });
   fireEvent.click(screen.getByRole("button", { name: "Inspect checkout" }));
   const retry = await screen.findByRole("button", { name: "Retry the same inspection" });
@@ -451,7 +451,7 @@ it("saves remediation switches, exact reviewer IDs and explicit execution choice
   }
   await screen.findByRole("option", { name: "Fix agent" });
   fireEvent.change(screen.getByLabelText("Remediation Agent Worker"), { target: { value: agent.id } });
-  fireEvent.change(screen.getByLabelText("Remediation execution Worker"), { target: { value: machine.id } });
+  fireEvent.change(screen.getByLabelText("Remediation Runner Device"), { target: { value: machine.id } });
   fireEvent.change(screen.getByLabelText("Remediation session strategy"), { target: { value: "dedicated" } });
   fireEvent.change(screen.getByLabelText("Conflict resolution strategy"), { target: { value: "rebase" } });
   fireEvent.change(screen.getByLabelText("Consecutive automatic attempt limit"), { target: { value: "7" } });
