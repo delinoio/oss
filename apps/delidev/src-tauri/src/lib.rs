@@ -172,7 +172,9 @@ impl Connector {
     pub fn connect(&self) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         tracing::info!(operation = "local_connect", phase = "start");
-        let result = self.connect_inner("start");
+        // Advanced Start intentionally reopens ordinary stopped intent, but
+        // shares Go's pinned desktop admission instead of ordinary CLI Start.
+        let result = self.connect_inner("desktop-launch");
         match &result {
             Ok(_) => tracing::info!(operation = "local_connect", phase = "ready"),
             Err(code) => tracing::warn!(operation = "local_connect", phase = "failed", ?code),

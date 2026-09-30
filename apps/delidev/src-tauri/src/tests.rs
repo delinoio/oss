@@ -88,6 +88,46 @@ fn bounded_output_rejects_overflow() {
         Err(NativeFailure::InvalidEvidence)
     );
 }
+
+#[test]
+#[cfg(unix)]
+fn advanced_start_preserves_native_service_ownership_before_pairing() {
+    use std::os::unix::fs::PermissionsExt;
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("private");
+    fs::create_dir(&root).unwrap();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(root.join("registration"), "original service ownership").unwrap();
+    let executable = temporary.path().join("sidecar");
+    // Model the Go admission boundary: desktop Start preserves a registration;
+    // ordinary explicit CLI Start has independent, unchanged semantics.
+    fs::write(
+        &executable,
+        r#"#!/bin/sh
+case "$3:$4" in
+  server:desktop-launch)
+    printf '%s' '{"version":1,"result":{"state":"service-managed"}}' ;;
+  server:start)
+    printf '%s' 'spawned' > "$2/competitor"
+    printf '%s' '{"version":1,"error":{"code":"unavailable"}}' ;;
+  *) exit 2 ;;
+esac
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let connector = Connector::new(executable, root.clone()).unwrap();
+    assert!(matches!(
+        connector.connect(),
+        Err(NativeFailure::ServiceManaged)
+    ));
+    assert!(!root.join("competitor").exists());
+    assert!(!root.join("desktop-client").exists());
+    assert_eq!(
+        fs::read_to_string(root.join("registration")).unwrap(),
+        "original service ownership"
+    );
+}
 #[test]
 #[ignore = "requires an explicitly built Go sidecar; uses only a temporary private server scope"]
 fn real_sidecar_connect_reuse_revocation_and_exit() {
