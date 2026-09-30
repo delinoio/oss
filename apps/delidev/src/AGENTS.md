@@ -537,6 +537,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
 
+- Session terminals use authenticated Connect/Connect Query under `docs/cmds-delidev-terminals-contract.md`. Keep output bounded and incrementally decoded across split UTF-8; expose gaps, exact uncertain mutation retries and explicit reattachment without creating another shell. The text view is not a full-screen VT emulator and owns no native process lifecycle.
+
 ### Home navigation ownership
 
 - Sessions/New Session share automatic independent catalog/global/named chains of 50-record generated Connect Query reads. Retain only connection-owned navigation projections and accepted boundaries, with no row-count/Search cutoff; total Home metadata grows with reached inventory. Keep ordinary query payloads bounded to eight extra inactive entries and protect live reads until settlement. Preserve scope generations, exact-token retries, typed cursor-expiry Reload list, accepted-token-only refresh with opaque-renewal-safe boundary validation and boundary-drift Reload list, original-ID fallback transfer, global-chain failure/recovery outside General Chat disclosure, 100 expanded-project/50 collapsed-fallback identities, selection and scroll. Follow the Home amendment in `docs/apps-delidev-desktop-contract.md`; manual paging in other destinations is unchanged.

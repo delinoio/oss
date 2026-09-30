@@ -511,10 +511,15 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 			}
 		}
 	}
-	// Every Archive completion path shares the socket-cleanup gate, including
-	// late preparation, title and agent reports. Native process completion alone
-	// cannot release a session's separately owned forward lifetimes.
 	if kind == domain.SessionKind {
+		var err error
+		value, err = t.terminalArchiveBarrier(id, value)
+		if err != nil {
+			return Record{}, err
+		}
+		// Every Archive completion also shares the socket-cleanup gate, including
+		// late preparation, title and agent reports. Native process completion alone
+		// cannot release a session's separately owned forward lifetimes.
 		raw, err := json.Marshal(value)
 		if err != nil {
 			return Record{}, err
@@ -612,11 +617,23 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 		return domain.Fail(domain.Conflict, "The entity revision changed.", "Reload its current revision before deletion.")
 	}
 	if kind == domain.SessionKind {
+		if err := t.requireTerminalCleanup(id); err != nil {
+			return err
+		}
 		if err := t.StopForwards(id, ""); err != nil {
 			return err
 		}
 		if err := t.deleteSessionPRActivity(id); err != nil {
 			return err
+		}
+	}
+	if kind == domain.TerminalKind {
+		terminal, err := Decode[domain.Terminal](r)
+		if err != nil {
+			return err
+		}
+		if terminal.Live() {
+			return domain.Fail(domain.RecoveryRequired, "The terminal still owns native resources.", "Close and join the original terminal before deleting its record.")
 		}
 	}
 	if kind == domain.ModelKind {

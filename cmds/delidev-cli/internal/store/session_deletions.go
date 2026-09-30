@@ -336,6 +336,9 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 }
 
 func (t *Tx) applySessionDeletion(v SessionDeletion) error {
+	if e := t.StopTerminals(v.SessionID); e != nil {
+		return e
+	}
 	// Deletion closes the same independent socket lifetimes as Archive. Keep
 	// their records until both original peers positively acknowledge cleanup.
 	if e := t.StopForwards(v.SessionID, ""); e != nil {
@@ -470,6 +473,9 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 // foreign keys cascade search/FTS, usage, estimates, assignments and grants.
 // Receipt identities remain but their results lose the deleted content.
 func (t *Tx) purgeSession(v SessionDeletion) error {
+	if e := t.requireTerminalCleanup(v.SessionID); e != nil {
+		return e
+	}
 	pending, e := t.SessionForwardsPending(v.SessionID)
 	if e != nil {
 		return e

@@ -260,8 +260,13 @@ The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
 forward; offline or uncertain peers keep both forwarding records and database
 removal pending. Original cleanup reports remain authorized during deletion,
-while new socket claims and traffic cannot reopen the session. Other unimplemented
-terminal/browser-profile/snapshot products are not invented by deletion. Uncontrolled filesystem snapshots and external copies are
+while new socket claims and traffic cannot reopen the session. Session terminals participate through their original close claims and independently
+joined cleanup reports under the [terminal contract](cmds-delidev-terminals-contract.md).
+Deletion atomically requests close without replacing an existing close identity,
+withholds workspace-removal work until every terminal confirms cleanup, and
+rechecks cleanup before database purge. New terminal creation/input/resize cannot
+reopen a deleting session. Original cleanup reports and exact receipt retries
+remain admissible. Browser-profile/snapshot products remain separate. Uncontrolled filesystem snapshots and external copies are
 outside the guarantee; platform/process fixtures do not establish native
 Windows/Linux or real-account acceptance.
 
