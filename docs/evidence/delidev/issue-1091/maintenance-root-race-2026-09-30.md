@@ -58,3 +58,12 @@ shards; Windows server and the dependent CI result failed on the Plan locator
 bug. This evidence does not transfer CI or review approval to the new head. New
 head checks, real hosted-account/native-platform acceptance, continuation,
 release and full issue #964 acceptance remain separate.
+
+The repair pass's final inventory also found a newly arrived unresolved
+[Codex security review](https://github.com/delinoio/oss/pull/1230#discussion_r4144405319)
+(`PRRT_kwDORRAKg86nhbPq`) about provider-directed automatic Reads outside the
+assigned workspace. This pass did not establish confinement, disprove the
+finding, or resolve it. The registered maintenance must assess it separately;
+passing protocol/lifecycle tests do not establish filesystem confinement. The
+Windows path repair does not address this security finding. No review approval
+or merge readiness is claimed.
