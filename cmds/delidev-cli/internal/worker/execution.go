@@ -140,6 +140,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	var managed *managedSubscriptionLease
 	var managedLatest []byte
 	managedCleanup, managedSuccess := false, false
+	managedPreNativeCleanup := false
 	defer func() {
 		if managed != nil {
 			if err := managed.finish(managedLatest, managedCleanup, false, managedSuccess); err != nil {
@@ -161,6 +162,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if _, _, err := subscription.Parse(managed.response.Bundle); err != nil {
 			return nil, err
 		}
+		// Install cleanup before the atomic write: even a synchronization error
+		// may leave the owned plaintext file committed. Publisher/registration
+		// failures occur before any native process can own this authentication.
+		managedPreNativeCleanup = true
+		defer func() {
+			if managedPreNativeCleanup {
+				managedCleanup = cleanupExecutionAuthentication(nativeHome, managed.response.Bundle, managed.response.Bundle) == nil
+				if !managedCleanup {
+					output, returned = nil, subscription.Invalid()
+				}
+			}
+		}()
 		if err := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
 			return nil, subscription.Invalid()
 		}
@@ -224,8 +237,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true
 	}
+	// Once startup may own a process, only independently joined native cleanup
+	// may authorize removal. A definite failed Open already proves that closure;
+	// recovery-required startup must retain its authentication and lease.
+	managedPreNativeCleanup = false
 	client, err := codex.Open(nativeCtx, nativeConfig)
 	if err != nil {
+		managedPreNativeCleanup = domain.SafeError(err).Code != domain.RecoveryRequired
 		return nil, err
 	}
 	defer func() {

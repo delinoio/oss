@@ -477,3 +477,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Managed Codex subscriptions use only the selected installed Codex 0.151.0 and a fresh private file-authentication profile under the protected lease. Journal original claims before native work, never retry uncertain delivery, verify native identity and independent last_refresh/token changes, join native cleanup and save the final bundle before another grant. Keep recovery evidence and synthetic test credentials isolated; follow `docs/cmds-delidev-subscription-contract.md`.
 
 - Close and join the managed subscription lane after uncertain delivery/completion so the server retains lost leases as recovery-required. A durably acknowledged operation failure must not interrupt unrelated accounts on that lane.
+
+- Install managed execution credential cleanup at the auth-file write boundary, before publisher/registration failure paths, including predecessor runtimes. Remove and synchronize only owned authentication after confirmed native closure or before any native ownership; unconfirmed startup/closure retains its recovery lease.
