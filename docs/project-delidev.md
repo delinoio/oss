@@ -32,10 +32,11 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
+- [Diagnostics presentation](apps-delidev-diagnostics-contract.md)
 - [Saved client connections](cmds-delidev-connections-contract.md)
 - [Session development-server forwarding](cmds-delidev-forwarding-contract.md)
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
-- [Account lifecycle](cmds-delidev-accounts-contract.md)
+- [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [API provider activation](cmds-delidev-provider-activation-contract.md)
@@ -53,6 +54,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - Local and remote operation preserve original native ownership, explicit authorization, credential isolation and uncertainty.
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.
+- PR activity preserves immutable source/version/actor metadata across Go, generated clients, CLI and desktop. Attempt success cannot establish verified handling; only a dedicated original verification source can project that outcome.
 
 ## Change Policy
 Update the owning domain contract when behavior changes. Update this index only for ownership, its domain catalog or cross-domain invariants. Record each implementation/validation increment in its own `docs/evidence/delidev/issue-<number>/` file. A validation-only increment does not require editing this index or an AGENTS file.

@@ -425,6 +425,41 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-schedule-row > p { margin: 2px 5px 0; color: #5b6577; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .schedule-page { min-height: 100%; }
 
+/* PR presentation follows the active surface without replacing controllers or affecting neighboring contexts. */
+.sidebar-pull-requests .sidebar-pane { gap: 12px; padding-inline: 16px; }
+.sidebar-pull-requests .sidebar-header h1 { font-size: 17px; font-weight: 600; }
+.sidebar-pull-requests .sidebar-surface-content { padding: 0 0 8px; color: #202632; font-size: 13px; line-height: 1.5; }
+.sidebar-pull-requests .sidebar-surface-content > h2 { margin: 0 0 16px; font-size: 17px; font-weight: 600; }
+.sidebar-pull-requests .sidebar-list-heading { gap: 8px; margin: 0 0 8px; }
+.sidebar-pull-requests .sidebar-list-heading h3, .sidebar-pull-requests .sidebar-query-options > h3 { margin: 0; color: #5b6577; font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none; }
+.sidebar-pull-requests .sidebar-surface-content button { border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.sidebar-pull-requests .sidebar-list-heading button, .sidebar-pull-requests .sidebar-repository-pages button { min-height: 36px; padding: 8px; border-color: transparent; background: transparent; color: #5b6577; font-size: 12px; }
+.sidebar-pull-requests .sidebar-list-heading button:hover, .sidebar-pull-requests .sidebar-repository-pages button:hover { background: #e7efff; }
+.sidebar-pull-requests .sidebar-repository-row { grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 8px; margin-block: 8px; padding: 12px 8px !important; }
+.sidebar-pull-requests .sidebar-repository-icon { width: 16px; height: 16px; margin-top: 2px; color: #5b6577; }
+.sidebar-pull-requests .sidebar-repository-info { display: grid; min-width: 0; gap: 8px; }
+.sidebar-pull-requests .sidebar-repository-row[aria-pressed="true"] { background: #e7efff; font-weight: 600; }
+.sidebar-pull-requests .sidebar-repository-row[aria-pressed="true"] .sidebar-repository-icon { color: #17499f; }
+.sidebar-pull-requests .sidebar-repository-row small { color: #5b6577; font-size: 12px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
+.sidebar-pull-requests .sidebar-repository-empty { display: grid; justify-items: center; gap: 12px; margin-block: 8px 16px; padding: 16px 8px; color: #5b6577; text-align: center; }
+.sidebar-pull-requests .sidebar-repository-empty .sidebar-icon { width: 24px; height: 24px; }
+.sidebar-pull-requests .sidebar-repository-empty p { margin: 0; }
+.sidebar-pull-requests .sidebar-repository-pages { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+.sidebar-pull-requests .sidebar-query-options { margin-top: 16px; padding-top: 16px; border-top: 1px solid #d8dee8; }
+.sidebar-pull-requests .sidebar-query-options > h3 { margin-bottom: 12px; }
+.sidebar-pull-requests .sidebar-form { gap: 12px; }
+.sidebar-pull-requests .sidebar-form label { min-width: 0; gap: 8px; margin: 0; color: #202632; font-size: 13px; font-weight: 500; }
+.sidebar-pull-requests .sidebar-form input, .sidebar-pull-requests .sidebar-form select { min-width: 0; min-height: 40px; padding: 8px; border-radius: 8px; }
+.sidebar-pull-requests .sidebar-help { margin: 8px 0 16px; font-size: 12px; }
+.sidebar-pull-requests .sidebar-form .sidebar-help { margin: 0; }
+.sidebar-pull-requests .sidebar-form > button { min-height: 40px; margin: 0 0 8px; }
+.sidebar-pull-requests .sidebar-action { min-height: 40px; margin: 24px 0 8px; border-color: #d8dee8; background: transparent; font-weight: 500; }
+/* Recovery dialogs live inside the footer. Exclude their entire subtree from inline control overrides. */
+.sidebar-pull-requests .sidebar-footer > p, .sidebar-pull-requests .sidebar-footer :is(p, .problem, small):not(.sidebar-footer dialog *) { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.sidebar-pull-requests .sidebar-footer :is(button, summary):not(.sidebar-footer dialog *) { min-height: 36px; height: auto; padding: 8px; border-color: transparent; border-radius: 8px; background: transparent; font-size: 13px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+.sidebar-pull-requests .sidebar-footer button:not(.sidebar-footer dialog *):hover { background: #e7efff; }
+.sidebar-pull-requests .sidebar-footer details:not(.sidebar-footer dialog *) { margin-block: 8px; padding: 0; border: 0; }
+
 @media (max-width: 759px) {
   .app { grid-template-columns: 52px minmax(0, 1fr); min-height: 0; }
   .sidebar { display: contents; }
@@ -433,6 +468,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
   .sidebar-pane-dialog:modal { display: block; box-shadow: 0 0 0 100vmax #16243b66; }
   .sidebar-pane-dialog:modal::backdrop { background: transparent; }
   .sidebar-pane { width: 100%; height: 100%; padding: 12px 12px 9px; background: #f5f6f8; }
+  .sidebar-pull-requests .sidebar-pane { padding-inline: 16px; }
   .sidebar-drawer-close { display: block; align-self: flex-start; min-height: 40px; }
   .sidebar-context-trigger { display: block; min-height: 40px; margin: 12px 16px; }
   main { grid-column: 2; grid-row: 1; }
