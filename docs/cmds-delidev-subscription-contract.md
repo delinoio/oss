@@ -14,6 +14,8 @@ Go owns server and Worker business logic. The native profile pins installed Code
 
 The server owner or an authorized paired client initiates lifecycle operations. A paired Worker advertises `managed-codex-subscriptions-v1` only after an empty-home native configuration handshake and owned cleanup; the server echoes this closed capability. Each operation selects an explicit execution machine. Workers cannot initiate owner lifecycle operations or read another machine's bundle.
 
+Execution admission requires that selected Worker's negotiated managed capability before claiming a session or consuming queued input. Ordinary native installation discovery alone cannot admit subscription execution; an unsupported Worker leaves the original input queued without selecting a fallback.
+
 ## Interfaces and Contracts
 
 Native subscription providers opt into the closed `subscription_harness: "codex"` field, retain `native-subscription` protocol and `subscription` authentication, and have an empty endpoint. Legacy providers without this selector remain metadata-only until explicitly configured; names never infer authentication authority. Accounts retain their independent enablement configuration.
