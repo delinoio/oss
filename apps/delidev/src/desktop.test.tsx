@@ -57,6 +57,9 @@ function localFixture() {
   });
   return { connection, getStatus, stop };
 }
+// This fixture recreates three full Settings openings under Strict Mode. Keep
+// its scoped CI budget while they share one lifetime; remove the override if
+// these flows are split into separately mounted fixtures.
 it("enters the verified product automatically under Strict Mode and confines controls to diagnostics", async () => {
   const fixture = localFixture();
   render(<StrictMode><Desktop /></StrictMode>);
@@ -93,7 +96,7 @@ it("enters the verified product automatically under Strict Mode and confines con
   fireEvent.click(screen.getByRole("button", { name: "Retry the same server stop" }));
   await screen.findByText(/Stop accepted/);
   expect(fixture.stop.mock.calls.map(([request]) => request.requestId)).toEqual([originalRequest, originalRequest]);
-});
+}, 15000);
 it("joins pending observations across remounts and submits only an explicit serialized retry", async () => {
   const fixture = localFixture();
   let finish!: (value: typeof fixture.connection) => void;
