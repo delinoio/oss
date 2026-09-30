@@ -114,7 +114,15 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
     assert_eq!(first.token, second.token);
     // A client/connector exit has no server stop side effect.
     let replacement = Connector::new(connector.executable.clone(), connector.root.clone()).unwrap();
-    let reopened = replacement.connect().unwrap();
+    // The production authority cannot adopt this fixture's alternate listener.
+    assert!(matches!(
+        replacement.connect(),
+        Err(NativeFailure::Incompatible)
+    ));
+    let mut same_authority =
+        Connector::new(connector.executable.clone(), connector.root.clone()).unwrap();
+    same_authority.listen = connector.listen.clone();
+    let reopened = same_authority.connect().unwrap();
     assert_eq!(reopened.server_id, first.server_id);
     let owner: serde_json::Value =
         serde_json::from_slice(&fs::read(connector.root.join("owner.json")).unwrap()).unwrap();

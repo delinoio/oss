@@ -185,6 +185,9 @@ func deviceLocal(ctx context.Context, o options, command string, args []string, 
 		if err := parse(fs, args[1:]); err != nil {
 			return nil, err
 		}
+		if *join {
+			return nil, usage()
+		}
 		if !*input || terminalInput(streams.In) {
 			return nil, domain.Fail(domain.MissingInput, "A private pairing document is required on stdin.", "Pipe the file returned by device create-pairing; never put its contents in argv.")
 		}

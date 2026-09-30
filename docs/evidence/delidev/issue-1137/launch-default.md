@@ -28,6 +28,9 @@ excluded from this record.
 | `go test -race ./cmds/delidev-cli/internal/cli ./cmds/delidev-cli/internal/userservice -run 'TestDesktopLaunch\|TestDesktopPairing\|TestLaunchAdmission\|TestCLILocalClientPairing\|TestDesktopRecovery\|TestAutomaticStartup\|TestStartupCannot\|TestDetachedStartupReadiness\|TestManagedIntent' -count=1` | Both packages pass. Covers concurrent startup, same-process Stop suppression, fresh launch after joined cleanup, malformed registration, incomplete database cleanup, service install/start/remove exclusion, original pairing/recovery evidence and prior startup behavior. |
 | `go vet -p 2 ./cmds/delidev-cli/...` | Passes after the final Go changes. |
 | `cargo test -j 2 -p delidev-desktop --lib -- --test-threads=1` | 16 pass, five explicit real-sidecar fixtures remain opt-in. Synthetic host tests prove one initial bootstrap/pairing, concurrent observation, Stop invalidation and retained missing-sidecar failure. |
+| `DELIDEV_TEST_SIDECAR=<temporary-binary> cargo test -j 2 -p delidev-desktop real_ -- --ignored --test-threads=1` | All five real-sidecar fixtures pass: fresh/concurrent launch, explicit local Worker fixture, saved authority isolation, same-authority reuse/revocation/recovery and crash/Stop/exit supervision. These temporary fixtures do not establish external-account or rendered-window acceptance. |
+| `VITEST_MAX_WORKERS=1 pnpm test` in `apps/delidev`, final full run | Passes the complete pipeline: client build, typecheck, 964 tests across 84 files, packaging/launcher/widget checks and production build. |
+| `cargo check -j 2 -p delidev-desktop --features desktop-host,custom-protocol --bin delidev-desktop` | Passes actual macOS arm64 CEF host compilation with the required sidecar/widget/frontend assets generated. |
 | `pnpm test:bundle-dry-run`; `pnpm test:desktop-launch`; `pnpm test:widget`; `pnpm build` in `apps/delidev` | Eight packaging tests, 16 launcher/asset tests, widget fixtures and frontend build pass. |
 | `pnpm prepare:assets`; `pnpm prepare:sidecar`; `pnpm prepare:widget` | Hydrated icon verified, bundled Go sidecar generated and macOS arm64 widget extension builds successfully with signing credentials excluded. |
 
@@ -70,8 +73,8 @@ as a new request. The final actual fixture passes in 3.91 seconds.
   run passed typecheck and 959 of 963 tests, failing three unchanged Settings
   lifetime cases at their five-second test deadline and the pricing integration
   confirmation wait. All four pass in the seven-file bounded rerun above. The
-  required full pipeline was rerun after adding the final retention test; its
-  outcome will be recorded separately before delivery.
+  required full pipeline was rerun after adding the final retention test and
+  passes all 964 tests and subsequent checks/build.
 - Root `cargo test -j 2 -- --test-threads=1` was run with the existing native CEF
   cache and target directory. The first run failed in unchanged clibox
   `timeout_terminates_owned_descendants` with an empty PID parse. The second run
@@ -83,7 +86,10 @@ as a new request. The final actual fixture passes in 3.91 seconds.
   timeouts in unchanged `TestCLISessionAcceptanceQueueAndArchive` and
   `TestDiscoveryVerifiesOpenCodeWithoutExecution`, then missing shared Go-cache
   import artifacts in later packages. It does not establish a passing broad Go
-  suite. Focused changed-area race tests and vet pass.
+  suite. Focused changed-area race tests and vet pass. Isolated OpenCode discovery
+  then passes; the isolated session case progresses past its original timeout
+  but fails a separate workspace diff read with Unavailable/RecoveryRequired.
+  This unrelated session acceptance failure remains unresolved in this change.
 - `DELIDEV_NATIVE_USER_SERVICE_TEST=1 go test -race
   ./cmds/delidev-cli/internal/cli -run '^TestNativeUserServiceLifecycle$' -count=1 -v`
   verified an actual uniquely named installed/stopped macOS registration remained
@@ -98,7 +104,12 @@ as a new request. The final actual fixture passes in 3.91 seconds.
 - An initial CEF host compile check failed before application compilation because
   the sidecar resource had not been generated and the shared CEF extraction was
   missing wrapper/header files. Required resources were then prepared and the
-  compile check rerun; its final result will be recorded before delivery.
+  compile check rerun successfully. No CEF dependency or ownership rule changed.
+- The existing real-sidecar reuse fixture initially expected a default fixed
+  connector to adopt its alternate test listener. The new pre-pair listener
+  validation correctly rejects that with Incompatible. The fixture now separately
+  proves that rejection and same-authority reuse while retaining its independent
+  fixed-endpoint recovery-rejection assertion; all five real fixtures pass.
 
 The busy shared machine and shared-cache failures are observed constraints, not
 proof that every broad failure is environmental. No unrelated tests or native
@@ -112,5 +123,6 @@ The fixed product listener was already occupied by an existing user process;
 this work does not stop or replace it. macOS x64, Windows x64/arm64 and Ubuntu
 X11 x64/arm64 actual checks are unperformed. No account, provider, harness,
 Worker execution or session-resume acceptance is inferred from these fixtures.
-Generated repository-owned `dist` output must be removed after validation and
-before the final worktree is delivered.
+Generated repository-owned `dist` output is removed after validation before the
+final worktree is delivered; required generated assets can be reproduced by the
+recorded build commands.

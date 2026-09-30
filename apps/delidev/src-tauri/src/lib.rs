@@ -197,7 +197,6 @@ impl Connector {
         let client: DeviceMetadata = serde_json::from_value(self.run(&[
             "device".into(),
             "inspect".into(),
-            "--join-existing".into(),
             "--device-dir".into(),
             self.root.join("desktop-client").into_os_string(),
         ])?)
@@ -265,6 +264,7 @@ impl Connector {
         let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
             "device".into(),
             "inspect".into(),
+            "--join-existing".into(),
             "--device-dir".into(),
             self.root.join("desktop-client").into_os_string(),
         ])?)
