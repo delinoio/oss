@@ -112,6 +112,24 @@ func (m *terminalManager) saveJournal(j terminalOperationJournal) error {
 	return security.WriteAtomic(m.journalPath(j.OperationID), raw)
 }
 
+func (m *terminalManager) markStarted(j *terminalOperationJournal, action domain.TerminalAction) error {
+	if action == domain.TerminalCreate {
+		// A crash after the start intent but before process.Start must retain an
+		// original owner index. Reconciliation can verify an empty private index;
+		// missing ownership must remain uncertain rather than becoming PID proof.
+		for _, directory := range []string{m.processRoot(), filepath.Join(m.processRoot(), string(j.TerminalID))} {
+			if err := security.PrivateDir(directory); err != nil {
+				return err
+			}
+			if err := security.SyncParent(directory); err != nil {
+				return err
+			}
+		}
+	}
+	j.Phase = terminalStarted
+	return m.saveJournal(*j)
+}
+
 func (m *terminalManager) loadJournal(a terminal.Assignment) (terminalOperationJournal, error) {
 	var j terminalOperationJournal
 	if err := security.PrivateDir(filepath.Join(m.config.Root, "terminal-operations")); err != nil {
@@ -188,8 +206,7 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 		}
 	}
 	if j.Phase == terminalClaimed {
-		j.Phase = terminalStarted
-		if err := m.saveJournal(j); err != nil {
+		if err := m.markStarted(&j, assignment.Operation.Action); err != nil {
 			return err
 		}
 		result := m.execute(assignment)

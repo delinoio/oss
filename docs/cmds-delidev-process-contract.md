@@ -45,6 +45,13 @@ Preparation recovery uses `ReconcileOwnerContext` to stop between bounded native
 
 ## Interactive native terminals
 
+Terminal creation synchronizes its private process root and original owner index
+before the Worker's native-start intent. A crash before native launch can
+reconcile that retained empty index; missing or changed ownership remains
+uncertain. Shell-discovery children and the interactive shell share this exact
+terminal owner index, so retained native scopes still require normal joined
+reconciliation.
+
 `process.Config.Terminal` selects a bounded 1–500-row, 1–1000-column terminal instead of ordinary pipes. Unix allocates a PTY inside the original independent supervisor and starts a new controlling session. Windows ConPTY is attached alongside the atomic suspended Job Object assignment. Neither replaces descendant ownership with a process group. Terminal stderr shares the native terminal byte stream; ordinary process streams retain their existing separation.
 
 Resize is serialized with input and acknowledged after native application. Native bytes remain undecoded until the consuming client. PTY EOF and ConPTY closure are joined with output consumption and original descendant reconciliation before completed ownership is published. ConPTY drains output concurrently with closure to avoid its synchronous output deadlock. Unix slave allocation or shell launch failure before native execution publishes clean prelaunch completion; unsupported native APIs retain typed failures.

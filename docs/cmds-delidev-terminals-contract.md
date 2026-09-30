@@ -119,7 +119,11 @@ a second input or output copy. Terminal history is retained after cleanup.
 
 Worker-private synchronized operation journals retain original IDs, semantic
 digests, claim/report IDs, phase and bounded native results; they never contain
-input/output bytes. Native-start intent is synchronized before side effects.
+input/output bytes. Creation synchronizes its private terminal-process root and
+original owner index before recording native-start intent. A restart before
+native launch can reconcile that retained empty index; a missing or changed
+index still cannot establish cleanup. Native-start intent is synchronized
+before side effects.
 An interrupted started operation is reported uncertain instead of repeating
 input, resize or shell creation. Finished results retry their exact report;
 confirmed reports retire the journal. Terminal reports share a 64 KiB JSON limit

@@ -133,3 +133,84 @@ func TestTerminalJournalOversizedWritePreservesOriginal(t *testing.T) {
 		t.Fatal("rejected oversized write replaced original ownership evidence", err)
 	}
 }
+
+func TestTerminalStartedCreationRetainsPreNativeCleanupIndex(t *testing.T) {
+	ctx := context.Background()
+	instance, machine, id, operation := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
+	manager := newTerminalManager(ctx, Config{Root: t.TempDir()}, nil, Credential{MachineID: machine}, instance)
+	assignment := terminal.Assignment{ID: id, SessionID: domain.NewID(), Terminal: domain.Terminal{MachineID: machine, ShellOverride: "/fixture/explicit-shell", Rows: 24, Columns: 80}, Operation: domain.TerminalOperation{ID: operation, Action: domain.TerminalCreate}}
+	journal, err := manager.loadJournal(assignment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.Phase = terminalClaimed
+	if err := manager.saveJournal(journal); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.markStarted(&journal, assignment.Operation.Action); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := manager.loadJournal(assignment)
+	if err != nil || retained.Phase != terminalStarted {
+		t.Fatal("original start intent was not retained", err)
+	}
+	owner := filepath.Join(manager.processRoot(), string(id))
+	if err := security.CheckPrivateDir(owner); err != nil {
+		t.Fatal("started creation did not retain private owner index", err)
+	}
+	entries, err := os.ReadDir(owner)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("pre-native creation unexpectedly launched a process", err)
+	}
+	// Simulate restart immediately at the synchronized start-intent boundary,
+	// before execute or shell discovery. Replacement ownership may close only.
+	restarted := newTerminalManager(ctx, Config{Root: manager.config.Root}, nil, Credential{MachineID: machine}, domain.NewID())
+	assignment.Terminal.OwnerInstanceID = instance
+	assignment.Terminal.Pending = &domain.TerminalOperation{ID: operation, Action: domain.TerminalCreate, Claimed: true}
+	assignment.Operation = domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalClose}
+	if err := os.Rename(owner, owner+"-moved"); err != nil {
+		t.Fatal(err)
+	}
+	missing := restarted.execute(assignment)
+	if missing.State != domain.TerminalUncertain || missing.CleanupVerified || missing.Problem == nil || missing.Problem.Code != domain.RecoveryRequired {
+		t.Fatal("missing original index manufactured cleanup", missing)
+	}
+	if err := os.Rename(owner+"-moved", owner); err != nil {
+		t.Fatal(err)
+	}
+	result := restarted.execute(assignment)
+	if result.State != domain.TerminalClosed || !result.CleanupVerified || result.Problem != nil || len(restarted.live) != 0 {
+		t.Fatal("retained original pre-native ownership did not permit close reconciliation", result)
+	}
+}
+
+func TestTerminalCreationOwnerFailurePreservesClaimedJournal(t *testing.T) {
+	manager := newTerminalManager(context.Background(), Config{Root: t.TempDir()}, nil, Credential{}, domain.NewID())
+	assignment := terminal.Assignment{ID: domain.NewID(), SessionID: domain.NewID(), Operation: domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalCreate}}
+	journal, err := manager.loadJournal(assignment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.Phase = terminalClaimed
+	if err := manager.saveJournal(journal); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(manager.processRoot()); err != nil {
+		t.Fatal(err)
+	}
+	owner := filepath.Join(manager.processRoot(), string(assignment.ID))
+	if err := security.WriteAtomic(owner, []byte("foreign owner-index fixture")); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.markStarted(&journal, assignment.Operation.Action); err == nil {
+		t.Fatal("creation accepted invalid original owner index")
+	}
+	retained, err := manager.loadJournal(assignment)
+	if err != nil || journal.Phase != terminalClaimed || retained.Phase != terminalClaimed {
+		t.Fatal("failed index preparation consumed the original native start intent", err)
+	}
+	raw, err := os.ReadFile(owner)
+	if err != nil || string(raw) != "foreign owner-index fixture" {
+		t.Fatal("failed preparation replaced foreign ownership", err)
+	}
+}
