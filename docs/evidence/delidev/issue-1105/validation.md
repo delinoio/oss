@@ -80,6 +80,19 @@ The separate native CLI rerun with `GOMAXPROCS=2 go test -race -p 1` still faile
 did not fail in that selection. This persistent failure is not dismissed as a
 confirmed concurrency-only result.
 
+The untouched-base control used a temporary source archive of
+`74701b8948694e2bf8f8ba6d07e596c2d2f358a7` and ran
+`GOMAXPROCS=2 go test -race -p 1 ./cmds/delidev-cli/internal/cli -run '^TestCLISessionAcceptanceQueueAndArchive$' -count=1`.
+It failed the same workspace-preparation wait (93.294s). The log is retained at
+`/private/tmp/issue-1105-cli-baseline.log`. This proves that case also fails
+without the ALLGREEN source change on this host; it does not prove the cause of
+other aggregate failures.
+
+The final one-worker frontend selection of `settings-devices.integration.test.tsx`
+and `tray-presentation.test.tsx` passed the tray case but still failed the Settings
+revoke-button observation: one passed / one failed test. That persistent result
+remains unresolved; no unrelated Settings source was modified.
+
 Fresh live queued-account/PAT/SSO, native product/platform and release acceptance
 were not performed. Fixtures use temporary state and synthetic credentials,
 never user accounts or configuration. No full issue #964 completion is claimed.
