@@ -3883,3 +3883,77 @@ npm/pnpm consumer smoke checks pass. All 95 repository contract fixtures pass.
 Repository-owned generated `dist` directories are absent after validation.
 Fresh hosted checks must confirm the pushed head; Codex's quota notice still
 does not supply a completed review or approval.
+
+### Issue #1134 shorter AI Subscription category (2026-09-30)
+
+The shared Settings category label is now exactly **AI Subscription** in the
+sidebar, heading and compact option. Its `subscription-accounts` value, all
+16 categories and their order, account filtering, help text, mutation locks and
+retained workflows remain unchanged. No CSS, font, icon, API, schema, backend or
+dependency change is included. Current naming is synchronized in the desktop
+rules, project index and desktop/account contracts; historical evidence above
+retains its original wording. The desktop category inventory also now records
+the existing sixteenth Backups category rather than the stale count of fifteen.
+
+The existing empty-Settings navigation test now checks all 16 compact option
+labels and values, every sidebar selection and heading, and compact selection
+back to `subscription-accounts` with its exact AI Subscription text/current
+state. The first validation attempt stopped at a new test query's unsupported
+TypeScript option; it was corrected before the full successful run. `pnpm test`
+from `apps/delidev` passes typed-client generation, type checking, all 74 Vitest
+files / 948 tests, all 8 package-verifier and 16 asset/launcher cases, native
+Swift widget fixtures and the production build. `git diff --check` and
+`git lfs fsck` pass.
+
+Native visual smoke used the unchanged pinned CEF development launcher on
+macOS 26.6.2 arm64, with a separately built ad-hoc bundle, temporary private app
+and server state, and a separately paired loopback server. The existing server
+on port 46310 was not changed. At 100% zoom, manually resized native content
+viewports of 960×640 and 1440×900 both show the selected label on one line in the
+unchanged 240px navigation pane, with the matching heading and unchanged API
+Accounts label. The 2× captures measure 1920×1344 and 2880×1864 including the
+32px native title bar. The first isolated build encountered a relocated CMake
+cache in the copied build output; removing that temporary generated cache
+allowed the normal launcher to build, sign and run successfully.
+
+A separate temporary browser fixture reused the real Settings component,
+production styles and the existing test's in-memory Connect fixture. At
+720×640 CSS pixels and 100% zoom, the compact selector displays the exact new
+label and retains its value and heading. Chrome's native zoom control confirms
+200%; a 1440×900 viewport override then measures 720×450 CSS pixels. Compact
+selection between API Accounts and AI Subscription updates the corresponding
+heading; the selector and Close control remain within the viewport, with no
+horizontal overflow or visibly clipped focus outline. These are browser
+responsive/zoom checks, distinct from the two native CEF checks: the native host
+has a 960px minimum width, and its keyboard shortcuts did not expose working
+page zoom. Windows/Linux runtime, production signing and release/publication
+acceptance are not established by this copy change.
+
+Temporary browser fixtures and generated desktop/client `dist` directories
+were removed after validation. The isolated app received Quit; its remaining
+CEF processes required task-scoped termination during cleanup. The temporary
+server was explicitly stopped. No user credentials or hosted inference were
+used.
+
+### PR #1113 Settings-label merge repair (2026-09-30)
+
+Merge main revision `1399d131dcd5ef205f5be02b17073936b21f31c7` (#1139)
+into the outbound-proxy branch. Resolve the sole conflict by retaining both
+appended evidence histories: the enlarged-icon and Linux process-status repair
+records, plus issue #1134's original native/browser label verification. The
+Settings component, regression assertions, scoped desktop rules and
+desktop/account contracts remain byte-identical to main. Preserve the
+`subscription-accounts` identity, 16-category order and existing account
+workflows. The existing clibox cleanup repair and proxy contracts/source remain
+byte-identical to this PR's preceding head.
+
+The actual asset-preparation command and `git lfs fsck` pass. On Node.js
+24.20.0, complete `pnpm test` from `apps/delidev` passes all 74 files / 948 tests,
+client build and type checking, eight packaging checks, sixteen asset/launcher
+checks, native Swift widget fixtures and the production build. All 95 repository
+contract checks and whitespace validation pass. Generated desktop/client `dist`
+directories are removed afterward. This merge imports no Rust, Go, protobuf or
+dependency changes. The imported native/browser evidence remains attributed to
+main's original run; fresh CI must evaluate the merged head, and the original
+Ubuntu cleanup failure's cause remains unconfirmed. Codex's quota notice still
+supplies no completed review or approval.
