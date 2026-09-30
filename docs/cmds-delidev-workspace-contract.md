@@ -195,3 +195,5 @@ the original execution lease. Changed configuration, forged metadata or uncertai
 shutdown cannot grant handling or another push; process restart cannot rebuild
 a missing original capability/proof key. This is a private Worker tool boundary,
 not a server-side Git publisher or new public RPC.
+
+The exact allowed `rebase --continue` uses a fixed noninteractive no-op editor to preserve the original commit message after conflict resolution. No harness editor or arbitrary interactive rebase is accepted; its eventual push still requires the exact original-head lease. Git editor precedence follows the [Git editor contract](https://git-scm.com/docs/git-var#Documentation/git-var.txt-GITEDITOR).

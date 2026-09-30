@@ -386,6 +386,12 @@ func (t *PRGitTool) runOwned(ctx context.Context, args []string, stdout io.Write
 		environment = t.localEnvironment()
 		command = append(command, "-c", "user.name="+t.localName, "-c", "user.email="+t.localEmail, "-c", "commit.gpgSign=false")
 	}
+	if slices.Equal(args, []string{"rebase", "--continue"}) {
+		// A resolved conflict requires Git's commit-message editor even without
+		// interactive rebase. Preserve that original message with a fixed no-op;
+		// harness-selected editors remain outside the credential-free profile.
+		command = append(command, "-c", "core.editor=true")
+	}
 	command = append(command, args...)
 	bounded, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()

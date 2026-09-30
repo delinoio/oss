@@ -477,3 +477,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Manual PR Git execution follows the integration/workspace contracts. Only an immutable supported assignment can prepare the closed native Git bridge under the original execution lease. Preserve Worker Git auth separately from harness account context, exact fork/ref/base/head and rebase lease, one synchronized push claim, bounded joined child ownership and independent post-native push proof. Missing/uncertain proof cannot grant handled state or replay.
 
 - Manual Git authentication remains in the separately owned Worker bridge, never reversible harness environment variables. Pin scope/configuration, isolate local-command lookup from network authentication, authenticate push claims with a parent-only key, and cancel/join the bounded loopback bridge before proof or lease release.
+
+- Manual PR rebase continuation uses only the fixed noninteractive editor to preserve the original commit message. Never forward a harness-selected editor or weaken the original-head push lease.

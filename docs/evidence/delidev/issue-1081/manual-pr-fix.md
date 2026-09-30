@@ -164,3 +164,20 @@ mixed-source validation limitation, not evidence about the merged source build.
 It also timed out in the existing Grok package. A fresh immutable-source broad
 run is required after the review and dispatch repairs finish; no full Go pass is
 claimed from the initial run.
+
+## Review repair: noninteractive rebase continuation
+
+The allowed resolved-conflict `rebase --continue` now selects a fixed no-op
+editor, retaining the original commit message without inheriting a harness
+editor. `go test -p 1 ./cmds/delidev-cli/internal/workspace
+-run '^TestPRGitToolRebaseConflictContinuesWithoutHarnessEditor$'
+-count=1 -timeout=10m` passed. The real isolated Git fixture creates an actual
+conflicting index, resolves it, continues with a dumb terminal and no editor,
+publishes through the exact original-head lease, and independently verifies
+that new fork head. This POSIX transport fixture does not establish Windows or
+live-account acceptance.
+
+The initial broad race command has now completed unsuccessfully. Alongside the
+previously recorded native fixture failures and Grok timeout, its workspace
+compile also crossed the bridge-source edit. Both later compile failures are
+mixed-source limitations; this run cannot establish a full merged-source result.

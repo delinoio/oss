@@ -14,8 +14,8 @@ import (
 	"testing"
 )
 
-func TestPRGitToolForkPushIsOriginalBoundAndNeverReplayed(t *testing.T) {
-	f := newPRPreparationFixture(t)
+func preparePRFixGitTransport(t *testing.T, f prPreparationFixture) {
+	t.Helper()
 	native, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +49,11 @@ exec %s "$@"
 	}
 	f.manager.Git.Executable = wrapper
 	gitTest(t, f.fork, "config", "receive.denyCurrentBranch", "updateInstead")
+}
+
+func TestPRGitToolForkPushIsOriginalBoundAndNeverReplayed(t *testing.T) {
+	f := newPRPreparationFixture(t)
+	preparePRFixGitTransport(t, f)
 	manifest, err := f.manager.Prepare(context.Background(), f.request)
 	if err != nil {
 		t.Fatal(err)
@@ -179,5 +184,78 @@ func TestPRGitPushOnlyRewriteCannotSubstituteDestination(t *testing.T) {
 	}
 	if err := git.rejectPRPushRewrite(context.Background(), root, "https://github.com/other-owner/repo.git"); err != nil {
 		t.Fatal("unrelated rewrite changed source", err)
+	}
+}
+
+// This real conflict requires the normal noninteractive rebase editor path.
+// The original message and exact-head lease survive resolution and publication.
+func TestPRGitToolRebaseConflictContinuesWithoutHarnessEditor(t *testing.T) {
+	f := newPRPreparationFixture(t)
+	preparePRFixGitTransport(t, f)
+	for _, key := range []string{"EDITOR", "VISUAL", "GIT_EDITOR", "GIT_SEQUENCE_EDITOR"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("TERM", "dumb")
+	if err := os.WriteFile(filepath.Join(f.source, "tracked.txt"), []byte("Base changed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitTest(t, f.source, "commit", "-am", "base change")
+	f.base = gitTest(t, f.source, "rev-parse", "HEAD")
+	f.request.Repositories[0].PRTarget.BaseSHA = f.base
+	f.request.Repositories[0].Base.Name = f.base
+	manifest, err := f.manager.Prepare(context.Background(), f.request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := f.manager.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), f.request, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	root := manifest.Repositories[0].Path
+	gitTest(t, root, "config", "user.name", "PR fixture")
+	gitTest(t, root, "config", "user.email", "fixture@example.invalid")
+	selection := domain.PRFixExecution{AttemptID: domain.NewID(), Target: *f.request.Repositories[0].PRTarget, Strategy: domain.RebaseConflictStrategy, Conflict: true}
+	tool, err := lease.PreparePRGitTool(context.Background(), selection, f.request, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tool.Close()
+	for _, entry := range tool.Environment(nil) {
+		name, value, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, prGitEnvironmentPrefix) {
+			t.Setenv(name, value)
+		}
+	}
+	if err := RunPRGit(context.Background(), tool.path, []string{"rebase", f.base}, &bytes.Buffer{}); err == nil {
+		t.Fatal("fixture did not create the real conflict")
+	}
+	if !strings.Contains(gitTest(t, root, "status", "--porcelain"), "UU tracked.txt") {
+		t.Fatal("fixture lacks the conflicted index")
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("Resolved base and PR change\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "tracked.txt"}, {"rebase", "--continue"}} {
+		if err := RunPRGit(context.Background(), tool.path, args, &bytes.Buffer{}); err != nil {
+			t.Fatal("resolved rebase could not continue", err)
+		}
+	}
+	if gitTest(t, root, "log", "-1", "--format=%B") != "PR change" {
+		t.Fatal("rebase rewrote the original commit message")
+	}
+	push := tool.scope.commandPlan()["push_argv"].([]string)
+	if !slices.Contains(push, "--force-with-lease=refs/heads/feature:"+f.head) {
+		t.Fatal("rebase lost the original head lease")
+	}
+	if err := RunPRGit(context.Background(), tool.path, push, &bytes.Buffer{}); err != nil {
+		t.Fatal("resolved exact-lease push", err)
+	}
+	if err := tool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	proof := tool.VerifyPush(context.Background())
+	if proof.State != domain.PRPushVerified || !proof.Matches(selection, lease.claim.ExecutionID) || proof.ResultHead == f.head || gitTest(t, f.fork, "rev-parse", "feature") != proof.ResultHead {
+		t.Fatal("resolved rebase lacks independent original proof", proof.State)
 	}
 }
