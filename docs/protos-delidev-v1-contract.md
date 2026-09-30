@@ -100,8 +100,8 @@ together; no output bytes enter durable events or mutation receipts.
 
 Forwarding retains its merged `ENTITY_KIND_FORWARD = 27` and system/Worker
 capability value `2`. User services retain system capability value `3`.
-Terminals use the separate additive entity value `28`, system capability value
-`4` and Worker capability value `3`; no feature may reinterpret another's wire
+Terminals use the main-reserved additive entity value `31`, system capability value
+`14` and Worker capability value `4`; no feature may reinterpret another's wire
 values. Regenerate all bindings from this combined canonical schema.
 
 ## Storage
