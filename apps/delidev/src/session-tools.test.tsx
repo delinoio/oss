@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode } from "./documents";
@@ -10,7 +10,7 @@ import { MutationIntents } from "./mutation";
 import { SessionTools } from "./session-tools";
 import { NewSession } from "./new-session";
 
-function fixture() {
+function fixture(machineGate?: Promise<void>) {
   const execution = newRequestId();
   const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ name: "Session", archive: "active", outcome: "not-started", dispatch: "paused", recovery: "required", preparation: { state: "uncertain" }, execution: { execution_id: execution } }) });
   const workspace = vi.fn(async (_request: unknown) => ({ change: { session } }));
@@ -22,15 +22,52 @@ function fixture() {
   const project = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Project", repositories: [newRequestId()], agents: { configured: false, ids: [] } }) });
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Later-page agent" }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Worker" }) });
+  const machineRows = [machine];
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1, capabilities: [SystemCapability.AUTOMATIC_TITLES_V1] }) });
     router.service(SessionService, { createSession, recoverSessionWorkspace: workspace, recoverSessionExecution: recover, prepareSessionWorkspace: prepare, renameSession: rename, controlSession: control });
-    router.service(ResourceService, { getResource: (request) => ({ resource: request.id === project.id ? project : undefined }), listResources: (request) => request.filter?.kind === EntityKind.AGENT && !request.filter.pageToken ? { resources: [], nextPageToken: "later" } : { resources: [project, agent, machine].filter((row) => row.kind === request.filter?.kind) } });
+    router.service(ResourceService, { getResource: (request) => ({ resource: request.id === project.id ? project : undefined }), listResources: async (request) => {
+      if (request.filter?.kind === EntityKind.MACHINE) {
+        await machineGate;
+        return { resources: machineRows };
+      }
+      return request.filter?.kind === EntityKind.AGENT && !request.filter.pageToken ? { resources: [], nextPageToken: "later" } : { resources: [project, agent].filter((row) => row.kind === request.filter?.kind) };
+    } });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (children: React.ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider>;
-  return { view, session, execution, workspace, recover, prepare, rename, control, createSession, project, agent, machine };
+  return { view, client, session, execution, workspace, recover, prepare, rename, control, createSession, project, agent, machine, machineRows };
 }
+
+it("names the machine selector Runs on while explaining loading and empty Runner Device inventory", async () => {
+  let finish!: () => void;
+  const value = fixture(new Promise<void>((resolve) => { finish = resolve; }));
+  value.machineRows.length = 0;
+  render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  const selector = screen.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement;
+  expect(within(selector).getByRole("option", { name: "Select runner device" })).toBeTruthy();
+  expect(await screen.findByText("Loading Runner Device choices…")).toBeTruthy();
+  finish();
+  expect(await screen.findByText("No selectable Runner Device choices are on this page.")).toBeTruthy();
+  expect(selector.value).toBe("");
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
+it("retains an unavailable Runs on selection with Runner Device status and fallback wording", async () => {
+  const value = fixture();
+  render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  await screen.findByRole("option", { name: "Worker" });
+  const selector = screen.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement;
+  fireEvent.change(selector, { target: { value: value.machine.id } });
+  await act(async () => {
+    value.machineRows[0] = create(ResourceSchema, { ...value.machine, id: newRequestId(), documentJson: encode({ name: "Replacement device" }) });
+    await value.client.invalidateQueries();
+  });
+  expect(await screen.findByText("The selected Runner Device is outside this page or unavailable. Its identity is retained; no other choice was selected.")).toBeTruthy();
+  expect((within(selector).getByRole("option", { name: `Selected Runner Device · ${value.machine.id}` }) as HTMLOptionElement).disabled).toBe(true);
+  expect(selector.value).toBe(value.machine.id);
+  expect(value.createSession).not.toHaveBeenCalled();
+});
 
 it("requires explicit incomplete preparation cleanup and retains its original retry after a peer change", async () => {
   const value = fixture();
@@ -104,7 +141,7 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   const choices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
   fireEvent.click(await choices.findByRole("button", { name: "More choices" }));
   fireEvent.change(screen.getByLabelText("Agent Worker"), { target: { value: (await screen.findByRole("option", { name: "Later-page agent" }) as HTMLOptionElement).value } });
-  fireEvent.change(screen.getByLabelText("Execution Worker"), { target: { value: value.machine.id } });
+  fireEvent.change(screen.getByLabelText("Runs on"), { target: { value: value.machine.id } });
   const repository = (document(value.project).repositories as string[])[0];
   fireEvent.change(screen.getByLabelText("Add repository override"), { target: { value: repository } });
   fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
@@ -120,7 +157,7 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   await waitFor(() => expect(value.createSession).toHaveBeenCalledTimes(1));
   const request = value.createSession.mock.calls[0][0] as { documentJson: Uint8Array; localWorkerToken: string };
   const input = JSON.parse(new TextDecoder().decode(request.documentJson));
-  expect(input).toMatchObject({ name_mode: "automatic", source: "MANUAL", estimated_cost_budget: { currency: "USD", threshold: "0.000000000000001" }, workspace: "worktree", project_id: value.project.id, agent_id: value.agent.id, starting: [{ repository_id: repository, reference: { type: "remote-branch", name: "feature/source", remote: "upstream" } }] });
+  expect(input).toMatchObject({ name_mode: "automatic", source: "MANUAL", estimated_cost_budget: { currency: "USD", threshold: "0.000000000000001" }, workspace: "worktree", project_id: value.project.id, agent_id: value.agent.id, machine_id: value.machine.id, starting: [{ repository_id: repository, reference: { type: "remote-branch", name: "feature/source", remote: "upstream" } }] });
   expect(input).not.toHaveProperty("name");
   expect(request.localWorkerToken).toBe("");
 });
@@ -134,8 +171,8 @@ it("reads fresh matching Local Worker proof for creation and retains that exact 
   fireEvent.change(screen.getByLabelText("Project"), { target: { value: value.project.id } });
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).value).toBe(value.machine.id));
-  expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true);
+  await waitFor(() => expect((screen.getByLabelText("Runs on") as HTMLSelectElement).value).toBe(value.machine.id));
+  expect((screen.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true);
   const choices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
   fireEvent.click(await choices.findByRole("button", { name: "More choices" }));
   await screen.findByRole("option", { name: "Later-page agent" });

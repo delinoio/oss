@@ -85,7 +85,7 @@ it("retains the original authenticated Local machine without inventing another o
   const value = fixture();
   value.schedule.documentJson = encode({ ...document(value.schedule), definition: { ...value.definition, workspace: "local" }, local_origin: { machine_id: value.machine.id, device_id: newRequestId() } });
   render(value.view(<ScheduleEditor initial={value.schedule} active saved={() => {}} cancel={() => {}} />));
-  expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const request = value.save.mock.calls[0][0] as { definitionJson: Uint8Array; localWorkerToken: string };

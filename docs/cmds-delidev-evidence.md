@@ -3548,3 +3548,30 @@ alpha coverage differs from the enlarged source by at most 0.008 percentage
 points. No production signing, notarization, publication or installed Dock
 appearance is claimed. Generated desktop/client `dist` directories were removed
 after verification.
+
+### Runs on and Runner Device presentation (2026-09-30, issue #1136)
+
+New session exposes its machine selector as exactly **Runs on** while its
+placeholder, inventory statuses and unavailable-selection fallback use
+**Runner Device**. Other affected Settings, checkout, schedule, remediation,
+diagnostics and prerequisite labels use **Runner Device(s)**. The two existing
+server failure/help messages use the same device terminology. Current desktop
+contracts and the desktop/CLI scoped naming rules agree; historical ledger
+entries retain their original wording.
+
+The optional internal selector resource noun defaults to its existing label.
+Regression fixtures preserve exact `machine_id`, Local proof/pinning and
+uncertain create retries, paginated selections, Settings category value
+`execution-workers`, unchanged PR planning `Unavailable`, and schedule Resume
+`Aborted` with its original disabling state and revision. No protocol, storage,
+CLI command, authorization, dependency or execution behavior changes.
+
+`pnpm test` in `apps/delidev` passed all 950 frontend tests, eight package
+fixtures, sixteen launch/asset fixtures, native widget fixture checks and the
+frontend build. `go vet ./cmds/delidev-cli/...`, `git lfs fsck` and
+`git diff --check` passed. The initial complete normal Go run passed the changed
+server package but failed the existing Worker cancellation/startup fixture;
+that fixture passed when rerun alone. An overlapping full race run also reported
+a CLI fixture failure. Complete-suite revalidation is recorded below when it
+finishes. All fixtures use temporary state; this copy change claims no new
+installed-desktop, real-account or release acceptance.

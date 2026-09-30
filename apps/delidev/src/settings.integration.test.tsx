@@ -197,7 +197,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   fireEvent.click(screen.getByRole("button", { name: "New Repository" }));
   change("Name", "Owned repository");
-  change("Execution Worker", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
+  change("Runner Device", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
   change("Absolute checkout path on this Worker", checkout);
   fireEvent.click(screen.getByRole("button", { name: "Inspect checkout" }));
   fireEvent.click(await screen.findByRole("button", { name: "Add inspected checkout" }, { timeout: 15000 }));
@@ -218,7 +218,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   await screen.findByRole("heading", { name: "Owned project" });
   const projects = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.PROJECT } });
   expect(document(projects.resources[0])).toMatchObject({ primary_repository: repositories.resources[0].id, accounts: { configured: true, ids: [] } });
-  fireEvent.click(screen.getByRole("button", { name: "Execution Workers" }));
+  fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
   fireEvent.click(await screen.findByRole("button", { name: "Inspect installed harnesses" }));
   fireEvent.click(screen.getByRole("button", { name: "Edit executable paths" }));
   for (const harness of ["codex", "claude-code", "opencode", "grok-build"]) change(`${harness} executable path`, join(directory, `missing-${harness}`));
@@ -245,7 +245,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   changeNewSession("Project", (await within(newSession.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
   fireEvent.click(newSession.getByRole("button", { name: "Options" }));
   fireEvent.click(newSession.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => expect((newSession.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true));
+  await waitFor(() => expect((newSession.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true));
   changeNewSession("Agent Worker", (await newSession.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
   changeNewSession("First message", "Local proof fixture without inference");
   fireEvent.click(newSession.getByText("Optional estimated-cost budget"));
@@ -281,9 +281,9 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   change("Schedule name", "Owned schedule");
   change("Project", (await within(screen.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
   change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
-  change("Execution Worker", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
+  change("Runner Device", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true));
+  await waitFor(() => expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true));
   change("Scheduled prompt", "Private schedule fixture prompt"); change("Cron expression", "0 0 1 1 *"); change("IANA timezone", "Asia/Seoul");
   fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
   fireEvent.click(await screen.findByRole("button", { name: "Resume future runs" }));

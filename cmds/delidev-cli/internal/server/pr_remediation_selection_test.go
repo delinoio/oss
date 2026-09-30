@@ -63,7 +63,7 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 		t.Fatal("PR planning lost exact head/fork, companion policy, primary cwd or account selection")
 	}
 	rollback := domain.Fail(domain.Conflict, "Discard negative planning fixture.", "No test changes are committed.")
-	for _, name := range []string{"missing-agent", "missing-machine", "foreign-project", "project-agent-denied", "project-account-denied", "missing-checkout", "disabled-worker", "missing-validation", "wrong-native-version", "read-only-agent"} {
+	for _, name := range []string{"missing-agent", "missing-machine", "foreign-project", "project-agent-denied", "project-account-denied", "missing-checkout", "disabled-worker", "disconnected-worker", "missing-validation", "wrong-native-version", "read-only-agent"} {
 		t.Run(name, func(t *testing.T) {
 			_, err := f.service.Store.Mutate(owner, domain.NewID(), "fixture.rejected-pr-plan", name, func(tx *store.Tx) (any, error) {
 				selected, original := policy, target
@@ -72,6 +72,10 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 					selected.AgentID = ""
 				case "missing-machine":
 					selected.MachineID = ""
+				case "disconnected-worker":
+					if err := tx.SetWorkerInstance(policy.MachineID, domain.NewID(), time.Now().UTC().Add(-domain.WorkerConnectionTimeout-time.Second)); err != nil {
+						return nil, err
+					}
 				case "foreign-project":
 					original.Target.RepositoryID = domain.NewID()
 				case "project-agent-denied", "project-account-denied":
@@ -152,6 +156,11 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 				}
 				if _, err := planPRRemediationWorkspace(tx, session, project, selected, original); err == nil {
 					t.Error("invalid current selection produced a PR preparation plan")
+				} else if name == "disconnected-worker" {
+					failure := domain.SafeError(err)
+					if failure.Code != domain.Unavailable || failure.Message != "The selected PR Runner Device is not connected." {
+						t.Fatal("disconnected Runner Device lost its message or classification", err)
+					}
 				}
 				return nil, rollback
 			})

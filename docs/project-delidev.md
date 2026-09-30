@@ -11,6 +11,8 @@ The desktop app icon keeps its original colored ribbon and transparent cutouts, 
 
 The current pull-request work additionally addresses issues #1056 and #1057: opt-in automatic titles use a separate, capability-negotiated title Worker lane, and the desktop starts sessions from a chat-first page while retaining the existing conversation surface. This increment does not claim completion of issue #964; native desktop visual and real-provider/account acceptance limits remain explicit in the evidence ledger.
 
+Issue #1136 updates execution-device presentation to **Runs on** in New session and **Runner Device(s)** elsewhere, including server failure/help text. Agent Worker, technical Worker names, exact machine IDs, existing commands and the `execution-workers` Settings category value retain their current contracts; see the [desktop contract](apps-delidev-desktop-contract.md).
+
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its standalone/sidecar executable is `delidev`.
 
