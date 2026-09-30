@@ -114,3 +114,26 @@ or input cannot share an original request. This gate retains no native grant.
 -run 'TestPRFix|TestManualPRFix' -count=5` passed (17.691 seconds), including all
 three retained problem scenarios and the new exact/capacity/cancellation cases.
 The fix is retained separately from the base-merge repair.
+
+## Merged CI and frontend validation
+
+`go test -race -p 1 ./cmds/delidev-cli/internal/server
+-run '^TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion/ci$'
+-count=3` passed (8.888 seconds). The additional required-CI scenario exercises
+retained exact result versions, known test-merge state, fresh CI/detail source
+binding, fork identity and concurrent identical acceptance. An incomplete
+fixture initially produced no retained trigger, consistently with the existing
+unknown-CI gate; the completed observation is explicit, not a production bypass.
+
+After the base merge, `pnpm proto:check` and `go vet -p 1
+./cmds/delidev-cli/...` passed. API-client `dist` was regenerated for consumers;
+frontend typecheck and a serial run of `pr-fix`, `pr-problems`,
+`pr-remediation-history`, `activity` and `pr-workflow` Vitest files passed all
+24 tests in five files. The generated client output was removed afterward.
+
+The original broad race suite remains running as of this repair's publication.
+It has additionally reported existing Codex approval/continuation/interaction
+fixture failures. These are not a green native suite, and the unchanged-primary
+control established only the specifically recorded App/Grok timing failures.
+The separately repeated manual-fix race fixtures pass after the coalescing
+repair. No Go data-race warning has been observed in the retained logs so far.

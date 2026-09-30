@@ -16,10 +16,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion(t *testing.T) {
-	for _, kind := range []string{"approved-review", "comment", "conflict"} {
+	for _, kind := range []string{"approved-review", "comment", "conflict", "ci"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newFirstDispatchFixture(t)
 			f.mutateAgent(t, func(a *domain.Agent) { a.Options.Permission = domain.PermissionWorkspaceWrite })
@@ -79,11 +80,25 @@ func TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion(t *testing.T) {
 					no := false
 					v.Items[0].Mergeable = &no
 				}
+				if q.Operation == domain.RepositoryCI {
+					// Stable original result metadata permits exact fresh-version
+					// comparison without fabricating a source from a CI projection.
+					item := v.Items[0]
+					completed := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)
+					conclusion, app := "FAILURE", "37"
+					rules := []domain.ActiveRepositoryRule{{Type: "required_status_checks", RulesetID: "71", SourceKind: domain.RulesetRepository, NativeSourceKind: "Repository", Source: "fixture-owner/repo", Digest: strings.Repeat("a", 64), RequiredChecks: &domain.RequiredRuleChecks{Checks: []domain.RequiredRuleCheck{{Context: "Required CI", IntegrationID: &app}}}}}
+					check := domain.CIContext{Evidence: &domain.CIContextEvidence{SuiteNodeID: "SUITE_1", StartedAt: &completed, CompletedAt: &completed}, Kind: domain.CICheckRun, NodeID: "CHECK_1", Name: "Required CI", CommitSHA: item.HeadSHA, Required: true, NativeStatus: "COMPLETED", NativeConclusion: &conclusion, Application: &domain.CheckApplication{ID: app, NodeID: "APP_37", Slug: "fixture-app"}}
+					v.CI = &domain.PullRequestCI{Rules: domain.PullRequestRules{BaseRef: item.BaseRef, BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, Rules: rules, Digest: domain.ActiveRulesDigest(rules)}, Head: domain.CIRollup{CommitSHA: item.HeadSHA, TotalCount: "1", Contexts: []domain.CIContext{check}}, TestMerge: &domain.CIRollup{CommitSHA: strings.Repeat("c", 40), TotalCount: "0", Contexts: []domain.CIContext{}}, NativeMergeability: "MERGEABLE"}
+					v.CI.Result = v.CI.Evaluate(item)
+				}
 				return v, nil
 			})
 			collection := pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_FEEDBACK
 			if kind == "conflict" {
 				collection = pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CONFLICT
+			}
+			if kind == "ci" {
+				collection = pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CI
 			}
 			collected, err := integrations.client.RefreshPullRequestProblems(context.Background(), ownerRequest(f.identity, &pb.RefreshPullRequestProblemsRequest{RequestId: string(domain.NewID()), RepositoryId: repo.Id, Number: "17", Kind: collection}))
 			if err != nil {
@@ -94,6 +109,9 @@ func TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion(t *testing.T) {
 			page, err := integrations.client.ListPullRequestProblems(context.Background(), ownerRequest(f.identity, &pb.ListPullRequestProblemsRequest{RemoteRepositoryId: set.Target.RemoteRepositoryID, PullRequestId: set.Target.PullRequestID, PageSize: 20}))
 			if err != nil {
 				t.Fatal(err)
+			}
+			if len(page.Msg.Problems) == 0 {
+				t.Fatalf("missing retained problem for %s: %+v", kind, set.CI)
 			}
 			row := page.Msg.Problems[0]
 			if kind == "comment" {
