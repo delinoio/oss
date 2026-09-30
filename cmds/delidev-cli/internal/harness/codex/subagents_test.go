@@ -146,7 +146,10 @@ func TestSubagentCanonicalCollaborationKeepsRequestedModelAndChildScope(t *testi
 		t.Fatal("canonical child was fabricated or lost", err)
 	}
 	activity := Event{Kind: SubagentActivityEvent, ThreadID: c.thread, AgentThreadID: child, ItemID: "original-activity", Correlated: true}
-	if _, err := c.ObserveResolvedActivity(context.Background(), activity); err != nil {
+	c.control = make(chan struct{}, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := c.ObserveResolvedActivity(ctx, activity); err != nil {
 		t.Fatal(err)
 	}
 	item["model"] = "different-requested-model"
