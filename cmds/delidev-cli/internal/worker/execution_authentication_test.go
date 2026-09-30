@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -23,15 +24,21 @@ import (
 
 type earlyExecutionSubscriptionRPC struct {
 	delidevv1connect.UnimplementedSubscriptionServiceHandler
-	bundle     []byte
-	finished   chan *pb.FinishSubscriptionRequest
-	failFinish bool
-	failTake   bool
+	bundle                 []byte
+	finished               chan *pb.FinishSubscriptionRequest
+	failFinish             bool
+	failTake               bool
+	denyAuthenticationHome string
 }
 
 func (f *earlyExecutionSubscriptionRPC) TakeSubscription(_ context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (*connect.Response[pb.TakeSubscriptionResponse], error) {
 	if f.failTake {
 		return nil, connect.NewError(connect.CodeUnavailable, nil)
+	}
+	if f.denyAuthenticationHome != "" {
+		if err := os.Chmod(f.denyAuthenticationHome, 0500); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
 	}
 	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: req.Msg.Mutation.RequestId, LeaseRevision: 3, GenerationId: string(domain.NewID()), Bundle: bytes.Clone(f.bundle)}), nil
 }
@@ -65,8 +72,11 @@ func (f *earlyExecutionRegistrationRPC) RegisterExecution(context.Context, *conn
 }
 
 func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
-	for _, mode := range []string{"publisher", "registration", "response", "native-open", "finish", "take"} {
+	for _, mode := range []string{"auth-write", "publisher", "registration", "response", "native-open", "finish", "take"} {
 		t.Run(mode, func(t *testing.T) {
+			if mode == "auth-write" && (runtime.GOOS == "windows" || os.Geteuid() == 0) {
+				t.Skip("the failed CreateTemp fixture requires Unix owner permission enforcement")
+			}
 			f := newCheckpointFixture(t)
 			// Use a fresh execution while preserving the helper's unrelated empty runtime.
 			f.input.ExecutionID = domain.NewID()
@@ -109,6 +119,10 @@ func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
 			bundle := workerSubscriptionBundle("first")
 			defer clear(bundle)
 			subscriptions := &earlyExecutionSubscriptionRPC{bundle: bundle, finished: make(chan *pb.FinishSubscriptionRequest, 1)}
+			if mode == "auth-write" {
+				subscriptions.denyAuthenticationHome = filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex")
+				t.Cleanup(func() { _ = os.Chmod(subscriptions.denyAuthenticationHome, 0700) })
+			}
 			_, handler := delidevv1connect.NewSubscriptionServiceHandler(subscriptions)
 			server := httptest.NewServer(handler)
 			defer server.Close()

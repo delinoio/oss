@@ -405,6 +405,29 @@ func cleanupManagedHome(home string, original os.FileInfo) error {
 	return nil
 }
 
+// Only the caller's pre-native barrier permits an unpublished auth destination.
+// A failed atomic write still needs a durable absence and the complete retained
+// file scan: a leftover temporary credential file cannot release the lease.
+func cleanupUnusedExecutionAuthentication(home string, original []byte) error {
+	if err := security.CheckPrivateDir(home); err != nil {
+		return subscription.Invalid()
+	}
+	path := filepath.Join(home, "auth.json")
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		return cleanupExecutionAuthentication(home, original, original)
+	}
+	if err := security.SyncParent(path); err != nil {
+		return subscription.Invalid()
+	}
+	if err := scanExecutionAuthentication(home, original, original); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		return subscription.Invalid()
+	}
+	return nil
+}
+
 func cleanupExecutionAuthentication(home string, latest, original []byte) error {
 	if err := security.CheckPrivateDir(home); err != nil {
 		return subscription.Invalid()
@@ -421,6 +444,10 @@ func cleanupExecutionAuthentication(home string, latest, original []byte) error 
 	if err := security.SyncParent(filepath.Join(home, "auth.json")); err != nil {
 		return subscription.Invalid()
 	}
+	return scanExecutionAuthentication(home, latest, original)
+}
+
+func scanExecutionAuthentication(home string, latest, original []byte) error {
 	// Native history is retained for resume. Check the bounded original tree
 	// rather than claiming credential cleanup merely from auth.json absence.
 	var needles [][]byte

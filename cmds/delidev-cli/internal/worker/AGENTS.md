@@ -496,6 +496,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Confirmed pre-native execution failure, including a definitively closed failed Open, returns the byte-identical unused original bundle only after its auth-file comparison/removal and retained-file scan succeed. Keep success and refresh false; the protected Finish proof permits preserving the original generation, never reporting native execution success. Changed files or unconfirmed cleanup retain uncertainty.
 
+- Before native ownership, a failed atomic authentication write may prove an unpublished destination instead of comparing a published file. Require the private original home, synchronized and rechecked destination absence, and the full bounded remnant scan; temporary credential remnants or missing/foreign home remain uncertain. Native-owned cleanup still requires the captured file comparison.
+
 - Capture the final managed execution bundle and native identity once while the native wire is still open, before terminal Close. Earlier exits may use the same bounded read before their deferred Close; never query a closed wire or retry a failed capture. After joined native cleanup, require the retained auth file to match the captured bytes before removal and protected write-back.
 
 - Retained managed native history must pass the bounded cleanup scan for both raw tokens and padded/unpadded standard/URL Base64 copies before confirming credential removal. Retain original history and uncertain ownership when that scan fails.

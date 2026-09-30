@@ -211,7 +211,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		managedPreNativeCleanup = true
 		defer func() {
 			if managedPreNativeCleanup {
-				managedCleanup = cleanupExecutionAuthentication(nativeHome, managed.response.Bundle, managed.response.Bundle) == nil
+				managedCleanup = cleanupUnusedExecutionAuthentication(nativeHome, managed.response.Bundle) == nil
 				if managedCleanup {
 					// This closed pre-native outcome returns unused original bytes;
 					// it does not claim native execution or authentication success.
