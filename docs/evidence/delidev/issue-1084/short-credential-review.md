@@ -18,7 +18,20 @@ The following commands use `GOMODCACHE=/private/tmp/delidev-1084-review-modcache
 - Initial attempts using the shared cache, and then only a private cache, could not compile after shared cache artifacts and toolchain executables became unavailable. The successful commands isolate both module/toolchain material and cache; they do not modify the shared directories.
 - Administrator and ach embed outputs were regenerated explicitly before the required root Go-format commit hook. They are generated output and are removed after verification.
 
-The complete isolated `go test -race -p 2 -timeout=20m ./cmds/delidev-cli/...` retry is still running. It has reported a session acceptance failure while the discovery, Claude and Codex packages have passed. This is not a passing full-suite claim; its final outcome is recorded when complete.
+## Completed isolated full race retry
+
+The existing `go test -race -p 2 -timeout=20m ./cmds/delidev-cli/...` retry in session 92171 completed with **exit 1**, confirmed on 2026-09-30. It used the isolated module/toolchain and cache paths listed above and did not repeat the original run. The retry began during the short-credential repair before merge `53d587adb5cf7f22810833dcbbc9f92087b3b8aa`; because that worktree later merged main while the command remained active, this run is not immutable combined-tree full-suite evidence.
+
+| Package | Actual outcome |
+| --- | --- |
+| `internal/cli` | Failed after 206.392 seconds. `TestCLISessionAcceptanceQueueAndArchive` failed at `sessions_test.go:215`: the selected workspace file read returned typed `unavailable`. |
+| `internal/harness/grok` | Failed after 1,201.226 seconds, including the 20-minute package timeout. `TestSessionBindingRequiresOriginalReadyModeAndConfiguration` returned uncertain native delivery for Execute and Plan; `TestTextClosureRequiresOriginalSummaryAcknowledgmentAndRemoval/closure-ack-only` could not complete native initialization; `TestProbeOwnsBoundedInspectedInitialization/inventory-first` returned a timeout instead of unsupported. At the package timeout, `TestOriginalTextStopSeparatesSubmissionTerminalAndCleanup/stop-claim-failure` was active. |
+| `internal/server` | Failed at the 20-minute package timeout, after 1,200.821 seconds. `TestStoppingRecoveryCancelsOnlyItsJobAndKeepsOriginalUncertain` was active at termination. |
+| `internal/workspace` | Failed after 1,004.482 seconds. `TestPRWorkspaceMatchReadsCurrentHeadWithoutTakingExecutionOwnership/local` and `TestPRWorkspaceMatchPreservesMismatchesAndDistinguishesUnknownAccess` returned `recovery_required`: the Worker result did not prove accepted preparation. |
+
+The other test-bearing packages passed: apiproxy, connections, credentials, domain, forwarding, harness/discovery, Claude, Codex, nativewire, OpenCode, GitHub integrations, outbound, presentation, process, providers, security, store, user services and Worker. Packages without tests reported that explicitly. Unlike the original shared-cache attempt, this isolated retry completed without unavailable cache/toolchain build artifacts.
+
+The earlier unchanged-main comparison is bounded to its selected tests and remains recorded in [implementation evidence](implementation.md). Its session failure occurred at an earlier workspace preparation step; it does not reproduce the file-read failure above or the Grok/server/workspace failures. Its two discovery verification failures did not recur in this retry, and its bounds/update-suppression test had passed. These are observed failures with unresolved causes, not proof of either a proxy regression or baseline equivalence. Targeted passes do not turn this full-suite outcome into success. No test assertion, timeout or product behavior was changed to suppress these outcomes.
 
 ## Evidence limits
 
