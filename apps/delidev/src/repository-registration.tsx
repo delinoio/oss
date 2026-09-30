@@ -154,7 +154,13 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   };
   const remote = summary ? selectedInspectionRemote(summary.output, text(data.preferred_remote)) : "";
   const github = summary ? object(object(summary.output.github_repositories)[remote]) : {};
-  const ready = Boolean(summary && text(data.name) && items(data.checkouts).length);
+  const primaryCheckout = summary ? { machine_id: summary.source.machine, path: text(summary.output.root) } : undefined;
+  // The confirmation and inferred metadata describe this exact inspected checkout.
+  // Additional checkout edits cannot make a different checkout its silent replacement.
+  const ready = Boolean(primaryCheckout && text(data.name) && items(data.checkouts).some(raw => {
+    const checkout = object(raw);
+    return checkout.machine_id === primaryCheckout.machine_id && checkout.path === primaryCheckout.path;
+  }));
   return <section className="repository-registration" aria-label="Add repository">
     <button type="button" disabled={blocked} onClick={cancel}>Back to repositories</button>
     <h2>Add repository</h2>
@@ -172,7 +178,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {offline ? <p role="status">The selected Worker is registered; its server heartbeat is offline. Keep this folder and check Execution Workers before retrying.</p> : null}
       {serverMachine.error ? <Problem error={serverMachine.error} /> : null}
       {unknown ? <p role="alert">Inspection was acknowledged without a readable result. Observe the original operation before another request.</p> : null}
-      {ready ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>Optional settings</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} /></fieldset></div></> : null}
+      {ready ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>Optional settings</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
       {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error} />
       {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>Retry the same inspection</button> : null}
       <div className="actions">{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</div>

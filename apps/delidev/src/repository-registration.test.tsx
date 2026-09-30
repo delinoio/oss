@@ -80,6 +80,48 @@ it("preserves cancellation and resets repository-bound options on a successful r
   expect(JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson))).toMatchObject({ name: "B", github_owner: "delinoio", starting: {} });
 });
 
+it.each([false, true])("retains the confirmed primary checkout when additional checkout removal is %s", async removeAdditional => {
+  const f = fixture();
+  const other = row(EntityKind.MACHINE, { name: "Other runner", last_seen: new Date().toISOString() });
+  f.resources.set(other.id, other); f.mount(); await f.chooseAndReview();
+  fireEvent.click(screen.getByRole("button", { name: "Optional settings" }));
+  await screen.findByRole("option", { name: "Other runner" });
+  fireEvent.change(screen.getByRole("combobox", { name: "Execution Worker" }), { target: { value: other.id } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Absolute checkout path on this Worker" }), { target: { value: "/alias/B" } });
+  f.inspected.mockImplementationOnce(async request => {
+    const job = row(EntityKind.JOB, { state: "succeeded", machine_id: request.machineId, output: { ...metadata, root: "/canonical/B", name: "B", github_repositories: { origin: { owner: "different", name: "B" } } } });
+    f.resources.set(job.id, job); return { job };
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Inspect checkout" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add inspected checkout" }));
+  const primary = within(screen.getByText(`${f.machine.id} · /canonical/oss`).closest("li")!);
+  const secondary = within(screen.getByText(`${other.id} · /canonical/B`).closest("li")!);
+  expect((primary.getByRole("button", { name: "Remove checkout" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(primary.getByText("Use Change folder to replace this checkout.")).toBeTruthy();
+  fireEvent.click(primary.getByRole("button", { name: "Remove checkout" }));
+  expect(screen.getByText(`${f.machine.id} · /canonical/oss`)).toBeTruthy();
+  expect((secondary.getByRole("button", { name: "Remove checkout" }) as HTMLButtonElement).disabled).toBe(false);
+  if (removeAdditional) fireEvent.click(secondary.getByRole("button", { name: "Remove checkout" }));
+  expect(within(screen.getByRole("region", { name: "Repository detected" })).getByText("/canonical/oss")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const saved = JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson));
+  expect(saved).toMatchObject({ name: "oss", github_owner: "delinoio", github_name: "oss" });
+  expect(saved.checkouts).toEqual([{ machine_id: f.machine.id, path: "/canonical/oss" }, ...(removeAdditional ? [] : [{ machine_id: other.id, path: "/canonical/B" }])]);
+});
+
+it("keeps checkout removal available when editing an existing repository", async () => {
+  const f = fixture();
+  const repository = row(EntityKind.REPOSITORY, { name: "Existing", checkouts: [{ machine_id: f.machine.id, path: "/existing" }], base: {}, starting: {}, auto_fetch: true });
+  f.resources.set(repository.id, repository); f.mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Edit Existing" }));
+  const remove = screen.getByRole("button", { name: "Remove checkout" });
+  expect((remove as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByText("Use Change folder to replace this checkout.")).toBeNull();
+  fireEvent.click(remove);
+  expect(screen.queryByText(`${f.machine.id} · /existing`)).toBeNull();
+});
+
 it("uses the selected remote's metadata without selecting an authentication profile", async () => {
   const f = fixture(); f.mount(); await f.chooseAndReview(); fireEvent.click(screen.getByRole("button", { name: "Optional settings" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Preferred Git remote" }), { target: { value: "upstream" } });
