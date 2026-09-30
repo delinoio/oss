@@ -66,3 +66,23 @@ message ForwardChange {
   Resource forward = 1;
   bool replayed = 2;
 }
+
+// Irrevocable deletion remains pending until every managed resource is confirmed.
+enum SessionDeletionState {
+  SESSION_DELETION_STATE_UNSPECIFIED = 0;
+  SESSION_DELETION_STATE_PENDING = 1;
+  SESSION_DELETION_STATE_SUCCEEDED = 2;
+}
+message SessionDeletionJob {
+  string id = 1;
+  string session_id = 2;
+  uint64 revision = 3;
+  SessionDeletionState state = 4;
+  string accepted_at = 5;
+  string finished_at = 6;
+  uint32 workers_pending = 7;
+  bool database_removed = 8;
+  bool backups_removed = 9;
+  // Removal is proved separately from filesystem allocation; bytes are unknown.
+  bool reclaimed_bytes_known = 10;
+}

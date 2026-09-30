@@ -57,6 +57,19 @@ type journal struct {
 	Problem    *domain.Error   `json:"problem,omitempty"`
 }
 
+type assignment struct {
+	resource    *pb.Resource
+	context     context.Context
+	cancel      context.CancelFunc
+	controls    chan *pb.QuestionResponseControl
+	approvals   chan *pb.ApprovalResponseControl
+	approvalIDs map[domain.ID]responseControlIdentity
+	responses   map[domain.ID]responseControlIdentity
+	steers      chan *pb.SteerInputControl
+	steerIDs    map[domain.ID]steerControlIdentity
+	native      bool
+}
+
 func authenticated[T any](credential Credential, message *T) *connect.Request[T] {
 	r := connect.NewRequest(message)
 	r.Header().Set("Authorization", "Bearer "+credential.Token)
@@ -268,6 +281,12 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 func watchAttached(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, auxiliary bool) error {
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	deletionsDone := make(chan struct{})
+	go func() {
+		defer close(deletionsDone)
+		watchSessionDeletions(watchCtx, config, client, credential, instance)
+	}()
+	defer func() { cancel(); <-deletionsDone }()
 	results := make(chan error, 2)
 	go func() { results <- watch(watchCtx, config, client, credential, instance) }()
 	count := 1
@@ -302,18 +321,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		cancel(err)
 		return err
 	}
-	type assignment struct {
-		resource    *pb.Resource
-		context     context.Context
-		cancel      context.CancelFunc
-		controls    chan *pb.QuestionResponseControl
-		approvals   chan *pb.ApprovalResponseControl
-		approvalIDs map[domain.ID]responseControlIdentity
-		responses   map[domain.ID]responseControlIdentity
-		steers      chan *pb.SteerInputControl
-		steerIDs    map[domain.ID]steerControlIdentity
-		native      bool
-	}
+
 	jobs := make(chan assignment, 1)
 	var active sync.Map
 	received := make(chan struct{})
@@ -569,42 +577,72 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		if job.MachineID != credential.MachineID || job.InstanceID != instance || job.State != domain.JobClaimed {
 			return domain.Fail(domain.PermissionDenied, "The received job belongs to another machine or process.", "Inspect the paired server and job ownership.")
 		}
-		jobConfig := config
-		jobConfig.execution = &PublicationConfig{Root: config.Root, Credential: credential, Instance: instance, Assignment: resource, Client: client, Logger: config.Logger}
-		jobConfig.executionContext = ctx
-		jobConfig.questionControls = work.controls
-		jobConfig.approvalControls = work.approvals
-		jobConfig.steerControls = work.steers
-		result, err := runJob(work.context, jobConfig, instance, resource, job)
-		work.cancel()
+		err := runAndReportJob(ctx, config, client, credential, instance, work, resource, job)
 		active.Delete(resource.Id)
 		if err != nil {
 			return err
 		}
+	}
+}
+
+// Native/workspace cleanup releases inner ownership before its final journal and
+// server report. Retain this outer lock through both publications so deletion
+// cannot remove a journal that the original assignment can still recreate.
+func runAndReportJob(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, work assignment, resource *pb.Resource, job domain.Job) (returned error) {
+	lock, err := security.TryLock(filepath.Join(config.Root, "jobs", resource.Id+".lock"))
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	defer func() {
+		if err := lock.Close(); err != nil {
+			returned = domain.SessionDeletionPending()
+		}
+	}()
+	defer work.cancel()
+	jobConfig := config
+	jobConfig.execution = &PublicationConfig{Root: config.Root, Credential: credential, Instance: instance, Assignment: resource, Client: client, Logger: config.Logger}
+	jobConfig.executionContext = ctx
+	jobConfig.questionControls = work.controls
+	jobConfig.approvalControls = work.approvals
+	jobConfig.steerControls = work.steers
+	result, err := runJob(work.context, jobConfig, instance, resource, job)
+	work.cancel()
+	if err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
+	report := &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(result.ReportID), Id: string(result.JobID), ExpectedRevision: result.Revision}, MachineId: string(credential.MachineID), InstanceId: string(instance), OutputJson: result.Output}
+	if result.Problem != nil {
+		report.Problem = &pb.ErrorDetail{Code: string(result.Problem.Code)}
+	}
+	attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
+	_, err = client.ReportWork(attempt, authenticated(credential, report))
+	cancel()
+	if err != nil {
 		if ctx.Err() != nil {
 			return context.Cause(ctx)
 		}
-		report := &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(result.ReportID), Id: string(result.JobID), ExpectedRevision: result.Revision}, MachineId: string(credential.MachineID), InstanceId: string(instance), OutputJson: result.Output}
-		if result.Problem != nil {
-			report.Problem = &pb.ErrorDetail{Code: string(result.Problem.Code)}
-		}
-		attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
-		_, err = client.ReportWork(attempt, authenticated(credential, report))
-		cancel()
-		if err != nil {
-			if ctx.Err() != nil {
-				return context.Cause(ctx)
-			}
-			return err
-		}
-		result.State = journalReported
-		if err := writeJSON(filepath.Join(config.Root, "jobs", string(id)+".json"), result); err != nil {
-			return err
-		}
-		config.Logger.InfoContext(ctx, "worker job reported", "machine_id", credential.MachineID, "job_id", id, "type", job.Type, "reported_problem", result.Problem != nil)
+		return err
 	}
+	result.State = journalReported
+	if err := writeJSON(filepath.Join(config.Root, "jobs", resource.Id+".json"), result); err != nil {
+		return err
+	}
+	config.Logger.InfoContext(ctx, "worker job reported", "machine_id", credential.MachineID, "job_id", resource.Id, "type", job.Type, "reported_problem", result.Problem != nil)
+	return nil
 }
+
 func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb.Resource, job domain.Job) (journal, error) {
+	if resource.SessionId != "" {
+		if e := domain.ID(resource.SessionId).Validate(); e != nil {
+			return journal{}, e
+		}
+		if _, e := os.Lstat(sessionDeletionPath(config.Root, domain.ID(resource.SessionId))); !errors.Is(e, os.ErrNotExist) {
+			return journal{}, domain.SessionDeletionPending()
+		}
+	}
 	if job.Type == domain.ExecuteSessionJob {
 		var input domain.ExecutionJobInput
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != resource.SessionId || input.MachineID != job.MachineID {

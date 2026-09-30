@@ -109,3 +109,13 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Keep the single ordered schema sequence in `migrations.go` and each version's SQL/apply definition in `migration_<version>.go`. Fresh databases and upgrades use the same definitions. Validate the complete sequence; preserve backup, rollback, and recognized mixed-layout repairs.
 - Historical schemas in `testdata/schema/` are fixed input evidence. Never regenerate older fixtures for a new version. Seeded records may be copied into a fixed fixture through the test-only common-column helper; production never guesses unknown layouts this way.
 - `migration-reservations.json` allocates pending work separately from executable migrations. Establish changes to reservations on main before starting dependent branches. Version 25 from an unmerged branch is not proof of schema identity; preserve unidentified data and return recovery-required.
+
+- Permanent session deletion follows `docs/cmds-delidev-storage-contract.md`: synchronize irrevocable metadata-only intent outside SQLite before pause/cancellation, retain original actor/request/assignment ownership and non-content tombstones, and reconstruct obligations before serving restored state. Purge only after every original Worker and both forwarding peers confirm cleanup; remove all containing managed backups, redact retained receipts, and keep offline/uncertain cleanup pending without reclaimed-byte claims.
+
+- Reapplying permanent deletion intent must preserve existing paused session revisions and events when no new transition is needed.
+
+- Permanent session deletion must bind its final backup inventory to the exact images inspected without session content under the backup publication gate. Preserve new/replaced images as pending until a fresh classification pass.
+
+- Exact acknowledged Worker deletion-report retries with a matching actor/work-bound SQL receipt are read-only. Preserve original metadata and reject conflicting receipts; reconstruct a missing SQL receipt through the original synchronized-intent recovery path.
+
+- Permanent session erasure removes PR activity through each original remediation attempt source, including reservation records without row-level session binding. Redact the validated shared attempt and its index without emitting a new business activity transition; preserve unrelated PR history, original reservation provenance and lifetime counters.

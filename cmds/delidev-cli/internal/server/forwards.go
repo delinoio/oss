@@ -689,6 +689,12 @@ func (s *Service) ReportForwardCleanup(ctx context.Context, req *connect.Request
 	return connect.NewResponse(&pb.ReportForwardCleanupResponse{Forward: rpc.Resource(row), Replayed: result.Replayed}), nil
 }
 func finishForwardArchive(tx *store.Tx, id domain.ID) error {
+	// Cleanup reports remain valid during permanent deletion. Its controller
+	// owns final resource removal; ordinary session controls are already closed.
+	deleting, err := tx.SessionDeleting(id)
+	if err != nil || deleting {
+		return err
+	}
 	r, session, err := sessionRecord(tx, id)
 	if err != nil {
 		if domain.SafeError(err).Code == domain.NotFound {

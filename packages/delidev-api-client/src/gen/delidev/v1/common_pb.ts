@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/common.proto.
  */
 export const file_delidev_v1_common: GenFile = /*@__PURE__*/
-  fileDesc("ChdkZWxpZGV2L3YxL2NvbW1vbi5wcm90bxIKZGVsaWRldi52MSLNAQoIUmVzb3VyY2USCgoCaWQYASABKAkSJAoEa2luZBgCIAEoDjIWLmRlbGlkZXYudjEuRW50aXR5S2luZBIQCghyZXZpc2lvbhgDIAEoBBISCgpzZXNzaW9uX2lkGAQgASgJEhIKCnByb2plY3RfaWQYBSABKAkSFgoOc2NoZW1hX3ZlcnNpb24YBiABKA0SFQoNZG9jdW1lbnRfanNvbhgHIAEoDBISCgpjcmVhdGVkX2F0GAggASgJEhIKCnVwZGF0ZWRfYXQYCSABKAkiRQoITXV0YXRpb24SEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJpZBgCIAEoCRIZChFleHBlY3RlZF9yZXZpc2lvbhgDIAEoBCJICg1Gb3J3YXJkQ2hhbmdlEiUKB2ZvcndhcmQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhAKCHJlcGxheWVkGAIgASgIKtIFCgpFbnRpdHlLaW5kEhsKF0VOVElUWV9LSU5EX1VOU1BFQ0lGSUVEEAASFwoTRU5USVRZX0tJTkRfUFJPSkVDVBABEhoKFkVOVElUWV9LSU5EX1JFUE9TSVRPUlkQAhIVChFFTlRJVFlfS0lORF9BR0VOVBADEhcKE0VOVElUWV9LSU5EX0FDQ09VTlQQBBIYChRFTlRJVFlfS0lORF9QUk9WSURFUhAFEhUKEUVOVElUWV9LSU5EX01PREVMEAYSFwoTRU5USVRZX0tJTkRfTUFDSElORRAHEhcKE0VOVElUWV9LSU5EX1NFU1NJT04QCBIYChRFTlRJVFlfS0lORF9URU1QTEFURRAJEhgKFEVOVElUWV9LSU5EX1NFVFRJTkdTEAoSGAoURU5USVRZX0tJTkRfU0NIRURVTEUQCxIaChZFTlRJVFlfS0lORF9PQ0NVUlJFTkNFEAwSFwoTRU5USVRZX0tJTkRfTUVTU0FHRRANEhUKEUVOVElUWV9LSU5EX1FVRVVFEA4SGwoXRU5USVRZX0tJTkRfSU5URVJBQ1RJT04QDxIWChJFTlRJVFlfS0lORF9SRVZJRVcQEBIYChRFTlRJVFlfS0lORF9TTkFQU0hPVBAREhYKEkVOVElUWV9LSU5EX0RFVklDRRASEhsKF0VOVElUWV9LSU5EX0lOVEVHUkFUSU9OEBMSHAoYRU5USVRZX0tJTkRfUFVMTF9SRVFVRVNUEBQSFwoTRU5USVRZX0tJTkRfUFJPQkxFTRAVEhUKEUVOVElUWV9LSU5EX0lOQk9YEBYSFQoRRU5USVRZX0tJTkRfVVNBR0UQFxITCg9FTlRJVFlfS0lORF9KT0IQGBIXChNFTlRJVFlfS0lORF9QQUlSSU5HEBkSFQoRRU5USVRZX0tJTkRfU1RFRVIQGhIXChNFTlRJVFlfS0lORF9GT1JXQVJEEBsqWwoNVXNhZ2VDb3ZlcmFnZRIeChpVU0FHRV9DT1ZFUkFHRV9VTlNQRUNJRklFRBAAEioKJlVTQUdFX0NPVkVSQUdFX09CU0VSVkVEX1JPT1RfUkVTUE9OU0VTEAFCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z");
+  fileDesc("ChdkZWxpZGV2L3YxL2NvbW1vbi5wcm90bxIKZGVsaWRldi52MSLNAQoIUmVzb3VyY2USCgoCaWQYASABKAkSJAoEa2luZBgCIAEoDjIWLmRlbGlkZXYudjEuRW50aXR5S2luZBIQCghyZXZpc2lvbhgDIAEoBBISCgpzZXNzaW9uX2lkGAQgASgJEhIKCnByb2plY3RfaWQYBSABKAkSFgoOc2NoZW1hX3ZlcnNpb24YBiABKA0SFQoNZG9jdW1lbnRfanNvbhgHIAEoDBISCgpjcmVhdGVkX2F0GAggASgJEhIKCnVwZGF0ZWRfYXQYCSABKAkiRQoITXV0YXRpb24SEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJpZBgCIAEoCRIZChFleHBlY3RlZF9yZXZpc2lvbhgDIAEoBCJICg1Gb3J3YXJkQ2hhbmdlEiUKB2ZvcndhcmQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhAKCHJlcGxheWVkGAIgASgIIowCChJTZXNzaW9uRGVsZXRpb25Kb2ISCgoCaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIQCghyZXZpc2lvbhgDIAEoBBIvCgVzdGF0ZRgEIAEoDjIgLmRlbGlkZXYudjEuU2Vzc2lvbkRlbGV0aW9uU3RhdGUSEwoLYWNjZXB0ZWRfYXQYBSABKAkSEwoLZmluaXNoZWRfYXQYBiABKAkSFwoPd29ya2Vyc19wZW5kaW5nGAcgASgNEhgKEGRhdGFiYXNlX3JlbW92ZWQYCCABKAgSFwoPYmFja3Vwc19yZW1vdmVkGAkgASgIEh0KFXJlY2xhaW1lZF9ieXRlc19rbm93bhgKIAEoCCrSBQoKRW50aXR5S2luZBIbChdFTlRJVFlfS0lORF9VTlNQRUNJRklFRBAAEhcKE0VOVElUWV9LSU5EX1BST0pFQ1QQARIaChZFTlRJVFlfS0lORF9SRVBPU0lUT1JZEAISFQoRRU5USVRZX0tJTkRfQUdFTlQQAxIXChNFTlRJVFlfS0lORF9BQ0NPVU5UEAQSGAoURU5USVRZX0tJTkRfUFJPVklERVIQBRIVChFFTlRJVFlfS0lORF9NT0RFTBAGEhcKE0VOVElUWV9LSU5EX01BQ0hJTkUQBxIXChNFTlRJVFlfS0lORF9TRVNTSU9OEAgSGAoURU5USVRZX0tJTkRfVEVNUExBVEUQCRIYChRFTlRJVFlfS0lORF9TRVRUSU5HUxAKEhgKFEVOVElUWV9LSU5EX1NDSEVEVUxFEAsSGgoWRU5USVRZX0tJTkRfT0NDVVJSRU5DRRAMEhcKE0VOVElUWV9LSU5EX01FU1NBR0UQDRIVChFFTlRJVFlfS0lORF9RVUVVRRAOEhsKF0VOVElUWV9LSU5EX0lOVEVSQUNUSU9OEA8SFgoSRU5USVRZX0tJTkRfUkVWSUVXEBASGAoURU5USVRZX0tJTkRfU05BUFNIT1QQERIWChJFTlRJVFlfS0lORF9ERVZJQ0UQEhIbChdFTlRJVFlfS0lORF9JTlRFR1JBVElPThATEhwKGEVOVElUWV9LSU5EX1BVTExfUkVRVUVTVBAUEhcKE0VOVElUWV9LSU5EX1BST0JMRU0QFRIVChFFTlRJVFlfS0lORF9JTkJPWBAWEhUKEUVOVElUWV9LSU5EX1VTQUdFEBcSEwoPRU5USVRZX0tJTkRfSk9CEBgSFwoTRU5USVRZX0tJTkRfUEFJUklORxAZEhUKEUVOVElUWV9LSU5EX1NURUVSEBoSFwoTRU5USVRZX0tJTkRfRk9SV0FSRBAbKlsKDVVzYWdlQ292ZXJhZ2USHgoaVVNBR0VfQ09WRVJBR0VfVU5TUEVDSUZJRUQQABIqCiZVU0FHRV9DT1ZFUkFHRV9PQlNFUlZFRF9ST09UX1JFU1BPTlNFUxABKogBChRTZXNzaW9uRGVsZXRpb25TdGF0ZRImCiJTRVNTSU9OX0RFTEVUSU9OX1NUQVRFX1VOU1BFQ0lGSUVEEAASIgoeU0VTU0lPTl9ERUxFVElPTl9TVEFURV9QRU5ESU5HEAESJAogU0VTU0lPTl9ERUxFVElPTl9TVEFURV9TVUNDRUVERUQQAkI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM");
 
 /**
  * Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
@@ -122,6 +122,70 @@ export type ForwardChange = Message<"delidev.v1.ForwardChange"> & {
  */
 export const ForwardChangeSchema: GenMessage<ForwardChange> = /*@__PURE__*/
   messageDesc(file_delidev_v1_common, 2);
+
+/**
+ * @generated from message delidev.v1.SessionDeletionJob
+ */
+export type SessionDeletionJob = Message<"delidev.v1.SessionDeletionJob"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: uint64 revision = 3;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: delidev.v1.SessionDeletionState state = 4;
+   */
+  state: SessionDeletionState;
+
+  /**
+   * @generated from field: string accepted_at = 5;
+   */
+  acceptedAt: string;
+
+  /**
+   * @generated from field: string finished_at = 6;
+   */
+  finishedAt: string;
+
+  /**
+   * @generated from field: uint32 workers_pending = 7;
+   */
+  workersPending: number;
+
+  /**
+   * @generated from field: bool database_removed = 8;
+   */
+  databaseRemoved: boolean;
+
+  /**
+   * @generated from field: bool backups_removed = 9;
+   */
+  backupsRemoved: boolean;
+
+  /**
+   * Removal is proved separately from filesystem allocation; bytes are unknown.
+   *
+   * @generated from field: bool reclaimed_bytes_known = 10;
+   */
+  reclaimedBytesKnown: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.SessionDeletionJob.
+ * Use `create(SessionDeletionJobSchema)` to create a new message.
+ */
+export const SessionDeletionJobSchema: GenMessage<SessionDeletionJob> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_common, 3);
 
 /**
  * @generated from enum delidev.v1.EntityKind
@@ -296,4 +360,32 @@ export enum UsageCoverage {
  */
 export const UsageCoverageSchema: GenEnum<UsageCoverage> = /*@__PURE__*/
   enumDesc(file_delidev_v1_common, 1);
+
+/**
+ * Irrevocable deletion remains pending until every managed resource is confirmed.
+ *
+ * @generated from enum delidev.v1.SessionDeletionState
+ */
+export enum SessionDeletionState {
+  /**
+   * @generated from enum value: SESSION_DELETION_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SESSION_DELETION_STATE_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * @generated from enum value: SESSION_DELETION_STATE_SUCCEEDED = 2;
+   */
+  SUCCEEDED = 2,
+}
+
+/**
+ * Describes the enum delidev.v1.SessionDeletionState.
+ */
+export const SessionDeletionStateSchema: GenEnum<SessionDeletionState> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_common, 2);
 

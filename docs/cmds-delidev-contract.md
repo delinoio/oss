@@ -180,7 +180,7 @@ The pinned Claude initial-assignment profile now composes authenticated Worker r
 ## Portable configuration
 The eight existing editable configuration kinds now share owner/client export, read-only signed previews and atomic imports through Connect, CLI and desktop settings. Explicit machine/checkout mappings, fresh disconnected accounts, unchanged reuse and revision-bound settings replacement prevent implicit authority transfer. New repositories pass every Worker inspection before any configuration commits. See [portable configuration](cmds-delidev-configuration-transfer-contract.md) for limits and remaining portable surfaces.
 
-Schema v23 adds durable managed-backup deletion indexing and external deletion obligations under the [storage contract](cmds-delidev-storage-contract.md). The explicit API, CLI and desktop operations share original inspection/revision checks and restart recovery. Permanent session deletion, workspace snapshots and database restoration remain incomplete.
+Schema v23 adds durable managed-backup deletion indexing and external deletion obligations under the [storage contract](cmds-delidev-storage-contract.md). The explicit API, CLI and desktop operations share original inspection/revision checks and restart recovery. Permanent session deletion now uses the coordinated lifecycle below; workspace snapshots and database restoration remain incomplete.
 
 
 ### Durable backup creation commands
@@ -208,3 +208,14 @@ Unix output-pipe setup failures persist pre-launch completion so an exited super
 Process controller setup now creates each scope exclusively and synchronizes removal of its original empty scope after a proven pre-launch failure, preserving replaced/nonempty evidence and all native-started ownership requirements.
 
 Streamed JSON numeric spellings and key names now share bounded reflection protection at their original parent paths and across the key sequence, before escaped field names reach a Worker.
+
+
+### Permanent session deletion
+
+`session delete --id SESSION-ID --revision N --confirm [--wait]` accepts an
+irreversible owner/paired-client deletion using the common exact request UUID.
+`session deletion --id SESSION-ID` observes its typed original job after restart
+or content removal. Waiting uses reads only and preserves accepted progress on
+cancellation or failure. Offline/uncertain Worker or backup cleanup stays pending;
+completion requires all managed copies confirmed removed and never invents
+reclaimed disk space. See the [storage contract](cmds-delidev-storage-contract.md).

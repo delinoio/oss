@@ -5,6 +5,16 @@
 import { WorkerService } from "./worker_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.ListSessionDeletionWork
+ */
+export const listSessionDeletionWork = WorkerService.method.listSessionDeletionWork;
+
+/**
+ * @generated from rpc delidev.v1.WorkerService.ReportSessionDeletion
+ */
+export const reportSessionDeletion = WorkerService.method.reportSessionDeletion;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.ReportWorkspaceRead
  */
 export const reportWorkspaceRead = WorkerService.method.reportWorkspaceRead;
