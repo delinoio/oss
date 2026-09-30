@@ -55,6 +55,45 @@ function validWorkflowRuns(raw: unknown, merge: Document): boolean {
   }
   return true;
 }
+
+enum WorkflowState {
+  Unknown = "unknown",
+  Pending = "pending",
+  NonFailing = "non-failing",
+  TerminalFailure = "terminal-failure",
+}
+function workflowState(row: Document): WorkflowState {
+  if (row.native_status !== "COMPLETED") {
+    return ["QUEUED", "IN_PROGRESS", "WAITING", "PENDING", "REQUESTED"].includes(text(row.native_status)) && row.native_conclusion == null ? WorkflowState.Pending : WorkflowState.Unknown;
+  }
+  if (["SUCCESS", "NEUTRAL", "SKIPPED"].includes(text(row.native_conclusion))) return WorkflowState.NonFailing;
+  return ["FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE"].includes(text(row.native_conclusion)) ? WorkflowState.TerminalFailure : WorkflowState.Unknown;
+}
+const workflowPriority = new Map([[WorkflowState.Unknown, 5], [WorkflowState.TerminalFailure, 4], [WorkflowState.Pending, 2], [WorkflowState.NonFailing, 1]]);
+function workflowAssessment(ref: Document, runs: Document[], contexts: Map<string, Document>, source: unknown, unsupported: boolean): { state: WorkflowState; reason: string; ids: string[] } {
+  const unknown = { state: WorkflowState.Unknown, reason: "workflow-unverified", ids: [] as string[] };
+  if (!sha(ref.sha) || unsupported || source !== "test-merge" || runs.some((run) => run.source == null)) return unknown;
+  const matching = runs.filter((run) => object(run.source).repository_id === ref.repository_id && object(run.source).path === ref.path);
+  const run = matching[0];
+  if (matching.length !== 1 || object(run.source).sha !== ref.sha || run.event !== "pull_request" || items(run.jobs).length === 0) return unknown;
+  let state = WorkflowState.NonFailing, pending = false;
+  const ids: string[] = [];
+  for (const raw of items(run.jobs)) {
+    const job = object(raw), context = contexts.get(text(job.node_id));
+    const evidence = object(context?.evidence), workflow = object(evidence.workflow);
+    if (!context || !context.required || context.kind !== "check-run" || object(context.application).id !== "15368" || evidence.suite_node_id !== run.suite_node_id || workflow.node_id !== run.node_id || workflow.observed_attempt !== run.attempt || context.workflow_event !== run.event || context.native_status !== job.native_status || context.native_conclusion !== job.native_conclusion) return unknown;
+    const current = workflowState(job);
+    pending ||= current === WorkflowState.Pending;
+    if (workflowPriority.get(current)! > workflowPriority.get(state)!) state = current;
+    ids.push(text(job.node_id));
+  }
+  // A running aggregate cannot promote retained failures to a current failure;
+  // terminal aggregates must agree with every attributed current-attempt job.
+  const aggregate = workflowState(run);
+  if (aggregate === WorkflowState.Pending && state !== WorkflowState.Unknown) return { state: WorkflowState.Pending, reason: "observed", ids };
+  if (aggregate !== state || pending) return unknown;
+  return { state, reason: state === WorkflowState.Unknown ? "unknown-native-result" : "observed", ids };
+}
 export function validPRCI(raw: unknown, item: Document): boolean {
   const value = object(raw), result = object(value.result);
   if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 512 << 10) return false;
@@ -78,7 +117,7 @@ export function validPRCI(raw: unknown, item: Document): boolean {
   const expected: Document[] = items(object(value.rules).rules).flatMap((raw) => {
     const rule = object(raw);
     if (rule.type === "required_status_checks") return items(object(rule.required_checks).checks).map((raw) => ({ ...object(raw), ruleset_id: rule.ruleset_id }));
-    return rule.type === "workflows" ? items(object(rule.required_workflows).workflows).map((raw) => ({ context: object(raw).path, workflow: raw, ruleset_id: rule.ruleset_id })) : [];
+    return rule.type === "workflows" ? items(object(rule.required_workflows).workflows).map((raw) => ({ context: object(raw).path, workflow: raw, ruleset_id: rule.ruleset_id, unsupported: object(rule.required_workflows).unknown_parameters === true })) : [];
   });
   if (result.requirements.length !== expected.length) return false;
   const contexts = new Map(items(selected.contexts).map((raw) => { const row = object(raw); return [text(row.node_id), row] as const; }));
@@ -91,13 +130,8 @@ export function validPRCI(raw: unknown, item: Document): boolean {
     if (row.workflow != null) {
       if (!validWorkflowReference(row.workflow)) return false;
       for (const key of ["repository_id", "path", "sha", "ref"]) if (object(row.workflow)[key] !== object(requirement.workflow)[key]) return false;
-      if (!["unknown", "pending", "non-failing", "terminal-failure"].includes(text(row.state))) return false;
-      if (row.state !== "unknown") {
-        const ref = object(row.workflow);
-        const matching = workflowRuns.filter((run) => object(run.source).repository_id === ref.repository_id && object(run.source).path === ref.path);
-        const run = matching[0];
-        if (!sha(ref.sha) || result.source !== "test-merge" || workflowRuns.some((run) => run.source == null) || matching.length !== 1 || object(run.source).sha !== ref.sha || run.event !== "pull_request" || items(run.jobs).length === 0 || items(run.jobs).length !== row.result_node_ids.length) return false;
-      }
+      const expected = workflowAssessment(object(row.workflow), workflowRuns, contexts, result.source, requirement.unsupported === true);
+      if (row.state !== expected.state || row.reason !== expected.reason || row.result_node_ids.length !== expected.ids.length || row.result_node_ids.some((id, index) => id !== expected.ids[index])) return false;
     }
     const used = new Set<string>();
     for (const id of row.result_node_ids) {

@@ -41,6 +41,35 @@ it("rejects malformed sources, wrong merge commits, cross-workflow jobs and dupl
   }
 });
 
+it("recomputes current workflow lifecycle before accepting retained failure proof", () => {
+  const value = fixture();
+  value.workflow_runs[0].native_status = "IN_PROGRESS";
+  Object.assign(value.workflow_runs[0], { native_conclusion: undefined });
+  expect(validPRCI(value, item)).toBe(false);
+  value.result.state = value.result.requirements[0].state = "pending";
+  expect(validPRCI(value, item)).toBe(true);
+  value.workflow_runs[0].native_status = "COMPLETED";
+  value.workflow_runs[0].native_conclusion = "SUCCESS";
+  expect(validPRCI(value, item)).toBe(false);
+  value.result.state = value.result.requirements[0].state = "unknown";
+  value.result.reason = value.result.requirements[0].reason = "workflow-unverified";
+  value.result.requirements[0].result_node_ids = [];
+  expect(validPRCI(value, item)).toBe(true);
+});
+
+it("rejects terminal aggregate proof with pending or unknown attributed jobs", () => {
+  for (const status of ["IN_PROGRESS", "UNRECOGNIZED"]) {
+    const value = fixture();
+    Object.assign(value.workflow_runs[0].jobs[0], { native_status: status, native_conclusion: undefined });
+    Object.assign(value.test_merge.contexts[0], { native_status: status, native_conclusion: undefined });
+    expect(validPRCI(value, item)).toBe(false);
+    value.result.state = value.result.requirements[0].state = "unknown";
+    value.result.reason = value.result.requirements[0].reason = "workflow-unverified";
+    value.result.requirements[0].result_node_ids = [];
+    expect(validPRCI(value, item)).toBe(true);
+  }
+});
+
 it("preserves missing source SHA as Unknown and shows its limitation", () => {
   const value = fixture();
   delete value.rules.rules[0].required_workflows.workflows[0].sha;
