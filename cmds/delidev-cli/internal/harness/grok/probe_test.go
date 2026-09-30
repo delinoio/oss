@@ -160,7 +160,7 @@ func init() {
 	os.Exit(0)
 }
 
-func fixtureConfig(t *testing.T, mode string) (ProbeConfig, *bytes.Buffer) {
+func fixtureConfig(t *testing.T, mode string) (ProbeConfig, *fixtureLogBuffer) {
 	t.Helper()
 	parent := t.TempDir()
 	root := filepath.Join(parent, "fixture-"+mode)
@@ -189,7 +189,7 @@ func fixtureConfig(t *testing.T, mode string) (ProbeConfig, *bytes.Buffer) {
 			env = append(env, key+"="+value)
 		}
 	}
-	logs := &bytes.Buffer{}
+	logs := &fixtureLogBuffer{}
 	return ProbeConfig{Version: SupportedVersion, Home: filepath.Join(root, "grok"), Process: process.Config{Directory: filepath.Join(filepath.Dir(root), "processes"), OwnerID: domain.NewID(), Executable: executable, Env: env, Cwd: root, Logger: slog.New(slog.NewJSONHandler(logs, nil))}}, logs
 }
 
