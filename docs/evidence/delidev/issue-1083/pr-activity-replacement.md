@@ -70,7 +70,57 @@ same typed projection exposed through Connect, generated clients and CLI.
   interrupted with exit 130. A full one-worker validation rerun preserves all
   assertions, hooks and timeouts; its result is recorded after completion.
 
-Additional required validation is recorded below after its completion.
+- On implementation commit `e644261ff167ccaf69155f28e02c9b8f7d930b80`,
+  `GOMAXPROCS=2 go test -race -p 1 -count=1` on store/server/CLI with
+  `PRActivity|^TestActivity|^TestCLIActivity` passed all three packages. This
+  includes historical-record no-backfill, equal-time pagination, source
+  rollback, alias/receipt/proof deduplication and session-owned removal.
+- `GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/...`: passed.
+- Final focused desktop activity rerun: all four tests passed.
+- Desktop downstream validation passed: all eight package-verifier cases, all
+  sixteen asset/launcher cases, native Swift widget fixtures and production build.
+- Generated client lint/typecheck/build passed; all 44 client tests passed,
+  including actual temporary Go-server and reflection compatibility fixtures.
+- Required ach and DevHud administrator embed preparation passed before the
+  root Go formatting commit hook; the implementation commit passed that hook.
+- The one-worker full frontend rerun also reported timeouts in unchanged
+  Settings and App tests. It was interrupted with exit 130 after those failures.
+  Both frontend invocations retain all assertions, hooks and deadlines; neither
+  is claimed as a full pass. The observed host load averages were
+  725.08/496.52/253.38 at 15:45 Asia/Seoul. This concurrent load observation does
+  not prove the cause of every failure.
+- Root `go test -race -p 2 -timeout 20m ./cmds/delidev-cli/...` reported failures
+  in CLI and native harness discovery, including timeout/version-probe failures
+  in the unchanged Claude/Grok/OpenCode/path fixtures. The remaining test-only
+  process tree was terminated with exit 143 after preserving those failures.
+  This is an incomplete failing full-suite run, not broad Go acceptance.
+
+- Full `pnpm proto:check` passed on implementation commit `e644261f`, including
+  formatting, lint, breaking compatibility, normal regeneration and exact
+  generated-source freshness.
+
+## Final controlled reruns
+
+After a new host-load observation showed the one-minute average had dropped to
+37.85, the complete frontend suite ran with `GOMAXPROCS=2` and one Vitest worker.
+All **964 tests across 85 files passed** in 358.30 seconds. Combined with the
+independently passing typecheck/client build, packaging, launcher, widget and
+production-build stages above, every frontend test-script stage passed. The
+initial failed default invocation and intermediate interruption remain recorded.
+
+The complete root Go rerun used `GOMAXPROCS=2 go test -race -p 1 -timeout 20m
+./cmds/delidev-cli/...`. It reported `TestCLISessionAcceptanceQueueAndArchive`
+failing during `session create --wait` with an unavailable timeout and still-pending
+workspace preparation, and `TestDiscoveryVerifiesClaudeWithoutGrantingExecution`
+failing because Claude probe cleanup could not be confirmed. No PR source creation
+or handling action is part of those failing setup paths. That rerun's remaining
+test-only process tree was stopped after the failures; full Go acceptance remains
+**unverified**, while activity-specific race tests and DeliDev-wide vet passed.
+No assertion, timeout, fixture or product deadline was changed to obtain a pass.
+
+The source and protocol are unchanged from implementation commit `e644261f`;
+this final update records verification only. Hosted CI and review remain separate
+pending evidence when the PR is opened.
 
 ## Limits
 
