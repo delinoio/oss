@@ -28,11 +28,12 @@ type checkpointResume struct {
 // inline tool/interaction profiles. Other auxiliary/child histories need their
 // own original native replacement evidence.
 func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string, raw []byte, ref CheckpointReference, request domain.ID, previousAgent PrimaryAgent, explicitResume bool) (result *OwnedAPI, returned error) {
+	scope, scopeErr := config.workspaceRoot()
 	source, err := decodeCheckpoint(raw, ref, home)
-	if err != nil || !slices.Equal(source.References, config.References) {
+	if err != nil || scopeErr != nil || !checkpointMatchesRoot(source, scope) || !slices.Equal(source.References, config.References) {
 		return nil, sessionUncertain()
 	}
-	if (previousAgent != BuildAgent && previousAgent != PlanAgent) || ctx.Err() != nil || request.Validate() != nil || request == ref.CreationRequestID || request == ref.InputRequestID || request == ref.OwnerID || config.Probe.Process.OwnerID == ref.OwnerID || source.Reference.RequiresResume && !explicitResume || config.Workspace != source.Workspace || config.NativeRoot != source.NativeRoot {
+	if (previousAgent != BuildAgent && previousAgent != PlanAgent) || ctx.Err() != nil || request.Validate() != nil || request == ref.CreationRequestID || request == ref.InputRequestID || request == ref.OwnerID || config.Probe.Process.OwnerID == ref.OwnerID || source.Reference.RequiresResume && !explicitResume || config.Workspace != source.Workspace {
 		return nil, sessionUncertain()
 	}
 	if checkpointReplacementProfile(source) != nil || request == config.Probe.Process.OwnerID || config.Probe.Process.OwnerID == ref.CreationRequestID || config.Probe.Process.OwnerID == ref.InputRequestID {
@@ -202,7 +203,7 @@ func InspectReplacementCheckpoint(ctx context.Context, home string, raw []byte, 
 }
 
 func checkpointReplacementProfile(value nativeCheckpoint) error {
-	if !validCheckpointTools(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || !validCheckpointReferences(value) || value.Snapshot == nil && (value.Project != "global" || filepath.Dir(value.NativeRoot) != value.NativeRoot) {
+	if !validCheckpointTools(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || !validCheckpointReferences(value) || value.Snapshot == nil && !checkpointGlobalRoot(value) {
 		return incompatible()
 	}
 	for _, history := range checkpointHistories(value) {
@@ -252,7 +253,17 @@ func CheckpointResumeClaim(config APIExecutionConfig, ref CheckpointReference, r
 // with the native checkpoint without launching or changing original state.
 func InspectReplacementWorkspace(ctx context.Context, home string, raw []byte, ref CheckpointReference, workspace, root string, references ...WorkspaceReference) error {
 	value, err := decodeCheckpoint(raw, ref, home)
-	if err != nil || value.Workspace != workspace || value.NativeRoot != root || !slices.Equal(value.References, references) {
+	if err != nil || value.Version != 1 || value.Workspace != workspace || value.NativeRoot != root || !slices.Equal(value.References, references) {
+		return sessionUncertain()
+	}
+	return InspectReplacementCheckpoint(ctx, home, raw, ref)
+}
+
+// InspectReplacementRoot compares both root facts to independently derived
+// manifest/lease authority. A checkpoint cannot reconstruct a missing boundary.
+func InspectReplacementRoot(ctx context.Context, home string, raw []byte, ref CheckpointReference, workspace string, root WorkspaceRoot, references ...WorkspaceReference) error {
+	value, err := decodeCheckpoint(raw, ref, home)
+	if err != nil || root.directory != workspace || root.inspect() != nil || value.Workspace != workspace || !checkpointMatchesRoot(value, root) || !slices.Equal(value.References, references) {
 		return sessionUncertain()
 	}
 	return InspectReplacementCheckpoint(ctx, home, raw, ref)
