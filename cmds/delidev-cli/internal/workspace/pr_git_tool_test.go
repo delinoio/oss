@@ -91,6 +91,12 @@ exec %s "$@"
 		}
 	}
 	push := tool.scope.commandPlan()["push_argv"].([]string)
+	gitTest(t, root, "config", "url.https://example.invalid/.pushInsteadOf", tool.scope.commandPlan()["push_argv"].([]string)[3])
+	if err := RunPRGit(context.Background(), tool.path, push, &bytes.Buffer{}); domain.SafeError(err).Code != domain.MissingInput {
+		t.Fatal("push-only rewrite accepted", err)
+	}
+	gitTest(t, root, "config", "--unset-all", "url.https://example.invalid/.pushInsteadOf")
+
 	gitTest(t, f.fork, "update-ref", "refs/heads/feature", f.next)
 	if err := RunPRGit(context.Background(), tool.path, push, &bytes.Buffer{}); err == nil {
 		t.Fatal("moved remote head accepted")
@@ -121,5 +127,32 @@ exec %s "$@"
 		if tool.scope.validateArgs(args) == nil {
 			t.Fatal("foreign operation accepted")
 		}
+	}
+}
+
+// This isolated read exercises Git's real push-only configuration grammar
+// without opening a network transport or invoking the inference harness.
+func TestPRGitPushOnlyRewriteCannotSubstituteDestination(t *testing.T) {
+	home := t.TempDir()
+	for key, value := range map[string]string{"HOME": home, "USERPROFILE": home, "GIT_CONFIG_GLOBAL": os.DevNull, "GIT_CONFIG_SYSTEM": os.DevNull, "GIT_CONFIG_NOSYSTEM": "1", "XDG_CONFIG_HOME": home} {
+		t.Setenv(key, value)
+	}
+	root := repository(t)
+	m := manager(t)
+	if err := m.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	git := m.Git
+	git.OwnerID, git.readOnly = domain.NewID(), true
+	address := "https://github.com/fixture-author/fork.git"
+	if err := git.rejectPRPushRewrite(context.Background(), root, address); err != nil {
+		t.Fatal("missing rewrite", err)
+	}
+	gitTest(t, root, "config", "url.https://example.invalid/.pushInsteadOf", "https://github.com/fixture-author/")
+	if err := git.rejectPRPushRewrite(context.Background(), root, address); domain.SafeError(err).Code != domain.MissingInput {
+		t.Fatal("matching rewrite accepted", err)
+	}
+	if err := git.rejectPRPushRewrite(context.Background(), root, "https://github.com/other-owner/repo.git"); err != nil {
+		t.Fatal("unrelated rewrite changed source", err)
 	}
 }

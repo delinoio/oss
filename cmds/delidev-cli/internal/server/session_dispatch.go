@@ -254,32 +254,33 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 
 func (s *Service) dispatchExecution(ctx context.Context, record store.Record) error {
 	attempt, observations, prepareErr := s.preparePRFixDispatch(ctx, record)
-	if prepareErr != nil {
-		return prepareErr
-	}
 	identity := struct {
 		Session  domain.ID
 		Revision uint64
 	}{record.ID, record.Revision}
-	result, err := s.Store.Mutate(ctx, domain.NewID(), "session.dispatch.execution", identity, func(tx *store.Tx) (any, error) {
-		sr, session, err := sessionRecord(tx, record.ID)
-		if err != nil {
-			return nil, err
-		}
-		if sr.Revision != record.Revision {
-			return nil, firstDispatchConflict()
-		}
-		var job store.Record
-		if session.InitialExecution == nil {
-			job, err = queueInitialExecution(tx, sr, session, false)
-		} else {
-			job, err = queueContinuation(tx, sr, session, false)
-		}
-		if err == nil {
-			err = bindPRFixAssignment(tx, attempt, job, observations)
-		}
-		return sessionReceipt{SessionID: sr.ID}, err
-	})
+	var result store.Result
+	err := prepareErr
+	if err == nil {
+		result, err = s.Store.Mutate(ctx, domain.NewID(), "session.dispatch.execution", identity, func(tx *store.Tx) (any, error) {
+			sr, session, err := sessionRecord(tx, record.ID)
+			if err != nil {
+				return nil, err
+			}
+			if sr.Revision != record.Revision {
+				return nil, firstDispatchConflict()
+			}
+			var job store.Record
+			if session.InitialExecution == nil {
+				job, err = queueInitialExecution(tx, sr, session, false)
+			} else {
+				job, err = queueContinuation(tx, sr, session, false)
+			}
+			if err == nil {
+				err = bindPRFixAssignment(tx, attempt, job, observations)
+			}
+			return sessionReceipt{SessionID: sr.ID}, err
+		})
+	}
 	if err == nil {
 		s.logger.InfoContext(ctx, "session_execution_queued", "session_id", record.ID, "request_id", result.RequestID)
 		return nil
@@ -288,7 +289,7 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 	if problem.Code == domain.ProviderDisabled {
 		s.logger.InfoContext(ctx, "session_dispatch_denied", "operation", "new_execution", "session_id", record.ID, "reason", problem.Code, "enabled", false)
 	}
-	if ctx.Err() != nil || problem.Code == domain.Conflict || problem.Code == domain.Internal || problem.Cause != "" {
+	if ctx.Err() != nil || (problem.Code == domain.Conflict && prepareErr == nil) || problem.Code == domain.Internal || problem.Cause != "" {
 		return err
 	}
 	// A failed native/configuration check rolls back the complete claim first.

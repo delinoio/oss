@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -127,4 +128,30 @@ func PRFixPrompt(selection PRFixExecution, problems []PRProblem) (string, error)
 		return "", Fail(ResourceExhausted, "The selected problem evidence exceeds one input.", "Select fewer original problems without truncating their evidence.")
 	}
 	return prompt, nil
+}
+
+// JSON string revisions must preserve one canonical exact representation;
+// encoding/json's uint64,string alone also accepts zero-prefixed spellings.
+func (v *PRFixRequest) UnmarshalJSON(raw []byte) error {
+	type plain PRFixRequest
+	var decoded plain
+	if err := Decode(raw, &decoded); err != nil {
+		return err
+	}
+	var original struct {
+		SetRevision string `json:"set_revision"`
+		Problems    []struct {
+			Revision string `json:"revision"`
+		} `json:"problems"`
+	}
+	if json.Unmarshal(raw, &original) != nil || original.SetRevision != strconv.FormatUint(decoded.SetRevision, 10) || len(original.Problems) != len(decoded.Problems) {
+		return Fail(InvalidArgument, "Fix revisions must be canonical decimal strings.", "Retain the exact original positive resource revision.")
+	}
+	for i, ref := range decoded.Problems {
+		if original.Problems[i].Revision != strconv.FormatUint(ref.Revision, 10) {
+			return Fail(InvalidArgument, "Fix revisions must be canonical decimal strings.", "Retain the exact original positive resource revision.")
+		}
+	}
+	*v = PRFixRequest(decoded)
+	return nil
 }

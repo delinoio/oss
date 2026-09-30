@@ -2,6 +2,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -51,6 +52,14 @@ func hashTool(raw []byte) string { sum := sha256.Sum256(raw); return hex.EncodeT
 
 const prGitEnvironmentPrefix = "DELIDEV_PR_GIT_"
 
+type prGitPreparationPhase string
+
+const (
+	prGitPreflightPhase   prGitPreparationPhase = "workspace-preflight"
+	prGitWriteAccessPhase prGitPreparationPhase = "write-access"
+	prGitPublicationPhase prGitPreparationPhase = "tool-publication"
+)
+
 func originalPRGitEnvironment() []string {
 	values := map[string]string{}
 	for _, entry := range gitEnvironment() {
@@ -88,7 +97,7 @@ func toolName() string {
 // Original Git lookup context is passed under a private prefix and restored
 // only by that entry point; the harness HOME/account environment stays private.
 func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.PRFixExecution, input PrepareRequest, manifest Manifest) (_ *PRGitTool, returnedErr error) {
-	phase := "workspace-preflight"
+	phase := prGitPreflightPhase
 	defer func() {
 		if returnedErr != nil {
 			l.manager.Logger.WarnContext(ctx, "manual_pr_git_preparation_failed", "attempt_id", selection.AttemptID, "execution_id", l.claim.ExecutionID, "phase", phase, "code", domain.SafeError(returnedErr).Code)
@@ -127,14 +136,20 @@ func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.
 	if err != nil {
 		return nil, err
 	}
-	phase = "write-access"
+	phase = prGitWriteAccessPhase
 	address := transport.address(selection.Target.HeadRepository.Owner, selection.Target.HeadRepository.Name)
+	if err := git.rejectPRPushRewrite(ctx, path, address); err != nil {
+		return nil, err
+	}
 	// Dry-run checks receive-pack access with the selected Worker's native Git
 	// identity. It is independently owned read/preflight, never publication.
 	if _, err := git.run(ctx, path, "-c", "http.followRedirects=false", "push", "--dry-run", "--porcelain", "--", address, selection.Target.HeadSHA+":refs/heads/"+selection.Target.HeadRef); err != nil {
+		if domain.SafeError(err).Cause != "git_exit" {
+			return nil, err
+		}
 		return nil, domain.Fail(domain.MissingInput, "The execution Worker lacks PR Git push access.", "Prepare native Git write authentication on this Worker; the server lookup PAT cannot be substituted.")
 	}
-	phase = "tool-publication"
+	phase = prGitPublicationPhase
 	dir := filepath.Join(l.manager.Root, "pr-git", string(l.claim.ExecutionID))
 	if err := security.PrivateDir(filepath.Dir(dir)); err != nil {
 		return nil, err
@@ -155,7 +170,7 @@ func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.
 		return nil, err
 	}
 	toolPath := filepath.Join(dir, toolName())
-	executableBytes, err := os.ReadFile(executable)
+	executableBytes, err := readPRExecutable(executable)
 	if err != nil || len(executableBytes) > 128<<20 {
 		return nil, toolFailure()
 	}
@@ -176,7 +191,7 @@ func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.
 	if err != nil || !filepath.IsAbs(nativeGit) {
 		return nil, toolFailure()
 	}
-	gitBytes, err := os.ReadFile(nativeGit)
+	gitBytes, err := readPRExecutable(nativeGit)
 	if err != nil || len(gitBytes) > 128<<20 {
 		return nil, toolFailure()
 	}
@@ -218,7 +233,7 @@ func loadPRGitScope(path string) (prGitScope, []byte, error) {
 	if err != nil || hashTool(launcher) != scope.ToolDigest {
 		return scope, nil, toolFailure()
 	}
-	native, err := os.ReadFile(scope.GitExecutable)
+	native, err := readPRExecutable(scope.GitExecutable)
 	if err != nil || len(native) > 128<<20 || !filepath.IsAbs(scope.GitExecutable) || hashTool(native) != scope.GitDigest {
 		return scope, nil, toolFailure()
 	}
@@ -303,6 +318,9 @@ func RunPRGit(ctx context.Context, path string, args []string, stdout io.Writer)
 	target := scope.Selection.Target
 	base, head := scope.addresses()
 	if args[0] == "push" {
+		if err := git.rejectPRPushRewrite(ctx, scope.RepositoryPath, head); err != nil {
+			return err
+		}
 		branch, branchErr := git.run(ctx, scope.RepositoryPath, "branch", "--show-current")
 		if branchErr != nil || trimGit(branch) != "" && trimGit(branch) != target.HeadRef {
 			return prWorkspaceChanged()
@@ -438,4 +456,48 @@ func (t *PRGitTool) VerifyPush(ctx context.Context) (p domain.PRPushProof) {
 	}
 	p.State, p.ResultHead, p.ObservedAt = domain.PRPushVerified, result, time.Now().UTC()
 	return p
+}
+
+// Git's read-only URL expansion does not inspect pushInsteadOf. A matching
+// push-only rewrite can redirect an explicit URL despite correct ls-remote
+// evidence. Reject it before dry-run/publication; remove this guard only when
+// the profile independently validates and binds Git's effective push address.
+func (g Git) rejectPRPushRewrite(ctx context.Context, root, address string) error {
+	raw, exit, err := g.runCommand(ctx, root, "config", "--null", "--get-regexp", `^url\..*\.pushinsteadof$`)
+	if err != nil {
+		if exit == 1 {
+			return nil
+		}
+		return err
+	}
+	for _, record := range bytes.Split(raw, []byte{0}) {
+		if len(record) == 0 {
+			continue
+		}
+		_, value, ok := bytes.Cut(record, []byte{'\n'})
+		if !ok {
+			return toolFailure()
+		}
+		if strings.HasPrefix(address, string(value)) {
+			return domain.Fail(domain.MissingInput, "The Worker's Git push URL is rewritten outside the selected transport.", "Configure the selected GitHub source transport explicitly; a push-only rewrite cannot substitute its destination.")
+		}
+	}
+	return nil
+}
+
+func readPRExecutable(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 128<<20 {
+		return nil, toolFailure()
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, (128<<20)+1))
+	if err != nil || len(raw) > 128<<20 || int64(len(raw)) != info.Size() {
+		return nil, toolFailure()
+	}
+	return raw, nil
 }

@@ -33,7 +33,11 @@ func prFixCommand(ctx context.Context, c client, o options, args []string, strea
 	}
 	var attempt domain.PRRemediationAttempt
 	var session domain.Session
-	if r.Msg.RequestId != string(o.requestID) || !prProblemEnvelope(r.Msg.Attempt) || domain.Decode(r.Msg.Attempt.DocumentJson, &attempt) != nil || attempt.Validate() != nil || attempt.SetID != input.SetID || attempt.GitTarget == nil || attempt.ProjectID != input.ProjectID || r.Msg.Session == nil || r.Msg.Session.Kind != pb.EntityKind_ENTITY_KIND_SESSION || r.Msg.Session.Id != string(attempt.SessionID) || r.Msg.Session.ProjectId != string(input.ProjectID) || r.Msg.Session.SchemaVersion != 1 || r.Msg.Session.Revision == 0 || domain.Decode(r.Msg.Session.DocumentJson, &session) != nil || session.ProjectID != input.ProjectID {
+	var set domain.PRProblemSet
+	if r.Msg.RequestId != string(o.requestID) || !prProblemEnvelope(r.Msg.Attempt) || domain.Decode(r.Msg.Attempt.DocumentJson, &attempt) != nil || attempt.Validate() != nil || attempt.SetID != input.SetID || attempt.GitTarget == nil || attempt.ProjectID != input.ProjectID || r.Msg.Session == nil || r.Msg.Session.Kind != pb.EntityKind_ENTITY_KIND_SESSION || r.Msg.Session.Id != string(attempt.SessionID) || r.Msg.Session.SessionId != r.Msg.Session.Id || r.Msg.Session.ProjectId != string(input.ProjectID) || r.Msg.Session.SchemaVersion != 1 || r.Msg.Session.Revision == 0 || domain.Decode(r.Msg.Session.DocumentJson, &session) != nil || session.ProjectID != input.ProjectID {
+		return nil, prProblemResponseError()
+	}
+	if attempt.Reserved.RequestID != o.requestID || !prProblemEnvelope(r.Msg.ProblemSet) || r.Msg.ProblemSet.Id != string(input.SetID) || domain.Decode(r.Msg.ProblemSet.DocumentJson, &set) != nil || set.Validate() != nil || set.Remediation == nil || set.Remediation.ID != attempt.ChainID || attempt.State.Active() != (set.Remediation.ActiveAttemptID == domain.ID(r.Msg.Attempt.Id)) || !set.Target.SamePR(attempt.GitTarget.Target) || set.Target.RepositoryNodeID != attempt.GitTarget.Target.RepositoryNodeID || set.Target.PullRequestNodeID != attempt.GitTarget.Target.PullRequestNodeID {
 		return nil, prProblemResponseError()
 	}
 	if attempt.GitTarget.Target.RepositoryID != input.RepositoryID || len(attempt.Problems) != len(input.Problems) {

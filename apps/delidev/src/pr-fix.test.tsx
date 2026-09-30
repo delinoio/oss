@@ -22,7 +22,7 @@ function fixture() {
  const send=vi.fn(async(request:{requestId:string;documentJson:Uint8Array})=>{
   const original=JSON.parse(new TextDecoder().decode(request.documentJson));
   const id=newRequestId(),sessionId=newRequestId(),chainId=newRequestId();
-  const session=create(ResourceSchema,{id:sessionId,kind:EntityKind.SESSION,revision:1n,schemaVersion:1,projectId:project,documentJson:encode({project_id:project})});
+  const session=create(ResourceSchema,{id:sessionId,sessionId,kind:EntityKind.SESSION,revision:1n,schemaVersion:1,projectId:project,documentJson:encode({project_id:project})});
   const problemSet=create(ResourceSchema,{...set,revision:set.revision+1n,documentJson:encode({...document(set),remediation:{id:chainId,sequence:1,automatic_attempts:0,resume_baseline:0,active_attempt_id:id}})});
   const attempt=create(ResourceSchema,{id,kind:EntityKind.PROBLEM,revision:3n,schemaVersion:1,documentJson:encode({version:1,type:"pull-request-remediation-attempt",set_id:set.id,chain_id:chainId,sequence:1,mode:"manual",state:"bound",policy:defaultRemediationPolicy(),problems:original.problems.map((p:{id:string;content_version:string})=>({id:p.id,content_version:p.content_version})),reserved:{actor_type:"owner",request_id:request.requestId,at},session_id:sessionId,input_id:newRequestId(),input_digest:"d".repeat(64),project_id:project,git_target:{version:1,target,head_repository:{provider:"github.com",id:"79",node_id:"R_fork",owner:"fixture-author",name:"fork",private:true},base_ref:"main",head_ref:"feature",base_sha:"a".repeat(40),head_sha:"b".repeat(40)}})});
   return {attempt,session,problemSet,requestId:request.requestId};
