@@ -36,6 +36,7 @@ const (
 	terminalClaimed  terminalOperationPhase = "claimed"
 	terminalStarted  terminalOperationPhase = "started"
 	terminalFinished terminalOperationPhase = "finished"
+	terminalReported terminalOperationPhase = "reported"
 )
 
 type terminalOperationJournal struct {
@@ -158,7 +159,7 @@ func (m *terminalManager) loadJournal(a terminal.Assignment) (terminalOperationJ
 		return j, domain.TerminalUnavailable()
 	}
 	switch j.Phase {
-	case terminalPrepared, terminalClaimed, terminalStarted, terminalFinished:
+	case terminalPrepared, terminalClaimed, terminalStarted, terminalFinished, terminalReported:
 	default:
 		return j, domain.TerminalUnavailable()
 	}
@@ -194,6 +195,9 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 	j, err := m.loadJournal(assignment)
 	if err != nil {
 		return err
+	}
+	if j.Phase == terminalReported {
+		return m.retireReported(j)
 	}
 	claimID, reportID := j.ClaimID, j.ReportID
 	recoveryClaim := false
@@ -257,13 +261,13 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 	if err := m.report(ctx, assignment.ID, assignment.Operation.ID, reportID, *j.Result); err != nil {
 		return err
 	}
-	// After confirmed report the server will never claim this operation again.
-	// Retain only unconfirmed journals; terminal keystrokes cannot grow private
-	// metadata indefinitely. Replayed product receipts remain server-owned.
-	if err := os.Remove(m.journalPath(j.OperationID)); err != nil {
+	// Persist acknowledgement before local metadata retirement. Recovery may
+	// finish that retirement even after the server purges the terminal record.
+	j.Phase = terminalReported
+	if err := m.saveJournal(j); err != nil {
 		return err
 	}
-	return security.SyncParent(m.journalPath(j.OperationID))
+	return m.retireReported(j)
 }
 
 func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
@@ -508,7 +512,16 @@ func (m *terminalManager) observeExits(ctx context.Context) {
 	for _, entry := range entries {
 		raw, err := security.ReadPrivate(filepath.Join(m.config.Root, "terminal-operations", entry.Name()), terminalOperationJournalMaxBytes)
 		var j terminalOperationJournal
-		if err != nil || domain.Decode(raw, &j) != nil || j.Result == nil || j.Phase != terminalFinished || j.ReportID.Validate() != nil || j.TerminalID.Validate() != nil {
+		if err != nil || domain.Decode(raw, &j) != nil || j.Result == nil || j.Result.Validate() != nil || j.ReportID.Validate() != nil || j.TerminalID.Validate() != nil || j.OperationID.Validate() != nil {
+			continue
+		}
+		if j.Phase == terminalReported {
+			if err := m.retireReported(j); err != nil {
+				m.config.Logger.WarnContext(ctx, "terminal_retirement_pending", "terminal_id", j.TerminalID, "code", domain.SafeError(err).Code)
+			}
+			continue
+		}
+		if j.Phase != terminalFinished {
 			continue
 		}
 		reportID := j.ReportID
@@ -525,8 +538,14 @@ func (m *terminalManager) observeExits(ctx context.Context) {
 			operation = ""
 		}
 		if m.report(ctx, j.TerminalID, operation, reportID, *j.Result) == nil {
-			_ = os.Remove(m.journalPath(j.OperationID))
-			_ = security.SyncParent(m.journalPath(j.OperationID))
+			j.Phase = terminalReported
+			if err := m.saveJournal(j); err != nil {
+				m.config.Logger.WarnContext(ctx, "terminal_retirement_pending", "terminal_id", j.TerminalID, "code", domain.SafeError(err).Code)
+				continue
+			}
+			if err := m.retireReported(j); err != nil {
+				m.config.Logger.WarnContext(ctx, "terminal_retirement_pending", "terminal_id", j.TerminalID, "code", domain.SafeError(err).Code)
+			}
 		}
 	}
 }
