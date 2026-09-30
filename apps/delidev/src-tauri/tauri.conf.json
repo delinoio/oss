@@ -26,6 +26,13 @@
     },
     "icon": ["icons/icon.png", "icons/icon-source@2x.png", "icons/icon.ico"],
     "externalBin": ["binaries/delidev"],
-    "macOS": {"minimumSystemVersion": "13.0"}
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "entitlements": "entitlements.plist",
+      "files": {
+        "PlugIns/DeliDevWidget.appex": "../../../target/delidev-widget/Release/DeliDevWidget.appex",
+        "PlugIns/DeliDevWidgetSelection.appex": "../../../target/delidev-widget/Release/DeliDevWidgetSelection.appex"
+      }
+    }
   }
 }
