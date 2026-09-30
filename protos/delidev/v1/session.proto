@@ -34,6 +34,7 @@ service SessionService {
   rpc EditLocalReviewComment(EditLocalReviewCommentRequest) returns (EditLocalReviewCommentResponse);
   rpc DeleteLocalReviewComment(DeleteLocalReviewCommentRequest) returns (DeleteLocalReviewCommentResponse);
   rpc SubmitLocalReview(SubmitLocalReviewRequest) returns (SubmitLocalReviewResponse);
+  rpc SwitchSessionAccount(SwitchSessionAccountRequest) returns (SwitchSessionAccountResponse);
 }
 
 message LinkSessionPullRequestRequest {
@@ -379,4 +380,13 @@ message ForkSessionResponse {
   Resource session = 2;
   string request_id = 3;
   bool replayed = 4;
+}
+
+message SwitchSessionAccountRequest {
+  Mutation mutation = 1;
+  string account_id = 2;
+}
+
+message SwitchSessionAccountResponse {
+  SessionChange change = 1;
 }

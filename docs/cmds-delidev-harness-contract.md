@@ -1605,6 +1605,10 @@ the first explicit child turn receives its ordinary fresh grant. Completed
 text/reasoning histories are supported; tool/rich/child histories are rejected
 until their inherited auxiliary state has its own verified adapter.
 
+### Codex portable full-history account boundary
+
+Explicit stopped API account selection uses the existing exact predecessor checkpoint, original history root, native thread Resume and complete latest-turn/settings verification. The checkpoint is read against the preceding assignment's original account/connection; the successor registration and checkpoint use the newly selected scope. No old bearer is reused. The pinned HTTP-only provider configuration (`supports_websockets=false`) is revalidated before Resume and input. Official [Codex 0.151.0 request construction](https://github.com/openai/codex/blob/rust-v0.151.0/codex-rs/core/src/client.rs) separates full Responses input from the process-local WebSocket previous-response cache. The server independently requires prior full-history use and forbids account-bound selectors on every switched request; native source inspection alone is not execution evidence. The controlled native CLI fixture checks complete ordered history across A-to-B process replacement and rejects response/conversation identifiers without reading user credentials. See the sessions contract and [issue #1097 evidence](evidence/delidev/issue-1097/stopped-account-switch.md) for admission and acceptance limits.
+
 ### Windows OpenCode General Chat root profile (issue #1205)
 
 OpenCode `1.18.32` uses the literal native worktree `/` for a global non-VCS

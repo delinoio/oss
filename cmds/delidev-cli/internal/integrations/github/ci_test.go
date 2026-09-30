@@ -15,9 +15,9 @@ import (
 
 func ciNodeFixture() map[string]any {
 	head := strings.Repeat("b", 40)
-	return map[string]any{"id": "ITEM_stable", "number": 17, "state": "OPEN", "merged": false, "baseRefName": "main", "baseRefOid": accessSHA, "headRefName": "feature", "headRefOid": head, "mergeable": "MERGEABLE", "isInMergeQueue": false, "repository": map[string]any{"id": "R_37"},
+	return map[string]any{"id": "ITEM_stable", "number": 17, "state": "OPEN", "merged": false, "baseRefName": "main", "baseRefOid": accessSHA, "headRefName": "feature", "headRefOid": head, "mergeable": "MERGEABLE", "isInMergeQueue": false, "mergeQueueEntry": nil, "repository": map[string]any{"id": "R_37"},
 		"potentialMergeCommit": map[string]any{"oid": strings.Repeat("c", 40), "parents": map[string]any{"totalCount": 2, "nodes": []any{map[string]any{"oid": accessSHA}, map[string]any{"oid": head}}}, "statusCheckRollup": nil},
-		"statusCheckRollup":    map[string]any{"commit": map[string]any{"oid": head}, "contexts": map[string]any{"totalCount": 1, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": "one"}, "nodes": []any{map[string]any{"__typename": "CheckRun", "startedAt": "2026-09-28T00:00:00Z", "completedAt": "2026-09-28T00:01:00Z", "title": "Result", "summary": "Original summary", "text": nil, "id": "CHECK_53", "name": "CI Result", "status": "COMPLETED", "conclusion": "FAILURE", "isRequired": true, "repository": map[string]any{"id": "R_37"}, "checkSuite": map[string]any{"id": "SUITE_1", "commit": map[string]any{"oid": head}, "app": map[string]any{"databaseId": 15368, "id": "APP_15368", "slug": "github-actions"}, "workflowRun": map[string]any{"id": "RUN_1", "event": "pull_request", "runNumber": 12, "runAttempt": 1, "createdAt": "2026-09-28T00:00:00Z", "updatedAt": "2026-09-28T00:01:00Z"}}}}}},
+		"statusCheckRollup":    map[string]any{"commit": map[string]any{"oid": head}, "contexts": map[string]any{"totalCount": 1, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": "one"}, "nodes": []any{map[string]any{"__typename": "CheckRun", "startedAt": "2026-09-28T00:00:00Z", "completedAt": "2026-09-28T00:01:00Z", "title": "Result", "summary": "Original summary", "text": nil, "id": "CHECK_53", "name": "CI Result", "status": "COMPLETED", "conclusion": "FAILURE", "isRequired": true, "repository": map[string]any{"id": "R_37"}, "checkSuite": map[string]any{"id": "SUITE_1", "commit": map[string]any{"oid": head}, "app": map[string]any{"databaseId": 15368, "id": "APP_15368", "slug": "github-actions"}, "workflowRun": map[string]any{"id": "RUN_1", "event": "pull_request", "runNumber": 12, "runAttempt": 1, "createdAt": "2026-09-28T00:00:00Z", "updatedAt": "2026-09-28T00:01:00Z", "checkSuite": map[string]any{"id": "SUITE_1", "commit": map[string]any{"oid": head}}}}}}}},
 	}
 }
 func ciClientFixture(t *testing.T, mutate func(int, map[string]any) map[string]any) (*Client, *int) {
@@ -40,9 +40,11 @@ func ciClientFixture(t *testing.T, mutate func(int, map[string]any) map[string]a
 			Query         string `json:"query"`
 			OperationName string `json:"operationName"`
 			Variables     struct {
-				ID         string  `json:"id"`
-				HeadAfter  *string `json:"headAfter"`
-				MergeAfter *string `json:"mergeAfter"`
+				ID               string  `json:"id"`
+				HeadAfter        *string `json:"headAfter"`
+				MergeAfter       *string `json:"mergeAfter"`
+				QueueAfter       *string `json:"queueAfter"`
+				QueueChecksAfter *string `json:"queueChecksAfter"`
 			} `json:"variables"`
 		}
 		if domain.Decode(raw, &request) != nil || request.Query != ciGraphQL || request.OperationName != "DeliDevRequiredCI" || request.Variables.ID != "ITEM_stable" {
@@ -140,7 +142,11 @@ func TestCIQueryBindsActiveRulesAndRejectsChangedResults(t *testing.T) {
 		})
 		query := domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryCI, Number: "17"}
 		value, err := c.QueryRepository(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", query)
-		if *reads != 2 {
+		wantReads := 3
+		if changed {
+			wantReads = 2
+		}
+		if *reads != wantReads {
 			t.Fatal("CI inventory was not rechecked", *reads)
 		}
 		if changed {

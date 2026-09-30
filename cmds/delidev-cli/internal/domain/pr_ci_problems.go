@@ -30,7 +30,10 @@ func (v PRCIObservation) Validate() error {
 	if v.Version != 1 || v.Type != PRCIObservationRecord || v.SetID.Validate() != nil || v.Target.Validate() != nil || v.Observation.Validate() != nil || Text(v.BaseRef, "CI base ref", 1024, true) != nil || Text(v.HeadRef, "CI head ref", 1024, true) != nil || (v.PullRequestState != RepositoryItemOpen && v.PullRequestState != RepositoryItemClosed) {
 		return invalidPRProblem()
 	}
-	item := RepositoryItem{State: v.PullRequestState, Merged: &v.Merged, Mergeable: v.Mergeable, BaseRef: v.BaseRef, HeadRef: v.HeadRef, BaseSHA: v.Observation.BaseSHA, HeadSHA: v.Observation.HeadSHA}
+	item := RepositoryItem{NodeID: v.Target.PullRequestNodeID, Number: v.Target.Number, State: v.PullRequestState, Merged: &v.Merged, Mergeable: v.Mergeable, BaseRef: v.BaseRef, HeadRef: v.HeadRef, BaseSHA: v.Observation.BaseSHA, HeadSHA: v.Observation.HeadSHA}
+	if v.CI.MergeQueue != nil && v.CI.MergeQueue.RepositoryNodeID != v.Target.RepositoryNodeID {
+		return invalidPRProblem()
+	}
 	if v.CI.Validate(item) != nil {
 		return invalidPRProblem()
 	}
@@ -95,6 +98,8 @@ func (v PRCIObservation) FailureContexts() ([]CIContext, error) {
 			return nil, invalidPRProblem()
 		}
 		contexts = v.CI.TestMerge.Contexts
+	} else if v.CI.Result.Source == CIMergeQueueCommit {
+		contexts = v.CI.MergeQueue.Rollup.Contexts
 	}
 	eligible := map[string]bool{}
 	for _, requirement := range v.CI.Result.Requirements {
@@ -117,14 +122,23 @@ func (v PRCIObservation) FailureContexts() ([]CIContext, error) {
 }
 
 type PRCIProblemEvidence struct {
-	ObservationID ID                    `json:"observation_id"`
-	Context       CIContext             `json:"context"`
-	Source        EvaluatedCommitSource `json:"source"`
-	RulesDigest   string                `json:"rules_digest"`
+	QueueNodeID      string                `json:"queue_node_id,omitempty"`
+	QueueEntryNodeID string                `json:"queue_entry_node_id,omitempty"`
+	ObservationID    ID                    `json:"observation_id"`
+	Context          CIContext             `json:"context"`
+	Source           EvaluatedCommitSource `json:"source"`
+	RulesDigest      string                `json:"rules_digest"`
 }
 
 func (v PRCIProblemEvidence) Validate() error {
-	if v.ObservationID.Validate() != nil || v.Context.Validate(v.Context.CommitSHA) != nil || !v.Context.Required || ciResultState(v.Context) != CITerminalFailure || (v.Source != CIHeadCommit && v.Source != CITestMergeCommit) || !lowerDigest(v.RulesDigest) {
+	if v.ObservationID.Validate() != nil || v.Context.Validate(v.Context.CommitSHA) != nil || !v.Context.Required || ciResultState(v.Context) != CITerminalFailure || (v.Source != CIHeadCommit && v.Source != CITestMergeCommit && v.Source != CIMergeQueueCommit) || !lowerDigest(v.RulesDigest) {
+		return invalidPRProblem()
+	}
+	if v.Source == CIMergeQueueCommit {
+		if Text(v.QueueNodeID, "original queue", 256, true) != nil || Text(v.QueueEntryNodeID, "original queue entry", 256, true) != nil {
+			return invalidPRProblem()
+		}
+	} else if v.QueueNodeID != "" || v.QueueEntryNodeID != "" {
 		return invalidPRProblem()
 	}
 	return nil
@@ -132,6 +146,9 @@ func (v PRCIProblemEvidence) Validate() error {
 
 func (v PRCIProblemEvidence) Matches(proof PRCIObservation) bool {
 	if v.Validate() != nil || v.Source != proof.CI.Result.Source || v.RulesDigest != proof.CI.Rules.Digest {
+		return false
+	}
+	if v.Source == CIMergeQueueCommit && (proof.CI.MergeQueue == nil || v.QueueNodeID != proof.CI.MergeQueue.NodeID || v.QueueEntryNodeID != proof.CI.MergeQueue.Entry.NodeID) {
 		return false
 	}
 	entries, err := proof.FailureContexts()
@@ -180,7 +197,7 @@ func (v PRCIObservationSummary) Validate() error {
 		if v.EvaluatedSHA != v.Observation.HeadSHA {
 			return invalidPRProblem()
 		}
-	case CITestMergeCommit:
+	case CITestMergeCommit, CIMergeQueueCommit:
 		if !repositorySHA(v.EvaluatedSHA) || v.EvaluatedSHA == v.Observation.HeadSHA {
 			return invalidPRProblem()
 		}
