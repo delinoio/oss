@@ -61,6 +61,9 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1 = 7;
   SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5;
   SYSTEM_CAPABILITY_SESSION_TERMINALS_V1 = 14;
+
+  // Reserved for issue #1092 in the repository allocation ledger.
+  SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1 = 13;
 }
 
 message StopServerRequest {
