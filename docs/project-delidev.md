@@ -7,6 +7,8 @@ The 2026-09-28 partial implementation checkpoint was merged in PR #1041. On 2026
 
 The macOS `dev:desktop` entry point validates/restores the source-icon LFS asset, prepares the embedded frontend, Go sidecar and widget extensions, then uses the pinned Tauri CLI to assemble and run a CEF development bundle with ad-hoc signing. The same asset preflight protects ordinary native builds and packaging, without replacing local edits or fetching unrelated assets. Executable-only Cargo compilation does not prepare the macOS Frameworks/helper layout. Argument forwarding, cancellation and local verification limits follow the [desktop contract](apps-delidev-desktop-contract.md).
 
+The desktop app icon keeps its original colored ribbon and transparent cutouts, with an approved 20% uniform enlargement inside the same canvas. PNG, Windows ICO and macOS ICNS exports share the canonical source and validation rules in the [desktop contract](apps-delidev-desktop-contract.md).
+
 The current pull-request work additionally addresses issues #1056 and #1057: opt-in automatic titles use a separate, capability-negotiated title Worker lane, and the desktop starts sessions from a chat-first page while retaining the existing conversation surface. This increment does not claim completion of issue #964; native desktop visual and real-provider/account acceptance limits remain explicit in the evidence ledger.
 
 ## Project ID

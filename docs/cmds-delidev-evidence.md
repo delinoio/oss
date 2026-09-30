@@ -3743,3 +3743,68 @@ user-service fixture was not selected. Earlier CLI workspace-reader failures
 and the ten-minute Grok timeout remain recorded at their original revisions;
 this successful run does not establish their cause or add native service,
 provider or release acceptance evidence. No Rust source changed in this merge.
+
+### App-icon 20% enlargement (2026-09-30)
+
+The owner approved a uniform 1.2× enlargement of the existing app icon, keeping
+its colored ribbon, gradient, proportions and transparent background/central
+cutout. The source was hydrated from the exact local LFS object
+`88a91d0ea8462b0b8d59d53d212a4f4030f99a2775eb733b38be8234b077364f`
+(585,665 bytes). One Lanczos SRT transform around `(627, 627)`, with scale 1.2,
+zero rotation and a transparent virtual canvas, preserves the 1254×1254 RGBA8
+canvas. The approved artwork is baked into the source rather than enlarged
+again during platform export. No frontend/Rust code, bundle configuration,
+public interface or in-app button size changed.
+
+The final source is 788,603 bytes with SHA-256
+`1100564e6a9a977c89aeb273c12297f5434850b0954f9e0e83e10ca0b2cf9d53`;
+its existing exact-path LFS attribute and `icon-source@2x.png` density marker
+remain intact. Its nonzero-alpha bounds change from `(257, 175, 1058, 1071)` to
+`(183, 84, 1145, 1160)`, remaining inside the canvas. Mean alpha coverage changes
+from 31.9858% to 46.0668%, consistent with the 1.44× area increase.
+
+Each final Windows ICO frame (16, 24, 32, 48, 64 and 256px) was exported from the
+enlarged source and decoded again after packaging. The 256px ICO pixels match
+the native PNG exactly. Every export retains near-opaque ribbon interiors,
+transparent background and central-cutout samples, and graded edge alpha;
+mean alpha coverage differs from the new source by at most 0.131 percentage
+points. Representative transformed interior colors differ by at most one
+8-bit channel value. Light, dark and checkerboard before/after composites and
+both-theme frame contact sheets were visually inspected without visible
+clipping or color/edge damage. These checks establish asset appearance, not
+Windows/Linux installed-shell acceptance.
+
+The existing asset-preparation and package-verifier suites pass all 18 tests.
+The two repository LFS asset contracts also pass, including after the new source
+pointer was committed. The first macOS dry run stopped at sandbox denial of the
+Go build cache; the same existing command was retried with the required access.
+`pnpm bundle:macos-dry-run` then passed on macOS arm64: native executable and Go
+sidecar, CEF resources/helpers, widget extensions, macOS 13 metadata, notices and
+ad-hoc signatures were verified. The generated `DeliDev.icns` contains the
+required 512-point Retina entry (1024×1024 pixels) and a 256×256 entry; their mean
+alpha coverage differs from the enlarged source by at most 0.008 percentage
+points. No production signing, notarization, publication or installed Dock
+appearance is claimed. Generated desktop/client `dist` directories were removed
+after verification.
+
+### PR #1118 merge of enlarged desktop icon (2026-09-30)
+
+Merged main revision `2e89b18f`, retaining the complete PR activity, user-service
+and app-icon evidence histories. The single evidence-ledger conflict preserves
+both additions. All three staged icon assets match main exactly; no further
+enlargement or export was applied. Desktop `prepare:assets` accepted the hydrated
+788,603-byte canonical PNG with SHA-256
+`1100564e6a9a977c89aeb273c12297f5434850b0954f9e0e83e10ca0b2cf9d53`,
+and Git LFS integrity checking passed.
+
+Full desktop `pnpm test` on Node 24 passed all 951 tests across 75 files
+(19.99s Vitest duration), typed-client generation/build and type checking,
+all eight package-verifier and sixteen asset/launcher cases, native Swift widget
+fixtures and the production frontend build. All 95 repository contract tests
+and workflow validation passed.
+
+This merge changes no Go, protobuf, Rust or frontend product source. The complete
+Go race suite and other checks from the preceding user-service merge remain
+recorded at their original revision; they were not rerun for this asset and
+documentation merge. These checks do not add native application, provider,
+installed-shell or release acceptance evidence.
