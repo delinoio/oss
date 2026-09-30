@@ -289,7 +289,14 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				options.Permission = domain.PermissionWorkspaceWrite
 			}
 			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: []domain.WeightedAccount{{ID: domain.ID(account["id"].(string)), Weight: 1}}, Options: options})["resource"].(map[string]any)
-			create := []string{"session", "create", "--request-id", string(domain.NewID()), "--wait"}
+			create := []string{"session", "create", "--request-id", string(domain.NewID())}
+			if profile != nativeForkWorkspaces {
+				create = append(create, "--wait")
+			}
+			// Fork acceptance needs a completed source, rather than the ordinary
+			// create command's short readiness wait. This profile uses public
+			// asynchronous acceptance and the bounded completion observation below;
+			// the fork command still exercises its real --wait deadline.
 			type localCheckout struct{ root, head string }
 			var localCheckouts []localCheckout
 			if scenario.workspace == domain.Local {
