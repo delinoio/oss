@@ -27,6 +27,8 @@ The desktop shell combines the issue #1044 project-grouped session sidebar and b
 
 Issue #1134 shortens the shared Settings category label to **AI Subscription** in the sidebar, category heading and compact selector while retaining `subscription-accounts` and the existing 16-category order, responsive layout and account behavior. Validation is recorded separately in the [evidence ledger](cmds-delidev-evidence.md).
 
+Issue #1138 replaces Settings close/reopen retention: ordinary entry starts at the first AI Subscription category; targeted New Project/Repositories entry remains explicit. Each opening retains category workflows while open, then disposes drafts, confirmations, local tracking, client waits and retry UI on Close, Escape or navigation away. Server/native effects already accepted remain authoritative, and sibling connection/session workflows are preserved. The desktop contract owns opening-scoped transport/cache isolation, same-identity reconnect and Strict Mode rules; component evidence remains distinct from native Escape/focus acceptance.
+
 ## Domain Contract Documents
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
