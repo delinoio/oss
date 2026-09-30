@@ -12,6 +12,10 @@ import { document } from "./documents";
 import { useSettingsFixture } from "./settings-test-fixture";
 
 const fixture = useSettingsFixture();
+// Each save waits for a real Go mutation and the active-query refetch. Allow
+// these two transitions up to five seconds on shared CI, keeping other waits
+// unchanged. Replace this allowance if the fixture gains a completion barrier.
+const savedPreferencesWait = { timeout: 5000 };
 
 it("creates and edits singleton server preferences with the exact Go defaults", async () => {
   const { transport, runCLI } = fixture;
@@ -21,7 +25,7 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  const edit = await screen.findByRole("button", { name: "Edit Server preferences" });
+  const edit = await screen.findByRole("button", { name: "Edit Server preferences" }, savedPreferencesWait);
   const resources = createClient(ResourceService, transport);
   const first = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(first).toHaveLength(1);
@@ -31,7 +35,7 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
   fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  await screen.findByRole("button", { name: "Edit Server preferences" });
+  await screen.findByRole("button", { name: "Edit Server preferences" }, savedPreferencesWait);
   const latest = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(latest).toHaveLength(1);
   expect(latest[0].id).toBe(first[0].id);
