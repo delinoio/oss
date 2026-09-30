@@ -3243,3 +3243,33 @@ checking, packaging/launcher checks, native Swift fixtures and the production
 build. Generated desktop/client `dist` output was removed after verification.
 No new Rust, Go, protocol or platform acceptance changes were made; the repaired
 hosted CI result remains pending after the push.
+
+### Desktop source-icon LFS preparation (2026-09-30)
+
+The ordinary macOS development entry point reproduced `Invalid PNG signature`
+while bundling its app icon: the source icon was a 132-byte Git LFS pointer for
+a 1,514,329-byte PNG. Frontend, sidecar, widget and native host builds had passed.
+Providing the exact digest-verified original icon as a temporary diagnostic
+input allowed bundling and native architecture/CEF/widget/entitlement/ad-hoc
+signature checks to pass. That diagnostic invocation intentionally exited before
+application state initialization; it was not a native UI acceptance result.
+
+The shared `prepare:assets` step now precedes native development, ordinary
+build/bundle and dry-run packaging. It restores only the unchanged committed
+source-icon pointer from cache or an exact-path current-ref LFS fetch, verifies
+size/digest/PNG container integrity and preserves local image and pointer edits.
+Existing PNGs require neither Git nor networking. Stable structured failures
+include recovery guidance without raw Git output, and cancellation joins the
+active Git child through the existing process lifecycle.
+
+Ten focused asset cases pass with temporary repositories and a local LFS remote,
+covering offline restoration, scoped fetch under conflicting caller filters,
+local changes, unavailable tools/downloads, integrity, concurrent edits and real
+SIGTERM delivery. The existing six launcher cases pass in their standalone run,
+and eight package verifier cases plus the native-package CI contract pass.
+The first concurrent aggregate was interrupted after an existing launcher signal
+case stalled. The initial full frontend run was also interrupted after existing
+backup, desktop, tray and Settings cases exceeded their deadlines under concurrent
+native compilation and host load. No product test timeout was increased.
+Normal root `pnpm install --frozen-lockfile` passed, including linked-worktree
+Lefthook installation. Final isolated package/runtime verification follows below.
