@@ -26,7 +26,7 @@ export function RemediationPolicyFields({ value, change, children }: { value: Do
     <p>Policies are saved on the server. Automatic execution is not available yet.</p>
     {[["ci_failure", "Automatically fix required CI failures"], ["review_feedback", "Automatically handle matching published feedback"], ["merge_conflict", "Automatically resolve verified merge conflicts"]].map(([key, label]) => <label className="checkbox" key={key}><input type="checkbox" checked={value[key] === true} onChange={event => field(key, event.target.checked)} />{label}</label>)}
     <PolicyChoice label="Remediation session strategy" value={value.session_strategy} values={Object.values(RemediationSessionStrategy)} change={next => field("session_strategy", next)} />
-    <p>Reuse selects an eligible linked session first. Archived or explicitly paused sessions cannot be resumed automatically. A new session requires the Agent Worker and execution Worker selected below.</p>
+    <p>Reuse selects an eligible linked session first. Archived or explicitly paused sessions cannot be resumed automatically. A new session requires the Agent Worker and Runner Device selected below.</p>
     {children}
     <PolicyChoice label="Conflict resolution strategy" value={value.conflict_strategy} values={Object.values(ConflictStrategy)} change={next => field("conflict_strategy", next)} />
     {value.conflict_strategy === ConflictStrategy.Rebase ? <p>Rebase requires force-with-lease against the expected remote head. A changed head requires reconciliation.</p> : null}

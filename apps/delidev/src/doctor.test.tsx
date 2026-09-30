@@ -50,6 +50,8 @@ it("owns the single Settings heading, three independent observations and every r
   for (const label of ["Server version", "Server platform", "Protocol version", "Database schema", "Bound endpoint"]) expect(within(server).getByText(label)).toBeTruthy();
   const storage = screen.getByRole("region", { name: "Storage diagnostics" });
   for (const size of [0n, 9007199254740993n, 18446744073709551615n, 4096n, 1024n]) expect(within(storage).getByText(`${size.toLocaleString()} bytes`)).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Runner Devices" })).toBeTruthy();
+  expect(screen.getByText(/Use AI accounts for validation and Runner Devices for discovery and connection recovery/)).toBeTruthy();
   const worker = screen.getByText("First Worker").closest("article")!;
   expect(worker.querySelectorAll(".diagnostics-installations > li")).toHaveLength(4);
   expect(within(worker).getAllByText("Handshake not checked")).toHaveLength(4);

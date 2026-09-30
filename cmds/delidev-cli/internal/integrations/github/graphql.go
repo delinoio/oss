@@ -19,12 +19,15 @@ const (
 	graphQLConversation
 	graphQLThreads
 	graphQLThreadComments
+	graphQLWorkflowSuites
 )
 
 func graphQLDocument(operation graphQLRead) (string, string) {
 	switch operation {
 	case graphQLCI:
 		return ciGraphQL, "DeliDevRequiredCI"
+	case graphQLWorkflowSuites:
+		return workflowSuitesGraphQL, "DeliDevWorkflowSuites"
 	case graphQLReviews:
 		return feedbackReviewsGraphQL, "DeliDevPRReviews"
 	case graphQLConversation:

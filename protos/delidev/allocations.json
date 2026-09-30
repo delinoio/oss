@@ -2803,6 +2803,22 @@
       "declaration": "SessionChange",
       "member": "compaction_job",
       "number": 9
+    },
+    {
+      "pr": 1193,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1",
+      "oldBranchNumber": 5,
+      "number": 6
+    },
+    {
+      "pr": 1193,
+      "kind": "message",
+      "declaration": "AttachWorkerResponse",
+      "member": "supported_worker_capabilities",
+      "oldBranchNumber": 3,
+      "number": 3
     }
   ]
 }
