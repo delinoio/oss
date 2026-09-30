@@ -75,3 +75,70 @@ func TestPublicFirstInputRetainsOriginalToolsAndTextClosure(t *testing.T) {
 		})
 	}
 }
+
+func TestPublicFirstInputInitialPlanSettlesWithoutToolObservations(t *testing.T) {
+	config, logs := fixtureAPIConfig(t, "input-valid")
+	config.Mode, config.Model = domain.PlanMode, turnFixtureModel
+	// Setup and mode selection retain their own native deadlines, matching the
+	// existing public fixture. The original input has its separate watchdog.
+	api, err := openAPI(context.Background(), config)
+	if err != nil {
+		t.Fatalf("initialization: %v; structured diagnostics: %s", err, logs.String())
+	}
+	defer api.Close()
+	if _, err := api.Create(context.Background(), domain.NewID(), domain.NewID(), func(context.Context, CreationClaim) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.runInput(context.Background(), domain.NewID(), "Original input.", func(context.Context, InputClaim) error {
+		t.Error("public Plan input claimed before original mode binding")
+		return nil
+	}, func(context.Context, InputObservation) error {
+		t.Error("public Plan input observed before original mode binding")
+		return nil
+	}, publicFirstInput); err == nil {
+		t.Fatal("public Plan input bypassed original mode selection")
+	}
+	var modeClaims []ModeClaim
+	if _, err := api.SelectPlan(context.Background(), domain.NewID(), func(_ context.Context, claim ModeClaim) error {
+		modeClaims = append(modeClaims, claim)
+		return claim.Validate()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(modeClaims) != 2 || modeClaims[0].Phase != ClaimMode || modeClaims[1].Phase != BindMode {
+		t.Fatal("initial Plan mode lacks original claim and binding")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var claims []InputClaim
+	var observations []InputObservation
+	result, err := api.runInput(ctx, domain.NewID(), "Original input.", func(_ context.Context, claim InputClaim) error {
+		claims = append(claims, claim)
+		return claim.Validate()
+	}, func(_ context.Context, observation InputObservation) error {
+		observations = append(observations, observation)
+		return nil
+	}, publicFirstInput)
+	if err != nil {
+		t.Fatalf("text-only initial Plan: %v; structured diagnostics: %s", err, logs.String())
+	}
+	if len(claims) != 2 || claims[0].Phase != ClaimInput || claims[1].Phase != BindInput || result.Reason != EndTurn || result.Meta.Prompt != claims[1].NativePromptID {
+		t.Fatal("original text-only Plan input lost its identity or completion")
+	}
+	if len(observations) != 5 || observations[0].Kind != InputAccepted || observations[3].Kind != InputResponse || observations[4].Kind != InputCompleted {
+		t.Fatal("text-only Plan observations lost their original lifecycle")
+	}
+	for _, observation := range observations {
+		if observation.ToolEvent != nil || observation.FileTool != nil || observation.Question != nil || observation.Plan != nil {
+			t.Fatal("text-only Plan fabricated a tool or in-prompt mode observation")
+		}
+	}
+	if api.completedText != nil || api.completedTools == nil || api.modeBinding == nil {
+		t.Fatal("initial Plan borrowed Execute history or lost its terminal")
+	}
+	owned := &OwnedAPI{connection: api}
+	proof, err := owned.CloseTools(ctx)
+	if err != nil || proof.Terminal.Validate(string(api.session)) != nil || proof.Terminal.Reason != domain.GrokToolsEndTurn {
+		t.Fatalf("text-only Plan original cleanup: %v", err)
+	}
+}
