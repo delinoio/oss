@@ -8,12 +8,14 @@ export enum InteractionDraftKind {
   OpenCodeQuestion = "opencode-question",
   OpenCodePermission = "opencode-permission",
   Claude = "claude",
+ Grok = "grok",
 }
 
 export enum DraftGrantScope { Turn = "turn", Session = "session" }
 export enum DraftAccess { Omit = "omit", Read = "read", Write = "write", Deny = "deny" }
 
 export type InteractionDraftState =
+ | {kind:InteractionDraftKind.Grok;outcome:string;decision:string;answers:Record<number,string>;notes:Record<number,string>;partial:Record<number,boolean>}
   | { kind: InteractionDraftKind.CodexQuestion; selected: Record<string, string[]>; free: Record<string, string>; unanswered: Record<string, boolean> }
   | { kind: InteractionDraftKind.CodexApproval; choice: number; access: Record<number, DraftAccess>; network: boolean; scope: DraftGrantScope; strict: boolean }
   | { kind: InteractionDraftKind.OpenCodeQuestion; selected: string[][]; custom: Record<number, string>; customEnabled: Record<number, boolean>; unanswered: Record<number, boolean> }
@@ -32,13 +34,13 @@ export function interactionRequestIdentity(resource: Resource): string {
   const data = document(resource);
   const nativeRequest = object(data.native_request_id);
   const claude = object(data.claude), opencode = object(data.opencode);
-  return [resource.id, text(nativeRequest.text), text(data.native_item_id), text(data.native_turn_id), text(claude.arrival_id), text(opencode.native_event_id)].filter(Boolean).join("|");
+  return [resource.id, text(nativeRequest.text), text(data.native_item_id), text(data.native_turn_id), text(claude.arrival_id), text(opencode.native_event_id),text(object(object(data.grok).event).arrival_id),text(object(data.grok).proposal_digest)].filter(Boolean).join("|");
 }
 
 export function initialInteractionDraft(resource: Resource): InboxInteractionDraft | undefined {
   const data = document(resource);
   let editable: InteractionDraftState | undefined;
-  if (data.claude != null) {
+  if (data.grok != null) { editable={kind:InteractionDraftKind.Grok,outcome:"accepted",decision:"",answers:{},notes:{},partial:{}}; } else if (data.claude != null) {
     editable = { kind: InteractionDraftKind.Claude, selected: [], custom: {}, customEnabled: {}, skipped: {}, denial: false, reason: "", interrupt: false };
   } else if (data.opencode != null) {
     editable = data.type === "user-question"
@@ -62,7 +64,8 @@ export function isEmptyInteractionDraft(state: InteractionDraftState): boolean {
       return state.selected.every((row) => row.length === 0) && Object.values(state.custom).every((value) => value === "") && !Object.values(state.customEnabled).some(Boolean) && !Object.values(state.unanswered).some(Boolean);
     case InteractionDraftKind.OpenCodePermission:
       return !state.feedbackEnabled && state.feedback === "";
-    case InteractionDraftKind.Claude:
+    case InteractionDraftKind.Grok: return state.outcome==="accepted"&&state.decision===""&&Object.values(state.answers).every((v)=>v==="")&&Object.values(state.notes).every((v)=>v==="")&&!Object.values(state.partial).some(Boolean);
+ case InteractionDraftKind.Claude:
       return state.selected.every((row) => row.length === 0) && Object.values(state.custom).every((value) => value === "") && !Object.values(state.customEnabled).some(Boolean) && !Object.values(state.skipped).some(Boolean) && !state.denial && state.reason === "" && !state.interrupt;
   }
 }

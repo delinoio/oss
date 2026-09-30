@@ -134,6 +134,7 @@ func (r QuestionRequest) Validate() error {
 // closure only. Response claims/delivery require a separate coordinator path;
 // a Worker cannot fabricate owner authorization by adding answer fields here.
 type ExecutionInteractionUpdate struct {
+	Grok               *GrokInteractionRequest        `json:"grok,omitempty"`
 	Claude             *ClaudeInteractionRequest      `json:"claude,omitempty"`
 	ClaudeCancellation *ClaudeInteractionCancellation `json:"claude_cancellation,omitempty"`
 	OpenCodeStop       *OpenCodeStopClosure           `json:"opencode_stop,omitempty"`
@@ -164,7 +165,11 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 		if u.Closure != "" || u.OpenCodeClosure != nil || u.OpenCodeStop != nil || u.ClaudeCancellation != nil {
 			return invalidInteraction()
 		}
-		if u.Claude != nil {
+		if u.Grok != nil {
+			if u.Claude != nil || u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Grok.Validate(u.Type, u.NativeRequestID, u.NativeItemID) != nil {
+				return invalidInteraction()
+			}
+		} else if u.Claude != nil {
 			if u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Claude.Validate(u.Type, u.NativeRequestID, u.NativeItemID) != nil {
 				return invalidInteraction()
 			}
@@ -197,7 +202,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 		if u.OpenCodeClosure != nil && (u.Type != NativeApprovalInteraction || u.NativeRequestID.Kind != InteractionTextID || NativeIdentity(u.NativeRequestID.Text).Validate(OpenCode, NativePermissionIdentity) != nil || u.OpenCodeClosure.Validate() != nil) {
 			return invalidInteraction()
 		}
-		if u.Claude != nil || u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Closure != closure {
+		if u.Grok != nil || u.Claude != nil || u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Closure != closure {
 			return invalidInteraction()
 		}
 	default:
@@ -211,6 +216,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 type ExecutionInteraction struct {
+	Grok               *GrokInteractionRequest        `json:"grok,omitempty"`
 	ClaudeSettlement   *ClaudeCallbackSettlement      `json:"claude_settlement,omitempty"`
 	Claude             *ClaudeInteractionRequest      `json:"claude,omitempty"`
 	ClaudeCancellation *ClaudeInteractionCancellation `json:"claude_cancellation,omitempty"`

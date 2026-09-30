@@ -41,3 +41,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Keep process startup/shutdown in `server_startup.go`, HTTP authorization in `server_http.go`, Connect registration in `server_routes.go`, and system status/capability responses in `server_status.go`. New service behavior belongs in its service file; preserve middleware and registration order.
+
+- Public Grok original tools require independent pure reduction of the immutable typed observation prefix and exact original interaction/response ownership. Accept native resolution/results only after current durable claimed/transmitted replies, close each interaction once and retain cancellation/recovery independently. Validate exact original Plan revision/content and response aggregate accounting before terminal storage; terminal publication cannot prove workspace cleanup, first-text history or continuation. Follow the issue #1091 harness/protocol contracts.

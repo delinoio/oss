@@ -1,0 +1,95 @@
+package grok
+
+import (
+	"bytes"
+	"encoding/json"
+	"reflect"
+	"testing"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+)
+
+func TestPublicToolJournalPreservesOriginalMixedAndPlanFacts(t *testing.T) {
+	for _, scenario := range []string{"mixed", "approved", "cancelled", "abandoned", "revised"} {
+		t.Run(scenario, func(t *testing.T) {
+			original, events := planningEvents(t, "approved")
+			if scenario == "mixed" {
+				original, _ = newMixedTools(turnFixtureSession, turnFixturePrompt)
+				events = mixedFixtureEvents(t)
+			} else {
+				original, events = planningEvents(t, scenario)
+			}
+			journal, err := NewToolJournal(turnFixtureSession, turnFixturePrompt, domain.GrokDefaultMode, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, event := range events {
+				fact, err := original.observe(event)
+				if err != nil {
+					t.Fatal(i, err)
+				}
+				projection, err := publicToolEvent(event, fact)
+				if err != nil {
+					t.Fatalf("projection %d: %v; original=%s", i, err, event.Params)
+				}
+				raw, err := json.Marshal(projection)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var retained domain.GrokToolEvent
+				if domain.Decode(raw, &retained) != nil {
+					t.Fatal("public decode", i)
+				}
+				native, err := nativeToolPayload(retained.Payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var want, got any
+				decoder := json.NewDecoder(bytes.NewReader(event.Params))
+				decoder.UseNumber()
+				_ = decoder.Decode(&want)
+				decoder = json.NewDecoder(bytes.NewReader(native))
+				decoder.UseNumber()
+				_ = decoder.Decode(&got)
+				if !reflect.DeepEqual(want, got) {
+					t.Fatalf("native shape changed at %d:\n%s\n%s", i, event.Params, native)
+				}
+				if err := journal.Observe(retained); err != nil {
+					t.Fatal("journal", i, err)
+				}
+				outcome := PlanOutcome(scenario)
+				if scenario == "revised" {
+					outcome = PlanCancelled
+					if fact.Plan != nil && fact.Plan.Artifact != nil && fact.Plan.Artifact.origin.Revision == 2 {
+						outcome = PlanApproved
+					}
+				}
+				if fact.Plan != nil && fact.Plan.Interaction != nil && fact.Plan.Interaction.Stage == planApprovalResolved {
+					// Fixture request claims are independently supplied by the reply tests.
+					// This reducer tests preservation of the same explicit decision.
+					outcome = original.plans.tools[fact.Plan.Interaction.ID].outcome
+					if outcome == "" {
+						outcome = PlanOutcome(scenario)
+						if scenario == "revised" {
+							outcome = PlanCancelled
+							if original.plans.tools[fact.Plan.Interaction.ID].artifact.origin.Revision == 2 {
+								outcome = PlanApproved
+							}
+						}
+					}
+					if err := journal.ObservePlanDecision(fact.Plan.Interaction.ID, outcome); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if fact.Plan != nil && fact.Plan.Interaction != nil && fact.Plan.Interaction.Stage == planApprovalResolved {
+					if err := original.plans.bindResponse(fact.Plan.Interaction.ID, outcome); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if !journal.Settled() {
+				t.Fatal("original tools remained unsettled")
+			}
+		})
+	}
+}

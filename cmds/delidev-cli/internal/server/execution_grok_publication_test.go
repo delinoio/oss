@@ -46,7 +46,7 @@ func TestGrokPublicationRetainsOnlyOriginalBindings(t *testing.T) {
 					t.Fatal(err)
 				}
 				expected := connect.CodeUnimplemented
-				if kind == domain.ExecutionTurnFinished && mode == domain.ExecuteMode {
+				if kind == domain.ExecutionTurnFinished {
 					expected = connect.CodeAborted
 				}
 

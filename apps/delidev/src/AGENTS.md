@@ -513,3 +513,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
+
+- Public Grok original-tool views and controls follow the issue #1091 desktop/harness contracts. Preserve exclusive original typed records, exact question keys/nullable options, current native mode and original Plan artifact revision. Share retained Session/Inbox draft and mutation identity; uncertain receipt retry cannot create another native response. Keep delivery, native result, execution terminal and workspace cleanup visible separately, and add no common synthetic Plan gate or unsupported native Read deny control.

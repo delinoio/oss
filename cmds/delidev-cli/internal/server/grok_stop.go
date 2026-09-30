@@ -10,7 +10,7 @@ import (
 
 func publishGrokStop(tx *store.Tx, input domain.ExecutionJobInput, sr store.Record, p *domain.ExecutionProgress, event domain.ExecutionEvent) error {
 	v := event.GrokStop
-	if v == nil || v.Validate(event.NativeThreadID) != nil || v.InputID != input.InputID || v.InputRequestID != input.TurnRequestID || v.Model != input.Configuration.NativeModel || event.Outcome != v.Outcome() || p.GrokStop != nil || p.GrokTerminal != nil || input.Input.Mode != domain.ExecuteMode || input.Continuation != nil || p.UnconfirmedResponses != 0 || v.RequestID == input.ThreadRequestID || v.RequestID == input.SessionID || v.RequestID == p.JobID {
+	if v == nil || v.Validate(event.NativeThreadID) != nil || v.InputID != input.InputID || v.InputRequestID != input.TurnRequestID || v.Model != input.Configuration.NativeModel || event.Outcome != v.Outcome() || p.GrokStop != nil || p.GrokToolsTerminal != nil || p.GrokTerminal != nil || input.Input.Mode != domain.ExecuteMode || input.Continuation != nil || p.UnconfirmedResponses != 0 || v.RequestID == input.ThreadRequestID || v.RequestID == input.SessionID || v.RequestID == p.JobID {
 		return executionEventConflict()
 	}
 	canceled, err := tx.JobCancellationRequested(p.JobID)
