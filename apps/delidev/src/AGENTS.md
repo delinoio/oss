@@ -513,3 +513,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
+
+- Required-workflow disclosure follows `docs/cmds-delidev-integrations-contract.md`. Validate additive numeric source/path/SHA, suite/run/attempt/job and exact requirement references before inert display. Distinguish current-attempt job attribution from aggregate workflow metadata; unsupported or missing proof remains Unknown and grants no navigation, handling or execution authority.
