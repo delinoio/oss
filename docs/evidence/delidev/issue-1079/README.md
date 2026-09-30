@@ -23,13 +23,15 @@ Implementation checks below cover commits `ea83fc363a278caacfe0746c9fef9d0a95882
 - Workspace test binaries cross-compile for Windows amd64 and Linux arm64. This is compilation evidence only.
 - `git lfs fsck` passes. Generated API-client `dist` output is removed.
 
-The required full `go test -race -p 2 -timeout=30m ./cmds/delidev-cli/...` run remains in progress as of 2026-09-30 07:00 UTC and has already reported these failures:
+The initial required full `go test -race -p 2 -timeout=30m ./cmds/delidev-cli/...` run was still in progress at 2026-09-30 07:00 UTC. Its process and final exit status are no longer available; the retained partial log contains these failures:
 
 - CLI: `TestCLISessionAcceptanceQueueAndArchive` reports the workspace-file reader unavailable at `sessions_test.go:215` (171.685s package time). An isolated branch rerun fails earlier during preparation at line 202 (126.401s package time). The exact isolated command on a source-only archive of current main `74701b8948694e2bf8f8ba6d07e596c2d2f358a7`, `go test -race -timeout=5m ./cmds/delidev-cli/internal/cli -run '^TestCLISessionAcceptanceQueueAndArchive$' -count=1`, reproduces the original line-215 reader failure (70.349s package time). That specific failure is therefore also present on the baseline on this host.
 - Claude harness (910.445s package time): bounded probe cleanup/timing, late acknowledgments, original callback cancellation, protocol-failure shutdown, and mismatched reply echo tests fail.
 - Codex harness (1164.175s package time): original approval response/execution, permission grant, and exact workspace-root tests fail with handshake or uncertain-delivery outcomes.
 
-The Claude and Codex harness source directories have no diff from the inspected main revision; their failures have not been independently reproduced on main. Other packages continue running. Concurrent native test processes are present on the host, but the record does not infer that scheduling explains every failure. No complete race-suite success is claimed.
+The retained log later also reports Grok original text/file/input/plan ownership and acknowledgment failures (package timeout after 1800.963s), native-wire JSON-RPC envelope/protocol failures (83.313s), OpenCode probe cleanup failure (326.575s), and process descendant/scope/cancellation failures (173.565s). The Claude, Codex, Grok, native-wire, OpenCode and process source directories have no diff from the inspected main revision; those failures have not been independently reproduced on main. Concurrent native test processes are present on the host, but the record does not infer that scheduling explains every failure. No complete race-suite success is claimed.
+
+[PR review repairs and validation](review-repair-validation.md) records the subsequent seven review fixes, their follow-up regression checks and the separately executed maintenance validation. It does not replace or relabel the initial run above.
 
 ## Evidence limits
 
