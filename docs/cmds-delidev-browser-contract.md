@@ -177,6 +177,14 @@ including offline/revoked clients. Configuration removal and browser cleanup are
 separate outcomes. The account confirmation UI reports outstanding cleanup and
 can read current counts after account removal.
 
+Managed database restore discards historical Device records and copies complete
+current Device documents from the synchronized safety image outside the replaced
+database. Browser profile IDs, states, profile revisions and deletion request IDs
+therefore retain current authority, including offline/revoked pending profiles and
+completed removal. The restore journal pins that safety image and candidate before
+publication; startup reconciles the independent outcome before serving. Restoring
+an older backup cannot make those profiles active or reauthorize revoked clients.
+
 A native poll reads the original local and saved client scopes, including unopened
 windows. Cleanup inventory reads use an independent read-only sidecar controller
 with a two-second joined-child deadline and cannot acquire the interactive
