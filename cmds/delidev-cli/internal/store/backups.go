@@ -28,6 +28,8 @@ type Backup struct {
 
 type BackupInspection struct {
 	Backup
+	// sourceInfo binds internal classification to the exact inspected image.
+	sourceInfo    os.FileInfo
 	SHA256        string    `json:"sha256"`
 	SchemaVersion uint32    `json:"schema_version"`
 	ServerID      domain.ID `json:"server_id"`
@@ -253,6 +255,6 @@ func (s *Store) inspectBackupContent(ctx context.Context, id, expectedServer dom
 			return result, backupUnavailable()
 		}
 	}
-	result = BackupInspection{Backup: backupMetadata(id, before), SHA256: hex.EncodeToString(hash.Sum(nil)), SchemaVersion: version, ServerID: owner}
+	result = BackupInspection{Backup: backupMetadata(id, before), SHA256: hex.EncodeToString(hash.Sum(nil)), SchemaVersion: version, ServerID: owner, sourceInfo: before}
 	return result, nil
 }

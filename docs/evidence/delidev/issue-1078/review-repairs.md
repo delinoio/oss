@@ -28,3 +28,18 @@ reusable after the fixture copies are removed.
 ./cmds/delidev-cli/internal/worker -run SessionDeletion -count=1` passed on
 2026-09-30 (28.891 seconds of package test time). This is isolated managed-copy
 fixture evidence; it does not add real native/account acceptance.
+
+## Final backup inventory ownership
+
+The final gated scan now requires every remaining backup to match the native
+identity and metadata of the image classified without session content. An image
+published under a new UUID or replaced at the same name cannot inherit the earlier
+classification. Real temporary SQLite fixtures restore a containing image between
+classification and the final scan, confirm it is preserved as pending, then confirm
+a fresh pass classifies and removes it through the durable backup-deletion path
+while preserving an unrelated clean image.
+
+`GOCACHE=/tmp/delidev-1171-gocache GOMAXPROCS=4 go test -race -p 2
+./cmds/delidev-cli/internal/store -run 'SessionDeletion|ManagedBackupInspection'
+-count=1` passed on 2026-09-30 (17.745 seconds of package test time). These are
+managed-image race fixtures, not physical free-space or native acceptance evidence.

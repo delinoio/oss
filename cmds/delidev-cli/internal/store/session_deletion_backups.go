@@ -20,6 +20,7 @@ func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) err
 	if e != nil {
 		return e
 	}
+	classified := map[domain.ID]BackupInspection{}
 	for _, item := range items {
 		if e := ctx.Err(); e != nil {
 			return domain.SafeError(e)
@@ -49,6 +50,7 @@ func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) err
 			return e
 		}
 		if !contains {
+			classified[item.ID] = checked
 			continue
 		}
 		row, _, e := s.DeleteBackup(ctx, domain.NewID(), BackupDeletionInput{Actor: domain.Principal{Type: domain.OwnerDevice}, ServerID: v.ServerID, Backup: checked.Backup, ExpectedRevision: 1, SHA256: checked.SHA256})
@@ -59,6 +61,13 @@ func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) err
 			return e
 		}
 	}
+	return s.finishSessionBackupScan(ctx, classified)
+}
+
+// Publication and final validation share the backup gate. Every remaining image
+// must still be the exact image classified without session content; a new or
+// replaced image stays pending until the next full content-classification pass.
+func (s *Store) finishSessionBackupScan(ctx context.Context, classified map[domain.ID]BackupInspection) error {
 	// A killed copy/inspection can retain session bytes in an unpublished image.
 	// Unknown scratch ownership cannot be silently skipped or unlinked. Keep the
 	// deletion pending until that original image is independently recovered.
@@ -76,7 +85,19 @@ func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) err
 		return domain.SessionDeletionPending()
 	}
 	for _, entry := range entries {
+		if e := ctx.Err(); e != nil {
+			return domain.SafeError(e)
+		}
 		if !strings.HasSuffix(entry.Name(), ".sqlite") {
+			return domain.SessionDeletionPending()
+		}
+		id := domain.ID(strings.TrimSuffix(entry.Name(), ".sqlite"))
+		checked, ok := classified[id]
+		if id.Validate() != nil || !ok {
+			return domain.SessionDeletionPending()
+		}
+		current, e := backupInfo(filepath.Join(s.root, "backups", entry.Name()))
+		if e != nil || !sameBackup(checked.sourceInfo, current) {
 			return domain.SessionDeletionPending()
 		}
 	}

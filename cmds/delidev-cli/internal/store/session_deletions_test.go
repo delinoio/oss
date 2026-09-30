@@ -333,3 +333,83 @@ func TestSessionDeletionIntentReplayPreservesPausedRevisionAndEvents(t *testing.
 		}
 	}
 }
+
+func TestSessionDeletionBackupScanRejectsNewAndReplacedImages(t *testing.T) {
+	for _, replacement := range []bool{false, true} {
+		name := "new image"
+		if replacement {
+			name = "same-name replacement"
+		}
+		t.Run(name, func(t *testing.T) {
+			s, root := openTest(t)
+			ctx := notificationOwner()
+			server := domain.NewID()
+			if e := s.BindIdentity(ctx, server); e != nil {
+				t.Fatal(e)
+			}
+			target, _, _ := deletionSession(t, s, "backup race")
+			oldID, e := s.Backup(ctx)
+			if e != nil {
+				t.Fatal(e)
+			}
+			oldPath := filepath.Join(root, "backups", string(oldID)+".sqlite")
+			oldBytes, e := os.ReadFile(oldPath)
+			if e != nil {
+				t.Fatal(e)
+			}
+			v, _, e := s.DeleteSession(ctx, domain.NewID(), target.ID, server, target.Revision)
+			if e != nil {
+				t.Fatal(e)
+			}
+			v, e = s.PurgeDeletedSession(ctx, target.ID)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if e := s.RemoveSessionBackups(ctx, v); e != nil {
+				t.Fatal(e)
+			}
+			cleanID, e := s.Backup(ctx)
+			if e != nil {
+				t.Fatal(e)
+			}
+			checked, e := s.InspectBackup(ctx, cleanID, server)
+			if e != nil {
+				t.Fatal(e)
+			}
+			classified := map[domain.ID]BackupInspection{cleanID: checked}
+			if e := s.finishSessionBackupScan(ctx, classified); e != nil {
+				t.Fatal("unchanged classified image rejected", e)
+			}
+			racedID := domain.NewID()
+			if replacement {
+				racedID = cleanID
+				if e := os.Remove(filepath.Join(root, "backups", string(cleanID)+".sqlite")); e != nil {
+					t.Fatal(e)
+				}
+			}
+			racedPath := filepath.Join(root, "backups", string(racedID)+".sqlite")
+			if e := os.WriteFile(racedPath, oldBytes, 0600); e != nil {
+				t.Fatal(e)
+			}
+			// Model publication/restoration between classification and the final
+			// gate. Completion must preserve this image until it is classified.
+			if e := s.finishSessionBackupScan(ctx, classified); e == nil {
+				t.Fatal("unclassified restored image acknowledged")
+			}
+			if _, e := os.Stat(racedPath); e != nil {
+				t.Fatal("raced image removed without classification", e)
+			}
+			if e := s.RemoveSessionBackups(ctx, v); e != nil {
+				t.Fatal("fresh pass did not reclassify image", e)
+			}
+			if _, e := os.Stat(racedPath); !os.IsNotExist(e) {
+				t.Fatal("containing image retained after reclassification", e)
+			}
+			if !replacement {
+				if _, e := os.Stat(filepath.Join(root, "backups", string(cleanID)+".sqlite")); e != nil {
+					t.Fatal("unrelated clean image removed", e)
+				}
+			}
+		})
+	}
+}

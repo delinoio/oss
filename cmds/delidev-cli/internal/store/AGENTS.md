@@ -111,3 +111,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Permanent session deletion follows `docs/cmds-delidev-storage-contract.md`: synchronize irrevocable metadata-only intent outside SQLite before pause/cancellation, retain original actor/request/assignment ownership and non-content tombstones, and reconstruct obligations before serving restored state. Purge only after every original Worker and both forwarding peers confirm cleanup; remove all containing managed backups, redact retained receipts, and keep offline/uncertain cleanup pending without reclaimed-byte claims.
 
 - Reapplying permanent deletion intent must preserve existing paused session revisions and events when no new transition is needed.
+
+- Permanent session deletion must bind its final backup inventory to the exact images inspected without session content under the backup publication gate. Preserve new/replaced images as pending until a fresh classification pass.

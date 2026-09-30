@@ -236,7 +236,10 @@ to classify **every** managed backup. Images containing session entities or shar
 remediation operands use existing durable backup deletion intents. Unrelated
 images remain. Published replacements, corrupt/foreign images, unpublished
 scratch or unresolved claimed images preserve uncertainty and block completion.
-The final backup acknowledgement follows confirmed removals and directory sync;
+The final backup acknowledgement follows confirmed removals and directory sync.
+Under the publication gate, every remaining image must match the native identity,
+mode, size and modification time captured by its content inspection. New or
+replaced images stay pending until a fresh pass classifies their contents;
 completion does not assert physical free-space recovery, and reclaimed bytes
 remain explicitly unknown. Repeated scans retain completed obligations and
 reapply removal to stale restored managed data. Logs contain operation/UUID,
