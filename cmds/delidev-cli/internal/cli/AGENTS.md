@@ -33,3 +33,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Common parsing, authenticated clients, document input, and output envelopes belong to `arguments.go`, `client.go`, `document.go`, and `output.go`. Command-family dispatch belongs in `dispatch_<family>.go`; preserve request ID propagation and the generic resource fallback.
+
+- Workspace storage commands use the authenticated WorkspaceStorageService, retain exact UUID-v7 receipts/revisions, and observe the original job without replaying native operations. Follow docs/cmds-delidev-storage-contract.md.

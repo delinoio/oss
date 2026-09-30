@@ -454,6 +454,9 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			}
 		}
 		if action == domain.ResumeSession {
+			if !value.WorkspaceAvailable() {
+				return nil, domain.Fail(domain.Conflict, "Workspace storage is pending, absent or uncertain.", "Restore or reconcile the original storage operation before Resume.")
+			}
 			deniedProviderID, err = requireSessionProviderEnabled(tx, value)
 			if err != nil {
 				return nil, err

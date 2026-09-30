@@ -41,3 +41,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Keep process startup/shutdown in `server_startup.go`, HTTP authorization in `server_http.go`, Connect registration in `server_routes.go`, and system status/capability responses in `server_status.go`. New service behavior belongs in its service file; preserve middleware and registration order.
+
+- Worker workspace storage follows docs/cmds-delidev-storage-contract.md. Protect active/Local work and unresolved dependents; reserve jobs and publish snapshot metadata, job outcomes and paused session events atomically. Resume cannot race accepted storage jobs. Reconnect never repeats started native effects.

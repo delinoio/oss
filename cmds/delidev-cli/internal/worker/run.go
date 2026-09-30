@@ -611,6 +611,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, publicationUncertain()
 		}
 	}
+	if job.Type == domain.WorkspaceStorageJob {
+		var input workspace.StorageRequest
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.OperationID != domain.ID(resource.Id) || input.Preparation.SessionID != domain.ID(resource.SessionId) || input.Preparation.MachineID != job.MachineID {
+			return journal{}, workspace.ResultUncertain()
+		}
+	}
 	if job.Type == domain.PrepareWorkspaceJob {
 		var input workspace.PrepareRequest
 		if err := domain.Decode(job.Input, &input); err != nil {
@@ -696,6 +702,32 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		return executeSessionTitle(ctx, config, owner, job)
 	case domain.RecoverExecutionJob:
 		return recoverExecution(ctx, config, job)
+	case domain.WorkspaceStorageJob:
+		var input workspace.StorageRequest
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return nil, err
+		}
+		if input.Action == workspace.StorageRecover {
+			if input.Recovery == nil {
+				return nil, workspace.ResultUncertain()
+			}
+			for _, claim := range input.Recovery.Claims {
+				raw, err := security.ReadPrivate(filepath.Join(root, "jobs", string(claim.JobID)+".json"), 2<<20)
+				if err != nil {
+					return nil, workspace.ResultUncertain()
+				}
+				var prior journal
+				if domain.Decode(raw, &prior) != nil || prior.Version != 1 || prior.JobID != claim.JobID || prior.InstanceID != claim.InstanceID || prior.Revision != claim.Revision || prior.Digest != claim.AssignmentDigest || prior.ReportID.Validate() != nil || (prior.State != journalStarted && prior.State != journalFinished && prior.State != journalReported) {
+					return nil, workspace.ResultUncertain()
+				}
+			}
+		}
+		manager := workspace.Manager{Root: root, Logger: config.Logger}
+		result, err := manager.Storage(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(result)
 	case domain.RecoverWorkspaceJob:
 		bounded, stopRecovery := context.WithTimeout(ctx, 2*time.Minute)
 		defer stopRecovery()

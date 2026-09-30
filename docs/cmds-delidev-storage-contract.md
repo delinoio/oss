@@ -6,7 +6,7 @@ Go owns managed database backups, session deletion, Worker snapshots and recover
 The approved completion work includes every remaining issue #964 requirement;
 actual account/private-GitHub access and platform distribution validation remain
 deferred. This document distinguishes the implemented backup observation surface
-from permanent session deletion, workspace snapshots and restoration, which remain pending. Managed backup deletion is implemented separately below.
+from permanent session deletion and database restoration, which remain pending. Managed backup deletion and Worker-local workspace storage are implemented separately below.
 
 ## Managed backup observation
 
@@ -166,10 +166,7 @@ snapshots and allocation remain outside that measurement.
 
 Permanent session deletion requires irrevocable intent, stopped ownership,
 offline-Worker progress and managed-backup removal. Restoration must preserve
-deletion obligations outside the replaced database. Worker-local snapshots must
-faithfully preserve all repositories, ignored files, unpushed commits and symlinks
-before deleting any managed source. Those operations are not yet exposed by the
-backup observation APIs; the complete requirements remain authoritative.
+deletion obligations outside the replaced database. Worker-local workspace snapshots use the separate storage service below; database backup observation does not grant workspace or database restoration. Permanent dependent Sidechat deletion, independent attachment/cache cleanup and a desktop storage-management surface remain separate issue #964 work. Parent workspace storage fails closed on unresolved dependent jobs or extra resources; it cannot report their permanent deletion. The complete requirements remain authoritative.
 
 ## Validation
 
@@ -236,3 +233,122 @@ The following source-backed notes were relocated from the project index at `12b3
 - `protos/delidev/v1`: versioned Connect RPC schemas.
 
 Backup publication and first-start recovery preserve the original state and synchronize durable names. Completed process scopes are retired only after native completion validation and controller release. Reported pre-launch claim-publication failures can roll back only the current attempt before lease issuance, preserving prior closed ownership and all unexpected evidence. Account deletion retains all live configuration and historical session references; keyless lifecycle operations remain independent of native credential availability. Bounded resource pages account for both wire encodings, and CLI waits distinguish observed completion from timeout/cancellation. Schedule availability restarts with each server process, while Stop/Archive retain their product outcome after later native success. Relay reflection checks cover SSE metadata and sanitized native error codes. These repairs do not close the remaining implementation and platform evidence gaps recorded in the evidence ledger.
+
+## Worker-local workspace storage (issue #1079)
+
+`WorkspaceStorageService.RequestWorkspaceStorage` accepts typed preview, create,
+cleanup, inspect, restore, delete and explicit recover actions. Owner/paired-client
+requests bind a UUID-v7 receipt to the authenticated actor, exact session revision,
+original action and selected preview/snapshot/recovery job. Acceptance reserves one
+`workspace-storage` job and (for creation/cleanup) one snapshot UUID. The same
+request returns the current original job; it never resends native work. Operation
+reads and revision-checked cancellation use dedicated RPCs. Workers cannot invoke
+this service. Generic owner/client Resource reads list snapshot metadata by session.
+`SystemService.GetStatus` advertises `WORKSPACE_STORAGE_V1`; generated Go,
+TypeScript and Connect Query clients expose the additive service.
+
+Only inactive prepared DeliDev-owned Worktree and General Chat workspaces are
+eligible. Local checkouts, active executions, unresolved native ownership,
+unconfirmed cleanup, pending titles and dependent queued/claimed/uncertain jobs
+block storage. The server examines the complete bounded session-job inventory,
+not only its first page. Extra resources in the managed root also block parent
+cleanup. Acceptance pauses dispatch and clears continuation intent atomically;
+first dispatch, Resume, continuation, preparation and initial execution claims
+independently require present storage. Archive still preserves files. Successful
+restoration and recovery remain paused and require explicit later Resume.
+
+The authenticated owning Worker performs five-minute cancellable operations
+under the existing session lock after independently reconciling process ownership
+and rejecting active execution claims. One private manifest covers the complete
+ordered repository set or General Chat directory. Bounds are 8 GiB, 8,192 entries
+and an 8 MiB private manifest, with bounded 128 KiB copying. Published snapshot
+inventory is capped at 4,096 entries. Files are copied through opened anchored
+parents with exclusive destinations, identity checks, full SHA-256 inventories,
+mode preservation and synchronization. Ordinary symlinks, including escaping
+links, remain links and are never opened. Sockets, devices, FIFOs and other
+unsupported special files block cleanup. Snapshot bytes are sensitive private
+Worker data, never server data or diagnostic content.
+
+Each repository receives an independent Git object/ref/index store preserving
+base/starting/HEAD and unpushed history, staged/unstaged state and tracked,
+untracked and Git-ignored regular files. Linked worktree administration is merged
+into that independent store with relative worktree configuration; original Local
+checkouts, shared Git registrations and source refs are preserved. Git checks
+are read-only/offline with hooks, fsmonitor, maintenance, lazy fetching and ambient
+Git/SSH configuration disabled. No remote push is used. External object alternates,
+local/worktree config includes, Git administration symlinks and nested external
+Git pointers are unsupported and block faithful publication. Full `git fsck` and
+inventory comparisons verify every recoverable copy. Whole source data and Git
+state are compared again before publication and before any source removal; an
+index-only change invalidates the exact cleanup preview.
+
+Windows offline Git commands explicitly enable `core.longpaths` at command scope
+because private operation/repository paths can exceed the default 260-character
+limit and ambient configuration is excluded. This does not modify source Git
+configuration. Failed independent Git checks log only the closed commit/object/
+location phase, session/repository IDs and stable error code, never paths, native
+output or workspace content.
+Copied Git configuration is synchronized through write-capable handles, as
+required by Windows flushing; only independent copies are opened for that write
+access, and original configuration remains unchanged.
+
+Cleanup requires an exact successful original preview. Every repository is
+published and re-read before a single atomic no-replace rename claims the entire
+source root for deletion. An independently synchronized immutable removal intent
+binds its complete inventory outside that root. Claimed contents are compared
+again before bounded anchored deletion and directory synchronization. A second
+repository copy failure or cancellation cannot remove either original repository.
+Failures after a namespace transition retain recovery uncertainty and private
+copies. Cancellation/failure after verified snapshot publication but before source
+removal also retains uncertainty: explicit recovery registers that same retained
+snapshot while settling the incomplete cleanup and preserving present sources. Terminal metadata and session state/events commit together after the
+owning Worker report; malformed reports retain uncertainty instead of authorizing
+Resume. Snapshots use the existing generic metadata schema; no database migration,
+history reset or new pre-migration backup is needed.
+
+Restore is available only from the exact current cleanup snapshot of a stored
+session. Its complete private manifest/hash/Git stores are revalidated, the entire
+workspace is copied and verified in owned scratch, then one atomic no-replace
+rename publishes it at the original canonical owned destination. Existing files
+are never replaced and no per-repository partial restore is reported. A private
+restore binding preserves the original logical workspace identity while allowing
+self-contained Git stores at that same path. This comparison does not manufacture
+native harness checkpoint or continuation support. Snapshot deletion requires an
+explicit owner/client request and cannot remove a stored workspace's only
+recoverable copy; restore it first. Deletion claims and verifies the snapshot via
+the same immutable removal-intent boundary and retains historical metadata with
+`deleted=true`.
+
+Usage results separate exact logical source bytes, all retained published snapshot
+bytes, confirmed logical removed source bytes and optional measured filesystem
+capacity/free bytes before/after. All byte counts use canonical decimal strings.
+The independent Git stores can cost more than the removed linked worktree. These
+logical counts never imply positive physical reclamation: compression, shared
+blocks and concurrent allocations prevent attribution from byte subtraction.
+Unsupported capacity observation stays absent. Failed/unfinished jobs do not
+report confirmed removal. Native disk-full/quota failures before publication have
+a redacted `resource_exhausted` classification; uncertain transitions retain their
+separate recovery-required ownership. Owned scratch/retained removal data may still occupy
+space during recovery and is reflected in filesystem free observations, not
+misrepresented as a published snapshot.
+
+Reconnect never repeats a started native operation. Explicit `recover` binds the
+original immutable assignment(s), Worker instance/revision/digest and durable
+Worker journals. It inspects existing publication/removal/restoration namespaces;
+it can finish only already claimed removals against their original inventories.
+It never recreates a snapshot, repeats a source rename or republishes restoration.
+Changed/foreign contents preserve uncertainty and bytes. Recovery itself may be
+reconciled through a bounded eight-claim lineage after another interruption.
+Original jobs and snapshots remain retained; successful reconciliation atomically
+settles their observed outcome and paused workspace state.
+
+CLI equivalents are `delidev storage preview|create|cleanup|inspect|restore|delete|recover
+--session-id ID --expected-revision REV`. Cleanup additionally requires
+`--preview-job-id JOB --confirm`; inspect/restore/delete use `--snapshot-id ID`,
+and delete requires `--confirm`. Recovery uses `--recovery-job-id JOB`.
+`storage operation --id JOB` reads current status and `storage cancel --id JOB
+--expected-revision REV` cancels queued work or targets an already claimed job.
+The global `--request-id` preserves exact acceptance/cancellation retries. These
+commands never implicitly start a server, wait by replaying a mutation or infer
+success from acceptance. `snapshot list --session-id ID` uses existing
+Resource pagination for retained snapshot metadata.

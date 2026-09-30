@@ -1281,6 +1281,38 @@
     "WatchForwardRequestsResponse": {
       "kind": "message",
       "file": "delidev/v1/worker.proto"
+    },
+    "WorkspaceStorageService": {
+      "kind": "service",
+      "file": "delidev/v1/workspace_storage.proto"
+    },
+    "WorkspaceStorageAction": {
+      "kind": "enum",
+      "file": "delidev/v1/workspace_storage.proto"
+    },
+    "RequestWorkspaceStorageRequest": {
+      "kind": "message",
+      "file": "delidev/v1/workspace_storage.proto"
+    },
+    "RequestWorkspaceStorageResponse": {
+      "kind": "message",
+      "file": "delidev/v1/workspace_storage.proto"
+    },
+    "GetWorkspaceStorageOperationRequest": {
+      "kind": "message",
+      "file": "delidev/v1/workspace_storage.proto"
+    },
+    "GetWorkspaceStorageOperationResponse": {
+      "kind": "message",
+      "file": "delidev/v1/workspace_storage.proto"
+    },
+    "CancelWorkspaceStorageOperationRequest": {
+      "kind": "message",
+      "file": "delidev/v1/workspace_storage.proto"
+    },
+    "CancelWorkspaceStorageOperationResponse": {
+      "kind": "message",
+      "file": "delidev/v1/workspace_storage.proto"
     }
   }
 }

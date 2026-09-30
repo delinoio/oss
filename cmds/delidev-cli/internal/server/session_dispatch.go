@@ -18,7 +18,7 @@ func firstDispatchConflict() error {
 
 func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain.ID, error) {
 	var providerID domain.ID
-	if session.InitialExecution != nil {
+	if !session.WorkspaceAvailable() || session.InitialExecution != nil {
 		providerID = session.InitialExecution.Configuration.ProviderID
 	} else {
 		agentRecord, err := tx.Get(domain.AgentKind, session.AgentID)
