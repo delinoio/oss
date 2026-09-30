@@ -231,7 +231,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 		}
-		progress = &domain.ExecutionProgress{JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
+		progress = &domain.ExecutionProgress{NativeHistory: session.CurrentNativeHistory, JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
 		session.Execution = progress
 	} else {
 		if event.Kind == domain.ExecutionThreadBound || progress.JobID != job.ID || progress.ExecutionID != input.ExecutionID || progress.InputID != input.InputID || progress.NativeThreadID != event.NativeThreadID || event.Sequence != progress.LastSequence+1 {

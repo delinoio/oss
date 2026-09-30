@@ -369,3 +369,5 @@ only original session/deletion IDs, plan digest and retained request UUID. No
 paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
+
+`SessionService.SwitchSessionAccount` is an additive owner/client-only mutation, capability-gated by `STOPPED_CODEX_ACCOUNT_SWITCH_V1` (wire value 5, allocated on main) in System status. Its `Mutation` binds the exact session revision/request and `account_id` selects an original candidate; actor-bound reference receipts return current `SessionChange`. Admission, historical attribution, full native history and explicit Resume follow the [sessions contract](cmds-delidev-sessions-contract.md). It performs no native side effect or automatic execution. Go, TypeScript and Connect Query bindings are generated from the service-owned schema; existing capabilities retain their wire values.
