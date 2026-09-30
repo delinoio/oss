@@ -24,9 +24,10 @@ const (
 type WorkerCapability int32
 
 const (
-	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED               WorkerCapability = 0
-	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 WorkerCapability = 1
-	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1     WorkerCapability = 2
+	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1      WorkerCapability = 1
+	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1          WorkerCapability = 2
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1 WorkerCapability = 3
 )
 
 // Enum value maps for WorkerCapability.
@@ -35,11 +36,13 @@ var (
 		0: "WORKER_CAPABILITY_UNSPECIFIED",
 		1: "WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1",
 		2: "WORKER_CAPABILITY_SESSION_FORWARDING_V1",
+		3: "WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1",
 	}
 	WorkerCapability_value = map[string]int32{
-		"WORKER_CAPABILITY_UNSPECIFIED":               0,
-		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1": 1,
-		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":     2,
+		"WORKER_CAPABILITY_UNSPECIFIED":                    0,
+		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1":      1,
+		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":          2,
+		"WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1": 3,
 	}
 )
 
@@ -2250,11 +2253,12 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"instanceId\"l\n" +
 	"\x1cWatchForwardRequestsResponse\x12\x1c\n" +
 	"\theartbeat\x18\x01 \x01(\bR\theartbeat\x12.\n" +
-	"\aforward\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aforward*\x93\x01\n" +
+	"\aforward\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aforward*\xc9\x01\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
 	"+WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1\x10\x01\x12+\n" +
-	"'WORKER_CAPABILITY_SESSION_FORWARDING_V1\x10\x022\xde\n" +
+	"'WORKER_CAPABILITY_SESSION_FORWARDING_V1\x10\x02\x124\n" +
+	"0WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1\x10\x032\xde\n" +
 	"\n" +
 	"\rWorkerService\x12k\n" +
 	"\x14WatchForwardRequests\x12'.delidev.v1.WatchForwardRequestsRequest\x1a(.delidev.v1.WatchForwardRequestsResponse0\x01\x12h\n" +

@@ -21,8 +21,8 @@ func init() {
 	if mode == "" || os.Args[len(os.Args)-1] != "app-server" {
 		return
 	}
-	// Fixtures implement only non-inference readiness. Any accidental account,
-	// thread creation or prompt request fails rather than reaching a real CLI.
+	// Each mode implements only its controlled protocol fixture. Unsupported
+	// requests fail instead of reaching an installed CLI or an external account.
 	initialized, notified := false, false
 	threads := &threadFixture{mode: mode}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -91,6 +91,9 @@ func init() {
 			}
 			write(request.ID, map[string]any{"data": threads, "nextCursor": nil})
 		default:
+			if managedFixtureHandle(mode, request.ID, request.Method, request.Params, write) {
+				continue
+			}
 			if request.Method == "" && mode == "thread-turn-approvals" {
 				if !threads.approvalReply(request.ID, request.Result) {
 					os.Exit(34)

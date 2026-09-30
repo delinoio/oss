@@ -39,7 +39,18 @@ func accountCommand(ctx context.Context, c client, o options, args []string, str
 	id := f.String("id", "", "")
 	var revision uint64
 	var keyStdin, keyless bool
-	if operation != "status" {
+	var machine, operationID string
+	var deviceCode bool
+	if operation == "login" || operation == "refresh" || operation == "logout" {
+		f.StringVar(&machine, "machine-id", "", "")
+	}
+	if operation == "login" {
+		f.BoolVar(&deviceCode, "device-code", false, "")
+	}
+	if operation == "login-progress" {
+		f.StringVar(&operationID, "operation-id", "", "")
+	}
+	if operation != "status" && operation != "login-progress" {
 		f.Uint64Var(&revision, "revision", 0, "")
 	}
 	if operation == "connect" {
@@ -62,10 +73,44 @@ func accountCommand(ctx context.Context, c client, o options, args []string, str
 		}
 		return map[string]any{"account": resourceJSON(response.Msg.Account)}, nil
 	}
+	if operation == "login-progress" {
+		if err := domain.ID(operationID).Validate(); err != nil {
+			return nil, err
+		}
+		response, err := c.subscriptions.GetSubscriptionProgress(ctx, request(c, &pb.GetSubscriptionProgressRequest{AccountId: *id, OperationId: operationID}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		return map[string]any{"url": response.Msg.Url, "user_code": response.Msg.UserCode, "canceled": response.Msg.Canceled}, nil
+	}
 	if revision == 0 {
 		return nil, domain.Fail(domain.MissingInput, "The account's current revision is required.", "Read account status and provide --revision.")
 	}
 	mutation := &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: revision}
+	if operation == "cancel-login" {
+		response, err := c.subscriptions.CancelSubscription(ctx, request(c, &pb.CancelSubscriptionRequest{Mutation: mutation}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		return map[string]any{"account": resourceJSON(response.Msg.Account), "replayed": response.Msg.Replayed}, nil
+	}
+	if operation == "login" || operation == "refresh" || operation == "logout" {
+		if err := domain.ID(machine).Validate(); err != nil {
+			return nil, err
+		}
+		action := pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN
+		if operation == "refresh" {
+			action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH
+		}
+		if operation == "logout" {
+			action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT
+		}
+		response, err := c.subscriptions.RequestSubscription(ctx, request(c, &pb.RequestSubscriptionRequest{Mutation: mutation, MachineId: machine, Action: action, DeviceCode: deviceCode}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		return map[string]any{"account": resourceJSON(response.Msg.Account), "operation_id": response.Msg.OperationId, "replayed": response.Msg.Replayed}, nil
+	}
 	if operation == "validate" {
 		response, err := c.accounts.ValidateAccount(ctx, request(c, &pb.ValidateAccountRequest{Mutation: mutation}))
 		if err != nil {

@@ -42,6 +42,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   machine discover --id ID --revision N [--input FILE|-] [--protocol] [--wait]
   account connect --id ID --revision N (--key-stdin | --keyless)
   account disconnect --id ID --revision N
+  account login --id ID --revision N --machine-id ID [--device-code]
+  account login-progress --id ID --operation-id ID
+  account cancel-login --id ID --revision N
+  account refresh --id ID --revision N --machine-id ID
+  account logout --id ID --revision N --machine-id ID
   account validate --id ID --revision N
   account status --id ID
   account list [--provider-id ID] [--account-type api|subscription] [--limit N] [--page-token TOKEN]

@@ -180,6 +180,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		attached, err := client.AttachWorker(attempt, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1}}))
 		cancel()
 		titleCapabilityExpected := false
+		managedCapabilityExpected := false
 		if err == nil && attached.Msg.ServerId != string(credential.ServerID) {
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
 		}
@@ -198,8 +199,23 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 					config.Logger.WarnContext(ctx, "automatic title capability probe failed", "machine_id", credential.MachineID, "code", domain.SafeError(probeErr).Code)
 				}
 			}
+			if executable != "" {
+				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
+				managedCapabilityExpected, err = verifyManagedSubscriptionProfile(probeCtx, config, executable)
+				stopProbe()
+				if err != nil {
+					if domain.SafeError(err).Code == domain.RecoveryRequired {
+						return err
+					}
+					config.Logger.InfoContext(ctx, "managed_subscription_profile_unavailable", "code", domain.SafeError(err).Code)
+					err = nil
+				}
+			}
 			titleCapabilityExpected = verifiedTitleProfile
 			profile := executable
+			if managedCapabilityExpected {
+				profile += "\x00managed"
+			}
 			if verifiedTitleProfile {
 				profile += "\x00verified"
 			} else {
@@ -209,6 +225,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1}
+			if managedCapabilityExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1)
+			}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
 			}
@@ -236,7 +255,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if titleCapabilityExpected && !auxiliary {
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
-			err = watchAttached(ctx, config, client, credential, instance, auxiliary)
+			err = watchAttached(ctx, config, client, credential, instance, auxiliary, managedCapabilityExpected && managedSubscriptionCapability(attached.Msg.Machine))
 			if time.Since(started) > 30*time.Second {
 				backoff = time.Second
 			}
@@ -265,15 +284,19 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	return nil
 }
 
-func watchAttached(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, auxiliary bool) error {
+func watchAttached(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, auxiliary bool, managed ...bool) error {
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	results := make(chan error, 2)
+	results := make(chan error, 3)
 	go func() { results <- watch(watchCtx, config, client, credential, instance) }()
 	count := 1
 	if auxiliary {
 		count++
 		go func() { results <- watchAuxiliary(watchCtx, config, client, credential, instance) }()
+	}
+	if len(managed) == 1 && managed[0] {
+		count++
+		go func() { results <- watchSubscriptions(watchCtx, config, credential, instance) }()
 	}
 	err := <-results
 	cancel()
