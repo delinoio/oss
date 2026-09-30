@@ -20,6 +20,21 @@ import (
 
 func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity string, sources snapshotInventory, expectedDigest string) (metadata SnapshotMetadata, returned error) {
 	var empty SnapshotMetadata
+	// Session locks alone cannot reserve a Worker-wide publication slot. Hold
+	// this fail-fast cross-process gate from admission through durable publication
+	// so concurrent sessions cannot both consume the final slot.
+	publication, err := security.TryLock(filepath.Join(m.Root, "locks", "snapshot-publication.lock"))
+	if err != nil {
+		return empty, err
+	}
+	defer publication.Close()
+	_, count, err := m.snapshotInventoryBytes(ctx, r.Preparation.SessionID)
+	if err != nil {
+		return empty, err
+	}
+	if count >= maxPublishedSnapshots {
+		return empty, domain.Fail(domain.ResourceExhausted, "The Worker snapshot inventory is full.", "Delete an unneeded verified snapshot before requesting another; sources remain intact.")
+	}
 	staging := filepath.Join(m.Root, "snapshot-staging", string(r.OperationID))
 	if err := os.Mkdir(staging, 0700); err != nil {
 		return empty, ResultUncertain()
@@ -312,44 +327,49 @@ func (m *Manager) inspectSnapshot(ctx context.Context, id domain.ID) (snapshotMa
 	return snapshot, metadata, nil
 }
 func (m *Manager) snapshotBytes(ctx context.Context, session domain.ID) (uint64, error) {
+	bytes, _, err := m.snapshotInventoryBytes(ctx, session)
+	return bytes, err
+}
+
+func (m *Manager) snapshotInventoryBytes(ctx context.Context, session domain.ID) (uint64, int, error) {
 	root := filepath.Join(m.Root, "snapshots")
 	dir, err := os.Open(root)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer dir.Close()
-	entries, err := dir.ReadDir(4097)
+	entries, err := dir.ReadDir(maxPublishedSnapshots + 1)
 	if err != nil && err != io.EOF {
-		return 0, err
+		return 0, 0, err
 	}
-	if len(entries) > 4096 {
-		return 0, ResultUncertain()
+	if len(entries) > maxPublishedSnapshots {
+		return 0, 0, ResultUncertain()
 	}
 	var total uint64
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		id := domain.ID(entry.Name())
 		if id.Validate() != nil || !entry.IsDir() {
-			return 0, ResultUncertain()
+			return 0, 0, ResultUncertain()
 		}
 		raw, err := security.ReadPrivate(filepath.Join(root, entry.Name(), "snapshot.json"), maxSnapshotManifest)
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		var manifest snapshotManifest
 		if domain.DecodeBounded(raw, &manifest, maxSnapshotManifest) != nil || manifest.ID != id {
-			return 0, ResultUncertain()
+			return 0, 0, ResultUncertain()
 		}
 		if manifest.Workspace.SessionID == session {
 			if manifest.Inventory.Bytes > MaxSnapshotBytes || total > ^uint64(0)-manifest.Inventory.Bytes-uint64(len(raw)) {
-				return 0, ResultUncertain()
+				return 0, 0, ResultUncertain()
 			}
 			total += manifest.Inventory.Bytes + uint64(len(raw))
 		}
 	}
-	return total, nil
+	return total, len(entries), nil
 }
 
 // Preview and cleanup compare both filesystem data and the original Git

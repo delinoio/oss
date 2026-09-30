@@ -380,7 +380,11 @@ per repository for copied Git config rewrites before copying payloads; this boun
 headroom can reject data close to 8 GiB even when its final metadata would be smaller.
 Git roots count once, overlapping administration directories count only when new,
 and excess or growing-file bytes never enter the copied payload. Published snapshot
-inventory is capped at 4,096 entries. Removal intents separately allow the two
+inventory is capped at 4,096 entries. Creation and cleanup hold a Worker-wide
+cross-process publication gate from count admission through durable publication;
+reject at capacity before staging. A busy gate fails with conflict and no output,
+so independent sessions cannot both consume the final slot. Preview remains
+available at capacity, and explicit snapshot deletion can release a slot. Removal intents separately allow the two
 snapshot wrapper entries (`workspace` and `snapshot.json`) beyond a complete
 8,192-entry workspace, without admitting unexpected root content or increasing
 the workspace bound. Private manifests and removal intents use their explicit

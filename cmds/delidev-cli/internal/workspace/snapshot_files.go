@@ -19,6 +19,7 @@ import (
 
 const MaxSnapshotBytes uint64 = 8 << 30
 const MaxSnapshotEntries = 8192
+const maxPublishedSnapshots = 4096
 
 // Snapshot deletion additionally inventories the workspace directory and manifest.
 const maxSnapshotRemovalEntries = MaxSnapshotEntries + 2

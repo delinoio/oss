@@ -14,6 +14,8 @@ Follow the root and parent instructions and docs/cmds-delidev-workspace-contract
 - Bind cleanup removal authority to the verified snapshot source inventory, never a later mutable observation. Compare the claimed namespace to that inventory and restore the source name without replacement on mismatch before any unlink.
 - Snapshot walks compare the root's opened/named identity, mode, size and modification time around enumeration and copying, as for nested directories. A late root entry or retained-handle mutation cannot yield a complete inventory or removal authority.
 
+- Snapshot creation/cleanup holds one Worker-wide cross-process publication gate through capacity admission and durable publication. Reject at 4,096 retained snapshots before staging; independent session locks cannot reserve the final global slot. A busy publication gate returns conflict without creating output or touching source.
+
 - Snapshot copying shares one remaining byte/entry budget across workspace data and every independent Git store. Reserve bounded manifest/config-rewrite byte headroom before payload writes, count Git roots once, and charge only new overlay directories. Reject excess files before creating them; growing files cannot write beyond their metadata reservation.
 
 - Snapshot deletion reserves two inventory entries for its workspace/manifest wrappers beyond the 8,192-entry workspace bound; reject unexpected snapshot-root content.
