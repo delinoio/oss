@@ -338,7 +338,11 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 				native.cancel()
 				_ = native.handle.Close()
 				result = m.finishNative(a.ID, native)
-				result.Problem = domain.SafeError(err)
+				// Ownership recovery takes precedence over the triggering I/O
+				// failure whenever process-tree cleanup remains unconfirmed.
+				if result.CleanupVerified {
+					result.Problem = domain.SafeError(err)
+				}
 				return result
 			}
 		case <-time.After(5 * time.Second):
@@ -346,7 +350,9 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 			_ = native.handle.Close()
 			<-done
 			result = m.finishNative(a.ID, native)
-			result.Problem = domain.Fail(domain.RecoveryRequired, "Terminal input or resize has an unconfirmed native outcome.", "Inspect the original terminal; do not resend the operation.")
+			if result.CleanupVerified {
+				result.Problem = domain.Fail(domain.RecoveryRequired, "Terminal input or resize has an unconfirmed native outcome.", "Inspect the original terminal; do not resend the operation.")
+			}
 			return result
 		case <-m.ctx.Done():
 			native.cancel()

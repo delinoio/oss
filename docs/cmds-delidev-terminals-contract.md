@@ -81,6 +81,9 @@ identity verification covers every repository before native launch and permits o
 and commits. It does not take or replace the agent execution lease. Native
 startup, input/resize, shell lookup and workspace verification remain bounded;
 unknown native outcomes become `uncertain`, requiring exact close reconciliation.
+After failed or timed-out input/resize, an unconfirmed cleanup retains its
+process-tree reconciliation problem and guidance; the triggering control error
+may replace that problem only after cleanup is independently verified.
 
 Agent Stop preserves terminals. Archive atomically queues closes for only the
 selected session and remains `archiving` until all agent/title/preparation and

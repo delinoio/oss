@@ -19,6 +19,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/terminal"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -208,5 +209,67 @@ func TestTerminalCloseBeforeNativeStartUsesOriginalJournal(t *testing.T) {
 	result = manager.execute(assignment)
 	if result.State != domain.TerminalUncertain || result.CleanupVerified {
 		t.Fatal("native-start intent without a process index manufactured cleanup")
+	}
+}
+
+func TestTerminalFailedControlPreservesCleanupRecoveryProblem(t *testing.T) {
+	for _, action := range []domain.TerminalAction{domain.TerminalInput, domain.TerminalResize} {
+		t.Run(string(action), func(t *testing.T) {
+			for _, corrupt := range []bool{false, true} {
+				name := "confirmed-cleanup"
+				if corrupt {
+					name = "unconfirmed-cleanup"
+				}
+				t.Run(name, func(t *testing.T) {
+					ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+					defer cancel()
+					root, id := t.TempDir(), domain.NewID()
+					logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+					manager := newTerminalManager(ctx, Config{Root: root, Logger: logger}, nil, Credential{}, domain.NewID())
+					nativeCtx, nativeCancel := context.WithCancel(ctx)
+					defer nativeCancel()
+					handle, err := process.Start(nativeCtx, process.Config{Directory: manager.processRoot(), OwnerID: id, Executable: "/bin/sh", Args: []string{"-i"}, Cwd: t.TempDir(), Env: []string{"PATH=/usr/bin:/bin"}, Terminal: &process.TerminalSize{Rows: 24, Columns: 80}, Stdout: io.Discard, Stderr: io.Discard, Logger: logger})
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer handle.Close()
+					// Leave the native start barrier closed so input fails
+					// deterministically; an invalid size similarly fails resize.
+					outputDone := make(chan struct{})
+					close(outputDone)
+					manager.live[id] = &nativeTerminal{handle: handle, result: terminal.Result{State: domain.TerminalRunning, Shell: "/bin/sh", Rows: 24, Columns: 80}, cancel: nativeCancel, outputDone: outputDone, writer: &terminalWriter{chunks: make(chan []byte)}}
+					unexpected := filepath.Join(manager.processRoot(), string(id), "unknown-owner-entry")
+					if corrupt {
+						if err := security.WriteAtomic(unexpected, []byte("untrusted ownership fixture")); err != nil {
+							t.Fatal(err)
+						}
+						defer os.Remove(unexpected)
+					}
+					result := manager.execute(terminal.Assignment{ID: id, Operation: domain.TerminalOperation{ID: domain.NewID(), Action: action, Input: []byte("unsent"), Rows: 0, Columns: 80}})
+					if corrupt {
+						if result.State != domain.TerminalUncertain || result.CleanupVerified || result.Problem == nil || result.Problem.Code != domain.RecoveryRequired {
+							t.Fatal("control error concealed unconfirmed ownership cleanup", result)
+						}
+						if err := os.Remove(unexpected); err != nil {
+							t.Fatal(err)
+						}
+						if err := manager.reconcile(id); err != nil {
+							t.Fatal("fixture did not restore independently confirmed cleanup", err)
+						}
+					} else {
+						expected := domain.Conflict
+						if action == domain.TerminalResize {
+							expected = domain.InvalidArgument
+						}
+						if !result.CleanupVerified || result.Problem == nil || result.Problem.Code != expected {
+							t.Fatal("confirmed cleanup lost the original control problem", result)
+						}
+					}
+					if len(manager.live) != 0 {
+						t.Fatal("failed control retained native input authority")
+					}
+				})
+			}
+		})
 	}
 }
