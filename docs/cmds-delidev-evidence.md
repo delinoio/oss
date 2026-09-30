@@ -3299,8 +3299,14 @@ A complete single-worker `pnpm test` attempt passed client generation and type
 checking, then finished Vitest with 71 passing files / 933 passing tests and
 3 failing files / 12 failures. Those failures were in the unchanged App, Settings
 integration and tray presentation tests (5-second deadlines and asynchronous
-element/state waits); this change does not establish a green full frontend suite.
+element/state waits); that attempt did not establish a green full frontend suite.
 An isolated rerun of those exact three files passed all 49 tests with the
 unchanged deadlines and product code. The production frontend build passed
 during the native launch. No Rust, Go,
 frontend product code, runtime pins or signing policies changed.
+
+The final single-worker `pnpm test` pipeline passed all 74 frontend files / 945
+tests, client generation/type checking, all 8 package-verifier and 16
+asset/launcher cases, native Swift widget fixtures and the production frontend
+build. Test deadlines were unchanged. Generated desktop/client `dist` directories
+and this task's temporary native smoke data were removed after verification.
