@@ -278,23 +278,6 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 				if err == nil {
 					handled, err = display.PublishBoundaryObservation(publicationContext, o)
 				}
-				if err == nil && handled {
-					if err := finishControls(); err != nil {
-						return nil, err
-					}
-					completion, err := display.Complete(publicationContext, api)
-					if err != nil {
-						return nil, err
-					}
-					if err := lease.Close(); err != nil {
-						return nil, err
-					}
-					completion, err = display.RetainCompletion(publicationContext, api, completion)
-					if err != nil {
-						return nil, err
-					}
-					return json.Marshal(completion)
-				}
 			}
 		case claude.CallbackInterruptResultObserved:
 			if display != nil {
@@ -314,6 +297,31 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		if !handled {
 			logger.WarnContext(publicationContext, "claude_execution_observation_requires_reconciliation", "kind", o.Kind, "code", domain.Unsupported)
 			return nil, domain.Fail(domain.Unsupported, "This native Claude observation requires additional publication evidence.", "Retain the original runtime and outbox; do not resend the input.")
+		}
+		if display != nil && display.pendingBoundaryReady() {
+			if err := display.PublishChildHistory(publicationContext, nativeConfig); err != nil {
+				return nil, err
+			}
+			if _, err := display.PublishPendingBoundary(publicationContext); err != nil {
+				return nil, err
+			}
+		}
+		if display != nil && display.terminalPublished() {
+			if err := finishControls(); err != nil {
+				return nil, err
+			}
+			completion, err := display.Complete(publicationContext, api)
+			if err != nil {
+				return nil, err
+			}
+			if err := lease.Close(); err != nil {
+				return nil, err
+			}
+			completion, err = display.RetainCompletion(publicationContext, api, completion)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(completion)
 		}
 	}
 }

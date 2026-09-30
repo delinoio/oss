@@ -51,6 +51,7 @@ type ClaudeContentPublisher struct {
 	terminalCommandID          string
 	resultUsageNativeID        string
 	resultBoundary             *claude.NativeResult
+	pendingTerminal            *domain.ClaudeTerminalObservation
 	terminal                   *domain.ClaudeTerminalObservation
 	terminalSequence           uint64
 	completion                 *domain.ExecutionCompletion
@@ -386,6 +387,7 @@ func (c *ClaudeContentPublisher) commitHead() {
 	if v := item.event.ClaudeTerminal; v != nil {
 		copy := *v
 		c.terminal, c.terminalSequence = &copy, item.event.Sequence
+		c.pendingTerminal = nil
 		c.binding.stage = claudeTerminalPublished
 		if logger := c.binding.publisher.config.Logger; logger != nil {
 			logger.Info("claude_original_terminal_observed", "job_id", c.binding.journal.JobID, "sequence", item.event.Sequence, "outcome", item.event.Outcome)
