@@ -39,3 +39,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - `session delete --id ID --revision N --confirm [--wait]` and `session deletion --id ID` share authenticated Connect semantics. Preserve original UUID/revision and accepted progress after uncertain reads or cancellation; waiting cannot resubmit deletion or report pending cleanup as success. Follow `docs/cmds-delidev-storage-contract.md`.
 
 - Native subagent observations follow `docs/cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
+
+- `usage summary --accounting-profile native-units-v1` requires the server echo before exposing native units. Omission preserves the existing response-only profile; unknown values fail. Keep source kinds and exact decimal totals distinct.

@@ -67,6 +67,20 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
 	if verified {
 		progress.CleanupVerified = true
+		if input.Configuration.Harness == domain.GrokBuild && progress.GrokStop == nil && session.Outcome == domain.ExecutionSucceeded {
+			// Stop/Archive can commit after ordinary native success but before
+			// this cleanup report. Retain native success and cleanup independently;
+			// only an uncanceled successful product input enters accounting.
+			canceled, err := tx.JobCancellationRequested(record.ID)
+			if err != nil {
+				return store.Record{}, err
+			}
+			if !canceled {
+				if err := tx.PutGrokAccounting(record.ID, sr.ProjectID, input, *progress, completion); err != nil {
+					return store.Record{}, err
+				}
+			}
+		}
 		if completion.Version == 2 && completion.Outcome == domain.ExecutionSucceeded && session.Outcome == domain.ExecutionSucceeded && previousDispatch == domain.DispatchClaimed && session.Archive == domain.NotArchived && session.Recovery == domain.NoRecovery && progress.Waiting == (domain.NativeWaiting{}) && progress.UnconfirmedResponses == 0 {
 			session.Dispatch, session.NextExecutionIntent = domain.DispatchReady, domain.ContinueAutomatically
 		}
