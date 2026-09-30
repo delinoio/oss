@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { devNull } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,7 +31,7 @@ export function selectPackages(output, shard) {
   return selected;
 }
 
-export function runGoTests(shard, { run = spawnSync, log = console.log } = {}) {
+export function runGoTests(shard, { run = spawnSync, log = console.log, platform = process.platform } = {}) {
   if (!Object.values(GoTestShard).includes(shard)) throw new Error("Unknown Go test shard");
   const started = performance.now();
   let packages = ["./..."];
@@ -55,7 +54,10 @@ export function runGoTests(shard, { run = spawnSync, log = console.log } = {}) {
     // output supports packages with identical names without retaining binaries.
     // Remove this phase if native cold-cache measurements show no net saving.
     const compileStarted = performance.now();
-    const compilation = run("go", ["test", "-c", "-o", devNull, ...packages], { shell: false, stdio: "inherit" });
+    // Go recognizes literal NUL on Windows, not Node's extended device path
+    // from os.devNull. That spelling is required for its multi-package exception.
+    const nullOutput = platform === "win32" ? "NUL" : "/dev/null";
+    const compilation = run("go", ["test", "-c", "-o", nullOutput, ...packages], { shell: false, stdio: "inherit" });
     if (compilation.error) throw compilation.error;
     const exitCode = compilation.status ?? 1;
     log(JSON.stringify({ event: "ci_go_test_compile", shard, elapsedSeconds: Math.round((performance.now() - compileStarted) / 1000), exitCode, signal: compilation.signal }));

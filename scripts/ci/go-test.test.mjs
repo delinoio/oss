@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { devNull } from "node:os";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -74,7 +73,7 @@ test("each Windows invocation discovers native packages and runs its whole shard
     assert.equal(discovery.options.shell, false);
     assert.deepEqual(discovery.options.stdio, ["ignore", "pipe", "inherit"]);
     assert.deepEqual(compilation, {
-      command: "go", args: ["test", "-c", "-o", devNull, ...fixtures[shard].toSorted()],
+      command: "go", args: ["test", "-c", "-o", process.platform === "win32" ? "NUL" : "/dev/null", ...fixtures[shard].toSorted()],
       options: { shell: false, stdio: "inherit" },
     });
     assert.deepEqual(execution, {
@@ -97,6 +96,13 @@ test("Linux and macOS retain their original full-suite Go invocation", () => {
   assert.deepEqual(fixture.calls, [{
     command: "go", args: ["test", "-timeout=20m", "./..."], options: { shell: false, stdio: "inherit" },
   }]);
+});
+
+test("Windows compilation uses Go's literal NUL exception rather than Node's extended device path", () => {
+  const fixture = runner({ status: 0, stdout: inventory });
+  assert.equal(runGoTests(GoTestShard.Core, { ...fixture.options, platform: "win32" }), 0);
+  assert.deepEqual(fixture.calls[1].args.slice(0, 4), ["test", "-c", "-o", "NUL"]);
+  assert.deepEqual(fixture.calls[2].args.slice(0, 3), ["test", "-p=1", "-timeout=20m"]);
 });
 
 test("discovery failures never start tests, even with partial output", () => {
