@@ -122,7 +122,7 @@ func planPRRemediationWorkspace(tx *store.Tx, sessionID, projectID domain.ID, po
 		return empty, err
 	}
 	if instance.Validate() != nil || seen.After(time.Now().UTC().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
-		return empty, domain.Fail(domain.Unavailable, "The selected PR execution Worker is not connected.", "Reconnect that machine before creating the remediation session.")
+		return empty, domain.Fail(domain.Unavailable, "The selected PR Runner Device is not connected.", "Reconnect that machine before creating the remediation session.")
 	}
 	preview, err := tx.PreviewInitialExecution(session)
 	if err != nil {
