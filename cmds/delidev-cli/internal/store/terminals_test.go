@@ -170,3 +170,82 @@ func TestSessionArchiveWaitsForTerminalAndForwardCleanup(t *testing.T) {
 		})
 	}
 }
+
+func TestTerminalArchiveLookupFailureRollsBackReportReceipt(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := context.Background()
+	sessionID, terminalID, damagedID := domain.NewID(), domain.NewID(), domain.NewID()
+	_, err := s.Mutate(ctx, domain.NewID(), "archive.fixture", nil, func(tx *Tx) (any, error) {
+		if _, err := tx.Put(domain.SessionKind, sessionID, 0, sessionID, "", domain.Session{Archive: domain.ArchivePending, Recovery: domain.NoRecovery}); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Put(domain.TerminalKind, terminalID, 0, sessionID, "", domain.Terminal{State: domain.TerminalRunning, Rows: 24, Columns: 80}); err != nil {
+			return nil, err
+		}
+		return tx.Put(domain.TerminalKind, damagedID, 0, sessionID, "", domain.Terminal{State: domain.TerminalClosed, CleanupVerified: true, Rows: 24, Columns: 80})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	damaged, err := s.Get(ctx, domain.TerminalKind, damagedID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Valid JSON with an invalid field type models retained record corruption,
+	// independently of the report transaction that must remain retryable.
+	if _, err := s.db.ExecContext(ctx, "UPDATE entities SET body=? WHERE id=?", []byte(`{"state":1}`), damagedID); err != nil {
+		t.Fatal(err)
+	}
+	requestID := domain.NewID()
+	report := func(tx *Tx) (any, error) {
+		if _, err := tx.Put(domain.TerminalKind, terminalID, 1, sessionID, "", domain.Terminal{State: domain.TerminalClosed, CleanupVerified: true, Rows: 24, Columns: 80}); err != nil {
+			return nil, err
+		}
+		return nil, tx.CompleteTerminalArchive(sessionID)
+	}
+	_, err = s.Mutate(ctx, requestID, "terminal.report.fixture", nil, report)
+	assertCode(t, err, domain.InvalidArgument)
+	original, err := s.Get(ctx, domain.TerminalKind, terminalID)
+	if err != nil || original.Revision != 1 {
+		t.Fatal("failed Archive lookup committed the terminal report", err)
+	}
+	if _, err := s.db.ExecContext(ctx, "UPDATE entities SET body=? WHERE id=?", damaged.Data, damagedID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.Mutate(ctx, requestID, "terminal.report.fixture", nil, report)
+	if err != nil || result.Replayed {
+		t.Fatal("failed Archive lookup consumed the report receipt", err)
+	}
+	session, err := s.Get(ctx, domain.SessionKind, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := Decode[domain.Session](session)
+	if err != nil || value.Archive != domain.Archived {
+		t.Fatal("exact report retry did not complete Archive after repair", err)
+	}
+}
+
+func TestTerminalArchiveHistoryBoundFailureIsNotCleanupDeferral(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := context.Background()
+	sessionID := domain.NewID()
+	_, err := s.Mutate(ctx, domain.NewID(), "archive.fixture", nil, func(tx *Tx) (any, error) {
+		if _, err := tx.Put(domain.SessionKind, sessionID, 0, sessionID, "", domain.Session{Archive: domain.ArchivePending, Recovery: domain.NoRecovery}); err != nil {
+			return nil, err
+		}
+		for range domain.MaxTerminalRecords + 1 {
+			if _, err := tx.Put(domain.TerminalKind, domain.NewID(), 0, sessionID, "", domain.Terminal{State: domain.TerminalClosed, CleanupVerified: true, Rows: 24, Columns: 80}); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Mutate(ctx, domain.NewID(), "terminal.archive.fixture", nil, func(tx *Tx) (any, error) {
+		return nil, tx.CompleteTerminalArchive(sessionID)
+	})
+	assertCode(t, err, domain.ResourceExhausted)
+}

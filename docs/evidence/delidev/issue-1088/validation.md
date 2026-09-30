@@ -85,6 +85,18 @@ native suite. Native verification is unresolved and needs follow-up on a clean
 host or additional diagnosis. No timeout, ownership or workspace validation was
 weakened to manufacture passing results.
 
+## Codex review repairs
+
+The Archive lookup finding is reproduced by corruption and history-bound
+regressions: both incorrectly returned success before the repair. Archive
+completion now defers only the expected live-terminal `RecoveryRequired` state
+and propagates other errors. The corruption fixture proves that the terminal
+report and receipt roll back, then that its exact request ID completes Archive
+after the retained record is repaired. Race-enabled terminal Archive and
+terminal/forward cleanup-order checks pass using an isolated temporary Go cache,
+`-p 2 -timeout=3m -count=1`. An earlier build did not execute the tests because
+shared Go cache files disappeared during linking; it is not test evidence.
+
 ## PR maintenance
 
 Non-draft PR [#1173](https://github.com/delinoio/oss/pull/1173) targets main and

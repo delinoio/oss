@@ -85,8 +85,11 @@ unknown native outcomes become `uncertain`, requiring exact close reconciliation
 Agent Stop preserves terminals. Archive atomically queues closes for only the
 selected session and remains `archiving` until all agent/title/preparation and
 terminal cleanup gates succeed. The central session publication barrier also
-covers late completion/recovery paths. Session or terminal deletion refuses
-unconfirmed terminal ownership. The repository's broader permanent-session
+covers late completion/recovery paths. Only the expected live-terminal
+`RecoveryRequired` result defers completion; lookup, decoding and history-bound
+failures roll back the report and its receipt so the exact report remains
+retryable after repair. Session or terminal deletion refuses unconfirmed terminal
+ownership. The repository's broader permanent-session
 deletion operation remains separate work; its storage boundary cannot bypass
 this gate. Close joins the original process tree and output machinery before
 reporting cleanup. Missing/changed ownership never authorizes PID termination.

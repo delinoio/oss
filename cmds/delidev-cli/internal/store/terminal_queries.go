@@ -55,7 +55,12 @@ func (t *Tx) CompleteTerminalArchive(sessionID domain.ID) error {
 		return nil
 	}
 	if err := t.requireTerminalCleanup(sessionID); err != nil {
-		return nil
+		if domain.SafeError(err).Code == domain.RecoveryRequired {
+			return nil
+		}
+		// A failed history lookup must roll back the report and its receipt so
+		// the exact Worker report can retry Archive completion after repair.
+		return err
 	}
 	session.Archive = domain.Archived
 	_, err = t.Put(domain.SessionKind, r.ID, r.Revision, r.SessionID, r.ProjectID, session)
