@@ -703,7 +703,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 						a.Connection = &domain.AccountConnection{ID: domain.ID(m.RequestId), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}
 						a.Health = domain.AccountReady
 					}
-					if state.Pending == nil {
+					// A queued logout may be canceled by initiator revocation while
+					// this execution finishes. Write-back cannot undo its revocation.
+					if state.Pending == nil && a.Health != domain.AccountRevoked {
 						a.Health = domain.AccountReady
 					}
 				} else if lease.Action == domain.SubscriptionLogout {
