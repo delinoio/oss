@@ -513,3 +513,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
+
+- New repository registration follows issue #1142 in the desktop contract: folder first, fresh same-computer proof or explicit remote selection, canonical inspection confirmation and collapsed existing options. Never retain proof tokens, infer authentication, inherit primary-replacement overrides or replay unknown operations. Keep all picker/proof/inspection/save continuations inside the current Settings opening; closing fully resets presentation while accepted effects remain authoritative. Existing edits/additional checkouts preserve saved metadata.

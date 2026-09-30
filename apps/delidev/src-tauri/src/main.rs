@@ -44,6 +44,65 @@ fn trusted_url(url: &tauri::Url) -> bool {
         && url.password().is_none()
 }
 
+// One native folder dialog per process. This command accepts no renderer path,
+// grants no content/Git access and rechecks the original webview on completion.
+static FOLDER_PICKER_BUSY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+struct FolderPickerGuard;
+impl Drop for FolderPickerGuard {
+    fn drop(&mut self) {
+        FOLDER_PICKER_BUSY.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
+#[tauri::command]
+async fn choose_repository_folder(
+    window: WebviewWindow<Cef>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+) -> Result<Option<String>, NativeFailure> {
+    let binding = if window.label() == "main" {
+        trusted_main(&window)?;
+        None
+    } else {
+        Some(saved_binding(&window, &windows)?)
+    };
+    if FOLDER_PICKER_BUSY
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .is_err()
+    {
+        return Err(NativeFailure::Busy);
+    }
+    let _guard = FolderPickerGuard;
+    tracing::info!(operation = "repository_folder", phase = "choosing");
+    let selected = rfd::AsyncFileDialog::new()
+        .set_title("Choose your repository folder")
+        .set_parent(&window)
+        .pick_folder()
+        .await;
+    if let Some(original) = binding {
+        let current = saved_binding(&window, &windows)?;
+        if current.instance != original.instance || current.profile != original.profile {
+            return Err(NativeFailure::PermissionDenied);
+        }
+    } else {
+        trusted_main(&window)?;
+    }
+    let result = selected
+        .map(|handle| delidev_desktop::repository_folder_path(handle.path()))
+        .transpose();
+    match &result {
+        Ok(Some(_)) => tracing::info!(operation = "repository_folder", phase = "selected"),
+        Ok(None) => tracing::info!(operation = "repository_folder", phase = "canceled"),
+        Err(code) => tracing::warn!(operation = "repository_folder", phase = "failed", ?code),
+    }
+    result
+}
+
 #[tauri::command]
 async fn open_github(
     window: WebviewWindow<Cef>,
@@ -740,6 +799,7 @@ fn run() -> Result<(), NativeFailure> {
         .manage(connector)
         .manage(Arc::clone(&supervision))
         .invoke_handler(tauri::generate_handler![
+            choose_repository_folder,
             open_github,
             connect_local,
             inspect_local_registration,

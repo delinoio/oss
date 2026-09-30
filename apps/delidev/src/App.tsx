@@ -20,12 +20,13 @@ import { TrayPresentation } from "./tray-presentation";
 import { TrayDestination } from "./tray";
 import { NotificationPresentation } from "./notification-presentation";
 import { Sidebar } from "./sidebar";
+import type { ChooseRepositoryFolder } from "./repository-registration";
 import { SettingsEntryDestination } from "./settings";
 import { SidebarOutletProvider } from "./sidebar-context";
 import { PullRequests } from "./pull-requests";
 import { PRWorkflowProvider } from "./pr-workflow";
 
-function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; localServer?: ReactNode; readLocalWorker?: ReadLocalWorkerProof }) {
+function Shell({ localServer, chooseRepositoryFolder, readLocalWorker, controlLocalWorker, currentDeviceId, pairingAuthority }: { chooseRepositoryFolder?: ChooseRepositoryFolder; pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; localServer?: ReactNode; readLocalWorker?: ReadLocalWorkerProof }) {
   const [surface, setSurface] = useState(Surface.Sessions);
   const [sidebarTarget, setSidebarTarget] = useState<HTMLElement | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -70,17 +71,17 @@ function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDevice
     <Usage active={surface === Surface.Usage} open={open} />
     <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} />
     <PullRequests active={surface === Surface.PullRequests} openSettings={openSettings} />
-  </main><Settings pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} close={closeSettings} visible={settings} entryDestination={settingsEntry} destinationConsumed={consumeSettingsEntry} /></div></SidebarOutletProvider>;
+  </main><Settings readLocalWorker={readLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} close={closeSettings} visible={settings} entryDestination={settingsEntry} destinationConsumed={consumeSettingsEntry} /></div></SidebarOutletProvider>;
 }
 
 // Reconnects for one server/device retain this memory and its mutation receipts
 // even when authentication creates a replacement transport. Selecting another
 // identity creates a fresh query, draft and mutation scope.
-export function App({ transport, localServer, connectionReady = true, connectionEpoch = 0, readLocalWorker, controlLocalWorker, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; readLocalWorker?: ReadLocalWorkerProof; transport: Transport; localServer?: ReactNode; connectionReady?: boolean; connectionEpoch?: number }) {
+export function App({ transport, chooseRepositoryFolder, localServer, connectionReady = true, connectionEpoch = 0, readLocalWorker, controlLocalWorker, currentDeviceId, pairingAuthority }: { chooseRepositoryFolder?: ChooseRepositoryFolder; pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; readLocalWorker?: ReadLocalWorkerProof; transport: Transport; localServer?: ReactNode; connectionReady?: boolean; connectionEpoch?: number }) {
   const connectionIdentity = pairingAuthority && currentDeviceId ? JSON.stringify([pairingAuthority.endpoint, pairingAuthority.serverId, currentDeviceId]) : transport;
   const connection = useMemo(() => ({ id: newRequestId(), ...connectionQueryClient() }), [connectionIdentity]);
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><PRWorkflowProvider><Shell pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} localServer={localServer} readLocalWorker={readLocalWorker} /></PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><PRWorkflowProvider><Shell chooseRepositoryFolder={chooseRepositoryFolder} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} localServer={localServer} readLocalWorker={readLocalWorker} /></PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
 }

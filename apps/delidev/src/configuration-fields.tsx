@@ -176,7 +176,7 @@ function RemediationFields({ value, change, active }: { value: Document; change:
   </RemediationPolicyFields>;
 }
 
-function RepositoryFields({ data, change, active, pendingOperation }: FieldsProps) {
+export function RepositoryFields({ data, change, active, pendingOperation }: FieldsProps) {
   const [machine, setMachine] = useState(""), [path, setPath] = useState("");
   const [unknownInspection, setUnknownInspection] = useState(false);
   const [inspection, setInspection] = useState<{ job: Resource; machine: string }>();

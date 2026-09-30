@@ -610,3 +610,50 @@ mod desktop_capability_tests {
         }
     }
 }
+
+// The picker returns native path bytes only when they fit the existing
+// inspection wire bound. It never canonicalizes or opens the selected
+// directory.
+pub fn repository_folder_path(path: &std::path::Path) -> Result<String> {
+    let value = path.to_str().ok_or(NativeFailure::InvalidEvidence)?;
+    if !path.is_absolute() || value.is_empty() || value.len() > 4096 || value.contains('\0') {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(value.to_owned())
+}
+
+#[cfg(test)]
+mod repository_folder_tests {
+    use super::*;
+    #[test]
+    fn selection_retains_native_path_and_bounds_only() {
+        let root = std::env::temp_dir();
+        let path = root.join("repository with spaces").join("not-created");
+        assert_eq!(
+            repository_folder_path(&path).unwrap(),
+            path.to_str().unwrap()
+        );
+        assert_eq!(
+            repository_folder_path(std::path::Path::new("relative")),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        assert_eq!(
+            repository_folder_path(&root.join("a".repeat(4097))),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        assert_eq!(
+            repository_folder_path(&root.join("invalid\0path")),
+            Err(NativeFailure::InvalidEvidence)
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_selection_cannot_change_wire_path_bytes() {
+        use std::os::unix::ffi::OsStringExt;
+        let path = std::env::temp_dir().join(std::ffi::OsString::from_vec(vec![0xff]));
+        assert_eq!(
+            repository_folder_path(&path),
+            Err(NativeFailure::InvalidEvidence)
+        );
+    }
+}

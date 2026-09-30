@@ -554,3 +554,22 @@ dialog.modal-full-window::backdrop { background: transparent; }
   .settings-category-heading { flex-wrap: wrap; gap: 14px; }
   .settings-toolbar { justify-content: flex-start; width: 100%; }
 }
+
+/* Repository registration keeps the existing Settings tokens and scroll owner. */
+.settings-content .repository-registration { max-width: 760px; min-width: 0; }
+.repository-folder-card, .repository-summary { border: 1px solid var(--border, #d8dee8); border-radius: 10px; padding: 24px; margin: 20px 0; }
+.repository-folder-card { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.repository-summary-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.repository-summary h3, .repository-folder-card h3 { margin: 0; }
+.repository-path { overflow-wrap: anywhere; }
+.repository-summary dl { border-top: 1px solid var(--border, #d8dee8); padding-top: 16px; }
+.repository-summary dl > div { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 2fr); gap: 12px; margin: 12px 0; }
+.repository-summary dd { margin: 0; overflow-wrap: anywhere; }
+.repository-options-toggle { margin: 12px 0; }
+.repository-registration button { min-height: 40px; }
+@media (max-width: 600px) {
+  .repository-summary-heading { flex-direction: column; }
+  .repository-summary dl > div { grid-template-columns: 1fr; gap: 4px; }
+  .repository-folder-card, .repository-summary { padding: 16px; }
+  .repository-registration .actions { flex-direction: column; align-items: stretch; }
+}

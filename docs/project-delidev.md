@@ -49,6 +49,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 ## Cross-Domain Invariants
 - Go owns business logic; clients use authenticated Connect and preserve exact request/revision identities.
 - Local and remote operation preserve original native ownership, explicit authorization, credential isolation and uncertainty.
+- New repository registration derives canonical metadata from an explicitly owned Worker after folder selection; negotiated optional GitHub metadata cannot grant authentication or Git/network authority. Closing Settings disposes the registration presentation while accepted operations remain authoritative.
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.
 

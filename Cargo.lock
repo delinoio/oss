@@ -2810,6 +2810,7 @@ dependencies = [
  "dirs 6.0.0",
  "futures-lite",
  "mac-usernotifications",
+ "rfd",
  "serde",
  "serde_json",
  "tauri",
