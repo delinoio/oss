@@ -52,6 +52,8 @@ Outside the list, Home has one 48px disclosure summary: **Local server** or the 
 
 Long names truncate on one line with complete pointer/focus and accessible descriptions. Preserve independent passive execution/archive glyphs and unknown values, title states/reasons, visible focus, keyboard activation and reduced motion. Automatic insertion never moves focus. Keep one responsive drawer/controller lifetime, native focus containment/background inertness, Escape/Close/opener restoration, and 200% reflow. There is no new feature flag, dependency, preference, persisted schema, migration or write authority. Diagnostics contain stable stage/classification only, never names, prompts, cursors, credentials or endpoint/path values. Component/browser evidence and unperformed native CEF/platform acceptance are recorded separately in the [issue #1161 evidence](evidence/delidev/issue-1161/home-navigation.md).
 
+The dated issue #1054 component and native evidence, including untested viewports and platforms, is recorded in the [DeliDev implementation and evidence ledger](cmds-delidev-evidence.md).
+
 ### Menu-specific context panes
 Each selected menu owns its context controls while the main content and shared shell stay mounted. Keep filter drafts and applied values, selections, bounded page tokens, scroll position and composer text in the current connection memory. Same-identity reconnect retains this state; replacing the connection clears it under the existing bounds. Suspend inactive surface reads and never write it to Web Storage.
 
