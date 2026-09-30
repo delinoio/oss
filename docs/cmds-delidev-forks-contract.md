@@ -135,6 +135,12 @@ the original manifest's stable registration source, after comparing both Git
 common directories. Recovery and removal use that stable source after the parent
 managed workspace has been removed. Explicit Local still owns no checkout files.
 
+Managed database restore follows the shared storage contract and refuses
+replacement while a claimed or uncertain fork retains native ownership.
+Restoration preserves published fork metadata and original execution selection,
+while retaining paused dispatch and requiring recovery. Database publication
+alone cannot prove native cleanup or authorize continuation or another Fork.
+
 ## Security
 
 ### Failure ownership
