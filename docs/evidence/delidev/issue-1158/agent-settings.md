@@ -70,6 +70,14 @@ tests because the shared Go build cache's linker input files were missing. That
 attempt does not establish baseline pass/fail for either case, and the cache was
 not cleared or another task's processes altered to force a result.
 
+Before publication, main at `7f356266fc195b1880ffac66a93dadab5c5a2df7` was merged
+as `9804dfb4`, retaining #1178's AI API Keys presentation and #1179's Diagnostics.
+The shared-editor and desktop-contract conflicts were resolved by preserving both
+changes. Generated client build and `pnpm typecheck` passed again. The focused
+command above plus `src/doctor.test.tsx` and `src/account-settings.test.tsx` passed
+all 7 files / 106 tests on that combined revision, followed by a passing production
+`pnpm build`. This focused result does not supersede the complete-suite/native gaps.
+
 ## Browser layout and keyboard observations
 
 A disposable loopback browser fixture rendered the production Settings dialog and
