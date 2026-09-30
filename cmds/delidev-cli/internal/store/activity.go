@@ -7,7 +7,8 @@ import "github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 // Execution jobs mean accepted dispatch, not native input acceptance. Terminal
 // inbox sources retain observed native results independently of owned cleanup.
 const activitySources = `(kind='job' AND json_extract(body,'$.type')='execute-session') OR
- (kind='inbox' AND json_extract(body,'$.source')='execution-terminal') OR kind='occurrence'`
+ (kind='inbox' AND json_extract(body,'$.source')='execution-terminal') OR kind='occurrence' OR
+ (kind='problem' AND json_extract(body,'$.type') IN ('pull-request-activity','pull-request-handling-verification'))`
 
 type ActivityFilter struct {
 	SessionID domain.ID
@@ -28,7 +29,7 @@ func (t *Tx) ActivityPage(f ActivityFilter) ([]Record, bool, uint64, error) {
 		return nil, false, 0, err
 	}
 	var epoch uint64
-	if err := t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(MAX(sequence),0) FROM events WHERE kind IN ('job','inbox','occurrence','session')`).Scan(&epoch); err != nil {
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(MAX(sequence),0) FROM events WHERE kind IN ('job','inbox','occurrence','session','problem')`).Scan(&epoch); err != nil {
 		return nil, false, 0, storageError(err)
 	}
 	if f.After != "" && f.Epoch != epoch {
