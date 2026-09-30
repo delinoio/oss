@@ -3881,3 +3881,77 @@ repeated. The complete Go race pass at `e166686e` remains recorded above. No
 native app was launched, and no new account, login, production signing or
 distribution acceptance is claimed. Hosted CI for the forthcoming merge head
 is pending; the empty review inventory still has only Codex's quota message.
+
+### Settings opening disposal (issue #1138, 2026-09-30)
+
+- Ordinary Settings entry now starts at the first SubscriptionAccounts category.
+  Close, dialog cancel/Escape and navigation away discard the entire opening,
+  including editors, filters/pages, account wizard secrets, confirmations, local
+  job tracking and uncertain retry UI. Targeted New Project/Repositories entries
+  remain explicit; deferred destinations are cleared on close.
+- A fresh opening-owned transport and mutation registry abort supported client
+  waits, reject late outcomes and prevent follow-up requests. Tagged native/Connect
+  cache cleanup preserves the connection QueryClient and sibling exact retries.
+  Strict Mode replay creates a fresh generation; same-identity transport replacement
+  preserves an open editor and uses the latest authenticated transport.
+- Generated-router regressions deliberately ignore cancellation and settle reads
+  and writes late. A fixture commits before delaying acknowledgment; fresh reads
+  observe that resource without replay or rollback. Tests also cover late native
+  Worker/permission callbacks, repeated cache cleanup, sibling uncertain requests,
+  Close/cancel opener restoration, targeted entries, tray navigation and preserved
+  session/composer state.
+- Package-local `pnpm test` passed: 75 Vitest files / 960 tests, 8 package-verifier
+  fixtures, 16 launcher/asset fixtures, native Swift widget fixtures, TypeScript
+  checking and production frontend build. The first sandboxed attempt could not
+  access the Go build cache; the permitted unsandboxed run passed with temporary
+  server/Worker fixtures and no external account or inference. The source icon
+  was hydrated from its existing exact-path LFS cache and its SHA-256/size remained
+  identical. Generated frontend/client `dist` output is removed before delivery.
+- Native smoke ran the unchanged pinned CEF launcher on macOS 26.6.2 arm64 in a
+  separately built ad-hoc bundle, with private app/cache state and a paired
+  disposable loopback server. Ordinary entry selected AI Subscription. An unsaved
+  custom-provider name was discarded by Escape; focus returned to Settings and
+  reopening selected AI Subscription, with an empty new provider editor. Close
+  discarded a second draft and restored the same opener. New Project opened and
+  focused its targeted editor; Escape restored New Project, and the next ordinary
+  entry cleared that destination and selected AI Subscription. No Save was used.
+  Native Tab/Shift-Tab boundary traversal visited the dialog's last disclosure,
+  document focus and Close, without reaching background controls. The 3440×2168
+  2× native capture showed the full Settings surface and focused Close control.
+- The copied native build cache required removal of temporary relocated CMake
+  caches. The initial launch collided with the existing app's CEF cache; private
+  cache/home context resolved it. The disposable server initially rejected the
+  renderer origin; restarting that server with the exact `http://tauri.localhost`
+  allowlist established the saved connection. Existing app/server state was not
+  modified. The fixture received Quit, remaining CEF processes were terminated
+  by their exact temporary bundle path, and the temporary server was stopped.
+  Generated desktop/client `dist` directories were removed. Windows/X11 runtime,
+  responsive resizing/zoom, production signing and release acceptance remain
+  unverified for this revision; earlier copy-only geometry evidence is separate.
+
+### PR #1114 Settings-opening merge reconciliation (2026-09-30)
+
+Merged main revision `12b33a2a`, including issue #1138's Settings-opening
+lifetime. The sole conflicting evidence section preserves both complete source
+histories. The imported scoped rules and desktop, storage and configuration
+transfer contracts retain category-local workflows within one opening and
+release them on close without canceling accepted server jobs or replaying them.
+Managed restore's exact receipt/revision checks, exclusive lifecycle barrier,
+server shutdown and restart recovery are unchanged.
+
+Node.js 24 focused Settings lifetime, presentation, generated-router integration,
+backup and app-shell suites passed all 90 tests across five files, including
+ignored cancellation, late success/error callbacks, fresh authoritative reads,
+sibling retries, same-identity reconnects and Strict Mode generation disposal.
+Go, Rust, canonical protocol and generated bindings are unchanged by this merge;
+the complete Go race pass at `e166686e` remains recorded above.
+
+The required package-local Node.js 24 `pnpm test` passed all 960 component tests
+across 75 files, generated-client build and TypeScript checking, eight
+package-verifier and 16 asset/launcher cases, native Swift widget fixtures and
+the production frontend build. Generated desktop/client `dist` output was
+removed afterward. The previous published head `27ff1870` completed all ten
+selected hosted CI checks; CI for this forthcoming merge head requires fresh
+results. Codex has no completed review and still reports its code-review usage
+limit. No native app was launched for this reconciliation; the incoming native
+smoke evidence remains distinct.
