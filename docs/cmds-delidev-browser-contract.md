@@ -121,7 +121,8 @@ remain untracked.
 
 External navigation and resources deny product origins (including WebSocket
 counterparts), app/IPC origins, the fixed local API/development ports, file/custom
-schemes and URL credentials. Only trusted address actions add loopback browsing origins to a bounded 32-origin
+schemes and URL credentials. IPv4-mapped IPv6 loopback addresses receive the
+same fixed-port denial and explicit-origin requirement as IPv4 loopback. Only trusted address actions add loopback browsing origins to a bounded 32-origin
 allowlist; restored local tabs retain their explicit origins. Redirects and resource
 requests cannot extend that list. Popups, downloads, file pickers and permission prompts are
 denied; script clipboard/paste access is disabled. Ordinary external HTTP(S) pages

@@ -177,7 +177,12 @@ impl Policy {
 fn loopback(url: &url::Url) -> bool {
     match url.host() {
         Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
-        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => {
+            ip.is_loopback()
+                || ip
+                    .to_ipv4_mapped()
+                    .is_some_and(|mapped| mapped.is_loopback())
+        }
         Some(url::Host::Domain(host)) => host == "localhost" || host.ends_with(".localhost"),
         None => false,
     }
@@ -393,6 +398,8 @@ mod tests {
             "http://127.0.0.1:46310/",
             "http://127.1:46311/",
             "http://localhost:46310/",
+            "http://[::ffff:127.0.0.1]:46310/",
+            "http://[::ffff:7f00:1]:46311/",
             "https://user:password@example.test/",
         ] {
             assert!(!p.navigation(u), "{u}")
@@ -407,6 +414,12 @@ mod tests {
         assert!(p.navigation("http://127.0.0.1:40221/app"));
         assert!(!p.navigation("http://127.0.0.1:40222/"));
         assert!(!p.navigation("https://server.test/"));
+        assert!(!p.navigation("http://[::ffff:127.0.0.1]:40221/"));
+        assert!(!p.resource("ws://[::ffff:127.0.0.1]:40221/socket"));
+        let explicit = p.with_explicit("http://[::ffff:127.0.0.1]:40221/").unwrap();
+        assert!(explicit.navigation("http://[::ffff:127.0.0.1]:40221/app"));
+        assert!(!explicit.resource("http://[::ffff:127.0.0.1]:40222/"));
+        assert!(!explicit.resource("ws://[::ffff:127.0.0.1]:46310/"));
     }
     #[test]
     fn profiles_share_only_original_scope_and_reject_symlinks() {
