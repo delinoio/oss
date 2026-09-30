@@ -2,6 +2,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- PR activity uses the closed metadata-only shapes in `pr_activity.go` under the activity contract. Keep original problem versions, actor provenance and attempt outcomes distinct from dedicated handling verification; never infer verification from success, dismissal or provider state.
+
 - Service status observations hold the state gate against controller admission, probe the runtime lock before reading completion, and retain an acquired runtime lock through that observation. Preserve incomplete controller evidence as uncertain; an earlier journal snapshot cannot establish cleanup after lock release.
 
 - Windows service process ownership resolves the reported Win32 image path under the installation's canonical path contract, including 8.3 aliases, and matches the original executable file identity. Preserve independent SID and before/after process-birth checks.
