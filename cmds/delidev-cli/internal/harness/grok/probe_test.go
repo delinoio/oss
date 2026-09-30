@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -160,7 +161,26 @@ func init() {
 	os.Exit(0)
 }
 
-func fixtureConfig(t *testing.T, mode string) (ProbeConfig, *bytes.Buffer) {
+// Fixture reads may overlap final diagnostics from the owned process. Protect
+// both operations; the slog handler's writer lock does not cover String reads.
+type fixtureLogBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *fixtureLogBuffer) Write(raw []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(raw)
+}
+
+func (b *fixtureLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
+}
+
+func fixtureConfig(t *testing.T, mode string) (ProbeConfig, *fixtureLogBuffer) {
 	t.Helper()
 	parent := t.TempDir()
 	root := filepath.Join(parent, "fixture-"+mode)
@@ -189,7 +209,7 @@ func fixtureConfig(t *testing.T, mode string) (ProbeConfig, *bytes.Buffer) {
 			env = append(env, key+"="+value)
 		}
 	}
-	logs := &bytes.Buffer{}
+	logs := &fixtureLogBuffer{}
 	return ProbeConfig{Version: SupportedVersion, Home: filepath.Join(root, "grok"), Process: process.Config{Directory: filepath.Join(filepath.Dir(root), "processes"), OwnerID: domain.NewID(), Executable: executable, Env: env, Cwd: root, Logger: slog.New(slog.NewJSONHandler(logs, nil))}}, logs
 }
 

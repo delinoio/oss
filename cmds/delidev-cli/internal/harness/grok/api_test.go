@@ -170,7 +170,7 @@ func fixtureAPIModels() []any {
 	return []any{map[string]any{"modelId": selectedModel, "name": selectedModelName, "_meta": map[string]any{"totalContextTokens": 32000, "agentType": "grok-build-plan"}}}
 }
 
-func fixtureAPIConfig(t *testing.T, mode string) (apiConfig, *bytes.Buffer) {
+func fixtureAPIConfig(t *testing.T, mode string) (apiConfig, *fixtureLogBuffer) {
 	t.Helper()
 	probe, log := fixtureConfig(t, "api-"+mode)
 	workspace, err := filepath.EvalSymlinks(t.TempDir())
