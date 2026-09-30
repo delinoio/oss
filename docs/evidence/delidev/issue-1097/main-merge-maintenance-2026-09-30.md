@@ -69,3 +69,16 @@ or test deadline was relaxed and no unrelated test behavior was changed.
 
 Generated repository-owned `dist` directories are removed before delivery.
 GitHub check/review evidence on the original head does not apply to the new push.
+
+## Committed-source verification
+
+The conflict repair is `bc9c38c1902605b5dba3391581ef9e0ae32cc2f0`, with
+parents equal to the original published head and the inspected main above.
+Root Lefthook Go formatting passed for that commit. `pnpm proto:check` then
+passed formatting/lint, baseline breaking comparison, forced Turbo regeneration
+and generated-source freshness with no tracked or untracked drift.
+
+Before the final repair push, GitHub reported no unresolved Codex review threads
+and no failing reported checks; its single successful external check belonged to
+the earlier head. No Codex review or approval was present. Those observations do
+not establish CI, review or merge readiness for the new head.
