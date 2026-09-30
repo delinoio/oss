@@ -559,3 +559,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Browser presentation treats the retained closed compact sidebar dialog and open wide sidebar region as ordinary navigation. Hide the native child only for a currently visible dialog, hidden/inert ancestry or clipped geometry; reopening retains the original profile with a new presentation identity. Follow `docs/cmds-delidev-browser-contract.md`.
 
 - Cache browser geometry only after native resize succeeds for the current presentation. Clear failed geometry so identical subsequent layout callbacks can retry rather than leaving an external child at obsolete bounds.
+
+- Retain the exact browser view identity after failed Hide and retry only its closure, including after panel unmount or a late open completion. Serialize hides and block resize/reopening until closure succeeds; an old cleanup cannot clear a replacement's identity.

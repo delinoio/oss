@@ -762,6 +762,9 @@ impl BrowserHost {
         let profile = profile.as_str();
         let view_id = view_id.as_str();
         tracing::debug!(operation = "browser_control", ?action);
+        if matches!(action, Action::Hide) {
+            return self.hide(window.label(), profile, view_id);
+        }
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         let view = state
             .views
@@ -834,12 +837,7 @@ impl BrowserHost {
                 }
             }
             Action::Hide => {
-                if let Some(v) = state.views.remove(window.label())
-                    && let Some(b) = v.browser
-                    && let Some(h) = b.host()
-                {
-                    h.close_browser(1);
-                }
+                unreachable!("Hide uses exact idempotent cleanup before ordinary controls")
             }
             Action::NewTab | Action::SelectTab | Action::CloseTab => {
                 let p = state.profiles.get_mut(profile).unwrap();
@@ -889,6 +887,37 @@ impl BrowserHost {
             tabs: p.tabs.clone(),
             removal_pending: p.removing,
         })
+    }
+
+    fn hide(&self, window: &str, profile: &str, view_id: &str) -> Result<BrowserState> {
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        let p = state
+            .profiles
+            .get(profile)
+            .ok_or(NativeFailure::InvalidEvidence)?;
+        let result = BrowserState {
+            tabs: p.tabs.clone(),
+            removal_pending: p.removing,
+        };
+        // A superseding reservation already closes the previous child. Retried
+        // cleanup proves that old view is absent without touching its replacement.
+        let view = if state
+            .views
+            .get(window)
+            .is_some_and(|v| v.profile == profile && v.view_id == view_id)
+        {
+            state.views.remove(window)
+        } else {
+            None
+        };
+        drop(state);
+        if let Some(view) = view
+            && let Some(browser) = view.browser
+            && let Some(host) = browser.host()
+        {
+            host.close_browser(1);
+        }
+        Ok(result)
     }
 
     pub fn status(&self, window: &str, profile: &str, view_id: &str) -> Result<BrowserState> {
@@ -1998,6 +2027,29 @@ mod tests {
             serde_json::to_vec(&host.state.lock().unwrap().profiles[&record.id].tabs).unwrap(),
             before
         );
+    }
+
+    #[test]
+    fn repeated_hide_preserves_a_replacement_view() {
+        let (_temp, host, record, view_id, request) = active_storage_fixture();
+        host.hide("fixture", &record.id, &view_id).unwrap();
+        assert!(host.state.lock().unwrap().views.is_empty());
+        host.hide("fixture", &record.id, &view_id).unwrap();
+        let replacement = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &replacement).unwrap();
+        host.state.lock().unwrap().views.insert(
+            "fixture".into(),
+            View {
+                profile: record.id.clone(),
+                generation: request.generation,
+                request,
+                browser: None,
+                failure: None,
+                view_id: replacement.clone(),
+            },
+        );
+        host.hide("fixture", &record.id, &view_id).unwrap();
+        assert!(host.status("fixture", &record.id, &replacement).is_ok());
     }
 
     #[test]

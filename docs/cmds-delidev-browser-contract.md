@@ -86,6 +86,12 @@ Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
 Closing the panel releases its view, retaining its request context/profile.
+Failed Hide retains its exact presentation identity and retries that closure,
+including after unmount or late open completion. Hides are serialized; resize
+and reopening wait for successful closure. Native Hide confirms an already
+absent original view without touching a replacement, and old cleanup cannot
+clear the replacement's frontend identity. Closure acceptance does not replace
+the independent native close/shutdown proofs required for profile deletion.
 Profile directory traversal, tab reads, URL policy preparation and durable writes
 run on serialized storage workers without holding the native state lock during
 I/O. Trusted documents and presentation/control generations are rechecked before

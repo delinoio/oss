@@ -46,7 +46,8 @@ export function SessionBrowser({ session, accountId, close }: { session: Resourc
   useEffect(() => {
     if (!profileId || !viewport.current) return;
     let disposed = false, opened = false, opening = false, resizing = false;
-    let lastBounds = "", queued = false, failed = false;
+    let lastBounds = "", queued = false, failed = false, ownedViewId = "";
+    let hiding = false, hideRequired = false, hideRetry: number | undefined;
     const node = viewport.current;
     const visible = () => node.isConnected && !node.closest("[hidden], [inert]") && !Array.from(documentGlobal().querySelectorAll('dialog[open]:not([role="region"]), [role="dialog"]:not(dialog)')).some((dialog) => {
       // The responsive sidebar retains a closed dialog, and its wide layout is
@@ -64,21 +65,39 @@ export function SessionBrowser({ session, accountId, close }: { session: Resourc
       }
       return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
     };
-    const hide = async () => { if (!opened) return; opened = false; lastBounds = ""; const viewId = presentation.current; presentation.current = ""; try { await invoke("control_browser", { profileId, viewId, action: BrowserAction.Hide }); } catch { /* Native ownership and profile data remain retained. */ } };
+    const hide = async () => {
+      if (!opened || hiding) return;
+      hideRequired = true; hiding = true;
+      const viewId = ownedViewId;
+      let closed = false;
+      try {
+        await invoke("control_browser", { profileId, viewId, action: BrowserAction.Hide });
+        opened = false; ownedViewId = ""; lastBounds = ""; hideRequired = false; closed = true;
+        if (presentation.current === viewId) presentation.current = "";
+        if (hideRetry !== undefined) { window.clearTimeout(hideRetry); hideRetry = undefined; }
+      } catch {
+        if (!disposed) setFailure("The browser view could not be hidden. Retrying native closure.");
+        // Keep exact cleanup ownership after unmount. A failed Hide has not
+        // released the raw child; retry only this closure, never an open/action.
+        if (hideRetry === undefined) hideRetry = window.setTimeout(() => { hideRetry = undefined; void hide(); }, 250);
+      } finally {
+        hiding = false;
+        if (closed && !disposed) { queued = false; void update(); }
+      }
+    };
     const update = async () => {
       if (disposed || failed) return;
-      if (opening || resizing) { queued = true; return; }
+      if (opening || resizing || hiding) { queued = true; return; }
+      if (opened && hideRequired) { await hide(); return; }
       const area = bounds(), geometry = JSON.stringify(area);
       if (!visible() || area.width < 1 || area.height < 1) { await hide(); return; }
       if (!opened) {
         opening = true;
-        const viewId = newRequestId(); presentation.current = viewId;
+        const viewId = newRequestId(); ownedViewId = viewId; presentation.current = viewId;
         try {
           const result = browserState(await invoke<BrowserState>("open_browser", { profileId, viewId, url: address, bounds: area }));
-          if (disposed || presentation.current !== viewId) {
-            await invoke("control_browser", { profileId, viewId, action: BrowserAction.Hide }).catch(() => {}); return;
-          }
           opened = true; lastBounds = geometry;
+          if (disposed || presentation.current !== viewId) { await hide(); return; }
           if (!visible()) { await hide(); return; }
           setState(result);
         } catch { failed = true; if (!disposed) setFailure("The native browser is unavailable. Check device authorization, then retry explicitly. Restarting the desktop releases retained profile contexts."); }

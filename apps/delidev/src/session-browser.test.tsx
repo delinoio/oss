@@ -89,6 +89,52 @@ it("surfaces a delayed native child failure and reopens only after explicit retr
   await waitFor(() => expect(native.mock.calls.filter(([operation]) => operation === "open_browser")).toHaveLength(2));
   expect(native.mock.calls.filter(([operation]) => operation === "open_browser")[1][1].viewId).not.toBe(first.viewId);
 });
+it("retains the exact view after failed hide and blocks resize or reopening until closure", async () => {
+  const f = fixture();
+  let attempts = 0, finish!: (value: typeof f.local) => void;
+  native.mockImplementation(async (_operation, args) => {
+    if (args.action === "hide") {
+      if (++attempts === 1) throw new Error("busy");
+      if (attempts === 2) return new Promise(resolve => { finish = resolve; });
+    }
+    return f.local;
+  });
+  const view = render(<f.View />);
+  await open();
+  await screen.findByRole("button", { name: /Tab 1/ });
+  const original = native.mock.calls.find(([op]) => op === "open_browser")![1];
+  const modal = document.createElement("dialog"); modal.setAttribute("open", "");
+  try {
+    await act(async () => { document.body.append(modal); });
+    await screen.findByText("The browser view could not be hidden. Retrying native closure.");
+    await waitFor(() => expect(attempts).toBe(2));
+    await act(async () => { modal.remove(); fireEvent.resize(window); });
+    expect(native.mock.calls.filter(([op]) => op === "open_browser")).toHaveLength(1);
+    expect(native.mock.calls.filter(([, args]) => args.action === "resize")).toHaveLength(0);
+    expect(native.mock.calls.filter(([, args]) => args.action === "hide").every(([, args]) => args.viewId === original.viewId)).toBe(true);
+    await act(async () => { finish(f.local); });
+    await waitFor(() => expect(native.mock.calls.filter(([op]) => op === "open_browser")).toHaveLength(2));
+    expect(native.mock.calls.filter(([op]) => op === "open_browser")[1][1].viewId).not.toBe(original.viewId);
+  } finally { modal.remove(); view.unmount(); }
+});
+it("retries failed cleanup after unmount with only its original view identity", async () => {
+  const f = fixture();
+  let attempts = 0;
+  native.mockImplementation(async (_operation, args) => {
+    if (args.action === "hide" && ++attempts === 1) throw new Error("busy");
+    return f.local;
+  });
+  const view = render(<f.View />);
+  await open();
+  await screen.findByRole("button", { name: /Tab 1/ });
+  const original = native.mock.calls.find(([op]) => op === "open_browser")![1];
+  view.unmount();
+  await waitFor(() => expect(attempts).toBe(2));
+  expect(native.mock.calls.filter(([, args]) => args.action === "hide").every(([, args]) => args.viewId === original.viewId)).toBe(true);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  expect(attempts).toBe(2);
+  expect(native.mock.calls.filter(([op]) => op === "open_browser")).toHaveLength(1);
+});
 it("closes only the earlier instance when its native open resolves after replacement",async()=>{
  const f=fixture();let finish!:(value:typeof f.local)=>void;native.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}));render(<f.View />);await open();await waitFor(()=>expect(native).toHaveBeenCalledTimes(1));const first=native.mock.calls[0][1];
  fireEvent.click(screen.getByRole("button",{name:"Retry native view"}));await waitFor(()=>expect(native.mock.calls.filter(([op])=>op==="open_browser")).toHaveLength(2));const second=native.mock.calls.filter(([op])=>op==="open_browser")[1][1];
