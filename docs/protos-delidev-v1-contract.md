@@ -6,6 +6,13 @@ names and numbers remain unchanged. `protos/delidev/allocations.json` records ma
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 
+The [planned shared compaction contract](cmds-delidev-compaction-contract.md)
+reserves `EntityKind` 32, `SystemCapability` 15, `WorkerCapability` 5 and
+`SessionChange.compaction_job` 9 for issues #1093, #1202 and #1203. These are
+ledger reservations only: no schema declaration, generated binding, RPC or
+capability advertisement is activated by the reservation change. The owning
+issue is recorded directly when no implementation PR exists yet.
+
 ## Scope
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 
@@ -343,7 +350,7 @@ Provider activation adds an owner/client-only `ProviderService.ListProviderInven
 
 `SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
-System capability wire values retain `AUTOMATIC_TITLES_V1 = 1` and the merged `SESSION_FORWARDING_V1 = 2`; the additive `USER_SERVICES_V1` uses `3`. `GetStatus` advertises all three independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3` and `PERMANENT_SESSION_DELETION_V1 = 9`; native accounting adds the reserved `NATIVE_ACCOUNTING_V1 = 4`. `GetStatus` advertises each independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 
@@ -375,3 +382,4 @@ Generate Go and TypeScript/Connect Query sources together and follow the
 Issue #1091 adds typed `grok-tool-observed`/`grok_tool`, exclusive `Interaction.grok`, question/approval response `input.grok`, native current-mode/order/response aggregate progress and the exclusive `grok_tools_terminal` Resource JSON variants. Original method/request-kind/arrival and exact decimal uint64 counters survive without float conversion. Grok numeric request IDs add `{kind: "decimal", decimal: "<original integer spelling>"}` within Resource JSON, preserving the native 19-digit optional-minus grammar and `-0` without narrowing; historical text/signed-number identities remain unchanged. Each interaction references its immutable earlier observation and original native proposal; Plan additionally binds original entry/Write/content digest/revision. Follow the harness contract for complete independent validation, bounds and evidence limits.
 
 Existing `RespondQuestion`, `RespondApproval`, owning-Worker response claims, metadata-only controls, delivery publications and exact receipt replay carry these variants. Accepted original tool results create the server-derived `native-grok-tool-result` evidence; a Worker cannot assert it through generic acceptance publication. Native Plan uses the original approval request and adds no common Plan gate. No protobuf service, generated binding, relational schema migration or Worker permission expansion is required. CLI `interaction respond` and `interaction approve` accept the same exclusive `{"grok": ...}` document through file/stdin after reading and validating the original interaction; credential stdin remains separate. Historical missing variants preserve existing bytes and do not gain this profile's authority.
+Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).

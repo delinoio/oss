@@ -113,8 +113,14 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 				return corrupt()
 			}
 			group.Totals.Add(record.Usage.Counts)
+			if f.AccountingProfile == domain.NativeUnitsV1Accounting {
+				group.Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
+			}
 			group.Estimates.Add(estimate)
 			result.Totals.Add(record.Usage.Counts)
+			if f.AccountingProfile == domain.NativeUnitsV1Accounting {
+				result.Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
+			}
 			if result.Analytics != nil {
 				created := time.UnixMilli(responseCreated).UTC()
 				day := sort.Search(len(dayBuckets), func(index int) bool { return created.Before(dayBuckets[index].Until) })
@@ -122,6 +128,9 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					return corrupt()
 				}
 				dayBuckets[day].Totals.Add(record.Usage.Counts)
+				if f.AccountingProfile == domain.NativeUnitsV1Accounting {
+					dayBuckets[day].Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
+				}
 				key := usageModelKey{Provider: record.ProviderID, Model: record.ModelID}
 				model := modelGroups[key]
 				if model == nil {
@@ -132,12 +141,20 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					modelGroups[key] = model
 				}
 				model.Totals.Add(record.Usage.Counts)
+				if f.AccountingProfile == domain.NativeUnitsV1Accounting {
+					model.Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
+				}
 			}
 		}
 		return storageError(rows.Err())
 	}()
 	if err != nil {
 		return domain.UsageSummary{}, err
+	}
+	if f.AccountingProfile == domain.NativeUnitsV1Accounting {
+		if err := t.grokAccountingSummary(f, &result, groups, modelGroups, dayBuckets); err != nil {
+			return domain.UsageSummary{}, err
+		}
 	}
 	if result.Analytics != nil {
 		for _, model := range modelGroups {
@@ -151,7 +168,11 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					continue
 				}
 				other.ModelCount++
-				other.Totals.Merge(model.Totals)
+				// Other keeps the existing response-ranked projection. Native
+				// accounting uses the complete model inventory independently.
+				responseTotals := model.Totals
+				responseTotals.Accounting = nil
+				other.Totals.Merge(responseTotals)
 			}
 			if other.ModelCount > 0 {
 				result.Analytics.OtherModels = other
