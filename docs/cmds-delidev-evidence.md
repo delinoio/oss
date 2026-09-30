@@ -3646,3 +3646,71 @@ used.
   Generated desktop/client `dist` directories were removed. Windows/X11 runtime,
   responsive resizing/zoom, production signing and release acceptance remain
   unverified for this revision; earlier copy-only geometry evidence is separate.
+
+
+### Issue #1149 home-only header actions (2026-09-30)
+
+Freshly fetched `main` at `12b33a2accafe55b39da9bae2fba1acf310b265b`
+still rendered Inbox/Search on every surface. The complete header-action group
+now exists only on Sessions welcome/list/detail and NewSession, independently
+of catalog read state. Other surfaces retain the static heading and contextual
+controls without replacement targets. Styles, native host, generated public
+interfaces and business RPC behavior are unchanged.
+
+Header actions preserve the existing Inbox/Search callbacks and retained
+connection state. A consumed pending header-origin destination hands focus off
+synchronously in the parent layout effect after destination commit and drawer
+close. The current media query selects wide `#main` focus with `preventScroll`
+or the persistent compact destination opener. Search keeps its existing later
+one-time query autofocus; replacement navigation and Settings opening retire
+obsolete intent. Drawer-to-wide focus restoration also completes synchronously,
+so it cannot steal focus in a later animation frame.
+
+Synthetic generated Connect fixtures cover all eight surfaces, empty/deferred,
+PermissionDenied, Unavailable and cached-refresh-error reads, action names/order
+and DOM absence, wide/compact focus and stale-intent replacement/Settings/resize.
+They also retain selected conversation/composer, NewSession draft, expanded
+project, independent catalog/session/Search/Inbox cursors, applied and unapplied
+filters, per-surface sidebar scroll and reconnect behavior. Mutation spies remain
+unused for enqueue/control/create/configuration/read-state/response/GitHub work;
+no real accounts, credentials, external writes or Worker execution are used.
+Existing tray/notification, Inbox response and connection-identity reset suites
+remain included in the full package run.
+
+The focused run passed 2 files / 60 tests. The first full run passed 972 tests
+and failed one new immediate paging assertion while a legitimate retained-page
+refresh was still fetching. That fixture now waits for the read to commit using
+the original observation deadline, and queries the restored current group rather
+than its detached old node. No product timeout or query behavior changed.
+The final `pnpm test` from `apps/delidev` passed typed-client generation and
+TypeScript checking, all 75 Vitest files / 973 tests, all 8 package-verifier and
+16 asset/launcher cases, native Swift widget fixtures and the production build.
+The DeliDev icon was hydrated through its exact LFS path before verification;
+`git lfs fsck` and `git diff --check` passed. No Rust code changed.
+
+A temporary Chrome fixture used the real App and production CSS with synthetic
+in-memory router data. At 100% zoom, home/non-home measurements at 960×640,
+1,100×640, 1,101×640 and 760×640 preserve heading x=64, header y=12 and height=34,
+52px rail, 256px pane through 1,100px and 288px pane at 1,101px. Home targets
+remain 34×34px, while non-home contains no header buttons. No horizontal overflow
+was observed. Tab then Enter activated Inbox with visible focus and `#main`
+focus; Tab then Space activated Search, whose first query autofocus won. Returning
+retained the literal query and Archive selection with `#main` focus.
+
+At 759×640, header activation closed the actual browser modal before focusing
+the newly named opener. First Search query autofocus waited for explicit drawer
+opening; Escape and Close restored the current opener. The native browser AX tree
+exposed only modal content while open. A 14-Tab sample had 13 dialog-owned focus
+observations and one non-dialog observation; this is not complete native-host
+focus-trap acceptance. The existing 200% loopback-host zoom was also checked with
+a 1440×900 override measuring 720×450 CSS pixels: home/non-home drawers, visible
+Close and destination-opener focus remained usable without horizontal overflow.
+The non-home Pull requests rendering was visually inspected and captured outside
+the repository. Temporary viewport overrides were reset.
+
+These are component and Chrome responsive/keyboard observations, not packaged
+Tauri/CEF or native window-geometry acceptance. This task did not launch a native
+app or establish macOS/Windows/Linux installed-runtime, complete assistive
+technology, reduced-motion, production signing or release acceptance. The
+existing native 960×640 minimum and styling are unchanged. The temporary browser
+fixture/server and all generated desktop/client `dist` directories were removed.

@@ -2,8 +2,8 @@ import { create } from "@bufbuild/protobuf";
 import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { afterEach, expect, it, vi } from "vitest";
+import { ConfigurationService, EntityKind, InboxService, IntegrationService, InteractionService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SearchArchiveState, SearchService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode } from "./documents";
 
@@ -24,6 +24,10 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const projectRequests: string[] = [];
   const sessionRequests: { projectId: string; includeArchived: boolean; pageToken: string }[] = [];
   const preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false });
+  const searches = vi.fn(async (_request: { query: string; archive: SearchArchiveState; pageToken: string }) => ({ hits: [], ...(_request.pageToken ? {} : { nextPageToken: "search-next" }) }));
+  const inboxReads = vi.fn(async (_request: { pageToken: string }) => ({ entries: [], ...(paginated && !_request.pageToken ? { nextPageToken: "inbox-next" } : {}) }));
+  const markRead = vi.fn(async () => ({}));
+  const respond = vi.fn(async () => ({}));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status });
     router.service(SessionService, { listSessions: (request) => {
@@ -47,12 +51,194 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
         await new Promise<void>((resolve) => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); });
       },
     });
-    router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: async () => ({ preferences }) });
+    router.service(InboxService, { listInbox: inboxReads, setInboxReadState: markRead, getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: async () => ({ preferences }) });
+    router.service(SearchService, { searchConversations: searches });
+    router.service(InteractionService, { respondQuestion: respond });
     router.service(IntegrationService, { queryRepositoryIntegration: githubQuery });
     router.service(ConfigurationService, { saveConfiguration });
   });
-  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, projectRequests, sessionRequests, agent, machine };
+  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, projectRequests, sessionRequests, agent, machine, searches, inboxReads, markRead, respond };
 }
+
+afterEach(() => vi.unstubAllGlobals());
+
+function viewport(initialWidth: number) {
+  let width = initialWidth;
+  const listeners = new Set<() => void>();
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ get matches() { return width <= 759; }, addEventListener: (_event: string, listener: () => void) => listeners.add(listener), removeEventListener: (_event: string, listener: () => void) => listeners.delete(listener) })));
+  return (nextWidth: number) => { width = nextWidth; for (const listener of listeners) listener(); };
+}
+
+function headerAction(name: "Inbox" | "Search") {
+  return within(window.document.querySelector<HTMLElement>(".sidebar-header")!).getByRole("button", { name });
+}
+
+function expectNoBusinessWrites(value: ReturnType<typeof fixture>) {
+  for (const mutation of [value.enqueues, value.controls, value.creates, value.saveConfiguration, value.markRead, value.respond, value.githubQuery]) expect(mutation).not.toHaveBeenCalled();
+}
+
+it.each(["Inbox", "Search"] as const)("hands wide header %s focus to committed content before first Search autofocus", async (destination) => {
+  viewport(960);
+  const value = fixture();
+  const view = render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  await screen.findByText("Server 0.1.0");
+  const button = headerAction(destination);
+  button.focus();
+  const main = screen.getByRole("main");
+  const focus = vi.spyOn(main, "focus");
+  fireEvent.click(button);
+  expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+  expect(window.document.activeElement).toBe(main);
+  expect(window.document.querySelector(".sidebar-header-actions")).toBeNull();
+  if (destination === "Search") {
+    const query = await screen.findByRole("textbox", { name: "Search conversations" });
+    await waitFor(() => expect(window.document.activeElement).toBe(query));
+    fireEvent.change(query, { target: { value: "keep this search" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Archive" }), { target: { value: SearchArchiveState.ARCHIVED } });
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(headerAction(destination));
+  expect(window.document.activeElement).toBe(main);
+  await act(async () => { await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())); });
+  if (destination === "Search") {
+    expect((screen.getByRole("textbox", { name: "Search conversations" }) as HTMLInputElement).value).toBe("keep this search");
+    expect((screen.getByRole("combobox", { name: "Archive" }) as HTMLSelectElement).value).toBe(String(SearchArchiveState.ARCHIVED));
+    expect(value.searches).not.toHaveBeenCalled();
+  }
+  view.rerender(<StrictMode><App transport={value.transport} connectionEpoch={1} /></StrictMode>);
+  await waitFor(() => expect(value.status.mock.calls.length).toBeGreaterThan(1));
+  expect(window.document.activeElement).toBe(main);
+  expectNoBusinessWrites(value);
+});
+
+it.each(["Inbox", "Search"] as const)("closes the compact header %s drawer before focusing the current opener", async (destination) => {
+  viewport(759);
+  const value = fixture();
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  const opener = screen.getByRole("button", { name: "Open session navigation" });
+  opener.focus();
+  fireEvent.click(opener);
+  const drawer = screen.getByRole("dialog", { name: "DeliDev navigation" });
+  const button = headerAction(destination);
+  button.focus();
+  fireEvent.click(button);
+  expect(drawer.hasAttribute("open")).toBe(false);
+  expect(screen.getByRole("button", { name: `Open ${destination.toLowerCase()} filters` })).toBe(opener);
+  expect(opener.getAttribute("aria-expanded")).toBe("false");
+  expect(window.document.activeElement).toBe(opener);
+  await act(async () => { await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())); });
+  expect(window.document.activeElement).toBe(opener);
+  fireEvent.click(opener);
+  if (destination === "Search") await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("textbox", { name: "Search conversations" })));
+  fireEvent(drawer, new Event("cancel", { bubbles: true, cancelable: true }));
+  expect(drawer.hasAttribute("open")).toBe(false);
+  // Actual modal inertness, keyboard trapping and browser opener restoration
+  // are verified separately; jsdom only models the dialog lifecycle.
+  expectNoBusinessWrites(value);
+});
+
+it.each(["replacement", "settings", "resize"])("discards or consumes header focus intent in the same commit as %s", async (change) => {
+  const resize = viewport(change === "resize" ? 759 : 960);
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  const main = screen.getByRole("main");
+  const focus = vi.spyOn(main, "focus");
+  if (change === "resize") fireEvent.click(screen.getByRole("button", { name: "Open session navigation" }));
+  const inbox = headerAction("Inbox");
+  const replacement = screen.getByRole("button", { name: change === "settings" ? "Settings" : "Usage" });
+  act(() => {
+    fireEvent.click(inbox);
+    if (change === "resize") resize(760);
+    else fireEvent.click(replacement);
+  });
+  if (change === "resize") {
+    expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+    await act(async () => { await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())); });
+    expect(window.document.activeElement).toBe(main);
+  } else {
+    expect(focus).not.toHaveBeenCalled();
+    if (change === "settings") {
+      await screen.findByRole("button", { name: "Close Settings" });
+      fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+      expect(focus).not.toHaveBeenCalled();
+    }
+  }
+  expectNoBusinessWrites(value);
+});
+
+it("retains session, sidebar pages and scroll plus applied Search and Inbox filters through home navigation", async () => {
+  viewport(960);
+  const project = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Navigation fixture" }) });
+  const value = fixture([], [], [project], true);
+  const view = render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(composer, { target: { value: "Keep my unsent input" } });
+  fireEvent.click(screen.getByRole("button", { name: "Next project page" }));
+  await waitFor(() => expect(value.projectRequests).toContain("project-next"));
+  const projectGroup = await screen.findByRole("button", { name: `Navigation fixture. Project ID: ${project.id}` });
+  fireEvent.click(projectGroup);
+  fireEvent.click(await screen.findByRole("button", { name: "Next page of Navigation fixture sessions" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next session page" }));
+  await waitFor(() => expect(value.sessionRequests.some((request) => request.pageToken === "global-next")).toBe(true));
+  const list = window.document.querySelector<HTMLElement>(".sidebar-list")!;
+  list.scrollTop = 120;
+  fireEvent.click(headerAction("Search"));
+  const query = await screen.findByRole("textbox", { name: "Search conversations" });
+  fireEvent.change(query, { target: { value: "keep this search" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Archive" }), { target: { value: SearchArchiveState.ARCHIVED } });
+  fireEvent.click(within(query.closest("form")!).getByRole("button", { name: "Search" }));
+  await waitFor(() => expect(value.searches).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect((within(screen.getByRole("main")).getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: "Next page" }));
+  await waitFor(() => expect(value.searches.mock.calls.at(-1)?.[0].pageToken).toBe("search-next"));
+  fireEvent.change(query, { target: { value: "unapplied search draft" } });
+  list.scrollTop = 80;
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect(list.scrollTop).toBe(120);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep my unsent input");
+  expect(screen.getByRole("button", { name: `Navigation fixture. Project ID: ${project.id}` }).getAttribute("aria-expanded")).toBe("true");
+  // Re-entering an expired query scope legitimately refreshes its retained
+  // page and temporarily disables paging; assert after that read commits.
+  await waitFor(() => expect((screen.getByRole("button", { name: "First project page" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() => expect((screen.getByRole("button", { name: "First session page" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(headerAction("Inbox"));
+  await screen.findByText("No retained requests or execution results.");
+  fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+  await waitFor(() => expect((within(screen.getByRole("main")).getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: "Next page" }));
+  await waitFor(() => expect(value.inboxReads.mock.calls.at(-1)?.[0].pageToken).toBe("inbox-next"));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(headerAction("Search"));
+  expect(list.scrollTop).toBe(80);
+  expect((screen.getByRole("textbox", { name: "Search conversations" }) as HTMLInputElement).value).toBe("unapplied search draft");
+  await waitFor(() => expect((within(screen.getByRole("main")).getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(value.searches.mock.calls.at(-1)?.[0]).toMatchObject({ query: "keep this search", archive: SearchArchiveState.ARCHIVED, pageToken: "search-next" });
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(headerAction("Inbox"));
+  expect(screen.getByRole("button", { name: "Unread" }).getAttribute("aria-pressed")).toBe("true");
+  await waitFor(() => expect((within(screen.getByRole("main")).getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
+  view.rerender(<App transport={value.transport} connectionEpoch={1} />);
+  expectNoBusinessWrites(value);
+}, 15_000);
+
+it("keeps the NewSession creation draft while header destinations are visited", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  const message = await screen.findByRole("textbox", { name: "First message" });
+  fireEvent.change(message, { target: { value: "Keep my creation draft" } });
+  fireEvent.click(headerAction("Search"));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(headerAction("Inbox"));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expect(screen.getByRole("textbox", { name: "First message" })).toBe(message);
+  expect((message as HTMLTextAreaElement).value).toBe("Keep my creation draft");
+  expectNoBusinessWrites(value);
+});
 
 it("creates an automatically named session from the first message and explicit Workers", async () => {
   const value = fixture([], [], [], false, true);

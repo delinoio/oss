@@ -1,4 +1,5 @@
 import { create } from "@bufbuild/protobuf";
+import { useState } from "react";
 import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -15,9 +16,10 @@ function resource(kind: EntityKind, name: string, projectId = "", values: Record
   return row;
 }
 
-function mountSidebar({ projects, sessions }: {
-  projects: (pageToken: string) => { resources: Resource[]; nextPageToken?: string };
+function mountSidebar({ projects, sessions, stateful = false }: {
+  projects: (pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[] }>;
   sessions: (request: { projectId: string; includeArchived: boolean; pageToken: string }) => { sessions: Resource[]; nextPageToken?: string };
+  stateful?: boolean;
 }) {
   const projectRequests: string[] = [];
   const sessionRequests: { projectId: string; includeArchived: boolean; pageToken: string }[] = [];
@@ -40,9 +42,83 @@ function mountSidebar({ projects, sessions }: {
   const openSettings = vi.fn();
   const newSession = vi.fn();
   const navigate = vi.fn();
-  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Sidebar surface={Surface.Sessions} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} openSettings={openSettings} /></QueryClientProvider></TransportProvider>);
-  return { ...view, client, navigate, openSession, openSettings, newSession, projectRequests, sessionRequests };
+  let changeSurface!: (surface: Surface) => void;
+  function Harness() {
+    const [surface, setSurface] = useState(Surface.Sessions);
+    changeSurface = setSurface;
+    return <Sidebar surface={surface} selectedSessionId="" navigate={(destination) => { navigate(destination); if (stateful) setSurface(destination); }} openSession={openSession} newSession={() => { newSession(); if (stateful) setSurface(Surface.NewSession); }} openSettings={openSettings} />;
+  }
+  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Harness /></QueryClientProvider></TransportProvider>);
+  return { ...view, client, navigate, openSession, openSettings, newSession, projectRequests, sessionRequests, changeSurface };
 }
+
+function expectHeaderActions(home: boolean) {
+  const header = window.document.querySelector(".sidebar-header")!;
+  expect(within(header as HTMLElement).getByRole("heading", { name: "DeliDev" })).toBeTruthy();
+  if (home) {
+    const buttons = within(header as HTMLElement).getAllByRole("button");
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual(["Inbox", "Search"]);
+    expect(buttons.every((button) => button.querySelector("svg")?.getAttribute("aria-hidden") === "true")).toBe(true);
+    expect(header.querySelector(".sidebar-header-actions")).toBeTruthy();
+  } else {
+    expect(header.querySelector(".sidebar-header-actions")).toBeNull();
+    expect(header.querySelectorAll("button")).toHaveLength(0);
+  }
+}
+
+it.each([undefined, Code.PermissionDenied, Code.Unavailable])("shows header actions only on both home surfaces regardless of catalog result %s", async (failure) => {
+  const value = mountSidebar({ stateful: true,
+    projects: () => { if (failure) throw new ConnectError("Fixture failure", failure); return { resources: [] }; },
+    sessions: () => { if (failure) throw new ConnectError("Fixture failure", failure); return { sessions: [] }; },
+  });
+  expectHeaderActions(true);
+  if (failure === Code.PermissionDenied) await screen.findByText("You do not have permission to view projects.");
+  else if (failure === Code.Unavailable) await screen.findByText("Could not connect to load projects.");
+  else await screen.findByText("No projects on this page.");
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expectHeaderActions(true);
+  fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
+  expect(value.navigate).toHaveBeenLastCalledWith(Surface.Inbox);
+  expectHeaderActions(false);
+  const reads = [value.projectRequests.length, value.sessionRequests.length];
+  for (const surface of [Surface.PullRequests, Surface.Usage, Surface.Schedules, Surface.Activity, Surface.Inbox, Surface.Search]) {
+    act(() => value.changeSurface(surface));
+    expectHeaderActions(false);
+    expect([value.projectRequests.length, value.sessionRequests.length]).toEqual(reads);
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expectHeaderActions(true);
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  expect(value.navigate).toHaveBeenLastCalledWith(Surface.Search);
+  expectHeaderActions(false);
+  expect(value.openSettings).not.toHaveBeenCalled();
+  expect(value.openSession).not.toHaveBeenCalled();
+});
+
+it("keeps home-only visibility during deferred reads and cached refresh failures", async () => {
+  let resolve!: (result: { resources: Resource[] }) => void;
+  const pending = new Promise<{ resources: Resource[] }>((done) => { resolve = done; });
+  const project = resource(EntityKind.PROJECT, "Retained header fixture");
+  let reads = 0;
+  const value = mountSidebar({ stateful: true,
+    projects: () => { if (++reads > 1) throw new ConnectError("Fixture unavailable", Code.Unavailable); return pending; },
+    sessions: () => ({ sessions: [] }),
+  });
+  await screen.findByText("Loading projects…");
+  expectHeaderActions(true);
+  act(() => value.changeSurface(Surface.NewSession));
+  expectHeaderActions(true);
+  act(() => value.changeSurface(Surface.Activity));
+  expectHeaderActions(false);
+  await act(async () => resolve({ resources: [project] }));
+  act(() => value.changeSurface(Surface.Sessions));
+  await screen.findByText("Could not refresh projects. Previous data is shown.");
+  expectHeaderActions(true);
+  expect(screen.getByRole("button", { name: `Retained header fixture. Project ID: ${project.id}` })).toBeTruthy();
+  act(() => value.changeSurface(Surface.Search));
+  expectHeaderActions(false);
+  expect(reads).toBe(2);
+});
 
 it("keeps equal-name projects separate, includes empty projects, and only reads expanded project pages", async () => {
   const first = resource(EntityKind.PROJECT, "Same name");

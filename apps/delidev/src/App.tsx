@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { type Transport } from "@connectrpc/connect";
 import { TransportProvider, useQuery } from "@connectrpc/connect-query";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -35,6 +35,19 @@ function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDevice
   const [settings, setSettings] = useState(false);
   const [newSessionActivation, setNewSessionActivation] = useState(0);
   const [settingsEntry, setSettingsEntry] = useState<SettingsEntryDestination>();
+  const pendingHeaderDestination = useRef<Surface | undefined>(undefined);
+  const main = useRef<HTMLElement>(null);
+  const contextOpener = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    const destination = pendingHeaderDestination.current;
+    pendingHeaderDestination.current = undefined;
+    if (!destination || destination !== surface || drawerOpen || settings) return;
+    // Sidebar's child layout effect has closed the drawer. Consume this intent
+    // now, before Search's existing first-entry autofocus animation frame.
+    const compact = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches;
+    const target = compact ? contextOpener.current : main.current;
+    if (target && !target.closest("[inert], dialog:not([open])")) target.focus({ preventScroll: true });
+  }, [surface, drawerOpen, settings]);
   const [draftState, setDraftState] = useState<{ drafts: ReadonlyMap<string, string>; error?: string }>({ drafts: new Map() });
   const { drafts } = draftState;
   const saveDraft = (id: string, value: string) => setDraftState((current) => {
@@ -48,8 +61,9 @@ function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDevice
   const sessions = useQuery(SessionQuery.listSessions, { projectId: "", includeArchived: false, pageSize: 50, pageToken: "" });
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
   const closeSettings = () => { setSettings(false); setSettingsEntry(undefined); };
-  const open = (id: string) => { closeSettings(); setSelected(id); setSurface(Surface.Sessions); setDrawerOpen(false); };
+  const open = (id: string) => { pendingHeaderDestination.current = undefined; closeSettings(); setSelected(id); setSurface(Surface.Sessions); setDrawerOpen(false); };
   const navigateTray = (destination: TrayDestination, inboxId?: string) => {
+    pendingHeaderDestination.current = undefined;
     if (destination === TrayDestination.Inbox) { setSelectedInbox(inboxId ?? ""); setInboxActivation((value) => value + 1); }
     setDrawerOpen(false);
     if (destination === TrayDestination.Settings) { openSettings(); return; }
@@ -57,13 +71,15 @@ function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDevice
     setDrawerOpen(false);
     setSurface(destination === TrayDestination.Inbox ? Surface.Inbox : destination === TrayDestination.Usage ? Surface.Usage : Surface.Sessions);
   };
-  const openSettings = (destination?: SettingsEntryDestination) => { setSettingsEntry(destination); setSettings(true); };
+  const openSettings = (destination?: SettingsEntryDestination) => { pendingHeaderDestination.current = undefined; setSettingsEntry(destination); setSettings(true); };
   const consumeSettingsEntry = useCallback(() => setSettingsEntry(undefined), []);
   const surfaceName = surface === Surface.Sessions || surface === Surface.NewSession ? "session navigation" : surface === Surface.PullRequests ? "pull request filters" : surface === Surface.Usage ? "usage filters" : surface === Surface.Schedules ? "schedule navigation" : surface === Surface.Activity ? "activity filters" : surface === Surface.Inbox ? "inbox filters" : "search filters";
-  const startNewSession = () => { closeSettings(); setDrawerOpen(false); setNewSessionActivation((value) => value + 1); setSurface(Surface.NewSession); };
-  return <SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen}><div className="app"><a className="skip" href="#main">Skip to content</a><Sidebar surface={surface} selectedSessionId={selected} localServer={localServer} navigate={(destination) => { closeSettings(); setDrawerOpen(false); setSurface(destination); if (destination === Surface.Inbox) setSelectedInbox(""); }} openSession={open} newSession={startNewSession} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main id="main" tabIndex={-1}><button type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>Open {surfaceName}</button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
+  const startNewSession = () => { pendingHeaderDestination.current = undefined; closeSettings(); setDrawerOpen(false); setNewSessionActivation((value) => value + 1); setSurface(Surface.NewSession); };
+  const navigate = (destination: Surface) => { pendingHeaderDestination.current = undefined; closeSettings(); setDrawerOpen(false); setSurface(destination); if (destination === Surface.Inbox) setSelectedInbox(""); };
+  const navigateHeader = (destination: Surface) => { navigate(destination); pendingHeaderDestination.current = destination; };
+  return <SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen}><div className="app"><a className="skip" href="#main">Skip to content</a><Sidebar surface={surface} selectedSessionId={selected} localServer={localServer} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>Open {surfaceName}</button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>Your sessions, in one place</h2><p>Select a retained session or start a new conversation.</p><Prerequisites active={surface === Surface.Sessions && !settings} openSettings={openSettings} /><Problem error={status.error} /></section>}</div>
-    <NewSession active={surface === Surface.NewSession && !settings} ownsActivation={surface === Surface.NewSession && !settings} activation={newSessionActivation} readLocalWorker={readLocalWorker} back={() => { setSurface(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
+    <NewSession active={surface === Surface.NewSession && !settings} ownsActivation={surface === Surface.NewSession && !settings} activation={newSessionActivation} readLocalWorker={readLocalWorker} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
     <Search active={surface === Surface.Search} open={open} />
     <Activity active={surface === Surface.Activity} open={open} />
     <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} /></div>
