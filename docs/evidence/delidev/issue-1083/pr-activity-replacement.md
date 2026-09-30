@@ -129,3 +129,9 @@ state and controlled provider/native observations. They do not establish real
 provider-account remediation, independent production verification, actual native
 side effects or multi-platform release acceptance. Permanent managed-backup and
 native-session erasure remains part of the separate coordinated deletion work.
+
+Generated repository-owned `dist` output was removed after validation. Cleanup
+scans only repository source domains and excludes third-party dependency caches;
+an initial broader scan encountered a read-only Go toolchain directory and was
+corrected. No generated bundle or fixture binary is tracked. Original asset
+licenses and notices remain intact.
