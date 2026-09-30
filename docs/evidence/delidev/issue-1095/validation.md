@@ -60,3 +60,17 @@ The first new regression attempt could not build because the shared Go 1.26.8 co
 A separate repair based on `12a4ef0a14c25828a736034cfa40c4e1970bda65` covers native execution completion racing cancellation of its initiator's queued logout. The protected Connect regression initially failed because successful bundle write-back restored Ready after revocation had removed the pending logout. The completion path now preserves Revoked health while retaining the newest generation; a fresh authorized logout still acquires the account and completes protected cleanup.
 
 Tested source blobs: `subscriptions.go` `b7a7c5c964141d717e36f268bba2cb2a4e3d5c28` and `subscriptions_revocation_test.go` `86b32aaff045a33b90d204e613c79b0028be44ea`. The five-package focused `Subscription|Managed|Bundle` race command and `GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/...` passed using the same isolated exact Go 1.26.8 toolchain. The regression verifies original execution-lease retention, completion write-back remaining revoked, and fresh logout reaching Disconnected without a retained generation. Complete native-suite and real-account limits above remain unchanged.
+
+## Frontend CI acknowledgment wait repair
+
+The [new-head protocol/client CI job](https://github.com/delinoio/oss/actions/runs/36686041320/job/109792311748) passed protocol reflection and API-client checks, then failed the singleton server-preferences integration test at its default one-second DOM wait for the save acknowledgment. The page still displayed the disabled Saving action when that wait expired; 1,012 other frontend tests passed on that runner.
+
+The regression now delays only the temporary fixture's successful ConfigurationService save replies by 1,100 milliseconds. With the original one-second waits, that controlled delay reproduced the same missing Edit Server preferences assertion. Five-second waits after both saves then passed while retaining every real-server singleton, exact-default, revision and edit assertion. The overall fifteen-second test deadline remains bounded. No production UI behavior or configuration changed.
+
+Validation base: `0f6e33829fdd6b854d18e677c1e9f93d875f94dd`. Tested `settings-preferences.integration.test.tsx` blob: `4b9bf44db1910fd0d5e51a8e5e7632a870b2f6d9`.
+
+- `pnpm exec vitest run src/settings-preferences.integration.test.tsx`: passed with the controlled delayed acknowledgment (9.49-second test).
+- Required `pnpm test` from `apps/delidev` on macOS arm64, using the isolated exact Go 1.26.8 toolchain for owned Go fixtures: passed. This includes API-client generation, frontend typecheck, 85 Vitest files / 998 tests, eight bundle dry-run checks, sixteen desktop-launch/asset checks, widget fixture checks and the production build.
+- The exact-path LFS icon was hydrated through `pnpm prepare:assets` before the frontend command. Generated app/client `dist` outputs are removed after validation.
+
+The successful frontend command does not establish real subscription authentication, packaged native desktop acceptance or a full DeliDev native-suite pass. The earlier native-suite failures and acceptance limits remain visible above; new-head CI and review after this repair are separate pending evidence.

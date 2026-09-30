@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-import { type Server } from "node:http";
-import { createClient } from "@connectrpc/connect";
+import { createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { EntityKind, ResourceService } from "@delinoio/delidev-api-client";
+import { ConfigurationService, EntityKind, ResourceService } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { document } from "./documents";
@@ -15,13 +14,22 @@ const fixture = useSettingsFixture();
 
 it("creates and edits singleton server preferences with the exact Go defaults", async () => {
   const { transport, runCLI } = fixture;
+  // A real save acknowledgment may exceed the default one-second DOM wait.
+  // Delay only owned fixture save replies; assertions still use the real server.
+  const delayedTransport: Transport = { ...transport, unary: async (method, ...args) => {
+    const response = await transport.unary(method, ...args);
+    if (method.parent.typeName === ConfigurationService.typeName && method.name === ConfigurationService.method.saveConfiguration.name) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 1100));
+    }
+    return response;
+  } };
   const defaults = JSON.parse(await runCLI(["settings", "defaults"])).result;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={delayedTransport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  const edit = await screen.findByRole("button", { name: "Edit Server preferences" });
+  const edit = await screen.findByRole("button", { name: "Edit Server preferences" }, { timeout: 5000 });
   const resources = createClient(ResourceService, transport);
   const first = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(first).toHaveLength(1);
@@ -31,7 +39,7 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
   fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  await screen.findByRole("button", { name: "Edit Server preferences" });
+  await screen.findByRole("button", { name: "Edit Server preferences" }, { timeout: 5000 });
   const latest = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(latest).toHaveLength(1);
   expect(latest[0].id).toBe(first[0].id);
