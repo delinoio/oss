@@ -73,6 +73,22 @@ it("retries identical geometry after a failed native resize and caches only succ
   await act(async () => { fireEvent.resize(window); });
   expect(attempts).toBe(2);
 });
+it("surfaces a delayed native child failure and reopens only after explicit retry", async () => {
+  const f = fixture();
+  native.mockImplementation(async (operation) => {
+    if (operation === "browser_state") throw new Error("sidecar-failed");
+    return f.local;
+  });
+  render(<f.View />);
+  await open();
+  await screen.findByRole("button", { name: /Tab 1/ });
+  const first = native.mock.calls.find(([operation]) => operation === "open_browser")![1];
+  await screen.findByText("The local browser state is unavailable.", {}, { timeout: 2500 });
+  expect(native.mock.calls.filter(([operation]) => operation === "open_browser")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Retry native view" }));
+  await waitFor(() => expect(native.mock.calls.filter(([operation]) => operation === "open_browser")).toHaveLength(2));
+  expect(native.mock.calls.filter(([operation]) => operation === "open_browser")[1][1].viewId).not.toBe(first.viewId);
+});
 it("closes only the earlier instance when its native open resolves after replacement",async()=>{
  const f=fixture();let finish!:(value:typeof f.local)=>void;native.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}));render(<f.View />);await open();await waitFor(()=>expect(native).toHaveBeenCalledTimes(1));const first=native.mock.calls[0][1];
  fireEvent.click(screen.getByRole("button",{name:"Retry native view"}));await waitFor(()=>expect(native.mock.calls.filter(([op])=>op==="open_browser")).toHaveLength(2));const second=native.mock.calls.filter(([op])=>op==="open_browser")[1][1];

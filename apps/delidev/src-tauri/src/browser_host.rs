@@ -90,6 +90,7 @@ struct View {
     generation: u64,
     request: ViewRequest,
     browser: Option<Browser>,
+    failure: Option<NativeFailure>,
     view_id: String,
 }
 #[derive(Default)]
@@ -549,6 +550,7 @@ impl BrowserHost {
                 generation,
                 request: request.clone(),
                 browser: None,
+                failure: None,
                 view_id,
             },
         );
@@ -602,6 +604,9 @@ impl BrowserHost {
                 || state.reservations.get(window).map(String::as_str) != Some(view_id)
             {
                 return Err(NativeFailure::Stopped);
+            }
+            if let Some(code) = view.failure {
+                return Err(code);
             }
             let p = state
                 .profiles
@@ -734,6 +739,11 @@ impl BrowserHost {
                 removal_pending: true,
             });
         }
+        if !matches!(action, Action::Hide)
+            && let Some(code) = view.failure
+        {
+            return Err(code);
+        }
         if prepared_revision.is_some_and(|revision| revision != p.storage_revision) {
             return Err(NativeFailure::Stopped);
         }
@@ -810,6 +820,7 @@ impl BrowserHost {
                         h.close_browser(1)
                     }
                     view.generation = generation;
+                    view.failure = None;
                     view.request.generation = generation;
                     view.request.tab = selected.clone();
                     if !selected.is_empty() {
@@ -846,10 +857,40 @@ impl BrowserHost {
             .profiles
             .get(profile)
             .ok_or(NativeFailure::InvalidEvidence)?;
+        if !p.removing
+            && let Some(code) = state.views[window].failure
+        {
+            return Err(code);
+        }
         Ok(BrowserState {
             tabs: p.tabs.clone(),
             removal_pending: p.removing,
         })
+    }
+
+    fn creation_completed(
+        &self,
+        profile: &str,
+        request: &ViewRequest,
+        result: Result<()>,
+    ) -> Result<()> {
+        if let Err(code) = result
+            && code != NativeFailure::Stopped
+        {
+            tracing::warn!(operation = "browser_create", ?code);
+            if let Ok(mut state) = self.state.lock()
+                && !self.stopping.load(Ordering::Acquire)
+                && state.profiles.get(profile).is_some_and(|p| !p.removing)
+                && state.views.get(&request.window).is_some_and(|view| {
+                    view.profile == profile
+                        && view.generation == request.generation
+                        && state.reservations.get(&request.window) == Some(&view.view_id)
+                })
+            {
+                state.views.get_mut(&request.window).unwrap().failure = Some(code);
+            }
+        }
+        result
     }
 
     fn prepare_removal(&self, record: ProfileRecord, scope: Option<SavedConnection>) -> Result<()> {
@@ -1404,9 +1445,19 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<T
         .map_err(|_| NativeFailure::InvalidEvidence)
 }
 cef::wrap_request_context_handler! {struct ContextReady{host:Arc<BrowserHost>,app:AppHandle<Cef>,profile:String,}impl RequestContextHandler{
- fn on_request_context_initialized(&self,context:Option<&mut RequestContext>){let Some(context)=context else{return};let pending={let Ok(mut state)=self.host.state.lock()else{return};let Some(p)=state.profiles.get_mut(&self.profile)else{return};if p.removing||self.host.stopping.load(Ordering::Acquire){return};p.ready=true;std::mem::take(&mut p.pending)};for request in pending{if let Err(code)=create(&self.host,&self.app,self.profile.clone(),request,context.clone()){tracing::warn!(operation="browser_create",?code)}}}
+ fn on_request_context_initialized(&self,context:Option<&mut RequestContext>){let Some(context)=context else{return};let pending={let Ok(mut state)=self.host.state.lock()else{return};let Some(p)=state.profiles.get_mut(&self.profile)else{return};if p.removing||self.host.stopping.load(Ordering::Acquire){return};p.ready=true;std::mem::take(&mut p.pending)};for request in pending{let _=create(&self.host,&self.app,self.profile.clone(),request,context.clone());}}
 }}
 fn create(
+    host: &Arc<BrowserHost>,
+    app: &AppHandle<Cef>,
+    profile: String,
+    request: ViewRequest,
+    context: RequestContext,
+) -> Result<()> {
+    let result = create_child(host, app, profile.clone(), request.clone(), context);
+    host.creation_completed(&profile, &request, result)
+}
+fn create_child(
     host: &Arc<BrowserHost>,
     app: &AppHandle<Cef>,
     profile: String,
@@ -1717,6 +1768,7 @@ mod tests {
                 generation: 1,
                 request: request.clone(),
                 browser: None,
+                failure: None,
                 view_id: view_id.clone(),
             },
         );
@@ -1822,6 +1874,54 @@ mod tests {
     }
 
     #[test]
+    fn asynchronous_creation_failure_is_visible_only_to_its_exact_view() {
+        let (_temp, host, record, view_id, request) = active_storage_fixture();
+        assert!(host.status("fixture", &record.id, &view_id).is_ok());
+        assert_eq!(
+            host.creation_completed(&record.id, &request, Err(NativeFailure::SidecarFailed)),
+            Err(NativeFailure::SidecarFailed)
+        );
+        assert!(matches!(
+            host.status("fixture", &record.id, &view_id),
+            Err(NativeFailure::SidecarFailed)
+        ));
+        assert_eq!(
+            host.prepare_control("fixture", &record.id, &view_id, Action::Reload, None, None),
+            Err(NativeFailure::SidecarFailed)
+        );
+        let replacement = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &replacement).unwrap();
+        let mut newer = request.clone();
+        newer.generation += 1;
+        host.state.lock().unwrap().views.insert(
+            "fixture".into(),
+            View {
+                profile: record.id.clone(),
+                generation: newer.generation,
+                request: newer.clone(),
+                browser: None,
+                failure: None,
+                view_id: replacement.clone(),
+            },
+        );
+        let _ = host.creation_completed(&record.id, &request, Err(NativeFailure::SidecarFailed));
+        assert!(host.status("fixture", &record.id, &replacement).is_ok());
+        let _ = host.creation_completed(&record.id, &newer, Err(NativeFailure::SidecarFailed));
+        host.state
+            .lock()
+            .unwrap()
+            .profiles
+            .get_mut(&record.id)
+            .unwrap()
+            .removing = true;
+        assert!(
+            host.status("fixture", &record.id, &replacement)
+                .unwrap()
+                .removal_pending
+        );
+    }
+
+    #[test]
     fn blocked_storage_does_not_block_native_state_or_publish_superseded_open() {
         let (_temp, host, record) = storage_fixture();
         let original = uuid::Uuid::now_v7().to_string();
@@ -1869,6 +1969,7 @@ mod tests {
                     generation: 1,
                 },
                 browser: None,
+                failure: None,
                 view_id: original,
             },
         );
@@ -2008,6 +2109,7 @@ esac
                     generation: 1,
                     request: request.clone(),
                     browser: None,
+                    failure: None,
                     view_id: view.clone(),
                 },
             );

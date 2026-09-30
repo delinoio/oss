@@ -71,6 +71,10 @@ native presentation UUID is reserved on the UI loop before asynchronous
 authorization. Reservation releases the previous raw child and invalidates its
 pending creation, even when the replacement authority read or storage preparation
 fails. Stale opens, controls and cleanup cannot replace a newer panel instance.
+Asynchronous request-context child creation failures are retained for the exact
+presentation and surfaced by native state polling. Ordinary controls return that
+typed failure until explicit Retry creates a new presentation; stale failures
+cannot poison its replacement, and tracked removal remains visible separately.
 The persistent closed compact sidebar dialog and open nonmodal wide sidebar
 region do not block browser presentation. Visible dialogs, hidden panels and
 clipped geometry cannot leave an external child above app UI.
