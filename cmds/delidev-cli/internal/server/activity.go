@@ -11,10 +11,12 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 func invalidActivity() error {
-	return domain.Fail(domain.RecoveryRequired, "The retained activity source is inconsistent.", "Preserve and inspect the original source; activity cannot infer missing execution or scheduling evidence.")
+	return domain.Fail(domain.RecoveryRequired, "The retained activity source is inconsistent.", "Preserve and inspect the original source; activity cannot infer missing execution, scheduling or PR handling evidence.")
 }
 
 func activityExecution(tx *store.Tx, id, session, project domain.ID) (domain.ExecutionJobInput, pb.ActivityJobState, error) {
@@ -110,6 +112,8 @@ func activityEntry(tx *store.Tx, r store.Record) (*pb.ActivityEntry, error) {
 		case domain.OccurrenceSkipped:
 			entry.OccurrenceState = pb.ActivityOccurrenceState_ACTIVITY_OCCURRENCE_STATE_SKIPPED
 		}
+	case domain.ProblemKind:
+		return activityPREntry(tx, r, entry)
 	default:
 		return nil, invalidActivity()
 	}
@@ -142,7 +146,7 @@ func (s *Service) ListActivity(ctx context.Context, req *connect.Request[pb.List
 	}
 	bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	result := &pb.ListActivityResponse{}
+	result := &pb.ListActivityResponse{Capabilities: []pb.ActivityCapability{pb.ActivityCapability_ACTIVITY_CAPABILITY_PR_HANDLING_V1}}
 	err := s.Store.Read(bounded, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			return err
@@ -151,17 +155,33 @@ func (s *Service) ListActivity(ctx context.Context, req *connect.Request[pb.List
 		if err != nil {
 			return err
 		}
+		var last domain.ID
+		var size int
 		for _, r := range rows {
 			entry, err := activityEntry(tx, r)
 			if err != nil {
 				return err
 			}
+			encoded, err := protojson.Marshal(entry)
+			if err != nil {
+				return invalidActivity()
+			}
+			n := max(proto.Size(entry), len(encoded)) + 32
+			// Reserve space for the signed cursor and response capability/framing.
+			if size+n > (3<<20)-8192 {
+				if len(result.Entries) == 0 {
+					return domain.Fail(domain.ResourceExhausted, "The original activity metadata exceeds the page bound.", "Preserve the complete source; no activity was truncated.")
+				}
+				more = true
+				break
+			}
+			size += n
 			result.Entries = append(result.Entries, entry)
+			last = r.ID
 		}
-		// At most 200 entries containing only bounded UUIDs, enums, revisions
-		// and timestamps fit well below either transport's byte bound.
-		if more && len(rows) > 0 {
-			result.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: rows[len(rows)-1].ID, Sequence: epoch})
+		// PR version references are complete and bounded in both encodings.
+		if more && last != "" {
+			result.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: last, Sequence: epoch})
 		}
 		return err
 	})
