@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -323,6 +324,65 @@ func TestRequiredWorkflowSourceReadJoinsCancellation(t *testing.T) {
 	case <-stopped:
 	default:
 		t.Fatal("source read outlived observation")
+	}
+}
+
+func workflowAndOrdinaryClientFixture(t *testing.T) *Client {
+	t.Helper()
+	c := workflowClientFixture(t, "failure")
+	original := c.http.Transport
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		response, err := original.RoundTrip(r)
+		if err != nil || r.URL.Path != "/repos/fixture-owner/repo/rules/branches/main" {
+			return response, err
+		}
+		_ = response.Body.Close()
+		ordinary := activeRuleFixture()
+		ordinary["ruleset_id"] = 19
+		raw, _ := json.Marshal([]any{workflowRuleFixture(), ordinary})
+		response.Body = io.NopCloser(strings.NewReader(string(raw)))
+		return response, nil
+	})
+	return c
+}
+
+func TestOversizedOptionalWorkflowProofPreservesOrdinaryCI(t *testing.T) {
+	c := workflowAndOrdinaryClientFixture(t)
+	repo, item := ciFixtureItem(t)
+	ci, err := c.readCIInventory(context.Background(), []byte("private-fixture-pat"), repo, item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, err := c.readActiveRules(context.Background(), []byte("private-fixture-pat"), repo, item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := c.requiredWorkflowInventory(context.Background(), []byte("private-fixture-pat"), repo, item, ci, *rules)
+	if err != nil || !retainRequiredWorkflowEvidence(&ci, *rules, item, runs) {
+		t.Fatal("bounded optional proof rejected", err)
+	}
+	ci.WorkflowRuns = nil
+	for n := 0; n < 4; n++ {
+		run := runs[0]
+		run.NodeID, run.SuiteNodeID, run.RunID = "RUN_large_"+strconv.Itoa(n), "SUITE_large_"+strconv.Itoa(n), strconv.Itoa(100+n)
+		run.Jobs = []domain.CIWorkflowJob{}
+		for job := 0; job < domain.MaxCIContexts; job++ {
+			run.Jobs = append(run.Jobs, domain.CIWorkflowJob{NodeID: strings.Repeat("J", 240) + strconv.Itoa(job), NativeStatus: "COMPLETED", NativeConclusion: runs[0].NativeConclusion})
+		}
+		runs = append(runs, run)
+	}
+	if retainRequiredWorkflowEvidence(&ci, *rules, item, runs) || ci.WorkflowRuns != nil {
+		t.Fatal("oversized proof admitted or partially retained")
+	}
+	ci.Rules = *rules
+	ci.Result = ci.Evaluate(item)
+	if ci.Validate(item) != nil || ci.Result.State != domain.CIUnknown || len(ci.TestMerge.Contexts) != 1 || len(ci.Result.Requirements) != 2 {
+		t.Fatal("ordinary observation erased by optional proof", ci.Result)
+	}
+	for _, requirement := range ci.Result.Requirements {
+		if requirement.Workflow == nil && requirement.State != domain.CITerminalFailure {
+			t.Fatal("ordinary required check assessment lost")
+		}
 	}
 }
 

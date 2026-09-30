@@ -278,7 +278,10 @@ func (c *Client) readRequiredWorkflows(ctx context.Context, token []byte, reposi
 		slog.WarnContext(ctx, "GitHub required workflow evidence unavailable", "operation", "required-workflows", "code", domain.SafeError(err).Code)
 		return nil
 	}
-	ci.WorkflowRuns = runs
+	if !retainRequiredWorkflowEvidence(ci, rules, item, runs) {
+		slog.WarnContext(ctx, "GitHub required workflow evidence unavailable", "operation", "required-workflows", "code", domain.ResourceExhausted)
+		return nil
+	}
 	unverified := 0
 	for _, run := range runs {
 		if run.Source == nil {
@@ -287,6 +290,21 @@ func (c *Client) readRequiredWorkflows(ctx context.Context, token []byte, reposi
 	}
 	slog.DebugContext(ctx, "GitHub required workflow inventory inspected", "operation", "required-workflows", "runs", len(runs), "unverified_sources", unverified)
 	return nil
+}
+
+func retainRequiredWorkflowEvidence(ci *domain.PullRequestCI, rules domain.PullRequestRules, item domain.RepositoryItem, runs []domain.CIRequiredWorkflowRun) bool {
+	candidate := *ci
+	candidate.WorkflowRuns, candidate.Rules = runs, rules
+	candidate.Result = candidate.Evaluate(item)
+	// Size the final rules/result envelope, including attributed result IDs,
+	// before admitting optional proof. Never publish a truncated inventory or
+	// let enrichment erase the independently collected ordinary check results.
+	raw, err := json.Marshal(candidate)
+	if err != nil || len(raw) > domain.MaxCIEvidenceBytes {
+		return false
+	}
+	ci.WorkflowRuns = runs
+	return true
 }
 
 func (c *Client) requiredWorkflowInventory(ctx context.Context, token []byte, repository domain.RemoteRepository, item domain.RepositoryItem, ci domain.PullRequestCI, rules domain.PullRequestRules) ([]domain.CIRequiredWorkflowRun, error) {

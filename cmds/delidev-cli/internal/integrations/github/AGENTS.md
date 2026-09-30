@@ -2,3 +2,4 @@
 
 - Follow `docs/cmds-delidev-integrations-contract.md` and the parent DeliDev instructions.
 - Pinned required workflows use numeric-ID rename resolution, the original run/file relationship and explicit immutable SHA. Bound and repeat complete current-test-merge suite and exact-attempt job inventories inside the existing rule/PR brackets. Keep inaccessible, changed, incomplete, competing and unsupported evidence Unknown without erasing ordinary status-check observations. Never match display names or nested reusable workflows, resolve mutable refs, fetch returned source URLs or log protected/native evidence.
+- Admit optional workflow proof only after sizing the complete rules/result CI envelope against `MaxCIEvidenceBytes`. Oversized proof remains wholly unavailable; preserve ordinary check observations and never publish a truncated run/job inventory.
