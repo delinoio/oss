@@ -82,7 +82,7 @@ Browser profile metadata extends the existing paired-client `Device` JSON
 record. Its own UUID/revision and typed non-secret ownership/state persist under
 the server's exclusive SQLite authority. Atomic device events and request receipts
 share the transaction. The serialized device document retains existing limits;
-schema remains 24, with no new table or destructive migration. Existing snapshots,
+schema remains 25 after the independent native-accounting migration, with no browser-specific table or migration. Existing snapshots,
 backups and absent-field historical device records remain valid. One account per
 device is enforced by the transaction and validated bounded inventory, rather
 than consuming a reserved migration for an index.
