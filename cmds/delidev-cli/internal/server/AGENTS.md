@@ -48,6 +48,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Worker workspace storage follows docs/cmds-delidev-storage-contract.md. Protect active/Local work and unresolved dependents; reserve jobs and publish snapshot metadata, job outcomes and paused session events atomically. Resume and new forwards cannot race accepted storage jobs. Storage requires every forward to have both original peer cleanup confirmations; unavailable storage closes live socket authority while preserving cleanup reports. Reconnect never repeats started native effects.
 
 - Validate failed workspace recovery against the original action and retained artifacts too; preserve prior availability, zero confirmed removal and required exact snapshot metadata before settlement.
+- Validate reported workspace preview and snapshot SHA-256 values as canonical lowercase hexadecimal before publishing metadata or availability. Malformed reports retain job/session uncertainty and cannot strand a stored workspace behind unusable digest metadata.
 
 - Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.
 

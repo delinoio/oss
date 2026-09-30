@@ -402,12 +402,12 @@ func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) 
 		return workspace.ResultUncertain()
 	}
 	if input.Action == workspace.StoragePreview {
-		if len(output.PreviewDigest) != 64 || output.Snapshot != nil {
+		if !storageDigestValid(output.PreviewDigest) || output.Snapshot != nil {
 			return workspace.ResultUncertain()
 		}
 	} else {
 		snapshot := output.Snapshot
-		if snapshot == nil || snapshot.ID != input.SnapshotID || snapshot.SessionID != output.SessionID || snapshot.MachineID != output.MachineID || len(snapshot.SHA256) != 64 || snapshot.SizeBytes > workspace.MaxSnapshotBytes || snapshot.CreatedAt.IsZero() || snapshot.RepositoryCount != uint32(len(input.Manifest.Repositories)) || snapshot.Deleted != (input.Action == workspace.StorageDelete) {
+		if snapshot == nil || snapshot.ID != input.SnapshotID || snapshot.SessionID != output.SessionID || snapshot.MachineID != output.MachineID || !storageDigestValid(snapshot.SHA256) || snapshot.SizeBytes > workspace.MaxSnapshotBytes || snapshot.CreatedAt.IsZero() || snapshot.RepositoryCount != uint32(len(input.Manifest.Repositories)) || snapshot.Deleted != (input.Action == workspace.StorageDelete) {
 			return workspace.ResultUncertain()
 		}
 		if input.SnapshotDigest != "" && snapshot.SHA256 != input.SnapshotDigest {
@@ -418,6 +418,11 @@ func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) 
 		return workspace.ResultUncertain()
 	}
 	return nil
+}
+
+func storageDigestValid(value string) bool {
+	raw, err := hex.DecodeString(value)
+	return err == nil && len(raw) == sha256.Size && hex.EncodeToString(raw) == value
 }
 
 func storageRecoveryInput(tx *store.Tx, sessionID domain.ID, session domain.Session, id domain.ID, input *workspace.StorageRequest) error {
