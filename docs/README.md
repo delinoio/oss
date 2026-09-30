@@ -71,6 +71,8 @@ Each project must have one project index document and one or more domain contrac
 - [API provider activation and new-work admission](cmds-delidev-provider-activation-contract.md)
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
+- [Same-account native Codex session forks](cmds-delidev-forks-contract.md)
+
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)

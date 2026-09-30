@@ -3,7 +3,7 @@
 ## Scope
 `cmds/delidev-cli/internal/domain/session.go`, `internal/store/sessions.go`, `internal/server/sessions.go`, `internal/server/session_workspace.go`, `internal/server/session_workspace_recovery.go`, `internal/server/session_dispatch.go` and `internal/cli/sessions.go` own durable session acceptance, ordered input, revision-checked edits, visibility and workspace preparation controls. `internal/domain/execution.go` and `internal/store/execution.go` provide the private first-execution configuration/selection transaction primitive. `internal/domain/execution_events.go`, `internal/server/execution_events.go` and the Worker publication components implement the private core native-event path. Authenticated `SessionService` acceptance and workspace controls are implemented end to end through the CLI/server and real SQLite.
 
-Workspace preparation and first Codex API execution are integrated through durable outbound Worker jobs. Creation initially retains `outcome=not-started`, `dispatch=blocked`, a readiness-pending problem and the current workspace job. Once preparation and current dispatch checks succeed, the coordinator atomically claims the earliest input, freezes the configuration/account/route and queues its immutable native assignment. The owning Worker independently validates actual filesystem/native/provider authority before sending. Native Stop/Archive, FIFO continuation, explicit Resume, selected-input Steer and non-secret question responses are integrated for the pinned Codex API profile. Public approval response delivery is also integrated; exact approval acceptance/recovery, protected answers, general native recovery and forks remain pending. Acceptance, a ready workspace and an assignment are separate from successful native execution.
+Workspace preparation and first Codex API execution are integrated through durable outbound Worker jobs. Creation initially retains `outcome=not-started`, `dispatch=blocked`, a readiness-pending problem and the current workspace job. Once preparation and current dispatch checks succeed, the coordinator atomically claims the earliest input, freezes the configuration/account/route and queues its immutable native assignment. The owning Worker independently validates actual filesystem/native/provider authority before sending. Native Stop/Archive, FIFO continuation, explicit Resume, selected-input Steer and non-secret question responses are integrated for the pinned Codex API profile. Public approval response delivery is also integrated; exact approval acceptance/recovery, protected answers, general native recovery and additional fork profiles remain pending; bounded same-account Codex forks follow [their contract](cmds-delidev-forks-contract.md). Acceptance, a ready workspace and an assignment are separate from successful native execution.
 
 ## Durable PR Associations
 
@@ -582,6 +582,20 @@ Issue #1089 adds authenticated explicit session/Worker development-server forwar
 The private server execution-dispatch coordinator establishes its own server-owner context before reading retained PR input ownership. Ordinary initial and continuation dispatch therefore share the same actor boundary regardless of the internal caller. This does not grant any public RPC or paired Worker owner authority; their authorization remains independently enforced.
 
 An empty queue supplies no manual-fix candidate and skips only the optional PR preflight. The ordinary claim transaction still decides lifecycle and empty-input errors, rejecting already active work before emptiness and preserving pause, Archive, routing and original assignment state.
+
+
+## Same-account Codex fork boundary (#1092)
+
+The [fork contract](cmds-delidev-forks-contract.md) adds a separate durable Worker
+operation for a completed source turn. A source reservation prevents concurrent
+continuation without rewriting source state. Atomic publication creates a new
+paused session with an immutable source/configuration link, a verified workspace
+and empty queue/interaction accounting. First child input uses a version-3
+fork-checkpoint assignment; later turns use ordinary version-2 predecessor
+completion on the child history. No fork acceptance, receipt, empty Resume or
+workspace result advances routing or authorizes provider inference. Local sharing
+is limited to user-owned Local source checkouts; parent-owned managed worktrees
+require an independent child copy so permanent parent deletion cannot remove its files.
 
 ### Windows OpenCode General Chat (issue #1205)
 

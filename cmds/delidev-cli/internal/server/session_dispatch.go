@@ -21,6 +21,8 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 	var providerID domain.ID
 	if session.InitialExecution != nil {
 		providerID = session.InitialExecution.Configuration.ProviderID
+	} else if session.Fork != nil {
+		providerID = session.Fork.Snapshot.Configuration.ProviderID
 	} else {
 		agentRecord, err := tx.Get(domain.AgentKind, session.AgentID)
 		if err != nil {
@@ -58,6 +60,9 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 // transient ready state, snapshot/routing claim and job are one transaction;
 // validating the selected configuration after the claim cannot partially commit.
 func queueInitialExecution(tx *store.Tx, sr store.Record, session domain.Session, explicitResume bool) (store.Record, error) {
+	if session.Fork != nil {
+		return queueForkInitialExecution(tx, sr, session, explicitResume)
+	}
 	if session.InitialExecution != nil || session.CurrentExecution != nil || session.NextExecutionIntent != "" || session.ActiveExecutionID != "" || session.Outcome != domain.ExecutionNotStarted || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || (session.Dispatch != domain.DispatchBlocked && session.Dispatch != domain.DispatchReady && !(explicitResume && session.Dispatch == domain.DispatchPaused)) {
 		return store.Record{}, firstDispatchConflict()
 	}
