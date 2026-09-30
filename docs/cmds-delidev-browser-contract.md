@@ -75,6 +75,10 @@ Asynchronous request-context child creation failures are retained for the exact
 presentation and surfaced by native state polling. Ordinary controls return that
 typed failure until explicit Retry creates a new presentation; stale failures
 cannot poison its replacement, and tracked removal remains visible separately.
+When a shared-profile tab operation replaces multiple children, every affected
+window receives a creation attempt even if another attempt fails. Each failure
+is retained against its exact view; the initiating command returns the first
+failure after attempting all replacements.
 The persistent closed compact sidebar dialog and open nonmodal wide sidebar
 region do not block browser presentation. Visible dialogs, hidden panels and
 clipped geometry cannot leave an external child above app UI.

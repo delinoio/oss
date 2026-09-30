@@ -875,9 +875,9 @@ impl BrowserHost {
                     }
                 }
                 drop(state);
-                for request in requests {
-                    create(self, app, profile.into(), request, context.clone())?;
-                }
+                self.recreate_children(profile, &requests, |request| {
+                    create_child(self, app, profile.into(), request.clone(), context.clone())
+                })?;
                 state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
             }
         }
@@ -913,6 +913,23 @@ impl BrowserHost {
             tabs: p.tabs.clone(),
             removal_pending: p.removing,
         })
+    }
+
+    fn recreate_children(
+        &self,
+        profile: &str,
+        requests: &[ViewRequest],
+        mut create_child: impl FnMut(&ViewRequest) -> Result<()>,
+    ) -> Result<()> {
+        let mut first_failure = None;
+        // Every shared user has already lost its old child. One failed creation
+        // cannot prevent later users from receiving a child or an exact failure.
+        for request in requests {
+            if let Err(code) = self.creation_completed(profile, request, create_child(request)) {
+                first_failure.get_or_insert(code);
+            }
+        }
+        first_failure.map_or(Ok(()), Err)
     }
 
     fn creation_completed(
@@ -1981,6 +1998,56 @@ mod tests {
             serde_json::to_vec(&host.state.lock().unwrap().profiles[&record.id].tabs).unwrap(),
             before
         );
+    }
+
+    #[test]
+    fn shared_child_recreation_attempts_every_view_after_failures() {
+        let (_temp, host, record, view_id, request) = active_storage_fixture();
+        let mut requests = vec![request];
+        let mut identities = vec![view_id];
+        for window in ["second", "third"] {
+            let id = uuid::Uuid::now_v7().to_string();
+            let mut request = requests[0].clone();
+            request.window = window.into();
+            let mut state = host.state.lock().unwrap();
+            state.reservations.insert(window.into(), id.clone());
+            state.views.insert(
+                window.into(),
+                View {
+                    profile: record.id.clone(),
+                    generation: request.generation,
+                    request: request.clone(),
+                    browser: None,
+                    failure: None,
+                    view_id: id.clone(),
+                },
+            );
+            requests.push(request);
+            identities.push(id);
+        }
+        let mut attempted = Vec::new();
+        assert_eq!(
+            host.recreate_children(&record.id, &requests, |request| {
+                assert!(host.state.try_lock().is_ok());
+                attempted.push(request.window.clone());
+                match request.window.as_str() {
+                    "fixture" => Err(NativeFailure::SidecarFailed),
+                    "second" => Err(NativeFailure::Busy),
+                    _ => Ok(()),
+                }
+            }),
+            Err(NativeFailure::SidecarFailed)
+        );
+        assert_eq!(attempted, ["fixture", "second", "third"]);
+        assert!(matches!(
+            host.status("fixture", &record.id, &identities[0]),
+            Err(NativeFailure::SidecarFailed)
+        ));
+        assert!(matches!(
+            host.status("second", &record.id, &identities[1]),
+            Err(NativeFailure::Busy)
+        ));
+        assert!(host.status("third", &record.id, &identities[2]).is_ok());
     }
 
     #[test]
