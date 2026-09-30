@@ -49,6 +49,8 @@ type PRGitTool struct {
 	environment         []string
 	bridge              *prGitBridge
 	configurationDigest string
+	preparation         PrepareRequest
+	manifest            Manifest
 	localName           string
 	localEmail          string
 	proofKey            [32]byte
@@ -106,6 +108,10 @@ func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.
 	}
 	current, err := l.manager.readExecutionClaim(l.claim.SessionID)
 	if err != nil || current != l.claim || current.State != executionClaimActive {
+		return nil, toolFailure()
+	}
+	identity, err := l.manager.verifyWorkspaceIdentityForOwner(ctx, input, manifest, continuationIdentity, l.claim.JobID)
+	if err != nil || identity != l.claim.WorkspaceDigest {
 		return nil, toolFailure()
 	}
 	var spec RepositorySpec
@@ -211,7 +217,7 @@ func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.
 	if err := security.WriteAtomic(scopePath, raw); err != nil {
 		return nil, err
 	}
-	tool := &PRGitTool{manager: l.manager, scope: scope, path: scopePath, raw: raw, environment: environment, configurationDigest: hashTool(configuration), localName: trimGit(name), localEmail: trimGit(email)}
+	tool := &PRGitTool{manager: l.manager, scope: scope, path: scopePath, raw: raw, environment: environment, configurationDigest: hashTool(configuration), preparation: input, manifest: manifest, localName: trimGit(name), localEmail: trimGit(email)}
 	if _, err := rand.Read(tool.proofKey[:]); err != nil {
 		return nil, toolFailure()
 	}
@@ -336,6 +342,11 @@ func (t *PRGitTool) runOwned(ctx context.Context, args []string, stdout io.Write
 		return err
 	}
 	git := scope.git(environment)
+	if args[0] == "push" || args[0] == "fetch" {
+		if err := t.requireWorkspace(ctx); err != nil {
+			return err
+		}
+	}
 	if err := t.requireConfiguration(ctx, git); err != nil {
 		return err
 	}
@@ -428,7 +439,7 @@ func (t *PRGitTool) VerifyPush(ctx context.Context) (p domain.PRPushProof) {
 		return p
 	}
 	git := scope.git(t.environment)
-	if t.requireConfiguration(ctx, git) != nil {
+	if t.requireWorkspace(ctx) != nil || t.requireConfiguration(ctx, git) != nil {
 		return p
 	}
 	_, head := scope.addresses()
@@ -537,6 +548,19 @@ func (t *PRGitTool) requireConfiguration(ctx context.Context, git Git) error {
 	if hashTool(raw) != t.configurationDigest {
 		t.manager.Logger.WarnContext(ctx, "manual_pr_git_scope_rejected", "attempt_id", t.scope.Selection.AttemptID, "execution_id", t.scope.Claim.ExecutionID, "phase", "git-configuration", "code", domain.Conflict)
 		return prWorkspaceChanged()
+	}
+	return nil
+}
+
+// Commits may change during the fix, but all repository administration and
+// companion workspaces must still belong to the original execution lease.
+// Recheck before privileged network Git and after native closure so replacing
+// a workspace cannot borrow the parent's authentication or publication proof.
+func (t *PRGitTool) requireWorkspace(ctx context.Context) error {
+	identity, err := t.manager.verifyWorkspaceIdentityForOwner(ctx, t.preparation, t.manifest, continuationIdentity, t.scope.Claim.JobID)
+	if err != nil || identity != t.scope.Claim.WorkspaceDigest {
+		t.manager.Logger.WarnContext(ctx, "manual_pr_git_scope_rejected", "attempt_id", t.scope.Selection.AttemptID, "execution_id", t.scope.Claim.ExecutionID, "phase", "workspace-identity", "code", domain.RecoveryRequired)
+		return toolFailure()
 	}
 	return nil
 }

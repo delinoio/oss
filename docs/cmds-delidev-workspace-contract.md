@@ -184,6 +184,13 @@ An internal completed-execution inspection now correlates the original Worker op
 
 Manual Fix now retains the ordinary execution lease through native closure and independent push verification. Its closed private Git bridge binds original source transport/executable/auth context and exact ref/base/head, exposes exact non-secret operands, claims one push synchronously before launch, joins native children and emits only original verified/unchanged/uncertain proof. Rebase conflict publication requires an original-head lease. Preserve original files and uncertainty after interruption; no bridge or Go controller automatically commits/pushes. See the manual-fix section of the integration contract.
 
+Before publishing that capability, every privileged fetch/push and post-native
+verification, the Worker rechecks the complete original execution lease's
+workspace identity, including companion repositories and linked Git
+administration. Current commits may advance under continuation identity checks;
+replacement directories, symlinks or administration cannot borrow native
+authentication or publication proof.
+
 The manual Git launcher's local capability connects only to a canonical
 `127.0.0.1` listener owned by the original Worker. It carries no reversible Git
 authentication context. The Worker keeps immutable scope/configuration and a

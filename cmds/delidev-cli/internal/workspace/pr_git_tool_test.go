@@ -107,6 +107,27 @@ func TestPRGitToolForkPushIsOriginalBoundAndNeverReplayed(t *testing.T) {
 		}
 	}
 	push := tool.scope.commandPlan()["push_argv"].([]string)
+	// A replacement symlink with the original contents must not borrow the
+	// privileged bridge's native authentication or post-native proof.
+	relocated := root + "-relocated"
+	if err := os.Rename(root, relocated); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(relocated, root); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunPRGit(context.Background(), tool.path, push, &bytes.Buffer{}); err == nil {
+		t.Fatal("replacement workspace borrowed push authority")
+	}
+	if p := tool.VerifyPush(context.Background()); p.State != domain.PRPushUncertain {
+		t.Fatal("replacement workspace borrowed push proof", p.State)
+	}
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(relocated, root); err != nil {
+		t.Fatal(err)
+	}
 	gitTest(t, root, "config", "url.https://example.invalid/.pushInsteadOf", tool.scope.commandPlan()["push_argv"].([]string)[3])
 	if err := RunPRGit(context.Background(), tool.path, push, &bytes.Buffer{}); err == nil {
 		t.Fatal("push-only rewrite accepted", err)

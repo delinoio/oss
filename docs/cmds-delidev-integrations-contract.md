@@ -323,7 +323,7 @@ Queued fix inputs retain their original evidence/digest. Explicit removal cancel
 
 CLI equivalents are `delidev github pr remediation capabilities` and `delidev --request-id <uuid-v7> github pr remediation fix --input <path|->`. Input files/stdin use the same closed version-1 selection; authentication stdin requires a separate file for the document. Preserve the same request ID and bytes after uncertainty. Structured diagnostics use opaque local IDs, closed phases, safe failure codes and proof states; never raw paths, native output, Git argv, credentials or problem bodies.
 
-The extension reuses schema-24 entities/indexes and adds optional historical fields without destructive migration or fabricated proof for old attempts. Generated service-specific Go/TypeScript clients and forwarding exports reproduce through the normal protocol generator. Isolated fixture/build evidence and remaining real-account/platform acceptance are recorded in `docs/evidence/delidev/issue-1081/`.
+The extension reuses existing PR entities/indexes introduced in schema 24 and adds optional historical fields without a new migration or fabricated proof for old attempts. Main's subsequent migration allocations remain unchanged. Generated service-specific Go/TypeScript clients and forwarding exports reproduce through the normal protocol generator. Isolated fixture/build evidence and remaining real-account/platform acceptance are recorded in `docs/evidence/delidev/issue-1081/`.
 
 ## Unified PR activity projection
 

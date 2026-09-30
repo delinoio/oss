@@ -31,6 +31,9 @@ The original evidence file is historical; its results are not current validation
   full 4,096-byte title bound. Desktop/CLI tolerate additive capability entries.
 - Permanent session deletion includes original `pr-git` scopes and invalidates
   prior completion proof when a scope reappears.
+- Capability publication, privileged fetch/push and post-native proof recheck
+  the original lease's complete workspace administration and companions. A
+  replacement symlink with original contents cannot borrow network authority.
 
 ## Validation
 
@@ -38,7 +41,10 @@ Workspace dependencies were installed through root `pnpm install`; the linked
 worktree hook installation succeeded. The DeliDev LFS icon was hydrated before
 frontend asset fixtures. Protocol sources were regenerated from reconciled
 service schemas; this adds an independent service without changing shared wire
-numbers or the executable schema-24 migration registry.
+numbers or migration allocations. Main subsequently advanced to
+`574c1a92c` with schema-25 Grok accounting and compaction reservations; these
+changes were merged without altering their allocations, and bindings were
+regenerated from the combined sources.
 
 Required and focused verification is in progress; final results will be recorded
 in a separate evidence file before publication. No current full-suite pass is
