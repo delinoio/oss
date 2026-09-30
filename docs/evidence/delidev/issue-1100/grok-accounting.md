@@ -65,10 +65,13 @@ LFS icon was hydrated before source-consuming frontend checks.
 
 ## Remaining limits
 
-The complete `go test -race -p 2 -timeout=20m ./cmds/delidev-cli/...` run is still
-running and has already failed unchanged CLI/configuration-transfer/workspace
-and harness-discovery fixtures. Its final outcome is recorded in the follow-up
-validation record after completion. No complete local Go race pass is claimed.
+The broad `go test -race -p 2 -timeout=20m ./cmds/delidev-cli/...` attempt
+failed unchanged CLI/configuration-transfer/workspace and harness fixtures and
+was interrupted after the Codex package reached its 20-minute timeout. The
+bounded failfast rerun completed with a CLI failure before remaining packages
+ran. Commands, observed results and coverage limits are recorded in
+[the follow-up validation record](full-race-validation.md). No complete local
+Go race pass is claimed.
 The full local frontend pipeline has not passed. Concurrent repository test load
 was observed; it is not proof that every failure is environmental or pre-existing.
 No hosted account, installed Grok inference, native desktop visual inspection,
