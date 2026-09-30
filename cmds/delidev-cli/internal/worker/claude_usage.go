@@ -41,8 +41,9 @@ func (c *ClaudeContentPublisher) PublishUsageObservation(ctx context.Context, o 
 				if child.ParentToolID != native.ParentToolID || child.Source != domain.ClaudeContentSource || child.SourceID != o.NativeID {
 					continue
 				}
+				model, acknowledged := c.childUsageModels[child.NativeID]
 				usage, err := claude.SubagentProviderUsage(native.Usage)
-				if err != nil || !reflect.DeepEqual(usage, child.Usage) || native.Model != "" && (child.ObservedModel == nil || native.Model != *child.ObservedModel) {
+				if !acknowledged || model.sourceID != o.NativeID || model.model != native.Model || err != nil || !reflect.DeepEqual(usage, child.Usage) || native.Model != "" && (child.ObservedModel == nil || native.Model != *child.ObservedModel) {
 					return true, b.block()
 				}
 				return false, nil

@@ -13,7 +13,13 @@ type claudePublishedContent struct {
 	content *domain.ClaudeMessageContent
 }
 
+type claudeChildUsageModel struct {
+	sourceID string
+	model    string
+}
+
 type claudeContentCommit struct {
+	childUsageModel    *string
 	child              *domain.SubagentObservation
 	tasksNext          *domain.ClaudeTasksState
 	replyEcho          domain.ID
@@ -33,6 +39,7 @@ type claudeContentCommit struct {
 // Its caller must reconcile child and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
+	childUsageModels           map[string]claudeChildUsageModel
 	children                   map[string]domain.SubagentObservation
 	childTools                 map[string]string
 	childProofs                map[string][]claude.HistoryMessageProof
@@ -329,6 +336,13 @@ func (c *ClaudeContentPublisher) commitHead() {
 			c.childTools = map[string]string{}
 		}
 		c.children[item.child.NativeID] = *item.child
+		delete(c.childUsageModels, item.child.NativeID)
+		if item.childUsageModel != nil {
+			if c.childUsageModels == nil {
+				c.childUsageModels = map[string]claudeChildUsageModel{}
+			}
+			c.childUsageModels[item.child.NativeID] = claudeChildUsageModel{sourceID: item.child.SourceID, model: *item.childUsageModel}
+		}
 		for _, tool := range item.child.Tools {
 			c.childTools[tool.NativeID] = item.child.NativeID
 		}

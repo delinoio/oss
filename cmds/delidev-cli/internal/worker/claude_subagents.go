@@ -9,7 +9,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 )
 
-func (c *ClaudeContentPublisher) publishChild(ctx context.Context, o domain.SubagentObservation) error {
+func (c *ClaudeContentPublisher) publishChild(ctx context.Context, o domain.SubagentObservation, usageModel *string) error {
 	state := domain.SubagentState{}
 	for id, child := range c.children {
 		state[id] = domain.SubagentOwner{ID: child.ID, ParentID: child.ParentID, ParentToolID: child.ParentToolID, Status: child.Status, Tool: child.Tool, Tools: child.Tools}
@@ -19,7 +19,7 @@ func (c *ClaudeContentPublisher) publishChild(ctx context.Context, o domain.Suba
 		return c.binding.block()
 	}
 	o.Tools = next[o.NativeID].Tools
-	c.queue = []claudeContentCommit{{event: domain.ExecutionEvent{Kind: domain.ExecutionSubagentObserved, Subagents: []domain.SubagentObservation{o}}, child: &o}}
+	c.queue = []claudeContentCommit{{event: domain.ExecutionEvent{Kind: domain.ExecutionSubagentObserved, Subagents: []domain.SubagentObservation{o}}, child: &o, childUsageModel: usageModel}}
 	return c.drain(ctx)
 }
 
@@ -106,7 +106,7 @@ func (c *ClaudeContentPublisher) publishChildTask(ctx context.Context, o claude.
 	}
 	// Task summaries and output locators are not the child's verified transcript.
 	// They cannot supply child content/model or authorize file access.
-	return true, c.publishChild(ctx, child)
+	return true, c.publishChild(ctx, child, nil)
 }
 
 func (c *ClaudeContentPublisher) publishChildContent(ctx context.Context, o claude.LifecycleObservation) (bool, error) {
@@ -210,7 +210,14 @@ func (c *ClaudeContentPublisher) publishChildContent(ctx context.Context, o clau
 		child.Tools = tools
 	}
 	c.seen[o.NativeID] = true
-	if err := c.publishChild(ctx, child); err != nil {
+	var usageModel *string
+	if len(o.Content) == 1 && o.Content[0].Usage != nil {
+		// Preserve this report's model presence independently of the child's
+		// last available observed model. Commit it only with its exact receipt.
+		model := o.Content[0].Model
+		usageModel = &model
+	}
+	if err := c.publishChild(ctx, child, usageModel); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -241,7 +248,7 @@ func (c *ClaudeContentPublisher) PublishChildHistory(ctx context.Context, config
 		child.Source, child.SourceID = domain.ClaudeHistorySource, observed.Transcript.LeafID
 		child.Output, child.ObservedModel = observed.Output, observed.ObservedModel
 		child.Usage = observed.Usage
-		if err := c.publishChild(ctx, child); err != nil {
+		if err := c.publishChild(ctx, child, nil); err != nil {
 			return err
 		}
 	}
