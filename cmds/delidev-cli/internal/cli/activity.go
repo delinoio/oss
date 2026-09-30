@@ -2,11 +2,13 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func activityCommand(ctx context.Context, c client, args []string) (any, error) {
@@ -53,7 +55,18 @@ func activityCommand(ctx context.Context, c client, args []string) (any, error) 
 		if entry.OccurrenceState != pb.ActivityOccurrenceState_ACTIVITY_OCCURRENCE_STATE_UNSPECIFIED {
 			value["occurrence_state"] = strings.ToLower(strings.TrimPrefix(entry.OccurrenceState.String(), "ACTIVITY_OCCURRENCE_STATE_"))
 		}
+		if entry.PullRequest != nil {
+			raw, err := (protojson.MarshalOptions{UseProtoNames: true, EmitDefaultValues: true}).Marshal(entry.PullRequest)
+			if err != nil {
+				return nil, err
+			}
+			value["pull_request"] = json.RawMessage(raw)
+		}
 		entries = append(entries, value)
 	}
-	return map[string]any{"entries": entries, "next_page_token": response.Msg.NextPageToken}, nil
+	capabilities := make([]string, 0, len(response.Msg.Capabilities))
+	for _, c := range response.Msg.Capabilities {
+		capabilities = append(capabilities, c.String())
+	}
+	return map[string]any{"entries": entries, "next_page_token": response.Msg.NextPageToken, "capabilities": capabilities}, nil
 }
