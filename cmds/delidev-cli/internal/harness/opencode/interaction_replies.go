@@ -357,6 +357,9 @@ func (s *sessionAPI) replyInteraction(ctx context.Context, observer *inputObserv
 	if s.problem != nil {
 		return InteractionReceipt{}, s.problem
 	}
+	if s.reconciliation == ReconciliationReading || s.reconciliation == ReconciliationPublishing || s.reconciliation == ReconciliationFailed {
+		return InteractionReceipt{}, sessionUncertain()
+	}
 	if problem := s.events.status(); problem != nil {
 		return InteractionReceipt{}, problem
 	}

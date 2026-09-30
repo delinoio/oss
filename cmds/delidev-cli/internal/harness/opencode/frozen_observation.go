@@ -16,6 +16,23 @@ type FrozenObservation struct {
 	rejected  []string
 	always    []string
 	bytes     int
+	snapshot  bool
+}
+
+// PublicationKey is private deduplication metadata. A reconciled read has no
+// native event identity: its digest must never be serialized as an evt_ ID.
+func (o inputObservation) PublicationKey() (string, error) {
+	if o.frozen != nil && o.frozen.snapshot && o.EventID == "" && o.Kind == o.frozen.event.Kind {
+		final := "open"
+		if o.frozen.finalized {
+			final = "final"
+		}
+		return "snapshot:" + string(o.Kind) + ":" + final + ":" + mutationDigest(o.frozen.event.Properties), nil
+	}
+	if !nativeID(o.EventID, "evt") {
+		return "", observerProblem()
+	}
+	return o.EventID, nil
 }
 
 func freezeObservation(event NativeEvent, value inputObservation) *FrozenObservation {
