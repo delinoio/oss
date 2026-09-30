@@ -369,3 +369,7 @@ only original session/deletion IDs, plan digest and retained request UUID. No
 paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
+
+### Server outbound network configuration
+
+`network.proto` owns NetworkService SaveNetworkProfile, DeleteNetworkProfile, SelectNetworkProfile, GetNetworkRoute and ExportWorkerNetworkMetadata. The pre-reserved `SERVER_OUTBOUND_PROXY_V1 = 6`, `NETWORK_PROFILE = 28` and `NETWORK_ROUTE = 29` values preserve every existing main assignment. Definition JSON and write-only credential bytes are separate. Actor-bound UUID-v7 receipts and exact revisions apply; Worker selections have independent desired generations. Export returns signed non-secret metadata only, never credential bytes or native application evidence. Follow [the network contract](cmds-delidev-network-contract.md).

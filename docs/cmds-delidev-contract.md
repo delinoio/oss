@@ -219,3 +219,7 @@ or content removal. Waiting uses reads only and preserves accepted progress on
 cancellation or failure. Offline/uncertain Worker or backup cleanup stays pending;
 completion requires all managed copies confirmed removed and never invents
 reclaimed disk space. See the [storage contract](cmds-delidev-storage-contract.md).
+
+### Explicit outbound networking
+
+Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. See [the network contract](cmds-delidev-network-contract.md); Worker bootstrap/native proxy application remains separate.

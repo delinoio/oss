@@ -37,7 +37,7 @@ func (s *Service) QueryRepositoryIntegration(ctx context.Context, req *connect.R
 	selected, err := s.withRepositoryIntegration(ctx, domain.ID(req.Msg.RepositoryId), string(query.Operation), correlation, func(readCtx context.Context, token []byte, selected repositoryIntegrationSelection) error {
 		client := s.githubQueries
 		if client == nil {
-			client = gh.New()
+			client = gh.New(s.outboundResolver())
 		}
 		var err error
 		observed, err = client.QueryRepository(readCtx, token, selected.repository.GitHubOwner, selected.repository.GitHubName, query)

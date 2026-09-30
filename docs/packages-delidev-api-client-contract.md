@@ -145,3 +145,7 @@ Worker cleanup queries and `PERMANENT_SESSION_DELETION_V1` retain the additive
 protocol without duplicating Go ownership logic. Preserve original request IDs,
 BigInt revisions and pending/unknown removal state; no automatic mutation replay.
 See the [storage contract](cmds-delidev-storage-contract.md).
+
+### Explicit outbound networking
+
+Generated `NetworkQuery` exposes authenticated configuration operations and typed capability/resources. Consumers retain exact decimal revisions and treat credentials as write-only request input, never query-cache data. Signed Worker metadata proves only the server export scope, not native installation or encrypted credential transfer. Follow [the network contract](cmds-delidev-network-contract.md).
