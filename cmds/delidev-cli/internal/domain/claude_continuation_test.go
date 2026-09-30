@@ -6,7 +6,7 @@ import (
 )
 
 func TestClaudeFailedContinuationRequiresCorrelatedNonAbortedSettledInput(t *testing.T) {
-	for _, change := range []string{"original", "aborted-stream", "aborted-tools", "outcome", "input", "permission-change", "permission-mismatch", "waiting", "unconfirmed", "pending-task", "background", "pending-compaction", "stop", "interruption", "denial"} {
+	for _, change := range []string{"original", "aborted-stream", "aborted-tools", "background-requested", "outcome", "input", "permission-change", "permission-mismatch", "waiting", "unconfirmed", "pending-task", "background", "pending-compaction", "stop", "interruption", "denial"} {
 		t.Run(change, func(t *testing.T) {
 			input := NewID()
 			p := ExecutionProgress{InputID: input, Outcome: ExecutionFailed, Observed: ObservedExecutionSettings{ClaudePermission: ClaudePermissionDefault}, ClaudeTerminal: &ClaudeTerminalObservation{InputID: input, ResultNativeID: string(NewID()), CommandNativeID: string(NewID()), IdleNativeID: string(NewID()), Kind: ClaudeResultSuccess, Reason: ClaudeAPIError, Error: true, Command: ClaudeCommandCancelled}}
@@ -15,6 +15,11 @@ func TestClaudeFailedContinuationRequiresCorrelatedNonAbortedSettledInput(t *tes
 				p.ClaudeTerminal.Reason = ClaudeAbortedStreaming
 			case "aborted-tools":
 				p.ClaudeTerminal.Reason = ClaudeAbortedTools
+			case "background-requested":
+				p.ClaudeTerminal.Reason, p.ClaudeTerminal.Command = ClaudeBackgroundRequested, ClaudeCommandCompleted
+				if p.ClaudeTerminal.Validate() != nil || !p.ClaudeTasks.InlineBashHistoryReady() {
+					t.Fatal("fixture must retain a valid terminal with no tracked background event")
+				}
 			case "outcome":
 				p.Outcome = ExecutionSucceeded
 			case "input":

@@ -9,7 +9,7 @@ import (
 )
 
 func TestClaudeFailedCheckpointStillRequiresOriginalNativeEOFProof(t *testing.T) {
-	for _, scenario := range []string{"eligible", "aborted-stream", "aborted-tools", "unfinished-tool", "unfinished-callback", "unsettled-callback"} {
+	for _, scenario := range []string{"eligible", "aborted-stream", "aborted-tools", "background-requested", "unfinished-tool", "unfinished-callback", "unsettled-callback"} {
 		t.Run(scenario, func(t *testing.T) {
 			c, _, command, idle := claudeTerminalFixture(t)
 			// Retain the original acknowledged failed result, command and idle.
@@ -33,6 +33,11 @@ func TestClaudeFailedCheckpointStillRequiresOriginalNativeEOFProof(t *testing.T)
 				c.terminal.Reason = domain.ClaudeAbortedStreaming
 			case "aborted-tools":
 				c.terminal.Reason = domain.ClaudeAbortedTools
+			case "background-requested":
+				c.terminal.Reason, c.terminal.Command = domain.ClaudeBackgroundRequested, domain.ClaudeCommandCompleted
+				if c.terminal.Validate() != nil {
+					t.Fatal("fixture must retain a valid background-requested terminal")
+				}
 			case "unfinished-tool":
 				c.tools["original"] = claudePublishedTool{}
 			case "unfinished-callback":

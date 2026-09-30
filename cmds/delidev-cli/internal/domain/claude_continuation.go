@@ -15,11 +15,11 @@ func (p ExecutionProgress) ClaudeContinuationBoundary(input ID) bool {
 	return p.ClaudeProgress == nil || !p.ClaudeProgress.PermissionChanged && (p.ClaudeProgress.Permission == nil || *p.ClaudeProgress.Permission == p.Observed.ClaudePermission)
 }
 
-// ContinuationCandidate excludes aborted histories even when their error bit
-// classifies them as failed. Cleanup and exact inline history remain separate
-// requirements; terminal classification alone never authorizes another input.
+// ContinuationCandidate excludes aborted and background-requested histories
+// even without a tracked task event. Background restoration needs its own
+// proof; cleanup and exact inline history remain separate requirements.
 func (v ClaudeTerminalObservation) ContinuationCandidate() bool {
-	return v.Validate() == nil && v.Reason != ClaudeAbortedStreaming && v.Reason != ClaudeAbortedTools && (v.Outcome() == ExecutionSucceeded || v.Outcome() == ExecutionFailed)
+	return v.Validate() == nil && v.Reason != ClaudeAbortedStreaming && v.Reason != ClaudeAbortedTools && v.Reason != ClaudeBackgroundRequested && (v.Outcome() == ExecutionSucceeded || v.Outcome() == ExecutionFailed)
 }
 
 // This public candidate preserves a completed original root Read, including a

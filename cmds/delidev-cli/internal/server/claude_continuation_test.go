@@ -59,7 +59,11 @@ func publishClaudeRootContent(t *testing.T, terminal domain.ExecutionEvent, mode
 
 func TestClaudeContinuationRequiresOriginalSettledPermissionAndReport(t *testing.T) {
 	for _, outcome := range []domain.ExecutionOutcome{domain.ExecutionSucceeded, domain.ExecutionFailed} {
-		for _, scenario := range []string{"ordinary", "permission-changed", "permission-mismatch", "interruption", "denial", "stop", "multiple-inputs", "unconfirmed", "prior-recovery"} {
+		scenarios := []string{"ordinary", "permission-changed", "permission-mismatch", "interruption", "denial", "stop", "multiple-inputs", "unconfirmed", "prior-recovery"}
+		if outcome == domain.ExecutionFailed {
+			scenarios = append(scenarios, "background-requested")
+		}
+		for _, scenario := range scenarios {
 			t.Run(string(outcome)+"/"+scenario, func(t *testing.T) {
 				f, completion := claudeRootOutcomeCompletionFixture(t, outcome)
 				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.continuation-boundary", nil, func(tx *store.Tx) (any, error) {
@@ -68,6 +72,11 @@ func TestClaudeContinuationRequiresOriginalSettledPermissionAndReport(t *testing
 						return nil, err
 					}
 					switch scenario {
+					case "background-requested":
+						s.Execution.ClaudeTerminal.Reason, s.Execution.ClaudeTerminal.Command = domain.ClaudeBackgroundRequested, domain.ClaudeCommandCompleted
+						if s.Execution.ClaudeTerminal.Validate() != nil || !s.Execution.ClaudeTasks.InlineBashHistoryReady() {
+							return nil, domain.Fail(domain.Internal, "Invalid background-requested fixture.", "Retain a valid terminal without a tracked task.")
+						}
 					case "permission-changed":
 						s.Execution.ClaudeProgress = &domain.ClaudeProgressState{NativeTurnID: s.Execution.NativeTurnID, PermissionChanged: true}
 					case "permission-mismatch":
