@@ -24,6 +24,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -31,6 +32,7 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
+	userServiceBackend        userservice.Backend
 	StartupID                 domain.ID
 	DataDir                   string
 	Listen                    string
@@ -51,6 +53,8 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
+	userServiceOptions userservice.ServerOptions
+	userServiceBackend userservice.Backend
 	delidevv1connect.UnimplementedSystemServiceHandler
 	delidevv1connect.UnimplementedResourceServiceHandler
 	delidevv1connect.UnimplementedConfigurationServiceHandler
@@ -211,7 +215,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	child, stop := context.WithCancel(ctx)
 	defer stop()
-	service := &Service{Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	service := &Service{userServiceBackend: config.userServiceBackend, userServiceOptions: userservice.ServerOptions{Listen: config.Listen, TLSCertificate: config.TLSCertificate, TLSKey: config.TLSKey, AllowedOrigins: config.AllowedOrigins}, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
 	defer service.closeAccountSecrets()
 	defer service.closeIntegrationSecrets()
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())
@@ -410,7 +414,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	})
 }
 func (s *Service) GetStatus(_ context.Context, req *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
-	response := connect.NewResponse(&pb.GetStatusResponse{Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, SchemaVersion: store.SchemaVersion, ServerId: string(s.Identity.ServerID), Listener: s.Endpoint.URL, StartedAt: s.Endpoint.StartedAt.Format(time.RFC3339Nano), Stopping: s.stopping.Load(), Capabilities: []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1, pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1}})
+	response := connect.NewResponse(&pb.GetStatusResponse{Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, SchemaVersion: store.SchemaVersion, ServerId: string(s.Identity.ServerID), Listener: s.Endpoint.URL, StartedAt: s.Endpoint.StartedAt.Format(time.RFC3339Nano), Stopping: s.stopping.Load(), Capabilities: []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1, pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1, pb.SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1}})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
