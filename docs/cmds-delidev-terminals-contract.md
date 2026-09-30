@@ -122,7 +122,9 @@ and LRU eviction bounding retention to 64 MiB. Frames are at most 32 KiB. Worker
 output uses a bounded 64-frame queue and backpressure. Identical most-recent
 frame retries are acknowledged; changed bytes or reordered frames fail.
 Eviction, server restart, missing prefixes, forward cursors and abandoned exit
-output expose a gap. Every shell has one native output epoch; reconnect does
+output expose a gap. A loss-only notification preserves the acknowledged cursor;
+only epoch changes, missing prefixes and invalid forward cursors replay the
+retained suffix. Every shell has one native output epoch; reconnect does
 not restart its producer. Normal exit joins/drains output before cleanup is
 reported; forced close may abandon bytes and exposes that fact.
 

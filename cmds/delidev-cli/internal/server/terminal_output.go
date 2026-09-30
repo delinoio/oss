@@ -171,8 +171,11 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 		if len(ring.chunks) != 0 {
 			first = ring.chunks[0].sequence
 		}
-		gap := (value.OutputLost && revision != record.Revision) || (epoch != "" && epoch != ring.epoch) || after > ring.sequence || (first > 1 && after < first-1)
-		if epoch != ring.epoch || gap {
+		cursorGap := (epoch != "" && epoch != ring.epoch) || after > ring.sequence || (first > 1 && after < first-1)
+		gap := (value.OutputLost && revision != record.Revision) || cursorGap
+		// Losing unpublished bytes changes completeness, not acknowledgment of
+		// retained bytes. Only an invalid cursor may replay the retained suffix.
+		if epoch != ring.epoch || cursorGap {
 			after = first - 1
 		}
 		epoch = ring.epoch
