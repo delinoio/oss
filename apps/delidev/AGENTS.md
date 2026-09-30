@@ -9,3 +9,5 @@ Read the relevant owner before changing its behavior, including cross-domain con
 - `apps/delidev/src/AGENTS.md`
 
 Keep implementation evidence in independent files under `docs/evidence/delidev/issue-<number>/`. Update instructions only when their rules or ownership change, not merely to record another validation run.
+
+- Settings > Projects follows the Projects-only presentation exception in `docs/apps-delidev-desktop-contract.md` and `src/AGENTS.md`. Preserve issue #1138 opening disposal and the shared shell and other categories.

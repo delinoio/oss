@@ -157,11 +157,20 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
 
 function RestrictionFields({ label, kind, value, change, active }: { label: string; kind: EntityKind; value: unknown; change: (value: Document) => void; active: boolean }) {
   const restriction = object(value);
-  return <fieldset><legend>{label}</legend><Check label={`Restrict ${label.toLowerCase()}`} value={restriction.configured} change={(configured) => change({ configured, ids: configured ? items(restriction.ids) : [] })} />{restriction.configured === true ? <><p>An empty selection permits none. Turning this restriction off permits every otherwise eligible entry.</p><OrderedLinks label={`Allowed ${label.toLowerCase()}`} kind={kind} links={items(restriction.ids)} active={active} explanation="Only these explicitly selected entries are allowed." change={(ids) => change({ ...restriction, ids })} /></> : <p>Every otherwise eligible entry is allowed.</p>}</fieldset>;
+  return <fieldset className="project-field-group"><legend>{label}</legend><Check label={`Restrict ${label.toLowerCase()}`} value={restriction.configured} change={(configured) => change({ configured, ids: configured ? items(restriction.ids) : [] })} />{restriction.configured === true ? <><p>An empty selection permits none. Turning this restriction off permits every otherwise eligible entry.</p><OrderedLinks label={`Allowed ${label.toLowerCase()}`} kind={kind} links={items(restriction.ids)} active={active} explanation="Only these explicitly selected entries are allowed." change={(ids) => change({ ...restriction, ids })} /></> : <p>Every otherwise eligible entry is allowed.</p>}</fieldset>;
 }
 function ProjectFields({ data, change, active }: FieldsProps) {
   const repositories = items(data.repositories).map(text);
-  return <><TextField label="Name" value={data.name} required change={(name) => change({ ...data, name })} /><OrderedLinks label="Ordered repositories" kind={EntityKind.REPOSITORY} links={repositories} active={active} explanation="All selected repositories form one workspace." change={(values) => change({ ...data, repositories: values, primary_repository: values.includes(data.primary_repository) ? data.primary_repository : "" })} /><label>Primary repository<select required value={text(data.primary_repository)} onChange={(event) => change({ ...data, primary_repository: event.target.value })}><option value="">Select the primary repository</option>{repositories.map((id) => <option key={id} value={id}>{id}</option>)}</select></label><p>The harness starts in this repository. Select it explicitly after adding repositories.</p><RestrictionFields label="Agent Workers" kind={EntityKind.AGENT} value={data.agents} active={active} change={(agents) => change({ ...data, agents })} /><RestrictionFields label="AI accounts" kind={EntityKind.ACCOUNT} value={data.accounts} active={active} change={(accounts) => change({ ...data, accounts })} /></>;
+  return <>
+    <fieldset className="project-field-group"><legend>Name</legend><TextField label="Name" value={data.name} required change={(name) => change({ ...data, name })} /></fieldset>
+    <fieldset className="project-field-group"><legend>Repositories</legend>
+      <OrderedLinks label="Ordered repositories" kind={EntityKind.REPOSITORY} links={repositories} active={active} explanation="All selected repositories form one workspace." change={(values) => change({ ...data, repositories: values, primary_repository: values.includes(data.primary_repository) ? data.primary_repository : "" })} />
+      <label>Primary repository<select required value={text(data.primary_repository)} onChange={(event) => change({ ...data, primary_repository: event.target.value })}><option value="">Select the primary repository</option>{repositories.map((id) => <option key={id} value={id}>{id}</option>)}</select></label>
+      <p>The harness starts in this repository. Select it explicitly after adding repositories.</p>
+    </fieldset>
+    <RestrictionFields label="Agent Workers" kind={EntityKind.AGENT} value={data.agents} active={active} change={(agents) => change({ ...data, agents })} />
+    <RestrictionFields label="AI accounts" kind={EntityKind.ACCOUNT} value={data.accounts} active={active} change={(accounts) => change({ ...data, accounts })} />
+  </>;
 }
 enum ReferenceType { Local = "local-branch", Remote = "remote-branch", Commit = "commit" }
 export function ReferenceFields({ label, value, change }: { label: string; value: unknown; change: (value: Document) => void }) {
