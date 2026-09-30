@@ -253,6 +253,10 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 }
 
 func (s *Service) dispatchExecution(ctx context.Context, record store.Record) error {
+	// This private server coordinator owns dispatch, including its retained PR
+	// history read. Establish its own owner context instead of depending on the
+	// ticker caller; public RPC and Worker authorization remain independent.
+	ctx = domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice})
 	attempt, observations, prepareErr := s.preparePRFixDispatch(ctx, record)
 	identity := struct {
 		Session  domain.ID

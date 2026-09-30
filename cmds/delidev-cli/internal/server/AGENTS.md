@@ -47,3 +47,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Manual PR fixes belong in `pr_fix.go` and the additive authenticated PullRequestFixService. Bind exact original evidence/project selections and final session/link revisions, recheck provider/Worker/native gates outside/inside their owning boundaries, and atomically compose ordinary queue/routing with stable-PR ownership. Explicit Resume cannot bypass PR assignment proof; automatic remediation remains separate. Follow the integration contract.
 
 - Coalesce identical initial manual-fix actor/request selections before provider inspection with bounded cancellable ownership. Recheck durable receipts after waiting; accepted replay bypasses gate capacity, and foreign input/actors cannot share ownership.
+
+- The private execution-dispatch entry point establishes server-owner context before retained PR-history reads. Public RPCs and store boundaries still validate their authenticated actor; ordinary dispatch must not depend on ticker-provided context.

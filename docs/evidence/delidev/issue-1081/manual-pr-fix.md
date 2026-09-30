@@ -196,3 +196,20 @@ its original owner, while foreign/missing/uncertain proof remains gated.
 -count=3` passed, including the unchanged existing server-report time and
 original assignment contradiction cases. These synthetic retained-state
 fixtures establish ordering policy, not live remote publication.
+
+## CI repair: private dispatch actor context
+
+Current-head macOS/Linux job logs from Actions run `36687252519` each showed
+18 top-level dispatch fixture failures caused by the new retained PR-history
+read lacking owner context. The private coordinator now establishes its own
+server-owner context; public RPC/store actor checks remain separate.
+
+A race run covering the affected initial/continuation/budget/harness/workspace
+and PR cases removed every original permission error but failed the existing
+claimed-work fixture: the optional PR preflight returned `missing-input` before
+the ordinary lifecycle conflict. That distinct regression is repaired separately.
+The focused `TestInitialDispatchOffProviderPreservesQueuedInputAndRouting`,
+`TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion` and
+`TestWorkspaceReadRelayWhileExecutionRemainsClaimed` race run passed, including
+public Worker mutation denial. Full CLI Go vet also passed after the review
+repairs and owner-context change.
