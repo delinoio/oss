@@ -21,8 +21,11 @@ function questions(v: unknown): v is Question[] {
 // Original ordering/proposals and response decisions are validated in Go.
 function observation(v: Document, thread: unknown) {
  const p = object(v.payload), meta = object(p._meta), u = object(p.update);
- if (!Object.values(Method).includes(v.method as Method) || !uuid(thread) || p.sessionId !== thread || encode(v).length > (512 << 10) || !Object.keys(v).every((k) => ["method", "payload", "request_id", "arrival_id", "inherited_permission", "plan_origin"].includes(k))) return false;
- if (v.method === Method.Update || v.method === Method.Notification) return v.request_id === undefined && v.arrival_id === undefined && typeof u.sessionUpdate === "string" && (meta.eventId === undefined || event(meta.eventId, thread)) && (meta.agentTimestampMs === undefined || count(meta.agentTimestampMs)) && (meta.totalTokens === undefined || count(meta.totalTokens)) && (v.inherited_permission === undefined || uuid(v.inherited_permission));
+ // Original proposal bytes are inert display evidence. Go checks their exact
+ // payload and digest; historical records may omit them, notifications cannot.
+ if (v.proposal_json !== undefined && (typeof v.proposal_json !== "string" || v.proposal_json.length > (512 << 10) || !bounded(v.proposal_json, 512 << 10, true))) return false;
+ if (!Object.values(Method).includes(v.method as Method) || !uuid(thread) || p.sessionId !== thread || encode(v).length > (512 << 10) || !Object.keys(v).every((k) => ["method", "payload", "request_id", "arrival_id", "inherited_permission", "plan_origin", "proposal_json"].includes(k))) return false;
+ if (v.method === Method.Update || v.method === Method.Notification) return v.request_id === undefined && v.arrival_id === undefined && v.proposal_json === undefined && typeof u.sessionUpdate === "string" && (meta.eventId === undefined || event(meta.eventId, thread)) && (meta.agentTimestampMs === undefined || count(meta.agentTimestampMs)) && (meta.totalTokens === undefined || count(meta.totalTokens)) && (v.inherited_permission === undefined || uuid(v.inherited_permission));
  const id = object(v.request_id);
  return uuid(v.arrival_id) && (exact(id, ["kind", "text"]) && id.kind === "text" && bounded(id.text, 128, true) || exact(id, ["kind", "number"]) && id.kind === "number" && Number.isSafeInteger(id.number) || exact(id, ["kind", "decimal"]) && id.kind === "decimal" && typeof id.decimal === "string" && /^-?(0|[1-9][0-9]{0,18})$/.test(id.decimal));
 }
