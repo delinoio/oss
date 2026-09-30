@@ -186,7 +186,10 @@ Question/approval forms share their typed controls with the session view, but In
 
 The session's Terminals pane uses authenticated generated public operations
 under the [terminal contract](cmds-delidev-terminals-contract.md). Mounting it
-lists retained terminal metadata; only explicit creation launches a shell.
+lists retained terminal metadata only after the server advertises session
+terminal support. Unknown/unsupported status gates history polling, manual
+refresh and selection and hides cached terminal errors; only explicit creation
+launches a shell.
 Creation supports the Worker's default shell or an absolute override. Each
 terminal offers line input, Ctrl+C/Ctrl+D bytes, resize, output reattachment and
 close. Creation/control use the connection-owned retained mutation registry;

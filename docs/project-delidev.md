@@ -88,3 +88,8 @@ Home (Sessions/New Session) keeps independent bounded 50-record reads and connec
 ## Session terminal deletion invariant
 
 Interactive terminals belong to the prepared session's original Worker and primary workspace. Agent Stop preserves them. Archive and permanent deletion join their independently confirmed process-tree cleanup; deletion cannot dispatch workspace removal before that join or bypass it during final purge. See the [terminal contract](cmds-delidev-terminals-contract.md) and [storage contract](cmds-delidev-storage-contract.md).
+
+Desktop terminal history reads, polling, manual refresh and selection require
+advertised system terminal support. Unknown or unsupported status cannot issue
+terminal reads or expose cached terminal errors; see the
+[desktop contract](apps-delidev-desktop-contract.md).
