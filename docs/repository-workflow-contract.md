@@ -1,5 +1,9 @@
 # Repository Workflow Contract
 
+DeliDev source decomposition, independent evidence and stable numeric reservations
+follow [the structure contract](cmds-delidev-structure-contract.md). These are source
+ownership changes; existing required checks and repository rulesets remain intact.
+
 Repository workflows are reviewed as source-backed contracts. Workflow IDs, job IDs, artifact names, permissions, triggers, protected environments, and publication boundaries must match the checked-in YAML and the static workflow tests.
 
 DeliDev's manual `delidev-native-dry-run.yml` is a credential-free six-target native

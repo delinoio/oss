@@ -194,3 +194,17 @@ Server and paired Worker scopes expose explicit native service install/status/st
 ## Authenticated development-server forwarding
 
 Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
+
+## Preserved project-index implementation notes
+
+The following source-backed notes were relocated from the project index at `12b33a2accaf`. Their historical qualifications and unresolved acceptance boundaries are retained verbatim.
+
+- `protos/gen/go/delidev/v1`: generated Go messages and Connect bindings.
+
+Keep command, protocol, evidence, and scoped AGENTS contracts synchronized with each implementation increment. Preserve the complete normative requirements even when individual acceptance items remain in progress. Generated bindings are tool-owned. Never claim the project complete while required CLI/server/Worker acceptance items remain unimplemented or unverified.
+
+Unix output-pipe setup failures persist pre-launch completion so an exited supervisor does not require reboot recovery for a command that never started.
+
+Process controller setup now creates each scope exclusively and synchronizes removal of its original empty scope after a proven pre-launch failure, preserving replaced/nonempty evidence and all native-started ownership requirements.
+
+Streamed JSON numeric spellings and key names now share bounded reflection protection at their original parent paths and across the key sequence, before escaped field names reach a Worker.

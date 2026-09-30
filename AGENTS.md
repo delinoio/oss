@@ -1,5 +1,7 @@
 ### Instructions
 
+- DeliDev parallel-change ownership follows `docs/cmds-delidev-structure-contract.md`. Record new validation in independent `docs/evidence/delidev/issue-<number>/` files; preserve the historical ledger. Validation-only updates do not require project-index or AGENTS edits. Update those files when their ownership, policy or cross-domain invariants change. Establish shared protocol-number and migration-version reservations on main before dependent implementations; regenerate tool-owned outputs from reconciled sources.
+
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
 - License repository-owned source and future distributions under Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
 - All repository-wide rules must be defined in the appropriate AGENTS.md.
