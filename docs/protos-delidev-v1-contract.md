@@ -335,7 +335,13 @@ Provider activation adds an owner/client-only `ProviderService.ListProviderInven
 
 Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).
 
-System capability wire values remain independent: automatic titles use `1`, session forwarding uses `2`, and native accounting uses `3`. Servers supporting both forwarding and accounting advertise both values; forwarding capability cannot imply support for the native accounting profile.
+System capability wire values remain independent: automatic titles use `1`, session forwarding uses `2`, current-user services use `3`, and native accounting uses `4`. Servers supporting both forwarding and accounting advertise both values; forwarding capability cannot imply support for the native accounting profile.
+
+### Current-user services
+
+`SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
+
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1` and the merged `SESSION_FORWARDING_V1 = 2`; the merged `USER_SERVICES_V1` uses `3`, and native accounting uses distinct value `4`. `GetStatus` advertises all four independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 

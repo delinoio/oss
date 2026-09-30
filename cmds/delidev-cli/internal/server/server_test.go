@@ -84,16 +84,16 @@ func TestRealConnectAuthenticationOriginsAndRedaction(t *testing.T) {
 	if response.Header().Get("X-Delidev-Correlation-Id") == "" {
 		t.Fatal("missing correlation")
 	}
-	// Forwarding already owns wire value 2. Native accounting must remain a
-	// separate negotiated capability when both features share this server.
-	if pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 != 2 || pb.SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1 != 3 {
+	// Forwarding and user services already own wire values 2 and 3. Accounting
+	// must remain an independent capability when all features share this server.
+	if pb.SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1 != 1 || pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 != 2 || pb.SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1 != 3 || pb.SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1 != 4 {
 		t.Fatal("system capability wire identities changed")
 	}
 	capabilities := make(map[pb.SystemCapability]int)
 	for _, capability := range response.Msg.Capabilities {
 		capabilities[capability]++
 	}
-	for _, capability := range []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1, pb.SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1} {
+	for _, capability := range []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1, pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1, pb.SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1, pb.SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1} {
 		if capabilities[capability] != 1 {
 			t.Fatalf("independent capability %v missing or duplicated: %v", capability, response.Msg.Capabilities)
 		}

@@ -130,6 +130,36 @@ func TestLifecycleLockPreventsConcurrentIntentChange(t *testing.T) {
 	}
 }
 
+func TestCompletedServiceStopPreservesReplacementGeneration(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "server")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	config := Config{DataDir: root, Listen: "127.0.0.1:0"}
+	first, err := WriteRunning(root, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SuppressCompletedServiceRestart(root, first.Generation); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := ReadLifecycle(root)
+	if err != nil || stopped.State != DesiredStopped || stopped.Configuration != first.Configuration {
+		t.Fatal("joined service Stop did not retain restart suppression", err)
+	}
+	replacement, err := WriteRunning(root, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SuppressCompletedServiceRestart(root, first.Generation); err != nil {
+		t.Fatal(err)
+	}
+	current, err := ReadLifecycle(root)
+	if err != nil || current != replacement {
+		t.Fatal("old service Stop suppressed replacement", err)
+	}
+}
+
 type blockedReadyLog struct {
 	slog.Handler
 	entered chan struct{}
