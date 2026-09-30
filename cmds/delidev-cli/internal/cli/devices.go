@@ -272,7 +272,11 @@ func repositoryInspect(ctx context.Context, c client, o options, args []string) 
 	return map[string]any{"job": resourceJSON(job), "replayed": response.Msg.Replayed}, nil
 }
 func awaitJob(ctx context.Context, c client, job *pb.Resource) (*pb.Resource, error) {
-	bounded, cancel := context.WithTimeout(ctx, 25*time.Second)
+	return awaitJobWithin(ctx, c, job, 25*time.Second)
+}
+
+func awaitJobWithin(ctx context.Context, c client, job *pb.Resource, limit time.Duration) (*pb.Resource, error) {
+	bounded, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	for {
 		latest, err := c.resources.GetResource(bounded, request(c, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_JOB, Id: job.Id}))

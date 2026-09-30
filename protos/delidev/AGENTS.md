@@ -126,6 +126,12 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Native subagent observations follow `docs/cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
 
+- Codex Fork uses owner/client-only `SessionService.ForkSession` and `GetSessionFork`, typed `ForkWorkspace`, and allocation-ledger capability `CODEX_SESSION_FORK_V1 = 13`. Local proof is write-only; exact job/child observation cannot replay native creation. Preserve split service ownership and generated compatibility exports under `docs/cmds-delidev-forks-contract.md`.
+
+- Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
+
+- Managed restore uses reserved `MANAGED_BACKUP_RESTORE_V1 = 7`. Preserve existing capabilities 1/2/3 and generate owner/client restore RPCs, presence-aware revision inputs and typed receipt states from `system.proto`.
+
 - `SwitchSessionAccount` is an additive owner/client-only SessionService mutation with exact actor/revision/request receipts and the typed stopped-Codex-account-switch capability (System wire value 5, established by `allocations.json`). It selects future execution without rewriting history or starting native work; follow the sessions contract and regenerate Go/TypeScript/Connect Query bindings.
 
 - Issue #1142 reserves repository-inspection metadata Worker value 6 and attachment-response support field 3, retaining provenance from closed PR #1193 whose Worker value was 5. Main owns value 5 for native compaction. Reservation kinds must match the existing baseline declaration kind, including message-field additions. Keep them allocation-only until the dependent implementation; do not advertise support from a reservation. Follow the protocol and structure contracts.

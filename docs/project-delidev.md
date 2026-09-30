@@ -45,6 +45,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [API provider activation](cmds-delidev-provider-activation-contract.md)
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
+- [Same-account Codex session forks](cmds-delidev-forks-contract.md)
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
@@ -66,8 +67,11 @@ owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
 - Local and remote operation preserve original native ownership, explicit authorization, credential isolation and uncertainty.
 - Each original Claude Agent/Task parent tool owns at most one observed child across Worker composition and atomic server publication, including after that child's completion. Clients retain the original hierarchy without child controls; see the [subagent contract](cmds-delidev-subagents-contract.md).
 - Shared Worker/server validation closes every supplied child usage report to its native source schema and requires exact nullable normalized counter parity before atomic publication. Native report bytes remain unchanged and independent reports remain non-additive; unavailable usage cannot be supplied without its original report. See the [subagent contract](cmds-delidev-subagents-contract.md).
+- Sessions with observed native subagents retain version-1 paused completion after independent cleanup. Same-account Codex Fork requires a version-2 checkpoint and cannot promote that child history; see the [subagent](cmds-delidev-subagents-contract.md) and [fork](cmds-delidev-forks-contract.md) contracts.
+- Codex fork children survive parent deletion. Explicit Local sharing is limited to user-owned Local source checkouts; managed Worktree sources require independent copies. Go rechecks ownership at acceptance, preparation and publication, and the desktop offers only the supported choice. See the [fork contract](cmds-delidev-forks-contract.md).
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.
+- Managed database restore preserves current revocations and external permanent deletion obligations, quarantines historical execution and ends the original server epoch. Temporary recovery images participate in permanent erasure; the storage contract owns their lifecycle.
 - PR activity preserves immutable source/version/actor metadata across Go, generated clients, CLI and desktop. Attempt success cannot establish verified handling; only a dedicated original verification source can project that outcome.
 - Negotiated native usage keeps Codex responses and verified Grok closed inputs as distinct accounting units across Go, CLI and desktop. Grok retention requires original input/history/closure and independently confirmed cleanup; its totals never imply pricing, actual cost or estimated-budget contribution. See the [usage contract](cmds-delidev-usage-contract.md).
 

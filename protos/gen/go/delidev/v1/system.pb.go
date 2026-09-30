@@ -34,7 +34,10 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1 SystemCapability = 9
 	// Read-only native Codex and Claude child-agent observations.
 	SystemCapability_SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1         SystemCapability = 12
+	SystemCapability_SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1       SystemCapability = 7
 	SystemCapability_SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1 SystemCapability = 5
+	// Reserved for issue #1092 in the repository allocation ledger.
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1 SystemCapability = 13
 )
 
 // Enum value maps for SystemCapability.
@@ -47,7 +50,9 @@ var (
 		4:  "SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1",
 		9:  "SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1",
 		12: "SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1",
+		7:  "SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1",
 		5:  "SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1",
+		13: "SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1",
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                     0,
@@ -57,7 +62,9 @@ var (
 		"SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1":            4,
 		"SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1":   9,
 		"SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1":         12,
+		"SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1":       7,
 		"SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1": 5,
+		"SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1":           13,
 	}
 )
 
@@ -356,6 +363,61 @@ func (x UserServiceState) Number() protoreflect.EnumNumber {
 // Deprecated: Use UserServiceState.Descriptor instead.
 func (UserServiceState) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_system_proto_rawDescGZIP(), []int{5}
+}
+
+type BackupRestoreState int32
+
+const (
+	BackupRestoreState_BACKUP_RESTORE_STATE_UNSPECIFIED BackupRestoreState = 0
+	BackupRestoreState_BACKUP_RESTORE_STATE_PREPARED    BackupRestoreState = 1
+	BackupRestoreState_BACKUP_RESTORE_STATE_PUBLISHED   BackupRestoreState = 2
+	BackupRestoreState_BACKUP_RESTORE_STATE_RESTORED    BackupRestoreState = 3
+	BackupRestoreState_BACKUP_RESTORE_STATE_ROLLED_BACK BackupRestoreState = 4
+)
+
+// Enum value maps for BackupRestoreState.
+var (
+	BackupRestoreState_name = map[int32]string{
+		0: "BACKUP_RESTORE_STATE_UNSPECIFIED",
+		1: "BACKUP_RESTORE_STATE_PREPARED",
+		2: "BACKUP_RESTORE_STATE_PUBLISHED",
+		3: "BACKUP_RESTORE_STATE_RESTORED",
+		4: "BACKUP_RESTORE_STATE_ROLLED_BACK",
+	}
+	BackupRestoreState_value = map[string]int32{
+		"BACKUP_RESTORE_STATE_UNSPECIFIED": 0,
+		"BACKUP_RESTORE_STATE_PREPARED":    1,
+		"BACKUP_RESTORE_STATE_PUBLISHED":   2,
+		"BACKUP_RESTORE_STATE_RESTORED":    3,
+		"BACKUP_RESTORE_STATE_ROLLED_BACK": 4,
+	}
+)
+
+func (x BackupRestoreState) Enum() *BackupRestoreState {
+	p := new(BackupRestoreState)
+	*p = x
+	return p
+}
+
+func (x BackupRestoreState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (BackupRestoreState) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_system_proto_enumTypes[6].Descriptor()
+}
+
+func (BackupRestoreState) Type() protoreflect.EnumType {
+	return &file_delidev_v1_system_proto_enumTypes[6]
+}
+
+func (x BackupRestoreState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use BackupRestoreState.Descriptor instead.
+func (BackupRestoreState) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_system_proto_rawDescGZIP(), []int{6}
 }
 
 type GetStatusRequest struct {
@@ -1117,8 +1179,10 @@ type InspectBackupResponse struct {
 	Sha256        string                 `protobuf:"bytes,2,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	SchemaVersion uint32                 `protobuf:"varint,3,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	ServerId      string                 `protobuf:"bytes,4,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Commit high-water mark; restore rechecks it and all live ownership.
+	RestoreRevision uint64 `protobuf:"varint,5,opt,name=restore_revision,json=restoreRevision,proto3" json:"restore_revision,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *InspectBackupResponse) Reset() {
@@ -1177,6 +1241,13 @@ func (x *InspectBackupResponse) GetServerId() string {
 		return x.ServerId
 	}
 	return ""
+}
+
+func (x *InspectBackupResponse) GetRestoreRevision() uint64 {
+	if x != nil {
+		return x.RestoreRevision
+	}
+	return 0
 }
 
 type BackupDeletionJob struct {
@@ -2298,6 +2369,291 @@ func (x *ControlUserServiceResponse) GetReplayed() bool {
 	return false
 }
 
+type BackupRestoreReceipt struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	BackupId      string                 `protobuf:"bytes,2,opt,name=backup_id,json=backupId,proto3" json:"backup_id,omitempty"`
+	State         BackupRestoreState     `protobuf:"varint,3,opt,name=state,proto3,enum=delidev.v1.BackupRestoreState" json:"state,omitempty"`
+	CreatedAt     string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BackupRestoreReceipt) Reset() {
+	*x = BackupRestoreReceipt{}
+	mi := &file_delidev_v1_system_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackupRestoreReceipt) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackupRestoreReceipt) ProtoMessage() {}
+
+func (x *BackupRestoreReceipt) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_system_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackupRestoreReceipt.ProtoReflect.Descriptor instead.
+func (*BackupRestoreReceipt) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_system_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *BackupRestoreReceipt) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *BackupRestoreReceipt) GetBackupId() string {
+	if x != nil {
+		return x.BackupId
+	}
+	return ""
+}
+
+func (x *BackupRestoreReceipt) GetState() BackupRestoreState {
+	if x != nil {
+		return x.State
+	}
+	return BackupRestoreState_BACKUP_RESTORE_STATE_UNSPECIFIED
+}
+
+func (x *BackupRestoreReceipt) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+type RestoreBackupRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Backup    *ManagedBackup         `protobuf:"bytes,2,opt,name=backup,proto3" json:"backup,omitempty"`
+	Sha256    string                 `protobuf:"bytes,3,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	// Presence is required; zero is a valid original commit high-water mark.
+	ExpectedRestoreRevision *uint64 `protobuf:"varint,4,opt,name=expected_restore_revision,json=expectedRestoreRevision,proto3,oneof" json:"expected_restore_revision,omitempty"`
+	Confirm                 bool    `protobuf:"varint,5,opt,name=confirm,proto3" json:"confirm,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *RestoreBackupRequest) Reset() {
+	*x = RestoreBackupRequest{}
+	mi := &file_delidev_v1_system_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestoreBackupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestoreBackupRequest) ProtoMessage() {}
+
+func (x *RestoreBackupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_system_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestoreBackupRequest.ProtoReflect.Descriptor instead.
+func (*RestoreBackupRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_system_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *RestoreBackupRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *RestoreBackupRequest) GetBackup() *ManagedBackup {
+	if x != nil {
+		return x.Backup
+	}
+	return nil
+}
+
+func (x *RestoreBackupRequest) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *RestoreBackupRequest) GetExpectedRestoreRevision() uint64 {
+	if x != nil && x.ExpectedRestoreRevision != nil {
+		return *x.ExpectedRestoreRevision
+	}
+	return 0
+}
+
+func (x *RestoreBackupRequest) GetConfirm() bool {
+	if x != nil {
+		return x.Confirm
+	}
+	return false
+}
+
+type RestoreBackupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Receipt       *BackupRestoreReceipt  `protobuf:"bytes,1,opt,name=receipt,proto3" json:"receipt,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestoreBackupResponse) Reset() {
+	*x = RestoreBackupResponse{}
+	mi := &file_delidev_v1_system_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestoreBackupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestoreBackupResponse) ProtoMessage() {}
+
+func (x *RestoreBackupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_system_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestoreBackupResponse.ProtoReflect.Descriptor instead.
+func (*RestoreBackupResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_system_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *RestoreBackupResponse) GetReceipt() *BackupRestoreReceipt {
+	if x != nil {
+		return x.Receipt
+	}
+	return nil
+}
+
+func (x *RestoreBackupResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type GetBackupRestoreRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBackupRestoreRequest) Reset() {
+	*x = GetBackupRestoreRequest{}
+	mi := &file_delidev_v1_system_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBackupRestoreRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBackupRestoreRequest) ProtoMessage() {}
+
+func (x *GetBackupRestoreRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_system_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBackupRestoreRequest.ProtoReflect.Descriptor instead.
+func (*GetBackupRestoreRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_system_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *GetBackupRestoreRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type GetBackupRestoreResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Receipt       *BackupRestoreReceipt  `protobuf:"bytes,1,opt,name=receipt,proto3" json:"receipt,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBackupRestoreResponse) Reset() {
+	*x = GetBackupRestoreResponse{}
+	mi := &file_delidev_v1_system_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBackupRestoreResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBackupRestoreResponse) ProtoMessage() {}
+
+func (x *GetBackupRestoreResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_system_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBackupRestoreResponse.ProtoReflect.Descriptor instead.
+func (*GetBackupRestoreResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_system_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *GetBackupRestoreResponse) GetReceipt() *BackupRestoreReceipt {
+	if x != nil {
+		return x.Receipt
+	}
+	return nil
+}
+
 var File_delidev_v1_system_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_system_proto_rawDesc = "" +
@@ -2358,12 +2714,13 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\abackups\x18\x01 \x03(\v2\x19.delidev.v1.ManagedBackupR\abackups\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"&\n" +
 	"\x14InspectBackupRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xa6\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xd1\x01\n" +
 	"\x15InspectBackupResponse\x121\n" +
 	"\x06backup\x18\x01 \x01(\v2\x19.delidev.v1.ManagedBackupR\x06backup\x12\x16\n" +
 	"\x06sha256\x18\x02 \x01(\tR\x06sha256\x12%\n" +
 	"\x0eschema_version\x18\x03 \x01(\rR\rschemaVersion\x12\x1b\n" +
-	"\tserver_id\x18\x04 \x01(\tR\bserverId\"\xc4\x02\n" +
+	"\tserver_id\x18\x04 \x01(\tR\bserverId\x12)\n" +
+	"\x10restore_revision\x18\x05 \x01(\x04R\x0frestoreRevision\"\xc4\x02\n" +
 	"\x11BackupDeletionJob\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tbackup_id\x18\x02 \x01(\tR\bbackupId\x12\x1a\n" +
@@ -2449,7 +2806,30 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\aservice\x18\x01 \x01(\v2\x17.delidev.v1.UserServiceR\aservice\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed*\xfc\x02\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"\xa7\x01\n" +
+	"\x14BackupRestoreReceipt\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1b\n" +
+	"\tbackup_id\x18\x02 \x01(\tR\bbackupId\x124\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x1e.delidev.v1.BackupRestoreStateR\x05state\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\tR\tcreatedAt\"\xf9\x01\n" +
+	"\x14RestoreBackupRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x121\n" +
+	"\x06backup\x18\x02 \x01(\v2\x19.delidev.v1.ManagedBackupR\x06backup\x12\x16\n" +
+	"\x06sha256\x18\x03 \x01(\tR\x06sha256\x12?\n" +
+	"\x19expected_restore_revision\x18\x04 \x01(\x04H\x00R\x17expectedRestoreRevision\x88\x01\x01\x12\x18\n" +
+	"\aconfirm\x18\x05 \x01(\bR\aconfirmB\x1c\n" +
+	"\x1a_expected_restore_revision\"o\n" +
+	"\x15RestoreBackupResponse\x12:\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"8\n" +
+	"\x17GetBackupRestoreRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
+	"\x18GetBackupRestoreResponse\x12:\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xda\x03\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1\x10\x01\x12+\n" +
@@ -2457,8 +2837,10 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\"SYSTEM_CAPABILITY_USER_SERVICES_V1\x10\x03\x12*\n" +
 	"&SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1\x10\x04\x123\n" +
 	"/SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1\x10\t\x12-\n" +
-	")SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1\x10\f\x125\n" +
-	"1SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1\x10\x05*\x84\x01\n" +
+	")SYSTEM_CAPABILITY_SUBAGENT_OBSERVATION_V1\x10\f\x12/\n" +
+	"+SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1\x10\a\x125\n" +
+	"1SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1\x10\x05\x12+\n" +
+	"'SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1\x10\r*\x84\x01\n" +
 	"\x13BackupDeletionState\x12%\n" +
 	"!BACKUP_DELETION_STATE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dBACKUP_DELETION_STATE_PENDING\x10\x01\x12#\n" +
@@ -2485,8 +2867,13 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\x1bUSER_SERVICE_STATE_STARTING\x10\x03\x12\x1e\n" +
 	"\x1aUSER_SERVICE_STATE_RUNNING\x10\x04\x12\x1f\n" +
 	"\x1bUSER_SERVICE_STATE_STOPPING\x10\x05\x12 \n" +
-	"\x1cUSER_SERVICE_STATE_UNCERTAIN\x10\x062\xb4\n" +
-	"\n" +
+	"\x1cUSER_SERVICE_STATE_UNCERTAIN\x10\x06*\xca\x01\n" +
+	"\x12BackupRestoreState\x12$\n" +
+	" BACKUP_RESTORE_STATE_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dBACKUP_RESTORE_STATE_PREPARED\x10\x01\x12\"\n" +
+	"\x1eBACKUP_RESTORE_STATE_PUBLISHED\x10\x02\x12!\n" +
+	"\x1dBACKUP_RESTORE_STATE_RESTORED\x10\x03\x12$\n" +
+	" BACKUP_RESTORE_STATE_ROLLED_BACK\x10\x042\xe9\v\n" +
 	"\rSystemService\x12W\n" +
 	"\x0eGetUserService\x12!.delidev.v1.GetUserServiceRequest\x1a\".delidev.v1.GetUserServiceResponse\x12c\n" +
 	"\x12ControlUserService\x12%.delidev.v1.ControlUserServiceRequest\x1a&.delidev.v1.ControlUserServiceResponse\x12H\n" +
@@ -2503,7 +2890,9 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\x13ListBackupDeletions\x12&.delidev.v1.ListBackupDeletionsRequest\x1a'.delidev.v1.ListBackupDeletionsResponse\x12T\n" +
 	"\rRequestBackup\x12 .delidev.v1.RequestBackupRequest\x1a!.delidev.v1.RequestBackupResponse\x12`\n" +
 	"\x11GetBackupCreation\x12$.delidev.v1.GetBackupCreationRequest\x1a%.delidev.v1.GetBackupCreationResponse\x12f\n" +
-	"\x13ListBackupCreations\x12&.delidev.v1.ListBackupCreationsRequest\x1a'.delidev.v1.ListBackupCreationsResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"\x13ListBackupCreations\x12&.delidev.v1.ListBackupCreationsRequest\x1a'.delidev.v1.ListBackupCreationsResponse\x12T\n" +
+	"\rRestoreBackup\x12 .delidev.v1.RestoreBackupRequest\x1a!.delidev.v1.RestoreBackupResponse\x12]\n" +
+	"\x10GetBackupRestore\x12#.delidev.v1.GetBackupRestoreRequest\x1a$.delidev.v1.GetBackupRestoreResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_system_proto_rawDescOnce sync.Once
@@ -2517,8 +2906,8 @@ func file_delidev_v1_system_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_system_proto_rawDescData
 }
 
-var file_delidev_v1_system_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_delidev_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_delidev_v1_system_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_delidev_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_delidev_v1_system_proto_goTypes = []any{
 	(SystemCapability)(0),               // 0: delidev.v1.SystemCapability
 	(BackupDeletionState)(0),            // 1: delidev.v1.BackupDeletionState
@@ -2526,97 +2915,111 @@ var file_delidev_v1_system_proto_goTypes = []any{
 	(UserServiceKind)(0),                // 3: delidev.v1.UserServiceKind
 	(UserServiceAction)(0),              // 4: delidev.v1.UserServiceAction
 	(UserServiceState)(0),               // 5: delidev.v1.UserServiceState
-	(*GetStatusRequest)(nil),            // 6: delidev.v1.GetStatusRequest
-	(*GetOverviewRequest)(nil),          // 7: delidev.v1.GetOverviewRequest
-	(*GetOverviewResponse)(nil),         // 8: delidev.v1.GetOverviewResponse
-	(*GetStatusResponse)(nil),           // 9: delidev.v1.GetStatusResponse
-	(*StopServerRequest)(nil),           // 10: delidev.v1.StopServerRequest
-	(*StopServerResponse)(nil),          // 11: delidev.v1.StopServerResponse
-	(*GetDoctorRequest)(nil),            // 12: delidev.v1.GetDoctorRequest
-	(*GetDoctorResponse)(nil),           // 13: delidev.v1.GetDoctorResponse
-	(*CreateBackupRequest)(nil),         // 14: delidev.v1.CreateBackupRequest
-	(*CreateBackupResponse)(nil),        // 15: delidev.v1.CreateBackupResponse
-	(*ManagedBackup)(nil),               // 16: delidev.v1.ManagedBackup
-	(*ListBackupsRequest)(nil),          // 17: delidev.v1.ListBackupsRequest
-	(*ListBackupsResponse)(nil),         // 18: delidev.v1.ListBackupsResponse
-	(*InspectBackupRequest)(nil),        // 19: delidev.v1.InspectBackupRequest
-	(*InspectBackupResponse)(nil),       // 20: delidev.v1.InspectBackupResponse
-	(*BackupDeletionJob)(nil),           // 21: delidev.v1.BackupDeletionJob
-	(*DeleteBackupRequest)(nil),         // 22: delidev.v1.DeleteBackupRequest
-	(*DeleteBackupResponse)(nil),        // 23: delidev.v1.DeleteBackupResponse
-	(*ListBackupDeletionsRequest)(nil),  // 24: delidev.v1.ListBackupDeletionsRequest
-	(*ListBackupDeletionsResponse)(nil), // 25: delidev.v1.ListBackupDeletionsResponse
-	(*BackupCreationJob)(nil),           // 26: delidev.v1.BackupCreationJob
-	(*RequestBackupRequest)(nil),        // 27: delidev.v1.RequestBackupRequest
-	(*RequestBackupResponse)(nil),       // 28: delidev.v1.RequestBackupResponse
-	(*GetBackupCreationRequest)(nil),    // 29: delidev.v1.GetBackupCreationRequest
-	(*GetBackupCreationResponse)(nil),   // 30: delidev.v1.GetBackupCreationResponse
-	(*ListBackupCreationsRequest)(nil),  // 31: delidev.v1.ListBackupCreationsRequest
-	(*ListBackupCreationsResponse)(nil), // 32: delidev.v1.ListBackupCreationsResponse
-	(*GetBackupDeletionRequest)(nil),    // 33: delidev.v1.GetBackupDeletionRequest
-	(*GetBackupDeletionResponse)(nil),   // 34: delidev.v1.GetBackupDeletionResponse
-	(*UserService)(nil),                 // 35: delidev.v1.UserService
-	(*GetUserServiceRequest)(nil),       // 36: delidev.v1.GetUserServiceRequest
-	(*GetUserServiceResponse)(nil),      // 37: delidev.v1.GetUserServiceResponse
-	(*ControlUserServiceRequest)(nil),   // 38: delidev.v1.ControlUserServiceRequest
-	(*ControlUserServiceResponse)(nil),  // 39: delidev.v1.ControlUserServiceResponse
+	(BackupRestoreState)(0),             // 6: delidev.v1.BackupRestoreState
+	(*GetStatusRequest)(nil),            // 7: delidev.v1.GetStatusRequest
+	(*GetOverviewRequest)(nil),          // 8: delidev.v1.GetOverviewRequest
+	(*GetOverviewResponse)(nil),         // 9: delidev.v1.GetOverviewResponse
+	(*GetStatusResponse)(nil),           // 10: delidev.v1.GetStatusResponse
+	(*StopServerRequest)(nil),           // 11: delidev.v1.StopServerRequest
+	(*StopServerResponse)(nil),          // 12: delidev.v1.StopServerResponse
+	(*GetDoctorRequest)(nil),            // 13: delidev.v1.GetDoctorRequest
+	(*GetDoctorResponse)(nil),           // 14: delidev.v1.GetDoctorResponse
+	(*CreateBackupRequest)(nil),         // 15: delidev.v1.CreateBackupRequest
+	(*CreateBackupResponse)(nil),        // 16: delidev.v1.CreateBackupResponse
+	(*ManagedBackup)(nil),               // 17: delidev.v1.ManagedBackup
+	(*ListBackupsRequest)(nil),          // 18: delidev.v1.ListBackupsRequest
+	(*ListBackupsResponse)(nil),         // 19: delidev.v1.ListBackupsResponse
+	(*InspectBackupRequest)(nil),        // 20: delidev.v1.InspectBackupRequest
+	(*InspectBackupResponse)(nil),       // 21: delidev.v1.InspectBackupResponse
+	(*BackupDeletionJob)(nil),           // 22: delidev.v1.BackupDeletionJob
+	(*DeleteBackupRequest)(nil),         // 23: delidev.v1.DeleteBackupRequest
+	(*DeleteBackupResponse)(nil),        // 24: delidev.v1.DeleteBackupResponse
+	(*ListBackupDeletionsRequest)(nil),  // 25: delidev.v1.ListBackupDeletionsRequest
+	(*ListBackupDeletionsResponse)(nil), // 26: delidev.v1.ListBackupDeletionsResponse
+	(*BackupCreationJob)(nil),           // 27: delidev.v1.BackupCreationJob
+	(*RequestBackupRequest)(nil),        // 28: delidev.v1.RequestBackupRequest
+	(*RequestBackupResponse)(nil),       // 29: delidev.v1.RequestBackupResponse
+	(*GetBackupCreationRequest)(nil),    // 30: delidev.v1.GetBackupCreationRequest
+	(*GetBackupCreationResponse)(nil),   // 31: delidev.v1.GetBackupCreationResponse
+	(*ListBackupCreationsRequest)(nil),  // 32: delidev.v1.ListBackupCreationsRequest
+	(*ListBackupCreationsResponse)(nil), // 33: delidev.v1.ListBackupCreationsResponse
+	(*GetBackupDeletionRequest)(nil),    // 34: delidev.v1.GetBackupDeletionRequest
+	(*GetBackupDeletionResponse)(nil),   // 35: delidev.v1.GetBackupDeletionResponse
+	(*UserService)(nil),                 // 36: delidev.v1.UserService
+	(*GetUserServiceRequest)(nil),       // 37: delidev.v1.GetUserServiceRequest
+	(*GetUserServiceResponse)(nil),      // 38: delidev.v1.GetUserServiceResponse
+	(*ControlUserServiceRequest)(nil),   // 39: delidev.v1.ControlUserServiceRequest
+	(*ControlUserServiceResponse)(nil),  // 40: delidev.v1.ControlUserServiceResponse
+	(*BackupRestoreReceipt)(nil),        // 41: delidev.v1.BackupRestoreReceipt
+	(*RestoreBackupRequest)(nil),        // 42: delidev.v1.RestoreBackupRequest
+	(*RestoreBackupResponse)(nil),       // 43: delidev.v1.RestoreBackupResponse
+	(*GetBackupRestoreRequest)(nil),     // 44: delidev.v1.GetBackupRestoreRequest
+	(*GetBackupRestoreResponse)(nil),    // 45: delidev.v1.GetBackupRestoreResponse
 }
 var file_delidev_v1_system_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.GetStatusResponse.capabilities:type_name -> delidev.v1.SystemCapability
-	16, // 1: delidev.v1.ListBackupsResponse.backups:type_name -> delidev.v1.ManagedBackup
-	16, // 2: delidev.v1.InspectBackupResponse.backup:type_name -> delidev.v1.ManagedBackup
+	17, // 1: delidev.v1.ListBackupsResponse.backups:type_name -> delidev.v1.ManagedBackup
+	17, // 2: delidev.v1.InspectBackupResponse.backup:type_name -> delidev.v1.ManagedBackup
 	1,  // 3: delidev.v1.BackupDeletionJob.state:type_name -> delidev.v1.BackupDeletionState
-	16, // 4: delidev.v1.DeleteBackupRequest.backup:type_name -> delidev.v1.ManagedBackup
-	21, // 5: delidev.v1.DeleteBackupResponse.job:type_name -> delidev.v1.BackupDeletionJob
-	21, // 6: delidev.v1.ListBackupDeletionsResponse.jobs:type_name -> delidev.v1.BackupDeletionJob
+	17, // 4: delidev.v1.DeleteBackupRequest.backup:type_name -> delidev.v1.ManagedBackup
+	22, // 5: delidev.v1.DeleteBackupResponse.job:type_name -> delidev.v1.BackupDeletionJob
+	22, // 6: delidev.v1.ListBackupDeletionsResponse.jobs:type_name -> delidev.v1.BackupDeletionJob
 	2,  // 7: delidev.v1.BackupCreationJob.state:type_name -> delidev.v1.BackupCreationState
-	26, // 8: delidev.v1.RequestBackupResponse.job:type_name -> delidev.v1.BackupCreationJob
-	26, // 9: delidev.v1.GetBackupCreationResponse.job:type_name -> delidev.v1.BackupCreationJob
-	26, // 10: delidev.v1.ListBackupCreationsResponse.jobs:type_name -> delidev.v1.BackupCreationJob
-	21, // 11: delidev.v1.GetBackupDeletionResponse.job:type_name -> delidev.v1.BackupDeletionJob
+	27, // 8: delidev.v1.RequestBackupResponse.job:type_name -> delidev.v1.BackupCreationJob
+	27, // 9: delidev.v1.GetBackupCreationResponse.job:type_name -> delidev.v1.BackupCreationJob
+	27, // 10: delidev.v1.ListBackupCreationsResponse.jobs:type_name -> delidev.v1.BackupCreationJob
+	22, // 11: delidev.v1.GetBackupDeletionResponse.job:type_name -> delidev.v1.BackupDeletionJob
 	3,  // 12: delidev.v1.UserService.kind:type_name -> delidev.v1.UserServiceKind
 	5,  // 13: delidev.v1.UserService.state:type_name -> delidev.v1.UserServiceState
 	5,  // 14: delidev.v1.UserService.desired_state:type_name -> delidev.v1.UserServiceState
 	3,  // 15: delidev.v1.GetUserServiceRequest.kind:type_name -> delidev.v1.UserServiceKind
-	35, // 16: delidev.v1.GetUserServiceResponse.service:type_name -> delidev.v1.UserService
+	36, // 16: delidev.v1.GetUserServiceResponse.service:type_name -> delidev.v1.UserService
 	3,  // 17: delidev.v1.ControlUserServiceRequest.kind:type_name -> delidev.v1.UserServiceKind
 	4,  // 18: delidev.v1.ControlUserServiceRequest.action:type_name -> delidev.v1.UserServiceAction
-	35, // 19: delidev.v1.ControlUserServiceResponse.service:type_name -> delidev.v1.UserService
-	36, // 20: delidev.v1.SystemService.GetUserService:input_type -> delidev.v1.GetUserServiceRequest
-	38, // 21: delidev.v1.SystemService.ControlUserService:input_type -> delidev.v1.ControlUserServiceRequest
-	6,  // 22: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
-	7,  // 23: delidev.v1.SystemService.GetOverview:input_type -> delidev.v1.GetOverviewRequest
-	10, // 24: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
-	12, // 25: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
-	14, // 26: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
-	17, // 27: delidev.v1.SystemService.ListBackups:input_type -> delidev.v1.ListBackupsRequest
-	19, // 28: delidev.v1.SystemService.InspectBackup:input_type -> delidev.v1.InspectBackupRequest
-	22, // 29: delidev.v1.SystemService.DeleteBackup:input_type -> delidev.v1.DeleteBackupRequest
-	33, // 30: delidev.v1.SystemService.GetBackupDeletion:input_type -> delidev.v1.GetBackupDeletionRequest
-	24, // 31: delidev.v1.SystemService.ListBackupDeletions:input_type -> delidev.v1.ListBackupDeletionsRequest
-	27, // 32: delidev.v1.SystemService.RequestBackup:input_type -> delidev.v1.RequestBackupRequest
-	29, // 33: delidev.v1.SystemService.GetBackupCreation:input_type -> delidev.v1.GetBackupCreationRequest
-	31, // 34: delidev.v1.SystemService.ListBackupCreations:input_type -> delidev.v1.ListBackupCreationsRequest
-	37, // 35: delidev.v1.SystemService.GetUserService:output_type -> delidev.v1.GetUserServiceResponse
-	39, // 36: delidev.v1.SystemService.ControlUserService:output_type -> delidev.v1.ControlUserServiceResponse
-	9,  // 37: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
-	8,  // 38: delidev.v1.SystemService.GetOverview:output_type -> delidev.v1.GetOverviewResponse
-	11, // 39: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
-	13, // 40: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
-	15, // 41: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
-	18, // 42: delidev.v1.SystemService.ListBackups:output_type -> delidev.v1.ListBackupsResponse
-	20, // 43: delidev.v1.SystemService.InspectBackup:output_type -> delidev.v1.InspectBackupResponse
-	23, // 44: delidev.v1.SystemService.DeleteBackup:output_type -> delidev.v1.DeleteBackupResponse
-	34, // 45: delidev.v1.SystemService.GetBackupDeletion:output_type -> delidev.v1.GetBackupDeletionResponse
-	25, // 46: delidev.v1.SystemService.ListBackupDeletions:output_type -> delidev.v1.ListBackupDeletionsResponse
-	28, // 47: delidev.v1.SystemService.RequestBackup:output_type -> delidev.v1.RequestBackupResponse
-	30, // 48: delidev.v1.SystemService.GetBackupCreation:output_type -> delidev.v1.GetBackupCreationResponse
-	32, // 49: delidev.v1.SystemService.ListBackupCreations:output_type -> delidev.v1.ListBackupCreationsResponse
-	35, // [35:50] is the sub-list for method output_type
-	20, // [20:35] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	36, // 19: delidev.v1.ControlUserServiceResponse.service:type_name -> delidev.v1.UserService
+	6,  // 20: delidev.v1.BackupRestoreReceipt.state:type_name -> delidev.v1.BackupRestoreState
+	17, // 21: delidev.v1.RestoreBackupRequest.backup:type_name -> delidev.v1.ManagedBackup
+	41, // 22: delidev.v1.RestoreBackupResponse.receipt:type_name -> delidev.v1.BackupRestoreReceipt
+	41, // 23: delidev.v1.GetBackupRestoreResponse.receipt:type_name -> delidev.v1.BackupRestoreReceipt
+	37, // 24: delidev.v1.SystemService.GetUserService:input_type -> delidev.v1.GetUserServiceRequest
+	39, // 25: delidev.v1.SystemService.ControlUserService:input_type -> delidev.v1.ControlUserServiceRequest
+	7,  // 26: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
+	8,  // 27: delidev.v1.SystemService.GetOverview:input_type -> delidev.v1.GetOverviewRequest
+	11, // 28: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
+	13, // 29: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
+	15, // 30: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
+	18, // 31: delidev.v1.SystemService.ListBackups:input_type -> delidev.v1.ListBackupsRequest
+	20, // 32: delidev.v1.SystemService.InspectBackup:input_type -> delidev.v1.InspectBackupRequest
+	23, // 33: delidev.v1.SystemService.DeleteBackup:input_type -> delidev.v1.DeleteBackupRequest
+	34, // 34: delidev.v1.SystemService.GetBackupDeletion:input_type -> delidev.v1.GetBackupDeletionRequest
+	25, // 35: delidev.v1.SystemService.ListBackupDeletions:input_type -> delidev.v1.ListBackupDeletionsRequest
+	28, // 36: delidev.v1.SystemService.RequestBackup:input_type -> delidev.v1.RequestBackupRequest
+	30, // 37: delidev.v1.SystemService.GetBackupCreation:input_type -> delidev.v1.GetBackupCreationRequest
+	32, // 38: delidev.v1.SystemService.ListBackupCreations:input_type -> delidev.v1.ListBackupCreationsRequest
+	42, // 39: delidev.v1.SystemService.RestoreBackup:input_type -> delidev.v1.RestoreBackupRequest
+	44, // 40: delidev.v1.SystemService.GetBackupRestore:input_type -> delidev.v1.GetBackupRestoreRequest
+	38, // 41: delidev.v1.SystemService.GetUserService:output_type -> delidev.v1.GetUserServiceResponse
+	40, // 42: delidev.v1.SystemService.ControlUserService:output_type -> delidev.v1.ControlUserServiceResponse
+	10, // 43: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
+	9,  // 44: delidev.v1.SystemService.GetOverview:output_type -> delidev.v1.GetOverviewResponse
+	12, // 45: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
+	14, // 46: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
+	16, // 47: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
+	19, // 48: delidev.v1.SystemService.ListBackups:output_type -> delidev.v1.ListBackupsResponse
+	21, // 49: delidev.v1.SystemService.InspectBackup:output_type -> delidev.v1.InspectBackupResponse
+	24, // 50: delidev.v1.SystemService.DeleteBackup:output_type -> delidev.v1.DeleteBackupResponse
+	35, // 51: delidev.v1.SystemService.GetBackupDeletion:output_type -> delidev.v1.GetBackupDeletionResponse
+	26, // 52: delidev.v1.SystemService.ListBackupDeletions:output_type -> delidev.v1.ListBackupDeletionsResponse
+	29, // 53: delidev.v1.SystemService.RequestBackup:output_type -> delidev.v1.RequestBackupResponse
+	31, // 54: delidev.v1.SystemService.GetBackupCreation:output_type -> delidev.v1.GetBackupCreationResponse
+	33, // 55: delidev.v1.SystemService.ListBackupCreations:output_type -> delidev.v1.ListBackupCreationsResponse
+	43, // 56: delidev.v1.SystemService.RestoreBackup:output_type -> delidev.v1.RestoreBackupResponse
+	45, // 57: delidev.v1.SystemService.GetBackupRestore:output_type -> delidev.v1.GetBackupRestoreResponse
+	41, // [41:58] is the sub-list for method output_type
+	24, // [24:41] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_system_proto_init() }
@@ -2624,13 +3027,14 @@ func file_delidev_v1_system_proto_init() {
 	if File_delidev_v1_system_proto != nil {
 		return
 	}
+	file_delidev_v1_system_proto_msgTypes[35].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_system_proto_rawDesc), len(file_delidev_v1_system_proto_rawDesc)),
-			NumEnums:      6,
-			NumMessages:   34,
+			NumEnums:      7,
+			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
