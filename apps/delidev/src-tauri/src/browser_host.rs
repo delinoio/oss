@@ -91,6 +91,8 @@ struct View {
     request: ViewRequest,
     browser: Option<Browser>,
     failure: Option<NativeFailure>,
+    creation_pending: bool,
+    closing: bool,
     view_id: String,
 }
 #[derive(Default)]
@@ -108,7 +110,7 @@ impl State {
         let labels: Vec<String> = self
             .views
             .iter()
-            .filter(|(_, v)| v.profile == profile && v.request.tab != selected)
+            .filter(|(_, v)| v.profile == profile && !v.closing && v.request.tab != selected)
             .map(|(label, _)| label.clone())
             .collect();
         let mut requests = Vec::new();
@@ -128,6 +130,8 @@ impl State {
             }
             view.generation = generation;
             view.failure = None;
+            view.creation_pending = false;
+            view.closing = false;
             view.request.generation = generation;
             view.request.tab = selected.into();
             if !selected.is_empty() {
@@ -631,6 +635,8 @@ impl BrowserHost {
                 request: request.clone(),
                 browser: None,
                 failure: None,
+                creation_pending: false,
+                closing: false,
                 view_id,
             },
         );
@@ -687,6 +693,9 @@ impl BrowserHost {
             }
             if let Some(code) = view.failure {
                 return Err(code);
+            }
+            if view.closing {
+                return Err(NativeFailure::Stopped);
             }
             let p = state
                 .profiles
@@ -812,6 +821,9 @@ impl BrowserHost {
         {
             return Err(NativeFailure::PermissionDenied);
         }
+        if view.closing {
+            return Err(NativeFailure::Stopped);
+        }
         let p = state
             .profiles
             .get(profile)
@@ -897,24 +909,51 @@ impl BrowserHost {
     }
 
     fn hide(&self, window: &str, profile: &str, view_id: &str) -> Result<BrowserState> {
+        self.hide_with(window, profile, view_id, |view| {
+            if let Some(browser) = &view.browser {
+                let host = browser.host().ok_or(NativeFailure::InvalidEvidence)?;
+                position(
+                    host.window_handle(),
+                    view.request.bounds,
+                    view.request.scale,
+                    false,
+                )?;
+            }
+            Ok(())
+        })
+    }
+
+    fn hide_with(
+        &self,
+        window: &str,
+        profile: &str,
+        view_id: &str,
+        mut unmap: impl FnMut(&View) -> Result<()>,
+    ) -> Result<BrowserState> {
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         // A superseding reservation already closes the previous child. Retried
         // cleanup proves that old view is absent without touching its replacement.
-        let view = if state
+        if let Some(view) = state
             .views
-            .get(window)
-            .is_some_and(|v| v.profile == profile && v.view_id == view_id)
+            .get_mut(window)
+            .filter(|v| v.profile == profile && v.view_id == view_id)
         {
-            state.views.remove(window)
-        } else {
-            None
-        };
-        drop(state);
-        if let Some(view) = view
-            && let Some(browser) = view.browser
-            && let Some(host) = browser.host()
-        {
-            host.close_browser(1);
+            view.closing = true;
+            if view.creation_pending {
+                return Err(NativeFailure::Busy);
+            }
+            // CloseBrowser is asynchronous. Keep ownership on unmap failure;
+            // only synchronous native invisibility permits immediate success.
+            let hidden = unmap(view);
+            let browser = view.browser.clone();
+            if hidden.is_ok() {
+                state.views.remove(window);
+            }
+            drop(state);
+            if let Some(host) = browser.and_then(|browser| browser.host()) {
+                host.close_browser(1);
+            }
+            hidden?;
         }
         // Cleanup returns no browsing data, including when the supplied profile
         // belongs to another window or the old presentation is already absent.
@@ -922,6 +961,52 @@ impl BrowserHost {
             tabs: Tabs::default(),
             removal_pending: false,
         })
+    }
+
+    fn child_created(&self, profile: &str, request: &ViewRequest, browser: &Browser) -> Result<()> {
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        let allowed = !self.stopping.load(Ordering::Acquire)
+            && state.profiles.get(profile).is_some_and(|p| !p.removing);
+        if allowed
+            && let Some(view) = state
+                .views
+                .get_mut(&request.window)
+                .filter(|v| v.profile == profile && v.generation == request.generation)
+        {
+            view.creation_pending = false;
+            view.browser = Some(browser.clone());
+            if view.closing {
+                let view_id = view.view_id.clone();
+                drop(state);
+                return self.hide(&request.window, profile, &view_id).map(|_| ());
+            }
+            let host = browser.host().ok_or(NativeFailure::InvalidEvidence)?;
+            return position(
+                host.window_handle(),
+                view.request.bounds,
+                view.request.scale,
+                true,
+            );
+        }
+        drop(state);
+        hide_browser(browser, request)
+    }
+
+    fn child_closed(&self, request: &ViewRequest) -> Option<i32> {
+        let mut state = self.state.lock().ok()?;
+        if let Some(view) = state
+            .views
+            .get_mut(&request.window)
+            .filter(|v| v.generation == request.generation)
+        {
+            view.browser = None;
+            view.creation_pending = false;
+            if view.closing {
+                state.views.remove(&request.window);
+            }
+        }
+        state.live = state.live.saturating_sub(1);
+        state.exit_when_ready()
     }
 
     pub fn status(&self, window: &str, profile: &str, view_id: &str) -> Result<BrowserState> {
@@ -1596,9 +1681,24 @@ fn create_child(
         .clone();
     let policy = p.policy.clone();
     drop(state);
-    host.state.lock().map_err(|_| NativeFailure::Busy)?.live += 1;
+    {
+        let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+        let view = state
+            .views
+            .get_mut(&request.window)
+            .filter(|v| v.profile == profile && v.generation == request.generation)
+            .ok_or(NativeFailure::Stopped)?;
+        view.creation_pending = true;
+        state.live += 1;
+    }
     let info = window_info(&request);
-    let mut client = ExternalClient::new(Arc::clone(host), app.clone(), profile, request, policy);
+    let mut client = ExternalClient::new(
+        Arc::clone(host),
+        app.clone(),
+        profile,
+        request.clone(),
+        policy,
+    );
     if browser_host_create_browser(
         Some(&info),
         Some(&mut client),
@@ -1612,7 +1712,15 @@ fn create_child(
         Some(&mut context),
     ) != 1
     {
-        host.state.lock().map_err(|_| NativeFailure::Busy)?.live -= 1;
+        let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+        if let Some(view) = state
+            .views
+            .get_mut(&request.window)
+            .filter(|v| v.generation == request.generation)
+        {
+            view.creation_pending = false;
+        }
+        state.live -= 1;
         return Err(NativeFailure::SidecarFailed);
     };
     Ok(())
@@ -1630,10 +1738,16 @@ cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<Cef
  fn download_handler(&self)->Option<DownloadHandler>{Some(DenyDownloads::new())}
 }}
 cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<Cef>,profile:String,request:ViewRequest,}impl LifeSpanHandler{
- fn on_after_created(&self,browser:Option<&mut Browser>){let Some(b)=browser else{return};let Ok(mut state)=self.host.state.lock()else{if let Some(h)=b.host(){h.close_browser(1)};return};let removing=state.profiles.get(&self.profile).is_none_or(|p|p.removing);if !removing&&!self.host.stopping.load(Ordering::Acquire)&&let Some(view)=state.views.get_mut(&self.request.window)&&view.generation==self.request.generation{view.browser=Some(b.clone());if let Some(h)=b.host()&&let Err(code)=position(h.window_handle(),view.request.bounds,view.request.scale,true){tracing::warn!(operation="browser_geometry",?code)}}else if let Some(h)=b.host(){h.close_browser(1)}}
+ fn on_after_created(&self,browser:Option<&mut Browser>){
+   let Some(b)=browser else{return};
+   if let Err(code)=self.host.child_created(&self.profile,&self.request,b){
+     let _=hide_browser(b,&self.request);
+     tracing::warn!(operation="browser_geometry",?code);
+   }
+ }
  fn on_before_popup(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_popup_id:i32,_target_url:Option<&CefString>,_target_frame_name:Option<&CefString>,_target_disposition:WindowOpenDisposition,_user_gesture:i32,_popup_features:Option<&PopupFeatures>,_window_info:Option<&mut WindowInfo>,_client:Option<&mut Option<Client>>,_settings:Option<&mut BrowserSettings>,_extra_info:Option<&mut Option<DictionaryValue>>,_no_javascript_access:Option<&mut i32>)->i32{1}
  fn on_before_close(&self,_browser:Option<&mut Browser>){
-   let exit = if let Ok(mut state)=self.host.state.lock(){state.live=state.live.saturating_sub(1);state.exit_when_ready()}else{None};
+   let exit = self.host.child_closed(&self.request);
    tracing::info!(operation="browser_view",state="closed");
    if let Some(code)=exit{self.app.exit(code);}
  }
@@ -1713,6 +1827,16 @@ fn window_info(r: &ViewRequest) -> WindowInfo {
     }
     info
 }
+fn hide_browser(browser: &Browser, request: &ViewRequest) -> Result<()> {
+    let host = browser.host().ok_or(NativeFailure::InvalidEvidence)?;
+    // Native invisibility is synchronous; CloseBrowser only requests teardown.
+    // Still request closure after an unmap failure, retaining the view until its
+    // exact close callback or a later successful native hide proves absence.
+    let hidden = position(host.window_handle(), request.bounds, request.scale, false);
+    host.close_browser(1);
+    hidden
+}
+
 fn position(
     handle: cef::sys::cef_window_handle_t,
     b: Bounds,
@@ -1743,7 +1867,9 @@ fn position(
     {
         use windows::Win32::{
             Foundation::HWND,
-            UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos},
+            UI::WindowsAndMessaging::{
+                SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos,
+            },
         };
         unsafe {
             SetWindowPos(
@@ -1753,11 +1879,16 @@ fn position(
                 (b.y * scale).round() as i32,
                 (b.width * scale).round() as i32,
                 (b.height * scale).round() as i32,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                SWP_NOZORDER
+                    | SWP_NOACTIVATE
+                    | if visible {
+                        SWP_SHOWWINDOW
+                    } else {
+                        SWP_HIDEWINDOW
+                    },
             )
         }
         .map_err(|_| NativeFailure::SidecarFailed)?;
-        let _ = visible;
         Ok(())
     }
     #[cfg(target_os = "linux")]
@@ -1872,6 +2003,8 @@ mod tests {
                 request: request.clone(),
                 browser: None,
                 failure: None,
+                creation_pending: false,
+                closing: false,
                 view_id: view_id.clone(),
             },
         );
@@ -2098,6 +2231,86 @@ mod tests {
     }
 
     #[test]
+    fn hide_retains_ownership_until_native_invisibility() {
+        let (_temp, host, record, view_id, _) = active_storage_fixture();
+        assert!(matches!(
+            host.hide_with("fixture", &record.id, &view_id, |view| {
+                assert!(view.closing);
+                assert_eq!(view.view_id, view_id);
+                Err(NativeFailure::SidecarFailed)
+            }),
+            Err(NativeFailure::SidecarFailed)
+        ));
+        assert_eq!(host.state.lock().unwrap().views["fixture"].view_id, view_id);
+        assert!(matches!(
+            host.prepare_control(
+                "fixture",
+                &record.id,
+                &view_id,
+                Action::NewTab,
+                Some("https://fixture.test/late"),
+                None
+            ),
+            Err(NativeFailure::Stopped)
+        ));
+        let mut hidden = false;
+        let result = host
+            .hide_with("fixture", &record.id, &view_id, |_| {
+                hidden = true;
+                Ok(())
+            })
+            .unwrap();
+        assert!(hidden);
+        assert!(result.tabs.tabs.is_empty());
+        assert!(host.state.lock().unwrap().views.is_empty());
+    }
+
+    #[test]
+    fn hide_waits_for_pending_creation_and_exact_close_callback() {
+        let (_temp, host, record, view_id, request) = active_storage_fixture();
+        {
+            let mut state = host.state.lock().unwrap();
+            state.views.get_mut("fixture").unwrap().creation_pending = true;
+            state.live = 1;
+        }
+        assert!(matches!(
+            host.hide_with("fixture", &record.id, &view_id, |_| panic!(
+                "pending child cannot prove invisibility"
+            )),
+            Err(NativeFailure::Busy)
+        ));
+        assert!(host.state.lock().unwrap().views["fixture"].closing);
+        host.child_closed(&request);
+        assert_eq!(host.state.lock().unwrap().live, 0);
+        assert!(
+            host.hide("fixture", &record.id, &view_id)
+                .unwrap()
+                .tabs
+                .tabs
+                .is_empty()
+        );
+        assert!(host.state.lock().unwrap().views.is_empty());
+    }
+
+    #[test]
+    fn old_close_callback_preserves_replacement_view() {
+        let (_temp, host, record, view_id, request) = active_storage_fixture();
+        {
+            let mut state = host.state.lock().unwrap();
+            let view = state.views.get_mut("fixture").unwrap();
+            view.generation += 1;
+            view.request.generation = view.generation;
+            state.live = 1;
+        }
+        host.child_closed(&request);
+        assert!(host.status("fixture", &record.id, &view_id).is_ok());
+        assert_eq!(
+            host.state.lock().unwrap().views["fixture"].generation,
+            request.generation + 1
+        );
+    }
+
+    #[test]
     fn repeated_hide_preserves_a_replacement_view() {
         let (_temp, host, record, view_id, request) = active_storage_fixture();
         assert!(
@@ -2125,6 +2338,8 @@ mod tests {
                 request,
                 browser: None,
                 failure: None,
+                creation_pending: false,
+                closing: false,
                 view_id: replacement.clone(),
             },
         );
@@ -2164,6 +2379,8 @@ mod tests {
                     request: request.clone(),
                     browser: None,
                     failure: None,
+                    creation_pending: false,
+                    closing: false,
                     view_id: id.clone(),
                 },
             );
@@ -2223,6 +2440,8 @@ mod tests {
                 request: newer.clone(),
                 browser: None,
                 failure: None,
+                creation_pending: false,
+                closing: false,
                 view_id: replacement.clone(),
             },
         );
@@ -2292,6 +2511,8 @@ mod tests {
                 },
                 browser: None,
                 failure: None,
+                creation_pending: false,
+                closing: false,
                 view_id: original,
             },
         );
@@ -2432,6 +2653,8 @@ esac
                     request: request.clone(),
                     browser: None,
                     failure: None,
+                    creation_pending: false,
+                    closing: false,
                     view_id: view.clone(),
                 },
             );

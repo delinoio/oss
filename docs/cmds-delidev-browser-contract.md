@@ -92,7 +92,11 @@ for the current presentation.
 Closing the panel releases its view, retaining its request context/profile.
 Failed Hide retains its exact presentation identity and retries that closure,
 including after unmount or late open completion. Hides are serialized; resize
-and reopening wait for successful closure. Native Hide confirms an already
+and reopening wait for successful closure. Native Hide synchronously makes the
+matching child invisible before acknowledging success; asynchronous CEF close
+requests alone cannot acknowledge Hide. Pending native creation and failed native
+hiding retain the original view until a successful hide or its exact close callback,
+and deny ordinary controls while closure is pending. Native Hide confirms an already
 absent original view without touching a replacement and returns no browsing
 data, including for unrelated-window requests. Old cleanup cannot clear the
 replacement's frontend identity. Closure acceptance does not replace
