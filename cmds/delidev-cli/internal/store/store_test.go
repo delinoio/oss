@@ -322,14 +322,20 @@ func TestErrorsAndEventsExcludeRawSecretCause(t *testing.T) {
 
 func TestUnmergedVersion25LayoutsRequireRecoveryWithoutModification(t *testing.T) {
 	for _, ddl := range []string{
+		"", // Even an identical table cannot identify an unmarked old branch.
 		"CREATE TABLE native_accounting(source TEXT PRIMARY KEY, grok_usage BLOB)",
 		"CREATE TABLE native_accounting(session_id TEXT PRIMARY KEY, claude_cost INTEGER)",
 		"CREATE TABLE request_diagnostics(request_id TEXT PRIMARY KEY, details BLOB)",
 	} {
 		t.Run(ddl, func(t *testing.T) {
 			s, root := openTest(t)
-			if _, err := s.db.Exec(ddl + "; PRAGMA user_version=25"); err != nil {
+			if _, err := s.db.Exec("DELETE FROM metadata WHERE key='native_accounting_layout'"); err != nil {
 				t.Fatal(err)
+			}
+			if ddl != "" {
+				if _, err := s.db.Exec("DROP TABLE native_accounting; " + ddl + "; PRAGMA user_version=25"); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if err := s.Close(); err != nil {
 				t.Fatal(err)

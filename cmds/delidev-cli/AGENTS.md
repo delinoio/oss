@@ -13,3 +13,5 @@ Read the relevant owner before changing its behavior, including cross-domain con
 Keep implementation evidence in independent files under `docs/evidence/delidev/issue-<number>/`. Update instructions only when their rules or ownership change, not merely to record another validation run.
 
 - Session terminals and native PTY/ConPTY ownership follow `docs/cmds-delidev-terminals-contract.md` and the process contract. Keep the shared terminal result JSON bound at 64 KiB and reserve 4 KiB more for operation journal ownership metadata. Keep shell selection Worker-owned with no fallback after invalid discovery or override; input/output/path/environment contents never enter logs or native ownership journals.
+
+Native session compaction for issues #1093, #1202 and #1203 follows the planned shared boundary in `docs/cmds-delidev-compaction-contract.md`. Its reservations must land on main before dependent implementation. Preserve original transcript/outcome, once-only native claims and independent history/cleanup verification; native acknowledgment never grants a successor checkpoint.

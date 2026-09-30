@@ -343,3 +343,18 @@ The following source-backed notes were relocated from the project index at `12b3
 - `protos/delidev/v1`: versioned Connect RPC schemas.
 
 Backup publication and first-start recovery preserve the original state and synchronize durable names. Completed process scopes are retired only after native completion validation and controller release. Reported pre-launch claim-publication failures can roll back only the current attempt before lease issuance, preserving prior closed ownership and all unexpected evidence. Account deletion retains all live configuration and historical session references; keyless lifecycle operations remain independent of native credential availability. Bounded resource pages account for both wire encodings, and CLI waits distinguish observed completion from timeout/cancellation. Schedule availability restarts with each server process, while Stop/Archive retain their product outcome after later native success. Relay reflection checks cover SSE metadata and sanitized native error codes. These repairs do not close the remaining implementation and platform evidence gaps recorded in the evidence ledger.
+
+Schema 25 retains the complete schema-24 backup/provider/title layout and adds
+only the future native-accounting table/indexes defined by the [usage
+contract](cmds-delidev-usage-contract.md). Initialization and migration create the
+same layout; migration publishes the existing validated synchronized backup
+before one transaction and leaves historical native observations untouched.
+Derived native-accounting rows cascade with permanent session removal and are
+retained by Archive and consistent database backups. A conflicting preexisting
+accounting layout fails without adopting or rewriting it.
+
+The reserved migration is implemented in `migration_025.go`. It writes the
+independent `native_accounting_layout=grok-closed-input-v1` metadata marker.
+Opening any version-25 database without that marker fails before WAL settings,
+migration or Worker state updates, preserving old unmerged version-25 files for
+explicit recovery. A version number alone cannot identify their layout.
