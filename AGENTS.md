@@ -124,6 +124,10 @@ enum ProjectId {
 
 - React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, `crates/forge-sfx`, `crates/forge-sprite`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 
+### DeliDev desktop launch amendment
+
+- Issue #1137 treats each fresh trusted main desktop process as intentional Go-admitted local Start, with one native-owned launch outcome and authenticated renderer verification. Preserve same-process Stop, native-service scope arbitration through shared control admission and spawn, independent saved authority and detached lifetimes. Keep routine startup/sidebar/tray in product terms and retain connection/recovery controls outside disposable Settings openings under Connection & diagnostics. Follow the desktop, CLI and user-service contracts; ordinary CLI product commands never implicitly start a server.
+
 ### Project Domain Ownership
 
 - DeliDev active issue #964 scope includes the complete desktop app plus CLI/server/Worker requirements, as explicitly confirmed by the owner on 2026-09-25; prior CLI-only increments do not narrow completion. Keep desktop implementation and native evidence gaps visible.

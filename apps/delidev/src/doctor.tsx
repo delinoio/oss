@@ -88,7 +88,8 @@ function Report({ report }: { report: Document }) {
     </div>
   </>;
 }
-export function Doctor({ active, visible = true }: { active: boolean; visible?: boolean }) {
+export enum DoctorTitle { Diagnostics = "Diagnostics", ConnectionDiagnostics = "Connection & diagnostics" }
+export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics }: { active: boolean; visible?: boolean; title?: DoctorTitle }) {
   const result = useQuery(SystemQuery.getDoctor, {}, { enabled: active });
   const [opening, setOpening] = useState(0);
   useEffect(() => {
@@ -111,7 +112,7 @@ export function Doctor({ active, visible = true }: { active: boolean; visible?: 
   const unknownServer = useRef({ report, key: 0 });
   if (unknownServer.current.report !== report) unknownServer.current = { report, key: unknownServer.current.key + 1 };
   return <section className="diagnostics">
-    <header className="diagnostics-header"><div><h1 aria-live="polite" aria-atomic="true">Diagnostics</h1><p>{scope}</p></div><button disabled={!active || result.isFetching} onClick={() => void result.refetch()}>Refresh diagnostics</button></header>
+    <header className="diagnostics-header"><div><h1 aria-live="polite" aria-atomic="true">{title}</h1><p>{scope}</p></div><button disabled={!active || result.isFetching} onClick={() => void result.refetch()}>Refresh diagnostics</button></header>
     <Problem error={result.error} />{result.isFetching && active ? <p role="status">Reading server diagnostics…</p> : null}{result.error && report ? <p role="alert">Refresh failed. The report below is the last returned observation.</p> : null}
     {report ? <Report key={JSON.stringify([opening, text(report.server_id) || unknownServer.current.key])} report={report} /> : result.data ? <p role="alert">{unsupported ? "This diagnostic report version is unsupported. No health result can be inferred." : "The diagnostic report is unavailable or malformed. No health result can be inferred."}</p> : null}
     <p className="diagnostics-guidance">{ownerCaveat} Use AI accounts for validation and Execution Workers for discovery and connection recovery.</p>

@@ -1,3 +1,9 @@
+## Explicit owner amendment: desktop startup (#1137, 2026-09-30)
+
+The original issue #964 requirements snapshot below is preserved verbatim. Issue #1137 amends only desktop launch/presentation: each fresh trusted main process owns one bounded Go-admitted start/reuse and separate client bootstrap, then verifies authenticated server identity before automatic product entry. Helpers, saved windows, renderer remounts and presentation restoration cannot replay it. A same-process Stop stays suppressed until explicit advanced Start or a later fresh process after cleanup; native-service ownership prevents a detached competitor and never grants automatic service management.
+
+Ordinary startup/sidebar/tray use product wording. Pending startup, generic failure, explicit serialized Retry and transport-independent Troubleshooting remain accessible. All 16 Settings categories remain, with Diagnostics displayed as Connection & diagnostics; retained local lifecycle/registration/saved-connection controls coexist with independent read-only Doctor. Existing fixed authority, private state, bounded children, client-only delivery, Connect traffic, explicit recovery gates and detached lifetimes remain normative. No automatic permission repair/reset, revoked-client replacement, account login, Worker/session/harness activity, feature flag or migration is allowed. See [desktop](apps-delidev-desktop-contract.md), [CLI](cmds-delidev-contract.md), [native services](cmds-delidev-user-services-contract.md) and [evidence](evidence/delidev/issue-1137/launch-default.md).
+
 ## Summary
 
 DeliDev is a personal desktop Agent Runner for managing multiple projects, AI accounts, harnesses, and execution machines. It does not inherit the web platform, organization, or billing scope of the historical issue #722. The desktop app, server, and Worker all target macOS, Windows, and Linux.

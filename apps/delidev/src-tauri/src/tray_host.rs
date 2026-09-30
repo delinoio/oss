@@ -283,7 +283,7 @@ fn render(app: &AppHandle<Cef>) -> tauri::Result<()> {
     labels.sort();
     for label in labels {
         let (name, instance) = if label == "main" {
-            ("Local server".to_owned(), None)
+            ("This computer".to_owned(), None)
         } else {
             let Some(binding) = saved.get(&label).filter(|v| !v.closing) else {
                 continue;
@@ -316,9 +316,9 @@ fn render(app: &AppHandle<Cef>) -> tauri::Result<()> {
                 app,
                 &submenu,
                 if stale {
-                    "Server status stale"
+                    "Connection status stale"
                 } else {
-                    "Server connected"
+                    "Connected"
                 },
                 None,
                 &mut state,
@@ -365,7 +365,13 @@ fn render(app: &AppHandle<Cef>) -> tauri::Result<()> {
                 &mut state,
             )?;
         } else {
-            append(app, &submenu, "Server status unavailable", None, &mut state)?;
+            append(
+                app,
+                &submenu,
+                "Connection status unavailable",
+                None,
+                &mut state,
+            )?;
             append(
                 app,
                 &submenu,

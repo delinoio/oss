@@ -16,6 +16,7 @@ import { JobState, TrackedJob } from "./jobs";
 import { LocalWorkerControls, type ControlLocalWorker } from "./local-worker-controls";
 import { MachineSettings } from "./machine-settings";
 import { DeviceDetails, DeviceRevocation, Doctor } from "./device-settings";
+import { DoctorTitle } from "./doctor";
 import { AccountConnection } from "./account-connection";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { Modal, ModalLayout, Problem } from "./ui";
@@ -88,7 +89,7 @@ const settingsCategories: Record<SettingsCategory, { label: string; description:
   [SettingsCategory.PairedDevices]: { label: "Paired devices", description: "Saved on the selected server.", kind: EntityKind.DEVICE, area: SettingsArea.Configuration },
   [SettingsCategory.ServerPreferences]: { label: "Server preferences", description: "Saved on the selected server.", kind: EntityKind.SETTINGS, area: SettingsArea.Configuration },
   [SettingsCategory.Integrations]: { label: "Integrations", description: "Manage GitHub profiles for repository access. AI accounts are configured separately.", area: SettingsArea.Integrations },
-  [SettingsCategory.Diagnostics]: { label: "Diagnostics", description: "Read-only observations from the selected server. This check does not repair state, connect an account or run model inference.", area: SettingsArea.Diagnostics },
+  [SettingsCategory.Diagnostics]: { label: "Connection & diagnostics", description: "Read-only observations from the selected server. This check does not repair state, connect an account or run model inference.", area: SettingsArea.Diagnostics },
   [SettingsCategory.Notifications]: { label: "Notifications", description: "These preferences belong to this client on the selected server. Inbox requests stay available when notifications are disabled or cannot be delivered.", area: SettingsArea.Notifications },
   [SettingsCategory.Transfer]: { label: "Import / Export", description: "Transfer providers, models, account preferences, Agent Workers, instructions, repositories, projects and server preferences. Accounts are imported disconnected and require a new connection. Device registrations, observed quotas, discovered model evidence and session history are excluded.", area: SettingsArea.Transfer },
 };
@@ -153,13 +154,13 @@ function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: (
   </article>;
 }
 
-interface SettingsProps { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
+interface SettingsProps { connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
 export function Settings({ visible = true, ...props }: SettingsProps) {
   const client = useQueryClient();
   return visible ? <SettingsLifetime>{(opening) => <MutationIntents><SettingsWorkspace {...props} close={() => { opening.dispose(client); props.close(); }} controlLocalWorker={props.controlLocalWorker ? (action, generation) => opening.native(() => props.controlLocalWorker!(action, generation)) : undefined} /></MutationIntents>}</SettingsLifetime> : null;
 }
 
-function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: SettingsProps) {
+function SettingsWorkspace({ connectionSettings, close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: SettingsProps) {
   const [selectedCategory, setSelectedCategory] = useState(() => entryDestination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : entryDestination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts);
   const [device, setDevice] = useState<Resource>();
   const [page, setPage] = useState("");
@@ -339,7 +340,7 @@ function SettingsWorkspace({ close, visible = true, controlLocalWorker, currentD
           <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} showCategoryIntro={false} onWorkflowReadyChange={reportIntegrationWorkflow} /></div>
           <div hidden={area !== SettingsArea.Transfer}><ConfigurationTransfer active={visible && area === SettingsArea.Transfer} showCategoryIntro={false} onWorkflowReadyChange={reportTransferWorkflow} /></div>
           <div hidden={area !== SettingsArea.Notifications}><NotificationSettings active={visible && area === SettingsArea.Notifications} showCategoryIntro={false} onWorkflowReadyChange={reportNotificationWorkflow} /></div>
-          <div hidden={area !== SettingsArea.Diagnostics}><Doctor active={visible && area === SettingsArea.Diagnostics} visible={visible} /></div>
+          <div hidden={area !== SettingsArea.Diagnostics}>{connectionSettings ? <section aria-label="Connection"><h2>Connection</h2>{connectionSettings}</section> : null}<Doctor title={DoctorTitle.ConnectionDiagnostics} active={visible && area === SettingsArea.Diagnostics} visible={visible} /></div>
           <div hidden={area !== SettingsArea.Configuration}>
             {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority ? <div hidden={kind !== EntityKind.DEVICE || Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} /></div> : null}

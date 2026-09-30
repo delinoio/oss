@@ -1,3 +1,5 @@
+> Issue #1137 startup-default implementation and validation are recorded in [its independent evidence record](evidence/delidev/issue-1137/launch-default.md). Historical observations below retain their original manual-start behavior.
+
 > Historical ledger through main `12b33a2accaf`. Existing text and anchors are preserved. New implementation and validation records belong in [independent issue evidence](evidence/delidev/README.md); current behavior is owned by the domain contracts.
 
 # DeliDev implementation and evidence ledger
