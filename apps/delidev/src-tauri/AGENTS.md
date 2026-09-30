@@ -32,6 +32,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Stage durable tab-control writes before exact reservation validation. Fence final publication against UI reservation acceptance from a blocking worker; the UI callback must never acquire that fence or wait for storage, and stale preparations must leave the prior tabs intact.
 
+- Observed-address writes must stage first and recheck the profile, child generation and current reservation under the same worker publication fence before replacing durable tabs.
+
 - Browser cleanup discovery uses an independent read-only controller with a two-second joined-child deadline; never hold the interactive connector gate through offline polling. Stage saved-connection purge only after fallible window setup, bind its exact original removal identity, and require a fresh retained Go removal receipt plus complete CEF shutdown before deleting bytes. Unchanged paired evidence cancels only the unaccepted intent; uncertain acceptance and independent account removal remain pending. Follow `docs/cmds-delidev-browser-contract.md`.
 
 - Advance the durable account-removal cursor before acknowledgment attempts, rotating retained intents across process exits so offline receipts cannot starve later local profile purges. Keep original request/revision ownership and the existing per-exit bounds.
