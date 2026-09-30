@@ -695,7 +695,7 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	// Historical receipt content must not resurrect a deleted entity. Preserve the
 	// request identity/digest, returning a minimal non-content deletion result.
 	redacted, _ := json.Marshal(map[string]any{"deleted": true, "id": id})
-	if _, err = t.tx.ExecContext(t.ctx, "UPDATE receipts SET result=? WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id=?)", redacted, id); err != nil {
+	if _, err = t.tx.ExecContext(t.ctx, "UPDATE receipts SET result="+deletedReceiptProjection+" WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id=?)", redacted, id); err != nil {
 		return storageError(err)
 	}
 	t.touched[id] = true

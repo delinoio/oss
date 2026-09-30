@@ -157,7 +157,7 @@ func TestTerminalReplacementRejectsNonCloseAndChangedJournals(t *testing.T) {
 	}
 }
 
-func TestTerminalCloseRecoverySuccessiveReplacementsPreserveFinishedResult(t *testing.T) {
+func TestTerminalCloseRecoveryReplacementAcknowledgesExactCommittedReceipt(t *testing.T) {
 	ctx := context.Background()
 	a := terminal.Assignment{ID: domain.NewID(), SessionID: domain.NewID(), Terminal: domain.Terminal{MachineID: domain.NewID(), Rows: 24, Columns: 80}, Operation: domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalClose}}
 	original := terminalOperationJournal{TerminalID: a.ID, OperationID: a.Operation.ID, InstanceID: domain.NewID(), Digest: terminalOperationDigest(a), ClaimID: domain.NewID(), ReportID: domain.NewID(), Phase: terminalFinished, Result: &terminal.Result{State: domain.TerminalClosed, CleanupVerified: true, OutputLost: true, Rows: 24, Columns: 80}}
@@ -179,20 +179,17 @@ func TestTerminalCloseRecoverySuccessiveReplacementsPreserveFinishedResult(t *te
 	}
 	second := newTerminalManager(ctx, Config{Root: root}, client, first.credential, domain.NewID())
 	second.observeExits(ctx)
-	if len(fixture.reports) != 1 {
-		t.Fatal("successor reported before its own close claim")
-	}
-	if err := second.apply(ctx, a); err != nil {
-		t.Fatal(err)
-	}
 	raw, _ := json.Marshal(original.Result)
-	if len(fixture.claims) != 2 || fixture.claims[0].RequestId == fixture.claims[1].RequestId || len(fixture.reports) != 2 || fixture.reports[0].RequestId == fixture.reports[1].RequestId {
-		t.Fatal("successive instances reused another instance's receipt identity")
+	if len(fixture.claims) != 1 || len(fixture.reports) != 2 || fixture.reports[0].RequestId != fixture.reports[1].RequestId || fixture.reports[0].InstanceId != fixture.reports[1].InstanceId {
+		t.Fatal("receipt acknowledgement changed original identity or claimed native authority")
 	}
 	for _, report := range fixture.reports {
 		if !bytes.Equal(raw, report.ResultJson) {
 			t.Fatal("replacement changed original finished result bytes")
 		}
+	}
+	if _, err := os.Stat(second.journalPath(original.OperationID)); !os.IsNotExist(err) {
+		t.Fatal("committed original receipt did not retire finished journal", err)
 	}
 }
 

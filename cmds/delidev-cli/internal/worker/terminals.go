@@ -73,13 +73,14 @@ type nativeTerminal struct {
 }
 
 type terminalManager struct {
-	ctx        context.Context
-	config     Config
-	client     delidevv1connect.WorkerServiceClient
-	credential Credential
-	instance   domain.ID
-	mu         sync.Mutex
-	live       map[domain.ID]*nativeTerminal
+	ctx         context.Context
+	config      Config
+	client      delidevv1connect.WorkerServiceClient
+	credential  Credential
+	instance    domain.ID
+	mu          sync.Mutex
+	live        map[domain.ID]*nativeTerminal
+	journalScan *os.File
 }
 
 func newTerminalManager(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID) *terminalManager {
@@ -167,6 +168,10 @@ func (m *terminalManager) loadJournal(a terminal.Assignment) (terminalOperationJ
 }
 
 func (m *terminalManager) report(ctx context.Context, id, operation, requestID domain.ID, result terminal.Result) error {
+	return m.reportInstance(ctx, m.instance, id, operation, requestID, result)
+}
+
+func (m *terminalManager) reportInstance(ctx context.Context, instance, id, operation, requestID domain.ID, result terminal.Result) error {
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return domain.SafeError(err)
@@ -174,7 +179,7 @@ func (m *terminalManager) report(ctx context.Context, id, operation, requestID d
 	if len(raw) > terminal.MaxResultBytes {
 		return domain.Fail(domain.ResourceExhausted, "The terminal report exceeds its size limit.", "Preserve the original result and reconcile its ownership before retrying.")
 	}
-	_, err = m.client.ReportTerminal(ctx, authenticated(m.credential, &pb.ReportTerminalRequest{RequestId: string(requestID), MachineId: string(m.credential.MachineID), InstanceId: string(m.instance), TerminalId: string(id), OperationId: string(operation), ResultJson: raw}))
+	_, err = m.client.ReportTerminal(ctx, authenticated(m.credential, &pb.ReportTerminalRequest{RequestId: string(requestID), MachineId: string(m.credential.MachineID), InstanceId: string(instance), TerminalId: string(id), OperationId: string(operation), ResultJson: raw}))
 	if err != nil {
 		return rpc.ClientError(err)
 	}
@@ -497,16 +502,21 @@ func (m *terminalManager) observeExits(ctx context.Context) {
 		default:
 		}
 	}
-	directory, err := os.Open(filepath.Join(m.config.Root, "terminal-operations"))
-	if err != nil {
-		return
+	if m.journalScan == nil {
+		directory, err := os.Open(filepath.Join(m.config.Root, "terminal-operations"))
+		if err != nil {
+			return
+		}
+		m.journalScan = directory
 	}
-	entries, err := directory.ReadDir(4097)
-	_ = directory.Close()
+	// One bounded batch per heartbeat; keep the directory position so an old
+	// backlog cannot suppress every later receipt or acknowledged retirement.
+	entries, err := m.journalScan.ReadDir(4096)
+	if err != nil || len(entries) < 4096 {
+		_ = m.journalScan.Close()
+		m.journalScan = nil
+	}
 	if err != nil && !errors.Is(err, io.EOF) {
-		return
-	}
-	if len(entries) > 4096 {
 		return
 	}
 	for _, entry := range entries {
@@ -524,20 +534,23 @@ func (m *terminalManager) observeExits(ctx context.Context) {
 		if j.Phase != terminalFinished {
 			continue
 		}
-		reportID := j.ReportID
+		reportID, reportInstance := j.ReportID, j.InstanceID
+		if reportInstance.Validate() != nil {
+			continue
+		}
 		if recovery := j.CloseRecovery; recovery != nil {
-			if recovery.InstanceID != m.instance || !recovery.Claimed || recovery.ClaimID.Validate() != nil || recovery.ReportID.Validate() != nil || j.Digest == "" {
+			if recovery.InstanceID.Validate() != nil || !recovery.Claimed || recovery.ClaimID.Validate() != nil || recovery.ReportID.Validate() != nil || j.Digest == "" {
 				continue
 			}
-			reportID = recovery.ReportID
-		} else if j.InstanceID != m.instance {
-			continue
+			reportID, reportInstance = recovery.ReportID, recovery.InstanceID
 		}
 		operation := j.OperationID
 		if j.Digest == "" {
 			operation = ""
 		}
-		if m.report(ctx, j.TerminalID, operation, reportID, *j.Result) == nil {
+		// Old-instance reports can only read their exact committed receipt. The
+		// server rejects missing receipts without mutation or native-work grants.
+		if m.reportInstance(ctx, reportInstance, j.TerminalID, operation, reportID, *j.Result) == nil {
 			j.Phase = terminalReported
 			if err := m.saveJournal(j); err != nil {
 				m.config.Logger.WarnContext(ctx, "terminal_retirement_pending", "terminal_id", j.TerminalID, "code", domain.SafeError(err).Code)
@@ -553,6 +566,10 @@ func (m *terminalManager) observeExits(ctx context.Context) {
 func (m *terminalManager) close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.journalScan != nil {
+		_ = m.journalScan.Close()
+		m.journalScan = nil
+	}
 	for id, native := range m.live {
 		// Synchronize conservative loss before cancellation can abandon a queued
 		// suffix. A replacement can publish it only through an exact close claim.

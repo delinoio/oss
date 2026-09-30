@@ -111,7 +111,12 @@ problems require the terminal contract's closed native failure classification;
 the server substitutes its own bounded diagnostic text before persistence while
 receipt identity retains the original report bytes. Output carries epoch UUIDs, exact uint64 sequences,
 raw bytes, explicit gaps and metadata heartbeats. Terminal mutations return
-current referenced records. Regenerate Go, TypeScript and Connect Query bindings
+current referenced records. A replacement retries an exact original-instance
+`ReportTerminal` only to acknowledge an already-committed receipt under the same
+current device/machine and live terminal-capable lease; this receipt-only response
+omits `terminal` and grants no mutation or native authority. New reports retain
+original current-instance checks. No new protobuf field or numeric reservation
+is required for this acknowledgement recovery. Regenerate Go, TypeScript and Connect Query bindings
 together; no output bytes enter durable events or mutation receipts.
 
 Forwarding retains its merged `ENTITY_KIND_FORWARD = 27` and system/Worker

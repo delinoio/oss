@@ -18,7 +18,10 @@ import (
 )
 
 type terminalReceipt struct {
-	TerminalID domain.ID `json:"terminal_id"`
+	Kind       store.TerminalReceiptKind `json:"receipt_kind,omitempty"`
+	TerminalID domain.ID                 `json:"terminal_id"`
+	MachineID  domain.ID                 `json:"machine_id,omitempty"`
+	DeviceID   domain.ID                 `json:"device_id,omitempty"`
 }
 
 func terminalRecord(tx *store.Tx, id domain.ID) (store.Record, domain.Terminal, error) {
@@ -134,7 +137,7 @@ func (s *Service) CreateTerminal(ctx context.Context, req *connect.Request[pb.Cr
 		if _, err := tx.Put(domain.TerminalKind, id, 0, sr.ID, sr.ProjectID, value); err != nil {
 			return nil, err
 		}
-		return terminalReceipt{id}, nil
+		return terminalReceipt{TerminalID: id}, nil
 	})
 	if err != nil {
 		return fail(err)
@@ -210,7 +213,7 @@ func (s *Service) ControlTerminal(ctx context.Context, req *connect.Request[pb.C
 		if _, err := tx.Put(domain.TerminalKind, r.ID, r.Revision, r.SessionID, r.ProjectID, value); err != nil {
 			return nil, err
 		}
-		return terminalReceipt{r.ID}, nil
+		return terminalReceipt{TerminalID: r.ID}, nil
 	})
 	if err != nil {
 		return fail(err)
@@ -403,7 +406,7 @@ func (s *Service) ClaimTerminal(ctx context.Context, req *connect.Request[pb.Cla
 		if _, err := tx.Put(domain.TerminalKind, r.ID, r.Revision, r.SessionID, r.ProjectID, value); err != nil {
 			return nil, err
 		}
-		return terminalReceipt{r.ID}, nil
+		return terminalReceipt{TerminalID: r.ID}, nil
 	})
 	if err != nil {
 		return fail(err)
@@ -470,6 +473,73 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 	}
 	actor, _ := domain.PrincipalFrom(ctx)
 	machine, instance := domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId)
+	var currentInstance domain.ID
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		var err error
+		currentInstance, _, err = tx.WorkerInstance(machine)
+		if err != nil {
+			return err
+		}
+		return terminalMachine(tx, machine, currentInstance)
+	})
+	if err != nil {
+		return fail(err)
+	}
+	// Exact receipt reads also survive a purge before the original process
+	// received its acknowledgement. Missing receipts still require current
+	// original-instance mutation authority.
+	prior, found, err := s.Store.Replay(ctx, domain.ID(req.Msg.RequestId), "terminal.report", req.Msg)
+	if err != nil {
+		return fail(err)
+	}
+	if found {
+		// A replacement can acknowledge only an already committed exact report.
+		// Never pass this path to Mutate: absent receipts cannot gain authority
+		// to report, claim, recreate or control the original native terminal.
+		var ref terminalReceipt
+		if domain.Decode(prior.Data, &ref) != nil || string(ref.TerminalID) != req.Msg.TerminalId || (ref.Kind != "" && ref.Kind != store.TerminalReportReceiptKind) {
+			return fail(domain.TerminalUnavailable())
+		}
+		var projected *pb.Resource
+		err = s.Store.Read(ctx, func(tx *store.Tx) error {
+			if err := terminalMachine(tx, machine, currentInstance); err != nil {
+				return err
+			}
+			if ref.MachineID != "" || ref.DeviceID != "" {
+				if ref.MachineID != machine || ref.DeviceID != actor.DeviceID {
+					return domain.TerminalUnavailable()
+				}
+				if currentInstance != instance {
+					return nil
+				}
+			}
+			// Older receipts lack ownership metadata. They require the original
+			// record to remain available; missing records are never ownership proof.
+			r, value, err := terminalRecord(tx, ref.TerminalID)
+			if err != nil {
+				if ref.Kind == store.TerminalReportReceiptKind && ref.MachineID == machine && ref.DeviceID == actor.DeviceID && domain.SafeError(err).Code == domain.NotFound {
+					return nil
+				}
+				return err
+			}
+			if value.MachineID != machine || value.DeviceID != actor.DeviceID {
+				return domain.TerminalUnavailable()
+			}
+			if currentInstance == instance && value.InstanceID == instance {
+				projected = rpc.Resource(r)
+			}
+			return nil
+		})
+		if err != nil {
+			return fail(err)
+		}
+		s.logger.InfoContext(ctx, "terminal_report_receipt_acknowledged", "terminal_id", ref.TerminalID, "machine_id", machine)
+		// Replacement and purged acknowledgements project no current resource.
+		return connect.NewResponse(&pb.ReportTerminalResponse{Terminal: projected}), nil
+	}
+	if currentInstance != instance {
+		return fail(domain.TerminalUnavailable())
+	}
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "terminal.report", req.Msg, func(tx *store.Tx) (any, error) {
 		if err := terminalMachine(tx, machine, instance); err != nil {
 			return nil, err
@@ -531,7 +601,7 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 				return nil, err
 			}
 		}
-		return terminalReceipt{r.ID}, nil
+		return terminalReceipt{Kind: store.TerminalReportReceiptKind, TerminalID: r.ID, MachineID: machine, DeviceID: actor.DeviceID}, nil
 	})
 	if err != nil {
 		return fail(err)

@@ -147,7 +147,18 @@ and retires only the empty terminal owner index, its private recovery lock and
 the shutdown observation, before removing the operation journal. Unacknowledged
 or uncertain cleanup retains original process evidence. Interrupted acknowledged
 retirement retries locally, including after server-side record deletion,
-without another claim, report or native operation.
+without another claim, report or native operation. If the report committed but
+its acknowledgement was lost before replacement, the replacement retries its
+exact original instance/request/operation/result bytes only to read the accepted
+receipt. The server requires the same currently authorized device/machine and a
+live terminal-capable Worker lease, acknowledges without resource content, and
+never mutates an absent receipt. New reports still require original current
+instance authority. Report receipts retain only their closed kind and original
+terminal/machine/device UUIDs through entity/session purge; ordinary deleted
+receipt content is redacted. Older receipts without ownership metadata require
+the original resource to remain available. The Worker synchronizes acknowledgement
+before independent local retirement. Journal scans advance through bounded
+4,096-entry batches rather than refusing every scan of a larger backlog.
 
 Worker shutdown synchronizes an original-terminal/instance-bound loss
 observation before cancelling output, then retains its joined native result

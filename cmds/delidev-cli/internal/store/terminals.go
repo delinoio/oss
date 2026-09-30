@@ -3,6 +3,23 @@ package store
 
 import "github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 
+type TerminalReceiptKind string
+
+const TerminalReportReceiptKind TerminalReceiptKind = "terminal-report"
+
+// Deletion removes resource content but preserves the closed ownership
+// projection of terminal report acknowledgements. A lost response must remain
+// provable after cleanup permits record purge; it cannot resurrect a resource
+// or grant another native operation. Rebuild the allowlist instead of retaining
+// arbitrary receipt fields. Readers independently validate its identities.
+const deletedReceiptProjection = `CASE
+	WHEN json_extract(result,'$.receipt_kind')='terminal-report'
+	THEN json_object('receipt_kind','terminal-report',
+		'terminal_id',json_extract(result,'$.terminal_id'),
+		'machine_id',json_extract(result,'$.machine_id'),
+		'device_id',json_extract(result,'$.device_id'))
+	ELSE ? END`
+
 func (t *Tx) SessionTerminals(id domain.ID) ([]Record, error) {
 	records, err := t.List(Filter{Kind: domain.TerminalKind, SessionID: id, Limit: domain.MaxTerminalRecords + 1})
 	if err != nil {

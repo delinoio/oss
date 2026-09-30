@@ -524,7 +524,7 @@ func (t *Tx) purgeSession(v SessionDeletion) error {
 		return e
 	}
 	redacted := []byte(`{"deleted":true}`)
-	if _, e := t.tx.ExecContext(t.ctx, "UPDATE receipts SET result=? WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id IN (SELECT id FROM entities WHERE id=? OR session_id=?))", redacted, v.SessionID, v.SessionID); e != nil {
+	if _, e := t.tx.ExecContext(t.ctx, "UPDATE receipts SET result="+deletedReceiptProjection+" WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id IN (SELECT id FROM entities WHERE id=? OR session_id=?))", redacted, v.SessionID, v.SessionID); e != nil {
 		return storageError(e)
 	}
 	// Read metadata in bounded pages without materializing transcript/job bodies.

@@ -476,3 +476,14 @@ independent `native_accounting_layout=grok-closed-input-v1` metadata marker.
 Opening any version-25 database without that marker fails before WAL settings,
 migration or Worker state updates, preserving old unmerged version-25 files for
 explicit recovery. A version number alone cannot identify their layout.
+
+## Terminal report acknowledgement after purge
+
+Entity deletion and permanent session purge retain only the closed terminal-report
+receipt kind plus original terminal, machine and paired-device UUIDs, rebuilding
+that allowlist from the accepted receipt. All resource content and other receipt
+fields remain redacted. This lets a same-device replacement confirm an exact
+already-committed report after response loss and retire independently joined
+local ownership evidence. It grants no new report, native operation or resource
+resurrection. Legacy unbound receipts require the original resource to remain
+available. See the [terminal contract](cmds-delidev-terminals-contract.md).

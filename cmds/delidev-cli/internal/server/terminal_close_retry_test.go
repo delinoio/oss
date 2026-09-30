@@ -108,8 +108,14 @@ func TestSessionDeletionReissuesUncertainTerminalClose(t *testing.T) {
 				if _, err := worker.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: instance, Version: "0.1.0", Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}})); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, uncertain)); err == nil {
-					t.Fatal("replaced instance retained report authority")
+				current = currentCatalogResource(t, f, current)
+				ack, err := worker.ReportTerminal(ctx, ownerRequest(identity, uncertain))
+				if err != nil || ack.Msg.Terminal != nil {
+					t.Fatal("replacement could not read exact receipt without terminal projection", err)
+				}
+				unchanged := currentCatalogResource(t, f, current)
+				if unchanged.Revision != current.Revision || !bytes.Equal(unchanged.DocumentJson, current.DocumentJson) {
+					t.Fatal("receipt-only acknowledgement changed the next cleanup intent")
 				}
 			}
 			// Keep a primary stream for the complete retry observation, independent

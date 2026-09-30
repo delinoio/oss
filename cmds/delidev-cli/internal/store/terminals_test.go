@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -248,4 +249,58 @@ func TestTerminalArchiveHistoryBoundFailureIsNotCleanupDeferral(t *testing.T) {
 		return nil, tx.CompleteTerminalArchive(sessionID)
 	})
 	assertCode(t, err, domain.ResourceExhausted)
+}
+
+func TestTerminalReportReceiptDeletionRetainsOnlyOwnershipAcknowledgement(t *testing.T) {
+	for _, sessionPurge := range []bool{false, true} {
+		t.Run(map[bool]string{false: "terminal-delete", true: "session-purge"}[sessionPurge], func(t *testing.T) {
+			s, _ := openTest(t)
+			ctx := context.Background()
+			session, id, machine, device, request := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
+			terminal := domain.Terminal{MachineID: machine, DeviceID: device, State: domain.TerminalClosed, CleanupVerified: true, Rows: 24, Columns: 80}
+			receipt, err := s.Mutate(ctx, request, "terminal.report", nil, func(tx *Tx) (any, error) {
+				if _, err := tx.Put(domain.SessionKind, session, 0, session, "", domain.Session{Archive: domain.NotArchived, Recovery: domain.NoRecovery}); err != nil {
+					return nil, err
+				}
+				if _, err := tx.Put(domain.TerminalKind, id, 0, session, "", terminal); err != nil {
+					return nil, err
+				}
+				return map[string]any{"receipt_kind": TerminalReportReceiptKind, "terminal_id": id, "machine_id": machine, "device_id": device, "extra": "fixture-content"}, nil
+			})
+			if err != nil || receipt.Replayed {
+				t.Fatal(err)
+			}
+			ordinaryID := domain.NewID()
+			_, err = s.Mutate(ctx, ordinaryID, "fixture.ordinary", nil, func(tx *Tx) (any, error) {
+				if _, err := tx.Put(domain.TerminalKind, id, 1, session, "", terminal); err != nil {
+					return nil, err
+				}
+				return map[string]string{"fixture_content": "must-be-redacted"}, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = s.Mutate(ctx, domain.NewID(), "fixture.purge", nil, func(tx *Tx) (any, error) {
+				if sessionPurge {
+					return nil, tx.purgeSession(SessionDeletion{SessionID: session})
+				}
+				return nil, tx.Delete(domain.TerminalKind, id, 2)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			replay, found, err := s.Replay(ctx, request, "terminal.report", nil)
+			var fields map[string]string
+			if err != nil || !found || domain.Decode(replay.Data, &fields) != nil || len(fields) != 4 || fields["receipt_kind"] != string(TerminalReportReceiptKind) || fields["terminal_id"] != string(id) || fields["machine_id"] != string(machine) || fields["device_id"] != string(device) {
+				t.Fatal("deletion lost acknowledgement binding or retained extra content", err)
+			}
+			ordinary, found, err := s.Replay(ctx, ordinaryID, "fixture.ordinary", nil)
+			if err != nil || !found || strings.Contains(string(ordinary.Data), "must-be-redacted") {
+				t.Fatal("ordinary deleted receipt retained resource content", err)
+			}
+			if _, err := s.Get(ctx, domain.TerminalKind, id); domain.SafeError(err).Code != domain.NotFound {
+				t.Fatal("receipt preservation resurrected terminal", err)
+			}
+		})
+	}
 }
