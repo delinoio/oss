@@ -70,9 +70,14 @@ All four reproduced in a disposable unchanged-main checkout at
 `74701b8948694e2bf8f8ba6d07e596c2d2f358a7` with race instrumentation,
 `-p 1 -timeout=5m -count=1` and the exact test-name selection. That establishes
 baseline failures for those four cases only. The temporary baseline checkout was
-removed after its checks. The full race run subsequently hit 20-minute timeouts
-in the unchanged Claude and Codex harness packages; remaining packages are still
-running at this record's publication. The full run is failing, not passing.
+removed after its checks. The full race run completed unsuccessfully. Claude,
+Codex, Grok and server packages reached 20-minute timeouts; nativewire and
+OpenCode fixtures also failed. Disappearing shared Go cache entries prevented
+five packages (store, terminal, userservice, Worker and workspace)
+from building. Those build failures did not execute their tests. The full process
+package subsequently passed in this run; it does not erase the focused cleanup
+failures below. Only the four separately reproduced cases above are established
+baseline failures. The full race run is failing, not passing.
 
 A separate exact-prefix terminal run with `-race -p 1 -timeout=5m -count=1`
 passed the server, Worker, store and CLI packages, including all-three-capability
@@ -107,6 +112,14 @@ with `-p 2 -timeout=3m -count=1`, including the portable fixture's exact report
 ID/byte retry through the exit-observation loop and the native creation/input
 receipt-loss fixture. The portable fixture was executed on macOS in this run;
 its presence does not prove Windows execution.
+
+Root Go vet was rerun after both repairs with the isolated cache and passed.
+A complete store package race run with `-p 2 -timeout=5m -count=1` then timed
+out in `TestScheduleWaitLimitIsAtomicAndDoesNotDropAcceptedOccurrences` while
+appending its retained schedule occurrences. This is an existing fixture, but
+its failure was not independently reproduced on main and is not claimed as a
+proven baseline failure. The focused terminal Archive and Worker regressions
+above pass; the complete store attempt is not passing evidence.
 
 ## PR maintenance
 
