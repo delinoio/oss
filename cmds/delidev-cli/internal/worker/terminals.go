@@ -25,6 +25,10 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
+// The 16 KiB report is nested inside ownership metadata. All journal readers
+// and synchronized writes share a larger bound so valid results remain retryable.
+const terminalOperationJournalMaxBytes = 32 << 10
+
 type terminalOperationPhase string
 
 const (
@@ -98,7 +102,13 @@ func (m *terminalManager) journalPath(operation domain.ID) string {
 	return filepath.Join(m.config.Root, "terminal-operations", string(operation)+".json")
 }
 func (m *terminalManager) saveJournal(j terminalOperationJournal) error {
-	raw, _ := json.Marshal(j)
+	raw, err := json.Marshal(j)
+	if err != nil {
+		return domain.SafeError(err)
+	}
+	if len(raw) > terminalOperationJournalMaxBytes {
+		return domain.Fail(domain.ResourceExhausted, "The terminal operation journal exceeds its size limit.", "Preserve original ownership and reconcile before retrying.")
+	}
 	return security.WriteAtomic(m.journalPath(j.OperationID), raw)
 }
 
@@ -107,7 +117,7 @@ func (m *terminalManager) loadJournal(a terminal.Assignment) (terminalOperationJ
 	if err := security.PrivateDir(filepath.Join(m.config.Root, "terminal-operations")); err != nil {
 		return j, err
 	}
-	raw, err := security.ReadPrivate(m.journalPath(a.Operation.ID), 16384)
+	raw, err := security.ReadPrivate(m.journalPath(a.Operation.ID), terminalOperationJournalMaxBytes)
 	if errors.Is(err, os.ErrNotExist) {
 		j = terminalOperationJournal{TerminalID: a.ID, OperationID: a.Operation.ID, InstanceID: m.instance, Digest: terminalOperationDigest(a), ClaimID: domain.NewID(), ReportID: domain.NewID(), Phase: terminalPrepared}
 		return j, m.saveJournal(j)
@@ -284,7 +294,7 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 			return result
 		}
 		if native == nil && a.Terminal.Pending != nil && a.Terminal.Pending.Action == domain.TerminalCreate {
-			raw, err := security.ReadPrivate(m.journalPath(a.Terminal.Pending.ID), 16384)
+			raw, err := security.ReadPrivate(m.journalPath(a.Terminal.Pending.ID), terminalOperationJournalMaxBytes)
 			var create terminalOperationJournal
 			if err == nil && domain.Decode(raw, &create) == nil && create.TerminalID == a.ID && create.OperationID == a.Terminal.Pending.ID && create.InstanceID == a.Terminal.OwnerInstanceID && (create.Phase == terminalPrepared || create.Phase == terminalClaimed || (create.Phase == terminalFinished && create.Result != nil && create.Result.CleanupVerified)) {
 				result.State, result.CleanupVerified = domain.TerminalClosed, true
@@ -424,7 +434,7 @@ func (m *terminalManager) observeExits(ctx context.Context) {
 		return
 	}
 	for _, entry := range entries {
-		raw, err := security.ReadPrivate(filepath.Join(m.config.Root, "terminal-operations", entry.Name()), 16384)
+		raw, err := security.ReadPrivate(filepath.Join(m.config.Root, "terminal-operations", entry.Name()), terminalOperationJournalMaxBytes)
 		var j terminalOperationJournal
 		if err != nil || domain.Decode(raw, &j) != nil || j.InstanceID != m.instance || j.Result == nil || j.Phase != terminalFinished || j.ReportID.Validate() != nil || j.TerminalID.Validate() != nil {
 			continue

@@ -17,7 +17,8 @@ it does not emulate full-screen VT applications.
 
 ## Validation, 2026-09-30
 
-Implementation revision: `15bc792c3` (evidence-only updates follow this revision).
+Initial implementation revision: `15bc792c3`. Later review repairs and their
+validation are recorded below; evidence-only updates also follow this revision.
 
 All commands use the isolated issue worktree and temporary fixture state. No
 user provider account or paired production Worker is used. The desktop's
@@ -96,6 +97,16 @@ after the retained record is repaired. Race-enabled terminal Archive and
 terminal/forward cleanup-order checks pass using an isolated temporary Go cache,
 `-p 2 -timeout=3m -count=1`. An earlier build did not execute the tests because
 shared Go cache files disappeared during linking; it is not test evidence.
+
+The journal finding is reproduced with a valid escaped-path result below the
+server's 16 KiB report limit whose metadata envelope exceeds the former 16 KiB
+read bound. Reads and writes now share a 32 KiB envelope limit across ordinary
+retry, pre-native cleanup and exit observation. An oversized write is rejected
+before replacing existing evidence. Race-enabled Worker terminal checks pass
+with `-p 2 -timeout=3m -count=1`, including the portable fixture's exact report
+ID/byte retry through the exit-observation loop and the native creation/input
+receipt-loss fixture. The portable fixture was executed on macOS in this run;
+its presence does not prove Windows execution.
 
 ## PR maintenance
 

@@ -110,8 +110,11 @@ digests, claim/report IDs, phase and bounded native results; they never contain
 input/output bytes. Native-start intent is synchronized before side effects.
 An interrupted started operation is reported uncertain instead of repeating
 input, resize or shell creation. Finished results retry their exact report;
-confirmed reports retire the journal. A proven pre-native original creation
-journal can reconcile a lost claim acknowledgement without inventing a process.
+confirmed reports retire the journal. Journal reads and writes share a 32 KiB
+envelope bound that reserves room for ownership metadata around a valid 16 KiB
+report, including JSON escaping; oversized writes fail before replacing retained
+ownership. A proven pre-native original creation journal can reconcile a lost
+claim acknowledgement without inventing a process.
 Native process journals retain the existing independent ownership/cleanup proof.
 
 Output is ephemeral: each server ring retains at most 512 KiB and 1,024 frames, with 128 rings
