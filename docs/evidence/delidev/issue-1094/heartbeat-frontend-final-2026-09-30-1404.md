@@ -2,7 +2,7 @@
 
 Validated implementation: `79ff32d83400373e8647f97f65c2f539b168fd44`.
 The default `GOMAXPROCS=2 pnpm test` command in `apps/delidev` was run again
-after all four review fixes. API-client generation/build and TypeScript checking
+after all four review fixes. API-client build and TypeScript checking
 passed. Vitest exited 1 after 226.12 seconds: 101 files (81 passed, 20 failed),
 1,280 tests (1,190 passed, 85 failed, 5 skipped). This required pipeline did not
 reach the packaging, widget or production-build stages.
