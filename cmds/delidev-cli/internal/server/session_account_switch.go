@@ -15,6 +15,12 @@ import (
 
 func (s *Service) SwitchSessionAccount(ctx context.Context, req *connect.Request[pb.SwitchSessionAccountRequest]) (*connect.Response[pb.SwitchSessionAccountResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
+	actor, ok := domain.PrincipalFrom(ctx)
+	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+		err := domain.Fail(domain.PermissionDenied, "Only an owner or paired client can switch a session account.", "Use an authorized product client.")
+		s.logger.InfoContext(ctx, "session_account_switch_denied", "correlation_id", correlation, "code", domain.PermissionDenied)
+		return nil, rpc.Error(err, correlation)
+	}
 	meta := req.Msg.Mutation
 	if err := validateSessionMutation(meta); err != nil {
 		return nil, rpc.Error(err, correlation)
@@ -23,7 +29,6 @@ func (s *Service) SwitchSessionAccount(ctx context.Context, req *connect.Request
 	if err := accountID.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	actor, _ := domain.PrincipalFrom(ctx)
 	identity := struct {
 		Session, Account domain.ID
 		Revision         uint64

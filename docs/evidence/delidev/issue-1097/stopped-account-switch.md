@@ -196,3 +196,38 @@ the store, completed successfully. This supersedes only the earlier running
 status; it preserves every earlier failure and native-acceptance limitation.
 The broad command began before these review repairs and is not final-head
 validation of them. No full scoped race pass is claimed.
+
+## PR #1177 account-switch principal review repair
+
+The reviewed head was `153418f6d22c41de1d19e5bca8474125cc308726`.
+The HTTP middleware already refused Worker product RPCs, but the service
+accepted a live authenticated Worker principal when invoked directly.
+`TestAccountSwitchRequiresOwnerOrClientBeforeMutation` reproduced that service
+acceptance before the fix; the authenticated HTTP Worker denial passed in the
+same regression. This distinguishes the missing service role check from the
+existing HTTP boundary.
+
+`SwitchSessionAccount` now requires an owner or paired client before request
+validation or mutation and logs only the stable denial code and correlation.
+The regression checks Worker, absent and unsupported principals, unchanged
+session bytes/revision, no receipt or store notification on denial, and the
+owner's later use of the same request identity. A separate regression checks
+paired-client selection, actor-bound exact replay and revoked-client rejection
+through both HTTP and direct service calls. Transactional device authorization
+remains authoritative even for replay.
+
+Validation uses the same private Go 1.26.8 toolchain/build cache described
+above, with `GOTOOLCHAIN=local`. Scoped
+`GOMAXPROCS=2 go vet -p 2 ./cmds/delidev-cli/...` and
+`node --test scripts/ci/delidev-structure.test.mjs` passed (3 structure checks).
+The principal regression's baseline race run failed on the accepted Worker
+service invocation (1.810 seconds); this was an executed regression, not a
+native account or platform acceptance run.
+
+After the guard, `GOMAXPROCS=2 go test -race -p 1 -timeout 5m
+./cmds/delidev-cli/internal/server -run
+'^Test(AccountSwitch|StoppedAccountSwitch|HistoryObservation|Continuation)'
+-count=1` passed (174.403 seconds), including both new principal regressions
+and the existing account-switch, receipt, revocation and continuation checks.
+This focused pass does not replace the broader failures or establish the
+still-missing complete native A-to-B acceptance.

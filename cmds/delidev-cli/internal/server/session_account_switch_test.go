@@ -4,13 +4,17 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 func accountSwitchFixture(t *testing.T, mode domain.NativeHistoryMode, settle bool) (*continuationFixture, *pb.Resource, string) {
@@ -138,6 +142,101 @@ func TestStoppedAccountSwitchRetainsHistoryAndRequiresExplicitResume(t *testing.
 	}
 	if _, err := client.SwitchSessionAccount(context.Background(), ownerRequest(f.identity, req)); err != nil {
 		t.Fatal("exact old receipt did not retain current-state replay", err)
+	}
+}
+
+func TestAccountSwitchRequiresOwnerOrClientBeforeMutation(t *testing.T) {
+	f, b, _ := accountSwitchFixture(t, domain.FullNativeHistory, true)
+	ctx := context.Background()
+	digest := sha256.Sum256([]byte(f.workerIdentity.Token))
+	worker, err := f.service.Store.Authenticate(ctx, digest[:])
+	if err != nil || worker.Type != domain.WorkerDevice {
+		t.Fatal("fixture Worker is not currently authorized", err)
+	}
+	client := sessionClient(f.accountFixture)
+	req := switchRequest(f, b, t)
+	before := f.refresh(t)
+	count := historyReceiptCounter(t, f)
+	receipts := count()
+	changed := f.service.Store.Changed()
+	assertDenied := func(err error) {
+		t.Helper()
+		if connect.CodeOf(err) != connect.CodePermissionDenied {
+			t.Fatal("account selection did not reject unauthorized role", err)
+		}
+		after := f.refresh(t)
+		if after.Revision != before.Revision || !bytes.Equal(after.Data, before.Data) || count() != receipts {
+			t.Fatal("role rejection changed session or retained a receipt")
+		}
+		select {
+		case <-changed:
+			t.Fatal("role rejection woke store watchers")
+		default:
+		}
+	}
+	// HTTP already rejects Workers. The service must also enforce its role
+	// boundary before mutation when invoked with an authenticated principal.
+	_, err = client.SwitchSessionAccount(ctx, ownerRequest(f.workerIdentity, req))
+	assertDenied(err)
+	for _, actor := range []context.Context{
+		domain.WithPrincipal(ctx, worker),
+		ctx,
+		domain.WithPrincipal(ctx, domain.Principal{}),
+	} {
+		_, err := f.service.SwitchSessionAccount(actor, connect.NewRequest(req))
+		assertDenied(err)
+	}
+	// Denied calls cannot consume the owner's exact request identity.
+	accepted, err := client.SwitchSessionAccount(ctx, ownerRequest(f.identity, req))
+	if err != nil || accepted.Msg.Change.Replayed || count() != receipts+1 {
+		t.Fatal("denied call consumed owner selection identity", err)
+	}
+}
+
+func TestAccountSwitchPairedClientReplayRechecksRevocation(t *testing.T) {
+	f, b, _ := accountSwitchFixture(t, domain.FullNativeHistory, true)
+	ctx := context.Background()
+	identity := localOriginClient(t, f.accountFixture)
+	digest := sha256.Sum256([]byte(identity.Token))
+	actor, err := f.service.Store.Authenticate(ctx, digest[:])
+	if err != nil || actor.Type != domain.ClientDevice {
+		t.Fatal("fixture client is not currently authorized", err)
+	}
+	client := sessionClient(f.accountFixture)
+	req := switchRequest(f, b, t)
+	accepted, err := client.SwitchSessionAccount(ctx, ownerRequest(identity, req))
+	if err != nil || accepted.Msg.Change.Replayed {
+		t.Fatal("paired client could not select account", err)
+	}
+	count := historyReceiptCounter(t, f)
+	receipts := count()
+	replay, err := client.SwitchSessionAccount(ctx, ownerRequest(identity, req))
+	if err != nil || !replay.Msg.Change.Replayed || replay.Msg.Change.Session.Revision != accepted.Msg.Change.Session.Revision || count() != receipts {
+		t.Fatal("paired client replay changed its selection", err)
+	}
+	if _, err := client.SwitchSessionAccount(ctx, ownerRequest(f.identity, req)); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("another actor inherited the client receipt", err)
+	}
+	device, err := f.service.Store.Get(ctx, domain.DeviceKind, actor.DeviceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	devices := delidevv1connect.NewDeviceServiceClient(http.DefaultClient, f.endpoint.URL)
+	if _, err := devices.RevokeDevice(ctx, ownerRequest(f.identity, &pb.RevokeDeviceRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(device.ID), ExpectedRevision: device.Revision}})); err != nil {
+		t.Fatal(err)
+	}
+	before, receipts := f.refresh(t), count()
+	_, err = client.SwitchSessionAccount(ctx, ownerRequest(identity, req))
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("revoked client replayed over HTTP", err)
+	}
+	_, err = f.service.SwitchSessionAccount(domain.WithPrincipal(ctx, actor), connect.NewRequest(req))
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("revoked client principal replayed in service", err)
+	}
+	after := f.refresh(t)
+	if after.Revision != before.Revision || !bytes.Equal(after.Data, before.Data) || count() != receipts {
+		t.Fatal("revoked replay changed session or receipt history")
 	}
 }
 
@@ -309,6 +408,9 @@ func TestAccountSwitchRejectsUncertainOrIneligibleSelectionsAtomically(t *testin
 			_, err := sessionClient(f.accountFixture).SwitchSessionAccount(context.Background(), ownerRequest(identity, req))
 			if err == nil {
 				t.Fatal("unsafe switch succeeded")
+			}
+			if scenario == "worker" && connect.CodeOf(err) != connect.CodePermissionDenied {
+				t.Fatal("Worker rejection lost its role classification", err)
 			}
 			after := f.refresh(t)
 			if before.Revision != after.Revision || !bytes.Equal(before.Data, after.Data) {
