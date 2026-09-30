@@ -51,3 +51,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - The private execution-dispatch entry point establishes server-owner context before retained PR-history reads. Public RPCs and store boundaries still validate their authenticated actor; ordinary dispatch must not depend on ticker-provided context.
 
 - Optional manual-fix preflight cannot replace ordinary dispatch lifecycle/error precedence when no queued input exists. The ordinary claim transaction remains authoritative for active, paused, archived and empty states.
+
+- Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.

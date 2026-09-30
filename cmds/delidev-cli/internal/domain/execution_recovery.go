@@ -64,7 +64,7 @@ func (r ExecutionRecoveryRequest) Validate() error {
 	if err != nil || r.OpenCode != nil && (len(bindings) != 1 || (r.OpenCode.ClaimVersion == 1) != (r.HistoryExecutionID == r.Completion.ExecutionID)) {
 		return ExecutionRecoveryUncertain()
 	}
-	if r.Claude != nil && (len(bindings) != 1 || (r.Claude.ClaimVersion == 1) != (r.HistoryExecutionID == r.Completion.ExecutionID) || string(r.Completion.NativeThreadID) != string(r.SessionID) || r.Completion.Outcome != ExecutionSucceeded) {
+	if r.Claude != nil && (len(bindings) != 1 || (r.Claude.ClaimVersion == 1) != (r.HistoryExecutionID == r.Completion.ExecutionID) || string(r.Completion.NativeThreadID) != string(r.SessionID) || (r.Completion.Outcome != ExecutionSucceeded && r.Completion.Outcome != ExecutionFailed)) {
 		return ExecutionRecoveryUncertain()
 	}
 	for _, raw := range []json.RawMessage{r.Preparation, r.Manifest} {

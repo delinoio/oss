@@ -251,3 +251,26 @@ These are recorded outcomes, not a green full suite or a blanket baseline-cause
 claim. The earlier unchanged-primary control proves only its specific App/Grok
 observations. Isolated manual Git race verification is recorded separately below.
 `go vet ./cmds/delidev-cli/...` passed after both dispatch repairs.
+
+## Isolated final Git race result and latest-base integration
+
+`go test -race ./cmds/delidev-cli/internal/workspace -run '^TestPRGit'
+-count=1 -timeout=10m` passed (169.023s) against the same immutable
+`c9896e1a589dce24a452eb1ecc02dd9e6daf9e29` source. All manual Git bridge fixtures
+completed under race, including original fork proof/replay/tamper, exact push
+rewrite rejection and real noninteractive conflict/rebase/lease publication.
+The broad package timeout cannot be presented as this passing isolated result.
+
+GitHub's final snapshot showed a newer base conflict. A normal merge of
+`b1b3e9e7c55511086a284021850426d48484b127` preserves the new Claude failed-resume
+rules alongside manual PR rules in all three scoped instruction conflicts. No
+Rust source resolution was needed. Current-head Windows job `109796174896`
+reported the same private dispatch owner-context regression, with no independent
+failing package in its log.
+
+After that merge, the race command covering `TestPRFix`, `TestManualPRFix`,
+`TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt` and
+`TestInitialDispatchOffProviderPreservesQueuedInputAndRouting` passed in domain,
+server (12.410s) and store (9.829s). `go vet ./cmds/delidev-cli/...` passed on the
+merged source. Required frontend validation runs separately on that merged tree;
+the immutable broad result above remains bound to its recorded source revision.
