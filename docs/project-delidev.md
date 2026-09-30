@@ -61,3 +61,7 @@ Update the owning domain contract when behavior changes. Update this index only 
 - [Project template](project-template.md)
 - [Structure and compatibility](cmds-delidev-structure-contract.md)
 - [Relocation inventory](evidence/delidev/pr-conflict-structure/document-relocations.json)
+
+## Home navigation invariant
+
+Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md) and [issue #1161 evidence](evidence/delidev/issue-1161/home-navigation.md).
