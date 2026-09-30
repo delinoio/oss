@@ -71,7 +71,7 @@ enum SettingsGroup { AiAgents = "AI & agents", Workspace = "Workspace", System =
 
 const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
   [SettingsCategory.Backups]: { label: "Backups", description: "Inspect managed database images and follow durable creation and deletion jobs on the selected server.", area: SettingsArea.Backups },
-  [SettingsCategory.SubscriptionAccounts]: { label: "AI Subscription Accounts", description: "Existing subscription account metadata is managed here; subscription login is not available.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
+  [SettingsCategory.SubscriptionAccounts]: { label: "AI Subscription", description: "Existing subscription account metadata is managed here; subscription login is not available.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.ApiAccounts]: { label: "API Accounts", description: "API account settings, credential connections and health are managed separately.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.Providers]: { label: "API Providers", description: "Provider availability is saved on the selected server.", kind: EntityKind.PROVIDER, area: SettingsArea.Configuration },
   [SettingsCategory.Models]: { label: "Models", description: "Saved on the selected server.", kind: EntityKind.MODEL, area: SettingsArea.Configuration },
