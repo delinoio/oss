@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -23,6 +24,50 @@ func backupCommand(ctx context.Context, c client, o options, args []string) (any
 	}
 	f := flags("backup " + args[0])
 	switch args[0] {
+	case "restore-status":
+		id := f.String("id", "", "original restore request UUID")
+		if err := parse(f, args[1:]); err != nil {
+			return nil, err
+		}
+		if err := domain.ID(*id).Validate(); err != nil {
+			return nil, err
+		}
+		result, err := c.system.GetBackupRestore(ctx, request(c, &pb.GetBackupRestoreRequest{RequestId: *id}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		return backupOutput(result.Msg)
+	case "restore":
+		id := f.String("id", "", "original managed backup UUID")
+		revision := f.Uint64("expected-revision", 0, "original backup revision")
+		size := f.Uint64("size-bytes", 0, "original inspected byte count")
+		modified := f.String("modified-at", "", "original inspected timestamp")
+		digest := f.String("sha256", "", "original inspected SHA-256")
+		restoreRevision := f.Uint64("expected-restore-revision", 0, "original inspected live revision")
+		confirm := f.Bool("confirm", false, "confirm database replacement and server shutdown; no workloads resume")
+		if err := parse(f, args[1:]); err != nil {
+			return nil, err
+		}
+		present := false
+		f.Visit(func(flag *flag.Flag) {
+			if flag.Name == "expected-restore-revision" {
+				present = true
+			}
+		})
+		if !*confirm || !present {
+			return nil, domain.Fail(domain.MissingInput, "Restore requires confirmation and the original live revision.", "Review backup inspect, supply --expected-restore-revision and --confirm; explicitly restart the server afterward.")
+		}
+		if err := domain.ID(*id).Validate(); err != nil {
+			return nil, err
+		}
+		if _, err := time.Parse(time.RFC3339Nano, *modified); err != nil {
+			return nil, usage()
+		}
+		result, err := c.system.RestoreBackup(ctx, request(c, &pb.RestoreBackupRequest{RequestId: string(o.requestID), Backup: &pb.ManagedBackup{Id: *id, Revision: *revision, SizeBytes: *size, ModifiedAt: *modified}, Sha256: *digest, ExpectedRestoreRevision: restoreRevision, Confirm: *confirm}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		return backupOutput(result.Msg)
 	case "create":
 		wait := f.Bool("wait", false, "wait for the original durable job; interruption does not cancel it")
 		if err := parse(f, args[1:]); err != nil {

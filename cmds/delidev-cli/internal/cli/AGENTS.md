@@ -40,6 +40,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Manual remediation capabilities/fix commands use generated authenticated PullRequestFixService with the same closed original selection and receipt semantics as desktop. Preserve exact revisions/request IDs; reject foreign acknowledgments and avoid authentication/document stdin sharing. Never publish with the server lookup PAT or silently select another harness.
 
+- Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
+
 - `session switch-account --id ID --revision N --account-id ID` invokes only the explicit owner/client Connect operation. Gate support with the typed status capability, preserve exact request identities, and leave the selected session paused until explicit Resume.
 
 - `usage summary --accounting-profile native-units-v1` requires the server echo before exposing native units. Omission preserves the existing response-only profile; unknown values fail. Keep source kinds and exact decimal totals distinct.
