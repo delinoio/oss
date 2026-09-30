@@ -33,9 +33,11 @@ Require `AUTOMATIC_TITLES_V1` from `GetStatus` before enabling creation. Missing
 Session detail and loaded sidebar rows show server-owned automatic title state and safe reason. They never infer state from a local request or overwrite the status with cached selection. Manual session names remain ordinary names.
 
 ### Contextual desktop navigation
-The desktop shell uses a shared 52px icon rail beside a 288px context pane; at viewport widths up to and including 1,100px, only the pane contracts to 256px. Preserve the native 960×640 minimum. The rail order is Sessions, Pull requests, Usage, Schedules, Activity, with Settings at the bottom. DeliDev remains static text; Inbox and Search stay in its header and select their own context surface without selecting a rail item. Sidebar-only styling must not alter the conversation/composer, title bar, or right-side panels. The rail and groups remain keyboard-operable with visible focus, descriptive names/tooltips, and reduced-motion-safe status graphics.
+The desktop shell uses a shared 52px icon rail beside a 288px context pane; at viewport widths up to and including 1,100px, only the pane contracts to 256px. Preserve the native 960×640 minimum. The rail order is Sessions, Pull requests, Usage, Schedules, Activity, with Settings at the bottom. DeliDev remains static, left-aligned text. The header Inbox bell and Search magnifier appear only in the home area (`Surface.Sessions`, including welcome and selected detail, and `Surface.NewSession`). Other destinations render no action group, buttons, disabled controls or placeholders. Keep the 34px minimum header height, bell-then-magnifier order, 34×34px targets, 18px decorative SVGs, 2px action gap, `#5b6577` foreground and existing hover/focus treatment; hiding actions must not move the heading, pane content or rail. Accessible button names remain exactly **Inbox** and **Search**. Their existing callbacks select the corresponding context surface without selecting a rail item; Sessions returns to the retained conversation or welcome. Sidebar-only styling must not alter the conversation/composer, title bar, or right-side panels. The rail and groups remain keyboard-operable with visible focus, descriptive names/tooltips, and reduced-motion-safe status graphics.
 
 Below 760 CSS pixels, retain the rail and show a purpose-named **Open …** control in the main area. It opens one native modal drawer beside the rail with a visible Close action, Escape handling, contained focus, background inertness and focus restoration to the opener. Keep the same surface controllers and query observers while switching between pane and drawer placement; filter edits alone do not close the drawer. Selection, opening a destination, explicit Apply/Reset/Search/Load and schedule selection close it. If the viewport becomes wide while open, close modal mode without dropping state and focus the corresponding visible navigation control. Reflow without clipping at 200% zoom.
+
+Only header-origin navigation transfers focus after the destination DOM commit and drawer close. Consume a pending destination in the parent synchronous layout effect: wide viewports focus `#main` with `preventScroll`, allowing the existing subsequent first-entry Search query autofocus to win; compact viewports focus the persistent **Open inbox filters** or **Open search filters** opener. First compact Search query autofocus still waits for explicitly opening its drawer. Evaluate the current `(max-width: 759px)` media query at handoff, discard superseded navigation/Settings intent, and never schedule a competing later autofocus frame or focus an inert/closed destination. Ordinary rail, tray and notification navigation retain their existing focus behavior. Visibility depends only on surface, including loading, empty, denied, offline and cached-refresh states; controllers, query instances, filters, cursors, per-surface scroll, selected session, composer and New session drafts remain connection-scoped memory. Hiding actions introduces no Web Storage, extra reads/writes, feature flag, API/schema change or telemetry. Issue #1149 supersedes only the previous globally visible header-action rule. Verification and native coverage limits are recorded in its [independent evidence record](evidence/delidev/issue-1149/home-sidebar-actions.md); the historical ledger remains frozen under the current structure contract.
 
 ### Project-grouped session sidebar
 The Sessions and New Session contexts share the same project-grouped session lists and cursors, preserving loaded rows and selection while the composer is open. Sidebar-only styling must not alter the conversation/composer, title bar, or right-side panels. The rail and groups remain keyboard-operable with visible focus, descriptive names/tooltips, and reduced-motion-safe status graphics.
@@ -242,13 +244,33 @@ Rows and Manage display Token storage and Identity validation separately, includ
 
 Settings-specific colors and system fonts are scoped to this modal and remain CSP-compatible: white content, pale-gray navigation, 8px control radii, a 12px empty-panel radius, 40px minimum controls, decorative outline icons and non-color selected-state semantics. Do not add a route, native window, dependency, external asset, inline-style exception, public API, persisted schema, storage, authorization, credential, polling or migration change. Component tests do not establish native geometry or keyboard containment; record native desktop smoke evidence separately, including platform and viewport, and report unsupported/unavailable platforms without claiming acceptance.
 
+#### Projects grouped presentation
+Issue #1157 adds a Projects-only exception to the shared white-content, 40px-control and 8px-radius Settings defaults. All Projects states share a centered fluid column with a maximum width of 820px, including the heading, scope description, toolbar, reads, forms and deletion confirmation. Preserve 40px content padding, 24px below 1100px and the existing narrow-screen padding. The single Projects title is 24px semibold with “Saved on the selected server.” below; Refresh settings and the single + New Project action stay together at the upper right of the list and stack when space is narrow. The content uses system fonts, 13px body text, #F5F5F7 background, white panels with #DCDCE1 borders and 12px radii, #202024 primary text, #62626A secondary text and #0067D9 primary/focus accents. Controls are at least 36px high with 7px radii; their #85858D boundaries retain AA control contrast. Keep decorative outline SVGs hidden from assistive technology, static CSS compatible with `style-src 'self'`, and visible focus. Other categories and the shared shell retain their defaults.
+
+Only a successful empty first page with no continuation token and no read failure shows the approximately 300px-high empty panel, 24px after the heading. Center a 48px neutral icon tile with a 24px outline folder and the 17px semibold “No projects yet” title. Its centered secondary copy, bounded to 430px, is exactly “Group repositories and choose which Agent Workers and AI accounts a project can use.” followed by “Choose New Project to get started.” There is no second create action. Initial loading/failure never claims emptiness. Successful cached results remain during refresh; failed refreshes retain rows with their sanitized error, guidance, correlation and “Refresh failed. Showing the last successfully loaded results.” Failed cached emptiness does not show the definitive empty panel. Empty later/continuation pages show “No projects on this page.” and retain First page/Next page. Hide pagination only for successful final first-page emptiness.
+
+Loaded Projects use one white divided panel, preserve server order and tokens, show complete wrapping names/IDs and retain project-specific accessible Edit/Delete actions. No sorting, row reads or automatic page traversal is added. Unsupported schemas disable Edit/Delete. New Project remains available during list loading/read failure; server authorization remains authoritative. Existing resource-read failures and revision mismatch block a new edit Save without discarding the draft.
+
+Create/edit forms retain every existing field and explanation in four white groups: Name, Repositories, Agent Workers and AI accounts. Repositories retain ordered selectors, Up/Remove controls and explicit required Primary repository. Removing the primary clears it without replacement. Each restriction retains configured-empty “permits none” semantics; turning it off clears selected IDs and permits otherwise eligible entries. Keep full serialized documents, byte limits, captured revisions, busy/uncertain locks and Save/Cancel/original request retries beneath the form. Deletion uses the same scoped white panel while retaining confirmation, session/history consequences, future schedule effects and the original revision/retry. No autosave or replay is added.
+
+Issue #1138 continues to own the opening lifetime: closing via Close, Escape/native cancel or navigation discards Projects drafts, editors, confirmations, cursors, waits and uncertain presentation. Ordinary reopening starts at AI Subscription; targeted New Project/Repositories entry, protected/deferred navigation, same-identity reconnect and successful-save invalidation remain unchanged within an opening. Preserve sibling session/composer/query state and late-result/cache-disposal guards. Native decorations, maximization, 1280×820 restored and 960×640 minimum sizes remain unchanged. Validate empty/list/create/edit/delete at 1440×900, 1280×820, 960×640 and 200% zoom, preserving the below-760px grouped native select, scrolling to all actions and full identities. Native dialog background inertness, keyboard containment, Escape and opener restoration require separate actual desktop evidence; browser and component checks alone cannot establish them.
+
 Account metadata editing is separate from credential connection, validation, catalog refresh and disconnection. API-key input is password-masked, limited to the server's printable ASCII contract, and cleared on submission or hiding the form. Its wire bytes can remain only in the bounded opening-scoped exact pending request after uncertainty; completed React Query mutation variables are released. Keys never enter read keys, logs or browser persistence. Keyless connection requires the selected provider's explicit keyless configuration. Subscription configuration never implies implemented login or inherited system credentials.
 
-Account settings separate **AI Subscription** and **AI API Keys** presentation sections while continuing to query the existing Account resource. Each section sends the server-side account-type selector; provider-row links add the exact provider ID. Filtering must happen before pagination, and cursors must remain scoped to the exact account type and provider. The desktop requires the provider activation, active-model filter, account-provider filter and explicit account-type-filter capability markers before enabling split lists or the guided API account flow. It must never fall back to a mixed list, client-page filtering or an inferred all-enabled provider inventory. The API provider inventory's Add AI API key action opens the two-step wizard with that enabled provider selected. The wizard rechecks the fresh provider identity, authentication, protocol, endpoint and enabled state before saving account metadata and before an explicit credential connection; it never validates or discovers models automatically. API connection, validation, health, quota, exhaustion and credential cleanup remain distinct states. Navigation stays locked during account creation, settings and connection workflows, with exact uncertain requests retained for deliberate retry. Subscription login remains unavailable; existing subscription configurations and metadata remain manageable without a login action. The collapsed subscription-provider section permits only native-subscription protocol, subscription authentication and an empty endpoint.
+Account settings separate **AI Subscription** and **AI API Keys** presentation sections while continuing to query the existing Account resource. Each section sends the server-side account-type selector; provider-row links add the exact provider ID. Filtering must happen before pagination, and cursors must remain scoped to the exact account type and provider. The desktop requires the provider activation, active-model filter, account-provider filter and explicit account-type-filter capability markers before enabling split lists or the guided API account flow. It must never fall back to a mixed list, client-page filtering or an inferred all-enabled provider inventory. The API provider inventory’s Add AI API key action opens the entry form directly with that exact enabled saved provider entry, consuming each deliberate event key once. The wizard rechecks the fresh provider identity, authentication, protocol, endpoint and enabled state before saving account metadata and before an explicit credential connection; it never validates or discovers models automatically. API connection, validation, health, quota, exhaustion and credential cleanup remain distinct states. Navigation stays locked during account creation, settings and connection workflows, with exact uncertain requests retained for deliberate retry. Subscription login remains unavailable; existing subscription configurations and metadata remain manageable without a login action. The collapsed subscription-provider section permits only native-subscription protocol, subscription authentication and an empty endpoint.
+
+Issue #1145 replaces the creation picker’s search, radios, selected markers, numbered steps and Continue with native provider action buttons. Choose an API provider / Select a provider to connect your entry. precedes one server-ordered page of enabled saved API entries. The picker requests `query: ""`, `enabledOnly: true`, `pageSize: 50` and its own cursor, independent of AI API Keys’ Search providers/filter and API Providers’ search. Both account and picker inventories must retain all four capability gates; no generic resource page or credential inference can supply eligibility. Direct-entry details remain disabled while either inventory lacks the gates, and become unavailable again if those capabilities are lost. The clicked UUID and complete summary/Resource are retained as one bounded hint even when the account-filter page does not contain that provider. The clicked snapshot remains authoritative across unrelated inventory refreshes; the existing fresh provider checks validate or reject its contract before writes.
+
+The creation card retains a 760 CSS px maximum width, 20px padding at every width, 12px radius, white background and 1px `#d8dee8` border. The picker’s internal content uses two equal columns at 560px or wider and one below that threshold, with 12px gaps. Neutral native `button type="button"` cards have 88px minimum height, 16px padding and 9px radius; each shows a bold exact provider name, muted API key or Local endpoint method and decorative chevron. No selected/pressed semantics, invented logos or inferred OAuth availability are used. System fonts, text `#202632`, muted `#5b6577` and focus/accent `#2563d8` remain scoped to this workflow; the narrow subscription-form padding rule remains separate.
+
+A deliberate click, Enter or Space opens the existing entry form immediately and focuses its step heading. Back/Change retains the picker page and restores the original provider-button focus. Next page exists only with a continuation token; First page exists on later pages, including a successful empty later page. Reads remain bounded without whole-inventory accumulation. Retry preserves the exact query/cursor. Loading, typed permission denial, read failure/Retry and stale cached results remain explicit. Open API Providers is offered only for a successful empty first page without continuation; empty pages with continuation keep Next and cannot imply globally empty inventory. Restoration, rerender, Strict Mode replay and provider navigation cannot create/connect/validate/discover or start authentication. Closing follows the opening-disposal policy above.
+
+Entry-name/key validation, password masking and transient key clearing, collapsed preferences (`enabled=true`, `exclude_automatic=false`, `recovery_notifications=true`), explicit keyless connection and server-relative localhost guidance remain unchanged. Fresh provider checks precede metadata save and connection; one save is followed by one deliberate connection, with saved-account retention on connection failure, unverified health, separate validation/discovery, original request/revision retries, navigation locks and late-continuation guards. Browser/component fixtures and native/provider acceptance are recorded separately in [issue #1145 evidence](evidence/delidev/issue-1145/provider-picker.md).
+
 
 API entry creation is a content-level Provider → Details flow inside Settings. Only the provider inventory's enabled API entries may be selected. The Details step keeps alias, a masked transient key only when required, and collapsed existing account preferences; keyless entries require an explicit connect action and retain server-relative localhost meaning. Creation is followed by a fresh provider read immediately before one explicit connection attempt, with the created account retained after connection failure. Manage/Done navigation stays disabled while that provider check is in flight. Exact uncertain create/connect requests use their original identities and revisions, visible keys clear at submission, and hiding or changing provider revokes late automatic connection continuations. Validation and discovery remain separate explicit actions and connection does not prove readiness.
 
-The `api-accounts` category presents **AI API Keys** in the sidebar, compact selector and page title, with the description “Manage AI API keys and keyless local connections. Connection and health are separate states.” API-authored list, wizard, preference, loading, stale/error and accessible copy uses **entry**: Add AI API key, Back to AI API Keys, Manage AI API Keys, Filter entries by provider, Entry name, Continue to details and 2 of 2 · Details. Its empty state is “No AI API key entries. Add an entry for an enabled API provider. Keyless local providers do not require a key.” The masked secret remains API key; keyed and keyless actions are Connect API key and Connect local endpoint, followed by separate Validate connection, Disconnect and Manage connection actions. Keyless failures never ask for a key. Shared editor, field, connection and deletion components apply entry terminology only to Account documents with `type: "api"`; preserve subscription/mixed account terminology, aliases, server diagnostics and all stored/RPC/CLI identities. This presentation ships in the ordinary desktop frontend build with no migration, flag, new logging or backend/native change. Verification is recorded under [issue #1135](evidence/delidev/issue-1135/verification.md).
+The `api-accounts` category presents **AI API Keys** in the sidebar, compact selector and page title, with the description “Manage AI API keys and keyless local connections. Connection and health are separate states.” API-authored list, wizard, preference, loading, stale/error and accessible copy uses **entry**: Add AI API key, Back to AI API Keys, Manage AI API Keys, Filter entries by provider, Entry name, Choose an API provider and Connect your entry. Issue #1145 supersedes the prior Continue to details control and numbered step marker with direct provider actions. Its empty state is “No AI API key entries. Add an entry for an enabled API provider. Keyless local providers do not require a key.” The masked secret remains API key; keyed and keyless actions are Connect API key and Connect local endpoint, followed by separate Validate connection, Disconnect and Manage connection actions. Keyless failures never ask for a key. Shared editor, field, connection and deletion components apply entry terminology only to Account documents with `type: "api"`; preserve subscription/mixed account terminology, aliases, server diagnostics and all stored/RPC/CLI identities. This presentation ships in the ordinary desktop frontend build with no migration, flag, new logging or backend/native change. Verification is recorded under [issue #1135](evidence/delidev/issue-1135/verification.md).
 
 Connection starts unverified. Validation and model discovery show their independent server observations; only explicit actions invoke them. Disconnection describes cancellation and credential removal, and presents accepted state separately from pending credential/Worker cleanup. A retained removal marker retries its original request ID and expected revision, never the newer account revision. Unsupported or unsafe revision encoding disables that retry instead of guessing.
 
@@ -294,6 +316,103 @@ Execution-Worker settings show platform, last observation, exact selected/resolv
 Schedules have a dedicated desktop surface that remains mounted across navigation. Creation/editing sends only the strict editable definition: prompt, project, Agent, Worker, input mode, cron, explicit IANA timezone, overlap policy and optional per-repository starting overrides. Defaults are paused Worktree schedules. The server alone computes next UTC due times, skips offline instants, applies overlap/skip/FIFO wait and resolves execution authority. Existing Local definitions can be edited with their unchanged authenticated Worker; new/relocated Local schedules require fresh private proof from this computer's paired Worker through the native boundary. The UI never accepts a supplied UUID as origin proof.
 
 Pause/resume changes future scheduling only. Run now explicitly confirms one independent occurrence, works while paused under ordinary server eligibility, and retains the original request after uncertain acknowledgment without enabling the future timer. Accepted occurrences are shown independently from native execution and current session state. Delete confirms future configuration removal, while the independent paginated history remains visible, refreshable and accessible by retained schedule ID. Every configuration/control mutation uses its captured revision, and stale edits preserve their draft. History and status reads do not replay side effects.
+
+### New schedule creation (issue #1152)
+
+The creation presentation owns `apps/delidev/src/schedule-creation.tsx` and
+`apps/delidev/src/schedule-creation.css`; shared schedule state and mutations
+remain in the existing schedule editor.
+
+Only creation without an initial resource uses the one-page Task, Execution and
+Repeat schedule presentation. Editing, list/detail/history, the icon rail,
+context pane and scheduling operations retain their existing contracts. At CSS
+viewport widths of at least 1280px, center a grid capped at 1080px, with Task then
+Execution in a flexible left column, a 320px Repeat column, and a 24px gap. Below
+1280px use Task -> Execution -> Repeat. The main-content creation form owns a
+scrolling body and a separate white, top-bordered persistent action row; its
+actual wrapped height reserves space without covering errors, pagination, final
+controls or focus outlines. Keep scrolling at 960×640, narrow effective widths
+and 200% zoom. Use existing system fonts and tokens, white 12px-radius cards,
+24px card padding, 8px controls of at least 40px, 28px page title, 18px section
+headings and 14px labels. Static creation-scoped CSS preserves the strict
+production `style-src 'self'`, dependencies and native geometry.
+
+The heading is **New schedule**, with **Set up a recurring task for your
+project.** Required Task fields are Schedule name, Project and Scheduled prompt;
+name/prompt placeholders are **e.g. Weekday code review** and **Describe what the
+agent should do on each run...**. The multiline prompt resizes vertically.
+Execution requires explicit Agent Worker and execution-machine choices with
+visible catalog loading, empty-page, permission/authentication, connection and
+cached-refresh failure states. Preserve bounded paging and exact off-page or
+unavailable selections without fallback. The execution-machine selector has
+the visible label and accessible name **Runner Device**. Selectors share a row
+only when their available width permits. Native Workspace and Execution mode
+radio groups offer Worktree/Local computer and Execute/Plan, with ordinary
+checked/keyboard semantics. Local disables only arbitrary execution-machine choice. Selection
+and new Local submission each acquire fresh proof for the exact selected
+connection/machine; proof never enters form state, queries or documents.
+
+Worktree exposes an initially collapsed **Starting reference overrides**
+disclosure with **Using saved project references**, or the override count. Keep
+its complete existing explanation, repositories, reference types/fields,
+addition/edit/removal, uniqueness and 1000-entry ceiling. Collapse keeps its
+contents and drafts mounted; invalid hidden required references reopen for
+focus. Changing Project or selecting Local clears overrides. Local omits this
+read/form path and explains shared checkouts without fetch or starting overrides.
+
+Frequency is an internal enum, never a definition field: Daily, Weekdays,
+Weekly, Custom cron. Defaults remain paused, Worktree, Execute, Overlap,
+Weekdays 09:00, `0 9 * * 1-5` and explicit `UTC`. Preset Time is required
+minute-resolution `HH:mm`; Weekly additionally selects exactly one weekday,
+first Monday, retained when leaving/returning. For valid hour `h` and minute `m`,
+Daily emits `m h * * *`, Weekdays `m h * * 1-5`, Weekly `m h * * d` (Sunday 0,
+Monday 1), with decimal numbers without leading zeros. Preset switches retain
+time. Custom exposes the original required 512-character Cron expression and
+five-field guidance; switching to Custom preserves the existing expression
+exactly. Custom -> preset imports only the time from exact canonical generated
+numeric forms above, including valid numeric weekday 0–6; its weekday never
+replaces the separately retained Weekly weekday. Arbitrary, padded or otherwise
+noncanonical expressions use the last valid preset time, or 09:00 when absent.
+No general parser, browser timezone substitution or client calendar validation
+is introduced. Empty/invalid Time remains a visible draft, blocks submission and
+cannot silently submit the last valid Cron. Preset summaries show frequency,
+time, entered timezone and actual Cron only when Time is valid; Custom shows raw
+Cron/timezone without natural-language interpretation. These are selection
+summaries, not execution-eligibility proof. Display **Next run is calculated by
+the server after saving.** The server retains all calendar/timezone, DST and
+absolute next-UTC authority.
+
+Retain Overlap independent sessions, Skip new occurrences while prior work is
+active, and FIFO Wait until confirmed cleanup. **Enable future scheduled runs**
+is unchecked by default with paused-creation guidance. Explain continued server
+scheduling after desktop closure and skipped offline due instants without a
+catch-up burst. The action row shows Paused/Enabled on creation plus workspace
+and mode, secondary Cancel and primary Create schedule. Cancel ends creation and
+returns to the list guidance without a write; acknowledgment enters schedule
+details. Local verification, saving and uncertainty lock mutable fields and
+Cancel; uncertainty also disables Create and exposes **Retry the same schedule**
+using its original retained definition bytes, token, request ID and revision.
+Definite errors permit draft correction. Preserve 1 MiB definition, 256 KiB UTF-8
+prompt and existing field bounds, retaining the previous valid draft on overflow.
+Every save remains strict schema-v1 editable definition only, empty resource ID
+and revision `0n` for creation, with one mutation identity and existing owner/client
+authorization. Frequency, time, weekday, disclosure and resolved/server-owned
+metadata never serialize; no RPC, storage schema or migration changes.
+
+Preserve all creation authoring state, including raw Custom input, time/weekday
+and disclosure, across global navigation, Settings and same-identity reconnect;
+connection replacement clears it. Inactive reads suspend. Existing schedule
+replacement locks remain active while editing/in-flight/uncertain. Focus Schedule
+name once on the first active fresh entry; retained entry, refetch and responsive
+changes cannot steal focus. Required labels, native radios, disclosure expanded
+state, visible focus, status/error announcements and Task -> Execution -> Repeat
+-> actions focus order stay accessible. The existing compact native drawer keeps
+focus containment, Escape/Close and opener restoration without remounting drafts.
+No new motion, telemetry, prompt/token/account logging, feature flag or server
+capability gate is added. Ordinary frontend/native packaging and compatible
+ScheduleService servers retain the same definition boundary. Record actual
+platform/viewport/zoom native acceptance and unavailable platforms separately
+from component checks in the evidence ledger.
 
 ### Session selection and recovery
 Session creation uses paginated project/Agent/Worker selectors with no first-option fallback, retains configured-empty Agent restrictions, and bounds the first prompt to 256 KiB UTF-8 before state retention. The first-message textarea keeps a visible keyboard focus indicator. Disable Project selection while Local Worker proof or session creation is pending or uncertain so the displayed selection remains aligned with the retained request. Project sessions allow independent starting overrides by repository without changing saved base references. General Chat clears project/Git selection and uses the selected Worker's isolated directory. Explicit Local creation reads this computer’s original paired Worker proof through the native boundary and keeps existing checkouts as-is.

@@ -131,10 +131,10 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   change("Project", (await within(screen.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
   change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
   change("Runner Device", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
-  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Local computer" }));
   await waitFor(() => expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true));
-  change("Scheduled prompt", "Private schedule fixture prompt"); change("Cron expression", "0 0 1 1 *"); change("IANA timezone", "Asia/Seoul");
-  fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
+  change("Frequency", "custom"); change("Scheduled prompt", "Private schedule fixture prompt"); change("Cron expression", "0 0 1 1 *"); change("IANA timezone", "Asia/Seoul");
+  fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   fireEvent.click(await screen.findByRole("button", { name: "Resume future runs" }));
   fireEvent.click(await screen.findByRole("button", { name: "Pause future runs" }));
   await screen.findByRole("button", { name: "Resume future runs" });
