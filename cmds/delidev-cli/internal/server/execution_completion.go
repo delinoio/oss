@@ -64,6 +64,11 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
 	if verified {
 		progress.CleanupVerified = true
+		if input.Configuration.Harness == domain.GrokBuild && progress.GrokStop == nil {
+			if err := tx.PutGrokAccounting(record.ID, sr.ProjectID, input, *progress, completion); err != nil {
+				return store.Record{}, err
+			}
+		}
 		if completion.Version == 2 && completion.Outcome == domain.ExecutionSucceeded && session.Outcome == domain.ExecutionSucceeded && previousDispatch == domain.DispatchClaimed && session.Archive == domain.NotArchived && session.Recovery == domain.NoRecovery && progress.Waiting == (domain.NativeWaiting{}) && progress.UnconfirmedResponses == 0 {
 			session.Dispatch, session.NextExecutionIntent = domain.DispatchReady, domain.ContinueAutomatically
 		}

@@ -33,3 +33,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Common parsing, authenticated clients, document input, and output envelopes belong to `arguments.go`, `client.go`, `document.go`, and `output.go`. Command-family dispatch belongs in `dispatch_<family>.go`; preserve request ID propagation and the generic resource fallback.
+
+- `usage summary --accounting-profile native-units-v1` requires the server echo before exposing native units. Omission preserves the existing response-only profile; unknown values fail. Keep source kinds and exact decimal totals distinct.

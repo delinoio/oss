@@ -41,3 +41,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### Source ownership
 
 - Keep process startup/shutdown in `server_startup.go`, HTTP authorization in `server_http.go`, Connect registration in `server_routes.go`, and system status/capability responses in `server_status.go`. New service behavior belongs in its service file; preserve middleware and registration order.
+
+- Publish GrokClosedInput accounting only in the original independently verified completion transaction, after matching original input, response, closed history and owned cleanup. Echo explicit NATIVE_UNITS_V1 reads, retain legacy response-only coverage and bound the combined units/groups/wire sizes. Advertise native accounting independently with capability value 4; never price Grok categories.
