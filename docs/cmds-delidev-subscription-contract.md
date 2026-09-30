@@ -48,7 +48,7 @@ Optional server-owned `Account.subscription` JSON preserves historical account b
 
 The existing OS-backed [credential vault](cmds-delidev-credentials-contract.md) stores bundles with `account-login` purpose and immutable UUID-v7 references. Native plaintext exists only in the leased Worker's private runtime; it is removed after owned process closure. Execution retains original history and checks its bounded remaining files for credential remnants. Worker journals contain only original claim/completion identities and cleanup outcomes, never bundle bytes or token digests. Temporary login presentation lives only in server memory.
 
-Missing refresh write-back, unconfirmed cleanup, Worker loss/replacement or server restart retains the original lease as recovery-required. The old generation cannot be redistributed. These lifecycle commands neither erase recovery evidence nor clear an uncertain lease; independent native recovery remains a separate product boundary.
+Uncertain delivery or completion closes the Worker subscription lane and joins its children so the server records lost ownership. An acknowledged failed operation retains its confirmed completion and leaves unrelated accounts on that lane active. Missing refresh write-back, unconfirmed cleanup, Worker loss/replacement or server restart retains the original lease as recovery-required. The old generation cannot be redistributed. These lifecycle commands neither erase recovery evidence nor clear an uncertain lease; independent native recovery remains a separate product boundary.
 
 ## Security
 

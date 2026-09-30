@@ -124,7 +124,17 @@ func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, succe
 	return nil
 }
 
-func watchSubscriptions(ctx context.Context, config Config, credential Credential, instance domain.ID) error {
+// A failed operation with acknowledged completion no longer owns a lease.
+// It must not interrupt unrelated accounts still running on this lane.
+type managedReportedFailure struct{ error }
+
+func (e *managedReportedFailure) Unwrap() error { return e.error }
+
+func watchSubscriptions(ctx context.Context, config Config, credential Credential, instance domain.ID) (returned error) {
+	// The stream and child operations share cancellation so uncertain delivery
+	// closes the server's ownership lane and triggers lost-lease reconciliation.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	client, closeRPC := subscriptionRPC(credential)
 	defer closeRPC()
 	stream, err := client.WatchSubscription(ctx, authenticated(credential, &pb.WatchSubscriptionRequest{MachineId: string(credential.MachineID), InstanceId: string(instance)}))
@@ -135,8 +145,16 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	active := map[domain.ID]bool{}
-	ctx, cancel := context.WithCancel(ctx)
-	defer func() { cancel(); wg.Wait() }()
+	failures := make(chan error, 1)
+	defer func() {
+		cancel()
+		wg.Wait()
+		select {
+		case err := <-failures:
+			returned = err
+		default:
+		}
+	}()
 	for stream.Receive() {
 		r := stream.Msg().Account
 		if r == nil {
@@ -158,8 +176,18 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 		go func() {
 			defer wg.Done()
 			defer func() { mu.Lock(); delete(active, op.ID); mu.Unlock() }()
-			if err := runManagedAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op); err != nil && config.Logger != nil {
-				config.Logger.WarnContext(ctx, "managed_subscription_requires_reconciliation", "account_id", r.Id, "operation_id", op.ID, "action", op.Action, "code", domain.SafeError(err).Code)
+			if err := runManagedAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op); err != nil {
+				if config.Logger != nil {
+					config.Logger.WarnContext(ctx, "managed_subscription_requires_reconciliation", "account_id", r.Id, "operation_id", op.ID, "action", op.Action, "code", domain.SafeError(err).Code)
+				}
+				var reported *managedReportedFailure
+				if !errors.As(err, &reported) {
+					select {
+					case failures <- err:
+					default:
+					}
+					cancel()
+				}
 			}
 		}()
 	}
@@ -186,6 +214,8 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 	defer func() {
 		if err := lease.finish(latest, cleanup, refresh, success); err != nil {
 			returned = err
+		} else if returned != nil {
+			returned = &managedReportedFailure{returned}
 		}
 		clear(latest)
 	}()
