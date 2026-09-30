@@ -87,6 +87,7 @@ func TestRealConnectAuthenticationOriginsAndRedaction(t *testing.T) {
 	}
 	for _, capability := range []pb.SystemCapability{
 		pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1,
+		pb.SystemCapability_SYSTEM_CAPABILITY_USER_SERVICES_V1,
 		pb.SystemCapability_SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1,
 	} {
 		if !slices.Contains(response.Msg.Capabilities, capability) {

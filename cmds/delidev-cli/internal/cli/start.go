@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -54,7 +55,12 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 	if err != nil {
 		return nil, err
 	}
+	serviceManaged, serviceStopped := false, false
 	if automatic {
+		serviceManaged, serviceStopped, err = userservice.ManagedIntent(o.dataDir, userservice.Server)
+		if err != nil {
+			return nil, err
+		}
 		if intent.State != server.DesiredRunning {
 			return map[string]any{"state": "stopped"}, nil
 		}
@@ -92,6 +98,12 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 		return status, nil
 	} else if code := domain.SafeError(err).Code; code != domain.ServerUnavailable && code != domain.Unavailable {
 		return nil, err
+	}
+	if automatic && serviceManaged {
+		if serviceStopped {
+			return map[string]any{"state": "stopped"}, nil
+		}
+		return nil, domain.Fail(domain.RecoveryRequired, "The registered native service has not confirmed readiness.", "Inspect user service status on this computer; automatic controllers cannot launch a competing server process.")
 	}
 	// Endpoint removal precedes the original store lock release during final
 	// shutdown. Join that ownership boundary before publishing a new intent or

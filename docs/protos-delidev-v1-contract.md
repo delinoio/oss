@@ -343,12 +343,19 @@ to the current session; cancellation binds it to the original current job.
 Successful preview, exact snapshot and original recovery job references have
 separate fields. Responses expose current original Resource jobs with request
 UUID/replay status; polling never resends native side effects. GetStatus adds
-`WORKSPACE_STORAGE_V1` at enum value 3; the existing `SESSION_FORWARDING_V1`
-retains value 2. Capability values are distinct and never alias or reinterpret
-main's forwarding capability. Snapshot metadata stays in the existing Snapshot kind
+`WORKSPACE_STORAGE_V1` at enum value 4; the existing `SESSION_FORWARDING_V1`
+retains value 2 and `USER_SERVICES_V1` retains value 3. Capability values are
+distinct and never alias or reinterpret main's forwarding or user-service
+capabilities. Snapshot metadata stays in the existing Snapshot kind
 and generated Go/TypeScript/Connect Query bindings reproduce from the schema.
 The [storage contract](cmds-delidev-storage-contract.md) owns exact authorization,
 state publication, safe copying, cancellation and explicit recovery semantics.
+
+## Current-user services
+
+`SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
+
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1` and the merged `SESSION_FORWARDING_V1 = 2`; the additive `USER_SERVICES_V1` uses `3`. The additive `WORKSPACE_STORAGE_V1` uses `4`. `GetStatus` advertises all four independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 

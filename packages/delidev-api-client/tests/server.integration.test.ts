@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { ConfigurationService, EntityKind, ResourceService, SystemService } from "../src/gen/delidev/v1/delidev_pb.js";
+import { ConfigurationService, EntityKind, ResourceService, SystemService, SystemCapability, UserServiceKind, UserServiceState } from "../src/gen/delidev/v1/delidev_pb.js";
 import { createDeliDevTransport } from "../src/transport.js";
 import { clientFailure, FailureCode } from "../src/errors.js";
 import { ConnectionState, SyncKind, synchronizeResources } from "../src/synchronization.js";
@@ -91,4 +91,18 @@ it("decodes the Go server's typed authentication error without returning credent
     expect(problem.correlationId).toMatch(/^[0-9a-f-]{36}$/);
     expect(JSON.stringify(problem)).not.toContain(token);
   }
+});
+
+it("exposes typed user-service capability and metadata without native side effects", async () => {
+  const system = createClient(SystemService, transport);
+  expect((await system.getStatus({})).capabilities).toEqual(expect.arrayContaining([
+    SystemCapability.AUTOMATIC_TITLES_V1,
+    SystemCapability.SESSION_FORWARDING_V1,
+    SystemCapability.USER_SERVICES_V1,
+    SystemCapability.WORKSPACE_STORAGE_V1,
+  ]));
+  const result = await system.getUserService({ kind: UserServiceKind.SERVER });
+  expect(result.service).toMatchObject({ kind: UserServiceKind.SERVER, revision: 0n, state: UserServiceState.ABSENT, loginEnabled: false });
+  expect(JSON.stringify(result, (_, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain(token);
+  await expect(system.getUserService({ kind: UserServiceKind.UNSPECIFIED })).rejects.toMatchObject({ code: 3 });
 });
