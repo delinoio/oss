@@ -246,6 +246,12 @@ func (s *Store) GetBackupRestore(ctx context.Context, id domain.ID) (BackupResto
 	if err != nil {
 		return v, storageError(err)
 	}
+	// External receipts retain the original actor across database replacement;
+	// authorization in the current database cannot transfer that ownership.
+	actor, ok := domain.PrincipalFrom(ctx)
+	if !ok || actor != v.Input.Actor {
+		return BackupRestore{}, domain.Fail(domain.PermissionDenied, "This restore receipt belongs to another actor.", "Use the owner or paired client that submitted the original restore request.")
+	}
 	owner, err := s.ScopeIdentity(ctx)
 	if err != nil || owner != v.Input.ServerID {
 		return v, backupUnavailable()

@@ -280,6 +280,9 @@ global UUID-v7 `--request-id` on uncertain responses. `backup restore-status
 --id REQUEST-ID` observes that exact original receipt after restarting the server.
 No command implicitly starts a server. Omitted live revision differs from explicit
 zero. Workers and revoked clients cannot inspect, restore or read restore receipts.
+Receipt reads require the exact original owner or paired-client principal recorded
+in the external journal, including after rollback and restart. Another currently
+authorized actor cannot read the receipt by knowing its request UUID.
 
 The thirty-second cancellable operation holds both the managed-file gate and
 exclusive store gate under the server's process lock. It checks original actor,
