@@ -425,6 +425,41 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-schedule-row > p { margin: 2px 5px 0; color: #5b6577; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .schedule-page { min-height: 100%; }
 
+/* PR presentation follows the active surface without replacing controllers or affecting neighboring contexts. */
+.sidebar-pull-requests .sidebar-pane { gap: 12px; padding-inline: 16px; }
+.sidebar-pull-requests .sidebar-header h1 { font-size: 17px; font-weight: 600; }
+.sidebar-pull-requests .sidebar-surface-content { padding: 0 0 8px; color: #202632; font-size: 13px; line-height: 1.5; }
+.sidebar-pull-requests .sidebar-surface-content > h2 { margin: 0 0 16px; font-size: 17px; font-weight: 600; }
+.sidebar-pull-requests .sidebar-list-heading { gap: 8px; margin: 0 0 8px; }
+.sidebar-pull-requests .sidebar-list-heading h3, .sidebar-pull-requests .sidebar-query-options > h3 { margin: 0; color: #5b6577; font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none; }
+.sidebar-pull-requests .sidebar-surface-content button { border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.sidebar-pull-requests .sidebar-list-heading button, .sidebar-pull-requests .sidebar-repository-pages button { min-height: 36px; padding: 8px; border-color: transparent; background: transparent; color: #5b6577; font-size: 12px; }
+.sidebar-pull-requests .sidebar-list-heading button:hover, .sidebar-pull-requests .sidebar-repository-pages button:hover { background: #e7efff; }
+.sidebar-pull-requests .sidebar-repository-row { grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 8px; margin-block: 8px; padding: 12px 8px !important; }
+.sidebar-pull-requests .sidebar-repository-icon { width: 16px; height: 16px; margin-top: 2px; color: #5b6577; }
+.sidebar-pull-requests .sidebar-repository-info { display: grid; min-width: 0; gap: 8px; }
+.sidebar-pull-requests .sidebar-repository-row[aria-pressed="true"] { background: #e7efff; font-weight: 600; }
+.sidebar-pull-requests .sidebar-repository-row[aria-pressed="true"] .sidebar-repository-icon { color: #17499f; }
+.sidebar-pull-requests .sidebar-repository-row small { color: #5b6577; font-size: 12px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
+.sidebar-pull-requests .sidebar-repository-empty { display: grid; justify-items: center; gap: 12px; margin-block: 8px 16px; padding: 16px 8px; color: #5b6577; text-align: center; }
+.sidebar-pull-requests .sidebar-repository-empty .sidebar-icon { width: 24px; height: 24px; }
+.sidebar-pull-requests .sidebar-repository-empty p { margin: 0; }
+.sidebar-pull-requests .sidebar-repository-pages { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+.sidebar-pull-requests .sidebar-query-options { margin-top: 16px; padding-top: 16px; border-top: 1px solid #d8dee8; }
+.sidebar-pull-requests .sidebar-query-options > h3 { margin-bottom: 12px; }
+.sidebar-pull-requests .sidebar-form { gap: 12px; }
+.sidebar-pull-requests .sidebar-form label { min-width: 0; gap: 8px; margin: 0; color: #202632; font-size: 13px; font-weight: 500; }
+.sidebar-pull-requests .sidebar-form input, .sidebar-pull-requests .sidebar-form select { min-width: 0; min-height: 40px; padding: 8px; border-radius: 8px; }
+.sidebar-pull-requests .sidebar-help { margin: 8px 0 16px; font-size: 12px; }
+.sidebar-pull-requests .sidebar-form .sidebar-help { margin: 0; }
+.sidebar-pull-requests .sidebar-form > button { min-height: 40px; margin: 0 0 8px; }
+.sidebar-pull-requests .sidebar-action { min-height: 40px; margin: 24px 0 8px; border-color: #d8dee8; background: transparent; font-weight: 500; }
+/* Recovery dialogs live inside the footer. Exclude their entire subtree from inline control overrides. */
+.sidebar-pull-requests .sidebar-footer > p, .sidebar-pull-requests .sidebar-footer :is(p, .problem, small):not(.sidebar-footer dialog *) { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.sidebar-pull-requests .sidebar-footer :is(button, summary):not(.sidebar-footer dialog *) { min-height: 36px; height: auto; padding: 8px; border-color: transparent; border-radius: 8px; background: transparent; font-size: 13px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+.sidebar-pull-requests .sidebar-footer button:not(.sidebar-footer dialog *):hover { background: #e7efff; }
+.sidebar-pull-requests .sidebar-footer details:not(.sidebar-footer dialog *) { margin-block: 8px; padding: 0; border: 0; }
+
 @media (max-width: 759px) {
   .app { grid-template-columns: 52px minmax(0, 1fr); min-height: 0; }
   .sidebar { display: contents; }
@@ -433,6 +468,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
   .sidebar-pane-dialog:modal { display: block; box-shadow: 0 0 0 100vmax #16243b66; }
   .sidebar-pane-dialog:modal::backdrop { background: transparent; }
   .sidebar-pane { width: 100%; height: 100%; padding: 12px 12px 9px; background: #f5f6f8; }
+  .sidebar-pull-requests .sidebar-pane { padding-inline: 16px; }
   .sidebar-drawer-close { display: block; align-self: flex-start; min-height: 40px; }
   .sidebar-context-trigger { display: block; min-height: 40px; margin: 12px 16px; }
   main { grid-column: 2; grid-row: 1; }
@@ -561,4 +597,65 @@ dialog.modal-full-window::backdrop { background: transparent; }
   .settings-compact-selector select { min-height: 40px; color: #202632; font-size: 1rem; }
   .settings-category-heading { flex-wrap: wrap; gap: 14px; }
   .settings-toolbar { justify-content: flex-start; width: 100%; }
+}
+
+/* GitHub profile presentation shares the existing Settings workflow owners. */
+.github-integrations { max-width: 1040px; font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
+.github-integrations button { border-radius: 8px; max-width: 100%; }
+.github-integrations fieldset { min-width: 0; }
+.github-integrations h3 { margin-bottom: 6px; font-size: 1.15rem; }
+.github-integrations h4 { margin: 0 0 12px; font-size: 1rem; }
+.integration-secondary { color: var(--muted); }
+.integration-panel, .integration-editor, .integration-manage { border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.integration-panel-header { flex-wrap: wrap; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.integration-provider { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.integration-provider h3 { margin: 0; font-size: 1rem; }
+.integration-provider p { margin: 2px 0 0; font-size: .875rem; }
+.integration-icon { width: 22px; height: 22px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.integration-provider-mark, .integration-empty-mark { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 10px; width: 40px; height: 40px; background: #f3f5f8; }
+.integration-panel-body { padding: 0 24px; }
+.integration-panel-body > p, .integration-panel-body > .problem { margin-block: 20px; }
+.integration-empty { padding: 40px 0; text-align: center; }
+.integration-empty-mark { width: 52px; height: 52px; margin-bottom: 16px; color: var(--accent); background: #e7efff; }
+.integration-empty h3 { margin-bottom: 12px; }
+.integration-empty p { margin: 0; color: var(--muted); }
+.integration-empty button { margin-top: 22px; }
+.integration-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: setup; list-style: none; margin: 0; padding: 20px 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: .875rem; }
+.integration-steps li { display: flex; align-items: center; gap: 10px; }
+.integration-steps li::before { counter-increment: setup; content: counter(setup); display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 50%; }
+.integration-access-note { margin: 0; padding: 14px 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: .875rem; }
+.integration-storage-note { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; color: var(--muted); font-size: .875rem; }
+.integration-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-block: 24px; border-bottom: 1px solid var(--border); }
+.integration-row:last-child { border-bottom: 0; }
+.integration-row > div:first-child { min-width: 0; flex: 1; }
+.integration-row > .actions { flex-shrink: 0; }
+.integration-row p { margin-bottom: 14px; }
+.integration-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; margin: 16px 0 0; }
+.integration-facts > div { min-width: 0; }
+.integration-facts dt { color: var(--muted); font-size: .875rem; }
+.integration-facts dd { margin: 4px 0 0; }
+.integration-editor { max-width: 760px; padding: 24px; }
+.integration-editor > .actions { margin-top: 20px; }
+.integration-editor fieldset p { color: var(--muted); font-size: .875rem; }
+.integration-manage { padding: 24px; }
+.integration-manage > header { align-items: flex-start; flex-wrap: wrap; }
+.integration-manage > .integration-facts { margin-bottom: 20px; }
+.integration-section { padding-top: 24px; margin-top: 24px; border-top: 1px solid var(--border); }
+.integration-token-guidance { padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: .875rem; }
+.integration-token-guidance summary { cursor: pointer; color: #202632; font-weight: 500; }
+.integration-token-guidance section { margin-top: 14px; }
+.integration-token-guidance section p:last-child { margin-bottom: 0; }
+.github-integrations button.primary:disabled { color: #5b6577; background: #eef1f5; border-color: var(--border); opacity: 1; }
+.github-integrations button.integration-danger { color: #b42332; border-color: #d9a5ab; }
+.github-integrations button.integration-danger:hover { background: #fff3f4; }
+@media (max-width: 1099px) {
+  .integration-row { flex-wrap: wrap; }
+  .integration-row > div:first-child { flex-basis: 100%; }
+  .integration-steps { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 759px) {
+  .integration-panel-header, .integration-editor, .integration-manage { padding: 16px; }
+  .integration-panel-body { padding-inline: 16px; }
+  .integration-steps, .integration-access-note { padding: 16px; }
+  .integration-facts { grid-template-columns: minmax(0, 1fr); }
 }
