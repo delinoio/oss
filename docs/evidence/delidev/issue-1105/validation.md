@@ -31,6 +31,11 @@ Rust source or Settings implementation changes are included.
   passed: server 50.194s, CLI 2.970s. This uses temporary SQLite and authenticated
   loopback fixtures for collection, request/revision receipts, history and CLI
   identity parity; it does not execute a real provider remediation.
+- `GOMAXPROCS=2 go test -race -p 1 -timeout=20m ./cmds/delidev-cli/internal/store`
+  passed the complete store package in 1,110.518s, using the Go source at
+  `ea7683f64daec5e19e98962496c122b45dff5551`. The log is retained at
+  `/private/tmp/issue-1105-store-race.log`. This bounded package rerun does not
+  replace the unsuccessful default aggregate command below.
 - `go vet ./cmds/delidev-cli/...` passed.
 - Type checking and `pnpm exec vitest run src/github-ci.test.tsx src/pr-problems.test.tsx`
   passed: two files / 17 tests. Queue evidence, inert display, historical proof,
@@ -53,7 +58,9 @@ Rust source or Settings implementation changes are included.
   entry/queue fields and ALLGREEN/HEADGREEN strategy enum.
 - Required DeliDev icon LFS content was hydrated and `git lfs fsck` passed.
   Required administrator and ach Go embed output was generated explicitly for
-  the repository formatting hook.
+  the repository formatting hook. All seven repository-owned generated `dist`
+  directories were removed from the final worktree after validation; dependency
+  output inside `node_modules` was retained.
 
 ## Aggregate failures and limits
 
