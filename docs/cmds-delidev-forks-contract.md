@@ -75,7 +75,10 @@ Project forks default to separate detached worktrees at every actual source
 HEAD, including unpushed commits, index changes, working changes and ignored or
 untracked files. No fetch may move that boundary. General Chat copies its owned
 files to a new owned directory. Explicit Local sharing requires independently
-authenticated same-machine Worker authority. Copying is bounded to 256 MiB and 100,000 entries per tree and a two-minute
+authenticated same-machine Worker authority and an original Local source whose
+checkouts are all user-owned. Reject Local sharing from managed Worktree sources
+before acceptance and again at Worker preparation/publication: parent deletion
+owns those paths. Use an independent Worktree copy instead. Copying is bounded to 256 MiB and 100,000 entries per tree and a two-minute
 Worker deadline, with per-chunk cancellation;
 source observations are compared before and after all repositories. Unsupported
 files, mixed snapshots or a failed second copy cannot publish a partial child.

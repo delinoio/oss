@@ -74,6 +74,11 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if domain.Decode(assignment.Preparation, &preparation) != nil || domain.Decode(assignment.Manifest, &manifest) != nil || workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
 		return nil, executionCheckpointUncertain()
 	}
+	if input.Workspace == domain.Local {
+		if err := workspace.ValidateLocalForkSource(manifest); err != nil {
+			return nil, err
+		}
+	}
 	manager := &workspace.Manager{Root: config.Root, Logger: logger}
 	inspection, err := manager.InspectClosedExecution(ctx, workspace.ExecutionPredecessor{JobID: input.SourceJobID, ExecutionID: assignment.ExecutionID}, preparation, manifest)
 	if err != nil {

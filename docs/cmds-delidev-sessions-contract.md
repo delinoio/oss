@@ -577,4 +577,6 @@ paused session with an immutable source/configuration link, a verified workspace
 and empty queue/interaction accounting. First child input uses a version-3
 fork-checkpoint assignment; later turns use ordinary version-2 predecessor
 completion on the child history. No fork acceptance, receipt, empty Resume or
-workspace result advances routing or authorizes provider inference.
+workspace result advances routing or authorizes provider inference. Local sharing
+is limited to user-owned Local source checkouts; parent-owned managed worktrees
+require an independent child copy so permanent parent deletion cannot remove its files.

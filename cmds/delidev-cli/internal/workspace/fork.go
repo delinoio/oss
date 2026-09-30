@@ -127,6 +127,25 @@ func forkUnsupported() error {
 	return domain.Fail(domain.Unsupported, "This workspace cannot be copied consistently by the fork profile.", "Use bounded regular files and directories without links, nested repositories or special files; preserve the source before retrying.")
 }
 
+// Local sharing must outlive deletion of the source session. Managed source
+// worktrees belong to that source's cleanup plan and cannot be borrowed by a
+// child without a separately implemented shared-ownership lifetime.
+func ValidateLocalForkSource(source Manifest) error {
+	if source.Type != domain.Local {
+		return localForkUnsupported()
+	}
+	for _, repo := range source.Repositories {
+		if repo.Owned {
+			return localForkUnsupported()
+		}
+	}
+	return nil
+}
+
+func localForkUnsupported() error {
+	return domain.Fail(domain.Unsupported, "Local fork sharing requires user-owned Local checkouts.", "Use an independent Worktree fork for a managed source workspace.")
+}
+
 // ForkPreparation derives paths only from the exact original manifest while
 // the caller holds InspectClosedExecution. It never selects configured defaults
 // or fetches. Explicit Local shares the current paths and owns no source files.
@@ -146,6 +165,9 @@ func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child do
 		return request, forkUnsupported()
 	}
 	if kind == domain.Local {
+		if err := ValidateLocalForkSource(source); err != nil {
+			return request, err
+		}
 		request.OriginMachineID = source.MachineID
 	}
 	git := m.Git

@@ -62,3 +62,18 @@ it("offers a completed root but refuses a completed forked child", async () => {
   expect(screen.queryByRole("button", { name: "Fork session" })).toBeNull();
   expect(fork).not.toHaveBeenCalled();
 });
+
+it.each(["worktree", "local"] as const)("offers Local sharing only for a user-owned Local source (%s)", async (workspace) => {
+  const source = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ name: "Original", workspace, machine_id: newRequestId(), archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "codex" } }, execution: { native_turn_id: newRequestId(), cleanup_verified: true } }) });
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.CODEX_SESSION_FORK_V1] }) });
+    router.service(ResourceService, { getResource: () => ({ resource: source }) });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()} readLocalWorker={vi.fn()}><SessionForkAction source={source} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+  const option = screen.queryByRole("option", { name: "Share this computer's Local checkouts" });
+  if (workspace === "local") expect(option).not.toBeNull();
+  else expect(option).toBeNull();
+  expect(screen.getByRole("option", { name: "Independent workspace" })).not.toBeNull();
+});

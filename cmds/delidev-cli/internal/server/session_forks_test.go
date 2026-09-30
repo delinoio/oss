@@ -269,3 +269,35 @@ func TestSessionForkRejectsPublishedChildAfterItsOwnCompletedTurn(t *testing.T) 
 		t.Fatal("refusal accepted work or changed the child", err)
 	}
 }
+
+func TestSessionForkRejectsLocalManagedSourceBeforeAcceptingJob(t *testing.T) {
+	f := newContinuationFixture(t, domain.ExecutionSucceeded)
+	f.control(t, pb.SessionAction_SESSION_ACTION_STOP)
+	before := f.refresh(t)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "test.managed-source", nil, func(tx *store.Tx) (any, error) {
+		source, err := store.Decode[domain.Session](before)
+		if err != nil {
+			return nil, err
+		}
+		source.Workspace = domain.Worktree
+		return tx.Put(before.Kind, before.ID, before.Revision, before.SessionID, before.ProjectID, source)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before = f.refresh(t)
+	filter := store.Filter{Kind: domain.JobKind, SessionID: before.ID, Limit: 100}
+	jobs, err := f.service.Store.List(context.Background(), filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(before.ID), ExpectedRevision: before.Revision}, ExpectedTurnId: string(f.turn), Name: "Unsafe Local child", Workspace: pb.ForkWorkspace_FORK_WORKSPACE_LOCAL, LocalWorkerToken: f.workerIdentity.Token}
+	if _, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, request)); domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+		t.Fatal("managed source accepted Local sharing", err)
+	}
+	after := f.refresh(t)
+	afterJobs, err := f.service.Store.List(context.Background(), filter)
+	if err != nil || len(afterJobs) != len(jobs) || after.Revision != before.Revision || !bytes.Equal(after.Data, before.Data) {
+		t.Fatal("unsupported Local request changed source or accepted work", err)
+	}
+}

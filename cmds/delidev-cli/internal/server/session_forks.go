@@ -93,6 +93,9 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		if err := s.Store.Read(ctx, func(tx *store.Tx) error { _, v, e := sessionRecord(tx, domain.ID(meta.Id)); source = v; return e }); err != nil {
 			return nil, rpc.Error(err, correlation)
 		}
+		if source.Workspace != domain.Local {
+			return nil, rpc.Error(workspace.ValidateLocalForkSource(workspace.Manifest{Type: source.Workspace}), correlation)
+		}
 		var err error
 		origin, originDigest, err = s.authenticateLocalOrigin(ctx, domain.CreateSession{Workspace: domain.Local, MachineID: source.MachineID}, req.Msg.LocalWorkerToken)
 		if err != nil {
@@ -134,6 +137,9 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		}
 		if (session.Workspace == domain.GeneralChat) != (input.Workspace == domain.GeneralChat) {
 			return nil, forkConflict()
+		}
+		if err := validateForkSharing(input); err != nil {
+			return nil, err
 		}
 		if origin != nil {
 			current, err := tx.Authenticate(originDigest[:])
@@ -231,6 +237,9 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 	if now.SourceRevision != input.SourceRevision || now.SourceJobID != input.SourceJobID || now.Completion != input.Completion || now.SourceAssignment.ConfigurationDigest != input.SourceAssignment.ConfigurationDigest || source.ExecutionSelection().AccountID != input.SourceAssignment.AccountID || source.ExecutionSelection().ConnectionID != input.SourceAssignment.ConnectionID {
 		return forkConflict()
 	}
+	if err := validateForkSharing(input); err != nil {
+		return err
+	}
 	if input.LocalOrigin != nil {
 		return validateLocalOrigin(tx, domain.Session{Workspace: domain.Local, MachineID: source.MachineID, LocalOrigin: input.LocalOrigin})
 	}
@@ -286,6 +295,9 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 }
 
 func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.PrepareRequest, manifest workspace.Manifest) error {
+	if err := validateForkSharing(input); err != nil {
+		return err
+	}
 	var source workspace.Manifest
 	if domain.Decode(input.SourceAssignment.Manifest, &source) != nil || len(preparation.Repositories) != len(source.Repositories) || len(manifest.Repositories) != len(source.Repositories) {
 		return forkConflict()
@@ -315,6 +327,17 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 		}
 	}
 	return nil
+}
+
+func validateForkSharing(input domain.ForkJobInput) error {
+	if input.Workspace != domain.Local {
+		return nil
+	}
+	var source workspace.Manifest
+	if domain.Decode(input.SourceAssignment.Manifest, &source) != nil {
+		return forkConflict()
+	}
+	return workspace.ValidateLocalForkSource(source)
 }
 
 func forkInputDigest(raw []byte) string {

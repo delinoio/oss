@@ -196,6 +196,8 @@ filesystem roots; linked destinations are rejected before copying, and copied
 files/directories are synchronized before the ready manifest. General Chat
 copies its owned tree. Source and target hashes,
 HEAD and index are rechecked after every repository and after native creation.
-Explicit authenticated Local uses the same files. Links, nested repositories,
+Explicit authenticated Local uses the same user-owned files only from an original
+Local source. Managed source worktrees cannot become unowned Local child paths;
+their parent retains removal authority, so those sources require independent copies. Links, nested repositories,
 special files, split indexes and unborn Git are outside the initial profile;
 refusal cannot silently drop data or publish partial preparation.

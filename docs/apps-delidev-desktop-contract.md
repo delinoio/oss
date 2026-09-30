@@ -964,8 +964,9 @@ connection controller retains its name/workspace draft, exact uncertain request
 and accepted job through conversation navigation; Escape hides the modal without
 losing that operation. The name input receives focus. A changed source revision
 requires discarding the fresh draft and inspecting the new boundary. Default
-workspace copying is independent; explicit Local requires fresh same-machine
-Worker proof. Poll `GetSessionFork` only by the accepted job ID, stop automatic
+workspace copying is independent; offer explicit Local sharing only for a Local
+source with fresh same-machine Worker proof. Managed Worktree sources retain only
+the independent workspace choice, preserving the child after parent deletion. Poll `GetSessionFork` only by the accepted job ID, stop automatic
 polling on terminal/uncertain state and offer explicit refresh. Open the child
 only after verified publication. The [fork contract](cmds-delidev-forks-contract.md)
 keeps Go ownership and current eligibility authoritative. Component tests do not
