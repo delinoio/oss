@@ -363,6 +363,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
         {newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>New project</div>, window.document.body) : null}
         {includeArchived ? <p className="sidebar-archive-indicator">Archived included</p> : null}
         <QueryProblem query={projects} label="projects" retryLabel="Retry project catalog" />
+        <QueryProblem query={sessions} label="sessions" retryLabel="Retry global sessions" />
         {!projects.loaded && !projects.error ? <p className="sidebar-query-state" role="status">Loading projects…</p> : null}
         {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>No projects loaded.</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}>Create a project</button></div> : null}
         {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: `Project · ${id}`, fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
@@ -370,7 +371,6 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
         <section className="sidebar-project-group sidebar-general-chat">
           <button type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">General Chat</span><Icon name="chevron" className={`sidebar-disclosure ${generalExpanded ? "is-expanded" : ""}`} /></button>
           {generalExpanded ? <>
-            <QueryProblem query={sessions} label="sessions" retryLabel="Retry global sessions" />
             {!sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status">Loading sessions…</p> : null}
             {generalRows.map((row) => <SessionRow key={row.id} row={row} selected={selectedSessionId === row.id} open={chooseSession} />)}
             {sessions.loaded && !sessions.error && generalRows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">No conversations loaded.</p> : null}

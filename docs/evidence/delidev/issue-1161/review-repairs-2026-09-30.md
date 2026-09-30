@@ -7,3 +7,10 @@ PR: https://github.com/delinoio/oss/pull/1200. Repairs follow the published `e51
 Review thread: https://github.com/delinoio/oss/pull/1200#discussion_r4142465410 (`PRRT_kwDORRAKg86ncpSk`). A refresh previously followed newly returned continuations and could replace/truncate accepted ranges or expose a newly discovered trailing continuation. It now reads the exact accepted request tokens, validates every outgoing continuation including final exhaustion, retains the entire accepted snapshot on boundary drift and returns the typed cursor-expiry recovery surface. Only explicit Reload list accepts new boundaries. Exact failed-range Retry still reads that range alone and preserves neighboring ranges.
 
 `pnpm exec vitest run src/home-navigation.test.ts --maxWorkers=1 --fileParallelism=false --testTimeout=30000` from `apps/delidev` passed 1 file / 9 tests, including changed first boundaries, premature exhaustion, newly extended exhausted tails and isolated failed-refresh retry. The API client was generated explicitly before testing. Component evidence does not establish native acceptance; review-thread resolution waits for the single repair push.
+
+
+## Global failure disclosure
+
+Review thread: https://github.com/delinoio/oss/pull/1200#discussion_r4142465418 (`PRRT_kwDORRAKg86ncpSq`). Global sessions are an unfiltered source for off-catalog fallback groups as well as General Chat. Their read failure/previous-data notice and Retry/Reload list now remain outside the General Chat disclosure. Collapsing General Chat cannot hide a failure affecting visible fallback rows or their recovery action.
+
+`pnpm exec vitest run src/sidebar.test.tsx --maxWorkers=1 --fileParallelism=false --testTimeout=30000` passed 1 file / 23 tests. The added unavailable and typed cursor-expiry cases retain the same visible fallback row, selection and focus, recover only the failed global scope, leave catalog reads unchanged and keep General Chat collapsed. Thread resolution waits for the single repair push.

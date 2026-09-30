@@ -5,7 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, ErrorDetailSchema, FailureCode, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { Surface } from "./views";
 import { Sidebar } from "./sidebar";
@@ -472,5 +472,42 @@ it("retains sidebar page scopes, group expansion and per-surface scroll through 
   });
   fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
   expect(list.scrollTop).toBe(45);
+  expect(value.openSession).not.toHaveBeenCalled();
+});
+
+
+it.each([false, true])("keeps global recovery visible with General Chat collapsed (expired=%s)", async (expired) => {
+  const parent = newRequestId();
+  const retained = resource(EntityKind.SESSION, "Visible fallback after failure", parent, { workspace: "local" });
+  let failed = false;
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: ({ projectId }) => {
+    expect(projectId).toBe("");
+    if (failed) throw new ConnectError("Fixture read failure", expired ? Code.OutOfRange : Code.Unavailable, undefined, expired ? [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: FailureCode.CursorExpired }) }] : []);
+    return { sessions: [retained] };
+  } });
+  const row = await screen.findByRole("button", { name: /Visible fallback after failure/ });
+  value.setProps({ selectedSessionId: retained.id });
+  row.focus();
+  const general = screen.getByRole("button", { name: "General Chat" });
+  fireEvent.click(general);
+  expect(general.getAttribute("aria-expanded")).toBe("false");
+  failed = true;
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+  expect(await screen.findByText(expired ? "sessions: The list cursor expired." : "Could not refresh sessions. Previous data is shown.")).toBeTruthy();
+  const recovery = screen.getByRole("button", { name: expired ? "Reload sessions list" : "Retry global sessions" });
+  expect(recovery.closest(".sidebar-general-chat")).toBeNull();
+  expect(screen.getByRole("button", { name: /Visible fallback after failure/ })).toBe(row);
+  expect(row.getAttribute("aria-current")).toBe("true");
+  expect(document.activeElement).toBe(row);
+  const catalogReads = [...value.projectRequests];
+  const globalReads = value.sessionRequests.length;
+  failed = false;
+  fireEvent.click(recovery);
+  await waitFor(() => expect(screen.queryByRole("button", { name: /Retry global sessions|Reload sessions list/ })).toBeNull());
+  expect(value.sessionRequests).toHaveLength(globalReads + 1);
+  expect(value.sessionRequests.at(-1)?.pageToken).toBe("");
+  expect(value.projectRequests).toEqual(catalogReads);
+  expect(general.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByRole("button", { name: /Visible fallback after failure/ })).toBe(row);
   expect(value.openSession).not.toHaveBeenCalled();
 });
