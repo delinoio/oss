@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -123,6 +124,18 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	command := remaining[0]
 	rest := remaining[1:]
+	if command == "service-run" {
+		value, err := runService(ctx, o, rest, streams)
+		return emit(value, err)
+	}
+	if (command == "server" || command == "worker") && len(rest) > 0 && rest[0] == "service" {
+		kind := userservice.Server
+		if command == "worker" {
+			kind = userservice.Worker
+		}
+		value, err := serviceCommand(ctx, o, kind, rest[1:], streams)
+		return emit(value, err)
+	}
 	if command == "device" && len(rest) > 0 && (rest[0] == "inspect-local" || rest[0] == "recover-local") {
 		value, err := desktopRecoveryCommand(ctx, o, rest)
 		return emit(value, err)
@@ -201,6 +214,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "service-control":
+		ensureRequest(&o)
+		value, err := serviceRPC(ctx, c, o, rest)
+		return emit(value, err)
 	case "usage":
 		if len(rest) > 0 && rest[0] == "pricing" {
 			if len(rest) > 1 && rest[1] == "set" {
@@ -800,6 +817,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
 
   server start [--foreground] [--listen IP:PORT] [--tls-cert FILE --tls-key FILE]
                [--allowed-origins ORIGIN,ORIGIN]
+  service-control install|status|start|stop|remove --kind server|worker [--revision N]
+  server service install|status|start|stop|remove [--revision N]
+  worker service install|status|start|stop|remove [--worker-dir PATH --revision N]
   server status | overview | stop
   server ensure [--listen IP:PORT] [--allowed-origins ORIGIN,ORIGIN]
   doctor
