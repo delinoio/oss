@@ -28,7 +28,7 @@ func queueForkInitialExecution(tx *store.Tx, sr store.Record, session domain.Ses
 		return store.Record{}, err
 	}
 	instance, seen, err := tx.WorkerInstance(session.MachineID)
-	if err != nil || instance.Validate() != nil || time.Since(seen) > domain.WorkerConnectionTimeout {
+	if err != nil || instance.Validate() != nil || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
 		return store.Record{}, forkConflict()
 	}
 	// Check current account/project/installation eligibility even when explicit

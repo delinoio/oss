@@ -42,6 +42,11 @@ or executable historical work. The child retains source/session/boundary links.
 Source continuation is excluded while a fork owns its boundary; this reservation
 does not rewrite the source session or advance routing.
 
+First child dispatch applies the ordinary fresh Worker-instance gate, including
+rejection of observations more than one second in the future. A backward host
+clock move cannot promote a disconnected Worker into a queued-input claim or
+turn an empty Resume into dispatch readiness.
+
 ### Public commands and child continuation
 
 `delidev session fork --id <source> --revision <revision> --turn-id <native-turn>
