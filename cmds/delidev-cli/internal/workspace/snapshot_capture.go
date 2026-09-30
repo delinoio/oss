@@ -126,18 +126,8 @@ func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo P
 	if _, err := os.Lstat(filepath.Join(common, "objects", "info", "alternates")); !errors.Is(err, os.ErrNotExist) {
 		return snapshotUnsupported()
 	}
-	_, exit, err := git.runCommand(ctx, repo.Path, "config", "--no-includes", "--local", "--get-regexp", "^(include|includeIf)\\.")
-	if err == nil || exit != 1 {
-		return snapshotUnsupported()
-	}
-	worktreeConfigSource := filepath.Join(admin, "config.worktree")
-	if _, err := os.Lstat(worktreeConfigSource); err == nil {
-		_, exit, err := git.runCommand(ctx, repo.Path, "config", "--no-includes", "--file", worktreeConfigSource, "--get-regexp", "^(include|includeIf)\\.")
-		if err == nil || exit != 1 {
-			return snapshotUnsupported()
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return ResultUncertain()
+	if err := validateSnapshotGitConfig(ctx, git, repo.Path, admin); err != nil {
+		return err
 	}
 	adminInventory, err := walkSnapshot(ctx, admin, "", nil)
 	if err != nil {
@@ -241,6 +231,16 @@ func (m *Manager) validateSnapshotGit(ctx context.Context, session domain.ID, re
 	git.OwnerID = session
 	git.readOnly = true
 	git.offline = true
+	if err := validateSnapshotGitConfig(ctx, git, path, filepath.Join(path, ".git")); err != nil {
+		return err
+	}
+	inventory, err := walkSnapshot(ctx, filepath.Join(path, ".git"), "", nil)
+	if err != nil {
+		return err
+	}
+	if err := validateGitInventory(inventory); err != nil {
+		return err
+	}
 	for _, commit := range []string{repo.BaseCommit, repo.StartingCommit, "HEAD"} {
 		if _, err := git.run(ctx, path, "cat-file", "-e", commit+"^{commit}"); err != nil {
 			return ResultUncertain()
@@ -391,8 +391,34 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 // enter a self-contained snapshot, even though ordinary workspace links are safe.
 func validateGitInventory(inventory snapshotInventory) error {
 	for _, entry := range inventory.Entries {
-		if os.FileMode(entry.Mode)&os.ModeSymlink != 0 {
+		if os.FileMode(entry.Mode)&os.ModeSymlink != 0 || (strings.HasPrefix(entry.Path, "objects/pack/") && strings.HasSuffix(entry.Path, ".promisor")) {
 			return snapshotUnsupported()
+		}
+	}
+	return nil
+}
+
+// Promisor fsck deliberately tolerates missing promised objects. A private offline
+// snapshot must reject that policy, including markers left after config removal,
+// rather than treating a successful fsck as complete local object recovery.
+func validateSnapshotGitConfig(ctx context.Context, git Git, path, admin string) error {
+	pattern := `^(include|include[iI]f)\.|^extensions\.partialclone$|^remote\..*\.(promisor|partialclonefilter)$`
+	configs := [][]string{{"--local"}}
+	worktree := filepath.Join(admin, "config.worktree")
+	if _, err := os.Lstat(worktree); err == nil {
+		configs = append(configs, []string{"--file", worktree})
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ResultUncertain()
+	}
+	for _, config := range configs {
+		args := append([]string{"config", "--no-includes"}, config...)
+		args = append(args, "--get-regexp", pattern)
+		_, exit, err := git.runCommand(ctx, path, args...)
+		if err == nil {
+			return snapshotUnsupported()
+		}
+		if exit != 1 {
+			return ResultUncertain()
 		}
 	}
 	return nil
