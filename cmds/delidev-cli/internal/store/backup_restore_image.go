@@ -75,6 +75,11 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		// not historical configuration that a database rollback may reactivate.
 		"DELETE FROM entities WHERE kind IN ('network_profile','network_route')",
 		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind IN ('network_profile','network_route')",
+		// Current Worker routes require their current machine descriptors for
+		// owner administration. Metadata grants no Worker credential/lease;
+		// those remain cleared and the copied devices are revoked below.
+		"DELETE FROM entities WHERE kind='machine' AND id IN (SELECT json_extract(CAST(body AS TEXT),'$.machine_id') FROM current_state.entities WHERE kind='network_route')",
+		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind='machine' AND id IN (SELECT json_extract(CAST(body AS TEXT),'$.machine_id') FROM current_state.entities WHERE kind='network_route')",
 		// Worker files are not restored. Their database association must be
 		// explicitly paired again after startup, never implicitly reattached.
 		"UPDATE entities SET body=json_set(body,'$.revoked',json('true')) WHERE kind='device' AND json_extract(body,'$.type')='worker'",

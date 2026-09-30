@@ -318,6 +318,13 @@ Workers must pair again; no Worker files or credential payloads are restored.
 Restored account and integration definitions are disconnected, without historical
 connection/validation/removal authority. Protected credential storage stays untouched. Current network profiles, immutable credential-generation references and server/Worker route selections are copied from the current safety image with their exact bodies preserved and resource revisions freshened by the ordinary restore rule; historical network routing cannot replace current explicit authority. The server holds the shared credential gate through restore eligibility and publication, preventing a native network/account write from crossing the private-intent-before-SQL boundary.
 
+Current machine descriptors required by retained Worker network routes are also
+copied from the safety image, replacing historical metadata for matching IDs and
+freshening their resource revisions. Owner/client route reads, explicit clearing
+and subsequent profile deletion remain possible even when the backup predates
+the Worker. These descriptors do not retain Worker credential verifiers,
+instances or execution grants; Workers still require fresh pairing.
+
 Every restored session is paused and recovery-required. Nonterminal historical
 jobs are canceled with a typed quarantine problem; schedules are disabled and their
 next-run timestamps cleared. Historical assignment copies cannot grant native
