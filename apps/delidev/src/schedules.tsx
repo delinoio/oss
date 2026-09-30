@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, ScheduleAction, ScheduleQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, Mode, object, text, Workspace, type Document } from "./documents";
@@ -6,6 +6,7 @@ import { ReferenceFields, ResourceChoice, TextField } from "./configuration-fiel
 import { useRetainedMutation } from "./mutation";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
+import { Icon as SidebarIcon } from "./sidebar";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 
 enum Overlap { Overlap = "overlap", Skip = "skip", Wait = "wait" }
@@ -85,24 +86,38 @@ export function Schedules({ active, open, readLocalWorker }: { active: boolean; 
   const [selected, setSelected] = useState<Resource>(), [editing, setEditing] = useState<{ initial?: Resource; key: string }>();
   const [historyDraft, setHistoryDraft] = useState(""), [history, setHistory] = useState("");
   const [projectId, setProjectId] = useState("");
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const historyRegionId = useId();
+  const historyInput = useRef<HTMLInputElement>(null);
+  const focusHistoryOnExpansion = useRef(false);
   const [protectedWorkflow, setProtectedWorkflow] = useState(false);
   const closeDrawer = useCloseSidebarDrawer();
   const locked = protectedWorkflow || Boolean(editing);
+  useEffect(() => {
+    // Only an explicit disclosure expansion owns focus; navigation, reconnects
+    // and portal placement must leave the user's current focus untouched.
+    if (!focusHistoryOnExpansion.current) return;
+    focusHistoryOnExpansion.current = false;
+    if (historyExpanded && active && !locked) historyInput.current?.focus();
+  }, [historyExpanded, active, locked]);
   const result = useQuery(ScheduleQuery.listSchedules, { projectId, pageSize: 50, pageToken: page, ...(filter === EnabledFilter.All ? {} : { enabled: filter === EnabledFilter.Enabled }) }, { enabled: active });
   const selectSchedule = (row: Resource) => { if (locked) return; setSelected(row); setHistory(""); closeDrawer(); };
   const newSchedule = () => { if (locked) return; setSelected(undefined); setHistory(""); setEditing({ key: newRequestId() }); closeDrawer(); };
   const openHistory = (event: FormEvent) => { event.preventDefault(); if (locked || !historyDraft.trim()) return; setSelected(undefined); setHistory(historyDraft.trim()); closeDrawer(); };
   return <>
-    <SidebarSurface active={active} title="Schedules">
-      <button className="primary sidebar-action" disabled={locked} onClick={newSchedule}>New schedule</button>
+    <SidebarSurface active={active} title="Schedules" className="schedules-sidebar">
+      <button className="primary sidebar-action" disabled={locked} onClick={newSchedule}><SidebarIcon name="plus" />New schedule</button>
       <div className="sidebar-filter-options" aria-label="Schedule state">{([[EnabledFilter.All, "All schedules"], [EnabledFilter.Enabled, "Enabled"], [EnabledFilter.Paused, "Paused"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} disabled={locked} onClick={() => { setFilter(value); setPage(""); }}>{label}</button>)}</div>
-      <ResourceChoice label="Filter by project" kind={EntityKind.PROJECT} value={projectId} change={(id) => { if (!locked) { setProjectId(id); setPage(""); } }} active={active} disabled={locked} />
-      <header className="sidebar-list-heading"><h3>Schedules</h3><button type="button" disabled={locked || result.isFetching} onClick={() => { setPage(""); void result.refetch(); }}>Refresh</button></header>
+      <ResourceChoice label="Filter by project" emptyLabel="All projects" kind={EntityKind.PROJECT} value={projectId} change={(id) => { if (!locked) { setProjectId(id); setPage(""); } }} active={active} disabled={locked} />
+      <header className="sidebar-list-heading"><h3>Saved schedules</h3><button type="button" disabled={locked || result.isFetching} onClick={() => { setPage(""); void result.refetch(); }}><SidebarIcon name="refresh" />Refresh</button></header>
       <Problem error={result.error} />{result.isPending && active ? <p role="status">Loading schedules…</p> : null}{result.error && result.data ? <p className="sidebar-help">Refresh failed. Showing the previous page.</p> : null}
-      {result.data?.schedules.map((row) => <article key={row.id} className="sidebar-schedule-row"><button type="button" disabled={locked} aria-current={selected?.id === row.id ? "true" : undefined} onClick={() => selectSchedule(row)}>{scheduleName(row)}</button><p>{object(document(row).definition).enabled === true ? "Enabled" : "Paused"} · Next run (UTC): {text(document(row).next_run_at) || "None scheduled"}</p></article>)}
-      {result.data?.schedules.length === 0 ? <p className="sidebar-help">{page ? "No schedules on this page." : "No saved schedules."}</p> : null}
-      <nav aria-label="Schedules pages"><button disabled={locked || !page || result.isFetching} onClick={() => setPage("")}>First</button><button disabled={locked || !result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>Next</button></nav>
-      <form className="sidebar-form" onSubmit={openHistory}><TextField label="Retained schedule ID" value={historyDraft} change={setHistoryDraft} max={36} required disabled={locked} /><button disabled={locked}>Retained history</button></form>
+      {result.data?.schedules.map((row) => <article key={row.id} className="sidebar-schedule-row"><button type="button" disabled={locked} aria-current={selected?.id === row.id ? "true" : undefined} onClick={() => selectSchedule(row)}><span className="schedule-row-title">{scheduleName(row)}</span><span className="schedule-row-state">{object(document(row).definition).enabled === true ? "Enabled" : "Paused"}</span><span className="schedule-row-next">Next run (UTC): <span>{text(document(row).next_run_at) || "None scheduled"}</span></span></button></article>)}
+      {!result.error && result.data?.schedules.length === 0 ? <p className="sidebar-help schedules-empty"><SidebarIcon name="schedules" />{page ? "No schedules on this page." : "No saved schedules."}</p> : null}
+      <nav className="schedules-pages" aria-label="Schedules pages"><button disabled={locked || !page || result.isFetching} onClick={() => setPage("")}>First</button><button disabled={locked || !result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>Next</button></nav>
+      <button type="button" className="schedules-history-toggle" aria-expanded={historyExpanded} aria-controls={historyRegionId} disabled={locked} onClick={() => { if (locked) return; focusHistoryOnExpansion.current = !historyExpanded; setHistoryExpanded(!historyExpanded); }}><SidebarIcon name="chevron" className="schedules-history-chevron" />Retained history</button>
+      <div role="region" id={historyRegionId} aria-label="Retained schedule history lookup" hidden={!historyExpanded}>
+        <form className="sidebar-form" onSubmit={openHistory}><label>Retained schedule ID<input ref={historyInput} value={historyDraft} onChange={(event) => setHistoryDraft(event.target.value)} maxLength={36} required disabled={locked} /></label><button disabled={locked}>Retained history</button></form>
+      </div>
     </SidebarSurface>
     <div hidden={!active} className="page schedule-page">{editing ? <ScheduleEditor readLocalWorker={readLocalWorker} key={editing.key} initial={editing.initial} active={active} saved={(row) => { setEditing(undefined); setProtectedWorkflow(false); if (row) setSelected(row); void result.refetch(); }} cancel={() => { setEditing(undefined); setProtectedWorkflow(false); }} protectedChange={setProtectedWorkflow} /> : selected ? <ScheduleDetails key={selected.id} initial={selected} active={active} open={open} close={() => { setSelected(undefined); setProtectedWorkflow(false); void result.refetch(); }} edit={(initial) => { setSelected(undefined); setEditing({ initial, key: newRequestId() }); }} protectedChange={setProtectedWorkflow} /> : history ? <><button onClick={() => setHistory("")}>Back to schedules</button><ScheduleHistory key={history} id={history} active={active} open={open} /></> : <section><h2>Schedules</h2><p>Select a schedule from the sidebar to inspect its details and retained history.</p></section>}</div>
   </>;

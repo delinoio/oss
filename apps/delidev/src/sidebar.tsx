@@ -24,7 +24,7 @@ enum ArchiveStatus {
 
 type TooltipPosition = { left: number; top: number };
 
-function Icon({ name, className = "" }: { name: string; className?: string }) {
+export function Icon({ name, className = "" }: { name: string; className?: string }) {
   const common = { "aria-hidden": true as const, className: `sidebar-icon ${className}`, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (name) {
     case "sessions": return <svg {...common}><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M9 20v-6h6v6"/></svg>;
