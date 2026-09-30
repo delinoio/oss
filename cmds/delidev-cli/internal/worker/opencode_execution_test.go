@@ -4,19 +4,16 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync/atomic"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
 func TestOpenCodeGeneralRootRejectsEnclosingGitMetadata(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows non-VCS native root needs its separate profile")
-	}
 	parent, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +24,7 @@ func TestOpenCodeGeneralRootRejectsEnclosingGitMetadata(t *testing.T) {
 	}
 	manifest := workspace.Manifest{Type: domain.GeneralChat, PrimaryPath: cwd}
 	root, err := openCodeWorkspaceRoot(manifest, cwd)
-	if err != nil || root != string(filepath.Separator) {
+	if err != nil || root == (opencode.WorkspaceRoot{}) {
 		t.Fatal("non-VCS root was not independently resolved", err)
 	}
 	for _, at := range []string{parent, cwd} {

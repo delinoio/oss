@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -253,6 +254,14 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 	if configure != nil {
 		configure(&config)
 	}
+	if runtime.GOOS == "windows" && config.NativeRoot == filesystemBoundary(config.Workspace) {
+		var err error
+		config.Root, err = GlobalWorkspaceRoot(config.Workspace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		config.NativeRoot = ""
+	}
 	var logs bytes.Buffer
 	config.Probe.Process.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	defer func() {
@@ -369,6 +378,7 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
 	if mismatch {
+		config.Root = WorkspaceRoot{}
 		config.NativeRoot = filepath.Dir(config.Workspace)
 	}
 	api, err := openAPISession(ctx, config)
@@ -397,7 +407,7 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 			t.Error(err)
 		}
 	}()
-	if !api.apiVerified || api.runtimeRoot != config.NativeRoot || api.runtimeRead || len(claims) != 0 || api.alive() != nil {
+	if !api.apiVerified || api.runtimeRoot != mustNativeConfigRoot(t, config).native || api.runtimeRead || len(claims) != 0 || api.alive() != nil {
 		t.Fatal("owned native initialization did not preserve its exact live context")
 	}
 	observed, observationErr := api.initialObservedSettings(ctx)
@@ -453,7 +463,7 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 	if _, err := api.observeInput(ctx, filepath.Join(config.Workspace, "foreign-root")); err == nil {
 		t.Fatal("unverified project root replaced initializer evidence")
 	}
-	observer, err := api.observeInput(ctx, config.NativeRoot)
+	observer, err := api.observeInput(ctx, mustNativeConfigRoot(t, config).native)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,4 +544,13 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 			}
 		}
 	}
+}
+
+func mustNativeConfigRoot(t *testing.T, config apiSessionConfig) WorkspaceRoot {
+	t.Helper()
+	root, err := config.workspaceRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
 }
