@@ -12,10 +12,33 @@ import (
 // Synthetic assignment/checkpoint fixtures verify durable handling rules.
 // They do not claim native or real-account push acceptance.
 func TestPRFixOnlyVerifiedOriginalPushHandlesEvidence(t *testing.T) {
-	for _, scenario := range []string{"verified", "worker-clock-slow", "worker-clock-fast", "unchanged", "missing", "uncertain", "foreign-attempt", "foreign-selection", "failed-native", "dismissed"} {
+	for _, scenario := range []string{"verified", "worker-clock-slow", "worker-clock-fast", "default-permission", "read-only-permission", "unchanged", "missing", "uncertain", "foreign-attempt", "foreign-selection", "failed-native", "dismissed"} {
 		t.Run(scenario, func(t *testing.T) {
 			s, _ := openTest(t)
 			f := newRemediationStoreFixture(t, s)
+			// Freeze the actual selected permission before claiming execution;
+			// manual proof must not borrow write authority from an ordinary fixture.
+			permission := domain.PermissionWorkspaceWrite
+			if scenario == "default-permission" {
+				permission = domain.PermissionDefault
+			} else if scenario == "read-only-permission" {
+				permission = domain.PermissionReadOnly
+			}
+			_, err := s.Mutate(notificationOwner(), domain.NewID(), "fixture.fix-write-permission", nil, func(tx *Tx) (any, error) {
+				row, err := tx.Get(domain.AgentKind, f.exec.agent)
+				if err != nil {
+					return nil, err
+				}
+				agent, err := Decode[domain.Agent](row)
+				if err != nil {
+					return nil, err
+				}
+				agent.Options.Permission = permission
+				return tx.Put(row.Kind, row.ID, row.Revision, "", "", agent)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 			f.observation.Items[0].HeadRepository = &domain.PRHeadRepositoryObservation{State: domain.PRHeadRepositoryAvailable, Repository: &f.observation.Repository}
 			target, err := domain.NewPRGitTarget(f.observation)
 			if err != nil {
