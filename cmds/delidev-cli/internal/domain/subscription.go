@@ -56,7 +56,9 @@ func (s SubscriptionState) Validate(account Account) error {
 	if account.Type != SubscriptionAccount {
 		return invalid()
 	}
-	if s.Generation != "" && (s.Generation.Validate() != nil || account.Connection == nil || account.Connection.Authentication != SubscriptionAuth || len(s.IdentityCommitment) != 64) {
+	// Database restore disconnects accounts without restoring their external
+	// vault. Quarantined references remain valid evidence, never grant authority.
+	if s.Generation != "" && (s.Generation.Validate() != nil || account.Connection == nil && !s.RecoveryRequired || account.Connection != nil && account.Connection.Authentication != SubscriptionAuth || len(s.IdentityCommitment) != 64) {
 		return invalid()
 	}
 	if s.Pending != nil {

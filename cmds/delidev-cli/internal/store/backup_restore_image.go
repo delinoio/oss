@@ -175,6 +175,11 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			v.Health = domain.AccountDisconnected
 			v.Connection, v.Removal, v.Validation, v.Catalog = nil, nil, nil, nil
 			v.Quota, v.ConfirmedExhausted = nil, false
+			if v.Subscription != nil {
+				// The vault is outside this image. Retain historical references as
+				// evidence without authorizing an older bundle or native claim.
+				v.Subscription.RecoveryRequired = true
+			}
 			value = v
 		case domain.IntegrationKind:
 			var v domain.Integration

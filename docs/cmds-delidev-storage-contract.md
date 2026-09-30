@@ -316,7 +316,7 @@ Current paired clients retain their present authorization; old/revoked/deleted
 clients gain none. Pairing codes and execution grants/references are discarded.
 Workers must pair again; no Worker files or credential payloads are restored.
 Restored account and integration definitions are disconnected, without historical
-connection/validation/removal authority. Protected credential storage stays untouched.
+connection/validation/removal authority. Protected credential storage stays untouched. Pending, leased or recovery-required managed subscription ownership blocks replacement. Restored subscription metadata retains its historical generation and ownership evidence under a recovery-required fence, with no account connection. The external vault is not restored, so neither an older reference nor database publication authorizes another credential grant.
 
 Every restored session is paused and recovery-required. Nonterminal historical
 jobs are canceled with a typed quarantine problem; schedules are disabled and their
