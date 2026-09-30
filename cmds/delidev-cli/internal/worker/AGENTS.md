@@ -482,6 +482,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Managed Codex subscriptions use only the selected installed Codex 0.151.0 and a fresh private file-authentication profile under the protected lease. Journal original claims before native work, never retry uncertain delivery, verify native identity and independent last_refresh/token changes, join native cleanup and save the final bundle before another grant. Keep recovery evidence and synthetic test credentials isolated; follow `docs/cmds-delidev-subscription-contract.md`.
 
+- Codex thread publication and checkpoint retention/read must compare the exact provider selected by the immutable accepted authentication profile: built-in OpenAI for managed subscriptions and the existing relay provider for API execution. Copy private checkpoint comparison flags only from that accepted configuration; do not infer a profile from a native observation or widen uncertain-lease recovery.
+
 - Close and join the managed subscription lane after uncertain delivery/completion so the server retains lost leases as recovery-required. A durably acknowledged operation failure must not interrupt unrelated accounts on that lane.
 
 - Uncertain protected execution completion must also escape ordinary job-error reporting, retain its started claim journal and close/join the primary work lane. Independent workspace cleanup failures cannot erase that uncertainty; server stream loss fences the original execution lease before another account grant.

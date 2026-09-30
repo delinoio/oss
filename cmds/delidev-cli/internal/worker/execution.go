@@ -118,7 +118,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		var promptDigest [sha256.Size]byte
 		copy(promptDigest[:], rawDigest)
-		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
 		if err != nil {
 			return nil, err
 		}
@@ -135,7 +135,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		logger.InfoContext(ctx, "native_execution_predecessor_verified", "previous_execution_id", c.Previous.ExecutionID)
 	}
-	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codex.APIProvider, Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: input.Configuration.Instructions, Options: input.Configuration.Options}
+	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codexExecutionProvider(input.Configuration.Subscription), Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: input.Configuration.Instructions, Options: input.Configuration.Options}
 	settings.WorkspaceRoots = nativeWorkspaceRoots(manifest)
 	var managed *managedSubscriptionLease
 	var managedLatest []byte
@@ -156,7 +156,6 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	// Native subscription authentication is selected explicitly by the server's
 	// immutable assignment, independently of the existing API token profile.
 	if input.Configuration.Subscription {
-		settings.Provider = "openai"
 		client, closeRPC := subscriptionRPC(connection.Credential)
 		closeManagedRPC = closeRPC
 		managed, err = takeManagedSubscription(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)

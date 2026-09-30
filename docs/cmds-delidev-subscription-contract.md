@@ -66,6 +66,8 @@ The merged native configuration must retain file storage, ChatGPT login and the 
 
 Both native thread start and resume recheck the merged configuration for the actual execution workspace before sending the mutation. A successful startup-directory handshake cannot authorize a workspace-specific provider or authentication override.
 
+Thread publication and checkpoint retention/read also bind the native provider to the immutable accepted authentication profile. Managed execution requires built-in OpenAI; API execution retains its existing relay provider. The private checkpoint comparison copies the profile only from accepted configuration, preserves API checkpoint bytes and cannot promote an uncertain subscription lease into recovery authority.
+
 Credential cleanup scans retained native files for raw token material and padded or unpadded standard/URL Base64 copies under the existing file/count/byte bounds. Finding a remnant leaves cleanup unconfirmed and retains recovery ownership without erasing the original native history.
 
 ## Logging
