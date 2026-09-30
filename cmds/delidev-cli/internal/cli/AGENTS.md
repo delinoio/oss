@@ -38,3 +38,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - `session delete --id ID --revision N --confirm [--wait]` and `session deletion --id ID` share authenticated Connect semantics. Preserve original UUID/revision and accepted progress after uncertain reads or cancellation; waiting cannot resubmit deletion or report pending cleanup as success. Follow `docs/cmds-delidev-storage-contract.md`.
 - Workspace storage commands use the authenticated WorkspaceStorageService, retain exact UUID-v7 receipts/revisions, and observe the original job without replaying native operations. Follow docs/cmds-delidev-storage-contract.md.
+
+- `usage summary --accounting-profile native-units-v1` requires the server echo before exposing native units. Omission preserves the existing response-only profile; unknown values fail. Keep source kinds and exact decimal totals distinct.

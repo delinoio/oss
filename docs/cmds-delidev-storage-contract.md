@@ -492,3 +492,18 @@ The global `--request-id` preserves exact acceptance/cancellation retries. These
 commands never implicitly start a server, wait by replaying a mutation or infer
 success from acceptance. `snapshot list --session-id ID` uses existing
 Resource pagination for retained snapshot metadata.
+
+Schema 25 retains the complete schema-24 backup/provider/title layout and adds
+only the future native-accounting table/indexes defined by the [usage
+contract](cmds-delidev-usage-contract.md). Initialization and migration create the
+same layout; migration publishes the existing validated synchronized backup
+before one transaction and leaves historical native observations untouched.
+Derived native-accounting rows cascade with permanent session removal and are
+retained by Archive and consistent database backups. A conflicting preexisting
+accounting layout fails without adopting or rewriting it.
+
+The reserved migration is implemented in `migration_025.go`. It writes the
+independent `native_accounting_layout=grok-closed-input-v1` metadata marker.
+Opening any version-25 database without that marker fails before WAL settings,
+migration or Worker state updates, preserving old unmerged version-25 files for
+explicit recovery. A version number alone cannot identify their layout.
