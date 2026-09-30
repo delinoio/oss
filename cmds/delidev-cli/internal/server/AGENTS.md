@@ -65,6 +65,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - BrowserService profile operations require the original paired client, current transaction-time authority and exact UUID/revision receipts. Owner/Worker credentials cannot substitute a browser device; owner/client cleanup counts remain independent of account configuration removal. Confirmation attests to separately completed native cleanup and cannot replay native work. Follow `docs/cmds-delidev-browser-contract.md`.
 
+- Strip browser profile inventory from every generic Device resource projection, including Get/List/Snapshot and pairing/revocation responses. Preserve original stored records and other device fields; only device-scoped BrowserService reads expose profile identities and state.
+
 - Browser registration validates the session's continuation account, including a pending explicit account switch before Resume. The previous execution's account remains historical attribution and cannot authorize a new browser registration after that selection changes.
 
 - Codex fork Local sharing is limited to original Local manifests with no parent-owned checkouts. Reject managed Worktree sharing before job acceptance and again before Worker native inspection/preparation and server publication; parent deletion retains those paths. Independent Worktree copying remains available. Follow `docs/cmds-delidev-forks-contract.md`.

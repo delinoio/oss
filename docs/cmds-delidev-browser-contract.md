@@ -50,6 +50,10 @@ migration version is consumed.
   filter the original device before pagination (default 50, maximum 200); signed
   cursors bind server and device. Foreign identities are indistinguishable from
   absent profiles. The profile inventory is capped at 2,000 records per device.
+  Generic Device Get/List/Snapshot projections and pairing/revocation responses
+  omit the entire browser inventory for every caller. Other device metadata and
+  the original stored document remain intact; browser reads use this dedicated
+  device-scoped service rather than generic resource access.
 - `GetAccountBrowserCleanup` accepts an account UUID even after its configuration
   was removed. Its active/pending/removed counts describe tracked obligations.
   Zero tracked profiles cannot attest to external browser data or unregistered
