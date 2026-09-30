@@ -133,6 +133,12 @@ Unknown creation or cleanup remains uncertain,
 retains the private runtime/workspace and holds the source reservation for
 operator investigation. No source execution claim is advanced by inspection.
 
+Rejected source-history inspection removes its proven-unused fresh runtime only
+after independently confirmed source-process cleanup. Synchronize its parent and
+confirm absence before returning a definite rejection; failed removal or unjoined
+inspection retains uncertainty. Successful inspection keeps the runtime for the
+original native creation attempt.
+
 The product never selects a rollout path. Native metadata selects one exact
 regular Worker-private `sessions/*.jsonl` file, with canonical rooted accesses,
 link/special-file refusal, immutable byte proof and before/after identity checks.

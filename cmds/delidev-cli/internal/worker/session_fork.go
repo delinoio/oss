@@ -130,11 +130,8 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	}
 	source, inspectErr := sourceClient.InspectForkSource(ctx, checkpoint.Native)
 	closeErr := sourceClient.Close()
-	if closeErr != nil {
-		return nil, executionCheckpointUncertain()
-	}
-	if inspectErr != nil {
-		return nil, inspectErr
+	if err := finishForkSourceInspection(home, inspectErr, closeErr); err != nil {
+		return nil, err
 	}
 	childPreparation, err := manager.ForkPreparation(ctx, manifest, input.ChildSessionID, input.Workspace)
 	if err != nil {
@@ -201,6 +198,28 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		return nil, executionCheckpointUncertain()
 	}
 	return json.Marshal(domain.ForkJobResult{Version: 1, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: input.Completion.NativeTurnID, CheckpointDigest: executionInputDigest(raw), Preparation: mustForkJSON(childPreparation), Manifest: mustForkJSON(childManifest), CleanupVerified: true})
+}
+
+// No native child or workspace has been created at this boundary. A rejected
+// source must not leave an unused runtime behind, but an unjoined inspection
+// process or unconfirmed removal still prevents a fresh fork attempt.
+func finishForkSourceInspection(home string, inspectErr, closeErr error) error {
+	if closeErr != nil {
+		return executionCheckpointUncertain()
+	}
+	if inspectErr == nil {
+		return nil
+	}
+	if err := os.RemoveAll(home); err != nil {
+		return executionCheckpointUncertain()
+	}
+	if err := security.SyncParent(home); err != nil {
+		return executionCheckpointUncertain()
+	}
+	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
+		return executionCheckpointUncertain()
+	}
+	return inspectErr
 }
 
 func mustForkJSON(value any) json.RawMessage { raw, _ := json.Marshal(value); return raw }
