@@ -3285,6 +3285,22 @@ This is controlled implementation/native evidence, not real hosted-account,
 subscription, Windows/Linux, desktop UI or release acceptance. No schema
 migration, user credential mutation or production publication is claimed.
 
+PR #1112's base-branch conflict repair merged main revision
+`60770d0649622739f5035b3abbfb30bd9b81331e`, preserving the provider cursor-scope
+policy, stopped-account selection policy and both branches' evidence sections.
+Focused race tests for account switching/history and provider inventory/filtering
+passed across server, store, CLI and relay packages. Go build, Go vet and
+`pnpm proto:check` passed. The post-merge full command
+`GOMAXPROCS=4 go test -race -p 2 -timeout 20m ./cmds/delidev-cli/...` completed
+with three failing fixtures: `TestCLISessionAcceptanceQueueAndArchive`
+(workspace file reader unavailable), `TestDiscoveryBoundsAndGrokUpdateSuppression`
+(native version-probe bounds) and
+`TestStreamPreservesLateAcknowledgmentsAndCanceledReads` (uncertain Claude
+request delivery). The other packages, including Grok, server, store, Worker and
+workspace, passed. This invocation changed conflict documentation only; the
+unchanged native-helper failures remain visible and full-suite success is not
+claimed. It did not repeat installed-native or hosted-account acceptance.
+
 ### Initial privacy-safe macOS status widget (#1090, 2026-09-30)
 
 - Added macOS 13 WidgetKit and Intents selection extensions (`io.delino.delidev.widget` and `io.delino.delidev.widget.selection`) sharing only `group.io.delino.delidev` metadata with the desktop. Each instance selects an exact saved-profile UUID; no default/fallback, account credentials, endpoint, prompt, conversation text, networking or agent action is available. Go/RPC/CLI business semantics and schemas remain unchanged.
