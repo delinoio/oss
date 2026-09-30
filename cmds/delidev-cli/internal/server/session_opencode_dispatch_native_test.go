@@ -176,7 +176,11 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 	rejectionCascade := externalMixed || rejection && strings.HasSuffix(tool, "-cascade")
 	emptyFeedback := tool == "read-reject-empty"
 	dismissed := tool == "question-dismissed"
-	stoppedFirst := dismissed || rejection && (!correction || rejectionCascade)
+	textStop := tool == "text-stop"
+	if textStop {
+		tool = ""
+	}
+	stoppedFirst := textStop || dismissed || rejection && (!correction || rejectionCascade)
 	if dismissed {
 		tool = "question"
 	}
@@ -364,6 +368,13 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						t.Error("replacement changed original tool result")
 					}
 				}
+				if textStop && providerTurn == 1 {
+					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("Retry-After", "60")
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_, _ = io.WriteString(w, `{"error":{"message":"Private fixture backoff","type":"server_error"}}`)
+					return
+				}
 				if failedFirst && providerTurn == 1 {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusUnauthorized)
@@ -472,6 +483,23 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 				}
 				for {
 					changed := f.service.Store.Changed()
+					if textStop && turn == 0 && !responded {
+						current := f.refresh(t)
+						session, err := store.Decode[domain.Session](current)
+						if err != nil {
+							t.Fatal(err)
+						}
+						// Stop only after original input acceptance and the first
+						// assistant publication. Provider delivery alone is not
+						// input/Stop authority. Resume must never resend this input.
+						if session.Execution != nil && session.Execution.NativeTurnID != "" && session.Execution.LastSequence >= 3 && calls.Load() == 1 {
+							_, err := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(current.ID), ExpectedRevision: current.Revision}, Action: pb.SessionAction_SESSION_ACTION_STOP}))
+							if err != nil {
+								t.Fatal("original text Stop failed", err)
+							}
+							responded = true
+						}
+					}
 					if (permission || question) && !responded {
 						rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
 						if err != nil || len(rows) > permissionCount {

@@ -1121,7 +1121,7 @@ A native `always` or `reject` reply can automatically close another original pen
 Question rejection remains distinct from an answer matrix. Permission rejection preserves original failed tools and separate native root settlement. Under the independently verified stop-on-rejection policy, an original failed rejected tool owned by the final assistant permits `stopped`/`permission-denied`; do not rewrite native finish metadata or turn every rejection into root failure. Nonempty direct correction can continue, while a plain cascaded sibling can still stop that run. Earlier rejected tools remain evidence after successful successor completion. Fresh exact stored-history comparison and owned cleanup/reporting remain mandatory; this profile grants no public dispatch, Stop control, continuation or restart authority.
 
 ### Original OpenCode Worker job and control orchestration
-The production Worker execution switch now routes original OpenCode assignments into its own initializer, event composer and response/Stop coordinator. It accepts the pinned first-input Build/Plan profile with every explicit setting validated, a canonical resolved executable, the original prepared execution lease and a fresh retained native runtime. Scoped token registration is preceded by a digest-only intent in the Worker job journal, outside the native runtime whose initial contents must remain empty. No upstream credential is sent to the Worker. Single-repository root identity comes from the independently verified lease; General Chat additionally inspects every ancestor for Git metadata before using the native non-VCS root. Multiple repositories use the separately defined native local-reference profile below; Windows General Chat remains unsupported pending its native identity profile.
+The production Worker execution switch now routes original OpenCode assignments into its own initializer, event composer and response/Stop coordinator. It accepts the pinned first-input Build/Plan profile with every explicit setting validated, a canonical resolved executable, the original prepared execution lease and a fresh retained native runtime. Scoped token registration is preceded by a digest-only intent in the Worker job journal, outside the native runtime whose initial contents must remain empty. No upstream credential is sent to the Worker. Single-repository root identity comes from the independently verified lease; General Chat additionally inspects every ancestor for Git metadata before using the native non-VCS root. Multiple repositories use the separately defined native local-reference profile below; Windows General Chat uses the separate global-root identity/checkpoint profile below.
 
 Native creation/settings publication precedes original text submission. The native lifetime context owns the original subscription; a separately cancelable reader retains up to 65,536 frozen original arrivals within 32 MiB until live user/input-part observation and a fresh stored-input receipt establish durable acceptance. The same prefix is then published exactly once. A failed acceptance or publication cannot recreate a session or resend input.
 
@@ -1130,7 +1130,7 @@ The original outbound Worker stream owns process lifetime. Before input acceptan
 Acknowledged terminal publication, complete native history, joined owned cleanup and the separately closed workspace lease precede the existing durable job journal and version-1 report. Lost report acknowledgement retains that exact report and cannot repeat native input. Version 1 cannot authorize continuation or original-history adoption. The public server first-dispatch gate now integrates the exact default OpenCode Build/Plan profile through the shared immutable selection validation and current account/Worker/workspace checks below. Actual macOS arm64 evidence exercises the real Worker outbound stream using generated private account state and a scripted loopback provider; it is distinct from public readiness, hosted-account and full-platform acceptance.
 
 ### Public OpenCode first dispatch
-`checkedExecutionAssignment` accepts Codex Responses and OpenCode Chat Completions through distinct immutable native version/protocol gates. OpenCode uses `ExecutionConfiguration.OpenCodePrimaryForInput` for the same complete requested-settings check as its Worker initializer, without discarding explicit effort, concurrency, secondary/review models, service tier or foreign permission policy. Current installation observation, account validation and connection/authentication, model compatibility, Agent/project restrictions, Worker connectivity and complete preparation/local-origin evidence remain mandatory. Multiple repository roots require the native local-reference profile below, and project continuation requires its positive snapshot profile. Windows General Chat remains gated before assignment publication.
+`checkedExecutionAssignment` accepts Codex Responses and OpenCode Chat Completions through distinct immutable native version/protocol gates. OpenCode uses `ExecutionConfiguration.OpenCodePrimaryForInput` for the same complete requested-settings check as its Worker initializer, without discarding explicit effort, concurrency, secondary/review models, service tier or foreign permission policy. Current installation observation, account validation and connection/authentication, model compatibility, Agent/project restrictions, Worker connectivity and complete preparation/local-origin evidence remain mandatory. Multiple repository roots require the native local-reference profile below, and project continuation requires its positive snapshot profile. Windows General Chat passes this gate only with the independently enforced global-root profile below.
 
 The first snapshot, actual account route, native request identities, input claim and queued Worker job still commit atomically. Every unsupported/stale check rolls back that complete claim, leaving routing/input unchanged; a separate stable dispatch diagnostic may be retained. Public Execute/Plan first Resume runs the real original Worker path. Version-1 completion stays paused; new eligible version-2 completion uses the separate checkpoint-backed continuation boundary below. Actual macOS fixtures exercise public configuration/pairing, keyless account connection/validation, session creation, real prepared workspace reports and first Resume before original native inference, publication and cleanup. Protocol discovery remains an explicitly reported pinned fixture, independently rechecked during actual native initialization. Neither these loopback results nor ordinary dispatch tests establish hosted-account or cross-platform acceptance.
 
@@ -1303,7 +1303,7 @@ The pinned [snapshot implementation](https://github.com/anomalyco/opencode/blob/
 
 Export follows native history/process cleanup while the production Worker still holds its workspace lease. Every Git child has the original job's durable process owner, explicit credential-free environment, bounded output and a two-minute deadline; cleanup uncertainty wins over command success. Only the pinned native config key family and exact original worktree may be read. Ambient config, hooks, replacement refs, network protocols and lazy fetching are disabled. Git writes only the new archive; original native files and current workspace contents are compared without mutation. The final complete 8,192-entry/256 MiB runtime inventory includes the independent pack, and the existing 8 MiB metadata limit remains. Failed capture is not retried or repinned. Logs contain phase, count and ownership identifiers only.
 
-Read-only inspection compares the retained private files, never launches Git or consults the source repository's object store. After a fresh durable resume claim, replacement copies exact SQLite/WAL/SHM and the independently retained archive into the pinned native snapshot location. It imports no alternates, account state, external configuration, hooks or unrelated artifacts. Native effective settings, original session identity and complete original message/part history are still compared before new input. Replacement never checks out a snapshot, resets files, replays an earlier tool or overwrites later workspace changes. The archive preserves old trees even after their source objects disappear. Public single-repository Worktree and authenticated Local continuation use this same positive snapshot boundary alongside their independently validated original Git ownership and primary path. Completed-report recovery selects the explicit OpenCode profile and compares the original archive under the closed workspace/process locks, without exporting a new pack, starting native processes or changing files; successful recovery stays paused until explicit Resume. Multiple repositories additionally require the local-reference profile below; unsupported auxiliary histories and Windows non-VCS identity remain gated.
+Read-only inspection compares the retained private files, never launches Git or consults the source repository's object store. After a fresh durable resume claim, replacement copies exact SQLite/WAL/SHM and the independently retained archive into the pinned native snapshot location. It imports no alternates, account state, external configuration, hooks or unrelated artifacts. Native effective settings, original session identity and complete original message/part history are still compared before new input. Replacement never checks out a snapshot, resets files, replays an earlier tool or overwrites later workspace changes. The archive preserves old trees even after their source objects disappear. Public single-repository Worktree and authenticated Local continuation use this same positive snapshot boundary alongside their independently validated original Git ownership and primary path. Completed-report recovery selects the explicit OpenCode profile and compares the original archive under the closed workspace/process locks, without exporting a new pack, starting native processes or changing files; successful recovery stays paused until explicit Resume. Multiple repositories additionally require the local-reference profile below; unsupported auxiliary histories remain gated; Windows non-VCS roots use the separate global-root profile below.
 
 The pinned [project-directory event schema](https://github.com/anomalyco/opencode/blob/545f51d26cc39a907d2867492d498d9607ea5fa4/packages/schema/src/project-directories.ts) emits `project.directories.updated` with only `projectID`, including during native linked-worktree inventory refresh. The observer accepts only the original native project ID, preserves event identity through frozen observations and treats it as ancillary. It cannot supply a workspace root, migrate the session, change configuration or establish file/tool/terminal authority. Foreign, missing or extra fields fail the original observation.
 
@@ -1575,3 +1575,66 @@ Schema v20 now provides an internal PR remediation coordination core: one durabl
 Internal remediation planning now lists original linked session candidates by recent activity and validates explicit new-session configuration without reserving accounts or advancing routing. PR-head preparation preserves companion repositories and primary cwd; current account/native/Worker checks reject unsupported selections before a preparation can be queued. The public controller and direct-harness Git writes remain unfinished; current native candidate matching is implemented separately below.
 
 The private Worker observation channel now verifies an existing Local/Worktree session's current PR head, branch, remote operands and clean state without changing files or native ownership. Original candidate revision/project/link checks invalidate stale observations after pause, Archive or unlink. This supplies candidate evidence; public Fix now/coalescing, fresh startup authorization and direct-harness Git writes remain unfinished.
+
+### Windows OpenCode General Chat root profile (issue #1205)
+
+OpenCode `1.18.32` uses the literal native worktree `/` for a global non-VCS
+project on Windows as well as Unix. The Worker's accepted manifest and owned
+execution lease construct a closed `WorkspaceRoot` distinguishing a Git root
+from a global root. Its exact native identity and canonical filesystem boundary
+are separate facts. Windows global filesystem inspection uses the independently
+derived drive-qualified root of the actual workspace, never `/`, `/path`, a
+native assistant message or a checkpoint-proposed path. UNC/device roots and
+arbitrary aliases have no new support.
+
+Before initialization and every existing instruction/configuration recheck,
+require canonical existing workspace/boundary directories and inspect every
+ancestor through the filesystem boundary. Any `.git` entry (including a file,
+link or uninspectable entry) refuses General Chat. Preserve the existing refusal
+of every `opencode.json`, `opencode.jsonc` and `.opencode` entry without reading
+or altering it. Select additive project instructions only within the session
+workspace for global roots. Runtime privacy, managed policy, references,
+account/model/configuration, process ownership and receipt/uncertainty gates
+remain independently required.
+
+Compare native `/path.directory` to the original workspace and `/path.worktree`
+to exact `/`. Original creation must retain native project `global`; original
+assistant paths and stored continuation history must preserve that identity.
+The sentinel grants no filesystem access authority. Native Build/Plan descriptor
+and complete ordered permission rules are compared unchanged. On Windows,
+native `path.relative("/", plans)` resolves the slash using the owned native
+process cwd's drive. The initializer independently enforces that cwd as its
+private runtime home and reconstructs an environment without per-drive cwd
+entries. Compute that comparison from this original process/runtime context,
+including when the workspace is on another drive; never use server, renderer
+or current Worker cwd. Existing Git and Unix rule validation remains unchanged.
+
+New Windows global native checkpoints have private version `2`, exact
+`native_root: "/"` and a required independently captured `filesystem_root`.
+Their runtime home also retains the original process cwd context. Only global
+non-VCS checkpoints without snapshot/project-adoption/reference state use this
+version. Existing version-1 Unix/Git serialization, digests and validation remain
+unchanged; fixed fixtures pin both Unix and Windows canonical version-1 bytes.
+Missing roots, foreign roots and rewritten version-1 envelopes cannot gain
+replacement authority. The legacy one-root inspector accepts version 1 only.
+
+First execution, FIFO, explicit Resume and completed-report recovery reconstruct
+both root facts from the accepted manifest and current owned directories and
+compare them with the exact retained native checkpoint before native launch or
+recovery publication. Existing eligible text/inline-tool/interaction lineage,
+original mutation claims, accepted reports, outbox acknowledgments, account and
+workspace/process cleanup still apply. Replacement sends only the new input;
+recovery is read-only and remains paused until explicit Resume. No old input,
+response, tool or filesystem effect is replayed. Private native checkpoint
+version 2 is distinct from the already-existing Worker/report version 2.
+
+Deterministic tests cover separate roots, exact native directory/worktree
+binding, late ancestor isolation changes, Plan path/rule semantics, corrupt
+checkpoint roots and version-1 compatibility. Opt-in installed Windows tests use
+`DELIDEV_NATIVE_OPENCODE_EXECUTABLE` with the pinned executable and scripted
+loopback providers for Build/Plan, FIFO, Stop/Resume and first/resumed lost-report
+recovery. A separately supplied canonical writable
+`DELIDEV_NATIVE_OPENCODE_WINDOWS_WORKSPACE_PARENT` on another local drive enables
+the native cross-drive Plan fixture. Neither deterministic tests nor
+cross-compilation establish installed Windows/account acceptance. See the
+independent [issue evidence](evidence/delidev/issue-1205/windows-root-validation.md).
