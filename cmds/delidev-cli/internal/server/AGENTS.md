@@ -49,3 +49,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Coalesce identical initial manual-fix actor/request selections before provider inspection with bounded cancellable ownership. Recheck durable receipts after waiting; accepted replay bypasses gate capacity, and foreign input/actors cannot share ownership.
 
 - The private execution-dispatch entry point establishes server-owner context before retained PR-history reads. Public RPCs and store boundaries still validate their authenticated actor; ordinary dispatch must not depend on ticker-provided context.
+
+- Optional manual-fix preflight cannot replace ordinary dispatch lifecycle/error precedence when no queued input exists. The ordinary claim transaction remains authoritative for active, paused, archived and empty states.

@@ -478,6 +478,12 @@ func (s *Service) preparePRFixDispatch(ctx context.Context, record store.Record)
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		ir, err := tx.OldestQueuedInput(record.ID)
 		if err != nil {
+			if domain.SafeError(err).Code == domain.MissingInput {
+				// No queued input means no manual-fix candidate. Let the ordinary
+				// claim transaction preserve lifecycle/error precedence, including
+				// rejecting an already active execution before reporting emptiness.
+				return nil
+			}
 			return err
 		}
 		var found bool

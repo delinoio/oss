@@ -213,3 +213,16 @@ The focused `TestInitialDispatchOffProviderPreservesQueuedInputAndRouting`,
 `TestWorkspaceReadRelayWhileExecutionRemainsClaimed` race run passed, including
 public Worker mutation denial. Full CLI Go vet also passed after the review
 repairs and owner-context change.
+
+## CI repair: ordinary dispatch error precedence
+
+The optional PR preflight now skips only its absent queued-input candidate,
+letting the ordinary claim transaction validate lifecycle and report its
+original error. Claimed work still returns conflict and cannot redispatch;
+explicit continuation and newly queued manual PR input preserve their ownership.
+
+`go test -race -p 1 ./cmds/delidev-cli/internal/server
+-run '^(TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt|TestContinuationExplicitResumeWithQueuedAndFutureInput|TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion)$'
+-count=1` passed (16.285 seconds). No production lifecycle gate was relaxed.
+The current broad result must come from an immutable committed-source snapshot,
+separate from the earlier mixed-source failure.
