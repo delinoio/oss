@@ -116,4 +116,4 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Generated legacy Go and TypeScript descriptor exports must retain aggregate reflection contents while the actual schema file ownership follows the declaration relocation manifest. Do not register duplicate runtime symbols or commit a serialized aggregate that creates a new per-feature merge hotspot.
 
-- Repository metadata appends Worker capability 3 and AttachWorkerResponse support field 3 under issue #1142. Preserve initial attachment/input compatibility, independent negotiation and Machine echo; update allocations and regenerate Go/TypeScript together.
+- Repository metadata appends Worker capability 5 (preserving reserved values 3 and 4) and AttachWorkerResponse support field 3 under issue #1142. Preserve initial attachment/input compatibility, independent negotiation and Machine echo; update allocations and regenerate Go/TypeScript together.
