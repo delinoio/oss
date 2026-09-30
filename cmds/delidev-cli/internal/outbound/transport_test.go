@@ -130,6 +130,73 @@ func mustPort(t *testing.T, address string) int {
 	return a.Port
 }
 
+func TestNetworkPlaintextLoopbackNeverEntersProxy(t *testing.T) {
+	for _, mode := range []domain.ProxyMode{domain.ProxyHTTP, domain.ProxyHTTPS, domain.ProxySOCKS5} {
+		t.Run(string(mode), func(t *testing.T) {
+			var originCalls, directCalls atomic.Int32
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { originCalls.Add(1) }))
+			defer origin.Close()
+			fixture := outboundtest.Connect(t, outboundtest.Address(origin.URL), mode == domain.ProxyHTTPS)
+			if mode == domain.ProxySOCKS5 {
+				fixture = outboundtest.SOCKS5(t, outboundtest.Address(origin.URL))
+			}
+			base := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: fixture.Roots}, DialContext: func(context.Context, string, string) (net.Conn, error) {
+				directCalls.Add(1)
+				return nil, errors.New("fixture direct path forbidden")
+			}}
+			transport := &outbound.Transport{Base: base, Resolve: fixture.Resolve}
+			for _, authority := range []string{"localhost", "LOCALHOST:80", "127.0.0.1", "127.0.0.2:8000", "[::1]:8000", "[::ffff:127.0.0.1]:8000"} {
+				for _, header := range []string{"Authorization", "X-Api-Key"} {
+					req, _ := http.NewRequest(http.MethodPost, "http://"+authority+"/provider", nil)
+					req.Header.Set(header, "account-fixture-key")
+					if _, err := transport.RoundTrip(req); domain.SafeError(err).Code != domain.PermissionDenied {
+						t.Fatal("plaintext loopback route was not rejected", authority, err)
+					}
+				}
+			}
+			if fixture.Calls.Load() != 0 || directCalls.Load() != 0 || originCalls.Load() != 0 {
+				t.Fatal("rejected local request reached a connection", fixture.Calls.Load(), directCalls.Load(), originCalls.Load())
+			}
+		})
+	}
+}
+
+func TestNetworkLoopbackHTTPSStillUsesVerifiedProxy(t *testing.T) {
+	for _, mode := range []domain.ProxyMode{domain.ProxyHTTP, domain.ProxyHTTPS, domain.ProxySOCKS5} {
+		t.Run(string(mode), func(t *testing.T) {
+			var calls atomic.Int32
+			origin, roots := outboundtest.TLSOrigin(t, "127.0.0.1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.Header.Get("Authorization") != "Bearer account-fixture-key" || r.Header.Get("Proxy-Authorization") != "" {
+					t.Error("TLS account/proxy credentials lost separation")
+				}
+				io.WriteString(w, "verified")
+			}))
+			fixture := outboundtest.Connect(t, outboundtest.Address(origin.URL), mode == domain.ProxyHTTPS)
+			if mode == domain.ProxySOCKS5 {
+				fixture = outboundtest.SOCKS5(t, outboundtest.Address(origin.URL))
+			}
+			if fixture.ProxyCertificate != nil {
+				roots.AddCert(fixture.ProxyCertificate)
+			}
+			base := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}, DialContext: func(context.Context, string, string) (net.Conn, error) {
+				return nil, errors.New("fixture direct path forbidden")
+			}}
+			client := &http.Client{Transport: &outbound.Transport{Base: base, Resolve: fixture.Resolve}}
+			req, _ := http.NewRequest(http.MethodGet, origin.URL, nil)
+			req.Header.Set("Authorization", "Bearer account-fixture-key")
+			response, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if fixture.Calls.Load() != 1 || calls.Load() != 1 {
+				t.Fatal("verified local HTTPS did not use proxy")
+			}
+		})
+	}
+}
+
 func TestNetworkCancellationClosesBlockedProxyHandshake(t *testing.T) {
 	for _, mode := range []domain.ProxyMode{domain.ProxyHTTP, domain.ProxySOCKS5} {
 		t.Run(string(mode), func(t *testing.T) {

@@ -2,6 +2,7 @@
 package apiproxy
 
 import (
+	"crypto/x509"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,13 +13,14 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/outbound"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/outboundtest"
 )
 
 func TestNetworkInferenceRelayUsesExplicitProxy(t *testing.T) {
 	for _, socks := range []bool{false, true} {
 		t.Run(map[bool]string{false: "CONNECT", true: "SOCKS5"}[socks], func(t *testing.T) {
-			f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
+			f, roots := networkTLSRelayFixture(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Proxy-Authorization") != "" || r.Header.Get("Authorization") != "Bearer "+fixtureKey {
 					t.Error("credential separation")
 				}
@@ -30,7 +32,9 @@ func TestNetworkInferenceRelayUsesExplicitProxy(t *testing.T) {
 				fixture = outboundtest.SOCKS5(t, outboundtest.Address(f.upstream.URL))
 			}
 			f.server.Close()
-			f.server = httptest.NewServer(New(f.authority, slog.New(slog.NewJSONHandler(f.logs, nil)), fixture.Resolver()))
+			handler := New(f.authority, slog.New(slog.NewJSONHandler(f.logs, nil)), fixture.Resolver())
+			handler.client.Transport.(*outbound.Transport).Base.TLSClientConfig.RootCAs = roots
+			f.server = httptest.NewServer(handler)
 			response, _, err := f.request(t, "/chat/completions", `{"model":"fixed-model","messages":[]}`, nil)
 			if err != nil || response.StatusCode != 200 || fixture.Calls.Load() != 1 {
 				t.Fatal("inference routing", err)
@@ -47,7 +51,7 @@ func TestNetworkInferenceRedirectRefusalAndJoinedCancellation(t *testing.T) {
 				recorder := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected.Add(1) }))
 				defer recorder.Close()
 				started, stopped, relayStopped := make(chan struct{}), make(chan struct{}), make(chan struct{})
-				f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
+				f, roots := networkTLSRelayFixture(t, func(w http.ResponseWriter, r *http.Request) {
 					defer close(stopped)
 					if r.Header.Get("Proxy-Authorization") != "" || r.Header.Get("Authorization") != "Bearer "+fixtureKey {
 						t.Error("credential authority changed")
@@ -63,13 +67,14 @@ func TestNetworkInferenceRedirectRefusalAndJoinedCancellation(t *testing.T) {
 					w.WriteHeader(status)
 				})
 				address, direct := outboundtest.DenyDirect(t)
-				f.authority.scope.Provider.Endpoint = "http://" + address + "/provider"
+				f.authority.scope.Provider.Endpoint = "https://" + address + "/provider"
 				fixture := outboundtest.Connect(t, outboundtest.Address(f.upstream.URL), false)
 				if socks {
 					fixture = outboundtest.SOCKS5(t, outboundtest.Address(f.upstream.URL))
 				}
 				f.server.Close()
 				handler := New(f.authority, slog.New(slog.NewJSONHandler(f.logs, nil)), fixture.Resolver())
+				handler.client.Transport.(*outbound.Transport).Base.TLSClientConfig.RootCAs = roots
 				f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { defer close(relayStopped); handler.ServeHTTP(w, r) }))
 				done := make(chan struct{})
 				var response *http.Response
@@ -100,5 +105,48 @@ func TestNetworkInferenceRedirectRefusalAndJoinedCancellation(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Only this network fixture installs test CA roots. Production relay TLS still
+// verifies against its normal root store and destination hostname/IP.
+func networkTLSRelayFixture(t *testing.T, handler http.HandlerFunc) (*proxyFixture, *x509.CertPool) {
+	t.Helper()
+	f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, handler)
+	f.upstream.Close()
+	upstream, roots := outboundtest.TLSOrigin(t, "127.0.0.1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { f.calls.Add(1); handler(w, r) }))
+	f.upstream = upstream
+	f.authority.scope.Provider.Endpoint = upstream.URL + "/provider"
+	return f, roots
+}
+
+func TestNetworkInferencePlaintextLoopbackRequiresExplicitDirectAuthority(t *testing.T) {
+	for _, mode := range []domain.ProxyMode{domain.ProxyHTTP, domain.ProxyHTTPS, domain.ProxySOCKS5} {
+		t.Run(string(mode), func(t *testing.T) {
+			f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer "+fixtureKey || r.Header.Get("Proxy-Authorization") != "" {
+					t.Error("local key authority changed")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, `{"choices":[]}`)
+			})
+			fixture := outboundtest.Connect(t, outboundtest.Address(f.upstream.URL), mode == domain.ProxyHTTPS)
+			if mode == domain.ProxySOCKS5 {
+				fixture = outboundtest.SOCKS5(t, outboundtest.Address(f.upstream.URL))
+			}
+			f.server.Close()
+			f.server = httptest.NewServer(New(f.authority, slog.New(slog.NewJSONHandler(f.logs, nil)), fixture.Resolver()))
+			response, raw, err := f.request(t, "/chat/completions", `{"model":"fixed-model","messages":[]}`, nil)
+			if err != nil || response.StatusCode < 400 || fixture.Calls.Load() != 0 || f.calls.Load() != 0 {
+				t.Fatal("plaintext local inference escaped or fell back", err)
+			}
+			assertNoProxySecrets(t, f, raw)
+			fixture.Profile.Bypass = []domain.ProxyBypass{{Host: "127.0.0.1"}}
+			response, raw, err = f.request(t, "/chat/completions", `{"model":"fixed-model","messages":[]}`, nil)
+			if err != nil || response.StatusCode != http.StatusOK || fixture.Calls.Load() != 0 || f.calls.Load() != 1 {
+				t.Fatal("explicit local bypass lost direct authority", err)
+			}
+			assertNoProxySecrets(t, f, raw)
+		})
 	}
 }

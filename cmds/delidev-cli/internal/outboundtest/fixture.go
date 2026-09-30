@@ -212,6 +212,10 @@ func TLSOrigin(t *testing.T, name string, handler http.Handler) (*httptest.Serve
 		t.Fatal(err)
 	}
 	cert := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: name}, DNSNames: []string{name}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true}
+	if ip := net.ParseIP(name); ip != nil {
+		cert.DNSNames = nil
+		cert.IPAddresses = []net.IP{ip}
+	}
 	der, err := x509.CreateCertificate(rand.Reader, cert, cert, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)

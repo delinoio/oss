@@ -39,6 +39,19 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err = p.Validate(); err != nil {
 		return nil, unavailable()
 	}
+	if req.URL.Scheme == "http" && p.Mode != domain.ProxyDirect {
+		host, port := req.URL.Hostname(), req.URL.Port()
+		if port == "" {
+			port = "80"
+		}
+		ip := net.ParseIP(host)
+		if (strings.EqualFold(host, "localhost") || ip != nil && ip.IsLoopback()) && !p.Bypasses(net.JoinHostPort(host, port)) {
+			// A loopback HTTP provider is safe only on this server. CONNECT or
+			// SOCKS5 would move its plaintext account key into the proxy's trust
+			// boundary. Reject before dialing; never silently switch routes.
+			return nil, domain.Fail(domain.PermissionDenied, "Plaintext loopback endpoints require Direct or an exact bypass.", "Select Direct, configure an exact destination bypass, or use a verified HTTPS endpoint.")
+		}
+	}
 	var credential domain.ProxyCredential
 	if p.CredentialGeneration != "" {
 		if domain.Decode(raw, &credential) != nil || credential.Validate() != nil {
