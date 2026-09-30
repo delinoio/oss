@@ -41,6 +41,7 @@ The desktop shell combines the issue #1044 project-grouped session sidebar and b
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Saved client connections](cmds-delidev-connections-contract.md)
+- [Session development-server forwarding](cmds-delidev-forwarding-contract.md)
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
@@ -280,3 +281,5 @@ Managed backup creation, inventory, integrity inspection and durable permanent i
 Local desktop registration now has explicit owner-verified revoked-client recovery and a current-client revocation guard in the app. The CLI/native boundary retains the original revoked identity and private pairing history, uses a separate candidate and exact durable retry, and preserves server sessions/settings and independent Workers. It does not add automatic repair, remote saved-profile recovery, a new RPC or database migration; see the CLI and desktop contracts and evidence ledger.
 
 The issue #1083 activity extension retains immutable PR problem/dismissal and attempt-state metadata, plus projection of dedicated verification records. Reads preserve exact original versions/actors/source identities and never infer handling from success. The private verification publication boundary is fixture-tested; its independent production verifier/controller and real native/provider acceptance remain separate, as documented in the activity and integration contracts.
+
+Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.

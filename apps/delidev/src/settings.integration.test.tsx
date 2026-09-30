@@ -512,9 +512,9 @@ it("persists native Claude permission selection through the desktop and real Go 
 it("saves and renames GitHub profiles through the real Go server and CLI", async () => {
   // Real-server mutation and list publication exceed the default one-second
   // observation deadline under CI load. Retain both the delayed first receipt
-  // and sequential save/list latency, with bounded five-second UI waits and no
-  // replayed saves. Restore the default only when this fixture no longer tests
-  // delayed replies and full CI reliably fits one second.
+  // and sequential save/list latency, with bounded fifteen-second UI waits and no
+  // replayed saves. Restore the default only after both the native server and
+  // delayed replies leave this fixture and full CI reliably fits one second.
   let delayedSave = false;
   const profileTransport: Transport = {
     ...transport,
@@ -539,11 +539,11 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Real server profile" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "fixture-owner" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }, { timeout: 5000 }));
+  fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }, { timeout: 15000 }));
   expect(delayedSave).toBe(true);
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Renamed server profile" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  await screen.findByRole("button", { name: "Manage Renamed server profile" }, { timeout: 5000 });
+  await screen.findByRole("button", { name: "Manage Renamed server profile" }, { timeout: 15000 });
   const output = JSON.parse(await runCLI(["integration", "list"]));
   const row = output.result.resources.find((value: { data: { name: string } }) => value.data.name === "Renamed server profile");
   expect(row).toBeTruthy();

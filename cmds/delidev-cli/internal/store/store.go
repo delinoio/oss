@@ -510,6 +510,31 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	if expected >= 1<<63-1 {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid expected revision.", "Reload the current entity revision.")
 	}
+	// Every Archive completion path shares the socket-cleanup gate, including
+	// late preparation, title and agent reports. Native process completion alone
+	// cannot release a session's separately owned forward lifetimes.
+	if kind == domain.SessionKind {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return Record{}, err
+		}
+		var fields map[string]json.RawMessage
+		var archive domain.ArchiveState
+		if json.Unmarshal(raw, &fields) == nil && json.Unmarshal(fields["archive"], &archive) == nil && archive == domain.Archived {
+			pending, err := t.SessionForwardsPending(id)
+			if err != nil {
+				return Record{}, err
+			}
+			if pending {
+				fields["archive"], _ = json.Marshal(domain.ArchivePending)
+				raw, err := json.Marshal(fields)
+				if err != nil {
+					return Record{}, err
+				}
+				value = json.RawMessage(raw)
+			}
+		}
+	}
 	body, err := json.Marshal(value)
 	if err != nil || len(body) > 1<<20 {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid entity document.", "Use a validated entity no larger than 1 MiB.")
@@ -586,6 +611,9 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 		return domain.Fail(domain.Conflict, "The entity revision changed.", "Reload its current revision before deletion.")
 	}
 	if kind == domain.SessionKind {
+		if err := t.StopForwards(id, ""); err != nil {
+			return err
+		}
 		if err := t.deleteSessionPRActivity(id); err != nil {
 			return err
 		}
