@@ -15,6 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/terminal"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestTerminalReplacementReadsOnlyCommittedOriginalReportReceipt(t *testing.T) {
@@ -90,19 +91,19 @@ func TestTerminalReplacementReadsOnlyCommittedOriginalReportReceipt(t *testing.T
 					t.Fatal("exact committed receipt did not return content-free acknowledgement", err)
 				}
 			}
-			changed := *report
+			changed := proto.Clone(report).(*pb.ReportTerminalRequest)
 			changed.ResultJson = append(bytes.Clone(raw), ' ')
-			if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, &changed)); connect.CodeOf(err) != connect.CodeAborted {
+			if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, changed)); connect.CodeOf(err) != connect.CodeAborted {
 				t.Fatal("changed report bytes acknowledged", err)
 			}
-			changed = *report
+			changed = proto.Clone(report).(*pb.ReportTerminalRequest)
 			changed.RequestId = string(domain.NewID())
-			if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, &changed)); err == nil {
+			if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, changed)); err == nil {
 				t.Fatal("absent receipt granted old-instance reporting authority")
 			}
-			changed = *report
+			changed = proto.Clone(report).(*pb.ReportTerminalRequest)
 			changed.MachineId = string(domain.NewID())
-			if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, &changed)); connect.CodeOf(err) != connect.CodePermissionDenied {
+			if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, changed)); connect.CodeOf(err) != connect.CodePermissionDenied {
 				t.Fatal("another machine read original receipt", err)
 			}
 			if !purged {
@@ -112,9 +113,9 @@ func TestTerminalReplacementReadsOnlyCommittedOriginalReportReceipt(t *testing.T
 				}
 			}
 			// Fresh instance identities cannot recreate a completed original report.
-			changed = *report
+			changed = proto.Clone(report).(*pb.ReportTerminalRequest)
 			changed.InstanceId, changed.RequestId = replacement, string(domain.NewID())
-			if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, &changed)); err == nil {
+			if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, changed)); err == nil {
 				t.Fatal("receipt acknowledgement revived native reporting authority")
 			}
 			device := currentCatalogResource(t, f, &pb.Resource{Kind: pb.EntityKind_ENTITY_KIND_DEVICE, Id: string(authority.DeviceID)})
