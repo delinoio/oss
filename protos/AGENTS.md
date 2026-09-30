@@ -142,3 +142,7 @@
 - DeliDev provider activation follows `docs/cmds-delidev-provider-activation-contract.md`: provider inventory is owner/client-only and capability-bearing; provider ID scopes only account list pages; the optional enabled-provider model filter remains additive and cursor-bound. Generate all Go and TypeScript bindings from the canonical proto.
 
 - DeliDev native accounting requires explicit NATIVE_UNITS_V1 request/response negotiation and the corresponding SystemCapability. Keep AccountingUnitKind and measured/unavailable unit counts distinct from legacy response fields, preserve exact decimal totals and unavailable Grok costs, expose no private source references, and regenerate both clients. Follow the usage contract.
+
+- Preserve distinct SystemCapability wire identities: automatic titles = 1, session forwarding = 2, native accounting = 3. Concurrent additive features must not reuse an existing capability value or reinterpret its negotiation.
+
+- DeliDev session forwards follow `docs/cmds-delidev-forwarding-contract.md`: preserve explicit loopback port selection, original client/Worker/device/instance ownership, negotiated capabilities and bounded ordered opaque traffic. Native claims precede sockets and receipt replay grants no new lifetime. Keep Stop independent from Archive, gate every Archive completion on both original cleanup outcomes, and retain positive private cleanup receipts through offline reporting without redialing or recreating listeners. Worker credentials receive only their original forwarding peer endpoints.

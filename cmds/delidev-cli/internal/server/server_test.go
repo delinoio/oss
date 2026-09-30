@@ -84,6 +84,20 @@ func TestRealConnectAuthenticationOriginsAndRedaction(t *testing.T) {
 	if response.Header().Get("X-Delidev-Correlation-Id") == "" {
 		t.Fatal("missing correlation")
 	}
+	// Forwarding already owns wire value 2. Native accounting must remain a
+	// separate negotiated capability when both features share this server.
+	if pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 != 2 || pb.SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1 != 3 {
+		t.Fatal("system capability wire identities changed")
+	}
+	capabilities := make(map[pb.SystemCapability]int)
+	for _, capability := range response.Msg.Capabilities {
+		capabilities[capability]++
+	}
+	for _, capability := range []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1, pb.SystemCapability_SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1} {
+		if capabilities[capability] != 1 {
+			t.Fatalf("independent capability %v missing or duplicated: %v", capability, response.Msg.Capabilities)
+		}
+	}
 	raw, _ := json.Marshal(response.Msg)
 	if bytes.Contains(raw, []byte(identity.Token)) {
 		t.Fatal("status leaked owner token")
