@@ -153,6 +153,12 @@ func (s *Store) inspectBackupContent(ctx context.Context, id, expectedServer dom
 	if s.closed {
 		return result, backupUnavailable()
 	}
+	return s.copyBackup(ctx, id, expectedServer, afterCopy, "", observe)
+}
+
+// Caller holds backupGate and gate. A retained output belongs only to restore
+// staging; the published source is always read-only and independently checked.
+func (s *Store) copyBackup(ctx context.Context, id, expectedServer domain.ID, afterCopy func(), output string, observe func(*sql.DB) error) (result BackupInspection, returned error) {
 	root := filepath.Join(s.root, "backups")
 	if err := security.CheckPrivateDir(root); err != nil {
 		return result, storageError(err)
@@ -183,11 +189,20 @@ func (s *Store) inspectBackupContent(ctx context.Context, id, expectedServer dom
 	if err != nil || !sameBackup(before, current) {
 		return result, backupUnavailable()
 	}
-	scratch, err := os.CreateTemp(root, ".inspection-*.tmp")
+	var scratch *os.File
+	if output == "" {
+		scratch, err = os.CreateTemp(root, ".inspection-*.tmp")
+	} else {
+		scratch, err = os.OpenFile(output, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+	}
 	if err != nil {
 		return result, storageError(err)
 	}
-	defer os.Remove(scratch.Name())
+	defer func() {
+		if output == "" || returned != nil {
+			os.Remove(scratch.Name())
+		}
+	}()
 	defer scratch.Close()
 	hash := sha256.New()
 	buffer := make([]byte, 128<<10)
@@ -210,6 +225,11 @@ func (s *Store) inspectBackupContent(ctx context.Context, id, expectedServer dom
 	}
 	if n, err := input.Read(buffer[:1]); n != 0 || !errors.Is(err, io.EOF) {
 		return result, backupUnavailable()
+	}
+	if output != "" {
+		if err := scratch.Sync(); err != nil {
+			return result, storageError(err)
+		}
 	}
 	if err := scratch.Close(); err != nil {
 		return result, storageError(err)

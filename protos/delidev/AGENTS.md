@@ -117,3 +117,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Generated legacy Go and TypeScript descriptor exports must retain aggregate reflection contents while the actual schema file ownership follows the declaration relocation manifest. Do not register duplicate runtime symbols or commit a serialized aggregate that creates a new per-feature merge hotspot.
 
 - Permanent deletion adds owner/client SessionService acceptance/status and independent owning-Worker cleanup RPCs. Shared job/state messages belong to common.proto; exclusive request/response types belong to their service file. Preserve `PERMANENT_SESSION_DELETION_V1 = 9` from allocations.json alongside merged capabilities, exact uint64 revisions, pending acknowledgements and unknown reclaimed bytes. Follow `docs/cmds-delidev-storage-contract.md` and regenerate bindings.
+
+- Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
+
+- Managed restore uses reserved `MANAGED_BACKUP_RESTORE_V1 = 7`. Preserve existing capabilities 1/2/3 and generate owner/client restore RPCs, presence-aware revision inputs and typed receipt states from `system.proto`.
