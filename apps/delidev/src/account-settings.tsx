@@ -497,7 +497,7 @@ function AccountCreationWizard({
       <p>Provider: <strong>{selectedProvider?.displayName ?? "Unavailable"}</strong> <button type="button" disabled={providerChecking || create.busy || create.uncertain} onClick={returnToProviders}>Change</button></p>
       {!accountTypeFilteringReady ? <p role="status">This server no longer reports the provider inventory and account-type filtering capabilities required here. Update the server before submitting or retrying.</p> : null}
       <form onSubmit={(event) => { event.preventDefault(); createAccount(); }}>
-        <fieldset disabled={providerChecking || create.busy || create.uncertain}>
+        <fieldset disabled={!accountTypeFilteringReady || providerChecking || create.busy || create.uncertain}>
           <label>Entry name<input autoComplete="off" maxLength={256} value={alias} aria-invalid={(attempted || alias.length > 0) && !aliasValid} onChange={(event) => setAlias(event.target.value)} /></label>
           {(attempted || alias.length > 0) && !aliasValid ? <p role="alert">Enter a non-empty entry name no longer than 256 UTF-8 bytes.</p> : null}
           {keyless ? <p>Connect to this local endpoint on the selected server.</p> : <>

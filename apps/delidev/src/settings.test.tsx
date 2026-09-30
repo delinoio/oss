@@ -123,6 +123,23 @@ it("keeps API provider accounts optional when none are connected", async () => {
   expect(await screen.findByRole("heading", { name: "Connect your entry" })).toBeTruthy();
 });
 
+it("keeps provider-row entry fields disabled when the server lacks account-type filtering", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", enabled: true, preset_id: "openai" });
+  const entry = create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OPENAI, providerId: provider.id, displayName: "OpenAI", enabled: true, provider, accountCountsAvailable: true });
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
+  const value = fixture([provider], { readProviderInventory: () => ({ entries: [entry], capabilities }) });
+  render(value.view(<Settings visible close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add AI API key" }));
+  await screen.findByRole("heading", { name: "Connect your entry" });
+  expect(screen.getByLabelText("Entry name").matches(":disabled")).toBe(true);
+  expect(screen.getByLabelText("API key").matches(":disabled")).toBe(true);
+  expect((screen.getByRole("button", { name: "Add and connect" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText(/server no longer reports/)).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+  expect(value.connect).not.toHaveBeenCalled();
+});
+
 it("still reports a real provider inventory read failure", async () => {
   const value = fixture([], { providerInventoryError: new ConnectError("Inventory unavailable", Code.Unavailable) });
   render(value.view(<Settings visible close={() => {}} />));

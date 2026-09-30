@@ -129,6 +129,33 @@ it("opens the exact inventory action once under Strict Mode and rerender without
   expect(value.connect).not.toHaveBeenCalled();
 });
 
+it.each(["account inventory", "picker inventory"])("keeps direct-entry fields unavailable until the %s capability gates are ready", async (unavailable) => {
+  const value = fixture();
+  const entry = { key: "gated-provider-entry", providerId: value.providerId, provider: value.providerOption };
+  const picker = { ready: unavailable !== "picker inventory", loaded: true, fetching: false, pageToken: "", nextPageToken: "", retry: vi.fn(), next: vi.fn(), first: vi.fn() };
+  const props = { startApiWizard: entry, accountTypeFilteringReady: unavailable !== "account inventory", providerPicker: picker };
+  const view = render(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api, props))}</StrictMode>);
+  await screen.findByRole("heading", { name: "Connect your entry" });
+  const name = screen.getByLabelText("Entry name") as HTMLInputElement;
+  const key = screen.getByLabelText("API key") as HTMLInputElement;
+  expect(name.matches(":disabled")).toBe(true);
+  expect(key.matches(":disabled")).toBe(true);
+  expect((screen.getByRole("button", { name: "Add and connect" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.submit(name.closest("form")!);
+  view.rerender(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api, { ...props, accountTypeFilteringReady: true, providerPicker: { ...picker, ready: true } }))}</StrictMode>);
+  expect(name.matches(":disabled")).toBe(false);
+  expect(key.matches(":disabled")).toBe(false);
+  fireEvent.change(name, { target: { value: "Explicit draft" } });
+  fireEvent.change(key, { target: { value: "fixture-only-key" } });
+  view.rerender(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api, props))}</StrictMode>);
+  expect(name.matches(":disabled")).toBe(true);
+  expect(key.matches(":disabled")).toBe(true);
+  fireEvent.submit(name.closest("form")!);
+  expect(value.save).not.toHaveBeenCalled();
+  expect(value.connect).not.toHaveBeenCalled();
+  expect(value.other).not.toHaveBeenCalled();
+});
+
 it.each([Authentication.Key, Authentication.Keyless])("keeps the clicked %s contract across stale independent inventory snapshots", async (authentication) => {
   const providerId = newRequestId();
   const keyless = authentication === Authentication.Keyless;
