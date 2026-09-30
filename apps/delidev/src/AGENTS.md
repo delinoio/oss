@@ -509,3 +509,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - DeliDev API Providers and Models follow `docs/cmds-delidev-provider-activation-contract.md`: gate on all required inventory capabilities, render server-derived exact counts and bounded pages, use server-side active-provider filtering for model reads/new choices, and preserve explicit disabled references. Zero accounts is normal and must not display an account-required error or notice; account addition is optional, manual model registration remains available, and automatic discovery still requires a connected account. Keep real request failures visible. Never use generic unfiltered resource reads as eligibility fallback.
 
 - Key managed-preset rows and activation intents by stable preset identity before and after first activation publishes its saved UUID. An inventory refresh or Settings navigation must preserve the exact uncertain request and disabled switch until its original acknowledgment is resolved; custom providers keep UUID-based identity.
+
+### Integration fixture ownership
+
+- Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.

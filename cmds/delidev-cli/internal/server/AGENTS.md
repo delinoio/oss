@@ -37,3 +37,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Require and validate the original local desktop pairing journal and its request-bound grant before revoked eligibility or recovery intent. Both original credential and pairing commitments are mandatory on journal load; validate archived pairing ownership on retries and never reconstruct absent original pairing evidence.
 
 - Enforce the optional desktop `--expected-endpoint` guard against the authenticated owner client before any recovery journal, archive or pairing mutation. The guard never selects another endpoint, and a mismatch preserves the original credential and all recovery state.
+
+### Source ownership
+
+- Keep process startup/shutdown in `server_startup.go`, HTTP authorization in `server_http.go`, Connect registration in `server_routes.go`, and system status/capability responses in `server_status.go`. New service behavior belongs in its service file; preserve middleware and registration order.

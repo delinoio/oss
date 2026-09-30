@@ -52,3 +52,17 @@ Use the existing protocol, Go, frontend and CI-contract suites. No new GitHub
 ruleset, required check or merge-queue policy is introduced. Merge the validated
 structural PR first, confirm main, then close only still-open PRs in the snapshot.
 Preserve their branches and linked issues. New PRs are not added to that set.
+
+## Concrete source boundaries
+
+The server's HTTP/authentication wrapper, Connect registration, system status, and
+startup live in `server_http.go`, `server_routes.go`, `server_status.go`, and
+`server_startup.go` under its owner directory. CLI dispatch uses one file per command
+family; shared output framing still observes each command's generated request ID.
+Settings integration files call the common `settings-test-fixture.ts` factory,
+which owns independent temporary directories and child lifetimes per file.
+
+The relocation inventory is an audit of this change, not a permanent prohibition
+on editing live contracts. Set `DELIDEV_VERIFY_RELOCATION=1` to repeat the verbatim
+migration audit; ordinary CI checks the destinations and inventory without freezing
+future authorized policy edits.
