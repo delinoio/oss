@@ -4,6 +4,7 @@ import { EntityKind, IntegrationQuery, ResourceQuery, PullRequestProblemCollecti
 import { document, object, text, type Document } from "./documents";
 import { bounded, date, positive, sha, uuid } from "./github-query-model";
 import { useRetainedMutation } from "./mutation";
+import { selectedCIRollup } from "./github-ci-queue";
 import { CIOriginalEvidence, PRCI, validCIContext, validPRCI } from "./github-ci";
 import { Problem } from "./ui";
 import { prSelectionKey, usePRWorkflow } from "./pr-workflow";
@@ -26,7 +27,7 @@ export function readPRProblemSet(row: Resource, selection: PRProblemSelection): 
  const value = document(row), ci = object(value.ci), conflict = object(value.conflict);
  if (!envelope(row) || value.version !== 1 || value.type !== "pull-request-set" || !targetValid(object(value.target), selection) || (value.feedback == null && value.ci == null && value.conflict == null)) return;
  if (value.feedback != null && !observationValid(object(value.feedback))) return;
- if (value.ci != null && (!observationValid(object(ci.observation)) || !["unknown", "missing", "pending", "non-failing", "terminal-failure", "not-required"].includes(text(ci.state)) || !["head", "test-merge", "unknown"].includes(text(ci.source)) || !/^[a-f0-9]{64}$/.test(text(ci.rules_digest)) || (ci.source === "unknown" ? ci.evaluated_sha != null || ci.state !== "unknown" : !sha(ci.evaluated_sha)))) return;
+ if (value.ci != null && (!observationValid(object(ci.observation)) || !["unknown", "missing", "pending", "non-failing", "terminal-failure", "not-required"].includes(text(ci.state)) || !["head", "test-merge", "merge-queue", "unknown"].includes(text(ci.source)) || !/^[a-f0-9]{64}$/.test(text(ci.rules_digest)) || (ci.source === "unknown" ? ci.evaluated_sha != null || ci.state !== "unknown" : !sha(ci.evaluated_sha)))) return;
  if (value.conflict != null && (!observationValid(object(conflict.observation)) || !bounded(conflict.base_ref, 1024) || !bounded(conflict.head_ref, 1024) || !["unknown", "mergeable", "conflicting", "not-applicable"].includes(text(conflict.state)) || !["open", "closed"].includes(text(conflict.pull_request_state)) || typeof conflict.merged !== "boolean" || (conflict.mergeable != null && typeof conflict.mergeable !== "boolean") || (conflict.active != null && !conflictSnapshotValid(object(conflict.active))))) return;
  return value;
 }
@@ -36,7 +37,8 @@ export function readPRProblem(row: Resource, set: Resource, selection: PRProblem
   if (value.kind === "ci-failure") {
     const ci = object(value.ci), context = object(ci.context);
     const terminal = context.kind === "check-run" ? context.native_status === "COMPLETED" && ["FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE"].includes(text(context.native_conclusion)) : context.kind === "commit-status" && ["FAILURE", "ERROR"].includes(text(context.native_status));
-    if (value.feedback != null || value.original_provider != null || value.latest_provider != null || value.conflict != null || !uuid(ci.observation_id) || !validCIContext(context) || context.required !== true || !terminal || !["head", "test-merge"].includes(text(ci.source)) || !/^[a-f0-9]{64}$/.test(text(ci.rules_digest))) return;
+    if (value.feedback != null || value.original_provider != null || value.latest_provider != null || value.conflict != null || !uuid(ci.observation_id) || !validCIContext(context) || context.required !== true || !terminal || !["head", "test-merge", "merge-queue"].includes(text(ci.source)) || !/^[a-f0-9]{64}$/.test(text(ci.rules_digest))) return;
+    if (ci.source === "merge-queue" ? !bounded(ci.queue_node_id, 256) || !bounded(ci.queue_entry_node_id, 256) : ci.queue_node_id != null || ci.queue_entry_node_id != null) return;
     return value;
   }
   if (value.kind === "merge-conflict") {
@@ -85,11 +87,11 @@ function OriginalCIProofRead({ value, selection }: { value: Document; selection:
   const ci = object(value.ci), context = object(ci.context);
   const query = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROBLEM, id: text(ci.observation_id) }, options);
   const row = query.data?.resource, proof = document(row), observation = object(proof.observation), evaluation = object(proof.ci), result = object(evaluation.result);
-  const item = { base_ref: proof.base_ref, head_ref: proof.head_ref, base_sha: observation.base_sha, head_sha: observation.head_sha, state: proof.pull_request_state, merged: proof.merged, mergeable: proof.mergeable };
-  const selected = result.source === "test-merge" ? object(evaluation.test_merge) : object(evaluation.head);
+  const item = { node_id: object(proof.target).pull_request_node_id, number: object(proof.target).number, base_ref: proof.base_ref, head_ref: proof.head_ref, base_sha: observation.base_sha, head_sha: observation.head_sha, state: proof.pull_request_state, merged: proof.merged, mergeable: proof.mergeable };
+  const selected = selectedCIRollup(evaluation);
   const contexts = Array.isArray(selected.contexts) ? selected.contexts as Document[] : [];
   const matches = contexts.find(candidate => candidate.node_id === context.node_id);
-  const valid = Boolean(row && envelope(row) && row.id === ci.observation_id && proof.version === 1 && proof.type === "pull-request-ci-observation" && proof.set_id === value.set_id && targetValid(object(proof.target), selection) && observationValid(observation) && sameJSON(proof.observation, value.observation) && validPRCI(evaluation, item) && result.state === "terminal-failure" && result.source === ci.source && object(evaluation.rules).digest === ci.rules_digest && matches && sameJSON(matches, context));
+  const valid = Boolean(row && envelope(row) && row.id === ci.observation_id && proof.version === 1 && proof.type === "pull-request-ci-observation" && proof.set_id === value.set_id && targetValid(object(proof.target), selection) && observationValid(observation) && sameJSON(proof.observation, value.observation) && validPRCI(evaluation, item) && result.state === "terminal-failure" && result.source === ci.source && object(evaluation.rules).digest === ci.rules_digest && (ci.source !== "merge-queue" || (object(evaluation.merge_queue).node_id === ci.queue_node_id && object(object(evaluation.merge_queue).entry).node_id === ci.queue_entry_node_id && object(evaluation.merge_queue).repository_node_id === object(proof.target).repository_node_id)) && matches && sameJSON(matches, context));
   return <><Problem error={query.error} />{query.isPending ? <p>Reading original CI evaluation…</p> : !valid ? <p role="alert">The original CI proof does not match this result version.</p> : <PRCI value={evaluation} historical />}</>;
 }
 function OriginalCIProof({ value, selection }: { value: Document; selection: PRProblemSelection }) {

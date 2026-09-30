@@ -1,6 +1,7 @@
 import { items, object, text, type Document } from "./documents";
 import { bounded, positive, sha } from "./github-query-model";
 import { validPRRules, validWorkflowReference } from "./github-rules";
+import { evaluableCIQueue, queueResultProvenance, selectedCIRollup, validCIQueue } from "./github-ci-queue";
 
 const states = new Set(["unknown", "missing", "pending", "non-failing", "terminal-failure", "not-required"]);
 const reasons = new Set(["observed", "no-matching-result", "app-unverified", "unknown-native-result", "unsupported-rule", "commit-unverified", "closed-pr", "workflow-unverified"]);
@@ -16,6 +17,7 @@ function validEvidence(row: Document): boolean {
     if (!bounded(value.suite_node_id, 256) || value.created_at != null || value.updated_at != null || value.description != null || (value.workflow == null) !== (row.workflow_event == null)) return false;
     if (ciTime(value.started_at) && ciTime(value.completed_at) && Date.parse(value.completed_at) < Date.parse(value.started_at)) return false;
     if (value.workflow != null && (!bounded(workflow.node_id, 256) || !positive(workflow.run_number) || BigInt(text(workflow.run_number)) > 2147483647n || !positive(workflow.observed_attempt) || BigInt(text(workflow.observed_attempt)) > 2147483647n || !ciTime(workflow.created_at) || !ciTime(workflow.updated_at) || Date.parse(workflow.updated_at) < Date.parse(workflow.created_at))) return false;
+    if ((workflow.suite_node_id == null) !== (workflow.commit_sha == null) || (workflow.suite_node_id != null && (workflow.suite_node_id !== value.suite_node_id || workflow.commit_sha !== row.commit_sha))) return false;
     return true;
   }
   return row.kind === "commit-status" && value.suite_node_id == null && value.started_at == null && value.completed_at == null && value.workflow == null && value.title == null && value.summary == null && value.text == null && ciTime(value.created_at) && ciTime(value.updated_at) && Date.parse(value.updated_at) >= Date.parse(value.created_at);
@@ -72,6 +74,47 @@ function workflowState(row: Document): CIState {
   return ["FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE"].includes(text(row.native_conclusion)) ? CIState.TerminalFailure : CIState.Unknown;
 }
 const ciPriority = new Map([[CIState.Unknown, 5], [CIState.TerminalFailure, 4], [CIState.Missing, 3], [CIState.Pending, 2], [CIState.NonFailing, 1], [CIState.NotRequired, 0]]);
+enum QueueCIReason {
+  Observed = "observed",
+  NoMatchingResult = "no-matching-result",
+  AppUnverified = "app-unverified",
+  WorkflowUnverified = "workflow-unverified",
+  UnknownNativeResult = "unknown-native-result",
+}
+function queuedStatusAssessment(ref: Document, contexts: Map<string, Document>): { state: CIState; reason: QueueCIReason; ids: string[] } {
+  const result = { state: CIState.Missing, reason: QueueCIReason.NoMatchingResult, ids: [] as string[] };
+  if (ref.integration_id === "0") return { state: CIState.Unknown, reason: QueueCIReason.AppUnverified, ids: [] };
+  const checkSources = new Map<string, number>();
+  // Match the domain's complete ordered assessment, including unknown App or
+  // workflow provenance and duplicate same-App runs. Referenced IDs alone cannot
+  // prove a headline or hide another matching required result.
+  for (const context of contexts.values()) {
+    if (context.name !== ref.context || context.required !== true) continue;
+    let state = context.kind === "commit-status"
+      ? context.native_status === "SUCCESS" ? CIState.NonFailing : ["FAILURE", "ERROR"].includes(text(context.native_status)) ? CIState.TerminalFailure : ["PENDING", "EXPECTED"].includes(text(context.native_status)) ? CIState.Pending : CIState.Unknown
+      : workflowState(context);
+    let reason = QueueCIReason.Observed;
+    const app = object(context.application);
+    if (context.kind === "check-run") {
+      if (context.application == null) { state = CIState.Unknown; reason = QueueCIReason.AppUnverified; }
+      else if (app.id === "15368" && !queueResultProvenance(context)) { state = CIState.Unknown; reason = QueueCIReason.WorkflowUnverified; }
+    }
+    if (ref.integration_id != null) {
+      if (context.application == null) { state = CIState.Unknown; reason = QueueCIReason.AppUnverified; }
+      else if (app.id !== ref.integration_id) continue;
+    }
+    if (state === CIState.Unknown && reason === QueueCIReason.Observed) reason = QueueCIReason.UnknownNativeResult;
+    if (context.kind === "check-run" && context.application != null) {
+      const count = (checkSources.get(text(app.id)) ?? 0) + 1;
+      checkSources.set(text(app.id), count);
+      if (count > 1) { state = CIState.Unknown; reason = QueueCIReason.UnknownNativeResult; }
+    }
+    result.ids.push(text(context.node_id));
+    if (result.state === CIState.Missing || ciPriority.get(state)! > ciPriority.get(result.state)!) { result.state = state; result.reason = reason; }
+  }
+  if (result.state === CIState.Missing) result.state = CIState.Unknown;
+  return result;
+}
 function workflowAssessment(ref: Document, runs: Document[], contexts: Map<string, Document>, source: unknown, unsupported: boolean): { state: CIState; reason: string; ids: string[] } {
   const unknown = { state: CIState.Unknown, reason: "workflow-unverified", ids: [] as string[] };
   if (!sha(ref.sha) || unsupported || source !== "test-merge" || runs.some((run) => run.source == null)) return unknown;
@@ -106,6 +149,10 @@ function validAggregate(rules: unknown[], result: Document): boolean {
   for (const raw of rules) {
     const rule = object(raw);
     if (rule.source_kind === "unknown") unsupported();
+    if (rule.type === "merge_queue") {
+      if (result.source !== "merge-queue") unsupported();
+      continue;
+    }
     if (rule.type !== "required_status_checks" && rule.type !== "workflows") {
       if (!nonCIRules.has(text(rule.type))) unsupported();
       continue;
@@ -129,6 +176,8 @@ export function validPRCI(raw: unknown, item: Document): boolean {
   const seen = new Set<string>();
   if (raw == null || !validPRRules(value.rules, item) || !validRollup(value.head, item.head_sha, seen) || !["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(text(value.native_mergeability)) || typeof value.in_merge_queue !== "boolean") return false;
   const merge = object(value.test_merge);
+  const queue = object(value.merge_queue);
+  if (value.merge_queue != null && (value.in_merge_queue !== true || !validCIQueue(queue, item) || (queue.rollup != null && !validRollup(queue.rollup, object(queue.entry).head_sha, new Set())))) return false;
   if (!validWorkflowRuns(value.workflow_runs, merge)) return false;
   if (value.test_merge != null && (merge.commit_sha === item.head_sha || value.native_mergeability === "CONFLICTING" || !validRollup(value.test_merge, merge.commit_sha, seen))) return false;
   if (!states.has(text(result.state)) || !reasons.has(text(result.reason)) || !Array.isArray(result.requirements)) return false;
@@ -139,12 +188,15 @@ export function validPRCI(raw: unknown, item: Document): boolean {
   } else if (result.source === "test-merge") {
     selected = merge;
     if (result.evaluated_sha !== merge.commit_sha || items(merge.contexts).length === 0) return false;
+  } else if (result.source === "merge-queue") {
+    selected = object(queue.rollup);
+    if (value.in_merge_queue !== true || !evaluableCIQueue(queue, item) || result.evaluated_sha !== object(queue.entry).head_sha) return false;
   } else if (result.source === "unknown") {
     const closed = item.state !== "open" || item.merged !== false;
-    const unavailable = value.in_merge_queue || value.native_mergeability === "UNKNOWN" || (value.native_mergeability === "MERGEABLE" && value.test_merge == null);
+    const unavailable = value.in_merge_queue ? !evaluableCIQueue(queue, item) : value.native_mergeability === "UNKNOWN" || (value.native_mergeability === "MERGEABLE" && value.test_merge == null);
     return (closed || unavailable) && result.evaluated_sha == null && result.state === "unknown" && result.reason === (closed ? "closed-pr" : "commit-unverified") && result.requirements.length === 0;
   } else return false;
-  if (value.in_merge_queue || value.native_mergeability === "UNKNOWN" || (value.native_mergeability === "MERGEABLE" && value.test_merge == null) || item.state !== "open" || item.merged) return false;
+  if ((result.source !== "merge-queue" && (value.in_merge_queue || value.native_mergeability === "UNKNOWN" || (value.native_mergeability === "MERGEABLE" && value.test_merge == null))) || item.state !== "open" || item.merged) return false;
   const expected: Document[] = items(object(value.rules).rules).flatMap((raw) => {
     const rule = object(raw);
     if (rule.type === "required_status_checks") return items(object(rule.required_checks).checks).map((raw) => ({ ...object(raw), ruleset_id: rule.ruleset_id }));
@@ -163,12 +215,17 @@ export function validPRCI(raw: unknown, item: Document): boolean {
       for (const key of ["repository_id", "path", "sha", "ref"]) if (object(row.workflow)[key] !== object(requirement.workflow)[key]) return false;
       const expected = workflowAssessment(object(row.workflow), workflowRuns, contexts, result.source, requirement.unsupported === true);
       if (row.state !== expected.state || row.reason !== expected.reason || row.result_node_ids.length !== expected.ids.length || row.result_node_ids.some((id, index) => id !== expected.ids[index])) return false;
+    } else if (result.source === "merge-queue") {
+      const expected = queuedStatusAssessment(requirement, contexts);
+      if (row.state !== expected.state || row.reason !== expected.reason || row.result_node_ids.length !== expected.ids.length || row.result_node_ids.some((id, index) => id !== expected.ids[index])) return false;
     }
     const used = new Set<string>();
     for (const id of row.result_node_ids) {
       if (typeof id !== "string" || used.has(id)) return false;
       const context = contexts.get(id);
       if (!context || context.required !== true || (row.workflow == null && context.name !== row.context)) return false;
+      if (result.source === "merge-queue" && row.state !== "unknown" && !queueResultProvenance(context)) return false;
+      if (result.source === "merge-queue" && row.state !== "unknown" && row.integration_id != null && (row.integration_id === "0" || object(context.application).id !== row.integration_id)) return false;
       if (row.workflow != null) {
         const evidence = object(context.evidence), workflow = object(evidence.workflow);
         const run = runsByID.get(text(workflow.node_id));
@@ -203,10 +260,11 @@ const reasonLabels = new Map([
   ["no-matching-result", "No matching required result was observed."],
 ]);
 export function PRCI({ value, historical = false }: { value: Document; historical?: boolean }) {
-  const result = object(value.result), selected = result.source === "test-merge" ? object(value.test_merge) : object(value.head);
+  const result = object(value.result), selected = selectedCIRollup(value), queue = object(value.merge_queue), entry = object(queue.entry);
   return <section aria-label="Required CI evaluation">
     <p role="status">{stateLabels.get(text(result.state))}</p>
-    {result.evaluated_sha ? <p>Evaluated {result.source === "test-merge" ? "test merge" : "head"} commit: <code>{text(result.evaluated_sha)}</code></p> : null}
+    {result.evaluated_sha ? <p>Evaluated {result.source === "merge-queue" ? "merge queue entry" : result.source === "test-merge" ? "test merge" : "head"} commit: <code>{text(result.evaluated_sha)}</code></p> : null}
+    {value.merge_queue ? <p>Queue {text(queue.node_id)} · entry {text(entry.node_id)} · position {text(entry.position)} · strategy {text(queue.strategy)} · base <code>{text(entry.base_sha) || "Unavailable"}</code>. Entry state {text(entry.state)} does not establish a failed check.</p> : null}
     {reasonLabels.has(text(result.reason)) ? <p>{reasonLabels.get(text(result.reason))}</p> : null}
     <p>{historical ? "This is the original retained evaluation of active rulesets." : "This is a current observation of active rulesets."} Missing, pending and unknown results do not establish passing CI. A later action requires fresh evidence.</p>
     {items(value.workflow_runs).length ? <details><summary>Original required-workflow evidence</summary><ul>{items(value.workflow_runs).map((raw) => { const run = object(raw), source = object(run.source); return <li key={text(run.node_id)}>Run {text(run.run_id)} · attempt {text(run.attempt)} · {text(run.event)} · {text(run.native_status)}{source.repository_id ? <> · source repository {text(source.repository_id)} · <code>{text(source.path)}</code> · <code>{text(source.sha)}</code></> : " · source unavailable"}</li>; })}</ul></details> : null}
