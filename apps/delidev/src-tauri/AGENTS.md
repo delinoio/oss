@@ -25,3 +25,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Native desktop registration inspection/recovery must pass the compiled fixed endpoint as a Go-side guard before recovery intent or pairing. An endpoint mismatch cannot create or publish a replacement; post-publication connection validation is additional defense, never the first endpoint check.
 
 - Protected browser contexts follow `docs/cmds-delidev-browser-contract.md`. Reserve exact presentation IDs before asynchronous Go reads, keep raw external CEF children outside Tauri IPC/scripts, and count native creation/close callbacks through exit. Never remove a profile before poller join, all native close proofs and independently observed CEF shutdown return; retain original offline removal intents and exact acknowledgment retries.
+
+- Before forgetting a saved connection, persist its original browser scope for local purge. Discover completed CLI removals through retained connection tombstones; deny reopen and purge only after independently completed CEF shutdown, without using deleted client credentials or claiming remote acknowledgment.

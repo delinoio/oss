@@ -107,6 +107,14 @@ Only afterward can the complete resolved profile directory be removed. Cookie or
 cache clearing, an Exit event, a close request or a renderer acknowledgment is
 not proof of full process cleanup.
 
+Forgetting a saved connection durably records its original server/device scope
+before the native client credential is removed, denies new browser presentations,
+and closes its raw children. The entire device browser directory is purged only
+after the same independent CEF shutdown proof. Retained offline connection
+removal tombstones also discover CLI removals and removals made while the desktop
+was stopped. This local purge needs no deleted client credential and never claims
+a server account acknowledgment or remote device revocation.
+
 The original local removal intent remains after offline acknowledgment or an
 uncertain response. Each independent scope is handled separately. Once native
 shutdown is independently complete, local directory deletion can proceed offline;

@@ -273,6 +273,7 @@ async fn remove_connection(
     window: WebviewWindow<Cef>,
     app: AppHandle<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
+    browser: tauri::State<'_, Arc<browser_host::BrowserHost>>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     id: String,
     request_id: String,
@@ -296,6 +297,18 @@ async fn remove_connection(
     } else if profile.revision != revision {
         return Err(NativeFailure::InvalidEvidence);
     }
+    // This durable local scope survives credential deletion and denies older
+    // in-flight browser opens. Purging waits for independently completed CEF
+    // shutdown.
+    let host = Arc::clone(browser.inner());
+    let scope = profile.clone();
+    tauri::async_runtime::spawn_blocking(move || host.prepare_forget(&scope))
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+    let host = Arc::clone(browser.inner());
+    let scope = profile.clone();
+    app.run_on_main_thread(move || host.close_scope(&scope))
+        .map_err(|_| NativeFailure::SidecarFailed)?;
     let label = format!("server-{id}");
     let instance = uuid::Uuid::now_v7().to_string();
     let original = {

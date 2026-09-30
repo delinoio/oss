@@ -104,6 +104,7 @@ impl BrowserHost {
         browser::private_dir(&root)?;
         browser::private_dir(&root.join("profiles"))?;
         browser::private_dir(&root.join("removals"))?;
+        browser::private_dir(&root.join("forgotten"))?;
         Ok(Self {
             root,
             connector,
@@ -138,6 +139,30 @@ impl BrowserHost {
         let host = Arc::clone(self);
         let thread = thread::spawn(move || {
             while !host.stopping.load(Ordering::Acquire) {
+                // Completed offline connection tombstones retain the exact non-secret
+                // scope even after its client credential has been destroyed. This also
+                // discovers removals initiated by the CLI or while the app was stopped.
+                let mut after = String::new();
+                for _ in 0..16 {
+                    if host.stopping.load(Ordering::Acquire) {
+                        break;
+                    }
+                    let Ok(page) = host.connector.removed_connections(&after) else {
+                        break;
+                    };
+                    for scope in page.connections {
+                        if let Err(code) = host.prepare_forget(&scope) {
+                            tracing::warn!(operation = "browser_scope_removal", ?code);
+                            continue;
+                        }
+                        let copy = Arc::clone(&host);
+                        let _ = app.run_on_main_thread(move || copy.close_scope(&scope));
+                    }
+                    after = page.next_after;
+                    if after.is_empty() {
+                        break;
+                    }
+                }
                 // Read every saved client, including windows which have not been opened.
                 let mut scopes = vec![None];
                 if let Ok(saved) = host.connector.saved_connections() {
@@ -236,6 +261,12 @@ impl BrowserHost {
             .map(|s| s.endpoint.as_str())
             .unwrap_or("http://127.0.0.1:46310");
         let mut policy = Policy::new(endpoint, &url)?;
+        if self
+            .forgotten_path(&record.data.server_id, &record.data.device_id)?
+            .exists()
+        {
+            return Err(NativeFailure::Stopped);
+        }
         let parent = parent(window)?;
         let scale = window
             .scale_factor()
@@ -628,6 +659,97 @@ impl BrowserHost {
         Ok(())
     }
 
+    fn forgotten_path(&self, server: &str, device: &str) -> Result<PathBuf> {
+        canonical_id(server)?;
+        canonical_id(device)?;
+        Ok(self
+            .root
+            .join("forgotten")
+            .join(format!("{server}-{device}.json")))
+    }
+
+    // Persist before native connection removal drops its original client
+    // credential. No server authorization or browser contents are retained in
+    // this local intent.
+    pub fn prepare_forget(&self, scope: &SavedConnection) -> Result<()> {
+        scope.validate()?;
+        if scope.device_id.is_empty() {
+            return Ok(());
+        }
+        let path = self.forgotten_path(&scope.server_id, &scope.device_id)?;
+        if !path.exists() {
+            browser::write_private(
+                &path,
+                &ForgottenScope {
+                    server_id: scope.server_id.clone(),
+                    device_id: scope.device_id.clone(),
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn close_scope(&self, scope: &SavedConnection) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let mut profiles = Vec::new();
+        for (id, profile) in &mut state.profiles {
+            if profile.record.data.server_id == scope.server_id
+                && profile.record.data.device_id == scope.device_id
+            {
+                profile.removing = true;
+                profile.pending.clear();
+                profiles.push(id.clone());
+            }
+        }
+        for view in state
+            .views
+            .values_mut()
+            .filter(|view| profiles.contains(&view.profile))
+        {
+            if let Some(browser) = view.browser.take()
+                && let Some(host) = browser.host()
+            {
+                host.close_browser(1);
+            }
+        }
+    }
+
+    fn finish_forgotten(&self) -> Result<()> {
+        for entry in fs::read_dir(self.root.join("forgotten"))
+            .map_err(|_| NativeFailure::StorageUnavailable)?
+        {
+            let path = entry.map_err(|_| NativeFailure::StorageUnavailable)?.path();
+            if path.extension().and_then(|v| v.to_str()) != Some("json") {
+                continue;
+            }
+            let scope: ForgottenScope = read_json(&path)?;
+            if path != self.forgotten_path(&scope.server_id, &scope.device_id)? {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+            let server = self.root.join("profiles").join(&scope.server_id);
+            let device = server.join(&scope.device_id);
+            if server.exists() {
+                browser::private_dir(&server)?;
+                if device.exists() {
+                    browser::private_dir(&device)?;
+                    fs::remove_dir_all(&device).map_err(|_| NativeFailure::StorageUnavailable)?;
+                    #[cfg(unix)]
+                    std::fs::File::open(&server)
+                        .and_then(|f| f.sync_all())
+                        .map_err(|_| NativeFailure::StorageUnavailable)?;
+                }
+            }
+            fs::remove_file(path).map_err(|_| NativeFailure::StorageUnavailable)?;
+            tracing::info!(
+                operation = "browser_scope_removal",
+                state = "locally-purged"
+            );
+        }
+        Ok(())
+    }
+
     pub fn close_all(&self) {
         if let Ok(mut state) = self.state.lock() {
             for v in state.views.values_mut() {
@@ -652,6 +774,7 @@ impl BrowserHost {
         {
             return Err(NativeFailure::InvalidEvidence);
         }
+        self.finish_forgotten()?;
         let mut first_failure = None;
         let started = Instant::now();
         let mut processed = 0;
@@ -741,6 +864,12 @@ impl BrowserHost {
         }
         first_failure.map_or(Ok(()), Err)
     }
+}
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ForgottenScope {
+    server_id: String,
+    device_id: String,
 }
 #[derive(Deserialize, Serialize)]
 struct Removal {
@@ -1016,6 +1145,63 @@ mod tests {
     use delidev_desktop::browser::Profile;
 
     use super::*;
+    #[test]
+    fn forgotten_connection_purges_whole_original_scope_only_after_native_shutdown() {
+        let temp = tempfile::tempdir().unwrap();
+        let sidecar = temp.path().join("sidecar");
+        fs::write(&sidecar, "#!/bin/sh\nexit 1\n").unwrap();
+        fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
+        let connector = Arc::new(Connector::new(sidecar, temp.path().to_path_buf()).unwrap());
+        let host = BrowserHost::new(temp.path().join("cef"), connector).unwrap();
+        let scope = SavedConnection {
+            version: 1,
+            revision: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "fixture".into(),
+            endpoint: "https://server.test".into(),
+            server_id: uuid::Uuid::now_v7().to_string(),
+            pairing_id: uuid::Uuid::now_v7().to_string(),
+            device_id: uuid::Uuid::now_v7().to_string(),
+            state: delidev_desktop::SavedConnectionState::Paired,
+            created_at: "2026-09-30T00:00:00Z".into(),
+            removal: None,
+        };
+        let record = ProfileRecord {
+            id: uuid::Uuid::now_v7().to_string(),
+            revision: 1,
+            data: Profile {
+                server_id: scope.server_id.clone(),
+                device_id: scope.device_id.clone(),
+                account_id: uuid::Uuid::now_v7().to_string(),
+                state: ProfileState::Active,
+                deletion_request_id: String::new(),
+            },
+        };
+        let cache = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
+        fs::write(cache.join("cookies"), b"fixture web credentials").unwrap();
+        let mut other = record.clone();
+        other.data.device_id = uuid::Uuid::now_v7().to_string();
+        let preserved = browser::profile_path(&host.root.join("profiles"), &other).unwrap();
+        host.prepare_forget(&scope).unwrap();
+        assert!(
+            host.forgotten_path(&scope.server_id, &scope.device_id)
+                .unwrap()
+                .exists()
+        );
+        assert!(host.finish_removals().is_err());
+        host.stopping.store(true, Ordering::Release);
+        host.state.lock().unwrap().live = 1;
+        assert!(host.finish_removals().is_err());
+        assert!(cache.exists());
+        host.state.lock().unwrap().live = 0;
+        host.finish_removals().unwrap();
+        assert!(!cache.parent().unwrap().exists());
+        assert!(preserved.exists());
+        assert_eq!(
+            fs::read_dir(host.root.join("forgotten")).unwrap().count(),
+            0
+        );
+    }
     #[test]
     fn offline_acknowledgment_retains_intent_without_failing_normal_quit() {
         let temp = tempfile::tempdir().unwrap();
