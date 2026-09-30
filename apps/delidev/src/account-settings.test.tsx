@@ -467,7 +467,7 @@ it("labels stale provider results and excludes disabled, unsaved and subscriptio
   expect(screen.queryByRole("button", { name: "Open API Providers" })).toBeNull();
 });
 
-it("labels empty API entry navigation separately from subscription account navigation", async () => {
+it("labels API entry navigation and omits empty subscription pagination", async () => {
   const value = fixture();
   const view = render(value.view(value.settings(AccountSettingsSection.Api)));
   expect(await screen.findByText("No AI API key entries. Add an entry for an enabled API provider. Keyless local providers do not require a key.")).toBeTruthy();
@@ -475,9 +475,11 @@ it("labels empty API entry navigation separately from subscription account navig
   expect(screen.getByRole("combobox", { name: "Filter entries by provider" })).toBeTruthy();
   expect(screen.getByRole("navigation", { name: "Entry pages" })).toBeTruthy();
   view.rerender(value.view(value.settings(AccountSettingsSection.Subscription)));
-  expect(await screen.findByText("No subscription accounts are configured.")).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "No subscriptions yet" })).toBeTruthy();
+  const advanced = screen.getByText("Advanced settings").closest("details")!;
+  expect(advanced.open).toBe(false); advanced.open = true;
   expect(screen.getByRole("combobox", { name: "Filter accounts by provider" })).toBeTruthy();
-  expect(screen.getByRole("navigation", { name: "Account pages" })).toBeTruthy();
+  expect(screen.queryByRole("navigation", { name: "Account pages" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Add AI API key" })).toBeNull();
 });
 
