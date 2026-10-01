@@ -94,7 +94,7 @@ export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics
   const [opening, setOpening] = useState(0);
   useEffect(() => {
     // Category inactivity is not a close. Reset only this presentation subtree
-    // when the actual Settings modal hides; queries and operations stay owned.
+    // when the actual Settings visit ends; queries and operations stay owned.
     if (!visible) setOpening((value) => value + 1);
   }, [visible]);
   const { report, unsupported } = useMemo(() => {

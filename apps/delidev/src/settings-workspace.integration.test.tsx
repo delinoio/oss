@@ -41,7 +41,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   await promisify(execFile)("git", ["init", "--quiet", checkout], { timeout: 10000 });
   const canonical = await realpath(checkout);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   fireEvent.click(screen.getByRole("button", { name: "New Repository" }));
@@ -150,7 +150,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   await screen.findByText("Schedule configuration deleted. Retained occurrences and sessions remain.");
   expect((await createClient(ScheduleService, transport).listScheduleOccurrences({ scheduleId })).occurrences).toHaveLength(1);
   cleanup();
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
   fireEvent.click(await screen.findByRole("button", { name: "Delete Owned project" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));

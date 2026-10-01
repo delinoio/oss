@@ -131,6 +131,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Session terminals use the main-established wire allocations: EntityKind 31, SystemCapability 14 and WorkerCapability 4. Keep TerminalService declarations in `terminal.proto`, Worker-only methods on WorkerService, actor/revision/request ownership and additive generation/legacy compatibility under `docs/cmds-delidev-terminals-contract.md`.
 
+- PullRequestFixService is an additive independently owned `pr_fix.proto` service with typed profile capability and original selection JSON. Existing wire numbers remain unchanged. Preserve generated service/facade/reflection compatibility and authenticated owner/client scope; Worker Git execution is not API publishing.
+
 - NetworkService owns `v1/network.proto` and generated bindings under `docs/cmds-delidev-network-contract.md`. Activate only the pre-reserved EntityKind 28/29 and SystemCapability 6 values. Owner/client operations keep credentials write-only, revisions exact and server/Worker desired generations separate; Worker metadata exports carry no secrets or native application proof.
 
 - Codex Fork uses owner/client-only `SessionService.ForkSession` and `GetSessionFork`, typed `ForkWorkspace`, and allocation-ledger capability `CODEX_SESSION_FORK_V1 = 13`. Local proof is write-only; exact job/child observation cannot replay native creation. Preserve split service ownership and generated compatibility exports under `docs/cmds-delidev-forks-contract.md`.

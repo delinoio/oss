@@ -258,7 +258,7 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 		}
 		paths = append(paths, filepath.Join(root, "jobs", string(copy.JobID)), filepath.Join(root, "jobs", string(copy.JobID)+".json"), filepath.Join(root, "workspace-recovery", string(copy.JobID)+".json"), filepath.Join(root, "processes", string(copy.JobID)), filepath.Join(root, "processes", string(copy.JobID)+".recovery.lock"))
 		if copy.ExecutionID != "" {
-			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ExecutionID)))
+			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ExecutionID)), filepath.Join(root, "pr-git", string(copy.ExecutionID)))
 		}
 		if copy.Type == domain.GenerateSessionTitleJob {
 			titlePrefixes[string(copy.JobID)+"-"] = true

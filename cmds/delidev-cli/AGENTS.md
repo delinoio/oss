@@ -31,3 +31,5 @@ Native session compaction for issues #1093, #1202 and #1203 follows the planned 
 - Codex fork Local sharing is limited to original Local manifests with no parent-owned checkouts. Reject managed Worktree sharing before job acceptance and again before Worker native inspection/preparation and server publication; parent deletion retains those paths. Independent Worktree copying remains available. Follow `docs/cmds-delidev-forks-contract.md`.
 
 - Fork workspace preparation validates every repository's manifest eligibility and the complete derived request before creating a child process index or launching Git. Definite manifest rejection must leave no new unpublished child scope; native HEAD/ownership failures retain their recovery classification and process evidence.
+
+- Manual PR Git environment snapshots preserve exact variable names on POSIX and normalize case-insensitive names only on Windows. Retain the last applicable value, deterministic digest ordering and private values; never promote an inert POSIX lowercase entry to an active Git/SSH or PATH setting. Follow `docs/cmds-delidev-integrations-contract.md`.

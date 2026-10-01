@@ -33,7 +33,7 @@ function fixture(resources: Resource[] = []) {
   return { list, get, save, remove, client, view };
 }
 function openProjects(value: ReturnType<typeof fixture>) {
-  render(value.view(<Settings close={() => {}} />));
+  render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
 }
 function decoded(request: unknown) { return JSON.parse(new TextDecoder().decode((request as { documentJson: Uint8Array }).documentJson)); }
@@ -118,17 +118,18 @@ it.each(["save", "delete"])("explicitly retries the exact project %s request wit
   expect((screen.getByRole("button", { name: "Repositories" }) as HTMLButtonElement).disabled).toBe(true); expect((screen.getByRole("button", { name: submit }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(retry); await waitFor(() => expect(operation).toHaveBeenCalledTimes(2)); expect(operation.mock.calls[1][0]).toEqual(operation.mock.calls[0][0]); expect(operation.mock.calls[0][0]).toMatchObject({ mutation: { id: row.id, expectedRevision: 7n } });
 });
-it.each(["button", "cancel"])("discards a project draft and uncertain retry on %s close without replay", async route => {
+it.each(["navigation", "Escape then navigation"])("discards a project draft and uncertain retry after %s without replay", async route => {
   const value = fixture(); value.save.mockRejectedValue(new ConnectError("ack lost", Code.Unavailable));
-  function Harness() { const [visible, show] = useState(false); return <><button onClick={() => show(true)}>Open settings fixture</button><Settings visible={visible} close={() => show(false)} /></>; }
+  function Harness() { const [visible, show] = useState(false); return <><button onClick={() => show(true)}>Open settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); show(false); }}>Leave Settings fixture</button><Settings visible={visible} /></>; }
   render(value.view(<Harness />)); const opener = screen.getByRole("button", { name: "Open settings fixture" }); opener.focus(); fireEvent.click(opener);
   fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Abandoned project" } }); fireEvent.submit(screen.getByRole("button", { name: "Save Project" }).closest("form")!); await screen.findByRole("button", { name: "Retry the same configuration" });
-  if (route === "button") fireEvent.click(screen.getByRole("button", { name: "Close Settings" })); else fireEvent(screen.getByRole("dialog"), new Event("cancel", { bubbles: true, cancelable: true }));
-  expect(document.activeElement).toBe(opener); fireEvent.click(opener); expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy(); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
+  if (route === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect(screen.getByRole("button", { name: "Retry the same configuration" })).toBeTruthy(); }
+  fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
+  expect(document.activeElement).not.toBe(opener); fireEvent.click(opener); expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy(); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(""); expect(value.save).toHaveBeenCalledTimes(1);
 });
 it("focuses targeted creation and confines the presentation to Projects", async () => {
-  const value = fixture(); render(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} close={() => {}} />)); await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
+  const value = fixture(); render(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} />)); await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
   expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(true); fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
   for (const category of ["Repositories", "Instructions", "API Providers"]) { fireEvent.click(screen.getByRole("button", { name: category })); expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(false); expect(screen.getByRole("heading", { level: 1, name: category })).toBeTruthy(); }
 });

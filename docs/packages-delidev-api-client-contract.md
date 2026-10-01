@@ -184,6 +184,8 @@ protocol without duplicating Go ownership logic. Preserve original request IDs,
 BigInt revisions and pending/unknown removal state; no automatic mutation replay.
 See the [storage contract](cmds-delidev-storage-contract.md).
 
+Generated `PullRequestFixQuery` provides typed manual-fix capability and acceptance operations. Callers preserve exact original version-1 selection/request bytes and validate original attempt/session/set acknowledgments. Uncertain responses permit only same-request receipt replay; server lookup credentials never become native Git authority. See the integration contract.
+
 ### Explicit outbound networking
 
 Generated `NetworkQuery` exposes authenticated configuration operations and typed capability/resources. Consumers retain exact decimal revisions and treat credentials as write-only request input, never query-cache data. Signed Worker metadata proves only the server export scope, not native installation or encrypted credential transfer. Follow [the network contract](cmds-delidev-network-contract.md).

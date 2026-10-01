@@ -36,7 +36,7 @@ for (const kind of ["client", "worker"] as const) it(`issues a real single-use $
     return response;
   } };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={grantTransport}><QueryClientProvider client={client}><MutationIntents><Settings pairingAuthority={authority} close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={grantTransport}><QueryClientProvider client={client}><MutationIntents><Settings pairingAuthority={authority} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
   fireEvent.click(screen.getByRole("button", { name: "Create pairing document" }));
   fireEvent.change(screen.getByLabelText("Device name"), { target: { value: `Disposable ${kind}` } });

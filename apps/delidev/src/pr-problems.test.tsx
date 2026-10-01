@@ -60,6 +60,24 @@ it("collects only on explicit action and keeps exact remote IDs for retained rea
   await waitFor(() => expect(f.collect).toHaveBeenCalledTimes(1));
   expect(f.collect.mock.calls[0][0]).toMatchObject({ repositoryId: f.selection.repositoryId, number: "17" });
 });
+it("displays the complete original handled-push audit without offering another action", async () => {
+  const f = fixture();
+  const handling = { attempt_id: newRequestId(), execution_id: newRequestId(), pushed_head: "d".repeat(40), at: "2026-09-30T23:00:00Z" };
+  const row = create(ResourceSchema, { ...f.row, documentJson: encode({ ...f.body, state: "handled", handling }) });
+  f.list.mockResolvedValue({ problemSet: f.set, problems: [row] });
+  render(f.view());
+  await screen.findByText(/Local handling: Handled after verified push/);
+  const audit = screen.getByText(/Verified push:/);
+  expect(audit.textContent).toContain(handling.pushed_head);
+  expect(audit.textContent).toContain(`attempt ${handling.attempt_id}`);
+  expect(audit.textContent).toContain(`execution ${handling.execution_id}`);
+  expect(audit.textContent).toContain(`handled at ${handling.at}`);
+  expect(audit.querySelector("time")?.dateTime).toBe(handling.at);
+  expect(screen.queryByRole("button", { name: "Dismiss this content version" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Fix now" })).toBeNull();
+  expect(f.dismiss).not.toHaveBeenCalled();
+  expect(f.collect).not.toHaveBeenCalled();
+});
 it("rejects foreign set identity, malformed local decisions and unknown schema", () => {
   const f = fixture(); expect(readPRProblem(f.row, f.set, f.selection)).toBeTruthy();
   for (const patch of [{ set_id: newRequestId() }, { content_version: "d".repeat(64) }, { state: "locally-dismissed" }, { target: { ...document(f.row).target as object, pull_request_id: "99" } }]) {

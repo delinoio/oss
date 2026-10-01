@@ -129,6 +129,12 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Permanent deletion includes each original claimed workspace-storage snapshot reservation, even before output exists. Persist those typed UUIDs in the synchronized immutable deletion plan; no database migration or inferred native completion is required.
 
+- Manual fixes retain optional original Git/project selection on existing attempts. Only original assignment-bound verified push plus successful native completion/cleanup can handle exact evidence; dismissal wins a race and handled audit cannot be erased. Missing/uncertain proof retains stable PR ownership. Cancel only an explicitly removed unstarted original input atomically; preserve legacy attempts without inventing push proof.
+
+- Manual fix completion must retain dedicated Activity verification in the same transaction as exact handled versions, after original native, cleanup and push proof. An outcome alone cannot create verification.
+
+- Manual push proof ordering uses original server-observed assignment/report and cleanup barriers. Worker wall time is metadata only; clock skew cannot override server handling timestamps or strand a matching verified push.
+
 - Grok typed tool observations and interactions use existing Resource JSON storage and scoped bounded reads; preserve publication sequence, exact original native ownership and original request contents in Session/Inbox projections. Close SQL row readers before nested resource reads, and bound complete retained journals without truncation. Derived search projection or native restoration requires independent typed ownership; tool paths and descriptors remain inert.
 
 - Explicit outbound profiles/routes reuse the existing entity/event/receipt transactions under `docs/cmds-delidev-network-contract.md`. Keep one revisioned selection per server or registered Worker, reject deletion of selected profiles, and exclude network authority from generic configuration import/export. Protected credential bytes never enter SQLite.

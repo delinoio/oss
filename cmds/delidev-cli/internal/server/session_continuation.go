@@ -189,6 +189,8 @@ func checkedContinuationPredecessor(tx *store.Tx, sr store.Record, session domai
 
 func continuationAssignment(session domain.Session, assignment domain.ExecutionJobInput, completion domain.ExecutionCompletion, digest string, intent domain.ExecutionIntent, account, connection domain.ID) domain.ExecutionJobInput {
 	input := assignment
+	// A successor must not inherit the preceding one-shot PR Git authority.
+	input.Remediation = nil
 	input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
 	// The first child turn imports the fork checkpoint. Every later turn uses
 	// its own verified completion on that history, never the creation boundary.

@@ -40,7 +40,7 @@ function fixture(initial = rows) {
   });
   const firstTransport = transport();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  const view = (options: { visible?: boolean; pairing?: boolean; transport?: Transport } = {}) => <StrictMode><TransportProvider transport={options.transport ?? firstTransport}><QueryClientProvider client={client}><Settings close={() => {}} currentDeviceId={ids[2]} visible={options.visible ?? true} pairingAuthority={options.pairing ? authority : undefined} /></QueryClientProvider></TransportProvider></StrictMode>;
+  const view = (options: { visible?: boolean; pairing?: boolean; transport?: Transport } = {}) => <StrictMode><TransportProvider transport={options.transport ?? firstTransport}><QueryClientProvider client={client}><Settings currentDeviceId={ids[2]} visible={options.visible ?? true} pairingAuthority={options.pairing ? authority : undefined} /></QueryClientProvider></TransportProvider></StrictMode>;
   return { state, list, read, revoke, issue, transport, client, view };
 }
 async function open() {
@@ -96,7 +96,8 @@ it("retains matching disclosure through refresh, categories, reflow, reconnect a
   expect(workerDetails().getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(workerDetails());
   view.rerender(value.view({ visible: false })); view.rerender(value.view());
-  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByRole("combobox", { name: "Settings category" })).toBeNull();
   await open(); expect(workerDetails().getAttribute("aria-expanded")).toBe("false");
   expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE).every(([request]) => request.filter?.pageSize === 50)).toBe(true);
 });

@@ -35,6 +35,7 @@ type Git struct {
 	Logger        *slog.Logger
 	HooksDir      string
 	Timeout       time.Duration
+	environment   []string
 	readOnly      bool
 	offline       bool
 	diffIndexFile string
@@ -102,6 +103,9 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	var out limitedOutput
 	out.limit = MaxGitOutput
 	environment := gitEnvironment()
+	if g.environment != nil {
+		environment = slices.Clone(g.environment)
+	}
 	if g.offline {
 		environment = slices.DeleteFunc(environment, func(value string) bool {
 			key, _, _ := strings.Cut(value, "=")

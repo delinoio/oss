@@ -39,7 +39,7 @@ function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: unk
 
 it("owns the single Settings heading, three independent observations and every report field", async () => {
   const value = fixture();
-  const view = render(value.view(<Settings close={() => {}} />));
+  const view = render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
   await screen.findByText("Read succeeded");
   expect(screen.getAllByRole("heading", { level: 1, name: "Connection & diagnostics" })).toHaveLength(1);
@@ -92,7 +92,7 @@ it("keeps query gating and identity-bound native disclosures through category ch
   const data = report(), machines = data.machines as Document[], credentials = data.credentials as Document[];
   machines.push({ ...machines[0], machine_id: newRequestId(), name: "Second Worker" });
   credentials.push({ ...credentials[0], account_id: newRequestId(), connection_id: newRequestId() });
-  const value = fixture(data), view = render(value.view(<Settings close={() => {}} />));
+  const value = fixture(data), view = render(value.view(<Settings />));
   await act(async () => { await value.client.invalidateQueries(); });
   expect(value.doctor).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" })); await screen.findByText("First Worker");
@@ -117,15 +117,15 @@ it("keeps query gating and identity-bound native disclosures through category ch
   expect(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details").open).toBe(false);
   expect(screen.getByText("Connection identity").parentElement?.hasAttribute("open")).toBe(false);
   expect(value.save).not.toHaveBeenCalled();
-  view.rerender(value.view(<Settings visible={false} close={() => {}} />));
+  view.rerender(value.view(<Settings visible={false} />));
   allClosed(view.container);
 });
 
-for (const exit of ["Close", "Escape", "navigation"]) it(`resets all details on actual Settings ${exit} and reopens collapsed without mutations`, async () => {
+for (const exit of ["navigation", "Escape then navigation"]) it(`resets all details on actual Settings ${exit} and reopens collapsed without mutations`, async () => {
   const value = fixture();
   function Harness() {
     const [visible, setVisible] = useState(false);
-    return <><button onClick={() => setVisible(true)}>Open settings</button><button onClick={() => setVisible(false)}>Navigate away</button><Settings visible={visible} close={() => setVisible(false)} /></>;
+    return <><button onClick={() => setVisible(true)}>Open settings</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Navigate away</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Leave Settings fixture</button><Settings visible={visible} /></>;
   }
   const view = render(value.view(<Harness />));
   const opener = screen.getByRole("button", { name: "Open settings" }); opener.focus(); fireEvent.click(opener);
@@ -133,12 +133,11 @@ for (const exit of ["Close", "Escape", "navigation"]) it(`resets all details on 
   for (const details of view.container.querySelectorAll<HTMLDetailsElement>(".diagnostics details")) toggle(details);
   expect([...view.container.querySelectorAll<HTMLDetailsElement>(".diagnostics details")].every((details) => details.open)).toBe(true);
   const count = value.doctor.mock.calls.length;
-  if (exit === "Close") fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
-  else if (exit === "Escape") fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
-  else fireEvent.click(screen.getByRole("button", { name: "Navigate away" }));
+  if (exit === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect([...view.container.querySelectorAll<HTMLDetailsElement>(".diagnostics details")].every((details) => details.open)).toBe(true); }
+  fireEvent.click(screen.getByRole("button", { name: "Navigate away" }));
   expect(value.doctor).toHaveBeenCalledTimes(count);
   allClosed(view.container);
-  expect(document.activeElement).toBe(opener);
+  expect(document.activeElement).not.toBe(opener);
   fireEvent.click(opener);
   expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));

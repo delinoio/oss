@@ -26,6 +26,7 @@ func (s *Service) rpcMux() *http.ServeMux {
 	mux.Handle(delidevv1connect.NewAccountServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewProviderServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewIntegrationServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewPullRequestFixServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewNetworkServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewSessionServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewInteractionServiceHandler(s, options...))

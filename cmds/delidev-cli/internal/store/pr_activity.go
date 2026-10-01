@@ -5,10 +5,10 @@ import (
 	"slices"
 )
 
-// RetainPRHandlingVerification is the private publication boundary for a future
-// independent verifier. Callers must have verified the exact original versions;
-// an attempt outcome or provider thread state cannot supply this proof. No RPC,
-// CLI control, Worker report or current remediation path calls this method.
+// RetainPRHandlingVerification is the private publication boundary for an
+// independent verifier. Manual fixes call it only after original assignment,
+// native completion, cleanup and push verification. An attempt outcome, public
+// write request or provider thread state cannot supply this proof.
 func (t *Tx) RetainPRHandlingVerification(set domain.ID, problems []domain.PRRemediationProblemRef, proofDigest string) (Record, error) {
 	actor, err := t.prRemediationActor()
 	if err != nil {

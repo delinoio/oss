@@ -38,7 +38,7 @@ function fixture() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   function Harness() {
     const [visible, setVisible] = useState(true);
-    return <TransportProvider transport={transport}><QueryClientProvider client={client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><Settings visible={visible} close={() => setVisible(false)} /></QueryClientProvider></TransportProvider>;
+    return <TransportProvider transport={transport}><QueryClientProvider client={client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Leave Settings fixture</button><Settings visible={visible} /></QueryClientProvider></TransportProvider>;
   }
   return { Harness, client, provider, list, inventory, save, lifecycle, fail: (code?: Code) => { failure = code; }, finish: () => release?.() };
 }
@@ -78,7 +78,7 @@ it("discards metadata drafts, filters and late acknowledgments on close while ac
   fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Accepted subscription metadata" } });
   fireEvent.click(screen.getByRole("button", { name: "Add subscription configuration" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
   fireEvent.click(screen.getByRole("button", { name: "Open Settings fixture" }));
   await screen.findByRole("article", { name: "Accepted subscription metadata" });
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));

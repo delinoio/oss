@@ -43,7 +43,7 @@ it("shows the exact final-empty content only after a successful first read", asy
   let resolve!: (value: Page) => void;
   const pending = new Promise<Page>(done => { resolve = done; });
   const value = fixture([], () => pending);
-  render(value.view(<Settings close={() => {}} />)); choosePreferences();
+  render(value.view(<Settings />)); choosePreferences();
   expect(screen.getByRole("status").textContent).toBe("Loading server preferences…");
   expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByRole("region", { name: "No saved server preferences" })).toBeNull();
@@ -62,7 +62,7 @@ it("shows the exact final-empty content only after a successful first read", asy
 
 it.each([Code.PermissionDenied, Code.Unavailable])("does not create or claim empty on an initial %s failure", async code => {
   const value = fixture([], () => { throw new ConnectError("Fixture read failure", code); });
-  render(value.view(<Settings close={() => {}} />)); choosePreferences();
+  render(value.view(<Settings />)); choosePreferences();
   await screen.findByRole("alert");
   expect(screen.queryByRole("region", { name: "No saved server preferences" })).toBeNull();
   expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
@@ -73,7 +73,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])("does not create or claim emp
 it("does not authorize creation on empty continuation or later pages", async () => {
   let failedRefresh = false;
   const value = fixture([], token => { if (failedRefresh) throw new ConnectError("Refresh unavailable", Code.Unavailable); return { resources: [], nextPageToken: token ? "" : "opaque-page-2" }; });
-  render(value.view(<Settings close={() => {}} />)); choosePreferences();
+  render(value.view(<Settings />)); choosePreferences();
   await screen.findByText("No server preferences on this page.");
   expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
   await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
@@ -99,7 +99,7 @@ it.each([true, false])("retains the last successful result during and after fail
   let reject!: (error: ConnectError) => void;
   const pending = new Promise<Page>((_resolve, rejection) => { reject = rejection; });
   const value = fixture([row], () => fail ? pending : { resources: empty ? [] : [row] });
-  render(value.view(<Settings close={() => {}} />)); choosePreferences();
+  render(value.view(<Settings />)); choosePreferences();
   const panel = await screen.findByRole(empty ? "region" : "article", { name: empty ? "No saved server preferences" : "Saved server preferences" });
   fail = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findByText("Refreshing server preferences…");
@@ -118,7 +118,7 @@ it.each([true, false])("retains the last successful result during and after fail
 it("summarizes exact known stored values and keeps one title-aligned Edit action", async () => {
   const row = resource(EntityKind.SETTINGS, known);
   const value = fixture([row]);
-  render(value.view(<Settings close={() => {}} />)); choosePreferences();
+  render(value.view(<Settings />)); choosePreferences();
   const summary = within(await screen.findByRole("article", { name: "Saved server preferences" }));
   expect(summary.getByText(row.id)).toBeTruthy(); expect(summary.getByText("priority")).toBeTruthy(); expect(summary.getByText("Disabled")).toBeTruthy();
   expect(summary.getAllByText("On")).toHaveLength(2); expect(summary.getAllByText("Off")).toHaveLength(1);
@@ -133,7 +133,7 @@ it.each(["future", "invalid-json", "missing-policy", "unknown-routing", "invalid
   const row = resource(EntityKind.SETTINGS, variant === "missing-policy" ? {} : variant === "unknown-routing" ? { ...known, default_routing: "future-routing" } : variant === "invalid-fetch" ? { ...known, automatic_fetch: null } : known);
   if (variant === "future") row.schemaVersion = 2;
   if (variant === "invalid-json") row.documentJson = new Uint8Array([255]);
-  const value = fixture([row]); render(value.view(<Settings close={() => {}} />)); choosePreferences();
+  const value = fixture([row]); render(value.view(<Settings />)); choosePreferences();
   const summary = within(await screen.findByRole("article", { name: "Saved server preferences" }));
   expect(summary.getByText(row.id)).toBeTruthy(); expect(summary.getByRole("status").textContent).toContain("Policy values are unavailable.");
   for (const invented of ["Allowed", "Disabled", "On", "Off", "priority", "sequential-exhaustion"]) expect(summary.queryByText(invented)).toBeNull();
@@ -208,19 +208,19 @@ it("retains a draft after revision drift and blocks a fresh save", async () => {
   expect(value.save).not.toHaveBeenCalled();
 });
 
-it("disposes a changed disclosure and ignores a late prior save in a replacement opening", async () => {
+it("disposes a changed disclosure and ignores a late prior save in a replacement visit", async () => {
   const value = fixture();
   let resolve!: (response: { resource: Resource }) => void;
   value.save.mockImplementation(() => new Promise(done => { resolve = done; }));
-  const view = render(value.view(<Settings visible close={() => {}} />)); choosePreferences();
+  const view = render(value.view(<Settings visible />)); choosePreferences();
   await waitFor(() => expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "New Server preferences" }));
   details().open = true;
   fireEvent.change(screen.getByLabelText("Consecutive automatic attempt limit"), { target: { value: "11" } });
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
-  view.rerender(value.view(<Settings visible={false} close={() => {}} />));
-  view.rerender(value.view(<Settings visible close={() => {}} />));
+  view.rerender(value.view(<Settings visible={false} />));
+  view.rerender(value.view(<Settings visible />));
   expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy();
   choosePreferences(); await screen.findByRole("region", { name: "No saved server preferences" });
   resolve({ resource: resource(EntityKind.SETTINGS, known) });
@@ -233,14 +233,14 @@ it("disposes a changed disclosure and ignores a late prior save in a replacement
   expect(value.save).toHaveBeenCalledOnce();
 });
 
-it("ignores a late prior read after its Settings opening was replaced", async () => {
+it("ignores a late prior read after its Settings visit was replaced", async () => {
   let resolve!: (response: Page) => void, waiting = true;
   const pending = new Promise<Page>(done => { resolve = done; });
   const value = fixture([], () => waiting ? pending : { resources: [] });
-  const view = render(value.view(<Settings visible close={() => {}} />)); choosePreferences();
+  const view = render(value.view(<Settings visible />)); choosePreferences();
   await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.kind === EntityKind.SETTINGS)).toBe(true));
-  view.rerender(value.view(<Settings visible={false} close={() => {}} />));
-  waiting = false; view.rerender(value.view(<Settings visible close={() => {}} />)); choosePreferences();
+  view.rerender(value.view(<Settings visible={false} />));
+  waiting = false; view.rerender(value.view(<Settings visible />)); choosePreferences();
   await screen.findByRole("region", { name: "No saved server preferences" });
   resolve({ resources: [resource(EntityKind.SETTINGS, known)] });
   await waitFor(() => expect(value.client.isFetching()).toBe(0));

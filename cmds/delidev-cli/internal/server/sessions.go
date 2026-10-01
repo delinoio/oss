@@ -350,6 +350,13 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		if err != nil {
 			return nil, err
 		}
+		fixRow, fix, hasFix, err := tx.PRRemediationForInput(r.ID)
+		if err != nil {
+			return nil, err
+		}
+		if hasFix && fix.GitTarget != nil && !remove {
+			return nil, domain.Fail(domain.Conflict, "A manual PR fix retains its original input.", "Remove the queued fix explicitly and submit a new revision-bound request instead of editing its evidence.")
+		}
 		if value.Delivery != domain.InputQueued {
 			return nil, domain.Fail(domain.Conflict, "Only undelivered queued input can be changed.", "Reconcile claimed or uncertain delivery before another operation.")
 		}
@@ -370,6 +377,11 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		session.PendingInputBytes = pendingBytes
 		if _, err := tx.Put(domain.QueueKind, r.ID, r.Revision, r.SessionID, r.ProjectID, value); err != nil {
 			return nil, err
+		}
+		if remove && hasFix && fix.GitTarget != nil {
+			if _, err := tx.CancelPRRemediation(fixRow.ID, fixRow.Revision); err != nil {
+				return nil, err
+			}
 		}
 		if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
 			return nil, err
@@ -470,6 +482,24 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			}
 			if value.StartupRejection != nil {
 				return nil, domain.Fail(domain.Conflict, "This input was rejected before native startup and cannot be resumed.", "Preserve this attempt and create a fresh authorized PR fix after resolving its rejection.")
+			}
+			if ir, err := tx.OldestQueuedInput(r.ID); err == nil {
+				_, fix, found, err := tx.PRRemediationForInput(ir.ID)
+				if err != nil {
+					return nil, err
+				}
+				if found && fix.GitTarget != nil {
+					// Explicit Resume unpauses only. The dispatcher still owns
+					// fresh remote gates and the original immutable assignment.
+					if value.Dispatch != domain.DispatchPaused || value.Archive != domain.NotArchived || value.Recovery != domain.NoRecovery || value.ActiveExecutionID != "" || value.Preparation == nil || value.Preparation.State != domain.PreparationReady {
+						return nil, firstDispatchConflict()
+					}
+					value.Dispatch, value.Problem = domain.DispatchReady, nil
+					if _, err := tx.Put(r.Kind, r.ID, r.Revision, r.ID, r.ProjectID, value); err != nil {
+						return nil, err
+					}
+					return sessionReceipt{SessionID: r.ID}, nil
+				}
 			}
 			if value.InitialExecution != nil {
 				_, err := queueContinuation(tx, r, value, true)
