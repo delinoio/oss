@@ -592,3 +592,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Cache browser geometry only after native resize succeeds for the current presentation. Clear failed geometry so identical subsequent layout callbacks can retry rather than leaving an external child at obsolete bounds.
 
 - Retain the exact browser view identity after failed Hide and retry only its closure, including after panel unmount or a late open completion. Serialize hides and block resize/reopening until closure succeeds; an old cleanup cannot clear a replacement's identity.
+
+- Remediation policy copy describes bounded automatic fixes for explicitly linked PRs with current Agent/Runner Device/evidence eligibility; defaults remain off. Validate optional automatic source link IDs and decimal-string revisions without rounding. Reading history or editing a draft grants no execution or cleanup authority.

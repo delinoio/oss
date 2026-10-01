@@ -49,7 +49,7 @@ it("shows the exact final-empty content only after a successful first read", asy
   expect(screen.queryByRole("region", { name: "No saved server preferences" })).toBeNull();
   resolve({ resources: [] });
   const empty = await screen.findByRole("region", { name: "No saved server preferences" });
-  for (const copy of ["Review the defaults, then save one preference set for this server.", "Choose the default policy for Agent Workers that inherit server routing.", "Allow fetching before Worktree preparation. Repository preferences also apply.", "Configure remediation policies. Automatic execution is not available yet.", "Choose New Server preferences to review and save."]) expect(within(empty).getByText(copy)).toBeTruthy();
+  for (const copy of ["Review the defaults, then save one preference set for this server.", "Choose the default policy for Agent Workers that inherit server routing.", "Allow fetching before Worktree preparation. Repository preferences also apply.", "Configure bounded automatic fixes for linked pull requests. All automatic policies default off.", "Choose New Server preferences to review and save."]) expect(within(empty).getByText(copy)).toBeTruthy();
   expect(screen.getByText("Default routing, Worktree fetch, and pull request remediation.")).toBeTruthy();
   expect(screen.getAllByRole("button", { name: "New Server preferences" })).toHaveLength(1);
   expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(false);
@@ -122,7 +122,7 @@ it("summarizes exact known stored values and keeps one title-aligned Edit action
   const summary = within(await screen.findByRole("article", { name: "Saved server preferences" }));
   expect(summary.getByText(row.id)).toBeTruthy(); expect(summary.getByText("priority")).toBeTruthy(); expect(summary.getByText("Disabled")).toBeTruthy();
   expect(summary.getAllByText("On")).toHaveLength(2); expect(summary.getAllByText("Off")).toHaveLength(1);
-  expect(summary.getByText("Policies are saved on the server. Automatic execution is not available yet.")).toBeTruthy();
+  expect(summary.getByText("Enabled policies run bounded fixes for linked pull requests when the Agent, Runner Device, and current evidence are eligible.")).toBeTruthy();
   const edit = screen.getByRole("button", { name: "Edit Server preferences" });
   expect(edit.closest(".settings-toolbar")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();

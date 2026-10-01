@@ -226,6 +226,11 @@ func (t *Tx) StartPRRemediation(id domain.ID, expected uint64, executionID domai
 	if r.Revision != expected || v.State != domain.PRRemediationBound || executionID.Validate() != nil {
 		return r, prRemediationConflict()
 	}
+	if v.Mode == domain.PRRemediationAutomatic && v.GitTarget != nil {
+		if err := t.RequireAutomaticPRSource(v); err != nil {
+			return r, err
+		}
+	}
 	v.ExecutionID = executionID
 	_, session, err := t.prRemediationInput(v, domain.InputClaimed)
 	if err != nil {

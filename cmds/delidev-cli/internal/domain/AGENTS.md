@@ -59,3 +59,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Keep negotiated native accounting unit kinds distinct under the usage contract. GrokClosedInput preserves its supplied uint64 total, original input/history/closure/source references and immutable attribution; it has no pricing or budget contribution.
 
 - Protected browser records contain only canonical server/device/account/profile IDs, monotonic revisions and closed cleanup state. Keep browsing data and paths outside Device metadata and product documents; follow `docs/cmds-delidev-browser-contract.md`.
+
+- Automatic PR source revisions remain exact canonical decimal strings. Explicit session Stop/Archive/Restore retain server-owned automation suppression, cleared only by successful explicit Resume. Keep a failed automatic queue paused; replacement requires the original profile, settled failure and independently confirmed cleanup under the integration/session contracts.
