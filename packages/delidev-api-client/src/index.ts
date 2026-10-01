@@ -4,6 +4,7 @@ export * as ResourceQuery from "./gen/delidev/v1/delidev-ResourceService_connect
 export * as ConfigurationQuery from "./gen/delidev/v1/delidev-ConfigurationService_connectquery.js";
 export * as DeviceQuery from "./gen/delidev/v1/delidev-DeviceService_connectquery.js";
 export * as WorkerQuery from "./gen/delidev/v1/delidev-WorkerService_connectquery.js";
+export * as BrowserQuery from "./gen/delidev/v1/delidev-BrowserService_connectquery.js";
 export * as AccountQuery from "./gen/delidev/v1/delidev-AccountService_connectquery.js";
 export * as ProviderQuery from "./gen/delidev/v1/delidev-ProviderService_connectquery.js";
 export * as SessionQuery from "./gen/delidev/v1/delidev-SessionService_connectquery.js";

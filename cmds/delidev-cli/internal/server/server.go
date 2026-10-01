@@ -51,6 +51,7 @@ type Service struct {
 	delidevv1connect.UnimplementedForwardServiceHandler
 	delidevv1connect.UnimplementedWorkerServiceHandler
 	delidevv1connect.UnimplementedTerminalServiceHandler
+	delidevv1connect.UnimplementedBrowserServiceHandler
 	delidevv1connect.UnimplementedAccountServiceHandler
 	delidevv1connect.UnimplementedProviderServiceHandler
 	delidevv1connect.UnimplementedNetworkServiceHandler

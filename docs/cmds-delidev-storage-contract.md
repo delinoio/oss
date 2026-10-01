@@ -313,6 +313,11 @@ The safety image supplies current device descriptors/verifiers, merged deletion
 tombstones, deleted-project policies, model suppressions, backup publication claims
 and permanent backup-removal jobs/receipts. Remove tombstoned entities and deleted
 session children, including indexed transcript content through existing cascades.
+Device replacement copies each complete current document, including protected
+browser inventory: original profile identities/revisions, pending deletion
+request IDs and completed cleanup states survive an older source image. Offline
+and revoked clients retain their obligations. The historical Device documents
+are discarded rather than merged back into that current inventory.
 Use the permanent deletion redactor for shared remediation operands and their
 source-linked activity before removing the original session graph.
 Schema-25 native accounting retains its original verified unit, attribution and

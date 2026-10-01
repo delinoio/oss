@@ -33,6 +33,10 @@ These independent enum spaces preserve the merged user-service system value 3.
 Desktop history reads, polling, manual refresh and selection wait for advertised
 system terminal support. Unknown or unsupported status shows its capability
 notice without terminal requests or cached terminal errors.
+The Terminals header action shares one visible session panel with Files, Diff and
+Browser while the conversation and unsent composer remain mounted. Closing restores
+the original action's focus. Switching panels releases only the client attachment;
+it never requests shell closure or discards original terminal mutation authority.
 Creation requires a ready
 original workspace, current Worker instance/lease and current session revision.
 The terminal retains the session/project, machine, original Worker instance and
