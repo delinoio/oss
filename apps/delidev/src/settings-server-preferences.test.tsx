@@ -4,7 +4,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type ListResourcesRequest, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationEditor, Settings } from "./settings";
@@ -15,6 +15,7 @@ import { MutationIntents } from "./mutation";
 // Settings renders all mounted categories under Strict Mode. Keep this fixture
 // bounded while allowing concurrent integration/build load on development hosts.
 vi.setConfig({ testTimeout: 15000 });
+configure({ asyncUtilTimeout: 5000 });
 
 type Page = { resources: Resource[]; nextPageToken?: string };
 function resource(kind: EntityKind, data: Document, revision = 8n) {
@@ -75,12 +76,14 @@ it("does not authorize creation on empty continuation or later pages", async () 
   render(value.view(<Settings close={() => {}} />)); choosePreferences();
   await screen.findByText("No server preferences on this page.");
   expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
+  await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
   expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByRole("region", { name: "No saved server preferences" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).map(([request]) => request.filter?.pageToken)).toEqual(["", "opaque-page-2", "opaque-page-2"]));
+  await waitFor(() => expect(value.client.isFetching()).toBe(0));
   failedRefresh = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findByRole("alert");
   expect(screen.getByText("No server preferences on this page.")).toBeTruthy();
