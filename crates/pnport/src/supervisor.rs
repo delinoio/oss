@@ -27,7 +27,8 @@ pub fn platform() -> Result<()> {
     )) {
         return Err(Error::new(
             Code::PnportUnsupportedOperation,
-            "This development build has no verified native interception backend for this target.",
+            "This release supports macOS and glibc Linux on x64/arm64. Windows support is planned \
+             for pnport 0.2.0.",
         ));
     }
     Ok(())
@@ -290,6 +291,15 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             }
             std::thread::sleep(Duration::from_millis(100));
         })();
+        if let Err(error) = &result {
+            tracing::debug!(
+                action = "supervisor_failed",
+                code = error.code.as_str(),
+                initialization_started,
+                ready = ready.is_file(),
+                "Owned execution failed before cleanup"
+            );
+        }
         #[cfg(unix)]
         unsafe {
             libc::kill(-pid, libc::SIGTERM);
@@ -356,6 +366,8 @@ mod failure_tests {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
+    use std::sync::{atomic::AtomicBool, Arc};
+
     use fs2::FileExt;
     use pnport::{
         cache::{private_dir, Cache},
@@ -364,6 +376,67 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[derive(Clone, Copy)]
+    enum Scenario {
+        CacheContention,
+        IncompleteInitialization,
+        UnacknowledgedDescendant,
+    }
+
+    impl Scenario {
+        fn name(self) -> &'static str {
+            match self {
+                Self::CacheContention => {
+                    "cache_contention_after_initializer_entry_can_exceed_five_seconds"
+                }
+                Self::IncompleteInitialization => {
+                    "initializer_entry_without_readiness_cannot_accept_a_child_result"
+                }
+                Self::UnacknowledgedDescendant => {
+                    "unacknowledged_descendant_prevents_a_complete_result"
+                }
+            }
+        }
+    }
+
+    fn run_in_fresh_process(scenario: Scenario) -> bool {
+        let name = scenario.name();
+        if std::env::var("PNPORT_SUPERVISOR_TEST_SCENARIO").as_deref() == Ok(name) {
+            return false;
+        }
+        // A CLI process owns one supervisor and its process-wide signal state.
+        // Parallel unit threads cannot model that ownership; keep each scenario
+        // in its own process while the normal test runner remains parallel.
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                format!("supervisor::tests::{name}"),
+                "--exact".into(),
+                "--nocapture".into(),
+            ])
+            .env("PNPORT_SUPERVISOR_TEST_SCENARIO", name)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "Supervisor scenario {name} failed: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        true
+    }
+
+    fn record_outcome(scenario: Scenario, result: &Result<i32>) {
+        eprintln!(
+            "{}",
+            json!({
+                "event": "pnport_supervisor_test_result",
+                "scenario": scenario.name(),
+                "status": result.as_ref().ok(),
+                "code": result.as_ref().err().map(|error| error.code.as_str()),
+            })
+        );
+    }
 
     fn fixture() -> (tempfile::TempDir, View, PathBuf) {
         let root = tempfile::tempdir().unwrap();
@@ -404,6 +477,9 @@ mod tests {
 
     #[test]
     fn cache_contention_after_initializer_entry_can_exceed_five_seconds() {
+        if run_in_fresh_process(Scenario::CacheContention) {
+            return;
+        }
         let (_root, mut view, executable) = fixture();
         let lock = fs::OpenOptions::new()
             .read(true)
@@ -412,6 +488,8 @@ mod tests {
             .unwrap();
         lock.lock_exclusive().unwrap();
         let session = view.session.clone();
+        let supervisor_finished = Arc::new(AtomicBool::new(false));
+        let finished = Arc::clone(&supervisor_finished);
         let release = std::thread::spawn(move || {
             let deadline = Instant::now() + Duration::from_secs(15);
             loop {
@@ -421,7 +499,9 @@ mod tests {
                 {
                     break;
                 }
-                assert!(Instant::now() < deadline, "The preload did not start.");
+                if finished.load(Ordering::SeqCst) || Instant::now() >= deadline {
+                    return Err("The preload did not start before supervision ended or timed out.");
+                }
                 std::thread::sleep(Duration::from_millis(10));
             }
             // Begin the long wait only after actual constructor entry, so a
@@ -432,15 +512,21 @@ mod tests {
                 "Readiness must wait for cache coordination."
             );
             drop(lock);
+            Ok(())
         });
         let result = run(&mut view, &artifact().unwrap(), &executable, &[]);
-        release.join().unwrap();
+        record_outcome(Scenario::CacheContention, &result);
+        supervisor_finished.store(true, Ordering::SeqCst);
+        release.join().unwrap().unwrap();
         assert_eq!(result.unwrap(), 0);
         assert_eq!(fs::read_dir(view.session.join("ready")).unwrap().count(), 1);
     }
 
     #[test]
     fn initializer_entry_without_readiness_cannot_accept_a_child_result() {
+        if run_in_fresh_process(Scenario::IncompleteInitialization) {
+            return;
+        }
         let (root, mut view, executable) = fixture();
         let source = root.path().join("incomplete.c");
         let library = root.path().join("incomplete.dylib");
@@ -476,6 +562,7 @@ __attribute__((constructor)) static void start(void) {
         // launch, but accept this test only after entry is actually proven.
         for attempt in 0..3 {
             let result = run(&mut view, &library, &executable, &[]);
+            record_outcome(Scenario::IncompleteInitialization, &result);
             assert_eq!(result.unwrap_err().code, Code::PnportInjectionFailed);
             let observed = fs::read_dir(view.session.join("starting"))
                 .ok()
@@ -497,10 +584,14 @@ __attribute__((constructor)) static void start(void) {
 
     #[test]
     fn unacknowledged_descendant_prevents_a_complete_result() {
+        if run_in_fresh_process(Scenario::UnacknowledgedDescendant) {
+            return;
+        }
         let (_root, mut view, executable) = fixture();
         fs::create_dir(view.session.join("pending")).unwrap();
         fs::write(view.session.join("pending/pnport-unacknowledged"), b"").unwrap();
         let result = run(&mut view, &artifact().unwrap(), &executable, &[]);
+        record_outcome(Scenario::UnacknowledgedDescendant, &result);
         assert_eq!(result.unwrap_err().code, Code::PnportInjectionFailed);
     }
 }

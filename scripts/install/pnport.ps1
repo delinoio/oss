@@ -5,6 +5,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Keep the Windows implementation for the planned 0.2.0 release. Remove this
+# gate only when its native execution and installation acceptance is complete.
+throw "[install.pnport] Windows is not supported by this release. Windows support is planned for pnport 0.2.0; no files were downloaded or installed."
+
 if ($Version -eq "latest") {
   if ($SourceDir) { throw "[install.pnport] SourceDir requires an exact version" }
   $versions = @()

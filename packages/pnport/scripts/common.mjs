@@ -26,6 +26,14 @@ export function metadata(read = sourceText) {
   return { version: npm.version };
 }
 
+export function requireReleaseReady(read = sourceText) {
+  // Host smoke tests do not prove minimum-OS support or the full conformance
+  // contract. Enable this source gate only after those remaining acceptance
+  // results are reviewed; dry runs must stay available while it is closed.
+  const source = JSON.parse(read("packages/pnport/package.json"));
+  ensure(source.pnportReleaseReady === true && source.version !== "0.0.0", "pnport publication is blocked until full native, minimum-OS, and benchmark acceptance is complete");
+}
+
 export function revision() {
   return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 }

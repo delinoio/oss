@@ -30,6 +30,7 @@ jobs:
       dry_run: ${{ steps.source.outputs.dry_run }}
       revision: ${{ steps.source.outputs.revision }}
       tree: ${{ steps.source.outputs.tree }}
+      matrix: ${{ steps.source.outputs.matrix }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -49,12 +50,15 @@ jobs:
           import { appendFileSync, readFileSync } from 'node:fs';
           import { execFileSync } from 'node:child_process';
           import { sourceMetadata, Project } from './scripts/release/project.mjs';
+          import { nativeMatrix } from './packages/pnport/scripts/native-matrix.mjs';
+          import { requireReleaseReady } from './packages/pnport/scripts/common.mjs';
           const source = sourceMetadata({ project: Project.Pnport, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, file => readFileSync(file, 'utf8'));
           const revision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
           const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
           if (revision !== process.env.GITHUB_SHA) throw new Error('Checkout revision mismatch');
           if (source.dry_run !== 'true' && (process.env.GITHUB_REPOSITORY !== 'delinoio/oss' || process.env.GITHUB_REF !== `refs/tags/${source.tag}`)) throw new Error('Publication requires exact first-party tag');
-          appendFileSync(process.env.GITHUB_OUTPUT, Object.entries({ ...source, revision, tree }).map(([key, value]) => `${key}=${value}\n`).join(''));
+          if (source.dry_run !== 'true') requireReleaseReady();
+          appendFileSync(process.env.GITHUB_OUTPUT, Object.entries({ ...source, revision, tree, matrix: JSON.stringify(nativeMatrix) }).map(([key, value]) => `${key}=${value}\n`).join(''));
           JS
 
   build:
@@ -62,14 +66,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { runner: macos-15-intel, target: x86_64-apple-darwin, suffix: darwin-x64 }
-          - { runner: macos-14, target: aarch64-apple-darwin, suffix: darwin-arm64 }
-          - { runner: windows-latest, target: x86_64-pc-windows-msvc, suffix: win32-x64-msvc }
-          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc, suffix: win32-arm64-msvc }
-          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu, suffix: linux-x64-gnu }
-          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, suffix: linux-arm64-gnu }
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     env:
       PNPORT_TARGET: ${{ matrix.target }}
     steps:
@@ -110,7 +107,6 @@ jobs:
           set -euo pipefail
           binary="target/$PNPORT_TARGET/release/pnport"
           preload="target/$PNPORT_TARGET/release/libpnport_preload.so"
-          if [[ "$PNPORT_TARGET" == *windows* ]]; then binary="$binary.exe"; preload="target/$PNPORT_TARGET/release/pnport_preload.dll"; fi
           if [[ "$PNPORT_TARGET" == *apple* ]]; then preload="target/$PNPORT_TARGET/release/libfspy_preload_unix.dylib"; fi
           pnpm --filter @delino/pnport test:package --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
           fixture="$RUNNER_TEMP/pnport-typescript"
@@ -145,7 +141,7 @@ jobs:
         with:
           pattern: pnport-native-*
           path: packages/pnport/dist/native
-      - name: Validate the seven packages, six archives, and signed-release inputs
+      - name: Validate the complete packages, archives, and signed-release inputs
         env:
           PNPORT_REVISION: ${{ needs.prepare.outputs.revision }}
           PNPORT_TREE: ${{ needs.prepare.outputs.tree }}

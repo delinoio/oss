@@ -25,7 +25,7 @@ try {
   ensure(buildPackage({ output }).integrity === launcher.integrity, "Launcher npm package is not reproducible");
   const resolutions = { [native.name]: `file:${path.join(output, "tarballs", native.filename)}` };
   // Yarn resolves every optional package before it filters incompatible hosts.
-  // Local inert fixtures fill those five slots while the selected package is
+  // Local inert fixtures fill the other slots while the selected package is
   // always the real two-file artifact under test; no fixture is published.
   for (const other of targets.filter((candidate) => candidate !== target)) {
     const stub = path.join(temporary, "stubs", other.suffix);
