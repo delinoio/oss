@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, IntegrationService, ResourceService, ResourceSchema, PullRequestProblemCollectionKind, newRequestId, type Resource } from "@delinoio/delidev-api-client";
-import { ciObservation } from "./github-ci-fixture";
+import { ciObservation, queueCIObservation } from "./github-ci-fixture";
 import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { PRWorkflowProvider } from "./pr-workflow";
@@ -98,6 +98,24 @@ it("rejects mismatched original CI context output without displaying its rule ev
   render(f.view()); fireEvent.click(await screen.findByRole("button", { name: "Inspect original CI rules and results" }));
   await screen.findByText("The original CI proof does not match this result version.");
   expect(screen.queryByRole("table", { name: "Active ruleset CI requirements" })).toBeNull();
+});
+
+it("reads a historical ALLGREEN entry proof without promoting it to current failure authority", async () => {
+  const f = ciHistoryFixture(), ci = queueCIObservation(), body = document(f.proof), value = document(f.ciRow);
+  ci.merge_queue.entry.pull_request_node_id = "PR_17";
+  const evidence = { observation_id: f.proof.id, context: ci.merge_queue.rollup.contexts[0], source: "merge-queue", rules_digest: ci.rules.digest, queue_node_id: "QUEUE_Q", queue_entry_node_id: "ENTRY_E" };
+  const row = create(ResourceSchema, { ...f.ciRow, documentJson: encode({ ...value, ci: evidence }) });
+  f.list.mockResolvedValue({ problemSet: f.set, problems: [row] });
+  f.proof.documentJson = encode({ ...body, ci });
+  expect(readPRProblem(row, f.set, f.selection)).toBeTruthy();
+  const missing = create(ResourceSchema, { ...row, documentJson: encode({ ...value, ci: { ...evidence, queue_entry_node_id: undefined } }) });
+  expect(readPRProblem(missing, f.set, f.selection)).toBeUndefined();
+  render(f.view());
+  fireEvent.click(await screen.findByRole("button", { name: "Inspect original CI rules and results" }));
+  await screen.findByRole("table", { name: "Active ruleset CI requirements" });
+  expect(screen.getByText(/This is the original retained evaluation/)).toBeTruthy();
+  expect(screen.getByText(/Latest CI evaluation: unknown/)).toBeTruthy();
+  expect(f.collect).not.toHaveBeenCalled();
 });
 it("collects CI and conflict through explicit independent enum selections", async () => {
   const f = fixture(); render(f.view());

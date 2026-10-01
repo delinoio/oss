@@ -75,6 +75,8 @@ type inputProgress struct {
 	NeedsRecovery       bool
 	RejectedInteraction bool
 	StoppedOnRejection  bool
+	Reconciliation      ReconciliationState
+	IdleReconciled      bool
 }
 
 type observedMessage struct {
@@ -93,9 +95,9 @@ type observedPart struct {
 	text  string
 }
 
-// inputObserver consumes one original uninterrupted event stream in arrival
-// order. It does not reconnect, authorize another input, establish persisted
-// history, publish product outcomes or prove owned process cleanup.
+// inputObserver consumes original native arrivals in order. Reconciliation joins
+// separately verified reads on a copy before replacing its state. This observer
+// grants no input, publication, persisted-history or cleanup authority.
 type inputObserver struct {
 	mu                 sync.Mutex
 	creation           sessionCreation
@@ -123,6 +125,7 @@ type inputObserver struct {
 	retries            []observedRetry
 	currentRetry       *observedRetry
 	todo               *TodoHistoryObservation
+	snapshotJoining    bool
 }
 
 func observerProblem() *domain.Error {
@@ -140,7 +143,7 @@ func (s *sessionAPI) observeInput(ctx context.Context, root string) (*inputObser
 	if s.runtimeRoot != "" && root != s.runtimeRoot {
 		return nil, sessionInvalid()
 	}
-	if s.creation == nil || s.input == nil || s.events == nil || s.events.ctx == nil || !filepath.IsAbs(root) || domain.Text(root, "native root", 32768, true) != nil {
+	if s.creation == nil || s.input == nil || s.events == nil || s.events.ctx == nil || !(filepath.IsAbs(root) || root == "/" && s.apiProfile != nil && s.apiProfile.WorkspaceRoot != nil && s.apiProfile.WorkspaceRoot.windowsGlobal() && s.apiProfile.WorkspaceRoot.native == root) || domain.Text(root, "native root", 32768, true) != nil {
 		return nil, sessionInvalid()
 	}
 	if s.observer != nil {
@@ -152,7 +155,11 @@ func (s *sessionAPI) observeInput(ctx context.Context, root string) (*inputObser
 	creation := *s.creation
 	creation.settings.Permission = slices.Clone(creation.settings.Permission)
 	input := *s.input
-	observerContext, cancel := context.WithCancel(s.events.ctx)
+	lifetime := s.events.parent
+	if lifetime == nil {
+		lifetime = s.events.ctx
+	}
+	observerContext, cancel := context.WithCancel(lifetime)
 	s.observer = &inputObserver{
 		creation: creation, input: input, sessionPermissions: slices.Clone(s.sessionPermissions), cwd: s.cwd, root: root, logger: s.logger, owner: s.owner,
 		ctx: observerContext, cancel: cancel, interactions: map[string]*observedInteraction{}, responseIDs: map[domain.ID]bool{},
@@ -217,6 +224,7 @@ func (o *inputObserver) snapshot() inputProgress {
 func (o *inputObserver) interruption(ctx context.Context) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	o.progress.Reconciliation = ReconciliationFailed
 	return o.fail(ctx, "transport", sessionUncertain())
 }
 
@@ -435,7 +443,7 @@ func (o *inputObserver) refresh() {
 		}
 	}
 	o.progress.StoppedOnRejection = message != nil && o.rejectionStopsMessage(message.value.ID)
-	o.progress.SettledObserved = o.progress.TerminalObserved && o.progress.Status == NativeStatusIdle && o.progress.IdleNotification
+	o.progress.SettledObserved = o.progress.TerminalObserved && o.progress.Status == NativeStatusIdle && (o.progress.IdleNotification || o.progress.IdleReconciled)
 }
 
 func (o *inputObserver) message(raw []byte) (_ *NativeMessage, _ bool, problem error) {
@@ -479,7 +487,7 @@ func (o *inputObserver) message(raw []byte) (_ *NativeMessage, _ bool, problem e
 			return nil, false, observerProblem()
 		}
 		if old == nil {
-			if o.progress.Status != NativeStatusBusy {
+			if o.progress.Status != NativeStatusBusy && !o.snapshotJoining {
 				return nil, false, observerProblem()
 			}
 			if prior := o.messages[o.progress.AssistantID]; prior != nil {

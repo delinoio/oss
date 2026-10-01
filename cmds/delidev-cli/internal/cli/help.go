@@ -49,6 +49,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   integration edit --id ID --revision N --input FILE|-
   integration replace-token --id ID --revision N --pat-stdin
   integration validate|delete --id ID --revision N
+  network profile save --input FILE|- [--id ID --revision N] [--credential-stdin | --clear-credential]
+  network profile list|get|delete [--id ID --revision N] [--limit N --page-token TOKEN]
+  network select [--id ROUTE_ID --revision N] [--machine-id ID] [--profile-id ID --profile-revision N]
+  network status [--machine-id ID]
+  network export-metadata --machine-id ID --revision DESIRED_GENERATION
   integration list|get|snapshot [--id ID]
   integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]
   integration inspect-repository --repository-id ID
@@ -86,6 +91,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session enqueue --id ID --input FILE|-
   session steer --id SESSION --input-id INPUT --revision N --execution-id EXECUTION --turn-id TURN
   session stop|archive|restore|resume --id ID --revision N
+  session switch-account --id ID --revision N --account-id ID
   session rename --id ID --revision N --name NAME
   schedule create --input FILE|- [--local-worker-dir PATH]
   schedule edit --id ID --revision N --input FILE|- [--local-worker-dir PATH]
@@ -125,6 +131,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   backup creations [--limit N] [--page-token TOKEN]
   backup list [--limit N] [--page-token TOKEN]
   backup inspect --id ID
+  backup restore --id ID --expected-revision REV --size-bytes BYTES --modified-at TIME --sha256 SHA256 --expected-restore-revision REV --confirm
+  backup restore-status --id REQUEST-ID
   backup delete --id ID --expected-revision REV --size-bytes BYTES --modified-at TIME --sha256 SHA256 --confirm
   backup deletion --id JOB-ID
   backup deletions [--limit N] [--page-token TOKEN]

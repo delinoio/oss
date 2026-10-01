@@ -20,6 +20,8 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 	var providerID domain.ID
 	if session.InitialExecution != nil {
 		providerID = session.InitialExecution.Configuration.ProviderID
+	} else if session.Fork != nil {
+		providerID = session.Fork.Snapshot.Configuration.ProviderID
 	} else {
 		agentRecord, err := tx.Get(domain.AgentKind, session.AgentID)
 		if err != nil {
@@ -57,6 +59,9 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 // transient ready state, snapshot/routing claim and job are one transaction;
 // validating the selected configuration after the claim cannot partially commit.
 func queueInitialExecution(tx *store.Tx, sr store.Record, session domain.Session, explicitResume bool) (store.Record, error) {
+	if session.Fork != nil {
+		return queueForkInitialExecution(tx, sr, session, explicitResume)
+	}
 	if session.InitialExecution != nil || session.CurrentExecution != nil || session.NextExecutionIntent != "" || session.ActiveExecutionID != "" || session.Outcome != domain.ExecutionNotStarted || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || (session.Dispatch != domain.DispatchBlocked && session.Dispatch != domain.DispatchReady && !(explicitResume && session.Dispatch == domain.DispatchPaused)) {
 		return store.Record{}, firstDispatchConflict()
 	}
@@ -234,10 +239,6 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if c.Harness == domain.GrokBuild {
 		if request.Type != domain.GeneralChat || len(manifest.Repositories) != 0 {
 			return empty, domain.Fail(domain.Unsupported, "This Grok runner requires an owned General Chat workspace.", "Retain repository workspaces for their separately verified native profile.")
-		}
-	} else if c.Harness == domain.OpenCode {
-		if request.Type == domain.GeneralChat && machine.OS == "windows" {
-			return empty, domain.Fail(domain.Unsupported, "OpenCode General Chat requires a verified native Windows root identity.", "Preserve the prepared workspace; do not infer native non-VCS path ownership.")
 		}
 	} else if c.Harness == domain.Codex {
 		settings := codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Cwd: manifest.PrimaryPath, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}

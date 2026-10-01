@@ -58,7 +58,7 @@ Preserve existing service operational logs. This presentation adds no logging of
 
 ## Build and Test
 
-Run `pnpm test` in `apps/delidev`, including `doctor.test.tsx`, existing device diagnostics fixtures and isolated temporary Go server integration. Fixtures cover hierarchy/all fields, failure ownership, canonical integers, query/lifecycle/disclosure identities, deferred refresh, permissions/correlation, compatibility/inventory bounds and inert HTML-like text. Browser geometry and keyboard smoke, actual zoom and packaged platform/CEF acceptance are independent evidence. Record commands, revision and unavailable checks in `docs/evidence/delidev/issue-1144/`; preserve the frozen historical ledger. Prepare generated/LFS inputs as needed and remove generated repository-owned `dist` after validation.
+Run `pnpm test` in `apps/delidev`, including `doctor.test.tsx`, existing device diagnostics fixtures and isolated temporary Go server integration. Fixtures cover hierarchy/all fields, failure ownership, canonical integers, query/lifecycle/disclosure identities, deferred refresh, permissions/correlation, compatibility/inventory bounds and inert HTML-like text. Browser geometry and keyboard smoke, actual zoom and packaged platform/CEF acceptance are independent evidence. Record commands, revision and unavailable checks in pull requests, issues and CI logs/artifacts. Prepare generated/LFS inputs as needed and remove generated repository-owned `dist` after validation.
 
 ## Dependencies and Integrations
 

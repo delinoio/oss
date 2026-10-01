@@ -1,7 +1,7 @@
 # DeliDev Worker workspace contract
 
 ## Scope
-`cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. The Worker first Codex runner now uses the execution lease below; public first dispatch uses that lease; forks and snapshots remain separate pending boundaries in the evidence ledger.
+`cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. The Worker first Codex runner now uses the execution lease below; public first dispatch uses that lease; snapshots and additional fork profiles remain separate pending boundaries; the bounded same-account Codex profile follows [the fork contract](cmds-delidev-forks-contract.md).
 
 ## Runtime and Language
 Go and the execution machine's installed Git. No harness or Git installation is performed automatically.
@@ -44,7 +44,7 @@ Before advancing ownership, require the exact current closed version-2 predecess
 
 Before replacing the current claim, synchronize a metadata-only immutable copy of the closed predecessor at `execution-history/<session-id>/<execution-id>.json`, then create the fresh job process index and synchronize the new active claim with both predecessor IDs. Existing history must match exactly; old execution IDs and existing process owners cannot be reused. Failure to retain history prevents ownership advancement. A lost latest claim with retained history cannot authorize a new first execution; this check reads at most one history entry. Concurrent/replaced Workers cannot continue over an active, missing, mismatched or uncertain predecessor. Cleanup of the successor uses the same independent process reconciliation and idempotent lease-close boundary, preserving earlier history.
 
-Version-1 claims remain readable for their original cleanup/recovery checks but lack the captured continuation identity digest. They cannot be automatically upgraded into continuation authority after files may have changed; explicit native/workspace recovery is required, without replaying the first input. History belongs to the session's managed metadata and must participate in coordinated permanent deletion and backup/restore; it is never removed by Stop/Archive. These lease fixtures alone do not establish native acceptance; public continuation integration and installed Codex evidence are recorded separately in the session contract and evidence ledger.
+Version-1 claims remain readable for their original cleanup/recovery checks but lack the captured continuation identity digest. They cannot be automatically upgraded into continuation authority after files may have changed; explicit native/workspace recovery is required, without replaying the first input. History belongs to the session's managed metadata and must participate in coordinated permanent deletion and backup/restore; it is never removed by Stop/Archive. These lease fixtures alone do not establish native acceptance; the session contract owns public continuation integration. Record installed Codex evidence separately in pull requests, issues and CI logs/artifacts.
 
 ## Storage
 The Worker owns private `workspaces`, `locks`, `execution-claims`, `execution-history`, and empty hook directories under its explicit data scope. UUID-v7 session/repository IDs derive managed paths. Manifests record original checkouts separately from deletion-owned paths. Cleanup recomputes owned paths from identities, reconciles Git registration even when a directory is absent, and never removes original Local checkouts. These local resources intentionally override the repository R2 default.
@@ -61,10 +61,10 @@ Structured preparation start/ready/failure/cleanup records contain session and m
 Run `go test -race ./cmds/delidev-cli/internal/workspace` and package vet. Tests create real temporary Git repositories, local remotes, linked worktrees, dirty Local trees, and separate General Chat directories. Validate fetch advancement/failure, detached commits, multi-repository rollback, idempotency, cancellation, original-checkout preservation, and missing-default rejection. Continuation tests additionally use real commits/branches/dirty files, exact predecessor history, concurrent owners, changed Git administrative identity, lost current ownership, retired-ID refusal and legacy/missing/invalid cleanup evidence.
 
 ## Dependencies and Integrations
-Worker jobs pass typed preparation requests/results over authenticated Connect. The server validates complete manifests against the immutable accepted preparation input and records ready/failed/canceled/uncertain state with the job in one transaction. Cancellation is persisted outside the claimed envelope so reconnect can deliver a precanceled assignment without invalidating its journal identity. The Worker gives each job an independent cancellation context; a late control cannot cancel the next job. Files remain on the Worker, with references and resolved commits recorded on the server. The private first-execution lease shares that session lock and prevents preparation/recovery from bypassing unresolved native ownership. The first Codex Worker runner uses that lease; public first dispatch now integrates it, while forks, snapshots, terminal ownership and full native recovery remain additional lifecycle boundaries not implied by passing preparation/lease tests.
+Worker jobs pass typed preparation requests/results over authenticated Connect. The server validates complete manifests against the immutable accepted preparation input and records ready/failed/canceled/uncertain state with the job in one transaction. Cancellation is persisted outside the claimed envelope so reconnect can deliver a precanceled assignment without invalidating its journal identity. The Worker gives each job an independent cancellation context; a late control cannot cancel the next job. Files remain on the Worker, with references and resolved commits recorded on the server. The private first-execution lease shares that session lock and prevents preparation/recovery from bypassing unresolved native ownership. The first Codex Worker runner uses that lease; public first dispatch now integrates it, while snapshots, terminal ownership, additional fork profiles and full native recovery remain additional lifecycle boundaries not implied by passing preparation/lease tests.
 
 ## Change Triggers
-Update this contract, the command contract, project index, scoped AGENTS, and evidence ledger when ownership, reference selection, cleanup, or Worker integration changes.
+Update this contract, the command contract, project index, scoped AGENTS, and validation records in pull requests, issues and CI logs/artifacts when ownership, reference selection, cleanup, or Worker integration changes.
 
 ## References
 - [Project](project-delidev.md)
@@ -85,7 +85,7 @@ Worker Git operations run through the [owned process contract](cmds-delidev-proc
 First claim, continuation and completed-execution inspection already validate every repository's canonical location, original Git common/admin ownership and registration. Multi-repository execution retains that complete gate: changed/missing non-primary ownership blocks a replacement claim, while valid commits/branches/dirty files on any owned repository remain intact. Native permission and checkpoint/root comparison rules are defined in the harness contract. Local creation now authenticates its originating Worker, and the shared native-root gate also applies to its existing checkouts.
 
 ### Local Git identity
-Each Local prepared repository includes `local_identity_digest`: a canonical SHA-256 digest of its repository UUID and canonical common/admin Git directory paths, captured during read-only preparation. Ready-result validation requires this proof for Local and rejects it on managed Worktree records. Local paths remain exactly their configured canonical original checkout paths with `owned=false`; they need not be under the private workspace root. First/continuation/closed inspection reject missing or redirected Git metadata and changed worktree registration while permitting current commits and branch selections. Independent Local sessions explicitly share checkouts; their per-session journals and process claims remain independent, and removing managed metadata never removes a shared source tree. Existing Local preparation records without the digest cannot acquire native authority. The original-journal preparation recovery path now supports ready Local inspection and explicit partial metadata cleanup; native snapshots and forks remain separate pending boundaries.
+Each Local prepared repository includes `local_identity_digest`: a canonical SHA-256 digest of its repository UUID and canonical common/admin Git directory paths, captured during read-only preparation. Ready-result validation requires this proof for Local and rejects it on managed Worktree records. Local paths remain exactly their configured canonical original checkout paths with `owned=false`; they need not be under the private workspace root. First/continuation/closed inspection reject missing or redirected Git metadata and changed worktree registration while permitting current commits and branch selections. Independent Local sessions explicitly share checkouts; their per-session journals and process claims remain independent, and removing managed metadata never removes a shared source tree. Existing Local preparation records without the digest cannot acquire native authority. The original-journal preparation recovery path now supports ready Local inspection and explicit partial metadata cleanup; native snapshots and additional fork profiles remain separate pending boundaries; bounded same-account Codex forks retain their independently validated copy and cleanup ownership.
 
 
 ### Unborn Local checkouts
@@ -180,3 +180,24 @@ The following source-backed notes were relocated from the project index at `12b3
 First-execution configuration, initial account selection, input claim and per-Agent routing state share one durable transaction. The public first-dispatch coordinator validates current installation/account/workspace/Worker evidence and exact native selection in the same transaction as its immutable job. Eligible ready sessions dispatch automatically; paused/restored first sessions require explicit Resume, and failed checks consume no input or routing. Template contents/order are retained exactly, later edits cannot rewrite them, and current restrictions still apply.
 
 An internal completed-execution inspection now correlates the original Worker operation/outbox/native checkpoint with current closed workspace/process ownership, preserving results without relaunch or report replay. The dedicated public execution-recovery RPC/CLI and Worker job now reconcile a retained completed execution atomically after Worker replacement, preserving outcome and pause until explicit Resume. Missing historical interaction evidence and safe surviving-process reattachment remain separate requirements.
+
+
+## Independent fork workspaces (#1092)
+
+Follow the [fork contract](cmds-delidev-forks-contract.md). Optional omitted
+`fork_source_id`/`fork_source_path` preparation fields preserve historical JSON.
+The owning Worker holds the original closed execution inspection while deriving
+actual HEAD commits, then copies each repository into a separate detached
+`--no-checkout` worktree without fetch or checkout filters. It copies the exact
+non-split index and bounded regular files, preserving original directory and
+file permission modes independently of the Worker umask, including staged, unstaged, ignored
+and untracked data. Source reads and destination writes use separate opened
+filesystem roots; linked destinations are rejected before copying, and copied
+files/directories are synchronized before the ready manifest. General Chat
+copies its owned tree. Source and target hashes,
+HEAD and index are rechecked after every repository and after native creation.
+Explicit authenticated Local uses the same user-owned files only from an original
+Local source. Managed source worktrees cannot become unowned Local child paths;
+their parent retains removal authority, so those sources require independent copies. Links, nested repositories,
+special files, split indexes and unborn Git are outside the initial profile;
+refusal cannot silently drop data or publish partial preparation.

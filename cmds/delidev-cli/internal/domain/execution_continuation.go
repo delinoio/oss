@@ -3,7 +3,37 @@ package domain
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"slices"
+	"time"
 )
+
+// SessionAccountChange is an explicit selection for future execution. It never
+// rewrites a completed assignment, its usage, or the original candidate snapshot.
+type SessionAccountChange struct {
+	RequestID         ID        `json:"request_id"`
+	Revision          uint64    `json:"revision,string"`
+	AfterExecutionID  ID        `json:"after_execution_id"`
+	PreviousAccountID ID        `json:"previous_account_id"`
+	AccountID         ID        `json:"account_id"`
+	ConnectionID      ID        `json:"connection_id"`
+	ChangedAt         time.Time `json:"changed_at"`
+}
+
+type NativeHistoryMode string
+
+const (
+	FullNativeHistory   NativeHistoryMode = "full-history"
+	AccountBoundHistory NativeHistoryMode = "account-bound"
+)
+
+func (s Session) ContinuationAccount() (ID, ID) {
+	if len(s.AccountChanges) != 0 {
+		change := s.AccountChanges[len(s.AccountChanges)-1]
+		return change.AccountID, change.ConnectionID
+	}
+	selected := s.ExecutionSelection()
+	return selected.AccountID, selected.ConnectionID
+}
 
 type ExecutionIntent string
 
@@ -39,14 +69,24 @@ func (s Session) OwnsExecution(i ExecutionJobInput) bool {
 		return false
 	}
 	if i.Continuation == nil {
+		if i.Fork != nil {
+			return s.Fork != nil && s.CurrentExecution != nil && initial.ID == i.Fork.RuntimeID && s.Fork.JobID == i.Fork.JobID && s.Fork.CheckpointDigest == i.Fork.CheckpointDigest && initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID
+		}
 		return s.CurrentExecution == nil && initial.ID == i.ExecutionID && initial.InputID == i.InputID
 	}
-	return s.CurrentExecution != nil && i.Continuation.HistoryExecutionID == initial.ID && initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID
+	authorized := initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID || slices.ContainsFunc(s.AccountChanges, func(change SessionAccountChange) bool {
+		return change.AccountID == selected.AccountID && change.ConnectionID == selected.ConnectionID
+	})
+	return s.CurrentExecution != nil && i.Continuation.HistoryExecutionID == initial.ID && authorized
 }
 
 // ExecutionContinuation retains the preceding public progress before advancing
 // Session.Execution. Native paths/defaults stay in the digest-bound Worker file.
 type ExecutionContinuation struct {
+	// Only a switch carries predecessor account scope. The Worker reads the
+	// original checkpoint under that scope, never under the new credential.
+	PreviousAccountID     ID                  `json:"previous_account_id,omitempty"`
+	PreviousConnectionID  ID                  `json:"previous_connection_id,omitempty"`
 	HistoryExecutionID    ID                  `json:"history_execution_id"`
 	HistoryRequestID      ID                  `json:"history_request_id"`
 	Previous              ExecutionProgress   `json:"previous"`
@@ -62,6 +102,11 @@ func (c ExecutionContinuation) Validate(input ExecutionJobInput) error {
 		return Fail(RecoveryRequired, "Continuation does not match a verified preceding execution.", "Preserve the original assignment, terminal history and cleanup proof before sending new input.")
 	}
 	p, done := c.Previous, c.Completion
+	if c.PreviousAccountID != "" || c.PreviousConnectionID != "" {
+		if input.Configuration.Harness != Codex || c.PreviousAccountID.Validate() != nil || c.PreviousConnectionID.Validate() != nil || (c.PreviousAccountID == input.AccountID && c.PreviousConnectionID == input.ConnectionID) || p.NativeHistory != FullNativeHistory || c.Intent != ContinueExplicitly {
+			return invalid()
+		}
+	}
 	if input.Configuration.Harness == ClaudeCode && (!p.ClaudeContinuationBoundary(p.InputID) || c.InputMode != input.Input.Mode) {
 		return invalid()
 	}

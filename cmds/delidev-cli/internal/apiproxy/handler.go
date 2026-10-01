@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/outbound"
 )
 
 const maxBody = 32 << 20
@@ -43,12 +44,16 @@ type Handler struct {
 	slots     chan struct{}
 }
 
-func New(authority Authority, logger *slog.Logger) *Handler {
+func New(authority Authority, logger *slog.Logger, routing ...outbound.Resolver) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	transport := &http.Transport{Proxy: nil, DialContext: directDial, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 10 * time.Minute, MaxResponseHeaderBytes: 32 << 10, DisableKeepAlives: true, DisableCompression: true}
-	return &Handler{authority: authority, logger: logger, slots: make(chan struct{}, 16), client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	var rt http.RoundTripper = transport
+	if len(routing) > 0 {
+		rt = &outbound.Transport{Base: transport, Resolve: routing[0]}
+	}
+	return &Handler{authority: authority, logger: logger, slots: make(chan struct{}, 16), client: &http.Client{Transport: rt, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
 func directDial(ctx context.Context, network, address string) (net.Conn, error) {
@@ -165,8 +170,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusServiceUnavailable, domain.Unavailable)
 		return
 	}
-	stopBody := context.AfterFunc(ctx, func() { _ = r.Body.Close(); _ = controller.SetWriteDeadline(time.Now()) })
-	defer stopBody()
+	bodyStopped := make(chan struct{})
+	stopBody := context.AfterFunc(ctx, func() {
+		defer close(bodyStopped)
+		_ = r.Body.Close()
+		_ = controller.SetWriteDeadline(time.Now())
+	})
+	defer func() {
+		// AfterFunc's stop does not join an already running callback. Retain
+		// writer ownership until it finishes so a late cancellation deadline
+		// cannot affect the next request on a reused downstream connection.
+		if !stopBody() {
+			<-bodyStopped
+		}
+	}()
 	bodyLimit := int64(maxBody)
 	if lease.Scope.Purpose == domain.SessionTitleUsage {
 		bodyLimit = 1 << 20

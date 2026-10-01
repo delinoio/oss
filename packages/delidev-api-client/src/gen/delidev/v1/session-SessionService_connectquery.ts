@@ -5,6 +5,16 @@
 import { SessionService } from "./session_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.ForkSession
+ */
+export const forkSession = SessionService.method.forkSession;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.GetSessionFork
+ */
+export const getSessionFork = SessionService.method.getSessionFork;
+
+/**
  * @generated from rpc delidev.v1.SessionService.DeleteSession
  */
 export const deleteSession = SessionService.method.deleteSession;
@@ -123,3 +133,8 @@ export const deleteLocalReviewComment = SessionService.method.deleteLocalReviewC
  * @generated from rpc delidev.v1.SessionService.SubmitLocalReview
  */
 export const submitLocalReview = SessionService.method.submitLocalReview;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.SwitchSessionAccount
+ */
+export const switchSessionAccount = SessionService.method.switchSessionAccount;

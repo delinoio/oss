@@ -30,7 +30,6 @@ try {
     source = source.replace(`service ${service} {`, `service ${service} {\n  rpc ${prefix}(${prefix}Request) returns (${prefix}Response);`);
     source += `\nmessage ${prefix}Request { string label = 1; }\nmessage ${prefix}Response { string label = 1; }\n`;
     put(path, source);
-    put(`docs/evidence/delidev/issue-964/${family}-fixture.md`, `# Independent ${family} evidence\n\nDisposable merge acceptance fixture.\n`);
     put(`apps/delidev/src/settings-${family}-fixture.integration.test.tsx`, `import { expect, it } from 'vitest';\nimport { ${service} } from '@delinoio/delidev-api-client';\nit('${family} owns its protocol surface', () => expect(${service}.typeName).toBe('delidev.v1.${service}'));\n`);
     generate();
     git('add', '.'); git('commit', '--quiet', '-m', `Independent ${family} fixture`);

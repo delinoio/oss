@@ -8,6 +8,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc ForkSession(ForkSessionRequest) returns (ForkSessionResponse);
+  rpc GetSessionFork(GetSessionForkRequest) returns (GetSessionForkResponse);
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
   rpc GetSessionDeletion(GetSessionDeletionRequest) returns (GetSessionDeletionResponse);
   rpc LinkSessionPullRequest(LinkSessionPullRequestRequest) returns (LinkSessionPullRequestResponse);
@@ -32,6 +34,7 @@ service SessionService {
   rpc EditLocalReviewComment(EditLocalReviewCommentRequest) returns (EditLocalReviewCommentResponse);
   rpc DeleteLocalReviewComment(DeleteLocalReviewCommentRequest) returns (DeleteLocalReviewCommentResponse);
   rpc SubmitLocalReview(SubmitLocalReviewRequest) returns (SubmitLocalReviewResponse);
+  rpc SwitchSessionAccount(SwitchSessionAccountRequest) returns (SwitchSessionAccountResponse);
 }
 
 message LinkSessionPullRequestRequest {
@@ -347,4 +350,43 @@ message GetSessionDeletionRequest {
 }
 message GetSessionDeletionResponse {
   SessionDeletionJob job = 1;
+}
+
+message ForkSessionRequest {
+  Mutation mutation = 1;
+  string expected_turn_id = 2;
+  string name = 3;
+  // Unspecified selects Worktree for projects and General Chat otherwise.
+  ForkWorkspace workspace = 4;
+  // Write-only secondary same-machine authority for explicit Local sharing.
+  string local_worker_token = 5;
+}
+enum ForkWorkspace {
+  FORK_WORKSPACE_UNSPECIFIED = 0;
+  FORK_WORKSPACE_WORKTREE = 1;
+  FORK_WORKSPACE_GENERAL_CHAT = 2;
+  FORK_WORKSPACE_LOCAL = 3;
+}
+message GetSessionForkRequest {
+  string job_id = 1;
+}
+message GetSessionForkResponse {
+  Resource job = 1;
+  Resource session = 2;
+}
+message ForkSessionResponse {
+  Resource job = 1;
+  // Absent until native conversation/workspace preparation and cleanup succeed.
+  Resource session = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+
+message SwitchSessionAccountRequest {
+  Mutation mutation = 1;
+  string account_id = 2;
+}
+
+message SwitchSessionAccountResponse {
+  SessionChange change = 1;
 }

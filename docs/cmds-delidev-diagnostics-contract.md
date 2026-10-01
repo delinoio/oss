@@ -42,7 +42,7 @@ Run `go test -race ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...`. 
 Uses existing Connect System service, single-authority store, Worker stream registry and native credential adapters. No external monitoring service/exporter or additional reporting credentials are introduced.
 
 ## Change Triggers
-Update scoped CLI/desktop AGENTS, the protocol and desktop contracts, project index and evidence ledger when report schemas, scope, limits, native access or presentation guarantees change. New credential families require their own exact ownership and read-only inspection contract before doctor may access them.
+Update scoped CLI/desktop AGENTS, the protocol and desktop contracts, project index and validation records in pull requests, issues and CI logs/artifacts when report schemas, scope, limits, native access or presentation guarantees change. New credential families require their own exact ownership and read-only inspection contract before doctor may access them.
 
 ## References
 - [DeliDev project](project-delidev.md)
@@ -51,5 +51,4 @@ Update scoped CLI/desktop AGENTS, the protocol and desktop contracts, project in
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Protocol contract](protos-delidev-v1-contract.md)
 - [Desktop contract](apps-delidev-desktop-contract.md)
-- [Evidence ledger](cmds-delidev-evidence.md)
 - [Repository defaults](repository-defaults.md)

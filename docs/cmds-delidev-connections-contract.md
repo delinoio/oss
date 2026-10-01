@@ -57,5 +57,4 @@ Update this contract, scoped CLI/desktop AGENTS, project index and evidence when
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
 - [Desktop client contract](apps-delidev-desktop-contract.md)
 - [Protocol contract](protos-delidev-v1-contract.md)
-- [Evidence ledger](cmds-delidev-evidence.md)
 - [Repository defaults](repository-defaults.md)

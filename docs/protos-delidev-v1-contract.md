@@ -13,6 +13,12 @@ ledger reservations only: no schema declaration, generated binding, RPC or
 capability advertisement is activated by the reservation change. The owning
 issue is recorded directly when no implementation PR exists yet.
 
+Issue #1206's pending [native Codex model observation contract](cmds-delidev-native-models-contract.md)
+reserves server capability 16 and Worker capability 7. Keep these out of active
+schemas and capability advertisements until a dependent implementation follows
+main-established allocations. No new RPC or generated binding is activated by
+the reservation prerequisite.
+
 ## Scope
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 
@@ -346,11 +352,27 @@ and Connect Query bindings together.
 
 Provider activation adds an owner/client-only `ProviderService.ListProviderInventory`, closed capability/preset enums, account-list-only `ListResourcesRequest.provider_id`, and additive `SearchModels.enabled_providers_only`. Omitted model filtering preserves existing behavior. Provider enabled and preset provenance remain optional fields in the canonical provider JSON document for legacy compatibility. Inventory capabilities let clients detect older servers that ignore filters; Workers cannot read it. See [provider activation](cmds-delidev-provider-activation-contract.md), and regenerate Go messages/Connect handlers and TypeScript Connect Query bindings together.
 
+### Managed database restore
+
+`SystemService.RestoreBackup` and `GetBackupRestore` are owner/paired-client-only
+operations. `MANAGED_BACKUP_RESTORE_V1` (wire value 7) advertises availability,
+preserving published `SESSION_FORWARDING_V1` value 2 and `USER_SERVICES_V1`
+value 3; `InspectBackup`
+adds an exact uint64 `restore_revision`. Restoration requires a UUID-v7 request,
+original backup revision/metadata/digest, a present exact expected live revision
+and explicit confirmation. Generated Go and TypeScript/Connect Query descriptors
+must reproduce together. `prepared`, `published`, `restored` and `rolled-back`
+remain distinct; publication ends the old server epoch, while startup reconciles
+the external journal before opening SQLite. Keep request UUIDs and decimal
+revisions exact across uncertain responses; polling never repeats replacement.
+Follow the [storage contract](cmds-delidev-storage-contract.md) for authorization,
+deletion enforcement, historical quarantine, bounds and recovery evidence limits.
+
 ### Current-user services
 
 `SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
-System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3` and `PERMANENT_SESSION_DELETION_V1 = 9`; native accounting adds the reserved `NATIVE_ACCOUNTING_V1 = 4`. `GetStatus` advertises each independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3` and `PERMANENT_SESSION_DELETION_V1 = 9`; managed restore adds reserved `MANAGED_BACKUP_RESTORE_V1 = 7` and native accounting adds reserved `NATIVE_ACCOUNTING_V1 = 4`. `GetStatus` advertises each implemented capability independently, including stopped-Codex account switching and same-account Codex Fork. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 
@@ -377,6 +399,14 @@ paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
 
+### Explicit stopped Codex API account selection
+
+`SessionService.SwitchSessionAccount` is an additive owner/client-only mutation, capability-gated by `STOPPED_CODEX_ACCOUNT_SWITCH_V1` (wire value 5, allocated on main) in System status. Its `Mutation` binds the exact session revision/request and `account_id` selects an original candidate; actor-bound reference receipts return current `SessionChange`. Admission, historical attribution, full native history and explicit Resume follow the [sessions contract](cmds-delidev-sessions-contract.md). It performs no native side effect or automatic execution. Go, TypeScript and Connect Query bindings are generated from the service-owned schema; existing capabilities retain their wire values.
+
+### Server outbound network configuration
+
+`network.proto` owns NetworkService SaveNetworkProfile, DeleteNetworkProfile, SelectNetworkProfile, GetNetworkRoute and ExportWorkerNetworkMetadata. The pre-reserved `SERVER_OUTBOUND_PROXY_V1 = 6`, `NETWORK_PROFILE = 28` and `NETWORK_ROUTE = 29` values preserve every existing main assignment. Definition JSON and write-only credential bytes are separate. Actor-bound UUID-v7 receipts and exact revisions apply; Worker selections have independent desired generations. Export returns signed non-secret metadata only, never credential bytes or native application evidence. Follow [the network contract](cmds-delidev-network-contract.md).
+
 ## Repository inspection metadata allocation prerequisite
 
 Closed, unmerged PR #1193 implemented repository metadata using Worker value 5 and attachment-response field 3. Main now reserves Worker values 3, 4 and 5 for other owners, including native compaction from issue #1203 at value 5. Issue #1142's replacement therefore reserves `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 6` and `AttachWorkerResponse.supported_worker_capabilities = 3`, retaining original-PR provenance. The original issue's proposed value 3 and the old branch's value 5 cannot replace existing main reservations.
@@ -386,3 +416,14 @@ Each reservation uses the kind of its existing declaration (`enum` or `message`)
 This reservation changes no schema, generated binding, capability advertisement, runtime negotiation or inspection behavior. Merge it into main before publishing the dependent repository-registration implementation, as required by `docs/cmds-delidev-structure-contract.md`.
 
 Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).
+
+## Codex session forks (#1092)
+
+`SessionService.ForkSession` accepts owner/paired-client mutation identity, exact
+source revision/native turn, child name and closed `ForkWorkspace`. The dedicated
+write-only Local proof is never ordinary receipt material. `GetSessionFork` reads
+the original job and optional published child; an accepted job is not a child.
+`SystemCapability.CODEX_SESSION_FORK_V1` is additive. Ordinary Worker credentials
+remain excluded from these product methods and complete their original job via
+existing authenticated `WatchWork`/`ReportWork`. See the
+[fork contract](cmds-delidev-forks-contract.md). No destructive migration occurs.

@@ -43,5 +43,12 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Native fixed desktop-client pairing/inspection may join the existing recovery lock under a bounded cancellable deadline. Validate original recovery evidence after acquisition, keep ordinary/remote/Worker pairing semantics, and never turn contention into another request, credential or recovery.
 
 - Read-only desktop status distinguishes absent legacy lifecycle evidence from explicit stopped intent. It may authenticate a compatible live legacy listener without publishing restart configuration, but never starts an unavailable legacy scope; ensure still requires original running intent. Validate exact configured listener and original endpoint authority on observation as well as launch/Retry.
+- The `network` command family uses authenticated NetworkService under `docs/cmds-delidev-network-contract.md`. Keep exact decimal revisions and request IDs; definition files, server authentication and proxy credential stdin must be independent. CLI response deadlines exceed bounded server credential work. Read status/export metadata never claims native Worker application.
+
+- `session fork` uses authenticated Fork/GetSessionFork and preserves accepted job/request identities on bounded wait failure. Keep dispatch in `dispatch_session.go`, retain the two-minute Worker bound with a 145-second command deadline, and never replay creation while observing a job. Follow `docs/cmds-delidev-forks-contract.md`.
+
+- Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
+
+- `session switch-account --id ID --revision N --account-id ID` invokes only the explicit owner/client Connect operation. Gate support with the typed status capability, preserve exact request identities, and leave the selected session paused until explicit Resume.
 
 - `usage summary --accounting-profile native-units-v1` requires the server echo before exposing native units. Omission preserves the existing response-only profile; unknown values fail. Keep source kinds and exact decimal totals distinct.

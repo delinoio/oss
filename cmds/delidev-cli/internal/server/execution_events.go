@@ -216,6 +216,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 		if err := event.Observed.ValidateForInput(input.Configuration, input.Input.Mode); err != nil {
 			return err
 		}
+		if f := input.Fork; f != nil && string(f.NativeThreadID) != event.NativeThreadID {
+			return executionEventConflict()
+		}
 		if c := input.Continuation; c != nil {
 			previous := c.Previous.Observed
 			if input.Configuration.Harness == domain.OpenCode {
@@ -231,7 +234,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 		}
-		progress = &domain.ExecutionProgress{JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
+		progress = &domain.ExecutionProgress{NativeHistory: session.CurrentNativeHistory, JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
 		session.Execution = progress
 	} else {
 		if event.Kind == domain.ExecutionThreadBound || progress.JobID != job.ID || progress.ExecutionID != input.ExecutionID || progress.InputID != input.InputID || progress.NativeThreadID != event.NativeThreadID || event.Sequence != progress.LastSequence+1 {
@@ -256,6 +259,11 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 			if c := input.Continuation; c != nil && c.Previous.NativeTurnID == event.NativeTurnID {
+				return executionEventConflict()
+			}
+			// The inherited last turn belongs to the source history, never to
+			// the child's newly accepted input, even before child turn indexing.
+			if f := input.Fork; f != nil && string(f.NativeTurnID) == event.NativeTurnID {
 				return executionEventConflict()
 			}
 			completed, err := tx.NativeTurnCompleted(sr.ID, event.NativeThreadID, event.NativeTurnID)

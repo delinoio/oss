@@ -20,6 +20,8 @@ service SystemService {
   rpc RequestBackup(RequestBackupRequest) returns (RequestBackupResponse);
   rpc GetBackupCreation(GetBackupCreationRequest) returns (GetBackupCreationResponse);
   rpc ListBackupCreations(ListBackupCreationsRequest) returns (ListBackupCreationsResponse);
+  rpc RestoreBackup(RestoreBackupRequest) returns (RestoreBackupResponse);
+  rpc GetBackupRestore(GetBackupRestoreRequest) returns (GetBackupRestoreResponse);
 }
 
 message GetStatusRequest {}
@@ -56,6 +58,12 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_USER_SERVICES_V1 = 3;
   SYSTEM_CAPABILITY_NATIVE_ACCOUNTING_V1 = 4;
   SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1 = 9;
+  SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1 = 7;
+  SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5;
+  SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1 = 6;
+
+  // Reserved for issue #1092 in the repository allocation ledger.
+  SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1 = 13;
 }
 
 message StopServerRequest {
@@ -109,6 +117,8 @@ message InspectBackupResponse {
   string sha256 = 2;
   uint32 schema_version = 3;
   string server_id = 4;
+  // Commit high-water mark; restore rechecks it and all live ownership.
+  uint64 restore_revision = 5;
 }
 
 // Accepted deletions cannot be canceled or undone by restoring a database image.
@@ -264,4 +274,36 @@ message ControlUserServiceResponse {
   UserService service = 1;
   string request_id = 2;
   bool replayed = 3;
+}
+
+enum BackupRestoreState {
+  BACKUP_RESTORE_STATE_UNSPECIFIED = 0;
+  BACKUP_RESTORE_STATE_PREPARED = 1;
+  BACKUP_RESTORE_STATE_PUBLISHED = 2;
+  BACKUP_RESTORE_STATE_RESTORED = 3;
+  BACKUP_RESTORE_STATE_ROLLED_BACK = 4;
+}
+message BackupRestoreReceipt {
+  string request_id = 1;
+  string backup_id = 2;
+  BackupRestoreState state = 3;
+  string created_at = 4;
+}
+message RestoreBackupRequest {
+  string request_id = 1;
+  ManagedBackup backup = 2;
+  string sha256 = 3;
+  // Presence is required; zero is a valid original commit high-water mark.
+  optional uint64 expected_restore_revision = 4;
+  bool confirm = 5;
+}
+message RestoreBackupResponse {
+  BackupRestoreReceipt receipt = 1;
+  bool replayed = 2;
+}
+message GetBackupRestoreRequest {
+  string request_id = 1;
+}
+message GetBackupRestoreResponse {
+  BackupRestoreReceipt receipt = 1;
 }

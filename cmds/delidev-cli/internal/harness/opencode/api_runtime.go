@@ -20,11 +20,12 @@ import (
 
 // The Worker must register Token against its durable execution before opening
 // this private runtime. Format validation here cannot establish registration or
-// selected-account readiness. NativeRoot comes from independent Worker Git /
+// selected-account readiness. Root comes from independent Worker Git /
 // General Chat workspace inspection, never from a native message's own path.
 type apiSessionConfig struct {
 	Probe        ProbeConfig                               `json:"-"`
 	Workspace    string                                    `json:"-"`
+	Root         WorkspaceRoot                             `json:"-"`
 	NativeRoot   string                                    `json:"-"`
 	References   []WorkspaceReference                      `json:"-"`
 	ServerOrigin string                                    `json:"-"`
@@ -58,7 +59,11 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	if config.Probe.Version != SupportedVersion {
 		return nil, nil, incompatible()
 	}
-	if config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) || config.Claim == nil || !apiproxy.ValidToken(config.Token) || !canonicalDirectory(config.Workspace) || !canonicalDirectory(config.NativeRoot) || !directoryContains(config.NativeRoot, config.Workspace) {
+	scope, err := config.workspaceRoot()
+	if err != nil {
+		return nil, nil, err
+	}
+	if config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) || config.Claim == nil || !apiproxy.ValidToken(config.Token) {
 		return nil, nil, sessionInvalid()
 	}
 	// Only the two native primary profiles have effective-policy evidence.
@@ -67,10 +72,16 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 		return nil, nil, incompatible()
 	}
 	root := filepath.Dir(config.Probe.Home)
-	if directoryContains(root, config.Workspace) || directoryContains(config.Workspace, root) || !validWorkspaceReferences(config.References, config.Workspace, root) || len(config.References) > 0 && config.NativeRoot != config.Workspace {
+	// The new checkpoint profile also requires a local drive-qualified native
+	// runtime. Refuse UNC/device/relative contexts before Build can launch;
+	// waiting for Plan rules or checkpoint retention would reject too late.
+	if scope.windowsGlobal() && (!filepath.IsAbs(root) || filesystemBoundary(root) == "") {
 		return nil, nil, sessionInvalid()
 	}
-	projectConfig := &projectConfigScope{Directory: config.Workspace, Root: config.NativeRoot}
+	if directoryContains(root, config.Workspace) || directoryContains(config.Workspace, root) || !validWorkspaceReferences(config.References, config.Workspace, root) || len(config.References) > 0 && (scope.kind != gitWorkspaceRoot || scope.native != config.Workspace) {
+		return nil, nil, sessionInvalid()
+	}
+	projectConfig := &projectConfigScope{Directory: config.Workspace, Root: scope.boundary}
 	if err := projectConfig.inspect(); err != nil {
 		if logger := config.Probe.Process.Logger; logger != nil {
 			logger.Warn("opencode_project_config_source_refused", "owner_id", config.Probe.Process.OwnerID, "code", domain.Unsupported)
@@ -89,6 +100,7 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	settings.Permission = slices.Clone(settings.Permission)
 	profile := &nativeAPIProfile{Settings: settings, BaseURL: origin.String(), Token: config.Token, ContextLimit: config.ContextLimit, OutputLimit: config.OutputLimit, Rejection: config.Rejection, Instructions: config.Instructions}
 	profile.ProjectConfig = projectConfig
+	profile.WorkspaceRoot = &scope
 	profile.References = slices.Clone(config.References)
 	if err := profile.inspectReferences(); err != nil {
 		return nil, nil, err
@@ -96,7 +108,7 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	if config.Instructions != "" {
 		profile.InstructionsPath = filepath.Join(root, "instructions.txt")
 	}
-	project, err := collectProjectInstructions(config.Workspace, config.NativeRoot)
+	project, err := collectProjectInstructions(config.Workspace, scope.instructionRoot())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -203,15 +215,20 @@ func (s *sessionAPI) verifyNativeContext(ctx context.Context, config apiSessionC
 	}
 	s.runtimeRead = true
 	defer func() { s.runtimeRead = false }()
+	scope, err := config.workspaceRoot()
+	if err != nil || s.apiProfile.WorkspaceRoot == nil || *s.apiProfile.WorkspaceRoot != scope {
+		s.apiVerified, s.problem = false, sessionProblem()
+		return s.problem
+	}
 	root := filepath.Dir(config.Probe.Home)
-	paths := map[string]any{"home": root, "state": filepath.Join(root, "state", "opencode"), "config": filepath.Join(root, "config", "opencode"), "worktree": config.NativeRoot, "directory": config.Workspace}
+	paths := map[string]any{"home": root, "state": filepath.Join(root, "state", "opencode"), "config": filepath.Join(root, "config", "opencode"), "worktree": scope.native, "directory": config.Workspace}
 	for _, step := range []struct {
 		path     string
 		validate func([]byte) error
 	}{
 		{"/path", func(raw []byte) error { return exactPrivateJSON(raw, paths) }},
 		{"/agent", func(raw []byte) error {
-			return validatePrimaryAgent(raw, config.Settings.Agent, root, config.NativeRoot, s.apiProfile.References...)
+			return validatePrimaryAgent(raw, config.Settings.Agent, root, scope.native, s.apiProfile.References...)
 		}},
 	} {
 		raw, status, err := s.request(ctx, http.MethodGet, step.path, nil, http.StatusOK)
@@ -231,7 +248,10 @@ func (s *sessionAPI) verifyNativeContext(ctx context.Context, config apiSessionC
 			return err
 		}
 	}
-	s.runtimeRoot = config.NativeRoot
+	s.runtimeRoot = scope.native
+	if s.logger != nil {
+		s.logger.InfoContext(ctx, "opencode_workspace_root_verified", "owner_id", s.owner, "root_kind", scope.kind, "windows_global", scope.windowsGlobal())
+	}
 	if len(s.apiProfile.References) > 0 && s.logger != nil {
 		s.logger.InfoContext(ctx, "opencode_workspace_references_verified", "owner_id", s.owner, "additional_repositories", len(s.apiProfile.References))
 	}
@@ -290,7 +310,7 @@ func expectedPrimaryAgent(agent PrimaryAgent, root, worktree string, references 
 	case PlanAgent:
 		description = "Plan mode. Disallows all edit tools."
 		plans := filepath.Join(root, "data", "opencode", "plans")
-		relative, err := filepath.Rel(worktree, filepath.Join(plans, "*.md"))
+		relative, err := nativePlanRelativePath(worktree, root, filepath.Join(plans, "*.md"))
 		if err != nil {
 			return nil, incompatible()
 		}
@@ -307,4 +327,23 @@ func expectedPrimaryAgent(agent PrimaryAgent, root, worktree string, references 
 	}
 	rules = append(rules, PermissionRule{"external_directory", glob, PermissionAllow})
 	return map[string]any{"name": agent, "description": description, "mode": "primary", "native": true, "options": map[string]any{}, "permission": rules}, nil
+}
+
+// Node/Bun resolves Windows "/" on the original process cwd's drive. The
+// initializer enforces runtimeHome == process.Cwd and strips per-drive cwd
+// environment entries. Workspace/server/renderer cwd cannot supply this fact.
+func nativePlanRelativePath(worktree, processCwd, target string) (string, error) {
+	if runtime.GOOS == "windows" && worktree == "/" {
+		worktree = filesystemBoundary(processCwd)
+		if worktree == "" {
+			return "", incompatible()
+		}
+		// Native path.relative returns an absolute target across drives. Keep
+		// this handling confined to the new global profile; existing Git
+		// initialization and version-1 checkpoint validation stay unchanged.
+		if !strings.EqualFold(filepath.VolumeName(worktree), filepath.VolumeName(target)) {
+			return target, nil
+		}
+	}
+	return filepath.Rel(worktree, target)
 }

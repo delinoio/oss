@@ -140,6 +140,11 @@ func nativeOpenCodeWorkerFixture(t *testing.T, publishBindings, changedInput boo
 				Workspace: workspace, NativeRoot: filepath.VolumeName(workspace) + string(filepath.Separator), ServerOrigin: relay.URL, Token: authority.token,
 				Settings: settings.Session, Instructions: settings.Instructions, Rejection: settings.Rejection, Claim: journal.Claim,
 			}
+			cfg.Root, err = opencode.GlobalWorkspaceRoot(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.NativeRoot = ""
 			api, err := opencode.OpenOwnedAPI(ctx, cfg)
 			if err != nil {
 				t.Fatal(err)

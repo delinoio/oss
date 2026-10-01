@@ -1,7 +1,7 @@
 # DeliDev command, server, and Worker contract
 
 ## Scope
-`cmds/delidev-cli` produces the `delidev` binary for macOS, Windows, and Linux. It contains the standalone CLI and the identical bundled-sidecar server/Worker entry points. The complete issue is retained in [requirements](cmds-delidev-requirements.md); implementation and verification progress is recorded in the [evidence ledger](cmds-delidev-evidence.md).
+`cmds/delidev-cli` produces the `delidev` binary for macOS, Windows, and Linux. It contains the standalone CLI and the identical bundled-sidecar server/Worker entry points. The complete issue is retained in [requirements](cmds-delidev-requirements.md); record implementation and verification progress in pull requests, issues and CI logs/artifacts.
 
 ## Runtime and Language
 Go, using the root module and pinned dependencies. Business logic is independent of desktop presentation. Initial version is `0.1.0` (unreleased).
@@ -112,6 +112,12 @@ Stream reflection checks include decoded JSON key fragments at both global and o
 
 Controller creation failure before native startup removes only the current attempt's original empty scope and synchronizes its parent. Nonempty/replaced evidence and uncertain durability remain recoverable failures; native-started scopes always require their existing ownership proof.
 
+Native relay cancellation retains its original response-writer ownership until
+all started body/deadline callbacks finish. A downstream connection's later
+request cannot inherit an earlier cancellation deadline; revoked tokens fail
+without another key read or upstream attempt. See the
+[relay contract](cmds-delidev-proxy-contract.md).
+
 ## Logging
 Use `log/slog` on stderr with correlation, operation, session, and Worker IDs. Stable typed failures retain safe causes and recovery guidance. Prompts, raw emails, tokens, provider bodies, and internal instructions are excluded. Structured JSON is never mixed with progress.
 
@@ -128,7 +134,7 @@ Cross-compilation does not substitute for native platform evidence. Native adapt
 Connect Go/protobuf, modernc SQLite, UUID v7, native Git, and installed Codex/Claude Code/OpenCode/Grok Build interfaces. Harness discovery checks the explicit executable before PATH; never downloads a harness. Read-only GitHub integration uses explicit repository/PAT associations.
 
 ## Change Triggers
-Update this document, the project/protocol contracts, the evidence ledger, and scoped AGENTS when ownership or behavior changes. Preserve the normative requirements snapshot and record any subsequent owner amendments explicitly.
+Update this document, the project/protocol contracts, validation records in pull requests, issues and CI logs/artifacts, and scoped AGENTS when ownership or behavior changes. Preserve the normative requirements snapshot and record any subsequent owner amendments explicitly.
 
 ## References
 - [Project](project-delidev.md)
@@ -137,7 +143,7 @@ Update this document, the project/protocol contracts, the evidence ledger, and s
 
 ### Codex follow-up execution
 
-After verified successful cleanup, the pinned Codex API profile automatically claims later inputs in their durable FIFO order. `session stop` pauses that progression; `session resume --id ID --revision N` validates the prior terminal/cleanup evidence and current readiness, then claims the next input or records explicit intent for a future input. Native failure/interruption stays paused until explicit Resume, and uncertain acceptance/cleanup requires recovery. Current restrictions and the original account connection still apply; changed Agent/templates never replace the first snapshot or rerun routing. Every turn has a fresh execution/job/grant and retains its exact predecessor before resuming the original private native history. General Chat, single- or multiple-repository Worktree and authenticated Local support this path; selected queued-input Steer is integrated through its dedicated RPC/Worker boundary, while account changes and native recovery remain pending. Full ownership and checkpoint details are in the session and harness contracts.
+After verified successful cleanup, the pinned Codex API profile automatically claims later inputs in their durable FIFO order. `session stop` pauses that progression; `session resume --id ID --revision N` validates the prior terminal/cleanup evidence and current readiness, then claims the next input or records explicit intent for a future input. Native failure/interruption stays paused until explicit Resume, and uncertain acceptance/cleanup requires recovery. Current restrictions and the retained account connection still apply (original unless changed by the explicit stopped Codex API operation); changed Agent/templates never replace the first snapshot or rerun routing. Every turn has a fresh execution/job/grant and retains its exact predecessor before resuming the original private native history. General Chat, single- or multiple-repository Worktree and authenticated Local support this path; selected queued-input Steer is integrated through its dedicated RPC/Worker boundary, while subscription/provider/model changes and broader native recovery remain pending. Explicit stopped Codex API selection is available through `session switch-account` and authenticated `SwitchSessionAccount`, under the original-candidate, current-eligibility, full-history, terminal/cleanup and explicit-Resume gates in the sessions contract. Full ownership and checkpoint details are in the session and harness contracts.
 
 The pinned Codex API profile exposes `session steer --id SESSION --input-id INPUT --revision INPUT_REVISION --execution-id EXECUTION --turn-id TURN`. It asynchronously claims the exact selected entry; `steer get --id REQUEST_ID` reports queued/claimed/accepted/rejected/uncertain/canceled state. Original mode/configuration/account remain fixed. Native acknowledgement or exact history proof removes FIFO eligibility; definite rejection leaves the entry queued, and uncertainty triggers automatic native inspection followed by paused recovery if still inconclusive. Late proof preserves the earlier observation and never resumes execution. See the session contract for concurrency, current authority, bounds and journal ownership.
 
@@ -181,7 +187,7 @@ Detached `server start`/`ensure` holds controller/lifecycle serialization, probe
 The same question/approval CLI commands now accept original OpenCode direct responses through disjoint JSON: `{"opencode":{"answers":[["First"],[]]}}` preserves one ordered row per original question, and `{"opencode":{"decision":"once"}}` grants one original permission request. Inspect the original native proposal/revision before responding; there are no invented per-question IDs. Preserve empty-string choices versus explicit unanswered rows and native multiple/custom flags. Dedicated Worker claims, exact native body digests, HTTP delivery, original native reply acceptance and request closure remain independently retained. Exact server receipt/outbox retry never resends a native reply or clears earlier uncertainty. The same disjoint JSON also supports native `always`/`reject`, optional `feedback` on rejection and question `reject:true` instead of an answer matrix. Automatic native policy closure is retained independently without another response. The original production Worker now schedules these controls and targeted Stop under its authenticated job lifecycle. Public first dispatch now accepts the exact verified default OpenCode Build/Plan Chat Completions profile. Protected responses, continuation and remaining native profiles stay pending; see the harness and session contracts.
 
 ### Claude registered API authority
-The pinned Claude initial-assignment profile now composes authenticated Worker registration with the revocable server relay. It authorizes only Anthropic Messages creation using the immutable original account/connection/model and shared native settings validation. It retains independent native input, result, idle and cleanup facts; registration alone does not enable public Claude dispatch, publication, continuation, subscription accounts or token counting. See the [relay contract](cmds-delidev-proxy-contract.md) and [evidence ledger](cmds-delidev-evidence.md).
+The pinned Claude initial-assignment profile now composes authenticated Worker registration with the revocable server relay. It authorizes only Anthropic Messages creation using the immutable original account/connection/model and shared native settings validation. It retains independent native input, result, idle and cleanup facts; registration alone does not enable public Claude dispatch, publication, continuation, subscription accounts or token counting. See the [relay contract](cmds-delidev-proxy-contract.md).
 
 ## Portable configuration
 The eight existing editable configuration kinds now share owner/client export, read-only signed previews and atomic imports through Connect, CLI and desktop settings. Explicit machine/checkout mappings, fresh disconnected accounts, unchanged reuse and revision-bound settings replacement prevent implicit authority transfer. New repositories pass every Worker inspection before any configuration commits. See [portable configuration](cmds-delidev-configuration-transfer-contract.md) for limits and remaining portable surfaces.
@@ -225,3 +231,19 @@ or content removal. Waiting uses reads only and preserves accepted progress on
 cancellation or failure. Offline/uncertain Worker or backup cleanup stays pending;
 completion requires all managed copies confirmed removed and never invents
 reclaimed disk space. See the [storage contract](cmds-delidev-storage-contract.md).
+
+### Explicit outbound networking
+
+Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. See [the network contract](cmds-delidev-network-contract.md); Worker bootstrap/native proxy application remains separate.
+
+### Managed database restore commands
+
+`backup restore` uses owner/client `SystemService.RestoreBackup` with explicit
+confirmation, the complete original inspection and its exact live restore
+revision. Retain the UUID-v7 request across an uncertain response; `backup
+restore-status --id REQUEST-ID` reads the original external receipt after explicit
+server restart. Publication ends the original process and durably suppresses
+implicit `server ensure` recovery before replacement. Inspection or status never
+restores credentials, Worker files or historical execution. See the
+[storage contract](cmds-delidev-storage-contract.md) for settled ownership,
+permanent-deletion enforcement, bounded staging and startup recovery.
