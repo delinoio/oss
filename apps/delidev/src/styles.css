@@ -680,6 +680,41 @@ dialog.modal-full-window::backdrop { background: transparent; }
 .settings-agent-actions { min-width: 0; margin: 0; }
 .settings-agent-actions button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 
+/* Runner Devices list mode alone uses flat sections; detail and shared Worker controls keep their defaults. */
+.settings-runner-devices { color: #202632; font-size: 14px; }
+.settings-runner-column { width: 100%; max-width: 1040px; min-width: 0; margin-inline: auto; }
+.settings-runner-column > .settings-category-heading { gap: 16px; margin-bottom: 32px; padding-bottom: 32px; border-bottom: 1px solid #d8dee8; }
+.settings-runner-column .settings-category-title h1 { font-size: 28px; font-weight: 600; }
+.settings-runner-column h2 { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.5; }
+.settings-runner-column p { margin: 0; color: #5b6577; line-height: 1.5; overflow-wrap: anywhere; }
+.settings-runner-column small { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.settings-runner-column button { max-width: 100%; min-height: 40px; border-color: #8993a4; border-radius: 8px; white-space: normal; overflow-wrap: anywhere; }
+.settings-runner-column button.primary { border-color: #2563d8; background: #2563d8; }
+.settings-runner-column :focus-visible { outline-color: #2563d8; }
+.settings-runner-column .actions { min-width: 0; margin: 0; gap: 16px; }
+.settings-runner-column .settings-runner-worker { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; margin-bottom: 32px; padding-bottom: 32px; border-bottom: 1px solid #d8dee8; }
+.settings-runner-worker-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0; }
+.settings-runner-badge { padding: 2px 8px; border: 1px solid #d8dee8; border-radius: 8px; color: #5b6577; font-size: 12px; line-height: 1.5; }
+.settings-runner-column .settings-runner-uncertain { display: flex; align-items: flex-start; gap: 8px; color: #805400; }
+.settings-runner-uncertain svg { width: 18px; height: 18px; flex: 0 0 18px; margin-top: 1px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.settings-runner-column .settings-runner-stop { color: #8a2424; }
+.settings-runner-inventory > h2 { margin-bottom: 16px; }
+.settings-runner-inventory > p, .settings-runner-inventory > .problem { margin-bottom: 16px; }
+.settings-runner-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; padding-block: 16px; border-bottom: 1px solid #d8dee8; }
+.settings-runner-identity { min-width: 0; flex: 1; }
+.settings-runner-identity h3 { margin: 0 0 16px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.settings-runner-identity p { margin-bottom: 16px; }
+.settings-runner-skeleton-row { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding-block: 16px; border-bottom: 1px solid #d8dee8; }
+.settings-runner-skeleton-row span { width: min(240px, 75%); height: 12px; border-radius: 3px; background: #e9edf3; }
+.settings-runner-skeleton-row span:nth-child(2) { width: min(360px, 90%); }
+.settings-runner-skeleton-row span:nth-child(3) { width: min(300px, 85%); }
+.settings-runner-column .settings-pages { gap: 16px; margin-top: 16px; }
+@media (max-width: 1099px) {
+  .settings-runner-column > .settings-category-heading { flex-direction: column; }
+  .settings-runner-column .settings-toolbar { justify-content: flex-start; width: 100%; }
+  .settings-runner-row { flex-direction: column; align-items: stretch; }
+}
+
 /* Projects is the scoped exception to the shared white/40px/8px Settings defaults. */
 .settings-projects { color: #202024; background: #f5f5f7; font-size: 13px; --muted: #62626a; --border: #dcdce1; --accent: #0067d9; }
 .settings-projects .settings-content-column { width: 100%; max-width: 820px; min-width: 0; margin-inline: auto; }
