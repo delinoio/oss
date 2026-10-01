@@ -36,6 +36,32 @@ version-1 imports remain supported and legacy subscription graphs are rejected
 atomically with recreate guidance. Implementation must compose the independent
 managed-account ownership and cleanup boundary from issue #1095.
 
+## Planned account OAuth attempts (issue #1146)
+
+Migration 29 is reserved for the private `account_oauth_attempts` table under
+[issue #1146](https://github.com/delinoio/oss/issues/1146), following real
+migrations 26–28. Establish the reservation on main before dependent
+implementation; the executable sequence still ends at 25. Do not create empty
+predecessors, reuse an allocated version or activate this table early.
+
+The [planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the
+complete lifecycle. Attempt metadata binds actor/server/provider and revision,
+original start/completion IDs, reserved account/create/connect IDs, process
+generation, state/revision/times, keyed comparison commitments, exact protected
+references and cleanup status. Do not require an existing account foreign key,
+cascade deletion of recovery evidence, or include attempts in public resources,
+snapshots/events or portable export. SQLite, receipts and backup images contain
+no raw verifier, code, key or callback/authorization URL.
+
+Fresh/upgrade paths must share the verified backup-first transaction and preserve
+existing account/provider/settings/claim state and explicit default deletions.
+A durable claim commits before HTTP outside locks; no restart, copied image,
+timeout, cancellation or retry can reacquire exchange authority. Original local
+recovery may finish only an exactly sealed credential or accepted result without
+HTTP. Keep account-less staged references, partial disconnected accounts and
+unresolved cleanup; unknown provider response never proves failure or revocation.
+This reservation implements no table, migration, exchange or restore feature.
+
 ## Managed backup observation
 
 `SystemService.CreateBackup`, `ListBackups` and `InspectBackup` are available only
