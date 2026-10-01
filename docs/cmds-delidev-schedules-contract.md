@@ -77,7 +77,7 @@ The opt-in `TestManualNativeCLIScheduledWorkspaces` uses installed Codex 0.151.0
 The scheduling coordinator uses the existing session/input/workspace preparation transaction and leaves the first-dispatch snapshot/routing boundary intact. Waiting schedules resolve Agent configuration/templates/account routing at actual first execution; they never freeze a premature account or follow later edits to the already accepted prompt/selection. Stop/Archive, native cleanup, inbox/activity/usage and permanent deletion must preserve ordinary session ownership and independent outcome/recovery. ScheduleService/CLI owns create/list/get/edit/delete/pause/resume/next-run/history/Run now; generic configuration writes remain unable to activate schedules.
 
 ## Change Triggers
-Update this contract, the command and protocol contracts, project/catalog entries, scoped AGENTS and evidence ledger when coordinator execution, lifecycle APIs, recurrence semantics, retention, limits or native scheduled execution change. Passing private primitive tests is not complete schedule acceptance.
+Update this contract, the command and protocol contracts, project/catalog entries, scoped AGENTS and validation records in pull requests, issues and CI logs/artifacts when coordinator execution, lifecycle APIs, recurrence semantics, retention, limits or native scheduled execution change. Passing private primitive tests is not complete schedule acceptance.
 
 ## References
 - [Complete requirements](cmds-delidev-requirements.md)

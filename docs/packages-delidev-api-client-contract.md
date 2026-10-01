@@ -50,7 +50,7 @@ The library does not log resource documents, credentials, cursors, exception obj
 Pinned Buf protobuf 2.14.0, Connect/Connect Web 2.1.2 and Connect Query 2.3.1 follow repository versions. React Query integration uses generated service namespaces; no second product transport or client-side routing/eligibility engine is introduced. The Go server and its canonical resource schemas remain authoritative.
 
 ## Change Triggers
-Update generated bindings, package/domain AGENTS, protocol contract, project index, evidence ledger, generation freshness/Turbo outputs and CI when schemas, origin/auth boundaries, synchronization behavior or validation commands change.
+Update generated bindings, package/domain AGENTS, protocol contract, project index, validation records in pull requests, issues and CI logs/artifacts, generation freshness/Turbo outputs and CI when schemas, origin/auth boundaries, synchronization behavior or validation commands change.
 
 ## References
 - [Project](project-delidev.md)

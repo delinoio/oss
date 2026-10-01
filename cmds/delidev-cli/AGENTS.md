@@ -12,7 +12,7 @@ Read the relevant owner before changing its behavior, including cross-domain con
 - `cmds/delidev-cli/internal/cli/AGENTS.md`
 - `cmds/delidev-cli/internal/server/AGENTS.md`
 
-Keep implementation evidence in independent files under `docs/evidence/delidev/issue-<number>/`. Update instructions only when their rules or ownership change, not merely to record another validation run.
+Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
 
 - Codex child ownership requires the original sender/receiver spawn evidence or a complete validated state-DB-only descendant read. A child `thread/started` notification may refine only an already proved exact parent relationship; unmatched starts remain discarded metadata and cannot allocate a product child or cleanup obligation.
 

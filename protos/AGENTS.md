@@ -60,4 +60,4 @@ Read the relevant owner before changing its behavior, including cross-domain con
 
 - `protos/delidev/AGENTS.md`
 
-Keep implementation evidence in independent files under `docs/evidence/delidev/issue-<number>/`. Update instructions only when their rules or ownership change, not merely to record another validation run.
+Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
