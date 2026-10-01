@@ -1,0 +1,145 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Shared semantic colors. OS fallback also covers the first paint before IPC. */
+:root {
+  color-scheme: light;
+  --background: #f8f9fb;
+  --surface: #ffffff;
+  --surface-subtle: #fafbfc;
+  --surface-muted: #f5f6f8;
+  --surface-inset: #f0f2f5;
+  --surface-hover: #eceef1;
+  --surface-selected: #e2e5e9;
+  --text: #202632;
+  --text-secondary: #3f4754;
+  --muted: #5b6577;
+  --text-subtle: #6a7485;
+  --border: #d8dee8;
+  --control-border: #85858d;
+  --border-subtle: #e6eaf0;
+  --accent: #2563d8;
+  --accent-hover: #1c55bd;
+  --link: #2563d8;
+  --focus: #266bdc;
+  --on-accent: #ffffff;
+  --inverse-surface: #202632;
+  --inverse-hover: #151a23;
+  --inverse-border: #44535d;
+  --on-inverse: #ffffff;
+  --on-inverse-muted: #d5e0e7;
+  --selected-background: #e7efff;
+  --selected-text: #17499f;
+  --selected-border: #99b6ef;
+  --warning-background: #fff3d9;
+  --warning-text: #7b5600;
+  --warning-border: #c88927;
+  --danger-background: #fff3f4;
+  --danger-text: #b42332;
+  --danger-border: #d9a5ab;
+  --success-text: #246547;
+  --conversation-background: #f7f6f2;
+  --conversation-text: #483519;
+  --conversation-border: #d7d9d5;
+  --shadow-subtle: #2026320a;
+  --shadow-soft: #2026321a;
+  --shadow: #20263233;
+  --backdrop: #16243b66;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #14181f;
+  --surface: #1b212b;
+  --surface-subtle: #181e27;
+  --surface-muted: #171d26;
+  --surface-inset: #10161e;
+  --surface-hover: #293342;
+  --surface-selected: #344154;
+  --text: #e7edf6;
+  --text-secondary: #c3cddd;
+  --muted: #aab7ca;
+  --text-subtle: #9aabc1;
+  --border: #47556a;
+  --control-border: #8291a8;
+  --border-subtle: #354256;
+  --accent: #245fc1;
+  --accent-hover: #1e54ac;
+  --link: #9ec2ff;
+  --focus: #aacaff;
+  --on-accent: #ffffff;
+  --inverse-surface: #28364b;
+  --inverse-hover: #34455d;
+  --inverse-border: #7187a5;
+  --on-inverse: #ffffff;
+  --on-inverse-muted: #c3cddd;
+  --selected-background: #203858;
+  --selected-text: #b6d0ff;
+  --selected-border: #688fc6;
+  --warning-background: #332815;
+  --warning-text: #f2cd88;
+  --warning-border: #a68855;
+  --danger-background: #392127;
+  --danger-text: #ffb6bf;
+  --danger-border: #a7777e;
+  --success-text: #9ed9b7;
+  --conversation-background: #24251f;
+  --conversation-text: #ded2ba;
+  --conversation-border: #515447;
+  --shadow-subtle: #0000001a;
+  --shadow-soft: #00000033;
+  --shadow: #00000066;
+  --backdrop: #00000099;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --background: #14181f;
+    --surface: #1b212b;
+    --surface-subtle: #181e27;
+    --surface-muted: #171d26;
+    --surface-inset: #10161e;
+    --surface-hover: #293342;
+    --surface-selected: #344154;
+    --text: #e7edf6;
+    --text-secondary: #c3cddd;
+    --muted: #aab7ca;
+    --text-subtle: #9aabc1;
+    --border: #47556a;
+    --control-border: #8291a8;
+    --border-subtle: #354256;
+    --accent: #245fc1;
+    --accent-hover: #1e54ac;
+    --link: #9ec2ff;
+    --focus: #aacaff;
+    --on-accent: #ffffff;
+    --inverse-surface: #28364b;
+    --inverse-hover: #34455d;
+  --inverse-border: #7187a5;
+    --on-inverse: #ffffff;
+    --on-inverse-muted: #c3cddd;
+    --selected-background: #203858;
+    --selected-text: #b6d0ff;
+    --selected-border: #688fc6;
+    --warning-background: #332815;
+    --warning-text: #f2cd88;
+    --warning-border: #a68855;
+    --danger-background: #392127;
+    --danger-text: #ffb6bf;
+    --danger-border: #a7777e;
+    --success-text: #9ed9b7;
+    --conversation-background: #24251f;
+    --conversation-text: #ded2ba;
+    --conversation-border: #515447;
+    --shadow-subtle: #0000001a;
+    --shadow-soft: #00000033;
+    --shadow: #00000066;
+    --backdrop: #00000099;
+  }
+}
+
+.appearance-settings { max-width: 640px; }
+.appearance-settings legend { font-weight: 600; margin-bottom: 12px; }
+.appearance-choice { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.appearance-choice:has(:checked) { border-color: var(--selected-border); background: var(--selected-background); color: var(--selected-text); }
+.appearance-choice input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.appearance-settings > p { color: var(--muted); line-height: 1.5; }
+.appearance-settings [role="alert"] { color: var(--danger-text); }
+.appearance-notice { position: fixed; z-index: 1100; inset: auto 16px 16px; max-width: 680px; margin: 0 auto; padding: 12px; border: 1px solid var(--danger-border); border-radius: 8px; background: var(--danger-background); color: var(--danger-text); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; pointer-events: none; }

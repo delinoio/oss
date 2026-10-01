@@ -266,7 +266,7 @@ pull requests and CI runs.
 
 ### Settings shell and opening lifetime
 
-Settings is a full-window presentation inside the existing native modal and fills the webview content viewport below the native title bar. It covers the ordinary app sidebar without resizing, maximizing, or entering OS fullscreen; all other modal callers keep the standard dialog layout. Its fixed 64px header contains the Settings title and an accessible Close Settings action with an Esc hint. At desktop widths, the grouped 240px navigation pane and flexible content pane scroll independently. The groups and 16 categories appear once in this order: AI & agents (AI Subscription, AI API Keys, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Runner Devices), and System (Paired devices, Server preferences, Integrations, Connection & diagnostics, Notifications, Import / Export, Backups). Below 760 CSS pixels, the sidebar is visually removed and replaced by a labeled native select with the same groups and selection; category panels stay mounted across selection and responsive changes. Content padding is 40px, reduced to 24px below 1100px. The shell must reflow at 200% zoom without clipping controls or focus outlines.
+Settings is a full-window presentation inside the existing native modal and fills the webview content viewport below the native title bar. It covers the ordinary app sidebar without resizing, maximizing, or entering OS fullscreen; all other modal callers keep the standard dialog layout. Its fixed 64px header contains the Settings title and an accessible Close Settings action with an Esc hint. At desktop widths, the grouped 240px navigation pane and flexible content pane scroll independently. The groups and 17 categories appear once in this order: AI & agents (AI Subscription, AI API Keys, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Runner Devices), and System (Appearance, Paired devices, Server preferences, Integrations, Connection & diagnostics, Notifications, Import / Export, Backups). Below 760 CSS pixels, the sidebar is visually removed and replaced by a labeled native select with the same groups and selection; category panels stay mounted across selection and responsive changes. Content padding is 40px, reduced to 24px below 1100px. The shell must reflow at 200% zoom without clipping controls or focus outlines.
 
 The shared AI Subscription category label is exactly the same in the sidebar, category heading and compact selector. Its category ID remains `subscription-accounts`; the selected English label fits on one line in the existing 240px sidebar at 100% zoom without changes to layout, font or icon styling.
 
@@ -295,6 +295,61 @@ GitHub Integrations uses the approved issue #1147 content hierarchy within this 
 Rows and Manage display Token storage and Identity validation separately, including pending denial, unsupported versions, unknown observations and original check time/identity when provided. Neither identity verification nor token storage claims repository capability. Create/rename forms are bounded to 760 CSS pixels, focus the name only on first visible entry, and keep token type/owner immutable after creation. Manage separates explicit token connection, identity validation and confirmed deletion. Its empty password field disables submission and never reveals stored tokens. Full official-form guidance remains mounted inside a native disclosure; toggling alone cannot query or open a form. New unconnected profiles explain token creation by default; connected profiles initially collapse it. Existing exact uncertain identities, decimal revisions, PAT clearing, operation/navigation guards and the common Settings opening lifecycle remain authoritative. Use scoped CSP-compatible CSS, decorative vectors, wrapping metadata/actions and stacked steps; preserve shell spacing, category selection and native modal focus/close behavior. See the [integration contract](cmds-delidev-integrations-contract.md) for authority and operation ordering.
 
 Settings-specific colors and system fonts are scoped to this modal and remain CSP-compatible: white content, pale-gray navigation, 8px control radii, a 12px empty-panel radius, 40px minimum controls, decorative outline icons and non-color selected-state semantics. Do not add a route, native window, dependency, external asset, inline-style exception, public API, persisted schema, storage, authorization, credential, polling or migration change. Component tests do not establish native geometry or keyboard containment; record native desktop smoke evidence separately, including platform and viewport, and report unsupported/unavailable platforms without claiming acceptance.
+
+
+### Device appearance (issue #1238)
+
+Appearance is the first category in the System group, with the scope description
+“Saved on this computer.” Existing category IDs/order, the ordinary AI Subscription
+entry and targeted New Project/Repositories entries remain unchanged. The desktop
+sidebar and compact native selector expose the same category. Theme is a native
+radio group with System, Light and Dark; System is the fresh-install default.
+Selection saves automatically, with pending and visible failure states and no Save
+button. System observes `prefers-color-scheme` changes while running; explicit Light
+and Dark ignore later OS changes.
+
+`appearance.tsx` mounts above local/saved connection application state. Appearance
+changes update static root selectors without remounting sessions, composer drafts,
+Settings openings or other workflows. Closing Settings disposes its opening as
+before while the device controller and already submitted appearance save remain
+alive. This preference is shared by every live local/saved-server window and loaded
+by newly opened windows, independent of selected server or connectivity.
+
+Native owns bounded, strictly validated `appearance.json` in `app_config_dir()`,
+using `{ "version": 1, "theme": "system" | "light" | "dark" }`. It contains no
+server identifier, secret or user content and stays outside server configuration,
+pairing, backups and configuration transfer. The narrow `read_appearance` and
+`update_appearance` commands authorize the trusted `main` or registered `server-*`
+document using the existing URL/binding checks; no generic path/filesystem or
+Connect/protobuf capability is introduced. URL checks and disk I/O stay off CEF's
+UI loop. One native process store serializes reads/atomic writes; update checks
+the expected process revision and reinspects the stored document before replacement.
+Writes synchronize a same-directory temporary file before atomic replacement, then
+synchronize the Unix parent directory or use Windows write-through replacement.
+Committed changes emit `appearance-changed` only to authorized live webviews.
+Snapshots have non-wrapping unsigned process revisions; delayed reads, replies and
+events cannot restore older state. Equal unchanged inspections retain the revision.
+
+Read/write failures are visible with stable typed messages, without raw OS errors
+or paths. Failed writes retain the prior committed selection. An uncertain IPC or
+post-publication synchronization outcome disables another write until a deliberate
+fresh inspection; it never blindly repeats the mutation. Invalid, oversized, linked,
+unknown-field or unsupported-version files remain untouched, with System fallback
+and visible recovery guidance rather than silent replacement. Logging records only
+the operation and stable outcome/problem, never file bytes or configuration paths.
+
+`themes.css` owns shared semantic light/dark colors for initial connection/loading/
+error presentation, the shell, conversations, forms, dialogs and every Settings
+category, including the scoped Projects, Agent, Activity, schedule and Diagnostics
+treatments. A static OS media-query fallback covers initial paint before IPC. The
+fixed light color descriptions in earlier presentation sections describe their light
+baseline; issue #1238 extends them through semantic dark equivalents. Preserve all
+layout/content/state semantics, selected/disabled/hover/focus states, strict CSP,
+native geometry and decorations. No transparency, blur, custom theme, font/accent
+customization, feature flag, database migration or server-synchronized preference
+is introduced. Record component/build and temporary storage evidence separately
+from actual supported-platform CEF OS/theme/restart/multiwindow, keyboard containment
+and 200% zoom acceptance in PRs/issues/CI, retaining unavailable targets explicitly.
 
 #### Projects grouped presentation
 Issue #1157 adds a Projects-only exception to the shared white-content, 40px-control and 8px-radius Settings defaults. All Projects states share a centered fluid column with a maximum width of 820px, including the heading, scope description, toolbar, reads, forms and deletion confirmation. Preserve 40px content padding, 24px below 1100px and the existing narrow-screen padding. The single Projects title is 24px semibold with “Saved on the selected server.” below; Refresh settings and the single + New Project action stay together at the upper right of the list and stack when space is narrow. The content uses system fonts, 13px body text, #F5F5F7 background, white panels with #DCDCE1 borders and 12px radii, #202024 primary text, #62626A secondary text and #0067D9 primary/focus accents. Controls are at least 36px high with 7px radii; their #85858D boundaries retain AA control contrast. Keep decorative outline SVGs hidden from assistive technology, static CSS compatible with `style-src 'self'`, and visible focus. Other categories and the shared shell retain their defaults.
