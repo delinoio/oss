@@ -549,10 +549,15 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 			}
 		}
 	}
-	// Every Archive completion path shares the socket-cleanup gate, including
-	// late preparation, title and agent reports. Native process completion alone
-	// cannot release a session's separately owned forward lifetimes.
 	if kind == domain.SessionKind {
+		var err error
+		value, err = t.terminalArchiveBarrier(id, value)
+		if err != nil {
+			return Record{}, err
+		}
+		// Every Archive completion also shares the socket-cleanup gate, including
+		// late preparation, title and agent reports. Native process completion alone
+		// cannot release a session's separately owned forward lifetimes.
 		raw, err := json.Marshal(value)
 		if err != nil {
 			return Record{}, err
@@ -655,11 +660,23 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 		}
 	}
 	if kind == domain.SessionKind {
+		if err := t.requireTerminalCleanup(id); err != nil {
+			return err
+		}
 		if err := t.StopForwards(id, ""); err != nil {
 			return err
 		}
 		if err := t.deleteSessionPRActivity(id); err != nil {
 			return err
+		}
+	}
+	if kind == domain.TerminalKind {
+		terminal, err := Decode[domain.Terminal](r)
+		if err != nil {
+			return err
+		}
+		if terminal.Live() {
+			return domain.Fail(domain.RecoveryRequired, "The terminal still owns native resources.", "Close and join the original terminal before deleting its record.")
 		}
 	}
 	if kind == domain.ModelKind {
@@ -683,7 +700,7 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	// Historical receipt content must not resurrect a deleted entity. Preserve the
 	// request identity/digest, returning a minimal non-content deletion result.
 	redacted, _ := json.Marshal(map[string]any{"deleted": true, "id": id})
-	if _, err = t.tx.ExecContext(t.ctx, "UPDATE receipts SET result=? WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id=?)", redacted, id); err != nil {
+	if _, err = t.tx.ExecContext(t.ctx, "UPDATE receipts SET result="+deletedReceiptProjection+" WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id=?)", redacted, id); err != nil {
 		return storageError(err)
 	}
 	t.touched[id] = true

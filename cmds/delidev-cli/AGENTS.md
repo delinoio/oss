@@ -20,6 +20,10 @@ Current-user service completion follows `docs/cmds-delidev-user-services-contrac
 
 - Desktop-launch infrastructure follows issue #1137 and the desktop/CLI/user-service contracts. Ordinary product commands never implicitly start a server. Pin registered native-service admission against concurrent control through running-intent publication and detached spawn; preserve original explicit Start and running-intent-only ensure semantics.
 
+- Session terminals and native PTY/ConPTY ownership follow `docs/cmds-delidev-terminals-contract.md` and the process contract. Keep the shared terminal result JSON bound at 64 KiB and reserve 4 KiB more for operation journal ownership metadata. Keep shell selection Worker-owned with no fallback after invalid discovery or override; input/output/path/environment contents never enter logs or native ownership journals.
+
+- `internal/rpc.Resource` owns the common public resource projection. Terminal pending input bytes are private dispatch payloads: omit them from every mutation/read/snapshot/output-metadata resource without changing original Worker watch/claim assignments, operation IDs or pending-control state.
+
 Native session compaction for issues #1093, #1202 and #1203 follows the planned shared boundary in `docs/cmds-delidev-compaction-contract.md`. Its reservations must land on main before dependent implementation. Preserve original transcript/outcome, once-only native claims and independent history/cleanup verification; native acknowledgment never grants a successor checkpoint.
 
 - Browser ownership and cleanup follow `docs/cmds-delidev-browser-contract.md`. Keep bounded non-secret profile metadata on the original paired-client Device document with independent UUID-v7 identity/revision, exact authorization and receipts. Account deletion atomically marks every device obligation; session deletion and Archive retain profiles. Service-owned browser messages avoid reserved shared enum numbers and SQLite migrations; never persist browsing content or paths.

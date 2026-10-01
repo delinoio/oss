@@ -29,10 +29,12 @@ it("revokes a real paired client through settings and reads bounded server diagn
   await waitFor(() => expect((screen.getByRole("button", { name: "Confirm device revocation" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Confirm device revocation" }));
   await screen.findByText("Authorization revoked for DeliDev desktop.");
+  expect(screen.getByText("Retained sessions stay saved. Revocation does not confirm native cleanup or erase the device's private files.")).toBeTruthy();
   await expect(createClient(SystemService, paired).getStatus({})).rejects.toMatchObject({ code: 16 });
   const retained = await createClient(ResourceService, transport).getResource({ kind: EntityKind.DEVICE, id: credential.device_id as string });
   expect(document(retained.resource).revoked).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Return to devices" }));
+  await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Details for DeliDev desktop" })));
   fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
   await screen.findByText("Server owner credential loaded");
   expect(screen.getByText("Read succeeded")).toBeTruthy();
@@ -43,4 +45,3 @@ it("revokes a real paired client through settings and reads bounded server diagn
   expect(screen.getByRole("region", { name: "Protected credential diagnostics" })).toBeTruthy();
   expect(screen.queryByText(/legacy report/)).toBeNull();
 }, 15000);
-

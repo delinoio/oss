@@ -1306,6 +1306,70 @@
       "kind": "message",
       "file": "delidev/v1/pr_fix.proto"
     },
+    "TerminalService": {
+      "kind": "service",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "TerminalAction": {
+      "kind": "enum",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "CreateTerminalRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ControlTerminalRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "CreateTerminalResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ControlTerminalResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "WatchTerminalOutputRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "WatchTerminalOutputResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "WatchTerminalsRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "WatchTerminalsResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ClaimTerminalRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ClaimTerminalResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ReportTerminalRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ReportTerminalResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "PublishTerminalOutputRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "PublishTerminalOutputResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
     "BrowserService": {
       "kind": "service",
       "file": "delidev/v1/browser.proto"

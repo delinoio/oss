@@ -19,6 +19,8 @@ export * from "./errors.js";
 export * from "./validation.js";
 export * as UsageQuery from "./gen/delidev/v1/delidev-UsageService_connectquery.js";
 export * as IntegrationQuery from "./gen/delidev/v1/delidev-IntegrationService_connectquery.js";
+
+export * as TerminalQuery from "./gen/delidev/v1/delidev-TerminalService_connectquery.js";
 export * as NetworkQuery from "./gen/delidev/v1/network-NetworkService_connectquery.js";
 export * as ForwardQuery from "./gen/delidev/v1/delidev-ForwardService_connectquery.js";
 export * as PullRequestFixQuery from "./gen/delidev/v1/pr_fix-PullRequestFixService_connectquery.js";
