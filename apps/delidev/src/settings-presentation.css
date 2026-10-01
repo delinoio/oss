@@ -11,7 +11,9 @@
 .settings-content[aria-label] .settings-content-column :is(label, input, select, textarea, button, summary) { font-size: 14px; line-height: 20px; }
 .settings-content[aria-label] .settings-content-column p { font-size: 14px; line-height: 20px; }
 .settings-content[aria-label] .settings-content-column :is(.settings-scope, .api-entry-scope, .paired-device-scope, .backups-category-scope) { margin-top: 8px; font-size: 12px; line-height: 18px; color: var(--muted); }
-.settings-content[aria-label] .settings-content-column :is(button, input:not([type=checkbox]):not([type=radio]), select, textarea, summary) { min-height: 40px; max-width: 100%; border-radius: 8px; white-space: normal; }
+.settings-content[aria-label] .settings-content-column :is(button, input:not([type=checkbox]):not([type=radio]), select, textarea, summary) { min-height: 40px; max-width: 100%; border-radius: 8px; }
+.settings-content[aria-label] .settings-content-column :is(button, input:not([type=checkbox]):not([type=radio]), select, summary) { white-space: normal; }
+.settings-content[aria-label] .settings-content-column textarea { white-space: pre-wrap; }
 .settings-content[aria-label] .settings-content-column :is(input:not([type=checkbox]):not([type=radio]), select, textarea) { border-color: var(--control-border); }
 .settings-content[aria-label] .settings-content-column label.checkbox { min-height: 40px; }
 .settings-content[aria-label] .settings-content-column button { border-color: var(--control-border); }

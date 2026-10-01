@@ -54,15 +54,16 @@ try {
         const column = root.querySelector(".settings-content-column"), h1s = [...root.querySelectorAll("h1")].filter(node => node.getClientRects().length);
         const style = getComputedStyle(root), box = column.getBoundingClientRect();
         const controls = [...root.querySelectorAll("button, select, input:not([type=checkbox]):not([type=radio])")].filter(node => node.getClientRects().length);
+        const textareas = [...root.querySelectorAll("textarea")].filter(node => node.getClientRects().length);
         const empty = [...root.querySelectorAll(".settings-empty")].filter(node => node.getClientRects().length);
         const forms = [...root.querySelectorAll("form")].filter(node => node.getClientRects().length);
-        return { titles: h1s.length, titleSize: getComputedStyle(h1s[0]).fontSize, padding: style.paddingLeft, anchor: box.left - root.getBoundingClientRect().left, width: box.width, overflow: root.scrollWidth > root.clientWidth, controls: controls.every(node => node.getBoundingClientRect().height >= 39.5), empty: empty.every(node => node.getBoundingClientRect().height >= 159.5), forms: forms.every(node => node.getBoundingClientRect().width <= 720.5) };
+        return { titles: h1s.length, titleSize: getComputedStyle(h1s[0]).fontSize, padding: style.paddingLeft, anchor: box.left - root.getBoundingClientRect().left, width: box.width, overflow: root.scrollWidth > root.clientWidth, controls: controls.every(node => node.getBoundingClientRect().height >= 39.5), multiline: textareas.every(node => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(node).whiteSpace)), empty: empty.every(node => node.getBoundingClientRect().height >= 159.5), forms: forms.every(node => node.getBoundingClientRect().width <= 720.5) };
       });
       const context = `${theme}/${populated}/${viewport}/${category}: ${JSON.stringify(layout)}`;
       assert.equal(layout.titles, 1, context); assert.equal(layout.titleSize, "26px", context);
       assert.equal(layout.padding, viewport[0] >= 1100 ? "32px" : viewport[0] >= 760 ? "24px" : "16px", context);
       assert.equal(layout.anchor, Number.parseInt(layout.padding), context);
-      assert(layout.width <= 1040.5 && !layout.overflow && layout.controls && layout.empty && layout.forms, context);
+      assert(layout.width <= 1040.5 && !layout.overflow && layout.controls && layout.multiline && layout.empty && layout.forms, context);
       checked++;
     }
     if (!populated) {
@@ -70,6 +71,7 @@ try {
         await select(category); await page.getByRole("button", { name: action, exact: true }).click();
         if (category === "AI API Keys") await page.getByRole("button", { name: /^Fixture provider/ }).click();
         const form = page.locator(".settings-content form:visible"); await form.waitFor();
+        assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline form controls preserve whitespace`);
         assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
         assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
         assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} form overflow`);
