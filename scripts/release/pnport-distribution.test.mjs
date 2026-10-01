@@ -91,7 +91,9 @@ test("publication stays blocked until reviewed release acceptance, independently
   for (const pnportReleaseReady of [undefined, false, "true"]) {
     assert.throws(() => requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady })), /publication is blocked/u);
   }
-  assert.throws(() => requireReleaseReady(() => JSON.stringify({ version: "0.0.0", pnportReleaseReady: true })), /publication is blocked/u);
+  for (const version of [undefined, "", "0.0.0", "0.1.0-preview", "01.0.0"]) {
+    assert.throws(() => requireReleaseReady(() => JSON.stringify({ version, pnportReleaseReady: true })), /publication is blocked/u);
+  }
   requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady: true }));
 });
 
