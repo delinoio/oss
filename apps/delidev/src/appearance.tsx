@@ -119,6 +119,16 @@ export function AppearanceProvider({ children, bridge = nativeBridge }: { childr
       if (generation.current === owned) { running.current = false; setOperation(undefined); }
     }
   };
+  useEffect(() => {
+    const inspect = () => {
+      // Recover a missed event when a retained window becomes visible. Errors
+      // and uncertain saves still require the explicit Reload action.
+      if (document.visibilityState === "visible" && !current.current.problem) void run();
+    };
+    window.addEventListener("focus", inspect);
+    document.addEventListener("visibilitychange", inspect);
+    return () => { window.removeEventListener("focus", inspect); document.removeEventListener("visibilitychange", inspect); };
+  }, [bridge]);
   return <AppearanceContext.Provider value={{ snapshot, operation, select: (theme) => { void run(theme); }, reload: () => { void run(); } }}>
     {children}
     {!operation && snapshot.problem ? <p className="appearance-notice" role="alert">Appearance: {problemMessages[snapshot.problem]}</p> : null}

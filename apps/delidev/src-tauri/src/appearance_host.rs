@@ -48,13 +48,23 @@ pub async fn update_appearance(
             // Only committed changes are broadcast. Native URL authorization
             // stays off the CEF UI loop and external child views receive none.
             for window in app.webview_windows().into_values() {
-                if authorized(&window, &windows).is_ok()
-                    && window.emit("appearance-changed", &snapshot).is_err()
-                {
+                let mut admission = authorized(&window, &windows);
+                // Retry brief saved-window label contention without holding
+                // its binding lock or blocking the CEF UI loop.
+                for _ in 0..5 {
+                    if !matches!(admission, Err(NativeFailure::Busy)) {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    admission = authorized(&window, &windows);
+                }
+                if admission.is_ok() && window.emit("appearance-changed", &snapshot).is_err() {
                     tracing::warn!(
                         operation = "appearance_event",
                         code = "delivery-unavailable"
                     );
+                } else if matches!(admission, Err(NativeFailure::Busy)) {
+                    tracing::warn!(operation = "appearance_event", code = "binding-busy");
                 }
             }
         }

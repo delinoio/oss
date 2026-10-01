@@ -329,6 +329,9 @@ synchronize the Unix parent directory or use Windows write-through replacement.
 Committed changes emit `appearance-changed` only to authorized live webviews.
 Snapshots have non-wrapping unsigned process revisions; delayed reads, replies and
 events cannot restore older state. Equal unchanged inspections retain the revision.
+Brief saved-window binding contention receives bounded event-admission retries.
+A healthy retained window reinspects when focused or made visible to reconcile a
+missed event; an error or uncertain save still requires explicit Reload appearance.
 
 Read/write failures are visible with stable typed messages, without raw OS errors
 or paths. Failed writes retain the prior committed selection. An uncertain IPC or

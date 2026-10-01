@@ -140,3 +140,18 @@ test("reload restores a failed event subscription before enabling writes", async
   act(() => value.publish({ revision: 2, theme: Theme.Dark, problem: null }));
   expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).checked).toBe(true);
 });
+
+test("foreground inspection reconciles a missed event without clearing uncertainty", async () => {
+  scheme(false); const value = fixture();
+  render(<AppearanceProvider bridge={value.bridge}><AppearanceSettings /></AppearanceProvider>);
+  await waitFor(() => expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).matches(":disabled")).toBe(false));
+  vi.mocked(value.bridge.read).mockResolvedValue({ revision: 3, theme: Theme.Dark, problem: null });
+  fireEvent.focus(window);
+  await waitFor(() => expect(document.documentElement.dataset.theme).toBe(Theme.Dark));
+  vi.mocked(value.bridge.update).mockRejectedValueOnce(new Error("uncertain delivery"));
+  fireEvent.click(screen.getByRole("radio", { name: "Light" }));
+  await screen.findByRole("button", { name: "Reload appearance" });
+  vi.mocked(value.bridge.read).mockClear();
+  fireEvent.focus(window);
+  expect(value.bridge.read).not.toHaveBeenCalled();
+});
