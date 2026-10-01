@@ -42,7 +42,10 @@ try {
     const localLauncher = `file:${path.join(output, "tarballs", launcher.filename)}`;
     const manifest = { name: "pnport-smoke", private: true, packageManager: "yarn@4.18.0", dependencies: { [launcher.name]: localLauncher, [native.name]: localNative }, resolutions };
     writeFileSync(path.join(consumer, "package.json"), JSON.stringify(manifest, null, 2) + "\n");
-    const installEnv = { ...process.env, YARN_ENABLE_SCRIPTS: "0", npm_config_ignore_scripts: "true" };
+    // These generated consumers have no committed lockfile. Yarn enables
+    // immutable installs in CI by default, so allow only this fixture's initial
+    // lockfile creation; the committed TypeScript fixture stays immutable.
+    const installEnv = { ...process.env, YARN_ENABLE_SCRIPTS: "0", YARN_ENABLE_IMMUTABLE_INSTALLS: "false", npm_config_ignore_scripts: "true" };
     if (manager === "yarn") {
       writeFileSync(path.join(consumer, ".yarnrc.yml"), "nodeLinker: pnp\nenableScripts: false\n");
       npm(["exec", "--yes", "--package", "@yarnpkg/cli-dist@4.18.0", "--", "yarn", "install"], { cwd: consumer, env: installEnv });

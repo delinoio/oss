@@ -97,6 +97,7 @@ jobs:
             cargo build --locked -p fspy_preload_unix --features fspy_preload_unix/pnport --target "$PNPORT_TARGET"
           else
             cargo build --locked --release -p pnport -p pnport-preload --target "$PNPORT_TARGET"
+            cargo build --locked -p pnport-preload --target "$PNPORT_TARGET"
           fi
           cargo test --locked -p pnport -p pnport-core -p pnport-preload --target "$PNPORT_TARGET"
       - name: Verify installed consumers and native TypeScript
