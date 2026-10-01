@@ -222,6 +222,10 @@
 
 ### pnport Rules
 
+- pnport macOS hook recursion tokens require lazy construction after successful entry. Reentry must never drop a temporary token or clear the outer guard while native/runtime locks remain held. Preserve the repeated-reentry regression alongside actual x64 and arm64 filesystem execution.
+
+- pnport must cancel Linux `io_uring_setup` before kernel execution and return `ENOSYS` so feature probes can fall back to mediated filesystem calls. Never create an unmediated ring; `io_uring_enter` and `io_uring_register` still fail closed. Test with and without enclosing Docker seccomp denial.
+
 - Private pnport runtime belongs to `crates/pnport` and `crates/pnport-core`; macOS injection is the pnport-mode `crates/fspy_preload_unix` fork and Linux/Windows retain `crates/pnport-preload`; follow `docs/crates-pnport-foundation.md`, `docs/crates-fspy-vendor-contract.md`, and the complete requirements. Keep exact pnp/fspy pins, data-only graph loading, fail-closed interception, read-only dependency views, private leased cache and all four 0.1.0 macOS/glibc Linux native conformance gates. Retain Windows requirements for 0.2.0. No crates.io publication.
 - Keep all three private Cargo versions and lock entries synchronized with the pnport npm source at unpublished `0.0.0`; the first selected minor release candidate is `0.1.0`. Build the executable and adjacent interception library together for each native archive, and require actual four-host execution and installation evidence in the separate exact-tag workflow before publication. A version commit or tag alone does not authorize publication.
 

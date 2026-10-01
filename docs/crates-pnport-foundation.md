@@ -12,6 +12,10 @@ Rust on the root nightly-2026-01-01 toolchain; explicit Cargo workspace membersh
 Local developers and CI users running finite commands, servers, watchers and language servers; no hosted operators.
 
 ## Interfaces and Contracts
+
+macOS recursion guards must construct their drop-bearing token only after successful entry. Reentrant libc calls must preserve the outer guard until its hook returns, including x64 `getcwd` implementations that call interposed metadata operations while runtime state is locked.
+
+Linux cancels `io_uring_setup` before kernel execution and returns `ENOSYS`, allowing feature-probing runtimes to continue through mediated ordinary filesystem syscalls. It never creates a ring. `io_uring_enter` and `io_uring_register` remain unsupported and stop the owned tree; this preserves the boundary against preexisting rings and unmediated submissions. Validate this behavior with static native fixtures and official TypeScript under both default container filters and a container without an enclosing seccomp filter; a Docker filter's `EPERM` alone does not prove pnport's setup denial.
 Commands are `run -- <command> [args...]`, `doctor [--json]`, and `cache path|list|prune|clean`. Global flags are `--project`, `--cache-dir`, `--log-level`, and `--color`. In `auto` mode, ANSI requires terminal stderr and absence of `NO_COLOR`; explicit `always` overrides `NO_COLOR`, `never` disables ANSI, and `doctor --json` is ANSI-free in every mode. Selecting a project preserves cwd. Automatic selection walks upward to the nearest .pnp.cjs. Explicit executable paths stay explicit; bare commands prefer the active workspace's direct dependency bins and reject ambiguous bins before inherited PATH lookup. Never build an implicit shell command.
 
 Read inline and split Yarn 4 data without evaluating loader JavaScript. Validate before calling pnp hydration, including its required top-level locator. Preserve aliases, fallback policy, workspaces and peer-specific virtual identity. One owned process tree uses one graph snapshot; no independent-project merging.

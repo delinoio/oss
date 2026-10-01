@@ -95,6 +95,7 @@ jobs:
           if [[ "$PNPORT_TARGET" == *apple* ]]; then
             cargo build --locked --release -p pnport -p fspy_preload_unix --features fspy_preload_unix/pnport --target "$PNPORT_TARGET"
             cargo build --locked -p fspy_preload_unix --features fspy_preload_unix/pnport --target "$PNPORT_TARGET"
+            cargo test --locked -p fspy_preload_unix --features fspy_preload_unix/pnport --target "$PNPORT_TARGET"
           else
             cargo build --locked --release -p pnport -p pnport-preload --target "$PNPORT_TARGET"
             cargo build --locked -p pnport-preload --target "$PNPORT_TARGET"

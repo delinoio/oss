@@ -340,6 +340,65 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_io_uring_probe_falls_back_to_mediated_filesystem_calls() {
+    use std::process::Command;
+
+    let root = fixture();
+    let source = root.path().join("io-uring-probe.c");
+    let executable = root.path().join("io-uring-probe");
+    fs::write(
+        &source,
+        r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/io_uring.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    struct io_uring_params parameters = {0};
+    struct io_uring_params unchanged = parameters;
+    if (syscall(SYS_io_uring_setup, 1, &parameters) != -1) return 40;
+    // An enclosing container filter may deny setup before pnport sees it.
+    if (errno != ENOSYS && errno != EPERM) return 41;
+    if (memcmp(&parameters, &unchanged, sizeof(parameters))) return 42;
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 43;
+    char bytes[14] = {0};
+    if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 44;
+    close(fd);
+    errno = 0;
+    if (open("node_modules/dep/file.txt", O_WRONLY) != -1 || errno != EROFS) return 45;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(root.path().join("private-cache"))
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_rewrites_paths_from_a_guard_adjacent_stack() {
     use std::process::Command;
     let root = fixture();

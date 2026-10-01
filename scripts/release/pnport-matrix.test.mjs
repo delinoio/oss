@@ -31,6 +31,7 @@ test("CI and exact-tag release use the package-owned four native hosts", () => {
     for (const gate of ["cargo test --locked -p pnport", "test:package", "test:typescript", "install-smoke.mjs"]) assert.ok(commands.includes(gate), gate);
     assert.ok(commands.includes("-p pnport-core -p pnport-preload"));
     assert.ok(commands.includes('cargo build --locked -p pnport-preload --target "$PNPORT_TARGET"'));
+    assert.ok(commands.includes("cargo test --locked -p fspy_preload_unix --features fspy_preload_unix/pnport"));
     assert.ok(!commands.includes("--test-threads=1"));
   }
 });
