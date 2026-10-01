@@ -52,7 +52,7 @@ it("renders the Agent-only empty inventory after the first read succeeds", async
   const panel = await screen.findByRole("region", { name: "No agent workers yet" });
   expect(screen.getAllByRole("heading", { level: 1, name: "Agent Workers" })).toHaveLength(1);
   expect(screen.getByText("Reusable configurations for your agents.")).toBeTruthy();
-  expect(screen.getByText("Saved on the selected server.", { selector: ".settings-agent-scope" })).toBeTruthy();
+  expect(screen.getByText("Saved on the selected server.", { selector: ".settings-agent-column > .settings-category-heading .settings-scope" })).toBeTruthy();
   expect(within(panel).getByRole("heading", { name: "No agent workers yet" })).toBeTruthy();
   expect(within(panel).getByText("Define a harness, model, accounts, and instructions, then reuse them in new sessions.")).toBeTruthy();
   expect(panel.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");

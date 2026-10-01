@@ -1,0 +1,89 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Shared body rules deliberately stop at Settings content. The app rail,
+   context pane/drawer and device-owned controllers retain their geometry. */
+.settings-content[aria-label] { padding: 32px; color: var(--text); background: var(--surface); font-size: 14px; line-height: 20px; }
+.settings-content[aria-label] .settings-content-column { width: 100%; max-width: 1040px; min-width: 0; margin-inline: 0; container: settings-body / inline-size; }
+.settings-content[aria-label] .settings-content-column :is(.settings-agent-column, .settings-paired-column, .settings-runner-column, .settings-transfer-column, .subscription-settings, .api-keys-view, .models-list, .github-integrations, .configuration-transfer, .backups-settings) { width: 100%; max-width: 1040px; min-width: 0; margin-inline: 0; font-size: 14px; line-height: 20px; }
+.settings-content[aria-label] .settings-content-column :is(section, article, header, fieldset, form, label, header > div) { min-width: 0; }
+.settings-content[aria-label] .settings-content-column :is(h1, h2, h3, h4, p, small, li, legend, code, dt, dd, button, summary) { overflow-wrap: anywhere; }
+.settings-content[aria-label] .settings-content-column h1 { margin: 0 0 8px; font-size: 26px; line-height: 32px; font-weight: 600; letter-spacing: normal; }
+.settings-content[aria-label] .settings-content-column :is(h2, h3, h4, legend) { font-size: 16px; line-height: 24px; font-weight: 600; }
+.settings-content[aria-label] .settings-content-column :is(label, input, select, textarea, button, summary) { font-size: 14px; line-height: 20px; }
+.settings-content[aria-label] .settings-content-column p { font-size: 14px; line-height: 20px; }
+.settings-content[aria-label] .settings-content-column :is(.settings-scope, .api-entry-scope, .paired-device-scope, .backups-category-scope) { margin-top: 8px; font-size: 12px; line-height: 18px; color: var(--muted); }
+.settings-content[aria-label] .settings-content-column :is(button, input:not([type=checkbox]):not([type=radio]), select, textarea, summary) { min-height: 40px; max-width: 100%; border-radius: 8px; white-space: normal; }
+.settings-content[aria-label] .settings-content-column :is(input:not([type=checkbox]):not([type=radio]), select, textarea) { border-color: var(--control-border); }
+.settings-content[aria-label] .settings-content-column label.checkbox { min-height: 40px; }
+.settings-content[aria-label] .settings-content-column button { border-color: var(--control-border); }
+.settings-content[aria-label] .settings-content-column button:is(.primary, .backups-primary) { border-color: var(--accent); }
+.settings-content[aria-label] .settings-content-column button:is(.paired-device-revoke, .integration-danger, .backups-destructive) { border-color: var(--danger-text); }
+.settings-content[aria-label] .settings-category-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin: 0 0 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.settings-content[aria-label] .settings-category-title { flex: 1; min-width: 0; }
+.settings-content[aria-label] .settings-category-title p { margin-bottom: 0; color: var(--muted); }
+.settings-content[aria-label] .settings-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+.settings-content[aria-label] .settings-content-column :is(form, .account-wizard, .subscription-account-create, .api-entry-workflow, .integration-manage, .paired-device-form, .project-deletion) { width: 100%; max-width: 720px; margin-inline: 0; container-type: inline-size; }
+.settings-content[aria-label] .settings-content-column :is(.account-wizard, .subscription-account-create, .agent-core, .project-field-group, .project-deletion, .server-preferences-panel, .paired-device-form, .integration-editor, .integration-manage, .transfer-panel) { padding: 0; border: 0; border-radius: 0; background: var(--surface); }
+.settings-content[aria-label] .settings-content-column :is(.project-field-group, .agent-optional, .integration-section, .transfer-panel + .transfer-panel) { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+.settings-content[aria-label] .settings-content-column :is(.settings-agent-list, .project-list, .paired-device-list, .api-entry-rows, .models-rows, .subscription-list, .integration-panel, .backups-panel) { border: 0; border-radius: 0; background: var(--surface); }
+.settings-content[aria-label] .settings-content-column :is(.settings-agent-row, .project-row, .paired-device-main, .api-entry-row, .models-row, .subscription-row, .integration-row, .result) { padding: 16px; margin: 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: var(--surface); }
+.settings-content[aria-label] .settings-content-column :is(.settings-agent-row, .project-row, .models-row, .integration-row) { gap: 16px; }
+.settings-content[aria-label] .settings-content-column .subscription-provider-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.settings-content[aria-label] .settings-content-column .subscription-provider-card { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; padding: 16px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; }
+.settings-content[aria-label] .subscription-provider-card .subscription-mark { grid-row: 1 / span 2; }
+.settings-content[aria-label] .subscription-provider-card h3, .settings-content[aria-label] .subscription-provider-card p { margin: 0; }
+.settings-content[aria-label] .subscription-provider-card button { grid-column: 3; grid-row: 1 / span 2; width: auto; }
+.settings-content[aria-label] .settings-content-column .subscription-settings section + section { margin-top: 24px; }
+.settings-content[aria-label] .settings-content-column .integration-panel-header { padding: 0 0 16px; }
+.settings-content[aria-label] .settings-content-column .integration-panel-body { padding: 0; }
+.settings-content[aria-label] .settings-content-column :is(.integration-steps, .integration-access-note) { padding: 16px 0; }
+.settings-content[aria-label] .settings-content-column .settings-runner-worker { margin-bottom: 24px; padding-bottom: 24px; }
+.settings-content[aria-label] .settings-content-column .settings-runner-row { padding: 16px; }
+.settings-content[aria-label] .settings-content-column .agent-disclosure { border: 0; border-top: 1px solid var(--border); border-radius: 0; }
+.settings-content[aria-label] .settings-content-column .agent-disclosure summary { padding-inline: 0; border-radius: 0; }
+.settings-content[aria-label] .settings-content-column .agent-section-fields { padding-inline: 0; }
+.settings-content[aria-label] .settings-content-column .configuration-transfer { gap: 24px; }
+.settings-content[aria-label] .settings-content-column .transfer-panel { max-width: 720px; }
+.settings-content[aria-label] .settings-content-column .backups-panel { margin-top: 24px; border-top: 1px solid var(--border); }
+.settings-content[aria-label] .settings-content-column :is(.backups-panel-header, .backups-inventory-footer) { padding: 16px 0; }
+.settings-content[aria-label] .settings-content-column :is(.backups-inspection, .backups-accepted, .backups-history, .backups-read-state) { padding: 16px 0; }
+.settings-content[aria-label] .settings-content-column :is(.backups-inventory th, .backups-inventory td) { padding: 16px; }
+.settings-content[aria-label] .settings-content-column .backups-empty-history { min-height: 0; align-items: flex-start; text-align: left; padding-block: 16px; }
+.settings-content[aria-label] .settings-content-column :is(.diagnostics-panel, .diagnostics-record) { padding: 16px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; }
+.settings-content[aria-label] .settings-content-column :is(.diagnostics-observations, .diagnostics-sections, .diagnostics-records) { gap: 24px; }
+.settings-content[aria-label] .settings-empty { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 16px; min-height: 160px; padding: 16px; border-block: 1px solid var(--border); }
+.settings-content[aria-label] .settings-empty h2 { margin: 0 0 8px; }
+.settings-content[aria-label] .settings-empty p { margin: 0; color: var(--muted); }
+.settings-content[aria-label] .settings-empty p + p { margin-top: 8px; }
+.settings-empty-icon { width: 32px; height: 32px; color: var(--muted); }
+.settings-empty-icon svg { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.settings-skeleton-row { padding: 16px; border-bottom: 1px solid var(--border); }
+.settings-skeleton-row span { display: block; width: min(240px, 75%); height: 12px; margin-block: 8px; border-radius: 3px; background: var(--surface-hover); }
+.settings-skeleton-row span + span { width: min(360px, 90%); }
+.settings-content[aria-label] .notification-settings > section, .settings-content[aria-label] .notification-preferences { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+.notification-status-row, .notification-saved-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 16px; border-bottom: 1px solid var(--border); }
+.notification-status-row p { margin: 0; }
+.notification-saved-row dt { flex: 1; }
+.notification-saved-row dd { margin: 0; }
+.notification-guidance { margin-top: 24px; color: var(--muted); }
+.settings-content[aria-label] .appearance-settings { max-width: 720px; container: appearance / inline-size; }
+.appearance-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.settings-content[aria-label] .appearance-choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); margin: 0; }
+.appearance-miniature { grid-column: 1 / -1; display: grid; grid-template-columns: 20% minmax(0, 1fr); gap: 8px; height: 64px; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
+.appearance-miniature::before { content: ""; background: var(--surface-inset); border-right: 1px solid var(--border); }
+.appearance-miniature::after { content: ""; border-block: 6px solid var(--border); background: var(--surface-muted); }
+.appearance-miniature[data-preview=dark] { background: var(--inverse-surface); }
+.appearance-miniature[data-preview=system] { border-inline-end: 24px solid var(--inverse-surface); }
+@container appearance (width < 640px) { .appearance-choices { grid-template-columns: minmax(0, 1fr); } }
+@container (width < 640px) { .settings-content[aria-label] .account-provider-choices, .settings-content[aria-label] .agent-core-columns { grid-template-columns: minmax(0, 1fr); } .server-routing-field { display: block; } }
+@media (max-width: 1099px) {
+  .settings-content[aria-label] { padding: 24px; }
+  .settings-content[aria-label] .settings-category-heading { flex-direction: column; }
+  .settings-content[aria-label] .settings-toolbar { width: 100%; justify-content: flex-start; }
+  .settings-content[aria-label] .settings-content-column :is(.settings-agent-row, .project-row, .models-row, .integration-row) { flex-direction: column; align-items: stretch; }
+  .settings-content[aria-label] .settings-agent-details, .settings-content[aria-label] .project-identity { flex-basis: auto; }
+}
+@media (max-width: 759px) { .settings-content[aria-label] { padding: 24px 16px; } .notification-status-row { flex-wrap: wrap; } }
+@container settings-body (width < 640px) {
+  .settings-content[aria-label] .subscription-provider-card { grid-template-columns: 40px minmax(0, 1fr); }
+  .settings-content[aria-label] .subscription-provider-card button { grid-column: 2; grid-row: auto; justify-self: start; }
+}

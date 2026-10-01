@@ -1,3 +1,4 @@
+import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
@@ -157,18 +158,18 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
   const successfulEmpty = Boolean(result.data && !result.error && !page && result.data.resources.length === 0 && !result.data.nextPageToken);
   const createProfile = <button className="primary" onClick={() => setEditing({ key: newRequestId() })}><span aria-hidden="true">+ </span>New GitHub profile</button>;
   return <section className="github-integrations" aria-label="GitHub integrations">
-    {showCategoryIntro ? <><h2>Integrations</h2><p>Manage GitHub profiles for repository access. AI accounts are configured separately.</p></> : null}
+    {showCategoryIntro ? <SettingsHeading title="Integrations" description="Manage GitHub profiles for repository access. AI accounts are configured separately." actions={!editing && !selected ? <><button aria-label="Refresh GitHub profiles" onClick={() => void result.refetch()}>Refresh</button>{createProfile}</> : undefined} /> : null}
     {editing ? <IntegrationEditor key={editing.key} initial={editing.initial} active={active} close={done} /> : selected ? <IntegrationConnection key={selected.id} initial={selected} active={active} close={done} /> : <>
       <section className="integration-panel" aria-label="GitHub profiles" aria-busy={result.isFetching}>
         <header className="integration-panel-header"><div className="integration-provider"><span className="integration-provider-mark"><IntegrationIcon kind={IntegrationIconKind.GitHub} /></span><div><h3>GitHub</h3><p>GitHub.com · Personal access tokens</p></div></div>
-          <div className="actions"><button aria-label="Refresh GitHub profiles" onClick={() => void result.refetch()}>Refresh</button>{!successfulEmpty ? createProfile : null}</div>
+          {!showCategoryIntro ? <div className="actions"><button aria-label="Refresh GitHub profiles" onClick={() => void result.refetch()}>Refresh</button>{createProfile}</div> : null}
         </header>
         <div className="integration-panel-body">
-          {!result.data && result.isPending ? <p role="status">Loading GitHub profiles…</p> : null}
+          {!result.data && result.isPending ? <SettingsLoading label="Loading GitHub profiles…" /> : null}
           {result.data && result.isFetching ? <p role="status">Refreshing GitHub profiles… Previous results are shown.</p> : null}
           <Problem error={result.error} />
           {result.data && result.error ? <p role="status">Previous GitHub profile results are stale because the refresh failed.</p> : null}
-          {successfulEmpty ? <div className="integration-empty"><span className="integration-empty-mark"><IntegrationIcon kind={IntegrationIconKind.Link} /></span><h3>Add your first GitHub profile</h3><p>Create a named profile, then connect a personal access token.</p><p>Each repository selects its profile explicitly.</p>{createProfile}</div> : <>
+          {successfulEmpty ? <SettingsEmpty title="Add your first GitHub profile" icon={<IntegrationIcon kind={IntegrationIconKind.Link} />}><p>Create a named profile, then connect a personal access token.</p><p>Each repository selects its profile explicitly.</p></SettingsEmpty> : <>
             {result.data?.resources.map((row) => <article className="integration-row" key={row.id}><div><h3>{resourceName(row)}</h3><p className="integration-secondary">{profileDescription(document(row))}</p><ProfileFacts profile={row} /></div>
               <div className="actions"><button aria-label={`Manage ${resourceName(row)}`} disabled={row.schemaVersion !== 1} onClick={() => setSelected(row)}>Manage</button><button aria-label={`Rename ${resourceName(row)}`} disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Rename</button></div>
             </article>)}

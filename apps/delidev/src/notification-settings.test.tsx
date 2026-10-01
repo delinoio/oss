@@ -31,7 +31,8 @@ it("retains stale notification drafts across settings visibility and never saves
   expect((screen.getByRole("button", { name: "Save notification preferences" }) as HTMLButtonElement).disabled).toBe(true);
   expect(value.save).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
-  expect((screen.getByRole("checkbox", { name: "Questions and approval requests" }) as HTMLInputElement).checked).toBe(false);
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.getAllByText("Disabled")).toHaveLength(2);
 });
 
 it("retries only the original uncertain preference request after current preferences change", async () => {
@@ -47,4 +48,36 @@ it("retries only the original uncertain preference request after current prefere
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
   expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]);
   expect(value.save.mock.calls[0][0].preferences).toMatchObject({ revision: 1n, interactions: false, terminals: false });
+});
+
+it("renders saved preferences as text and focuses explicit edit/cancel/save once", async () => {
+  const value = fixture(); render(value.view());
+  const edit = await screen.findByRole("button", { name: "Edit notification preferences" });
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.getByText("Enabled")).toBeTruthy(); expect(screen.getByText("Disabled")).toBeTruthy();
+  fireEvent.click(screen.getByText("About notification delivery"));
+  expect(value.save).not.toHaveBeenCalled();
+  fireEvent.click(edit);
+  expect(document.activeElement).toBe(screen.getByRole("checkbox", { name: "Questions and approval requests" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit notification preferences" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit notification preferences" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Execution completion, failure and interruption" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save notification preferences" }));
+  await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit notification preferences" })));
+  expect(value.save.mock.calls[0][0].preferences).toMatchObject({ revision: 1n, interactions: true, terminals: true });
+});
+
+it("does not return focus after deliberate transfer during a pending save", async () => {
+  const value = fixture(); let finish!: (result: object) => void;
+  value.save.mockImplementationOnce(() => new Promise(resolve => { finish = resolve as typeof finish; }));
+  render(<><button>Outside settings</button>{value.view()}</>);
+  fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save notification preferences" }));
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  const outside = screen.getByRole("button", { name: "Outside settings" }); outside.focus();
+  await act(async () => finish({ preferences: { revision: 2n, interactions: true, terminals: false } }));
+  await screen.findByRole("button", { name: "Edit notification preferences" });
+  expect(document.activeElement).toBe(outside);
 });

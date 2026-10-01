@@ -51,11 +51,11 @@ it("reports unavailable cleanup without replaying deletion and preserves API ent
   const f = fixture("api");
   f.cleanup.mockRejectedValue(new ConnectError("Cleanup observation unavailable", Code.Unavailable));
   render(<f.View />);
-  expect(screen.getByRole("heading", { name: "Delete entry?", level: 1 })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Delete entry?", level: 2 })).toBeTruthy();
   expect(screen.getByText(/Disconnect the entry/)).toBeTruthy();
   expect(screen.getByText(/Browser profile cleanup remains pending/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
-  await screen.findByRole("heading", { name: "API key entry deleted", level: 1 });
+  await screen.findByRole("heading", { name: "API key entry deleted", level: 2 });
   await screen.findByText("Cleanup status is unavailable until the owning server can be read.");
   expect(screen.getByRole("button", { name: "Return to AI API Keys" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Refresh cleanup status" }));

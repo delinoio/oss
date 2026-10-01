@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Backups responds to available content width independently of Settings navigation. */
-.backups-settings { width: 100%; max-width: 1120px; min-width: 0; margin-inline: auto; container-type: inline-size; color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.backups-settings { width: 100%; max-width: 1040px; min-width: 0; margin-inline: 0; container-type: inline-size; color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .backups-settings * { min-width: 0; }
 .backups-settings [hidden] { display: none !important; }
 .backups-settings p { overflow-wrap: anywhere; }

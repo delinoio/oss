@@ -13,7 +13,7 @@ export function connectionQueryClient() {
         // Retain at most
         // eight additional inactive pages. Never remove a just-added query
         // before its observer attaches or its first result is committed.
-        const inactive = client.getQueryCache().getAll().filter((query) => query.getObserversCount() === 0 && query.state.fetchStatus !== "fetching").sort((a, b) => a.state.dataUpdatedAt - b.state.dataUpdatedAt);
+        const inactive = client.getQueryCache().getAll().filter((query) => query.getObserversCount() === 0 && query.state.status !== "pending" && query.state.fetchStatus !== "fetching").sort((a, b) => a.state.dataUpdatedAt - b.state.dataUpdatedAt);
         for (const query of inactive.slice(0, Math.max(0, inactive.length - 8))) client.removeQueries({ queryKey: query.queryKey, exact: true });
       } finally { pruning = false; }
     });
