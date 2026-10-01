@@ -8,6 +8,14 @@ import { useRetainedMutation } from "./mutation";
 import { useSettingsOpening } from "./settings-lifetime";
 import { JobState } from "./jobs";
 import { Problem } from "./ui";
+import "./configuration-transfer.css";
+
+enum TransferStage { Load = 1, Map = 2, Review = 3 }
+const transferStages = [
+  { stage: TransferStage.Load, label: "Load document" },
+  { stage: TransferStage.Map, label: "Map configuration" },
+  { stage: TransferStage.Review, label: "Review & apply" },
+];
 
 enum ImportAction { Create = "create", Reuse = "reuse", Replace = "replace" }
 const kinds: Record<string, EntityKind> = { provider: EntityKind.PROVIDER, model: EntityKind.MODEL, account: EntityKind.ACCOUNT, template: EntityKind.TEMPLATE, agent: EntityKind.AGENT, repository: EntityKind.REPOSITORY, project: EntityKind.PROJECT, settings: EntityKind.SETTINGS };
@@ -151,24 +159,44 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     } catch (error) { if (alive.current && generation.current === original) setProblem(error instanceof Error ? error.message : "Preview failed."); }
     finally { previewRead.reset(); gate.current = false; }
   };
-  return <section aria-label="Portable configuration">
-    {showCategoryIntro ? <><h3>Export and import configuration</h3><p>Transfer providers, models, account preferences, Agent Workers, instructions, repositories, projects and server preferences. Accounts are imported disconnected and require a new connection. Device registrations, observed quotas, discovered model evidence and session history are excluded.</p></> : null}
-    <button disabled={blocked || !active} onClick={() => void exportNow()}>Export configuration</button>
-    {exported ? <><label>Exported configuration<textarea ref={exportText} readOnly value={exported} rows={6} spellCheck={false} /></label><button onClick={() => { exportText.current?.focus(); exportText.current?.select(); }}>Select export for copying</button></> : null}
-    <fieldset disabled={blocked}>
-      <legend>Choose an export</legend>
-      <label>Configuration file<input type="file" accept=".json,application/json" onChange={(event) => {
-        const file = event.target.files?.[0]; event.target.value = "";
-        if (!file || gate.current) return;
-        invalidate(); setLoaded(undefined);
-        if (file.size > bundleLimit) { setProblem("Use an export of at most 384 KiB."); return; }
-        gate.current = true; setLoading(true);
-        void file.arrayBuffer().then((buffer) => { if (alive.current) { const raw = decoder.decode(buffer); setDraft(raw); load(raw); } }).catch(() => { if (alive.current) setProblem("The configuration file could not be read as UTF-8."); }).finally(() => { gate.current = false; if (alive.current) setLoading(false); });
-      }} /></label>
-      <label>Configuration JSON<textarea value={draft} rows={6} spellCheck={false} onChange={(event) => { if (encoder.encode(event.target.value).byteLength > bundleLimit) { setProblem("Use an export of at most 384 KiB."); return; } invalidate(); setLoaded(undefined); setDraft(event.target.value); }} /></label>
-      <button disabled={!draft} onClick={() => load(draft)}>Load configuration document</button>
-    </fieldset>
-    {loaded ? <fieldset disabled={blocked}>
+  const stage = preview || report || mutation.uncertain ? TransferStage.Review : loaded ? TransferStage.Map : TransferStage.Load;
+  return <section className="configuration-transfer" aria-label="Portable configuration">
+    {showCategoryIntro ? <header className="transfer-intro"><div><h1 aria-live="polite" aria-atomic="true">Import / Export</h1><p>Move configuration between DeliDev servers.</p></div></header> : null}
+    <section className="transfer-panel" aria-labelledby="transfer-export-heading">
+      <header className="transfer-export-header">
+        <div><h2 id="transfer-export-heading">Export configuration</h2><p>Copy a portable JSON document from the selected server.</p></div>
+        <button disabled={blocked || !active} onClick={() => void exportNow()}>Export configuration</button>
+      </header>
+      <p className="transfer-scope">Includes providers, models, account preferences, Agent Workers, instructions, repositories, projects and server preferences.</p>
+      {exported ? <><label>Exported configuration<textarea ref={exportText} readOnly value={exported} rows={6} spellCheck={false} /></label><button onClick={() => { exportText.current?.focus(); exportText.current?.select(); }}>Select export for copying</button></> : null}
+    </section>
+    <section className="transfer-panel" aria-labelledby="transfer-import-heading">
+      <h2 id="transfer-import-heading">Import configuration</h2>
+      <p>Choose a JSON file or paste an exported configuration.</p>
+      <ol className="transfer-stages" aria-label="Configuration import stages">
+        {transferStages.map((item) => <li key={item.stage} aria-current={stage === item.stage ? "step" : undefined}>
+          <span className="transfer-stage-number" aria-hidden="true">{item.stage}</span><span>{item.label}</span>
+          {stage === item.stage ? <span className="transfer-current-stage">Current stage</span> : null}
+        </li>)}
+      </ol>
+      <fieldset disabled={blocked}>
+        <legend className="transfer-input-legend">Choose an export</legend>
+        <label>Configuration file<input type="file" accept=".json,application/json" aria-describedby="transfer-file-help" onChange={(event) => {
+          const file = event.target.files?.[0]; event.target.value = "";
+          if (!file || gate.current) return;
+          invalidate(); setLoaded(undefined);
+          if (file.size > bundleLimit) { setProblem("Use an export of at most 384 KiB."); return; }
+          gate.current = true; setLoading(true);
+          void file.arrayBuffer().then((buffer) => { if (alive.current) { const raw = decoder.decode(buffer); setDraft(raw); load(raw); } }).catch(() => { if (alive.current) setProblem("The configuration file could not be read as UTF-8."); }).finally(() => { gate.current = false; if (alive.current) setLoading(false); });
+        }} /></label>
+        <p id="transfer-file-help" className="transfer-helper">JSON · UTF-8 · Up to 384 KiB</p>
+        <label>Configuration JSON<textarea className="transfer-json-input" value={draft} rows={6} spellCheck={false} placeholder="Paste a DeliDev configuration export…" onChange={(event) => { if (encoder.encode(event.target.value).byteLength > bundleLimit) { setProblem("Use an export of at most 384 KiB."); return; } invalidate(); setLoaded(undefined); setDraft(event.target.value); }} /></label>
+        <button className="primary" disabled={!draft} onClick={() => load(draft)}>Load configuration document</button>
+      </fieldset>
+      <p className="transfer-load-guidance">You will map resources and review changes before applying.</p>
+    </section>
+    {loading || exportRead.isPending || previewRead.isPending || mutation.busy ? <p role="status">{loading ? "Reading configuration file…" : exportRead.isPending ? "Exporting configuration…" : previewRead.isPending ? "Loading configuration change preview…" : "Sending configuration import request…"}</p> : null}
+    {loaded ? <fieldset className="transfer-panel transfer-mapping" disabled={blocked}>
       <legend>Map imported configuration</legend>
       <p>New entries keep their original contents and relationships. Reuse requires identical values after mapping. Only server preferences can replace an existing entry, and replacement requires its current revision.</p>
       {loaded.bundle.machines.map((machine) => <section key={machine.id}><p>Source machine: {machine.name} · {machine.os} / {machine.architecture}</p><ResourceChoice label={`Target for ${machine.name}`} kind={EntityKind.MACHINE} value={machines[machine.id] ?? ""} required active={active} disabled={blocked} change={(id) => { invalidate(); setMachines((values) => ({ ...values, [machine.id]: id })); }} /></section>)}
@@ -185,9 +213,13 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
       })}
       <button disabled={!active} onClick={() => void inspect()}>Preview configuration changes</button>
     </fieldset> : null}
-    {preview ? <section aria-label="Configuration change preview"><h3>Review changes before applying</h3><p>New repository paths must pass validation on every selected Worker before any settings are applied. Conflicts preserve existing configuration. Review full access permissions, provider endpoints and instruction contents below.</p>{preview.machines.map((machine) => <p key={text(machine.id)}>Target Worker: {text(machine.name)} · {text(machine.os)} / {text(machine.architecture)} · {text(machine.id)}</p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || "Server preferences"} · {text(change.kind)}</h4><p>Target: {text(change.id)}</p><p>{change.before ? "Current and imported values are both included in the complete change details." : "New values are included in the complete change details."}</p></article>)}<label>Complete change details<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><button className="primary" disabled={blocked || !active} onClick={() => { if (!blocked) void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); }}>Apply reviewed configuration</button></section> : null}
-    {mutation.uncertain ? <button disabled={mutation.busy || !active} onClick={mutation.retry}>Retry the same configuration import</button> : null}
-    {report ? <section aria-label="Configuration import result"><p role="status">{state === JobState.Succeeded ? "Configuration import completed. Connect each imported account before execution." : state === JobState.Failed || state === JobState.Canceled ? "Configuration import failed. Existing configuration was preserved." : state === JobState.Queued || state === JobState.Claimed ? "Import accepted. Waiting for confirmation of every repository validation." : "The import outcome is unavailable. Inspect the original operation before trying another import."}</p>{jobId ? <><small>{jobId}</small><button disabled={job.isFetching || !active} onClick={() => void job.refetch()}>Refresh configuration import</button></> : null}{text(importProblem.message) ? <p role="alert">{text(importProblem.message)} {text(importProblem.guidance)}</p> : null}<Problem error={job.error} />{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={() => { setReport(undefined); invalidate(); }}>Return to retained import document</button> : null}</section> : null}
+    {preview ? <section className="transfer-panel" aria-label="Configuration change preview"><h3>Review changes before applying</h3><p>New repository paths must pass validation on every selected Worker before any settings are applied. Conflicts preserve existing configuration. Review full access permissions, provider endpoints and instruction contents below.</p>{preview.machines.map((machine) => <p key={text(machine.id)}>Target Worker: {text(machine.name)} · {text(machine.os)} / {text(machine.architecture)} · {text(machine.id)}</p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || "Server preferences"} · {text(change.kind)}</h4><p>Target: {text(change.id)}</p><p>{change.before ? "Current and imported values are both included in the complete change details." : "New values are included in the complete change details."}</p></article>)}<label>Complete change details<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><button className="primary" disabled={blocked || !active} onClick={() => { if (!blocked) void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); }}>Apply reviewed configuration</button></section> : null}
+    {mutation.uncertain ? <section className="transfer-panel" aria-label="Uncertain configuration import"><button disabled={mutation.busy || !active} onClick={mutation.retry}>Retry the same configuration import</button></section> : null}
+    {report ? <section className="transfer-panel" aria-label="Configuration import result"><p role="status">{state === JobState.Succeeded ? "Configuration import completed. Connect each imported account before execution." : state === JobState.Failed || state === JobState.Canceled ? "Configuration import failed. Existing configuration was preserved." : state === JobState.Queued || state === JobState.Claimed ? "Import accepted. Waiting for confirmation of every repository validation." : "The import outcome is unavailable. Inspect the original operation before trying another import."}</p>{jobId ? <><small>{jobId}</small><button disabled={job.isFetching || !active} onClick={() => void job.refetch()}>Refresh configuration import</button></> : null}{text(importProblem.message) ? <p role="alert">{text(importProblem.message)} {text(importProblem.guidance)}</p> : null}<Problem error={job.error} />{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={() => { setReport(undefined); invalidate(); }}>Return to retained import document</button> : null}</section> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
+    <aside className="transfer-guidance" aria-labelledby="transfer-guidance-heading">
+      <h2 id="transfer-guidance-heading">Before you transfer</h2>
+      <ul><li>Imported accounts are disconnected and need a new connection.</li><li>Authentication, device registrations, observed quotas, discovered model evidence and session history are excluded.</li></ul>
+    </aside>
   </section>;
 }
