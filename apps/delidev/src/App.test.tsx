@@ -570,7 +570,7 @@ it("discards a notification draft on close without saving", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
   await screen.findByRole("button", { name: "Edit notification preferences" });
   expect(screen.queryByRole("checkbox")).toBeNull();
-  expect(within(screen.getByRole("region", { name: "Saved notification preferences" })).getByText("Enabled")).toBeTruthy();
+  expect(within(screen.getByRole("group", { name: "Notify this client about" })).getByText("Enabled")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
   expect(value.saveNotificationPreferences).not.toHaveBeenCalled();

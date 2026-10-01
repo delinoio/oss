@@ -43,13 +43,15 @@ export function NativeNotificationSettings({ active }: { active: boolean }) {
     if (opening) client.setQueryData([...opening.queryKey, ...readinessKey], value);
     client.setQueryData(readinessKey, value);
   } });
-  if (!isTauri()) return <p>Open DeliDev on your desktop to manage native notifications.</p>;
+  const desktop = isTauri();
   const value = readiness.data;
+  const failed = readiness.isError || request.isError;
+  const granted = desktop && !failed && value?.permission === Permission.Granted;
   const unavailable = value?.problem === Reason.BundleRequired ? "Native notifications require the installed DeliDev app bundle." : value?.problem === Reason.ActionsUnavailable ? "This desktop notification service cannot open notification actions." : value?.problem === Reason.Capacity ? "The native notification limit is reached for this app process. Requests remain in the inbox; restart DeliDev to clear its native presentation state." : "Native notification service is unavailable.";
-  return <section className="native-notification-settings"><h2>On this computer</h2><div className="notification-status-row">
-    <p role="status">{readiness.isError || request.isError ? "Native notification permission could not be confirmed." : !value ? "Checking native notification availability…" : value.permission === Permission.NotDetermined ? "Notification permission has not been requested." : value.permission === Permission.Denied ? "Notifications are disabled. Enable DeliDev in your operating system's notification settings." : value.permission === Permission.Granted ? "Notifications allowed" : value.permission === Permission.ServiceAvailable ? "The desktop notification service supports actions. This service does not report user permission or whether a banner was shown." : unavailable}</p>
-    <div className="actions">{value?.permission === Permission.NotDetermined ? <button type="button" disabled={request.isPending} onClick={() => request.mutate()}>Allow desktop notifications</button> : null}<button type="button" disabled={readiness.isFetching || request.isPending} onClick={() => { request.reset(); void readiness.refetch(); }} aria-label="Refresh status for native notifications">Refresh status</button></div>
-    </div>
-    {value?.permission === Permission.Granted ? <p>Focus or Do Not Disturb may still suppress banners.</p> : null}
+  return <section className="notification-os"><div className="notification-section-heading"><h2>On this computer</h2>{desktop ? <button type="button" disabled={readiness.isFetching || request.isPending} onClick={() => { request.reset(); void readiness.refetch(); }} aria-label="Refresh status for native notifications">Refresh status</button> : null}</div>
+    <p role="status" className={granted ? "notification-permission-granted" : undefined}>{granted ? <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg> : null}{!desktop ? "Open DeliDev on your desktop to manage native notifications." : failed ? "Native notification permission could not be confirmed." : !value ? "Checking native notification availability…" : value.permission === Permission.NotDetermined ? "Notification permission has not been requested." : value.permission === Permission.Denied ? "Notifications are disabled. Enable DeliDev in your operating system's notification settings." : granted ? "Notifications allowed" : value.permission === Permission.ServiceAvailable ? "The desktop notification service supports actions. This service does not report user permission or whether a banner was shown." : unavailable}</p>
+    {granted ? <p>Focus or Do Not Disturb may still suppress banners.</p> : null}
+    {desktop && !failed && value?.permission === Permission.NotDetermined ? <button type="button" disabled={request.isPending || readiness.isFetching} onClick={() => request.mutate()}>Allow desktop notifications</button> : null}
+    <p className="notification-support">Permission is shared by DeliDev windows on this computer.</p>
   </section>;
 }

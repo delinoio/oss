@@ -7,6 +7,7 @@ export * as WorkerQuery from "./gen/delidev/v1/delidev-WorkerService_connectquer
 export * as BrowserQuery from "./gen/delidev/v1/delidev-BrowserService_connectquery.js";
 export * as AccountQuery from "./gen/delidev/v1/delidev-AccountService_connectquery.js";
 export * as ProviderQuery from "./gen/delidev/v1/delidev-ProviderService_connectquery.js";
+export * as NativeModelQuery from "./gen/delidev/v1/native_models-NativeModelService_connectquery.js";
 export * as SessionQuery from "./gen/delidev/v1/delidev-SessionService_connectquery.js";
 export * as InteractionQuery from "./gen/delidev/v1/delidev-InteractionService_connectquery.js";
 export * as InboxQuery from "./gen/delidev/v1/delidev-InboxService_connectquery.js";

@@ -38,6 +38,9 @@ func Resource(record store.Record) *pb.Resource {
 	if record.Kind == domain.TerminalKind {
 		document = terminalResourceDocument(document)
 	}
+	if record.Kind == domain.JobKind {
+		document = nativeModelJobDocument(document)
+	}
 	return &pb.Resource{Id: string(record.ID), Kind: WireKind(record.Kind), Revision: record.Revision, SessionId: string(record.SessionID), ProjectId: string(record.ProjectID), SchemaVersion: 1, DocumentJson: document, CreatedAt: record.CreatedAt.Format(time.RFC3339Nano), UpdatedAt: record.UpdatedAt.Format(time.RFC3339Nano)}
 }
 func Error(err error, correlation string) error {
