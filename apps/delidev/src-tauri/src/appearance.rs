@@ -188,17 +188,20 @@ fn persist(path: &Path, theme: Theme) -> Result<(), AppearanceProblem> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let result = (|| {
-        let mut file = options
-            .open(&temporary)
-            .map_err(|_| AppearanceProblem::WriteFailed)?;
+    // Cleanup owns only the file that this attempt created exclusively. A
+    // creation failure cannot authorize deleting a pre-existing scratch file.
+    let mut file = options
+        .open(&temporary)
+        .map_err(|_| AppearanceProblem::WriteFailed)?;
+    let scratch = &temporary;
+    let result = (move || {
         let bytes = serde_json::to_vec(&Document { version: 1, theme })
             .map_err(|_| AppearanceProblem::WriteFailed)?;
         file.write_all(&bytes)
             .and_then(|_| file.sync_all())
             .map_err(|_| AppearanceProblem::WriteFailed)?;
         drop(file);
-        replace(&temporary, path).map_err(|_| AppearanceProblem::WriteFailed)?;
+        replace(scratch, path).map_err(|_| AppearanceProblem::WriteFailed)?;
         // Publication happened already. A failed directory sync is uncertain,
         // so retain the prior selection and require a fresh read before retry.
         #[cfg(unix)]

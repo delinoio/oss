@@ -121,7 +121,7 @@ export function AppearanceProvider({ children, bridge = nativeBridge }: { childr
   };
   return <AppearanceContext.Provider value={{ snapshot, operation, select: (theme) => { void run(theme); }, reload: () => { void run(); } }}>
     {children}
-    {snapshot.problem && snapshot.problem !== AppearanceProblem.Unavailable ? <p className="appearance-notice" role="alert">Appearance: {problemMessages[snapshot.problem]}</p> : null}
+    {!operation && snapshot.problem ? <p className="appearance-notice" role="alert">Appearance: {problemMessages[snapshot.problem]}</p> : null}
   </AppearanceContext.Provider>;
 }
 

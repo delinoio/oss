@@ -127,3 +127,16 @@ test("a failed older read cannot hide a newer committed event", async () => {
 test("validates the complete native snapshot before adoption", () => {
   for (const value of [null, {}, { revision: -1, theme: Theme.Dark, problem: null }, { revision: 1.5, theme: Theme.Dark, problem: null }, { revision: 1, theme: "other", problem: null }, { revision: 1, theme: Theme.Dark, problem: "private" }, { revision: 1, theme: Theme.Dark, problem: null, extra: true }]) expect(() => parseAppearance(value)).toThrow();
 });
+
+test("reload restores a failed event subscription before enabling writes", async () => {
+  scheme(false); const value = fixture();
+  vi.mocked(value.bridge.subscribe).mockRejectedValueOnce(new Error("event subscription unavailable"));
+  render(<AppearanceProvider bridge={value.bridge}><AppearanceSettings /></AppearanceProvider>);
+  await screen.findByRole("button", { name: "Reload appearance" });
+  expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).matches(":disabled")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Reload appearance" }));
+  await waitFor(() => expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).matches(":disabled")).toBe(false));
+  expect(value.listeners.size).toBe(1);
+  act(() => value.publish({ revision: 2, theme: Theme.Dark, problem: null }));
+  expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).checked).toBe(true);
+});
