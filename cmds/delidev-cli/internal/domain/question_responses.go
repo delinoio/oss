@@ -12,6 +12,7 @@ const MaxQuestionResponseBytes = 256 << 10
 // native questions need a protected native retention/delivery capability and
 // must never fall back to this ordinary persisted response shape.
 type QuestionResponseInput struct {
+	Grok     *GrokQuestionResponse     `json:"grok,omitempty"`
 	Claude   *ClaudePermissionResponse `json:"claude,omitempty"`
 	OpenCode *OpenCodeQuestionResponse `json:"opencode,omitempty"`
 	Answers  map[string][]string       `json:"answers"`
@@ -19,6 +20,7 @@ type QuestionResponseInput struct {
 
 func (r *QuestionResponseInput) UnmarshalJSON(raw []byte) error {
 	var wire struct {
+		Grok     *GrokQuestionResponse     `json:"grok,omitempty"`
 		Claude   *ClaudePermissionResponse `json:"claude,omitempty"`
 		OpenCode *OpenCodeQuestionResponse `json:"opencode,omitempty"`
 		Answers  map[string][]*string      `json:"answers"`
@@ -26,6 +28,13 @@ func (r *QuestionResponseInput) UnmarshalJSON(raw []byte) error {
 	var fields map[string]json.RawMessage
 	if Decode(raw, &wire) != nil || Decode(raw, &fields) != nil {
 		return invalidQuestionResponse()
+	}
+	if _, exists := fields["grok"]; exists {
+		if len(fields) != 1 || wire.Grok == nil {
+			return invalidQuestionResponse()
+		}
+		*r = QuestionResponseInput{Grok: wire.Grok}
+		return nil
 	}
 	if _, exists := fields["claude"]; exists {
 		if len(fields) != 1 || wire.Claude == nil {
@@ -66,7 +75,7 @@ func invalidQuestionResponse() error {
 }
 
 func (r QuestionResponseInput) Validate(original *QuestionRequest) error {
-	if r.Claude != nil || r.OpenCode != nil || original == nil || original.Validate() != nil || len(r.Answers) != len(original.Questions) {
+	if r.Grok != nil || r.Claude != nil || r.OpenCode != nil || original == nil || original.Validate() != nil || len(r.Answers) != len(original.Questions) {
 		return invalidQuestionResponse()
 	}
 	for _, question := range original.Questions {
@@ -210,6 +219,11 @@ func (u ExecutionQuestionAcceptanceUpdate) Validate() error {
 
 func (r QuestionResponseInput) MarshalJSON() ([]byte, error) {
 	type plain QuestionResponseInput
+	if r.Grok != nil && r.Claude == nil && r.OpenCode == nil && r.Answers == nil {
+		return json.Marshal(struct {
+			Grok *GrokQuestionResponse `json:"grok"`
+		}{r.Grok})
+	}
 	if r.Claude != nil && r.OpenCode == nil && r.Answers == nil {
 		return json.Marshal(struct {
 			Claude *ClaudePermissionResponse `json:"claude"`
@@ -222,3 +236,5 @@ func (r QuestionResponseInput) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(plain(r))
 }
+
+const NativeGrokToolResult QuestionAcceptanceEvidence = "native-grok-tool-result"

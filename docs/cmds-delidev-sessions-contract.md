@@ -587,6 +587,24 @@ Uncertain question/approval response delivery now automatically inspects the ori
 
 Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
 
+### Grok public original tool interactions (issue #1091)
+
+The [original-tool harness profile](cmds-delidev-harness-contract.md#grok-public-original-tools-questions-and-plan-issue-1091)
+extends first dispatch to the verified Execute/Plan General Chat inputs. Initial
+Plan requires its original native mode claim before input; native tools then
+publish immutable ordered observations and original Write/question/Plan requests
+through the existing authenticated response APIs. Each response binds the exact
+request, revision, current execution and authorization. Native Plan follows its
+original transitions without the common synthetic approval gate. Receipt retries
+repeat only the accepted public receipt; they cannot repeat native responses.
+
+Read's pinned automatic permission cycle exposes no user deny operation. Write
+once/session/rejection, questions and revised Plan proposals retain the independently
+validated native semantics. Delivery, result acceptance, terminal outcome and
+process/workspace cleanup remain separate. Uncertain replies or unsupported richer
+Stop evidence retain paused recovery. Existing first-text history/Stop continue to
+use their separate original profiles; repositories and continuation stay gated.
+Tool completion remains version 1, with no automatic next input.
 
 ## Same-account Codex fork boundary (#1092)
 

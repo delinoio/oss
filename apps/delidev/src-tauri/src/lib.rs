@@ -40,6 +40,7 @@ pub use supervision::{LocalServerState, LocalServerStatus, Supervision};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum NativeFailure {
+    ServiceManaged,
     Busy,
     SidecarMissing,
     SidecarFailed,
@@ -55,7 +56,7 @@ pub enum NativeFailure {
 
 type Result<T> = std::result::Result<T, NativeFailure>;
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Connection {
     pub endpoint: String,
     pub server_id: String,
@@ -162,11 +163,6 @@ impl Connector {
         if !executable.is_absolute() || !root.is_absolute() {
             return Err(NativeFailure::InvalidEvidence);
         }
-        let metadata =
-            fs::symlink_metadata(&executable).map_err(|_| NativeFailure::SidecarMissing)?;
-        if !metadata.is_file() || metadata.file_type().is_symlink() {
-            return Err(NativeFailure::SidecarMissing);
-        }
         Ok(Self {
             executable,
             root,
@@ -178,9 +174,11 @@ impl Connector {
     }
 
     pub fn connect(&self) -> Result<Connection> {
-        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         tracing::info!(operation = "local_connect", phase = "start");
-        let result = self.connect_inner();
+        // Advanced Start intentionally reopens ordinary stopped intent, but
+        // shares Go's pinned desktop admission instead of ordinary CLI Start.
+        let result = self.connect_inner("desktop-launch");
         match &result {
             Ok(_) => tracing::info!(operation = "local_connect", phase = "ready"),
             Err(code) => tracing::warn!(operation = "local_connect", phase = "failed", ?code),
@@ -244,29 +242,83 @@ impl Connector {
         })
     }
 
-    fn connect_inner(&self) -> Result<Connection> {
-        // The Go executable owns compatibility, startup locking and detachment.
-        // Dropping this client never invokes stop or assumes server ownership.
-        let started = self.run(&[
+    fn retry_launch(&self) -> Result<Connection> {
+        let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
+        tracing::info!(operation = "desktop_launch", phase = "explicit-retry");
+        self.connect_inner("desktop-retry")
+    }
+
+    fn launch(&self) -> Result<Connection> {
+        let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
+        tracing::info!(operation = "desktop_launch", phase = "starting");
+        let result = self.connect_inner("desktop-launch");
+        match &result {
+            Ok(_) => tracing::info!(operation = "desktop_launch", phase = "ready"),
+            Err(code) => tracing::warn!(operation = "desktop_launch", phase = "failed", ?code),
+        }
+        result
+    }
+
+    // Cached launch credentials are never current-readiness authority. This
+    // read cannot start/pair and rechecks durable Stop plus the original identity.
+    fn observe_launch(&self, original: &Connection) -> Result<Connection> {
+        let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
+        let status = self.run(&self.server_arguments("desktop-status"))?;
+        if self.server_state(&status)? != LocalServerState::Ready {
+            return Err(NativeFailure::Stopped);
+        }
+        let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
+            "device".into(),
+            "inspect".into(),
+            "--join-existing".into(),
+            "--device-dir".into(),
+            self.root.join("desktop-client").into_os_string(),
+        ])?)
+        .map_err(|_| NativeFailure::InvalidEvidence)?;
+        let current = self.read_local_connection(metadata)?;
+        if current.endpoint != original.endpoint
+            || current.server_id != original.server_id
+            || current.device_id != original.device_id
+            || current.token != original.token
+        {
+            return Err(NativeFailure::CredentialUnavailable);
+        }
+        Ok(current)
+    }
+
+    fn server_arguments(&self, action: &str) -> Vec<OsString> {
+        vec![
             "server".into(),
-            "start".into(),
+            action.into(),
             "--listen".into(),
             self.listen.clone().into(),
             "--allowed-origins".into(),
             ORIGINS.into(),
-        ])?;
-        if started.get("state").and_then(|value| value.as_str()) == Some("stopped") {
+        ]
+    }
+
+    fn connect_inner(&self, action: &str) -> Result<Connection> {
+        // The Go executable owns compatibility, startup locking and detachment.
+        // Dropping this client never invokes stop or assumes server ownership.
+        let started = self.run(&self.server_arguments(action))?;
+        if self.server_state(&started)? != LocalServerState::Ready {
             return Err(NativeFailure::Stopped);
         }
+        tracing::info!(operation = "local_connect", phase = "runtime-ready");
         let client_root = self.root.join("desktop-client");
         let metadata = self.run(&[
             "device".into(),
             "pair-local".into(),
+            "--join-existing".into(),
             "--device-dir".into(),
             client_root.clone().into_os_string(),
         ])?;
         let metadata: DeviceMetadata =
             serde_json::from_value(metadata).map_err(|_| NativeFailure::InvalidEvidence)?;
+        tracing::info!(
+            operation = "local_connect",
+            phase = "client-pairing-verified"
+        );
         self.read_local_connection(metadata)
     }
 
@@ -277,6 +329,7 @@ impl Connector {
         let inspected = self.run(&[
             "device".into(),
             "inspect".into(),
+            "--join-existing".into(),
             "--device-dir".into(),
             client_root.clone().into_os_string(),
         ])?;
@@ -309,6 +362,11 @@ impl Connector {
     ) -> Result<serde_json::Value> {
         if self.exiting.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
+        }
+        let metadata =
+            fs::symlink_metadata(&self.executable).map_err(|_| NativeFailure::SidecarMissing)?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(NativeFailure::SidecarMissing);
         }
         let mut command = Command::new(&self.executable);
         command
@@ -429,15 +487,15 @@ impl Connector {
     }
 
     fn ensure(&self) -> Result<LocalServerState> {
-        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
-        let value = self.run(&[
-            "server".into(),
-            "ensure".into(),
-            "--listen".into(),
-            self.listen.clone().into(),
-            "--allowed-origins".into(),
-            ORIGINS.into(),
-        ])?;
+        let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
+        let value = self.run(&self.server_arguments("ensure"))?;
+        self.server_state(&value)
+    }
+
+    fn server_state(&self, value: &serde_json::Value) -> Result<LocalServerState> {
+        if value.get("state").and_then(|value| value.as_str()) == Some("service-managed") {
+            return Err(NativeFailure::ServiceManaged);
+        }
         if value.get("state").and_then(|value| value.as_str()) == Some("stopped") {
             return Ok(LocalServerState::Stopped);
         }

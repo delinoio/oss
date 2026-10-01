@@ -11,10 +11,10 @@ import (
 )
 
 func TestGrokFirstDispatchRetainsUnsupportedSelectionsWithoutClaiming(t *testing.T) {
-	for _, scenario := range []string{"plan", "missing-context", "unknown-context", "small-context", "large-context", "option", "repository"} {
+	for _, scenario := range []string{"plan-options", "missing-context", "unknown-context", "small-context", "large-context", "option", "repository"} {
 		t.Run(scenario, func(t *testing.T) {
 			mode := domain.ExecuteMode
-			if scenario == "plan" {
+			if scenario == "plan-options" {
 				mode = domain.PlanMode
 			}
 			var f *firstDispatchFixture
@@ -22,6 +22,9 @@ func TestGrokFirstDispatchRetainsUnsupportedSelectionsWithoutClaiming(t *testing
 				f = newFirstDispatchFixtureWorkspaceProfile(t, domain.GrokBuild, mode, "/fixture/grok", "", "fixture-model", domain.Worktree)
 			} else {
 				f = newFirstDispatchFixtureForHarness(t, domain.GrokBuild, mode)
+			}
+			if scenario == "plan-options" {
+				f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 2 })
 			}
 			if scenario == "option" {
 				f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 2 })

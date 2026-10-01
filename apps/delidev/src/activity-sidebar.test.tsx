@@ -90,7 +90,10 @@ it("keeps filter drafts independent and sends exact applied/reset IDs and only r
   }
   expect(value.detail).not.toHaveBeenCalled();
   expect(value.stop).not.toHaveBeenCalled();
-  expect(screen.getByText("Fixture server footer")).toBeTruthy();
+  // Issue #1137 moves lifecycle controls to the persistent advanced panel;
+  // Activity preserves the ordinary footer's generic connection presentation.
+  expect(screen.queryByText("Fixture server footer")).toBeNull();
+  expect(screen.getByText("This computer · Connected")).toBeTruthy();
 }, 15000);
 
 it("retains long labels, exact off-page identities, independent choice pages, drafts and scroll across navigation and reconnect", async () => {

@@ -8,6 +8,8 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "open_github",
             "connect_local",
+            "launch_local",
+            "retry_local",
             "inspect_local_registration",
             "recover_local_registration",
             "local_server_status",

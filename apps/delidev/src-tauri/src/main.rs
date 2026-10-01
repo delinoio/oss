@@ -67,6 +67,31 @@ async fn open_github(
     result
 }
 
+// Observation joins the native-owned attempt; it never bootstraps or pairs.
+#[tauri::command]
+async fn launch_local(
+    window: WebviewWindow<Cef>,
+    supervision: tauri::State<'_, Arc<Supervision>>,
+) -> Result<Option<Connection>, NativeFailure> {
+    trusted_main(&window)?;
+    let supervision = Arc::clone(supervision.inner());
+    tauri::async_runtime::spawn_blocking(move || supervision.launch_connection())
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?
+}
+
+#[tauri::command]
+async fn retry_local(
+    window: WebviewWindow<Cef>,
+    supervision: tauri::State<'_, Arc<Supervision>>,
+) -> Result<Connection, NativeFailure> {
+    trusted_main(&window)?;
+    let supervision = Arc::clone(supervision.inner());
+    tauri::async_runtime::spawn_blocking(move || supervision.retry_launch())
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?
+}
+
 #[tauri::command]
 async fn connect_local(
     window: WebviewWindow<Cef>,
@@ -87,6 +112,7 @@ async fn connect_local(
     if connection.endpoint != "http://127.0.0.1:46310" {
         return Err(NativeFailure::Incompatible);
     }
+    supervision.adopt(&connection);
     Ok(connection)
 }
 
@@ -105,6 +131,7 @@ async fn inspect_local_registration(
 #[tauri::command]
 async fn recover_local_registration(
     window: WebviewWindow<Cef>,
+    supervision: tauri::State<'_, Arc<Supervision>>,
     connector: tauri::State<'_, Arc<Connector>>,
     device_id: String,
     revision: String,
@@ -120,6 +147,7 @@ async fn recover_local_registration(
     if connection.endpoint != "http://127.0.0.1:46310" {
         return Err(NativeFailure::Incompatible);
     }
+    supervision.adopt(&connection);
     Ok(connection)
 }
 
@@ -1036,6 +1064,8 @@ fn run() -> Result<(), NativeFailure> {
             browser_state,
             open_github,
             connect_local,
+            launch_local,
+            retry_local,
             inspect_local_registration,
             recover_local_registration,
             local_server_status,
@@ -1119,6 +1149,7 @@ fn run() -> Result<(), NativeFailure> {
         })
         .build(tauri::generate_context!())
         .map_err(|_| NativeFailure::SidecarFailed)?;
+    let exiting_supervision = Arc::clone(&supervision);
     let exiting = Arc::clone(&tray);
     let exiting_notifications = Arc::clone(&notifications);
     browser.start(app.handle().clone());
@@ -1149,6 +1180,7 @@ fn run() -> Result<(), NativeFailure> {
             exiting_browser.stop();
             exiting_browser.close_all();
             tracing::info!(operation = "desktop_exit", state = "runtime-exit-event");
+            exiting_supervision.stop();
             exiting_notifications.stop();
             tracing::info!(operation = "desktop_exit", state = "notifications-joined");
             exiting.stop();
@@ -1156,6 +1188,7 @@ fn run() -> Result<(), NativeFailure> {
         }
     });
     tracing::info!(operation = "desktop_exit", state = "runtime-returned");
+    supervision.stop();
     notifications.stop();
     tray.stop();
     browser.finish_removals()?;

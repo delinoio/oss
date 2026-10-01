@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"regexp"
 	"strconv"
 )
 
@@ -14,6 +15,7 @@ const (
 	NativeApprovalInteraction InteractionType          = "native-approval"
 	InteractionTextID         InteractionRequestIDKind = "text"
 	InteractionNumberID       InteractionRequestIDKind = "number"
+	InteractionDecimalID      InteractionRequestIDKind = "decimal"
 	InteractionOpen           InteractionClosure       = "open"
 	InteractionNativeClosed   InteractionClosure       = "native-closed"
 	InteractionTurnEnded      InteractionClosure       = "turn-ended"
@@ -24,20 +26,29 @@ const (
 )
 
 type InteractionRequestID struct {
-	Kind   InteractionRequestIDKind `json:"kind"`
-	Text   string                   `json:"text,omitempty"`
-	Number *int64                   `json:"number,omitempty"`
+	Kind    InteractionRequestIDKind `json:"kind"`
+	Text    string                   `json:"text,omitempty"`
+	Number  *int64                   `json:"number,omitempty"`
+	Decimal string                   `json:"decimal,omitempty"`
 }
+
+// Grok accepts these original integer spellings independently of int64. Keep
+// the lexical identity, including -0, through JSON and native request digests.
+var interactionDecimal = regexp.MustCompile(`^-?(0|[1-9][0-9]{0,18})$`)
 
 func (id InteractionRequestID) Key() (string, error) {
 	switch id.Kind {
 	case InteractionTextID:
-		if id.Number == nil && Text(id.Text, "native request identity", 128, true) == nil {
+		if id.Number == nil && id.Decimal == "" && Text(id.Text, "native request identity", 128, true) == nil {
 			return "s:" + id.Text, nil
 		}
 	case InteractionNumberID:
-		if id.Text == "" && id.Number != nil {
+		if id.Text == "" && id.Number != nil && id.Decimal == "" {
 			return "n:" + strconv.FormatInt(*id.Number, 10), nil
+		}
+	case InteractionDecimalID:
+		if id.Text == "" && id.Number == nil && interactionDecimal.MatchString(id.Decimal) {
+			return "n:" + id.Decimal, nil
 		}
 	}
 	return "", invalidInteraction()
@@ -134,6 +145,7 @@ func (r QuestionRequest) Validate() error {
 // closure only. Response claims/delivery require a separate coordinator path;
 // a Worker cannot fabricate owner authorization by adding answer fields here.
 type ExecutionInteractionUpdate struct {
+	Grok               *GrokInteractionRequest        `json:"grok,omitempty"`
 	Claude             *ClaudeInteractionRequest      `json:"claude,omitempty"`
 	ClaudeCancellation *ClaudeInteractionCancellation `json:"claude_cancellation,omitempty"`
 	OpenCodeStop       *OpenCodeStopClosure           `json:"opencode_stop,omitempty"`
@@ -159,12 +171,19 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 	if _, err := u.NativeRequestID.Key(); err != nil {
 		return err
 	}
+	if u.NativeRequestID.Kind == InteractionDecimalID && u.Grok == nil {
+		return invalidInteraction()
+	}
 	switch kind {
 	case ExecutionInteractionRequested:
 		if u.Closure != "" || u.OpenCodeClosure != nil || u.OpenCodeStop != nil || u.ClaudeCancellation != nil {
 			return invalidInteraction()
 		}
-		if u.Claude != nil {
+		if u.Grok != nil {
+			if u.Claude != nil || u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Grok.Validate(u.Type, u.NativeRequestID, u.NativeItemID) != nil {
+				return invalidInteraction()
+			}
+		} else if u.Claude != nil {
 			if u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Claude.Validate(u.Type, u.NativeRequestID, u.NativeItemID) != nil {
 				return invalidInteraction()
 			}
@@ -197,7 +216,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 		if u.OpenCodeClosure != nil && (u.Type != NativeApprovalInteraction || u.NativeRequestID.Kind != InteractionTextID || NativeIdentity(u.NativeRequestID.Text).Validate(OpenCode, NativePermissionIdentity) != nil || u.OpenCodeClosure.Validate() != nil) {
 			return invalidInteraction()
 		}
-		if u.Claude != nil || u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Closure != closure {
+		if u.Grok != nil || u.Claude != nil || u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Closure != closure {
 			return invalidInteraction()
 		}
 	default:
@@ -211,6 +230,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 type ExecutionInteraction struct {
+	Grok               *GrokInteractionRequest        `json:"grok,omitempty"`
 	ClaudeSettlement   *ClaudeCallbackSettlement      `json:"claude_settlement,omitempty"`
 	Claude             *ClaudeInteractionRequest      `json:"claude,omitempty"`
 	ClaudeCancellation *ClaudeInteractionCancellation `json:"claude_cancellation,omitempty"`

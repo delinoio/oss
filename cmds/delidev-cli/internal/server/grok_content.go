@@ -12,6 +12,9 @@ func publishGrokContent(tx *store.Tx, input domain.ExecutionJobInput, sr store.R
 	}
 	if event.Kind == domain.ExecutionGrokTextObserved {
 		v := *event.GrokText
+		if err := advanceGrokNativeEvent(progress, v.Metadata.EventID, event.NativeThreadID); err != nil {
+			return err
+		}
 		if progress.GrokUserMessageID != "" && v.ID <= progress.GrokUserMessageID {
 			return executionEventConflict()
 		}
@@ -75,6 +78,15 @@ func publishGrokContent(tx *store.Tx, input domain.ExecutionJobInput, sr store.R
 	if _, err := tx.Put(domain.UsageKind, event.ObservationID, 0, sr.ID, sr.ProjectID, record); err != nil {
 		return err
 	}
+	totals := domain.GrokResponseCounts{}
+	if progress.GrokResponseTotals != nil {
+		totals = *progress.GrokResponseTotals
+	}
+	totals, err = totals.Add(v.Counts)
+	if err != nil {
+		return err
+	}
+	progress.GrokResponseTotals = &totals
 	progress.GrokContent, progress.LatestUsageID = &next, event.ObservationID
 	return nil
 }
