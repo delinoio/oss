@@ -592,3 +592,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Cache browser geometry only after native resize succeeds for the current presentation. Clear failed geometry so identical subsequent layout callbacks can retry rather than leaving an external child at obsolete bounds.
 
 - Retain the exact browser view identity after failed Hide and retry only its closure, including after panel unmount or a late open completion. Serialize hides and block resize/reopening until closure succeeds; an old cleanup cannot clear a replacement's identity.
+
+- Native model settings follow `docs/cmds-delidev-native-models-contract.md`: capability-gate explicit scope selection, retain exact uncertain discovery/cancel requests, poll only accepted status and preserve immutable page selection. Register prepares the existing model editor with manual provenance and the executable ID; only explicit Save mutates canonical models.

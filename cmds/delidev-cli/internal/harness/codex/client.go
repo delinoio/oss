@@ -20,26 +20,28 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
-	Process process.Config
-	Version string
-	Home    string
-	Mode    ProtocolMode
-	API     *APIConfig
+	ModelObservation bool
+	Process          process.Config
+	Version          string
+	Home             string
+	Mode             ProtocolMode
+	API              *APIConfig
 }
 type Client struct {
-	home         string
-	wire         *nativewire.Connection
-	version      string
-	ownerID      domain.ID
-	logger       *slog.Logger
-	control      chan struct{}
-	thread       domain.ID
-	problem      *domain.Error
-	mode         ProtocolMode
-	execution    *executionState
-	eventGate    chan struct{}
-	pendingEvent *nativewire.Event
-	api          *apiBinding
+	modelObservation string
+	home             string
+	wire             *nativewire.Connection
+	version          string
+	ownerID          domain.ID
+	logger           *slog.Logger
+	control          chan struct{}
+	thread           domain.ID
+	problem          *domain.Error
+	mode             ProtocolMode
+	execution        *executionState
+	eventGate        chan struct{}
+	pendingEvent     *nativewire.Event
+	api              *apiBinding
 }
 
 type ProtocolMode string
@@ -113,6 +115,10 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err != nil {
 		return nil, err
 	}
+	observation, err := configureModelObservation(&config)
+	if err != nil {
+		return nil, err
+	}
 	config.Process.Args = append(config.Process.Args, "app-server")
 	phase = launchPhase
 	wire, err := nativewire.Start(ctx, config.Process)
@@ -181,7 +187,11 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
 	client = &Client{home: home, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api}
+	client.modelObservation = observation
 	if err := client.verifyAPI(ctx, config.Process.Cwd); err != nil {
+		return nil, err
+	}
+	if err := client.verifyModelObservation(ctx); err != nil {
 		return nil, err
 	}
 	return client, nil

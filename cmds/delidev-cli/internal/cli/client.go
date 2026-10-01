@@ -17,6 +17,7 @@ import (
 )
 
 type client struct {
+	nativeModels  delidevv1connect.NativeModelServiceClient
 	transport     *http.Transport
 	system        delidevv1connect.SystemServiceClient
 	resources     delidevv1connect.ResourceServiceClient
@@ -101,7 +102,8 @@ func connectClient(o options, input io.Reader) (client, error) {
 	httpClient, transport := rpc.HTTPClient()
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
 	return client{
-		transport: transport, endpoint: endpoint, token: token,
+		nativeModels: delidevv1connect.NewNativeModelServiceClient(httpClient, endpoint, opts...),
+		transport:    transport, endpoint: endpoint, token: token,
 		browsers:      delidevv1connect.NewBrowserServiceClient(httpClient, endpoint, opts...),
 		inbox:         delidevv1connect.NewInboxServiceClient(httpClient, endpoint, opts...),
 		schedules:     delidevv1connect.NewScheduleServiceClient(httpClient, endpoint, opts...),

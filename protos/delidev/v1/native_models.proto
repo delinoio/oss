@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Observations are separate from canonical model registration and entitlement.
+service NativeModelService {
+  rpc DiscoverNativeModels(DiscoverNativeModelsRequest) returns (DiscoverNativeModelsResponse);
+  rpc GetNativeModelObservation(GetNativeModelObservationRequest) returns (GetNativeModelObservationResponse);
+  rpc ListNativeModels(ListNativeModelsRequest) returns (ListNativeModelsResponse);
+  rpc CancelNativeModelDiscovery(CancelNativeModelDiscoveryRequest) returns (CancelNativeModelDiscoveryResponse);
+}
+
+message DiscoverNativeModelsRequest {
+  // Selected machine and exact current revision; request identity is durable.
+  Mutation mutation = 1;
+  string account_id = 2;
+  uint64 account_revision = 3;
+  bool include_hidden = 4;
+}
+
+message GetNativeModelObservationRequest {
+  string job_id = 1;
+}
+
+message CancelNativeModelDiscoveryRequest {
+  Mutation mutation = 1;
+}
+
+message NativeModelChange {
+  Resource job = 1;
+  Resource last_success = 2;
+  bool replayed = 3;
+}
+
+message DiscoverNativeModelsResponse {
+  Resource job = 1;
+  Resource last_success = 2;
+  bool replayed = 3;
+}
+
+message GetNativeModelObservationResponse {
+  Resource job = 1;
+  Resource last_success = 2;
+  bool replayed = 3;
+}
+
+message CancelNativeModelDiscoveryResponse {
+  Resource job = 1;
+  Resource last_success = 2;
+  bool replayed = 3;
+}
+
+message ListNativeModelsRequest {
+  // Always names one immutable successful observation, never the latest scope.
+  string job_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListNativeModelsResponse {
+  Resource job = 1;
+  bytes models_json = 2;
+  string next_page_token = 3;
+}

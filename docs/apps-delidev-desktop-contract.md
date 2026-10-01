@@ -20,6 +20,20 @@ One server owner can connect multiple paired desktop clients. The initial prereq
 - Search, activity and inbox use bounded pages. Inbox reading and answering remain separate. Unknown/unsupported native capabilities are explicit and cannot enable an emulated action.
 - Native initialization, local server lifetime, protected pairing, tray, notification/widget, signed update and session-side-app requirements must each have implementation and actual platform evidence before desktop completion is claimed.
 
+### Native Codex model observations (issue #1206)
+
+Models settings exposes an explicit native observation disclosure using generated
+`NativeModelQuery` bindings and the server capability. Select the Runner Device,
+connected account and hidden-model policy with their original revisions. Retain
+uncertain discovery/cancellation requests exactly, lock scope changes while they
+are unresolved, and inspect accepted jobs through read-only queries. Pages select
+one immutable observation; failed jobs can expose the separately labeled last
+success without claiming freshness. Render picker and executable IDs separately
+and metadata as inert advisory text. Register prepares the existing editor with
+the selected provider and executable ID, manual provenance and user-editable
+metadata; it never saves automatically. Keep managed-subscription unsupported and
+follow the [native observation contract](cmds-delidev-native-models-contract.md).
+
 ### Execution-device terminology (issue #1136)
 
 The New session machine selector has exactly **Runs on** as its visible label and accessible name. Its `ResourceChoice` passes `resourceLabel="Runner Device"` for the **Select runner device** placeholder and loading, empty-page, cached-read and unavailable-selection status nouns. `resourceLabel` is optional and defaults to `label`; `emptyLabel` still takes precedence. The unavailable selected identity uses **Selected Runner Device** and retains its original ID without choosing another resource.
