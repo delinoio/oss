@@ -23,3 +23,4 @@ export * as IntegrationQuery from "./gen/delidev/v1/delidev-IntegrationService_c
 export * as TerminalQuery from "./gen/delidev/v1/delidev-TerminalService_connectquery.js";
 export * as NetworkQuery from "./gen/delidev/v1/network-NetworkService_connectquery.js";
 export * as ForwardQuery from "./gen/delidev/v1/delidev-ForwardService_connectquery.js";
+export * as PullRequestFixQuery from "./gen/delidev/v1/pr_fix-PullRequestFixService_connectquery.js";

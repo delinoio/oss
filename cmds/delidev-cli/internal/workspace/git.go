@@ -35,6 +35,7 @@ type Git struct {
 	Logger        *slog.Logger
 	HooksDir      string
 	Timeout       time.Duration
+	environment   []string
 	readOnly      bool
 	diffIndexFile string
 }
@@ -92,6 +93,9 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	var out limitedOutput
 	out.limit = MaxGitOutput
 	environment := gitEnvironment()
+	if g.environment != nil {
+		environment = slices.Clone(g.environment)
+	}
 	if g.readOnly {
 		// Git localizes binary/EOF patch markers. Read observations require a
 		// stable wire grammar independent of the execution machine's locale.

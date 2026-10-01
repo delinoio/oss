@@ -143,6 +143,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 		if command == "github" {
 			limit = 40 * time.Second
+			if len(rest) >= 3 && rest[0] == "pr" && rest[1] == "remediation" && rest[2] == "fix" {
+				limit = 80 * time.Second
+			}
 			c.transport.ResponseHeaderTimeout = limit
 		}
 		if command == "integration" {

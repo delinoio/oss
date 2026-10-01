@@ -90,6 +90,7 @@ type Service struct {
 	forwardLanes        map[domain.ID]*forwardLane
 	workspaceReadsMu    sync.Mutex
 	workspaceReaders    map[domain.ID]*workspaceReader
+	prFixRequests       prFixRequestTracker
 	executionOnce       sync.Once
 	executionAuthority  *executionAuthority
 }

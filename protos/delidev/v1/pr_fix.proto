@@ -1,0 +1,33 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Explicit manual work through the selected execution Worker; no API publishing.
+service PullRequestFixService {
+  rpc GetPullRequestFixCapabilities(GetPullRequestFixCapabilitiesRequest) returns (GetPullRequestFixCapabilitiesResponse);
+  rpc RequestPullRequestFix(RequestPullRequestFixRequest) returns (RequestPullRequestFixResponse);
+}
+message GetPullRequestFixCapabilitiesRequest {}
+message GetPullRequestFixCapabilitiesResponse {
+  repeated PullRequestFixProfile profiles = 1;
+}
+enum PullRequestFixProfile {
+  PULL_REQUEST_FIX_PROFILE_UNSPECIFIED = 0;
+  PULL_REQUEST_FIX_PROFILE_CODEX_GIT_V1 = 1;
+}
+message RequestPullRequestFixRequest {
+  string request_id = 1;
+  uint32 schema_version = 2;
+  // Exact retained set/problem revisions and explicit project/repository only.
+  bytes document_json = 3;
+}
+message RequestPullRequestFixResponse {
+  Resource attempt = 1;
+  Resource session = 2;
+  string request_id = 3;
+  bool replayed = 4;
+  Resource problem_set = 5;
+}
