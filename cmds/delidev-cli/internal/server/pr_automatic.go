@@ -230,7 +230,7 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 					return err
 				}
 				after = r.ID
-				if kinds[p.Kind] && policy.AutomaticKind(p.Kind) && p.Current && p.State == domain.PRProblemUnhandled {
+				if kinds[p.Kind] && policy.AutomaticKind(p.Kind) && (p.Kind != domain.PRFeedbackProblem || len(policy.ReviewerSelectors) != 0) && p.Current && p.State == domain.PRProblemUnhandled {
 					input.Problems = append(input.Problems, domain.PRFixProblem{ID: r.ID, Revision: r.Revision, ContentVersion: p.ContentVersion})
 					problems = append(problems, p)
 					if len(input.Problems) == 100 {

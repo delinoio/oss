@@ -242,6 +242,42 @@ func TestAutomaticPRRemediationOffEmptySelectorsAndIndependentUnknownCI(t *testi
 	}
 }
 
+func TestAutomaticPRConfiguredEmptySelectorsSkipRetainedFeedback(t *testing.T) {
+	f := newAutomaticPRFixture(t)
+	f.savePolicy(t, func(p *domain.RemediationPolicy) { p.ReviewFeedback = true })
+	if err := f.service.collectAutomaticPRKind(f.owner, f.link, domain.PRFeedbackProblem); err != nil {
+		t.Fatal(err)
+	}
+	f.savePolicy(t, func(p *domain.RemediationPolicy) { p.CIFailure = true; p.ReviewerSelectors = nil })
+	f.ciFailed.Store(true)
+	f.queryHook = func(_ context.Context, q domain.RepositoryQuery) error {
+		if q.Operation == domain.RepositoryReviewers || q.Operation == domain.RepositoryFeedback {
+			t.Error("empty selectors polled retained feedback")
+		}
+		return nil
+	}
+	if err := f.service.remediateAutomaticPR(f.owner, f.link); err != nil {
+		t.Fatal(err)
+	}
+	attempts, _ := f.attempts(t)
+	if len(attempts) != 1 {
+		t.Fatal("independent CI attempt missing")
+	}
+	a, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
+	if len(a.Problems) != 1 {
+		t.Fatal("empty selectors selected retained feedback")
+	}
+	if err := f.service.Store.Read(f.owner, func(tx *store.Tx) error {
+		_, p, err := tx.GetPRProblem(a.Problems[0].ID)
+		if p.Kind != domain.PRCIProblem {
+			t.Error("selected problem was not CI")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAutomaticPRRemediationAliasesCoalesceAndControlsWin(t *testing.T) {
 	f := newAutomaticPRFixture(t)
 	f.savePolicy(t, func(p *domain.RemediationPolicy) { p.MergeConflict = true })
