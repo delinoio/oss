@@ -72,10 +72,13 @@ func TestSubagentSourceFieldMatrixRejectsWholePublication(t *testing.T) {
 func TestSubagentTaskOmissionRetainsContentWithoutAttributingItToTask(t *testing.T) {
 	f, children, sequence := claudeSubagentPublicationFixture(t)
 	child := children[0]
+	event := f.event(domain.ExecutionSubagentObserved, sequence+1)
+	event.Subagents = []domain.SubagentObservation{child}
+	f.publish(t, event)
 	model := "observed_child_model"
 	child.Source, child.ObservedModel = domain.ClaudeContentSource, &model
 	child.Output = &domain.SubagentOutput{NativeMessageID: "original_child_message", Text: "Original child content", Partial: true}
-	event := f.event(domain.ExecutionSubagentObserved, sequence+1)
+	event.Sequence++
 	event.Subagents = []domain.SubagentObservation{child}
 	f.publish(t, event)
 	child.Source, child.SourceID, child.Output, child.ObservedModel = domain.ClaudeTaskSource, string(domain.NewID()), nil, nil
@@ -88,7 +91,7 @@ func TestSubagentTaskOmissionRetainsContentWithoutAttributingItToTask(t *testing
 		t.Fatal(err)
 	}
 	retained, err := store.Decode[domain.SubagentRecord](row)
-	if err != nil || retained.Observation.Source != domain.ClaudeTaskSource || retained.Observation.Output == nil || retained.Observation.ObservedModel == nil || *retained.Observation.ObservedModel != model || len(retained.Sources) != 2 || retained.Sources[0].Source != domain.ClaudeContentSource || retained.Sources[1].Source != domain.ClaudeTaskSource {
+	if err != nil || retained.Observation.Source != domain.ClaudeTaskSource || retained.Observation.Output == nil || retained.Observation.ObservedModel == nil || *retained.Observation.ObservedModel != model || len(retained.Sources) != 3 || retained.Sources[0].Source != domain.ClaudeTaskSource || retained.Sources[1].Source != domain.ClaudeContentSource || retained.Sources[2].Source != domain.ClaudeTaskSource {
 		t.Fatal("source validation erased or reattributed retained content", err)
 	}
 }

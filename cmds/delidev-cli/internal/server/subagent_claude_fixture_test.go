@@ -34,7 +34,7 @@ func claudeSubagentPublicationFixture(t *testing.T) (*publicationFixture, []doma
 		publish()
 		u.Mutation, u.Block, u.Tool = domain.ClaudeBlockStop, nil, nil
 		publish()
-		children = append(children, domain.SubagentObservation{ID: domain.NewID(), NativeID: "child_" + native, ParentID: string(f.thread), ParentToolID: native, Tool: &ref, Source: domain.ClaudeTaskSource, SourceID: string(domain.NewID()), Status: domain.SubagentRunning})
+		children = append(children, domain.SubagentObservation{ID: domain.NewID(), NativeID: "child_" + native, ParentID: string(f.thread), ParentToolID: native, Tool: &ref, Source: domain.ClaudeTaskSource, SourceID: string(domain.NewID()), Status: domain.SubagentRunning, Task: &domain.SubagentTask{}})
 	}
 	u.Mutation, u.Index = domain.ClaudeMessageStop, nil
 	publish()

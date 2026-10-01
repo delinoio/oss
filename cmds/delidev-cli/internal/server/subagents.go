@@ -32,6 +32,11 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 			return executionEventConflict()
 		}
 		if !codex {
+			if _, exists := p.Subagents[child.NativeID]; !exists && (child.Source != domain.ClaudeTaskSource || child.Task == nil) {
+				// Content/history can refine only an original local_agent task.
+				// Parent-tool ownership alone does not establish a native child.
+				return executionEventConflict()
+			}
 			if child.ParentID == p.NativeThreadID {
 				if child.Tool == nil || validateClaudeProgressTool(tx, input, session, event, *child.Tool, false) != nil {
 					return executionEventConflict()
