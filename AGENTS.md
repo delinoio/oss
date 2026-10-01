@@ -124,6 +124,10 @@ enum ProjectId {
 
 - React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, `crates/forge-sfx`, `crates/forge-sprite`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 
+### DeliDev subscription identity prerequisite
+
+- Issue #1235 requires a main-first reservation prerequisite for independent `SUBSCRIPTION_SERVICE_ACCOUNTS_V1` capability 17 and migration 28. Preserve the real 26/27 order before activating retirement; reservations do not advertise support. Follow the DeliDev structure, protocol and storage contracts, retaining historical attribution, configured-empty deny-all restrictions and native ownership/cleanup gates when composing the later identity split.
+
 ### DeliDev desktop launch amendment
 
 - Issue #1137 treats each fresh trusted main desktop process as intentional Go-admitted local Start, with one native-owned launch outcome and authenticated renderer verification. Preserve same-process Stop, native-service scope arbitration through shared control admission and spawn, independent saved authority and detached lifetimes. Keep routine startup/sidebar/tray in product terms and retain connection/recovery controls outside disposable Settings openings under Connection & diagnostics. Follow the desktop, CLI and user-service contracts; ordinary CLI product commands never implicitly start a server.

@@ -100,6 +100,7 @@ it("exposes typed user-service capability and metadata without native side effec
     SystemCapability.SESSION_FORWARDING_V1,
     SystemCapability.USER_SERVICES_V1,
     SystemCapability.WORKSPACE_STORAGE_V1,
+    SystemCapability.SESSION_TERMINALS_V1,
   ]));
   const result = await system.getUserService({ kind: UserServiceKind.SERVER });
   expect(result.service).toMatchObject({ kind: UserServiceKind.SERVER, revision: 0n, state: UserServiceState.ABSENT, loginEnabled: false });

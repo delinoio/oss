@@ -20,6 +20,17 @@ main-established allocations. No new RPC or generated binding is activated by
 the reservation prerequisite.
 
 ## Scope
+
+Issue #1235 reserves `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17`
+under its owning issue identity. This independent capability will negotiate
+service-bearing subscription Accounts/native Models and retired-reference
+projections at resource schema version 2; unchanged API resources remain version
+1. It must not depend on API provider inventory capabilities. Establish this
+allocation and migration 28 on main before dependent implementation. This
+prerequisite changes no active schema, generated binding or capability
+advertisement; generate clients from reconciled schemas when implementation
+activates the reserved boundary.
+
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 
 ## Runtime and Language
@@ -91,13 +102,42 @@ Page/event cursors are HMAC-bound to server identity and filter/session scope an
 
 Generic resource lists and snapshots also enforce a 4 MiB aggregate budget using the greater of each resource's protobuf and protobuf-JSON encoded size plus bounded envelope overhead. This leaves room below the 5 MiB transport ceiling for cursor/response metadata. A byte-limited list resumes after its final returned resource; a snapshot instead returns correlated `ResourceExhausted` with narrower-scope guidance and no partial resources or event cursor, even when its record count fits.
 
-The native execution form of `WorkerService.ReportWork.output_json` is a closed `ExecutionCompletion`: exact execution/input UUID-v7 identities and original harness-owned native-thread/native-turn identities, acknowledged publication sequence, native outcome and verified cleanup. Version 1 remains accepted as historical terminal proof and forbids a checkpoint digest. Version 2 requires a canonical lowercase SHA-256 `native_checkpoint_digest`, preserved exactly in the job result, binding the separately synchronized Worker-private continuation evidence. Native identity validation uses the immutable assignment’s harness: Codex remains UUID-v7, while the separate Claude profile preserves its supplied UUID-v7 session and original UUID-v4/v7 turn, and OpenCode preserves its original `ses_` session and claimed `msg_` input. OpenCode keeps its native twelve lowercase hexadecimal time/counter digits and fourteen base-62 random characters verbatim; a later assistant message cannot replace the original input boundary. Native identity support alone does not enable public Claude/OpenCode publication or dispatch, and omitted recovery-harness selection remains the historical Codex-only profile; explicit OpenCode recovery uses the independently bound comparison document below. The JSON string representation of retained Codex completions is unchanged. The checkpoint's effective native paths/settings and original content do not enter this completion message. A report is valid only after a matching retained terminal event and owned Worker cleanup. Session cleanup state and the terminal job commit together, preserve pause/recovery and use a reference-only job receipt. Invalid or missing proof retains the active execution for recovery and never returns unacknowledged input to the editable queue. Worker replacement/revocation also propagates uncertainty without erasing accepted input or terminal observations. Verified cleanup completes pending Archive for the first native profile, whose current owned graph contains only the agent. Only a separate current-authority continuation claim can authorize another turn; future terminal/process/forward resources must join the Archive cleanup gate.
+The native execution form of `WorkerService.ReportWork.output_json` is a closed `ExecutionCompletion`: exact execution/input UUID-v7 identities and original harness-owned native-thread/native-turn identities, acknowledged publication sequence, native outcome and verified cleanup. Version 1 remains accepted as historical terminal proof and forbids a checkpoint digest. Version 2 requires a canonical lowercase SHA-256 `native_checkpoint_digest`, preserved exactly in the job result, binding the separately synchronized Worker-private continuation evidence. Native identity validation uses the immutable assignment’s harness: Codex remains UUID-v7, while the separate Claude profile preserves its supplied UUID-v7 session and original UUID-v4/v7 turn, and OpenCode preserves its original `ses_` session and claimed `msg_` input. OpenCode keeps its native twelve lowercase hexadecimal time/counter digits and fourteen base-62 random characters verbatim; a later assistant message cannot replace the original input boundary. Native identity support alone does not enable public Claude/OpenCode publication or dispatch, and omitted recovery-harness selection remains the historical Codex-only profile; explicit OpenCode recovery uses the independently bound comparison document below. The JSON string representation of retained Codex completions is unchanged. The checkpoint's effective native paths/settings and original content do not enter this completion message. A report is valid only after a matching retained terminal event and owned Worker cleanup. Session cleanup state and the terminal job commit together, preserve pause/recovery and use a reference-only job receipt. Invalid or missing proof retains the active execution for recovery and never returns unacknowledged input to the editable queue. Worker replacement/revocation also propagates uncertainty without erasing accepted input or terminal observations. Verified cleanup contributes to pending Archive completion; the central session publication barrier also requires independently confirmed session-terminal cleanup. Only a separate current-authority continuation claim can authorize another turn; future additional process/forward resources must join the same Archive cleanup gate.
 
 The shared observed-settings JSON shape has an optional typed `opencode_agent` (`build` or `plan`) for the separate native default-policy profile. It must match the original harness, model and input mode; permission remains `default`, approval policy is empty, and unobserved effort/tier remain null. Claude/Codex profiles reject the foreign field. Omission does not alter retained settings JSON. This shape support does not enable OpenCode dispatch, registration or public event publication, whose authority gates remain separate.
 
 `UsageService.GetUsageSummary` is owner/client-only under the [usage contract](cmds-delidev-usage-contract.md). It returns a coherent bounded 30-day-default summary of unique exact responses, original session/project/account/provider/model groups, optional current display labels, exact decimal-string known counters, measured/unavailable counts and explicit incomplete coverage and unavailable actual cost. Historical estimates use currency-separated decimal-string amounts, unpriced counts and original per-basis category evidence. Time and identity filters never change event attribution. No raw response/thread/turn identity or source content is exposed, and capacity failure returns no partial total.
 
 The additive `UsageTimeGranularity` request enum accepts `UNSPECIFIED` (the existing summary-only contract) or `DAY`. `GetUsageSummaryRequest` adds `granularity` and `time_zone`; a nonempty zone is invalid with `UNSPECIFIED`, and `DAY` requires a valid explicit IANA zone. The optional response `analytics` carries applied granularity/zone, chronological calendar-day buckets with half-open Unix-millisecond bounds and exact `UsageTotals`, all bounded original provider/model groups, and optional server-aggregated `other_models`. It is present for every valid DAY request, including an empty result; absence therefore identifies an older server. Daily/model values come from the same authorized retained-response snapshot as existing groups and estimates. Existing clients remain valid, summary-only requests retain their prior shape, and generated Go/TypeScript/Connect Query sources are tool-owned.
+
+Session terminals follow the [terminal contract](cmds-delidev-terminals-contract.md).
+The additive terminal entity, typed system/Worker capabilities and
+`TerminalService.CreateTerminal`, `ControlTerminal` and `WatchTerminalOutput`
+use existing authenticated mutations/resources plus bounded original-byte
+streaming. Worker-only watch/claim/report/publication messages bind the current
+machine, instance and original paired device; claim and report receipt retries
+revalidate that authority. Terminal result JSON is capped at 64 KiB to retain
+both accepted 4,096-byte native paths under worst-case JSON escaping. Worker
+problems require the terminal contract's closed native failure classification;
+the server substitutes its own bounded diagnostic text before persistence while
+receipt identity retains the original report bytes. Output carries epoch UUIDs, exact uint64 sequences,
+raw bytes, explicit gaps and metadata heartbeats. Terminal public Resources omit pending input bytes in mutation/receipt responses,
+generic reads/snapshots and output metadata; original authenticated Worker
+watch/claim assignments retain exact dispatch bytes. Operation IDs, pending
+state and original receipt digests remain intact. Terminal mutations return
+current referenced records. A replacement retries an exact original-instance
+`ReportTerminal` only to acknowledge an already-committed receipt under the same
+current device/machine and live terminal-capable lease; this receipt-only response
+omits `terminal` and grants no mutation or native authority. New reports retain
+original current-instance checks. No new protobuf field or numeric reservation
+is required for this acknowledgement recovery. Regenerate Go, TypeScript and Connect Query bindings
+together; no output bytes enter durable events or mutation receipts.
+
+Forwarding retains its merged `ENTITY_KIND_FORWARD = 27` and system/Worker
+capability value `2`. User services retain system capability value `3`.
+Terminals use the main-reserved additive entity value `31`, system capability value
+`14` and Worker capability value `4`; no feature may reinterpret another's wire
+values. Regenerate all bindings from this combined canonical schema.
 
 ## Storage
 Protocol messages never authorize clients to access SQLite. Credentials are write-only inputs to protected storage. Entity reads, snapshots, search, usage, diagnostics, and events contain no authentication material.

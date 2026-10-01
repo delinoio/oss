@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- Issue #1235 reserves `SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` under its owning issue identity. Establish this allocation and storage migration 28 on main before dependent implementation. The reservation does not change schemas, generated clients or advertised support; preserve the independent capability boundary from API provider inventory.
+
 - Use service-specific schema files and preserve the compatibility `delidev.proto` import. Shared numeric additions must match `allocations.json`; reservations do not advertise support. Run the normal generated-source pipeline and never hand-edit generated output. The exact declaration-relocation map preserves FILE compatibility checks without suppressing semantic changes.
 
 - Issues #1093, #1202 and #1203 share the native-compaction reservations and planned boundary in `docs/cmds-delidev-compaction-contract.md`. Establish the reservation change on main before activating it. Keep one `CompactSession` owner/client operation, separate action/job identity and profile-specific native proof; reserved capabilities cannot advertise an unimplemented endpoint or native profile.
@@ -124,6 +126,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Permanent deletion adds owner/client SessionService acceptance/status and independent owning-Worker cleanup RPCs. Shared job/state messages belong to common.proto; exclusive request/response types belong to their service file. Preserve `PERMANENT_SESSION_DELETION_V1 = 9` from allocations.json alongside merged capabilities, exact uint64 revisions, pending acknowledgements and unknown reclaimed bytes. Follow `docs/cmds-delidev-storage-contract.md` and regenerate bindings.
 - WorkspaceStorageService is owner/client-only and observes accepted original jobs separately. Worker results use existing immutable job claims. WORKSPACE_STORAGE_V1 uses the main-reserved SystemCapability value 11; retain values 1, 2 and 3 and regenerate service-specific Go/TypeScript bindings.
+
+- Session terminals use the main-established wire allocations: EntityKind 31, SystemCapability 14 and WorkerCapability 4. Keep TerminalService declarations in `terminal.proto`, Worker-only methods on WorkerService, actor/revision/request ownership and additive generation/legacy compatibility under `docs/cmds-delidev-terminals-contract.md`.
 
 - NetworkService owns `v1/network.proto` and generated bindings under `docs/cmds-delidev-network-contract.md`. Activate only the pre-reserved EntityKind 28/29 and SystemCapability 6 values. Owner/client operations keep credentials write-only, revisions exact and server/Worker desired generations separate; Worker metadata exports carry no secrets or native application proof.
 

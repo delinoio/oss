@@ -32,6 +32,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const readStates = vi.fn(() => ({}));
   const responses = vi.fn(() => ({}));
   const preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false });
+  const saveNotificationPreferences = vi.fn(async () => ({ preferences }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status });
     router.service(SessionService, { listSessions: (request) => {
@@ -55,13 +56,13 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
         await new Promise<void>((resolve) => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); });
       },
     });
-    router.service(InboxService, { listInbox: inboxReads, setInboxReadState: readStates, getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: async () => ({ preferences }) });
+    router.service(InboxService, { listInbox: inboxReads, setInboxReadState: readStates, getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: saveNotificationPreferences });
     router.service(SearchService, { searchConversations: searches });
     router.service(InteractionService, { respondQuestion: responses, respondApproval: responses });
     router.service(IntegrationService, { queryRepositoryIntegration: githubQuery });
     router.service(ConfigurationService, { saveConfiguration });
   });
-  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, projectRequests, sessionRequests, agent, machine, searches, inboxReads, readStates, responses };
+  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, saveNotificationPreferences, projectRequests, sessionRequests, agent, machine, searches, inboxReads, readStates, responses };
 }
 
 it("creates an automatically named session from the first message and explicit Workers", async () => {
@@ -538,7 +539,10 @@ it("discards a nested integration profile draft on close before targeted reposit
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
+  // The initial empty read moves the action from the toolbar into setup guidance.
+  // Wait for that read so the test clicks the current button, not a detached node.
+  await screen.findByRole("heading", { name: "Add your first GitHub profile" });
+  fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
   const name = screen.getByRole("textbox", { name: "Profile name" });
   fireEvent.change(name, { target: { value: "Retained GitHub profile draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
@@ -566,6 +570,7 @@ it("discards a notification draft on close without saving", async () => {
   expect((await screen.findByRole("checkbox", { name: "Questions and approval requests" }) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(value.saveNotificationPreferences).not.toHaveBeenCalled();
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
 

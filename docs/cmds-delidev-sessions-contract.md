@@ -64,6 +64,15 @@ Optional session estimated-cost budgets follow the [usage contract](cmds-delidev
 
 `session rename --id ID --revision N --name NAME` changes only the bounded title. Creation, enqueue, edits/removal, rename and controls use UUID-v7 request receipts and the same server serialization boundary. Mutations requiring an existing revision reject stale writes; retries of an accepted identical request return current referenced records. An old creation/enqueue/edit receipt cannot restore earlier content or repeat dispatch. Unsupported or pre-acceptance validation failures do not claim a successful receipt. No future schedule/remediation/fork source is accepted through this initial external creation schema.
 
+Worker-owned interactive terminals follow the
+[terminal contract](cmds-delidev-terminals-contract.md). They have independent
+UUID-v7 process owners and do not take the agent execution lease. Agent Stop
+preserves them; every Archive publication atomically requests exact selected-
+session closes and remains pending until all native resources confirm cleanup.
+Late agent/title/recovery writes use the same central barrier. Session/terminal
+storage deletion rejects unconfirmed terminal cleanup. Viewing/disconnecting
+does not create or close a shell, and unknown ownership never permits PID cleanup.
+
 ## Storage
 ### First-execution transaction primitive
 `Tx.ClaimInitialExecution` is an internal transaction primitive used by the public first-dispatch coordinator. It requires exact current session/input revisions, transient `dispatch=ready`, no previous execution/snapshot, active archive visibility, no recovery, a successful matching preparation job, and the earliest queued input. The coordinator validates the exact selected configuration and creates its immutable Worker job in the same transaction; any failure rolls back ready state, snapshot, input ownership, routing and job. A database claim alone grants no native capability or API relay credential.

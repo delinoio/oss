@@ -67,6 +67,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1:
+			capabilities = append(capabilities, domain.SessionTerminalsV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1:
 			capabilities = append(capabilities, domain.SessionForwardingV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1:
@@ -75,7 +77,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported an unknown native capability.", "Upgrade the Worker and report only verified capability identifiers."), correlation)
 		}
 	}
-	if len(capabilities) > 2 || (len(capabilities) == 2 && capabilities[0] == capabilities[1]) {
+	if len(capabilities) != len(slices.Compact(slices.Sorted(slices.Values(capabilities)))) {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported a duplicate native capability.", "Report each verified capability once."), correlation)
 	}
 	input := struct {
@@ -97,6 +99,9 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			return nil, domain.Fail(domain.Conflict, "Another Worker instance still owns this machine.", "Stop that instance and wait for its connection lease to expire.")
 		}
 		if previous != "" && previous != instance {
+			if err := loseTerminalAuthority(tx, machine); err != nil {
+				return nil, err
+			}
 			// A missing connection is not proof that execution never began. Preserve
 			// accepted ownership and require explicit reconciliation, never redispatch.
 			for {

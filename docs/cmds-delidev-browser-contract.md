@@ -72,7 +72,11 @@ for clients which actually completed native cleanup, not an automatic CLI action
 `browser-storage prepare` only prepares the native client's private cache root.
 
 The session Browser button opens a side panel while retaining the conversation
-and unsent composer. The user selects an HTTP(S) address before registration;
+and unsent composer. Browser shares the single session-panel selection with
+Terminals, Files and Diff.
+Switching away releases its native presentation while retaining its profile and
+the composer; the other panels keep their independent original operation lifetimes.
+The user selects an HTTP(S) address before registration;
 there is no automatic provider login or implicit external navigation. Back,
 Forward, Reload and bounded local tab controls use trusted native commands. A
 native presentation UUID is reserved on the UI loop before asynchronous

@@ -20,6 +20,8 @@ Agent Workers alone follows `docs/apps-delidev-desktop-contract.md`: use the app
 
 - Settings > Projects follows the Projects-only presentation exception in `docs/apps-delidev-desktop-contract.md` and `src/AGENTS.md`. Preserve issue #1138 opening disposal and the shared shell and other categories.
 
+- Settings > Paired devices follows issue #1239's compact list and opening-local bounded Details ownership in `src/AGENTS.md` and the desktop contract. Keep one existing pairing controller, exact revocation/credential/retry authority and once-only explicit focus handoffs. Preserve the shared shell, all other categories and discard-on-close semantics; native acceptance remains separate from fixtures/builds.
+
 - Home-only sidebar Inbox/Search actions and their consumed wide/compact focus handoff follow `docs/apps-delidev-desktop-contract.md` and the scoped `src/AGENTS.md` rules. Preserve mounted connection state and existing read-only navigation.
 
 GitHub Integrations presentation follows `docs/apps-delidev-desktop-contract.md` and `docs/cmds-delidev-integrations-contract.md`. Keep one create action, truthful read states, separate token-storage/identity observations, complete official-form guidance and the shared Settings lifecycle. The source owner retains exact mutation, credential and pagination safeguards.
@@ -29,5 +31,7 @@ Diagnostics presentation is owned by `src/doctor.tsx`, `src/doctor.css` and the 
 Unsupported-schema Agent display names/aliases are projected only within the existing 256-byte UTF-8 Agent name limit; larger values keep the Unnamed fallback and disabled actions while preserving the full resource ID.
 
 - Activity filter presentation is owned by `src/activity-sidebar.css` and the existing Activity controller in `src/views.tsx`. Follow the bounded issue #1156 treatment in `docs/apps-delidev-desktop-contract.md` and the scoped source instructions; preserve shared shell/server controls and the authority of issues #1137/#1149.
+
+- Import / Export presentation alone is owned by `src/configuration-transfer.tsx` and `src/configuration-transfer.css` under issue #1243 and the desktop/portable-configuration contracts. Keep its centered 880px column, exact panel/input/guidance copy, noninteractive state-derived stages and complete mapping/review/retry/results. Preserve original JSON bytes, bigint revisions, every existing operation/guard and Settings-host lifetime/locks; styling/reflow cannot remount controllers or acquire shell ownership from #1236. Record browser/component and native acceptance separately in PRs/issues/CI, never repository evidence files.
 
 - The protected session browser follows `docs/cmds-delidev-browser-contract.md`. Keep the composer mounted, external raw CEF children without Tauri browser-side IPC authority, initialization scripts or product credentials, native presentation generations exact, paths owner-private and server/device/account scoped, and whole-directory deletion after independently completed CEF shutdown. Keep offline acknowledgments pending and native/platform evidence distinct.

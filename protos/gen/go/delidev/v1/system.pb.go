@@ -35,6 +35,7 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1       SystemCapability = 7
 	SystemCapability_SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1            SystemCapability = 11
 	SystemCapability_SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1 SystemCapability = 5
+	SystemCapability_SYSTEM_CAPABILITY_SESSION_TERMINALS_V1            SystemCapability = 14
 	SystemCapability_SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1        SystemCapability = 6
 	// Reserved for issue #1092 in the repository allocation ledger.
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1 SystemCapability = 13
@@ -52,6 +53,7 @@ var (
 		7:  "SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1",
 		11: "SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1",
 		5:  "SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1",
+		14: "SYSTEM_CAPABILITY_SESSION_TERMINALS_V1",
 		6:  "SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1",
 		13: "SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1",
 	}
@@ -65,6 +67,7 @@ var (
 		"SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1":       7,
 		"SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1":            11,
 		"SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1": 5,
+		"SYSTEM_CAPABILITY_SESSION_TERMINALS_V1":            14,
 		"SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1":        6,
 		"SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1":           13,
 	}
@@ -2831,7 +2834,7 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\x87\x04\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xb3\x04\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1\x10\x01\x12+\n" +
@@ -2841,7 +2844,8 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"/SYSTEM_CAPABILITY_PERMANENT_SESSION_DELETION_V1\x10\t\x12/\n" +
 	"+SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1\x10\a\x12*\n" +
 	"&SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1\x10\v\x125\n" +
-	"1SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1\x10\x05\x12.\n" +
+	"1SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1\x10\x05\x12*\n" +
+	"&SYSTEM_CAPABILITY_SESSION_TERMINALS_V1\x10\x0e\x12.\n" +
 	"*SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1\x10\x06\x12+\n" +
 	"'SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1\x10\r*\x84\x01\n" +
 	"\x13BackupDeletionState\x12%\n" +

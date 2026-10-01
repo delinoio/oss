@@ -75,7 +75,19 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	if _, err := client.AttachWorker(ctx, ownerRequest(two, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version})); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("foreign machine attached: %v", err)
 	}
-	attach := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1}}
+	attach := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}
+	// Verify duplicate rejection across the entire negotiated set, including
+	// non-adjacent entries and duplicates after both older capabilities.
+	for _, capabilities := range [][]pb.WorkerCapability{
+		{attach.Capabilities[0], attach.Capabilities[0]},
+		{attach.Capabilities[0], attach.Capabilities[1], attach.Capabilities[0]},
+		{attach.Capabilities[0], attach.Capabilities[1], attach.Capabilities[2], attach.Capabilities[2]},
+	} {
+		invalid := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: capabilities}
+		if _, err := client.AttachWorker(ctx, ownerRequest(one, invalid)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatalf("duplicate Worker capability accepted: %v", err)
+		}
+	}
 	if _, err := client.AttachWorker(ctx, ownerRequest(one, attach)); err != nil {
 		t.Fatal(err)
 	}
