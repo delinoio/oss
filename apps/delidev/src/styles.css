@@ -680,6 +680,41 @@ dialog.modal-full-window::backdrop { background: transparent; }
 .settings-agent-actions { min-width: 0; margin: 0; }
 .settings-agent-actions button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 
+/* Runner Devices list mode alone uses flat sections; detail and shared Worker controls keep their defaults. */
+.settings-runner-devices { color: var(--text); font-size: 14px; }
+.settings-runner-column { width: 100%; max-width: 1040px; min-width: 0; margin-inline: auto; }
+.settings-runner-column > .settings-category-heading { gap: 16px; margin-bottom: 32px; padding-bottom: 32px; border-bottom: 1px solid var(--border); }
+.settings-runner-column .settings-category-title h1 { font-size: 28px; font-weight: 600; }
+.settings-runner-column h2 { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.5; }
+.settings-runner-column p { margin: 0; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
+.settings-runner-column small { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.settings-runner-column button { max-width: 100%; min-height: 40px; border-color: var(--control-border); border-radius: 8px; white-space: normal; overflow-wrap: anywhere; }
+.settings-runner-column button.primary { border-color: var(--accent); background: var(--accent); }
+.settings-runner-column:focus-visible { outline-color: var(--accent); }
+.settings-runner-column .actions { min-width: 0; margin: 0; gap: 16px; }
+.settings-runner-column .settings-runner-worker { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; margin-bottom: 32px; padding-bottom: 32px; border-bottom: 1px solid var(--border); }
+.settings-runner-worker-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0; }
+.settings-runner-badge { padding: 2px 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.settings-runner-column .settings-runner-uncertain { display: flex; align-items: flex-start; gap: 8px; color: var(--warning-text); }
+.settings-runner-uncertain svg { width: 18px; height: 18px; flex: 0 0 18px; margin-top: 1px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.settings-runner-column .settings-runner-stop { color: var(--danger-text); }
+.settings-runner-inventory > h2 { margin-bottom: 16px; }
+.settings-runner-inventory > p, .settings-runner-inventory > .problem { margin-bottom: 16px; }
+.settings-runner-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; padding-block: 16px; border-bottom: 1px solid var(--border); }
+.settings-runner-identity { min-width: 0; flex: 1; }
+.settings-runner-identity h3 { margin: 0 0 16px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.settings-runner-identity p { margin-bottom: 16px; }
+.settings-runner-skeleton-row { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding-block: 16px; border-bottom: 1px solid var(--border); }
+.settings-runner-skeleton-row span { width: min(240px, 75%); height: 12px; border-radius: 3px; background: var(--surface-hover); }
+.settings-runner-skeleton-row span:nth-child(2) { width: min(360px, 90%); }
+.settings-runner-skeleton-row span:nth-child(3) { width: min(300px, 85%); }
+.settings-runner-column .settings-pages { gap: 16px; margin-top: 16px; }
+@media (max-width: 1099px) {
+  .settings-runner-column > .settings-category-heading { flex-direction: column; }
+  .settings-runner-column .settings-toolbar { justify-content: flex-start; width: 100%; }
+  .settings-runner-row { flex-direction: column; align-items: stretch; }
+}
+
 /* Projects is the scoped exception to the shared white/40px/8px Settings defaults. */
 .settings-projects { color: var(--text); background: var(--surface-muted); font-size: 13px;  }
 .settings-projects .settings-content-column { width: 100%; max-width: 820px; min-width: 0; margin-inline: auto; }
@@ -897,3 +932,12 @@ dialog.modal-full-window::backdrop { background: transparent; }
   .integration-steps, .integration-access-note { padding: 16px; }
   .integration-facts { grid-template-columns: minmax(0, 1fr); }
 }
+.session-browser { display: flex; flex-direction: column; gap: 10px; padding: 16px; min-height: 100%; }
+.session-browser header, .browser-address, .browser-tabs li { display: flex; align-items: center; gap: 8px; }
+.session-browser header { justify-content: space-between; }
+.browser-address label { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.browser-address input { width: 100%; }
+.browser-tabs { margin: 0; padding: 0; list-style: none; }
+.browser-tabs li > button:first-child { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.browser-current-address { overflow-wrap: anywhere; font-size: 12px; }
+.browser-viewport { flex: 1; min-height: 400px; border: 1px solid var(--border); }
