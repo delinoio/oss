@@ -20,6 +20,8 @@ Agent Workers alone follows `docs/apps-delidev-desktop-contract.md`: use the app
 
 - Settings > Projects follows the Projects-only presentation exception in `docs/apps-delidev-desktop-contract.md` and `src/AGENTS.md`. Preserve issue #1138 visit disposal and the shared shell and other categories.
 
+- Settings > Paired devices follows issue #1239's compact list and visit-local bounded Details ownership in `src/AGENTS.md` and the desktop contract. Keep one existing pairing controller, exact revocation/credential/retry authority and once-only explicit focus handoffs. Preserve the shared shell, all other categories and discard-on-navigation-away semantics; native acceptance remains separate from fixtures/builds.
+
 - Home-only sidebar Inbox/Search actions and their consumed wide/compact focus handoff follow `docs/apps-delidev-desktop-contract.md` and the scoped `src/AGENTS.md` rules. Preserve mounted connection state and existing read-only navigation.
 
 GitHub Integrations presentation follows `docs/apps-delidev-desktop-contract.md` and `docs/cmds-delidev-integrations-contract.md`. Keep one create action, truthful read states, separate token-storage/identity observations, complete official-form guidance and the shared Settings lifecycle. The source owner retains exact mutation, credential and pagination safeguards.
