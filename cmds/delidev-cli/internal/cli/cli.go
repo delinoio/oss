@@ -133,7 +133,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		return emit(nil, err)
 	}
 	defer c.transport.CloseIdleConnections()
-	if command != "events" && !(command == "session" && len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start") {
+	if command != "events" && !(command == "session" && (followsTerminalOutput(rest) || (len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start"))) {
 		limit := 30 * time.Second
 		// Network credential work and backup inspection/replacement own bounded
 		// 30-second server work. Allow its typed outcome to arrive first.

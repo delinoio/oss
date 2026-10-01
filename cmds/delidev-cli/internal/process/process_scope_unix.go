@@ -34,10 +34,11 @@ type processScope struct {
 }
 
 type processCommand struct {
-	Path string
-	Args []string
-	Env  []string
-	Dir  string
+	Terminal *TerminalSize `json:",omitempty"`
+	Path     string
+	Args     []string
+	Env      []string
+	Dir      string
 }
 
 type processFrameKind string
@@ -48,11 +49,13 @@ const (
 	processError    processFrameKind = "stderr"
 	processInput    processFrameKind = "stdin"
 	processInputEnd processFrameKind = "stdin-end"
+	processResize   processFrameKind = "resize"
 	processInputAck processFrameKind = "stdin-ack"
 	processExit     processFrameKind = "exit"
 )
 
 type processFrame struct {
+	Size    *TerminalSize    `json:"size,omitempty"`
 	Kind    processFrameKind `json:"kind"`
 	Scope   *processScope    `json:"scope,omitempty"`
 	Data    []byte           `json:"data,omitempty"`
@@ -61,6 +64,7 @@ type processFrame struct {
 }
 
 type managedProcess struct {
+	terminal     bool
 	identity     Process
 	command      processCommand
 	conn         net.Conn
@@ -108,7 +112,7 @@ func init() {
 	}
 }
 
-func startProcess(c *exec.Cmd, dir string, owner domain.ID) (_ *managedProcess, err error) {
+func startProcess(c *exec.Cmd, dir string, owner domain.ID, terminal *TerminalSize) (_ *managedProcess, err error) {
 	if err = security.PrivateDir(dir); err != nil {
 		return nil, err
 	}
@@ -174,7 +178,7 @@ func startProcess(c *exec.Cmd, dir string, owner domain.ID) (_ *managedProcess, 
 	identity := saved.Owner
 	identity.ScopeDir = dir
 	identity.OwnerID = owner
-	p := &managedProcess{identity: identity, command: processCommand{c.Path, c.Args, c.Env, c.Dir}, conn: conn, done: make(chan struct{}), inputAck: make(chan struct{}, 1), cleanup: cleanup}
+	p := &managedProcess{identity: identity, terminal: terminal != nil, command: processCommand{Terminal: terminal, Path: c.Path, Args: c.Args, Env: c.Env, Dir: c.Dir}, conn: conn, done: make(chan struct{}), inputAck: make(chan struct{}, 1), cleanup: cleanup}
 	success = true
 	go func() {
 		defer close(p.done)
@@ -343,6 +347,9 @@ func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.Fil
 		}
 		_ = writer.frame(processFrame{Kind: processExit, Exit: 1})
 		return 0
+	}
+	if command.Terminal != nil {
+		return superviseTerminal(dir, scope, command, decoder, writer, pipe)
 	}
 	cancel := make(chan struct{})
 	inputRead, inputWrite, err := pipe()
