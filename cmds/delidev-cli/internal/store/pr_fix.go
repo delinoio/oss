@@ -89,7 +89,30 @@ func (t *Tx) RequireAutomaticPRSource(v domain.PRRemediationAttempt) error {
 	if err != nil {
 		return err
 	}
-	if sr.ProjectID != r.ProjectID || session.ProjectID != r.ProjectID || session.Dispatch == domain.DispatchPaused || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery {
+	if sr.ProjectID != r.ProjectID || session.ProjectID != r.ProjectID {
+		return prRemediationConflict()
+	}
+	return t.RequireAutomaticPRSourceSession(sr, session, link)
+}
+
+// A settled automatic failure can preserve discovery authority while a fresh
+// session executes the next attempt. This never resumes its old paused queue:
+// the exact retained failed attempt and positive cleanup must still match.
+func (t *Tx) RequireAutomaticPRSourceSession(sr Record, session domain.Session, link domain.SessionPullRequest) error {
+	if session.AutomaticRemediationStopped || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery {
+		return prRemediationConflict()
+	}
+	if session.Dispatch != domain.DispatchPaused {
+		return nil
+	}
+	if session.Outcome != domain.ExecutionFailed || session.Execution == nil || session.Execution.Outcome != domain.ExecutionFailed || !session.Execution.CleanupVerified || session.ActiveExecutionID != "" {
+		return prRemediationConflict()
+	}
+	_, attempt, found, err := t.PRRemediationForInput(session.Execution.InputID)
+	if err != nil {
+		return err
+	}
+	if !found || attempt.Mode != domain.PRRemediationAutomatic || attempt.AutomaticLinkID == "" || attempt.GitTarget == nil || !attempt.GitTarget.Target.SamePR(link) || attempt.ProjectID != sr.ProjectID || attempt.SessionID != sr.ID || attempt.ExecutionID != session.Execution.ExecutionID || attempt.State != domain.PRRemediationFinished || attempt.Outcome != domain.ExecutionFailed {
 		return prRemediationConflict()
 	}
 	return nil

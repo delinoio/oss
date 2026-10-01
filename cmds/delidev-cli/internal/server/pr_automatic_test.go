@@ -524,15 +524,15 @@ func TestAutomaticPRSelectionPreservesOriginalHeadAtDispatch(t *testing.T) {
 }
 
 func TestAutomaticPRFailureReplacementNeverOverridesExplicitControls(t *testing.T) {
-	attempt := domain.PRRemediationAttempt{Mode: domain.PRRemediationAutomatic, AutomaticLinkID: domain.NewID(), State: domain.PRRemediationFinished, Outcome: domain.ExecutionFailed}
-	session := domain.Session{Outcome: domain.ExecutionFailed, Dispatch: domain.DispatchPaused, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Execution: &domain.ExecutionProgress{CleanupVerified: true}}
+	attempt := domain.PRRemediationAttempt{Mode: domain.PRRemediationAutomatic, AutomaticLinkID: domain.NewID(), State: domain.PRRemediationFinished, Outcome: domain.ExecutionFailed, ExecutionID: domain.NewID(), InputID: domain.NewID()}
+	session := domain.Session{Outcome: domain.ExecutionFailed, Dispatch: domain.DispatchPaused, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Execution: &domain.ExecutionProgress{ExecutionID: attempt.ExecutionID, InputID: attempt.InputID, Outcome: domain.ExecutionFailed, CleanupVerified: true}}
 	if automaticPRPriorSessionBlocked(attempt, session) {
 		t.Fatal("settled failure cannot select a fresh session")
 	}
 	if session.Dispatch != domain.DispatchPaused {
 		t.Fatal("old failed queue was resumed")
 	}
-	for _, change := range []string{"explicit-stop", "archive", "recovery", "unconfirmed-cleanup", "running", "manual", "legacy", "stopped"} {
+	for _, change := range []string{"explicit-stop", "archive", "recovery", "unconfirmed-cleanup", "different-execution", "different-input", "running", "manual", "legacy", "stopped"} {
 		t.Run(change, func(t *testing.T) {
 			a, s := attempt, session
 			progress := *s.Execution
@@ -546,6 +546,10 @@ func TestAutomaticPRFailureReplacementNeverOverridesExplicitControls(t *testing.
 				s.Recovery = domain.NeedsRecovery
 			case "unconfirmed-cleanup":
 				s.Execution.CleanupVerified = false
+			case "different-execution":
+				s.Execution.ExecutionID = domain.NewID()
+			case "different-input":
+				s.Execution.InputID = domain.NewID()
 			case "running":
 				s.ActiveExecutionID = domain.NewID()
 			case "manual":

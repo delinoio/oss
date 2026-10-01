@@ -439,6 +439,12 @@ clears it. A positively settled failed attempt from this automatic profile may
 select a fresh eligible session only with confirmed native cleanup, no active
 execution, no recovery/Archive and no explicit Stop. Its original failed queue
 stays paused. Historical/manual failures cannot acquire this replacement authority.
+If that failed automatic execution ran in the discovery session itself, its
+paused association may retain discovery authority only while its original indexed
+input still proves the same finished automatic attempt/execution and confirmed
+cleanup. The next execution uses a fresh eligible session; it cannot resume that
+old queue. Explicit Stop, Archive, recovery or changed completion proof blocks both
+admission and final claim, including after replacement acceptance.
 
 Four cancellable target lanes, 50-link scan pages, a 30-second cooldown measured
 from completion, and failed-target backoff from 30 seconds to five minutes bound

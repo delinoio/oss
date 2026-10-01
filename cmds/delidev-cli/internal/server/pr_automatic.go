@@ -65,8 +65,11 @@ func automaticPRScope(tx *store.Tx, original store.Record) (domain.SessionPullRe
 	if err != nil {
 		return link, domain.RemediationPolicy{}, err
 	}
-	if sr.ProjectID != row.ProjectID || session.ProjectID != row.ProjectID || session.Archive != domain.NotArchived || session.Dispatch == domain.DispatchPaused || session.Recovery != domain.NoRecovery {
+	if sr.ProjectID != row.ProjectID || session.ProjectID != row.ProjectID {
 		return link, domain.RemediationPolicy{}, firstDispatchConflict()
+	}
+	if err := tx.RequireAutomaticPRSourceSession(sr, session, link); err != nil {
+		return link, domain.RemediationPolicy{}, err
 	}
 	if _, err := sessionPRScope(tx, sr.ID, link.RepositoryID); err != nil {
 		return link, domain.RemediationPolicy{}, err
@@ -111,7 +114,7 @@ func automaticPRPriorSessionBlocked(attempt domain.PRRemediationAttempt, session
 	}
 	// Only a positively settled failure from this automatic profile may select
 	// a new session. Keep its old queue paused; no implicit Resume is performed.
-	return attempt.Mode != domain.PRRemediationAutomatic || attempt.AutomaticLinkID == "" || attempt.State != domain.PRRemediationFinished || attempt.Outcome != domain.ExecutionFailed || session.Outcome != domain.ExecutionFailed || session.Execution == nil || !session.Execution.CleanupVerified || session.ActiveExecutionID != ""
+	return attempt.Mode != domain.PRRemediationAutomatic || attempt.AutomaticLinkID == "" || attempt.State != domain.PRRemediationFinished || attempt.Outcome != domain.ExecutionFailed || session.Outcome != domain.ExecutionFailed || session.Execution == nil || session.Execution.Outcome != domain.ExecutionFailed || session.Execution.ExecutionID != attempt.ExecutionID || session.Execution.InputID != attempt.InputID || !session.Execution.CleanupVerified || session.ActiveExecutionID != ""
 }
 
 func automaticPROperation(kind domain.PRProblemKind) domain.RepositoryQueryOperation {
