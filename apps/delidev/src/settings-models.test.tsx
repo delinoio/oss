@@ -53,7 +53,7 @@ it("composes one Models heading/action and a neutral successful empty page with 
   await screen.findByRole("heading", { name: "No models yet" });
   expect(screen.getAllByRole("heading", { name: "Models", level: 1 })).toHaveLength(1);
   expect(screen.getAllByRole("button", { name: "New Model" })).toHaveLength(1);
-  expect(screen.getByText("Saved on the selected server.")).toBeTruthy();
+  expect(screen.getByText("Saved on the selected server.", { selector: ".models-header p" })).toBeTruthy();
   expect(screen.getByText("Add models manually using New Model.")).toBeTruthy();
   expect(screen.getByText("You can add models without an API account.")).toBeTruthy();
   expect(screen.getByText("Connect an account only for automatic model discovery.")).toBeTruthy();
