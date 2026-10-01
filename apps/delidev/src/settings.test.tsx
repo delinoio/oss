@@ -832,3 +832,35 @@ it("keeps API connection actions separate from validation and preserves server-o
   expect(screen.queryByRole("button", { name: "Connect API key" })).toBeNull();
   expect(screen.queryByLabelText("API key")).toBeNull();
 });
+
+it("scopes Transfer presentation and retains its navigation locks until the Settings opening is discarded", async () => {
+  const value = fixture([]); const close = vi.fn();
+  const rendered = render(value.view(<Settings visible close={close} />));
+  fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
+  const heading = screen.getByRole("heading", { name: "Import / Export", level: 1 });
+  expect(heading.closest(".settings-transfer-column")).toBeTruthy();
+  expect(heading.getAttribute("aria-live")).toBe("polite");
+  expect(screen.getByText("Move configuration between DeliDev servers.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  expect(screen.getByRole("heading", { name: "Instructions", level: 1 }).closest(".settings-transfer-column")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
+  const json = screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement;
+  const raw = '{"version":1,"entries":[],"machines":[]}';
+  fireEvent.change(json, { target: { value: raw } });
+  for (const button of within(screen.getByRole("navigation", { name: "Settings categories" })).getAllByRole("button")) expect((button as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Load configuration document" }));
+  rendered.rerender(value.view(<Settings visible close={close} />));
+  expect(screen.getByRole("textbox", { name: "Configuration JSON" })).toBe(json);
+  expect(json.value).toBe(raw);
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  expect(close).toHaveBeenCalledTimes(1);
+  rendered.rerender(value.view(<Settings visible={false} close={close} />));
+  rendered.rerender(value.view(<Settings visible close={close} />));
+  expect(screen.getByRole("heading", { name: "AI Subscription", level: 1 })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
+  expect((screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement).value).toBe("");
+  expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry the same configuration import" })).toBeNull();
+  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).disabled).toBe(false);
+});
