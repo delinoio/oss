@@ -11,16 +11,17 @@ const read = path => readFileSync(resolve(root, path), 'utf8');
 test('pending database versions are ordered reservations independent of executable migrations', () => {
   const ledger = JSON.parse(read('cmds/delidev-cli/internal/store/migration-reservations.json'));
   let previous = ledger.baselineVersion;
-  let previousPR = 0;
   const seen = new Set();
   for (const entry of ledger.reservations) {
     assert.equal(entry.version, previous + 1);
-    assert.ok(entry.pr > previousPR);
+    assert.notEqual(Object.hasOwn(entry, 'pr'), Object.hasOwn(entry, 'issue'), 'a migration has one original PR or owning issue');
+    const owner = entry.pr ?? entry.issue;
+    assert.ok(Number.isSafeInteger(owner) && owner > 0, 'migration provenance is a positive GitHub number');
+    assert.ok(!seen.has(owner), 'migration owners are unique');
     if ([1108, 1115, 1117].includes(entry.pr)) assert.equal(entry.originalBranchVersion, 25);
     for (const dependency of entry.dependsOn ?? []) assert.ok(seen.has(dependency));
     previous = entry.version;
-    previousPR = entry.pr;
-    seen.add(entry.pr);
+    seen.add(owner);
   }
   for (const originalPR of [1108, 1115, 1117]) assert.ok(seen.has(originalPR));
 });
