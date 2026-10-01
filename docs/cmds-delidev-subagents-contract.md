@@ -46,7 +46,7 @@ Run `go test -race ./cmds/delidev-cli/...`, `go vet ./cmds/delidev-cli/...`, `pn
 The existing session, execution outbox, native adapter, process, usage and generated resource-client contracts remain authoritative. Codex canonical schema reference is pinned to commit `d8673cb68e349c208659b986697773d3145dbb14`; Claude uses the retained `2.1.236` task/content/history profile. No new runtime dependency is added.
 
 ## Change Triggers
-Update this contract, project/catalog index, harness/session/process/usage/protocol/client/desktop contracts, independent issue evidence and relevant `AGENTS.md` when versions, bounds, native source coverage, ownership, storage or capabilities change. Child-control or continuation support requires independent original evidence and an explicit contract extension.
+Update this contract, project/catalog index, harness/session/process/usage/protocol/client/desktop contracts and relevant `AGENTS.md` when versions, bounds, native source coverage, ownership, storage or capabilities change. Record source revisions, commands, results and unresolved validation limits in pull requests, issues and CI logs/artifacts under the repository validation policy; do not add repository evidence documents. Child-control or continuation support requires independent original evidence and an explicit contract extension.
 
 ## References
 - [Project index](project-delidev.md)
