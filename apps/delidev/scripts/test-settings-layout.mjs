@@ -17,7 +17,7 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Runner Devices", "Appearance", "Paired devices", "Server preferences", "Integrations", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [960,640], [640,480]];
-let checked = 0;
+let checked = 0, formsChecked = 0;
 try {
   const build = await createRsbuild({ cwd: app, rsbuildConfig: { plugins: [pluginReact()], source: { entry: { index: join(app, "src/settings-layout.fixture.tsx") } }, html: { template: join(app, "index.html") }, output: { distPath: { root: directory }, assetPrefix: "/", sourceMap: false, cleanDistPath: true } } });
   await build.build();
@@ -63,16 +63,20 @@ try {
       assert.equal(layout.padding, viewport[0] >= 1100 ? "32px" : viewport[0] >= 760 ? "24px" : "16px", context);
       assert.equal(layout.anchor, Number.parseInt(layout.padding), context);
       assert(layout.width <= 1040.5 && !layout.overflow && layout.controls && layout.empty && layout.forms, context);
-      if (theme === "light" && viewport[0] === 1440 && viewport[1] === 1000 && ["AI Subscription", "Appearance", "Notifications"].includes(category)) await page.screenshot({ path: join(tmpdir(), `oss-1256-${category.toLowerCase().replaceAll(" ", "-")}-${populated}.png`) });
       checked++;
     }
-    if (theme === "light" && !populated && viewport[0] === 1440 && viewport[1] === 1000) {
-      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "New Repository"], ["Server preferences", "New Server preferences"], ["Models", "New Model"]]) {
+    if (!populated) {
+      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "New Repository"], ["Server preferences", "New Server preferences"], ["Models", "New Model"], ["Integrations", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
         await select(category); await page.getByRole("button", { name: action, exact: true }).click();
+        if (category === "AI API Keys") await page.getByRole("button", { name: /^Fixture provider/ }).click();
         const form = page.locator(".settings-content form:visible"); await form.waitFor();
         assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
         assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
-        await page.getByRole("button", { name: "Cancel edit", exact: true }).click();
+        assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} form overflow`);
+        if (category === "Agent Workers") assert(await form.evaluate(node => node.getBoundingClientRect().width >= 640 || getComputedStyle(node.querySelector(".agent-core-columns")).gridTemplateColumns.split(" ").length === 1), "Narrow Agent fields stack");
+        formsChecked++;
+        await page.getByRole("button", { name: category === "AI API Keys" ? "Back to AI API Keys" : category === "Notifications" ? "Cancel notification edit" : "Cancel edit", exact: true }).click();
+        if (category === "AI API Keys" && await page.getByRole("button", { name: "Back to AI API Keys", exact: true }).isVisible()) await page.getByRole("button", { name: "Back to AI API Keys", exact: true }).click();
       }
     }
   }
@@ -83,7 +87,7 @@ try {
     await page.setViewportSize({ width: width / 2, height: height / 2 });
     for (const category of categories) { await select(category); assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} effective 200% ${width}`); checked++; }
   }
-  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, themes: 3, inventories: 2, viewports: 6, effectiveZoomChecks: 102, nativeAcceptance: "not-performed" }));
+  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, themes: 3, inventories: 2, viewports: 6, effectiveZoomChecks: 102, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));
