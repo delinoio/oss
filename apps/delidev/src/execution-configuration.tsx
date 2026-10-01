@@ -1,3 +1,4 @@
+import { NativeGrokToolsTerminal } from "./native-grok-interactions";
 import { NativeGrokTerminal, NativeGrokStop } from "./native-grok";
 import { type Resource } from "@delinoio/delidev-api-client";
 import { memo } from "react";
@@ -38,11 +39,11 @@ function NativeObservations({ progress, selection, harness }: { progress: Docume
         {harness === Harness.Codex ? <><dt>Observed sandbox</dt><dd>{observed(native.permission)}</dd><dt>Observed approval policy</dt><dd>{observed(native.approval_policy)}</dd></> : null}
         {harness === Harness.Claude ? <><dt>Observed Claude permission</dt><dd>{observed(native.claude_permission)}</dd></> : null}
         {harness === Harness.OpenCode ? <><dt>Observed OpenCode primary agent</dt><dd>{observed(native.opencode_agent)}</dd><dt>Observed permission selection</dt><dd>{observed(native.permission)}</dd></> : null}
-        {harness === Harness.Grok ? <><dt>Observed Grok initial mode</dt><dd>{observed(native.grok_mode)}</dd><dt>Observed Grok context window</dt><dd>{grokContext(native.grok_context_tokens)}</dd></> : null}
+        {harness === Harness.Grok ? <><dt>Observed Grok current mode</dt><dd>{observed(progress.grok_current_mode)}</dd><dt>Observed Grok initial mode</dt><dd>{observed(native.grok_mode)}</dd><dt>Observed Grok context window</dt><dd>{grokContext(native.grok_context_tokens)}</dd></> : null}
       </dl>
       {harness === Harness.Claude ? <NativeClaudePermissionProgress progress={progress} /> : null}
       {harness === Harness.Claude ? <NativeClaudeTerminal progress={progress} /> : null}
-      {harness === Harness.Grok ? <><NativeGrokTerminal progress={progress} /><NativeGrokStop progress={progress} /></> : null}
+      {harness === Harness.Grok ? <><NativeGrokToolsTerminal progress={progress}/><NativeGrokTerminal progress={progress} /><NativeGrokStop progress={progress} /></> : null}
       {harness === Harness.Claude ? <NativeClaudeStop progress={progress} /> : null}
       {harness === Harness.Claude ? <NativeClaudeDenialCompletion progress={progress} /> : null}
       <p>Observations describe this recorded execution. Missing values remain unavailable.</p>

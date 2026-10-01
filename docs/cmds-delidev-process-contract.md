@@ -1,7 +1,7 @@
 # DeliDev owned process contract
 
 ## Scope
-`cmds/delidev-cli/internal/process` owns Worker-launched Git, native harness and terminal process lifecycles. The complete product requirements remain in [issue requirements](cmds-delidev-requirements.md); the evidence ledger distinguishes implementation from native-platform verification.
+`cmds/delidev-cli/internal/process` owns Worker-launched Git, native harness and terminal process lifecycles. The complete product requirements remain in [issue requirements](cmds-delidev-requirements.md); distinguish implementation from native-platform verification in pull requests, issues and CI logs/artifacts.
 
 ## Runtime and Language
 Go and OS process primitives. No container, additional application sandbox, or replacement for native harness permissions is introduced.

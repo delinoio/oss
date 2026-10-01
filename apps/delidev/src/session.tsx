@@ -1,3 +1,4 @@
+import { NativeGrokTool } from "./native-grok-interactions";
 import { NativeGrokText, NativeGrokUser } from "./native-grok";
 import { SessionFiles } from "./session-files";
 import { SessionDiff } from "./session-diff";
@@ -130,7 +131,8 @@ export function interactionRows(base: readonly Resource[], live: ReadonlyMap<str
 
 const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
   const data = readDocument(resource);
-  if (Object.hasOwn(data, "grok_user")) return <NativeGrokUser data={data} />;
+  if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
+ if (Object.hasOwn(data, "grok_user")) return <NativeGrokUser data={data} />;
   if (data.grok_text != null) return <NativeGrokText data={data} />;
   if (data.claude_progress != null) return <NativeClaudeProgress data={data} />;
   if (data.claude_interruption != null) return <NativeClaudeInterruption data={data} />;

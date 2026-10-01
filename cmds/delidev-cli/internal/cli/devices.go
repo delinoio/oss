@@ -133,13 +133,29 @@ func deviceLocal(ctx context.Context, o options, command string, args []string, 
 		kind = domain.WorkerDevice
 	}
 	root := fs.String(rootName, defaultRoot, "private device scope")
+	join := fs.Bool("join-existing", false, "join the original fixed desktop client controller")
+	validateJoin := func() error {
+		if *join && (command != "device" || filepath.Clean(*root) != filepath.Join(o.dataDir, "desktop-client")) {
+			return usage()
+		}
+		return nil
+	}
 	switch args[0] {
 	case "inspect":
 		if err := parse(fs, args[1:]); err != nil {
 			return nil, err
 		}
+		if err := validateJoin(); err != nil {
+			return nil, err
+		}
 		if command == "device" {
-			lock, err := lockDesktopClient(o.dataDir, *root)
+			var lock *security.Lock
+			var err error
+			if *join {
+				lock, err = joinDesktopClient(ctx, o.dataDir, *root)
+			} else {
+				lock, err = lockDesktopClient(o.dataDir, *root)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -159,12 +175,18 @@ func deviceLocal(ctx context.Context, o options, command string, args []string, 
 		if err := parse(fs, args[1:]); err != nil {
 			return nil, err
 		}
-		return pairLocalDevice(ctx, o, *root, kind)
+		if err := validateJoin(); err != nil {
+			return nil, err
+		}
+		return pairLocalDeviceJoined(ctx, o, *root, kind, *join)
 	case "pair":
 		input := fs.Bool("code-stdin", false, "read private pairing document from stdin")
 		name := fs.String("name", "local worker", "execution machine name")
 		if err := parse(fs, args[1:]); err != nil {
 			return nil, err
+		}
+		if *join {
+			return nil, usage()
 		}
 		if !*input || terminalInput(streams.In) {
 			return nil, domain.Fail(domain.MissingInput, "A private pairing document is required on stdin.", "Pipe the file returned by device create-pairing; never put its contents in argv.")

@@ -14,7 +14,7 @@ Each project must have one project index document and one or more domain contrac
 - Project and domain contracts must document deviations from those defaults when a different language, ID format, search backend, build toolchain, static-site deployment platform, or file storage/access pattern is chosen.
 
 ## Documentation Editing Rules
-- Independent DeliDev evidence lives under `docs/evidence/delidev/issue-<number>/`; historical evidence remains preserved. Project indexes route to domain contracts, and validation-only records do not require changes to project indexes or AGENTS files. See [source ownership](cmds-delidev-structure-contract.md).
+- DeliDev implementation status and validation results belong in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. Project indexes route to domain contracts, and validation-only records do not require changes to project indexes or AGENTS files. See [source ownership](cmds-delidev-structure-contract.md).
 - These rules apply to documentation authoring and editing work, not general conversational summaries.
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
@@ -72,6 +72,7 @@ Each project must have one project index document and one or more domain contrac
 - [Native Codex model observations (pending)](cmds-delidev-native-models-contract.md)
 - [API provider activation and new-work admission](cmds-delidev-provider-activation-contract.md)
 - [Native API relay](cmds-delidev-proxy-contract.md)
+- [Explicit outbound networking](cmds-delidev-network-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Same-account native Codex session forks](cmds-delidev-forks-contract.md)
 
@@ -80,7 +81,6 @@ Each project must have one project index document and one or more domain contrac
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
-- [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
 ### React Forge
 - [Project index](project-react-forge.md)

@@ -55,7 +55,7 @@ The library does not log resource documents, credentials, cursors, exception obj
 Pinned Buf protobuf 2.14.0, Connect/Connect Web 2.1.2 and Connect Query 2.3.1 follow repository versions. React Query integration uses generated service namespaces; no second product transport or client-side routing/eligibility engine is introduced. The Go server and its canonical resource schemas remain authoritative.
 
 ## Change Triggers
-Update generated bindings, package/domain AGENTS, protocol contract, project index, evidence ledger, generation freshness/Turbo outputs and CI when schemas, origin/auth boundaries, synchronization behavior or validation commands change.
+Update generated bindings, package/domain AGENTS, protocol contract, project index, validation records in pull requests, issues and CI logs/artifacts, generation freshness/Turbo outputs and CI when schemas, origin/auth boundaries, synchronization behavior or validation commands change.
 
 ## References
 - [Project](project-delidev.md)
@@ -172,6 +172,10 @@ Worker cleanup queries and `PERMANENT_SESSION_DELETION_V1` retain the additive
 protocol without duplicating Go ownership logic. Preserve original request IDs,
 BigInt revisions and pending/unknown removal state; no automatic mutation replay.
 See the [storage contract](cmds-delidev-storage-contract.md).
+
+### Explicit outbound networking
+
+Generated `NetworkQuery` exposes authenticated configuration operations and typed capability/resources. Consumers retain exact decimal revisions and treat credentials as write-only request input, never query-cache data. Signed Worker metadata proves only the server export scope, not native installation or encrypted credential transfer. Follow [the network contract](cmds-delidev-network-contract.md).
 
 Issue #1100 generates the native accounting profile and unit enums with the existing UsageQuery descriptor. Consumers must require the echoed NATIVE_UNITS_V1 profile before interpreting UsageTotals.accounting, preserve exact decimal totals and distinct CodexResponse/GrokClosedInput unit kinds, and retain response-only legacy fields. Grok cost and budget contribution remain unavailable; clients cannot normalize or price the separate response dimensions.
 

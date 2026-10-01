@@ -28,6 +28,7 @@ type client struct {
 	workers       delidevv1connect.WorkerServiceClient
 	accounts      delidevv1connect.AccountServiceClient
 	integrations  delidevv1connect.IntegrationServiceClient
+	network       delidevv1connect.NetworkServiceClient
 	providers     delidevv1connect.ProviderServiceClient
 	forwards      delidevv1connect.ForwardServiceClient
 	terminals     delidevv1connect.TerminalServiceClient
@@ -107,6 +108,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		terminals:     delidevv1connect.NewTerminalServiceClient(httpClient, endpoint, opts...),
 		accounts:      delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...),
 		integrations:  delidevv1connect.NewIntegrationServiceClient(httpClient, endpoint, opts...),
+		network:       delidevv1connect.NewNetworkServiceClient(httpClient, endpoint, opts...),
 		providers:     delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...),
 		devices:       delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...),
 		workers:       delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...),

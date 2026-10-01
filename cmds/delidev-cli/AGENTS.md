@@ -12,7 +12,11 @@ Read the relevant owner before changing its behavior, including cross-domain con
 - `cmds/delidev-cli/internal/cli/AGENTS.md`
 - `cmds/delidev-cli/internal/server/AGENTS.md`
 
-Keep implementation evidence in independent files under `docs/evidence/delidev/issue-<number>/`. Update instructions only when their rules or ownership change, not merely to record another validation run.
+Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
+
+- The native API relay in `internal/apiproxy` must join any started body/deadline cancellation callback before its HTTP handler returns. Downstream connection reuse cannot inherit a prior request's late deadline mutation; preserve upstream cancellation, once-only key reads and lease release under `docs/cmds-delidev-proxy-contract.md`.
+
+- Desktop-launch infrastructure follows issue #1137 and the desktop/CLI/user-service contracts. Ordinary product commands never implicitly start a server. Pin registered native-service admission against concurrent control through running-intent publication and detached spawn; preserve original explicit Start and running-intent-only ensure semantics.
 
 - Session terminals and native PTY/ConPTY ownership follow `docs/cmds-delidev-terminals-contract.md` and the process contract. Keep the shared terminal result JSON bound at 64 KiB and reserve 4 KiB more for operation journal ownership metadata. Keep shell selection Worker-owned with no fallback after invalid discovery or override; input/output/path/environment contents never enter logs or native ownership journals.
 

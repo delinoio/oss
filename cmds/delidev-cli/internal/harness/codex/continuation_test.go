@@ -59,7 +59,15 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 		return true
 	}
 	if f.mode == "thread-continuation-late" {
-		time.Sleep(200 * time.Millisecond)
+		marker := os.Getenv("DELIDEV_CODEX_CAPTURE") + ".history-response"
+		if err := os.WriteFile(marker+".received", nil, 0o600); err != nil {
+			os.Exit(63)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := waitForTurnFixtureMarker(ctx, marker+".release"); err != nil {
+			os.Exit(64)
+		}
 	}
 	write(id, f.history)
 	if n := f.historyNotification; n != nil {
@@ -349,13 +357,38 @@ func TestContinuationUnavailableAndChangedStateKeepInputBlocked(t *testing.T) {
 	for _, mode := range []string{"unsupported", "became-active", "late"} {
 		t.Run(mode, func(t *testing.T) {
 			c, capture, checkpoint, _ := continuationFixture(t, mode)
-			ctx := context.Background()
+			var err error
 			if mode == "late" {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, 60*time.Millisecond)
-				defer cancel()
+				// Cancel only after the child records the history request and the
+				// existing transport fence joins its pipe write. A short timer can
+				// expire during the preceding metadata read on a busy Windows runner.
+				marker := capture + ".history-response"
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				result := make(chan error, 1)
+				done := make(chan struct{})
+				go func() {
+					defer close(done)
+					_, err := c.VerifyContinuation(ctx, domain.NewID(), checkpoint, ContinueAfterSuccess)
+					result <- err
+				}()
+				defer func() {
+					cancel()
+					<-done
+				}()
+				if err := waitForTurnFixtureMarker(ctx, marker+".received"); err != nil {
+					t.Fatalf("fixture did not receive the history request: %v", err)
+				}
+				if err := c.wire.Notify(ctx, "fixture/write-fence", struct{}{}); err != nil {
+					t.Fatalf("history request write did not complete: %v", err)
+				}
+				cancel()
+				err = <-result
+				if err := os.WriteFile(marker+".release", nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				_, err = c.VerifyContinuation(context.Background(), domain.NewID(), checkpoint, ContinueAfterSuccess)
 			}
-			_, err := c.VerifyContinuation(ctx, domain.NewID(), checkpoint, ContinueAfterSuccess)
 			if err == nil {
 				t.Fatal("unavailable or changed native history was accepted")
 			}
