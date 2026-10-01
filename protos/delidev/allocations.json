@@ -2842,6 +2842,132 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1",
       "number": 17
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "ProviderInventoryCapability",
+      "member": "PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1",
+      "number": 5
+    },
+    {
+      "issue": 1146,
+      "kind": "message",
+      "declaration": "ProviderInventoryEntry",
+      "member": "connection_method",
+      "number": 9
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "ProviderConnectionMethod",
+      "newDeclaration": true,
+      "member": "PROVIDER_CONNECTION_METHOD_UNSPECIFIED",
+      "number": 0
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "ProviderConnectionMethod",
+      "newDeclaration": true,
+      "member": "PROVIDER_CONNECTION_METHOD_API_KEY",
+      "number": 1
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "ProviderConnectionMethod",
+      "newDeclaration": true,
+      "member": "PROVIDER_CONNECTION_METHOD_OAUTH_PKCE",
+      "number": 2
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "ProviderConnectionMethod",
+      "newDeclaration": true,
+      "member": "PROVIDER_CONNECTION_METHOD_KEYLESS",
+      "number": 3
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "AccountOAuthState",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_STATE_UNSPECIFIED",
+      "number": 0
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "AccountOAuthState",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION",
+      "number": 1
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "AccountOAuthState",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_STATE_EXCHANGING",
+      "number": 2
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "AccountOAuthState",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_STATE_SAVING",
+      "number": 3
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "AccountOAuthState",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_STATE_CONNECTED",
+      "number": 4
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "AccountOAuthState",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_STATE_CANCELED",
+      "number": 5
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "AccountOAuthState",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_STATE_EXPIRED",
+      "number": 6
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "AccountOAuthState",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_STATE_FAILED",
+      "number": 7
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "AccountOAuthState",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_STATE_INTERRUPTED",
+      "number": 8
+    },
+    {
+      "issue": 1146,
+      "kind": "enum",
+      "declaration": "AccountOAuthState",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED",
+      "number": 9
     }
   ]
 }

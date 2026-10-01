@@ -5,50 +5,50 @@
   max-width: 880px;
   min-width: 0;
   margin-inline: auto;
-  color: #202632;
+  color: var(--text);
   font-size: 15px;
 }
 .settings-transfer-column .settings-category-title h1, .transfer-intro h1 { font-size: 28px; font-weight: 600; }
 .configuration-transfer { display: grid; gap: 20px; container: transfer / inline-size; }
 .configuration-transfer :is(section, article, fieldset, header, header > div, label) { min-width: 0; }
 .configuration-transfer :is(p, h2, h3, h4, legend, small, li, label, button, .problem) { overflow-wrap: anywhere; }
-.configuration-transfer p { color: #5b6577; line-height: 1.5; }
+.configuration-transfer p { color: var(--muted); line-height: 1.5; }
 .configuration-transfer :is(h2, h3, legend) { margin: 0 0 8px; font-size: 18px; font-weight: 600; line-height: 1.4; }
 .configuration-transfer h4 { font-size: 15px; }
 .transfer-intro { margin-bottom: 4px; }
 .transfer-intro h1 { margin: 0 0 8px; }
 .transfer-intro p { margin: 0; }
-.configuration-transfer .transfer-panel { margin: 0; padding: 24px; border: 1px solid #d8dee8; border-radius: 12px; background: #fff; }
+.configuration-transfer .transfer-panel { margin: 0; padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .transfer-export-header { align-items: flex-start; gap: 20px; }
 .transfer-export-header > div { flex: 1; }
 .transfer-export-header p { margin: 0; font-size: 15px; }
 .transfer-export-header > button { flex: 0 1 auto; }
-.configuration-transfer .transfer-scope { margin: 20px 0 0; padding-top: 20px; border-top: 1px solid #d8dee8; }
-.configuration-transfer :is(button, input, select, textarea) { max-width: 100%; min-width: 0; min-height: 40px; border: 1px solid #8792a2; border-radius: 8px; }
+.configuration-transfer .transfer-scope { margin: 20px 0 0; padding-top: 20px; border-top: 1px solid var(--border); }
+.configuration-transfer :is(button, input, select, textarea) { max-width: 100%; min-width: 0; min-height: 40px; border: 1px solid var(--control-border); border-radius: 8px; }
 .configuration-transfer button { white-space: normal; }
-.configuration-transfer button.primary { border-color: #2563d8; background: #2563d8; color: #fff; }
-.configuration-transfer :is(button, input, select, textarea):disabled { opacity: 1; color: #5b6577; background: #f3f5f8; border-color: #d8dee8; cursor: default; }
+.configuration-transfer button.primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.configuration-transfer :is(button, input, select, textarea):disabled { opacity: 1; color: var(--muted); background: var(--surface-muted); border-color: var(--border); cursor: default; }
 .configuration-transfer textarea { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 15px; resize: vertical; }
 .configuration-transfer .transfer-json-input { height: 144px; }
-.configuration-transfer textarea::placeholder { color: #5b6577; opacity: 1; }
+.configuration-transfer textarea::placeholder { color: var(--muted); opacity: 1; }
 .configuration-transfer input[type=file] { padding: 7px; font-size: 15px; }
-.configuration-transfer input::file-selector-button { min-height: 40px; max-width: 100%; margin-right: 12px; padding: 8px 13px; border: 1px solid #8792a2; border-radius: 8px; background: #fff; color: #202632; font: inherit; cursor: pointer; }
-.configuration-transfer input:disabled::file-selector-button { border-color: #d8dee8; background: #f3f5f8; color: #5b6577; cursor: default; }
-.configuration-transfer :focus-visible { outline: 3px solid #2563d8; outline-offset: 3px; }
+.configuration-transfer input::file-selector-button { min-height: 40px; max-width: 100%; margin-right: 12px; padding: 8px 13px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.configuration-transfer input:disabled::file-selector-button { border-color: var(--border); background: var(--surface-muted); color: var(--muted); cursor: default; }
+.configuration-transfer :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .configuration-transfer label { margin-block: 16px 8px; }
 .configuration-transfer .transfer-helper { margin: 0 0 20px; }
 .configuration-transfer .transfer-load-guidance { margin: 12px 0 0; }
 .transfer-input-legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .transfer-stages { display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 20px 0; padding: 0; list-style: none; }
-.transfer-stages li { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; color: #5b6577; }
-.transfer-stages li[aria-current=step] { color: #2563d8; font-weight: 600; }
-.transfer-stage-number { display: inline-grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px; border: 1px solid #8792a2; border-radius: 50%; }
-.transfer-stages li[aria-current=step] .transfer-stage-number { border-color: #2563d8; background: #2563d8; color: #fff; }
+.transfer-stages li { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; color: var(--muted); }
+.transfer-stages li[aria-current=step] { color: var(--link); font-weight: 600; }
+.transfer-stage-number { display: inline-grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px; border: 1px solid var(--control-border); border-radius: 50%; }
+.transfer-stages li[aria-current=step] .transfer-stage-number { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .transfer-current-stage { font-size: 12px; }
 .configuration-transfer .transfer-mapping > legend { margin: 0; padding-inline: 6px; }
-.transfer-mapping > section + section, .configuration-transfer .transfer-panel > article + article { margin-top: 20px; padding-top: 20px; border-top: 1px solid #d8dee8; }
+.transfer-mapping > section + section, .configuration-transfer .transfer-panel > article + article { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
 .configuration-transfer .transfer-guidance h2 { font-size: 15px; }
-.transfer-guidance ul { margin: 8px 0 0; padding-left: 20px; color: #5b6577; line-height: 1.5; }
+.transfer-guidance ul { margin: 8px 0 0; padding-left: 20px; color: var(--muted); line-height: 1.5; }
 .transfer-guidance li + li { margin-top: 8px; }
 @container transfer (width < 600px) {
   .transfer-export-header { flex-direction: column; align-items: stretch; }
