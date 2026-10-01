@@ -20,6 +20,17 @@ main-established allocations. No new RPC or generated binding is activated by
 the reservation prerequisite.
 
 ## Scope
+
+Issue #1235 reserves `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17`
+under its owning issue identity. This independent capability will negotiate
+service-bearing subscription Accounts/native Models and retired-reference
+projections at resource schema version 2; unchanged API resources remain version
+1. It must not depend on API provider inventory capabilities. Establish this
+allocation and migration 28 on main before dependent implementation. This
+prerequisite changes no active schema, generated binding or capability
+advertisement; generate clients from reconciled schemas when implementation
+activates the reserved boundary.
+
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 
 ## Runtime and Language

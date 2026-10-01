@@ -2835,6 +2835,13 @@
       "member": "WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
       "oldBranchNumber": 5,
       "number": 7
+    },
+    {
+      "issue": 1235,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1",
+      "number": 17
     }
   ]
 }
