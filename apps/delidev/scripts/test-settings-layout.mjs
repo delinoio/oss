@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRsbuild } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
@@ -25,7 +25,7 @@ try {
     try {
       const pathname = new URL(request.url, "http://127.0.0.1").pathname;
       const file = resolve(directory, `.${pathname === "/" ? "/index.html" : pathname}`);
-      if (!file.startsWith(`${directory}/`)) throw new Error("Invalid fixture path");
+      if (!file.startsWith(`${directory}${sep}`)) throw new Error("Invalid fixture path");
       response.setHeader("Content-Type", { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml" }[extname(file)] ?? "application/octet-stream");
       response.end(await readFile(file));
     } catch { response.writeHead(404); response.end(); }
