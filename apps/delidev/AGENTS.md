@@ -31,3 +31,5 @@ Diagnostics presentation is owned by `src/doctor.tsx`, `src/doctor.css` and the 
 Unsupported-schema Agent display names/aliases are projected only within the existing 256-byte UTF-8 Agent name limit; larger values keep the Unnamed fallback and disabled actions while preserving the full resource ID.
 
 - Activity filter presentation is owned by `src/activity-sidebar.css` and the existing Activity controller in `src/views.tsx`. Follow the bounded issue #1156 treatment in `docs/apps-delidev-desktop-contract.md` and the scoped source instructions; preserve shared shell/server controls and the authority of issues #1137/#1149.
+
+- The protected session browser follows `docs/cmds-delidev-browser-contract.md`. Keep the composer mounted, external raw CEF children without Tauri browser-side IPC authority, initialization scripts or product credentials, native presentation generations exact, paths owner-private and server/device/account scoped, and whole-directory deletion after independently completed CEF shutdown. Keep offline acknowledgments pending and native/platform evidence distinct.
