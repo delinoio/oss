@@ -379,18 +379,35 @@ Account metadata editing is separate from credential connection, validation, cat
 
 Account settings separate **AI Subscription** and **AI API Keys** presentation sections while continuing to query the existing Account resource. Each section sends the server-side account-type selector; provider-row links add the exact provider ID. Filtering must happen before pagination, and cursors must remain scoped to the exact account type and provider. The desktop requires the provider activation, active-model filter, account-provider filter and explicit account-type-filter capability markers before enabling split lists or the guided API account flow. It must never fall back to a mixed list, client-page filtering or an inferred all-enabled provider inventory. The API provider inventory’s Add AI API key action opens the entry form directly with that exact enabled saved provider entry, consuming each deliberate event key once. The wizard rechecks the fresh provider identity, authentication, protocol, endpoint and enabled state before saving account metadata and before an explicit credential connection; it never validates or discovers models automatically. API connection, validation, health, quota, exhaustion and credential cleanup remain distinct states. Navigation stays locked during account creation, settings and connection workflows, with exact uncertain requests retained for deliberate retry. Subscription login remains unavailable; existing subscription configurations and metadata remain manageable without a login action. The collapsed Advanced settings disclosure owns search, provider filters, disconnected metadata creation and the subscription-provider section, which permits only native-subscription protocol, subscription authentication and an empty endpoint. Issue #1143 defines the compact subscription list and planned provider cards in [the subscription Settings contract](apps-delidev-subscription-settings-contract.md); native lifecycle controls remain unavailable.
 
-Issue #1145 replaces the creation picker’s search, radios, selected markers, numbered steps and Continue with native provider action buttons. Choose an API provider / Select a provider to connect your entry. precedes one server-ordered page of enabled saved API entries. The picker requests `query: ""`, `enabledOnly: true`, `pageSize: 50` and its own cursor, independent of AI API Keys’ Search providers/filter and API Providers’ search. Both account and picker inventories must retain all four capability gates; no generic resource page or credential inference can supply eligibility. Direct-entry details remain disabled while either inventory lacks the gates, and become unavailable again if those capabilities are lost. The clicked UUID and complete summary/Resource are retained as one bounded hint even when the account-filter page does not contain that provider. The clicked snapshot remains authoritative across unrelated inventory refreshes; the existing fresh provider checks validate or reject its contract before writes.
+Issue #1145 replaces the creation picker’s search, radios, selected markers, numbered steps and Continue with native provider action buttons. Choose an API provider / Select a provider to connect your entry. precedes one server-ordered page of enabled saved API entries. The picker requests `query: ""`, `enabledOnly: true`, `pageSize: 50` and its own cursor, independent of AI API Keys’ unsearched account-provider inventory and API Providers’ search. Both account and picker inventories must retain all four capability gates; no generic resource page or credential inference can supply eligibility. Direct-entry details remain disabled while either inventory lacks the gates, and become unavailable again if those capabilities are lost. The clicked UUID and complete summary/Resource are retained as one bounded hint even when the account-filter page does not contain that provider. The clicked snapshot remains authoritative across unrelated inventory refreshes; the existing fresh provider checks validate or reject its contract before writes.
 
-The creation card retains a 760 CSS px maximum width, 20px padding at every width, 12px radius, white background and 1px `#d8dee8` border. The picker’s internal content uses two equal columns at 560px or wider and one below that threshold, with 12px gaps. Neutral native `button type="button"` cards have 88px minimum height, 16px padding and 9px radius; each shows a bold exact provider name, muted API key or Local endpoint method and decorative chevron. No selected/pressed semantics, invented logos or inferred OAuth availability are used. System fonts, text `#202632`, muted `#5b6577` and focus/accent `#2563d8` remain scoped to this workflow; the narrow subscription-form padding rule remains separate.
+Issue #1237 supersedes the prior API creation-card geometry. API list and child workflows use one left-aligned fluid column at most 820 CSS px wide, provider choices at most 720px and entry/preferences forms at most 560px. Remove the outer creation card. Preserve the shell’s 40px content padding, 24px below 1100px and existing narrow-screen padding. The picker uses two equal columns at an internal width of at least 560px and one below, with 10px gaps. Neutral native `button type="button"` actions have 64px minimum height, 12px padding and 8px corners, exact provider names, muted API key or Local endpoint methods and decorative chevrons. No selected/pressed semantics, invented logos or inferred OAuth availability are used. System fonts, white content, primary `#202632`, secondary `#5b6577`, accent/focus `#2563d8` and panel border `#d8dee8` remain scoped to API Account documents/workflows. Use a 26px semibold main title, 18px step headings, 14px body and 12px metadata, 40px minimum controls, 8px control corners and 12px panel corners with AA contrast. Subscription forms, API Providers and other Settings/modal callers retain their appearance.
 
 A deliberate click, Enter or Space opens the existing entry form immediately and focuses its step heading. Back/Change retains the picker page and restores the original provider-button focus. Next page exists only with a continuation token; First page exists on later pages, including a successful empty later page. Reads remain bounded without whole-inventory accumulation. Retry preserves the exact query/cursor. Loading, typed permission denial, read failure/Retry and stale cached results remain explicit. Open API Providers is offered only for a successful empty first page without continuation; empty pages with continuation keep Next and cannot imply globally empty inventory. Restoration, rerender, Strict Mode replay and provider navigation cannot create/connect/validate/discover or start authentication. Closing follows the opening-disposal policy above.
 
 Entry-name/key validation, password masking and transient key clearing, collapsed preferences (`enabled=true`, `exclude_automatic=false`, `recovery_notifications=true`), explicit keyless connection and server-relative localhost guidance remain unchanged. Fresh provider checks precede metadata save and connection; one save is followed by one deliberate connection, with saved-account retention on connection failure, unverified health, separate validation/discovery, original request/revision retries, navigation locks and late-continuation guards. Record browser/component fixtures separately from native/provider acceptance in issue #1145, its pull requests and CI runs.
 
 
+Issue #1237 simplifies AI API Keys for a few saved entries. List mode owns one **AI API Keys** title, one top-right **Add AI API key** action, the description **Manage AI API keys and keyless local connections. Connection and health are separate states.**, the scope **Saved on the selected server.** and a subtle divider. Creation owns **Back to AI API Keys**, one **Add AI API key** title and the same scope, without the common category title. Saved results, Manage connection, Edit preferences and Delete entry use one clear heading, full inert entry identity, the scope line and existing Back/Cancel actions.
+
+Remove API Search providers, Filter entries by provider and More provider filters entirely, with no hidden filter equivalent, totals, sorting or bulk operations. Its account-provider inventory always sends `query: ""`, `enabledOnly: false`, `pageSize: 50` and an API-owned bounded cursor. Subscription retains its own opening-local search/provider/cursor, and API Providers retains its own search. Provider-origin Manage stores only the exact provider-ID scope and bounded hint, never a display-name search. Display that provider’s exact label or complete inert ID with **Clear provider filter**, which clears the scope/hint and returns account pagination to its first page. Preserve server-side API/provider filtering before pagination and cursor binding; never accumulate the whole inventory or filter a loaded page.
+
+Saved entries retain server order in one bordered panel with divided semantic rows and 18px padding. Full aliases and provider identities wrap. Connection (including pending credential cleanup), Health, Entry Enabled/Disabled, Provider Enabled/Off/Unavailable and Quota (confirmed exhaustion, observation count or no observation) remain separate labeled facts. Actions are **Manage connection**, **Edit preferences**, **Delete entry** in that order; ordinary controls are neutral and deletion text is understated dark red. Unknown schemas retain existing unavailable-fact and disabled-action behavior and expose the full inert resource ID. No stored-key masking/readback/reveal/copy is added.
+
+Only a successful unscoped final empty first page shows the approximately 260px-high `#fafbfc` neutral panel with a decorative key, **No AI API key entries**, **Add an entry for an enabled API provider.** and **Keyless local providers do not require a key.** It has no second Add action. A provider-scoped final empty first page says **No entries for this provider.** Empty continuation or later pages say **No entries on this page.** Show First page only on later pages and Next page only with an opaque continuation; omit navigation when neither exists and retain fetching guards. Below results keep **Credentials are stored securely on the selected server.**
+
+Initial capability loading, permission denial, missing capability markers and sanitized read failures cannot claim successful emptiness. Failed refresh retains cached rows and the stale notice; cached empty failure suppresses definitive current-empty copy. Each failed inventory/account read has a deliberate Retry disabled while fetching that refetches only its current request/query/cursor, never writes, traverses pages or grants eligibility. All four account and picker capability markers remain required, including capability loss after direct provider entry.
+
+The Provider → Details flow remains immediate. Keep **Only enabled API providers appear here.** and arbitrary supported saved providers in server order; preview names are examples. Deliberate provider activation focuses the step heading; Change restores the exact provider-button focus on its retained page. Details uses **Connect your entry**, a slim provider/method summary and **Change**, Entry name, a transient password-masked API key only when required, collapsed **Where to get an API key** with every existing guidance/documentation string, and collapsed **Advanced preferences** with all existing fields/defaults. Preserve **Use a separate entry for each API key.**, **Stored securely on the selected server.** and **New connections remain unverified until you explicitly validate the connection.** Keep one **Add and connect** submit and the top list-return action; remove the duplicate footer Back to provider. Explicitly keyless providers omit key input/key-creation guidance, retain server-relative localhost/local-endpoint explanation and never ask for key reentry after local failure.
+
+Name/key byte limits, fresh provider checks before save/connection, one metadata save followed by one intended connection, retained saved entries after connection failure, distinct connection/health/validation outcomes, exact original request/revision retries, busy/uncertain locks, secret clearing and late-continuation guards remain authoritative. Management retains active-only five-second status reads and explicit Connect, Validate connection, Refresh models and Disconnect eligibility, separate validation/catalog observations with original times and sanitized problems, exact original cleanup retry and all disconnection consequences. Preferences retain immutable provider/type, complete fields/observations, captured revisions and guarded Save/Cancel/retry; they cannot mark an entry ready. Deletion retains explicit confirmation, disconnection/cleanup and relationship checks, sessions/history and original uncertain requests. No automatic validation, discovery, secret persistence or replay is introduced.
+
+Use static CSP-compatible CSS, semantic headings/articles/navigation, explicit labels, visible focus, text alongside status colors and decorative aria-hidden vectors. Keep the existing below-760px grouped selector, native modal inertness/Tab containment/Close/Escape/opener restoration and independent shell scrolling. Long UTF-8 aliases, provider names and full IDs wrap at 200% zoom; actions and forms stack without clipping. Fetching/reflow cannot steal focus. The common Settings-opening disposal policy continues to own drafts, cursors/scope, confirmations, secrets, waits/retry presentation, ordinary Subscription reopening, targeted entry and same-identity reconnect; preserve sibling caches and Strict Mode guards. Record revision, commands, actual results and native geometry/keyboard/zoom limits in issue #1237, its PR and CI artifacts under the current repository validation policy. Component/browser/build/package checks cannot establish native/provider acceptance. This ships in the ordinary frontend build without backend/native/API/schema/migration, dependency/asset, logging, credential-storage, flag or deployment changes.
+
+
 API entry creation is a content-level Provider → Details flow inside Settings. Only the provider inventory's enabled API entries may be selected. The Details step keeps alias, a masked transient key only when required, and collapsed existing account preferences; keyless entries require an explicit connect action and retain server-relative localhost meaning. Creation is followed by a fresh provider read immediately before one explicit connection attempt, with the created account retained after connection failure. Manage/Done navigation stays disabled while that provider check is in flight. Exact uncertain create/connect requests use their original identities and revisions, visible keys clear at submission, and hiding or changing provider revokes late automatic connection continuations. Validation and discovery remain separate explicit actions and connection does not prove readiness.
 
-The `api-accounts` category presents **AI API Keys** in the sidebar, compact selector and page title, with the description “Manage AI API keys and keyless local connections. Connection and health are separate states.” API-authored list, wizard, preference, loading, stale/error and accessible copy uses **entry**: Add AI API key, Back to AI API Keys, Manage AI API Keys, Filter entries by provider, Entry name, Choose an API provider and Connect your entry. Issue #1145 supersedes the prior Continue to details control and numbered step marker with direct provider actions. Its empty state is “No AI API key entries. Add an entry for an enabled API provider. Keyless local providers do not require a key.” The masked secret remains API key; keyed and keyless actions are Connect API key and Connect local endpoint, followed by separate Validate connection, Disconnect and Manage connection actions. Keyless failures never ask for a key. Shared editor, field, connection and deletion components apply entry terminology only to Account documents with `type: "api"`; preserve subscription/mixed account terminology, aliases, server diagnostics and all stored/RPC/CLI identities. This presentation ships in the ordinary desktop frontend build with no migration, flag, new logging or backend/native change. Record verification in issue #1135, its pull requests and CI runs.
+The `api-accounts` category presents **AI API Keys** in the sidebar, compact selector and page title, with the description “Manage AI API keys and keyless local connections. Connection and health are separate states.” API-authored list, wizard, preference, loading, stale/error and accessible copy uses **entry**: Add AI API key, Back to AI API Keys, Manage AI API Keys, Entry name, Choose an API provider and Connect your entry. Issue #1145 supersedes the prior Continue to details control and numbered step marker with direct provider actions. Its empty state is “No AI API key entries. Add an entry for an enabled API provider. Keyless local providers do not require a key.” The masked secret remains API key; keyed and keyless actions are Connect API key and Connect local endpoint, followed by separate Validate connection, Disconnect and Manage connection actions. Keyless failures never ask for a key. Shared editor, field, connection and deletion components apply entry terminology only to Account documents with `type: "api"`; preserve subscription/mixed account terminology, aliases, server diagnostics and all stored/RPC/CLI identities. This presentation ships in the ordinary desktop frontend build with no migration, flag, new logging or backend/native change. Record verification in issue #1135, its pull requests and CI runs.
 
 Connection starts unverified. Validation and model discovery show their independent server observations; only explicit actions invoke them. Disconnection describes cancellation and credential removal, and presents accepted state separately from pending credential/Worker cleanup. A retained removal marker retries its original request ID and expected revision, never the newer account revision. Unsupported or unsafe revision encoding disables that retry instead of guessing.
 
@@ -403,9 +420,108 @@ Session creation and retained-session controls expose the optional estimated-cos
 Budget editing captures the session revision. Preserve stale drafts, require an explicit latest-revision action before a new write, and retain original uncertain mutations for exact retry. Removing the budget is an explicit oneof operation. A raise/removal can permit already eligible queued execution but never itself resumes paused/archived sessions. Read failures mark cached evidence as stale and block new edits, while exact uncertain retries remain available. No display calculation or disabled button replaces server authorization.
 
 ### Devices and diagnostic observations
-Settings lists paired devices with independent authorization, type, pairing/revocation time and optional Worker identity. An authorized device is not automatically online. Revocation opens a confirmation bound to the original revision, identifies this desktop when applicable and warns that self-revocation disconnects it without automatic credential replacement. Stale new confirmations are blocked; uncertain retries preserve the exact original request even after a peer revision. Accepted revocation remains separate from session/native cleanup and private-file erasure. Generic device reads contain no bearer or pairing code.
+Settings lists paired devices with independent authorization, type, pairing/revocation time and optional Worker identity. An authorized device is not automatically online. Revocation opens a confirmation bound to the original revision, identifies this desktop when applicable and independently prevents current-desktop revocation in both the list and direct confirmation path. Stale new confirmations are blocked; uncertain retries preserve the exact original request even after a peer revision. Accepted revocation remains separate from session/native cleanup and private-file erasure. Generic device reads contain no bearer or pairing code.
 
-Paired-device settings explicitly issue single-use client or manually installed Worker grants through direct CreatePairing RPC. Generate 256 random bits with Web Crypto in the trusted app, retain the original name/type/request and native-pinned server origin/ID in one connection-owned component, and send only the SHA-256 verifier. Raw code never enters mutation variables, query keys/caches, Web Storage or logs. A lost response retains the same code/request across settings visibility; no automatic retry, regeneration or discard is allowed while acceptance is uncertain. Match the response request/resource/name/type before exposing any document.
+Issue #1239 defines the **Paired devices-only** compact list in
+`device-settings.tsx` / `device-settings.css` and the existing Settings workspace.
+Keep the shared native window, full-webview modal, 64px header, 240px independently
+scrolling grouped sidebar, all 17 category labels/order/IDs, compact selector and
+other categories unchanged. Center the category in a fluid 100%-width column with
+a 1040px maximum inside the existing 40px/24px/16px responsive padding. The one
+26px semibold title precedes **Pair devices using a short-lived document.** (14px)
+and **Saved on the selected server.** (12px). Refresh settings and exactly one
+eligible blue Create pairing document action share the list toolbar, with a
+decorative plus hidden from assistive technology. Below 1100px the toolbar sits
+below the title and row actions below metadata; below 760px retain the labeled
+native grouped selector and its existing lock. All content wraps at 200% zoom.
+
+Use one white bordered panel with 12px corners and divided semantic articles in
+server order. Each row displays a decorative outline desktop/Worker icon, complete
+inert 15px semibold name, known type as Desktop client/Worker (otherwise Unknown),
+textual Authorized/Revoked/Unknown badge, exact current-desktop marker and 13px
+UTC dates such as **29 Sep 2026, 00:58 UTC**. Missing/unparseable timestamps are
+Unknown; reject impossible calendar dates instead of normalizing them. Do not
+interpret future-schema documents to invent names, authorization or actions.
+Keep **Authorization does not mean this device is currently connected.** once
+above the list and **Local Worker registration is available in Runner Devices.**
+below the list/pagination, without a new navigation action or connectivity inference.
+
+Every row has a collapsed-by-default, keyboard-operable Details control with a
+device-scoped accessible name, announced expansion and associated content.
+Details retains full Device ID, optional `machine_id` as Runner Device ID, original
+paired/revoked timestamps verbatim (including invalid strings), and existing
+additional displayed metadata. Technical values use small monospace text; names
+and values wrap without truncation. Toggling is local and performs no RPC,
+clipboard operation or persistence. The Settings workspace owns expansion
+independently of the generic page token. Retain matching IDs across refresh,
+category visits, same-identity reconnect, revocation/list and responsive changes.
+Only explicit Paired-device First/Next clears the set; Settings disposal clears
+the whole opening. Keep the existing category-selection first-page reset. Bound
+retention to the last successful paired page (at most 50 IDs), prune absent IDs
+after successful replacement and retain the last set during failed refresh.
+
+Only supported authorized non-current devices retain Revoke, with a restrained
+red outlined visible label and device-scoped accessible name. Revoked/unknown or
+unsupported documents gain no mutation authority. The current desktop has no
+Revoke and keeps **This desktop client cannot revoke its own registration.**
+Revision-bound confirmation/result screens and the pairing editor use this same
+column with a 760px maximum inner form. Keep every existing field, help/warning,
+status and explicit action, original request/revision/self guards, current reads,
+polling, stale/permission/read errors, exact uncertain retry, unknown
+acknowledgments and session/native-cleanup/private-file caveats.
+
+Keep one mounted PairingGrant controller for this Settings opening. Only its
+create button is rendered into the heading; the active inline editor consumes
+that button without remounting or duplicating secret/request/query/mutation
+state. Existing pairing authority remains independent of list loading/failure,
+and existing refresh/workflow locks remain authoritative. Focus Device name once
+after explicit creation entry. Cancel/discard restores focus to the stable
+creation control after visible DOM commit. Preserve the 256-byte/NUL validation,
+pinned server/endpoint, 256-bit private code, digest-only RPC, matched acknowledgment,
+fresh matching read before reveal, explicit read-only selection/copy, activity
+hiding, five-minute expiry, irreversible consumed/expired code clearing, exact
+uncertain retry and discard explanation. No automatic clipboard, regeneration or
+replacement grant is introduced. Revocation cancel focuses the initiating Revoke
+if still eligible; Return to devices after a result focuses that row's Details.
+An absent/ineligible control falls back to Refresh settings. Consume these focus
+handoffs once after commit; refresh/reconnect/reflow never steal focus. Settings
+close retains the native modal's outer-opener restoration.
+
+Initial loading, initial read/permission failure, successful emptiness, cached
+refresh and failed retained refresh remain distinct. Keep sanitized Problem and
+correlation metadata and explicit current-query refresh. Only a successful empty
+first page without error/continuation shows **No paired devices yet** and, when
+pairing is available, **Choose Create pairing document to pair a desktop client
+or manually installed Worker.** Otherwise show **Pairing document creation is
+unavailable for this connection.** No duplicate create action is added. An empty
+later/continuation page says **No paired devices on this page** and keeps existing
+First/Next controls. Hide paging only for successful final first-page emptiness;
+retain the 50-resource size, opaque tokens and exact enabled states. Cache rows
+only for their current query/page. Failed refresh keeps **Refresh failed. Showing
+the last successfully loaded results.** and the sanitized error, including after
+cached-empty success, without a definitive empty claim or global count.
+
+Use system fonts, white content, `#f3f5f8` Details background, `#202632` primary
+text, `#5b6577` secondary text, `#2563d8` primary/focus accent and `#d8dee8`
+panel/divider borders. Authorized badges use pale blue/dark-blue text;
+Revoked/Unknown are neutral gray. Keep 1px dividers, 20px row padding, 8px control
+corners, 12px panel corners, at least 40px targets and AA text/control/focus
+contrast. Control boundaries remain independently visible; state has textual
+labels. Use static scoped CSP-compatible CSS without inline exceptions,
+dependencies, external assets, artwork, shadows or gradients. Preserve contained
+modal focus, Close/Escape, category announcements and background inertness.
+
+This presentation changes no public API, generated/schema/storage/native/backend
+interface, credentials, migration, polling, telemetry or feature flag. Keep
+Strict Mode generations, opening disposal, same-identity transport replacement,
+accepted server effects and sibling workflows/caches authoritative; ordinary
+reopen never restores abandoned drafts/disclosures/secrets/exact retries. Record
+actual revisions, commands/results and unresolved limits in issue #1239, its PRs
+and CI artifacts. Fixture/build/package checks remain separate from supported
+native geometry/keyboard acceptance at 1600×1000, 960×640, 720×800, 420×800 and
+200% zoom, with unavailable platforms explicitly named.
+
+Paired-device settings explicitly issue single-use client or manually installed Worker grants through direct CreatePairing RPC. Generate 256 random bits with Web Crypto in the trusted app, retain the original name/type/request and native-pinned server origin/ID in one opening-owned component, and send only the SHA-256 verifier. Raw code never enters mutation variables, query keys/caches, Web Storage or logs. A lost response retains the same code/request across category visibility within the current Settings opening; no automatic retry, regeneration or discard is allowed while acceptance is uncertain. Closing Settings disposes that opening under #1138 without replay or rollback. Match the response request/resource/name/type before exposing any document.
 
 Read the original pairing resource before allowing disclosure, poll only while this area is active and expose unavailable/mismatched observations. The document uses the original pinned endpoint/server/pairing IDs and is hidden until explicit reveal. A read-only textarea supports explicit select/copy without automatic clipboard access. Hide it whenever the area closes and clear the retained raw code after observed consumption or expiry. A consumed/expired grant cannot be revived by a later stale read. Explicit discard clears the window's copy, with an explanation that an issued grant remains usable until consumed/expired; closing the server window also loses this memory-only copy. This is independent of existing paired-device revocation. Cross-computer reachability and remote TLS remain deployment prerequisites.
 
