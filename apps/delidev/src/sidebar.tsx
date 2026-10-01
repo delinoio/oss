@@ -188,8 +188,8 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   </section>;
 }
 
-export function Sidebar({ surface, selectedSessionId, localServer, serverPresentation, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  surface: Surface; selectedSessionId: string; localServer?: ReactNode; serverPresentation?: ServerPresentation; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
+export function Sidebar({ surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const [compact, setCompact] = useState(false);
@@ -204,7 +204,6 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsButton = useRef<HTMLButtonElement>(null);
   const optionsPopup = useRef<HTMLDivElement>(null);
-  const [serverExpanded, setServerExpanded] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(() => new Set());
   const [collapsedFallbacks, setCollapsedFallbacks] = useState<ReadonlySet<string>>(() => new Set());
@@ -232,8 +231,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
     return () => window.document.removeEventListener("pointerdown", outside);
   }, [optionsOpen]);
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
-  const serverName = serverPresentation?.kind === ServerPresentationKind.Saved ? serverPresentation.name : "Local server";
-  const serverStatus = status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable";
+  const serverName = serverPresentation?.kind === ServerPresentationKind.Saved ? serverPresentation.name : "This computer";
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const media = window.matchMedia("(max-width: 759px)");
@@ -381,9 +379,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
         <div className="sidebar-surface-outlet" ref={setContextTarget} />
       </div>
       <footer className="sidebar-footer">
-        <button type="button" hidden={!sessionNavigation} className="sidebar-server-summary" aria-label={`${serverName} ${serverStatus}`} aria-expanded={serverExpanded} aria-controls="sidebar-server-management" onClick={() => setServerExpanded((current) => !current)}><Icon name="server" /><span className="sidebar-server-label"><span>{serverPresentation?.kind === ServerPresentationKind.Saved ? serverPresentation.name : "Local server"}</span><span role="status">{status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable"}</span></span><Icon name="chevron" className={`sidebar-disclosure ${serverExpanded ? "is-expanded" : ""}`} /></button>
-        {!sessionNavigation ? <p role="status">{status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable"}</p> : null}
-        <div id="sidebar-server-management" className="sidebar-server-management" hidden={sessionNavigation && !serverExpanded}>{localServer}</div>
+        <p role="status">{serverName} · {status.error || !connectionReady || status.data?.stopping ? "Disconnected · previous data may be stale" : status.data ? "Connected" : status.isPending ? "Connecting…" : "Disconnected"}</p>
       </footer>
     </div>
     </dialog>

@@ -24,7 +24,7 @@ function recoveryProblem(error: unknown) {
   return "The operation could not be confirmed. Check desktop registration or retry the same recovery; do not reset the server.";
 }
 
-export function LocalRegistrationRecovery({ busy, setBusy, recovered }: { busy: boolean; setBusy: (value: boolean) => void; recovered: (connection: NativeConnection) => Promise<void> }) {
+export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = true }: { active?: boolean; busy: boolean; setBusy: (value: boolean) => void; recovered: (connection: NativeConnection) => Promise<void> }) {
   const [status, setStatus] = useState<DesktopRegistration>();
   const [confirm, setConfirm] = useState(false);
   const [pending, setPending] = useState<RecoveryRequest>();
@@ -66,7 +66,7 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered }: { busy: 
     {status ? <p role="status">{status.state === RegistrationState.Authorized ? "This desktop registration is authorized." : status.state === RegistrationState.Revoked ? "This desktop registration was revoked. You can explicitly register this desktop again using this computer's server owner access." : "A desktop registration recovery is pending. Continue its original request."}</p> : null}
     {status && (status.state !== RegistrationState.Authorized || pending) ? <button disabled={busy} onClick={() => setConfirm(true)}>{pending ? "Continue desktop recovery" : "Re-register this desktop"}</button> : null}
     {error && !confirm ? <p role="alert">{recoveryProblem(error)}</p> : null}
-    <Modal title="Re-register this desktop" visible={confirm} close={() => setConfirm(false)}>
+    <Modal title="Re-register this desktop" visible={confirm && active} close={() => setConfirm(false)}>
       <p>This creates a new desktop registration. The original registration stays revoked. Your server, saved sessions, account settings and Workers are preserved.</p>
       <p>Switching to the new registration clears this window's unsent drafts and pending app actions. Sessions are not automatically resumed.</p>
       {pending ? <p>The original recovery request is retained. Closing this dialog does not cancel an accepted registration.</p> : null}

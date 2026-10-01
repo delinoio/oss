@@ -81,7 +81,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		value, err := desktopRecoveryCommand(ctx, o, rest)
 		return emit(value, err)
 	}
-	if command == "server" && len(rest) > 0 && (rest[0] == "start" || rest[0] == "run" || rest[0] == "ensure") {
+	if command == "server" && len(rest) > 0 && (rest[0] == "start" || rest[0] == "run" || rest[0] == "ensure" || rest[0] == "desktop-launch" || rest[0] == "desktop-status" || rest[0] == "desktop-retry") {
 		value, err := start(ctx, o, rest, streams)
 		return emit(value, err)
 	}

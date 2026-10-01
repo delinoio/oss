@@ -25,6 +25,8 @@ type OwnedAPI struct {
 }
 
 type PlanningRecorders struct {
+	Closure  func(context.Context, ClosureClaim) error
+	Stop     func(context.Context, StopClaim) error
 	Creation func(context.Context, CreationClaim) error
 	Mode     func(context.Context, ModeClaim) error
 	Input    func(context.Context, InputClaim) error
@@ -41,7 +43,7 @@ func OpenOwnedAPIWithPlanning(ctx context.Context, config APIExecutionConfig, re
 	if err != nil {
 		return nil, err
 	}
-	return &OwnedAPI{connection: connection, creation: record.Creation, mode: record.Mode, input: record.Input, fileReply: record.File, questionReply: record.Question, planReply: record.Plan}, nil
+	return &OwnedAPI{connection: connection, creation: record.Creation, mode: record.Mode, input: record.Input, fileReply: record.File, questionReply: record.Question, planReply: record.Plan, closure: record.Closure, stop: record.Stop}, nil
 }
 
 func (a *OwnedAPI) RunPlanning(ctx context.Context, request domain.ID, input string, emit func(context.Context, InputObservation) error) (PromptResult, error) {
@@ -245,4 +247,16 @@ func (a *OwnedAPI) CloseText(ctx context.Context, request domain.ID) (TextClosur
 		return TextClosure{}, apiConfigurationError()
 	}
 	return a.connection.CloseText(ctx, request, a.closure)
+}
+
+// RunFirstInput retains text-only closure when no original tool arrives. An
+// observed tool upgrades the same input once; no prompt is resent or restored.
+func (a *OwnedAPI) RunFirstInput(ctx context.Context, request domain.ID, input string, emit func(context.Context, InputObservation) error) (PromptResult, error) {
+	if a == nil || a.connection == nil || a.closure == nil || a.stop == nil || a.fileReply == nil || a.questionReply == nil || a.planReply == nil {
+		return PromptResult{}, apiConfigurationError()
+	}
+	return a.connection.runInput(ctx, request, input, a.input, emit, publicFirstInput)
+}
+func (a *OwnedAPI) HasOriginalTools() bool {
+	return a != nil && a.connection != nil && a.connection.completedTools != nil
 }

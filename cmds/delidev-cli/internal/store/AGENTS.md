@@ -122,6 +122,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Permanent deletion includes each original claimed workspace-storage snapshot reservation, even before output exists. Persist those typed UUIDs in the synchronized immutable deletion plan; no database migration or inferred native completion is required.
 
+- Grok typed tool observations and interactions use existing Resource JSON storage and scoped bounded reads; preserve publication sequence, exact original native ownership and original request contents in Session/Inbox projections. Close SQL row readers before nested resource reads, and bound complete retained journals without truncation. Derived search projection or native restoration requires independent typed ownership; tool paths and descriptors remain inert.
+
 - Explicit outbound profiles/routes reuse the existing entity/event/receipt transactions under `docs/cmds-delidev-network-contract.md`. Keep one revisioned selection per server or registered Worker, reject deletion of selected profiles, and exclude network authority from generic configuration import/export. Protected credential bytes never enter SQLite.
 
 - Same-account Codex forks follow `docs/cmds-delidev-forks-contract.md`. Keep source boundary reservations read-only, original actor/current account checks at acceptance/claim/publication, once-only journaled native Fork, private rollout proof, complete multi-repository snapshot checks across native creation, separate opened roots for copy reads/writes, synchronized copied files/directories, independent child queues and immutable continuation settings. Unknown native/cleanup outcomes never authorize another Fork.

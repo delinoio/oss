@@ -41,6 +41,11 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Permanent deletion accepts original workspace-storage jobs with optional reserved snapshot UUIDs. Preserve omitted legacy fields and bind each nonempty snapshot ID only to its storage copy.
 
+- Grok public tool, interaction and terminal documents follow the pinned issue #1091 harness/protocol contracts. Keep original request namespaces and lexical numeric IDs through the Grok-only decimal identity, nullable question data, exact decimal uint64 counters and exclusive response/terminal families. Original native Plan decisions cannot be converted to common Plan approval. Null/mixed/foreign response fields must fail before a native encoder or side effect.
+
+- Retain original Grok request JSON bytes alongside the typed observation for byte-based proposal digests. Bound both within the existing public event limit; neither representation grants native, filesystem or response authority.
+- Compare complete Grok request-ID values for original interaction/reply ownership, including the kind and decimal spelling. Normalized namespace keys retain duplicate-detection compatibility but cannot establish exact request identity.
+
 - Explicit outbound profiles and immutable selections follow `docs/cmds-delidev-network-contract.md`. Keep closed Direct/HTTP/HTTPS/SOCKS5 modes, bounded exact-host/IP/CIDR bypass rules and separate write-only credentials; never interpret DNS answers or wildcards as bypass authority.
 
 - Same-account Codex forks follow `docs/cmds-delidev-forks-contract.md`. Keep source boundary reservations read-only, original actor/current account checks at acceptance/claim/publication, once-only journaled native Fork, private rollout proof, complete multi-repository snapshot checks across native creation, separate opened roots for copy reads/writes, synchronized copied files/directories, independent child queues and immutable continuation settings. Unknown native/cleanup outcomes never authorize another Fork.
