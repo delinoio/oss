@@ -46,6 +46,10 @@ func startGrokStopControl(targeted, nativeCtx context.Context, cancelNative cont
 			code = domain.SafeError(err).Code
 		}
 		logger.InfoContext(nativeCtx, "grok_execution_stop_submitted", "request_id", request, "claimed", submitted.Claimed, "delivered", submitted.Delivered, "code", code)
+		if err != nil && !submitted.Claimed {
+			cancelNative()
+			return
+		}
 		select {
 		case <-c.finished:
 		case <-grace.Done():

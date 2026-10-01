@@ -49,7 +49,7 @@ Real temporary SQLite and loopback RPC/CLI tests cover chronological versus UUID
 Use the existing execution job, inbox, schedule occurrence, session and PR problem/attempt resources; the metadata projection shares current revocation and signed cursor infrastructure. No native harness, GitHub or provider request runs during activity reads.
 
 ## Change Triggers
-Keep protocol enums/bindings, CLI help and scoped `AGENTS.md` synchronized. Update the project index for ownership or cross-domain invariant changes, and record validation in independent `docs/evidence/delidev/issue-1083/` files while preserving the historical ledger. New activity sources require an explicit metadata projection of retained original evidence and must participate in permanent session deletion. Never derive successful execution from dispatch, connection loss, a read-state change or generic resource updates.
+Keep protocol enums/bindings, CLI help and scoped `AGENTS.md` synchronized. Update the project index for ownership or cross-domain invariant changes, and record validation in pull requests, issues and CI logs/artifacts. New activity sources require an explicit metadata projection of retained original evidence and must participate in permanent session deletion. Never derive successful execution from dispatch, connection loss, a read-state change or generic resource updates.
 
 ## References
 - [DeliDev project](project-delidev.md)

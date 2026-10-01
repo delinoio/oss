@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -144,6 +145,31 @@ func TestNativeUserServiceLifecycle(t *testing.T) {
 	if installed.Status.State != userservice.Stopped || installed.Status.LoginEnabled {
 		t.Fatal("native install started server")
 	}
+	registrationPath := filepath.Join(root, "user-service-server.json")
+	assertLaunch := func(want string) {
+		t.Helper()
+		registration, err := os.ReadFile(registrationPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		intent, err := server.ReadLifecycle(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := invoke("server", "desktop-launch", "--listen", "127.0.0.1:0")
+		if err != nil || !strings.Contains(string(raw), want) {
+			t.Fatal("desktop launch did not respect native service ownership", err, string(raw))
+		}
+		after, err := os.ReadFile(registrationPath)
+		if err != nil || !bytes.Equal(registration, after) {
+			t.Fatal("desktop launch changed the original service registration", err)
+		}
+		afterIntent, err := server.ReadLifecycle(root)
+		if err != nil || intent != afterIntent {
+			t.Fatal("desktop launch changed native-owned lifecycle intent", err)
+		}
+	}
+	assertLaunch(`"state":"service-managed"`)
 	started := action("server", "start", 1)
 	if started.Status.State != userservice.Running {
 		t.Fatal(started)
@@ -158,6 +184,7 @@ func TestNativeUserServiceLifecycle(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	assertLaunch(`"reused":true`)
 	// The exact server owner/identity/data remains unchanged across service launch.
 	before, e := security.LoadIdentity(root)
 	if e != nil {
@@ -212,6 +239,7 @@ func TestNativeUserServiceLifecycle(t *testing.T) {
 	if raw, e := invoke("server", "ensure", "--listen", "127.0.0.1:0"); e != nil || !strings.Contains(string(raw), `"state":"stopped"`) {
 		t.Fatal("automatic controller restarted a stopped native service", e)
 	}
+	assertLaunch(`"state":"service-managed"`)
 	if _, e = invoke("service-run", "--kind", "server", "--id", string(installed.Status.ID)); e == nil {
 		t.Fatal("delayed login restarted stopped server")
 	}

@@ -11,10 +11,11 @@ Read the relevant owner before changing its behavior, including cross-domain con
 - `apps/delidev/scripts/AGENTS.md`
 - `apps/delidev/src/AGENTS.md`
 
-Keep implementation evidence in independent files under `docs/evidence/delidev/issue-<number>/`. Update instructions only when their rules or ownership change, not merely to record another validation run.
+Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
 
 The Schedules context pane owns the issue #1153 presentation and connection-memory retained-history disclosure. Follow `src/AGENTS.md` and `docs/apps-delidev-desktop-contract.md`; keep shared shell defaults and the Settings opening lifetime unchanged.
 
+- Issue #1137 makes a fresh trusted main host own one Go-admitted launch before supervision, without renderer-triggered startup. Keep same-process Stop, native-service ownership and saved-window authority independent. Use persistent Connection & diagnostics for advanced controls, with product startup/sidebar/tray wording. Follow docs/apps-delidev-desktop-contract.md.
 Agent Workers alone follows `docs/apps-delidev-desktop-contract.md`: use the approved centered 1040px maximum column, exact title/summary/scope, below-1100px toolbar exception, success-only empty panel and divided rows with name-scoped Edit/Preview routing/Delete actions. Keep one eligible New action, inert full names/IDs and existing schema gates. Preserve the common Settings-opening lifecycle: drafts and exact retries survive reflow and same-identity reconnect within that opening; Close, Escape and navigation away dispose it, guard late continuations and retain authoritative server effects and sibling workflows without replay or rollback. Ordinary reopening starts at AI Subscription; explicit New Project/Repositories entries remain targeted.
 
 - Settings > Projects follows the Projects-only presentation exception in `docs/apps-delidev-desktop-contract.md` and `src/AGENTS.md`. Preserve issue #1138 opening disposal and the shared shell and other categories.

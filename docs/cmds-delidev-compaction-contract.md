@@ -115,9 +115,9 @@ foreign histories, conflicting observations and incomplete/overlapping usage.
 Retain complete lineage without hand-editing native database rows.
 
 Run the required Go race/vet, protocol/generated-client and frontend checks for
-their respective implementation changes. Record independent evidence under
-`docs/evidence/delidev/issue-1203/`, separating source inspection, fixture checks,
-real native scripted-provider execution and unperformed platform/account
+their respective implementation changes. Record independent evidence in
+pull requests, issues and CI logs/artifacts, separating source inspection,
+fixture checks, real native scripted-provider execution and unperformed platform/account
 acceptance. No new native version, subscription login, fork/child controls,
 active/failed-session manual action, cross-account/model routing or independent
 DeliDev summary is part of the OpenCode profile.

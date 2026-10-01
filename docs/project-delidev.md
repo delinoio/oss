@@ -1,7 +1,9 @@
 # Project: DeliDev
 
 ## Goal
-Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 remains normative; implementation and real-environment evidence are distinct.
+Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 remains normative, with the explicit owner startup/presentation amendment in #1137; implementation and real-environment evidence are distinct.
+
+Issue #1137 makes a fresh main desktop launch sufficient to start/reuse a compatible ordinary local runtime and verify the authenticated product connection. Native-service scope admission remains Go-owned; same-process Stop, renderer lifecycle, saved-window authority and detached server/Worker/session lifetime stay independent. Routine startup/sidebar/tray use product wording; lifecycle, registration and saved-connection controls live in persistent Connection & diagnostics. The [desktop contract](apps-delidev-desktop-contract.md) defines the implementation; record actual platform acceptance and unresolved limits in issue #1137, its pull requests and CI logs/artifacts.
 
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its executable is `delidev`.
@@ -22,7 +24,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Protocol contract](protos-delidev-v1-contract.md)
 - [TypeScript client contract](packages-delidev-api-client-contract.md)
-- [Desktop client contract](apps-delidev-desktop-contract.md), including [Agent Worker core/optional presentation](apps-delidev-desktop-contract.md#agent-worker-core-and-optional-presentation) and its [issue #1158 evidence](evidence/delidev/issue-1158/agent-settings.md)
+- [Desktop client contract](apps-delidev-desktop-contract.md), including [Agent Worker core/optional presentation](apps-delidev-desktop-contract.md#agent-worker-core-and-optional-presentation)
 - [AI Subscription settings](apps-delidev-subscription-settings-contract.md)
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Session file explorer and Git comparisons](cmds-delidev-files-contract.md)
@@ -53,7 +55,6 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Retained activity](cmds-delidev-activity-contract.md)
 - [Exact native response usage](cmds-delidev-usage-contract.md)
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
-- [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
 Permanent session deletion uses owner/client Connect and equivalent confirmed CLI
 commands, durable intent outside SQLite, original Worker cleanup acknowledgements
@@ -65,6 +66,7 @@ owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
 ## Cross-Domain Invariants
 - Execution-device presentation uses `Runs on` for the New session machine selector and `Runner Device` / `Runner Devices` for former Execution Worker labels and messages. Agent Worker and technical Worker terminology remain distinct; machine/protocol/storage IDs, CLI commands, logs, error codes and the `execution-workers` Settings category value stay unchanged. The [desktop contract](apps-delidev-desktop-contract.md) owns the presentation boundary.
 - Go owns business logic; clients use authenticated Connect and preserve exact request/revision identities.
+- Grok public request journals preserve typed payloads plus bounded original JSON bytes for independently verified proposal digests. Server admission precedes public response authority; byte evidence never grants native or filesystem access. Follow the [harness contract](cmds-delidev-harness-contract.md).
 - Local and remote operation preserve original native ownership, explicit authorization, credential isolation and uncertainty.
 - Native relay handlers join started response-writer cancellation callbacks before returning, so downstream connection reuse cannot inherit an earlier request's deadline mutation.
 - Plaintext loopback provider and inference requests require Direct or an explicit bypass. Reject proxied plaintext before connection, preserve verified HTTPS proxy routing, and never silently fall back.
@@ -88,22 +90,20 @@ authenticated Connect, CLI and generated clients. Original candidates,
 provider/model, terminal/cleanup and portable-history gates retain all prior
 attribution; new execution requires explicit Resume and a fresh scoped grant.
 Subscription/provider/model switching and automatic fallback remain excluded.
-See the [sessions contract](cmds-delidev-sessions-contract.md),
-[proxy contract](cmds-delidev-proxy-contract.md) and
-[issue #1097 evidence](evidence/delidev/issue-1097/stopped-account-switch.md)
-for the controlled native A-to-B result and unperformed
-desktop/real-account/platform acceptance.
+See the [sessions contract](cmds-delidev-sessions-contract.md) and
+[proxy contract](cmds-delidev-proxy-contract.md) for the account-switching boundary.
+Record the controlled native A-to-B result separately from unperformed
+desktop/real-account/platform acceptance in pull requests, issues and CI runs.
 
 ## Change Policy
-Update the owning domain contract when behavior changes. Update this index only for ownership, its domain catalog or cross-domain invariants. Record each implementation/validation increment in its own `docs/evidence/delidev/issue-<number>/` file. A validation-only increment does not require editing this index or an AGENTS file.
+Update the owning domain contract when behavior changes. Update this index only for ownership, its domain catalog or cross-domain invariants. Record each implementation/validation increment in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. A validation-only increment does not require editing this index or an AGENTS file.
 
 ## References
 - https://github.com/delinoio/oss/issues/964
 - [Repository defaults](repository-defaults.md)
 - [Project template](project-template.md)
 - [Structure and compatibility](cmds-delidev-structure-contract.md)
-- [Relocation inventory](evidence/delidev/pr-conflict-structure/document-relocations.json)
 
 ## Home navigation invariant
 
-Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md) and [issue #1161 evidence](evidence/delidev/issue-1161/home-navigation.md).
+Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md).

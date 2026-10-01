@@ -140,7 +140,7 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 		if input.Version != 1 || input.Continuation != nil {
 			return empty, domain.Fail(domain.Unsupported, "Grok continuation requires separately verified native history.", "Preserve the original completed input without creating a replacement session.")
 		}
-		if _, err := c.GrokFirstTextContext(input.Input.Mode); err != nil {
+		if _, err := c.GrokFirstInputContext(input.Input.Mode); err != nil {
 			return empty, err
 		}
 		version, protocol = domain.GrokProtocolVersion, domain.OpenAIChat

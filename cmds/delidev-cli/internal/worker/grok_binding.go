@@ -314,7 +314,7 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 	} else if c.stage == grokTerminalPending {
 		c.stage = grokTextFinished
 	} else {
-		if c.stage == grokContentPending {
+		if c.stage == grokContentPending && (c.pendingKind == domain.ExecutionGrokTextObserved || c.pendingKind == domain.ExecutionGrokUsageObserved) {
 			c.commitPendingContent()
 		}
 		c.stage = grokInputAccepted

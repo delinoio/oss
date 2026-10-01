@@ -18,6 +18,8 @@ The single server owner and authorized paired desktop clients inspect the select
 
 Doctor owns one level-1 Diagnostics title, the original scope paragraph, right-aligned Refresh diagnostics action and subordinate Observed at row with the exact server-returned UTC string. The outer category heading is suppressed only for Diagnostics; accessible category announcement remains. Three independent cards appear in order: Database read check, Owner credential and Inference probes. Retain known/unknown labels, positive read-success, informational owner-credential and neutral not-performed treatments, with text/icon semantics and no overall health score.
 
+Issue #1137 renames the existing Settings category to Connection & diagnostics without changing its stable ID. Settings passes that closed title to Doctor's existing header, retaining one category title; standalone Doctor keeps Diagnostics. A separately labelled Connection subsection opens the persistent native controls outside SettingsLifetime. Selecting the category still reads only Doctor; opening, hiding or disposing Settings cannot discard the connection panel's original lifecycle/registration requests and confirmations. Doctor's report, refresh and disclosure lifecycle remain independently read-only.
+
 Server information aligns version, OS/architecture, protocol version, database schema and bound endpoint in semantic label/value rows. Server identity is a closed native disclosure. Keep the owner-credential caveat visible.
 
 Server storage shows the exact result classification, safe code/guidance and all five byte fields: database file, write-ahead log, logical database size, filesystem capacity and space available to the server. Keep the separately-sampled/no-sum/no-reclaimable-space caveat visible. Retained resources contains bounded resource kind/count rows in a closed disclosure; unavailable/empty notices remain outside it. Partial storage measurements survive later measurement failures.
@@ -56,7 +58,7 @@ Preserve existing service operational logs. This presentation adds no logging of
 
 ## Build and Test
 
-Run `pnpm test` in `apps/delidev`, including `doctor.test.tsx`, existing device diagnostics fixtures and isolated temporary Go server integration. Fixtures cover hierarchy/all fields, failure ownership, canonical integers, query/lifecycle/disclosure identities, deferred refresh, permissions/correlation, compatibility/inventory bounds and inert HTML-like text. Browser geometry and keyboard smoke, actual zoom and packaged platform/CEF acceptance are independent evidence. Record commands, revision and unavailable checks in `docs/evidence/delidev/issue-1144/`; preserve the frozen historical ledger. Prepare generated/LFS inputs as needed and remove generated repository-owned `dist` after validation.
+Run `pnpm test` in `apps/delidev`, including `doctor.test.tsx`, existing device diagnostics fixtures and isolated temporary Go server integration. Fixtures cover hierarchy/all fields, failure ownership, canonical integers, query/lifecycle/disclosure identities, deferred refresh, permissions/correlation, compatibility/inventory bounds and inert HTML-like text. Browser geometry and keyboard smoke, actual zoom and packaged platform/CEF acceptance are independent evidence. Record commands, revision and unavailable checks in pull requests, issues and CI logs/artifacts. Prepare generated/LFS inputs as needed and remove generated repository-owned `dist` after validation.
 
 ## Dependencies and Integrations
 

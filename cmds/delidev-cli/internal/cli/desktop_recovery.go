@@ -232,6 +232,36 @@ func desktopHashes(root string) ([3]string, error) {
 
 // Share a stable lock with ordinary fixed-scope pairing and inspection. In
 // particular a partially published credential must never trigger fresh pairing.
+// Native host bootstrap/observation joins this exact original lock, rather than
+// retrying a pairing operation after Conflict. Recovery validation still runs
+// after acquisition and can never be replaced or interpreted as contention.
+func joinDesktopClient(ctx context.Context, owner, selected string) (*security.Lock, error) {
+	child, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := child.Err(); err != nil {
+			return nil, domain.SafeError(err)
+		}
+		lock, err := lockDesktopClient(owner, selected)
+		if err == nil && child.Err() != nil {
+			if lock != nil {
+				lock.Close()
+			}
+			return nil, domain.SafeError(child.Err())
+		}
+		if err == nil || domain.SafeError(err).Code != domain.Conflict {
+			return lock, err
+		}
+		select {
+		case <-child.Done():
+			return nil, domain.SafeError(child.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
 func lockDesktopClient(owner, selected string) (*security.Lock, error) {
 	expected, err := filepath.Abs(filepath.Join(owner, "desktop-client"))
 	if err != nil {
