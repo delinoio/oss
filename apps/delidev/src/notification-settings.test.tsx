@@ -14,10 +14,11 @@ function fixture() {
     preferences = create(NotificationPreferencesSchema, { interactions: request.preferences?.interactions, terminals: request.preferences?.terminals, revision: preferences.revision + 1n });
     return { preferences };
   });
-  const transport = createRouterTransport((router) => router.service(InboxService, { getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: save }));
+  const read = vi.fn(async () => ({ preferences }));
+  const transport = createRouterTransport((router) => router.service(InboxService, { getNotificationPreferences: read, setNotificationPreferences: save }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NotificationSettings active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { view, save, change: async () => { preferences = create(NotificationPreferencesSchema, { revision: 9n, interactions: false, terminals: false }); await client.invalidateQueries(); } };
+  return { view, save, read, change: async () => { preferences = create(NotificationPreferencesSchema, { revision: 9n, interactions: false, terminals: false }); await client.invalidateQueries(); } };
 }
 
 it("retains stale notification drafts across settings visibility and never saves over a changed revision", async () => {
@@ -80,4 +81,23 @@ it("does not return focus after deliberate transfer during a pending save", asyn
   await act(async () => finish({ preferences: { revision: 2n, interactions: true, terminals: false } }));
   await screen.findByRole("button", { name: "Edit notification preferences" });
   expect(document.activeElement).toBe(outside);
+});
+
+it.each(["focus", "pointer"])("discards deferred Edit focus after in-panel %s interaction during refetch", async (interaction) => {
+  const value = fixture();
+  let finishRead!: (result: Awaited<ReturnType<typeof value.read>>) => void;
+  render(value.view());
+  fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
+  value.read.mockImplementationOnce(() => new Promise(resolve => { finishRead = resolve; }));
+  fireEvent.click(screen.getByRole("button", { name: "Save notification preferences" }));
+  const edit = await screen.findByRole("button", { name: "Edit notification preferences" }) as HTMLButtonElement;
+  await waitFor(() => { expect(finishRead).toBeTypeOf("function"); expect(edit.disabled).toBe(true); });
+  const returned = vi.spyOn(edit, "focus");
+  const disclosure = screen.getByText("About notification delivery");
+  if (interaction === "focus") disclosure.focus();
+  else fireEvent.pointerDown(disclosure);
+  await act(async () => finishRead({ preferences: create(NotificationPreferencesSchema, { revision: 2n, interactions: true, terminals: false }) }));
+  await waitFor(() => expect(edit.disabled).toBe(false));
+  expect(returned).not.toHaveBeenCalled();
+  if (interaction === "focus") expect(document.activeElement).toBe(disclosure);
 });

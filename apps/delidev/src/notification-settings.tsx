@@ -23,9 +23,11 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
   const value = draft ?? current.data?.preferences;
   useEffect(() => {
     // A return intent can wait for refetch, but never survive a deliberate
-    // transfer to navigation, another dialog/window or an inactive category.
+    // transfer to another control, navigation, dialog/window or inactive category.
     const discard = () => { focus.current = undefined; ownsFocus.current = false; };
-    const transferred = (event: Event) => { if (!root.current?.contains(event.target as Node)) discard(); };
+    const transferred = (event: Event) => {
+      if (!root.current?.contains(event.target as Node) || (focus.current === NotificationFocus.Return && event.target !== editButton.current)) discard();
+    };
     document.addEventListener("focusin", transferred);
     document.addEventListener("pointerdown", transferred);
     window.addEventListener("blur", discard);
