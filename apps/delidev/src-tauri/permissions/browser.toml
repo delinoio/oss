@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "browser-presentation"
+description = "Present only Go-authorized device browser profiles in raw privilege-free CEF children."
+commands.allow = ["open_browser", "control_browser", "browser_state"]

@@ -649,6 +649,11 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	if expected != r.Revision {
 		return domain.Fail(domain.Conflict, "The entity revision changed.", "Reload its current revision before deletion.")
 	}
+	if kind == domain.AccountKind {
+		if err := t.RequireBrowserProfileRemoval(id); err != nil {
+			return err
+		}
+	}
 	if kind == domain.SessionKind {
 		if err := t.StopForwards(id, ""); err != nil {
 			return err

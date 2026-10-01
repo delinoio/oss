@@ -78,6 +78,17 @@ meaning established by the preceding change. Request diagnostics follows both
 implemented versions. If that product order changes, revise the ledger on main
 before branching; do not insert empty migrations to skip unfinished work.
 
+Issue #1235 reserves migration 28 for service-native subscription identity and
+legacy configuration retirement, after the real implementations of 26 and 27.
+Its independent `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1` allocation is
+17. Both reservations must land on main before dependent implementation; neither
+activates runtime support. Migration provenance uses one original PR or owning
+issue when no implementation PR exists yet, preserving that identity thereafter.
+The [storage contract](cmds-delidev-storage-contract.md#planned-subscription-retirement-issue-1235)
+owns the reset boundary. Compose later account/native ownership and restore
+changes with the subscription lifecycle work for issue #1095 rather than
+replacing its unsettled-ownership and cleanup gates.
+
 The storage suite covers every fixed schema from 1 through 24 and the recognized
 21/22 backup and 23 title variants. It compares upgraded DDL with a fresh database,
 retains existing seeded record/backfill/rollback tests, and verifies that three

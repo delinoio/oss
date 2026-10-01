@@ -21,6 +21,25 @@ import (
 // JSON expands document bytes to Base64, independently of the binary size.
 const maxResourcePageBytes = 4 << 20
 
+// Browser inventory is device-scoped through BrowserService. Device resources
+// remain useful for pairing/revocation but must not bypass that dedicated scope.
+func resourceProjection(record store.Record) (*pb.Resource, error) {
+
+	if record.Kind == domain.DeviceKind {
+		var document map[string]json.RawMessage
+		if err := json.Unmarshal(record.Data, &document); err != nil || document == nil {
+			return nil, domain.Fail(domain.RecoveryRequired, "Device metadata is invalid.", "Preserve the original device record.")
+		}
+		delete(document, "browser_profiles")
+		var err error
+		record.Data, err = json.Marshal(document)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return rpc.Resource(record), nil
+}
+
 func resourceWireSize(resource *pb.Resource) (int, error) {
 	encoded, err := protojson.Marshal(resource)
 	if err != nil {
@@ -111,7 +130,11 @@ func (s *Service) GetResource(ctx context.Context, req *connect.Request[pb.GetRe
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
-	response := connect.NewResponse(&pb.GetResourceResponse{Resource: rpc.Resource(record)})
+	resource, err := resourceProjection(record)
+	if err != nil {
+		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+	}
+	response := connect.NewResponse(&pb.GetResourceResponse{Resource: resource})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
@@ -133,7 +156,10 @@ func (s *Service) ListResources(ctx context.Context, req *connect.Request[pb.Lis
 	result := &pb.ListResourcesResponse{}
 	used := 0
 	for _, r := range records {
-		resource := rpc.Resource(r)
+		resource, err := resourceProjection(r)
+		if err != nil {
+			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+		}
 		size, err := resourceWireSize(resource)
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
@@ -173,7 +199,10 @@ func (s *Service) GetSnapshot(ctx context.Context, req *connect.Request[pb.GetSn
 	result := &pb.GetSnapshotResponse{}
 	used := 0
 	for _, r := range records {
-		resource := rpc.Resource(r)
+		resource, err := resourceProjection(r)
+		if err != nil {
+			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+		}
 		size, err := resourceWireSize(resource)
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
