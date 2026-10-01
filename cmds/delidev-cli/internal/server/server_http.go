@@ -17,7 +17,7 @@ import (
 
 func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	s.executionOnce.Do(func() { s.executionAuthority = newExecutionAuthority(s) })
-	proxy := apiproxy.New(s.executionAuthority, s.logger)
+	proxy := apiproxy.New(s.executionAuthority, s.logger, s.outboundResolver())
 	mux := s.rpcMux()
 	allowed := map[string]bool{}
 	for _, origin := range origins {

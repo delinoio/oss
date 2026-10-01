@@ -72,7 +72,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Session file observations follow `docs/cmds-delidev-files-contract.md`. Keep the outbound read stream separate from the single unresolved durable execution job; bind it to the current primary stream, fresh Worker instance and device, with one bounded observation per machine. Revalidate session/preparation and client/Worker authority before returning content. Only accepted manifests select roots; anchor reads with `os.Root`, reject unsupported paths/links/special files, bound enumeration/previews and isolate read-only Git process ownership from preparation/execution journals. File contents never enter persistence, transcript, receipts or logs.
 
-- Keep the evidence ledger current. Fixture success, cross-compilation, or explicit unsupported results do not prove real-harness/platform acceptance.
+- Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy; do not add repository evidence documents. Fixture success, cross-compilation, or explicit unsupported results do not prove real-harness/platform acceptance.
 
 - No harness installation, account failover, TTY scraping, unsupported-feature emulation, unprotected secrets, or raw provider diagnostics.
 

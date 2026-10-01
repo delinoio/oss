@@ -96,7 +96,7 @@ func (s *Service) inspectIntegration(ctx context.Context, meta *pb.Mutation, gen
 		}
 	}()
 	if s.github == nil {
-		s.github = gh.New()
+		s.github = gh.New(s.outboundResolver())
 	}
 	client := s.github
 	validation := domain.IntegrationValidation{GenerationID: original.Connection.GenerationID, State: domain.IntegrationUnavailable}

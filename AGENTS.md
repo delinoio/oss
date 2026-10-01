@@ -1,6 +1,6 @@
 ### Instructions
 
-- DeliDev parallel-change ownership follows `docs/cmds-delidev-structure-contract.md`. Record new validation in independent `docs/evidence/delidev/issue-<number>/` files; preserve the historical ledger. Validation-only updates do not require project-index or AGENTS edits. Update those files when their ownership, policy or cross-domain invariants change. Establish shared protocol-number and migration-version reservations on main before dependent implementations; regenerate tool-owned outputs from reconciled sources.
+- DeliDev parallel-change ownership follows `docs/cmds-delidev-structure-contract.md`. Record implementation status and validation results in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. Include the source revision, commands, results and unresolved limits, distinguishing fixtures, builds and packaging from actual native/account/platform acceptance. Exclude secrets, user state and raw native content from validation records. Validation-only updates do not require project-index or AGENTS edits. Update those files when their ownership, policy or cross-domain invariants change. Establish shared protocol-number and migration-version reservations on main before dependent implementations; regenerate tool-owned outputs from reconciled sources.
 
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
 - License repository-owned source and future distributions under Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
@@ -127,7 +127,7 @@ enum ProjectId {
 ### Project Domain Ownership
 
 - DeliDev active issue #964 scope includes the complete desktop app plus CLI/server/Worker requirements, as explicitly confirmed by the owner on 2026-09-25; prior CLI-only increments do not narrow completion. Keep desktop implementation and native evidence gaps visible.
-- `delidev` -> `apps/delidev`, `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`, `packages/delidev-api-client`; follow `docs/project-delidev.md` and the complete issue #964 requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in `docs/cmds-delidev-evidence.md`.
+- `delidev` -> `apps/delidev`, `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`, `packages/delidev-api-client`; follow `docs/project-delidev.md` and the complete issue #964 requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in pull requests, issues and CI logs/artifacts.
 - `forge` -> `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`; follow `docs/project-forge.md` and `docs/crates-forge-foundation.md`. Keep all three packages private, local-only, and preserve unsupported PPTX content during supported edits. Opened documents export to a separate path; reject replacement of their tracked source even with explicit overwrite. CLI/MCP share one core; optional preview is not a generation dependency.
 
 - `nodeup` -> `crates/nodeup`, `apps/public-docs/docs/nodeup`
