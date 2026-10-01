@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -490,6 +491,12 @@ func scanExecutionAuthentication(home string, latest, original []byte) error {
 	count, total := 0, int64(0)
 	err = fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.Type()&os.ModeSymlink != 0 {
+			return subscription.Invalid()
+		}
+		// WriteAtomic owns this temporary namespace. A failed write/removal can
+		// retain only a token prefix or no bytes, so token matching cannot prove
+		// cleanup while any such entry remains in the owned runtime.
+		if strings.HasPrefix(entry.Name(), ".pending-") {
 			return subscription.Invalid()
 		}
 		if entry.IsDir() {
