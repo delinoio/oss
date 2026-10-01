@@ -16,6 +16,8 @@ Keep implementation evidence in independent files under `docs/evidence/delidev/i
 
 - Codex child ownership requires the original sender/receiver spawn evidence or a complete validated state-DB-only descendant read. A child `thread/started` notification may refine only an already proved exact parent relationship; unmatched starts remain discarded metadata and cannot allocate a product child or cleanup obligation.
 
+- The native API relay in `internal/apiproxy` must join any started body/deadline cancellation callback before its HTTP handler returns. Downstream connection reuse cannot inherit a prior request's late deadline mutation; preserve upstream cancellation, once-only key reads and lease release under `docs/cmds-delidev-proxy-contract.md`.
+
 Native session compaction for issues #1093, #1202 and #1203 follows the planned shared boundary in `docs/cmds-delidev-compaction-contract.md`. Its reservations must land on main before dependent implementation. Preserve original transcript/outcome, once-only native claims and independent history/cleanup verification; native acknowledgment never grants a successor checkpoint.
 
 - Every Codex child collaboration, metadata notification and descendant-history snapshot publishes only output, observed model and usage actually supplied by that source. Retain last available values separately for later ownership comparisons; current-source omission cannot copy prior telemetry into an immutable receipt.

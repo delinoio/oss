@@ -154,7 +154,7 @@ func (s *Service) inspectAccount(ctx context.Context, meta *pb.Mutation, operati
 	started := time.Now()
 	s.logger.Info("account_inspection_started", "operation", operation, "account_id", input.ID, "request_id", meta.RequestId, "correlation_id", correlation)
 	if observation.Problem == nil {
-		observation.Observation, err = providers.Inspect(checkCtx, provider, key)
+		observation.Observation, err = providers.Inspect(checkCtx, provider, key, s.outboundResolver())
 		if err != nil {
 			observation.Problem = domain.SafeError(err)
 		} else {

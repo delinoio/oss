@@ -40,6 +40,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Native subagent observations follow `docs/cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
 
+- The `network` command family uses authenticated NetworkService under `docs/cmds-delidev-network-contract.md`. Keep exact decimal revisions and request IDs; definition files, server authentication and proxy credential stdin must be independent. CLI response deadlines exceed bounded server credential work. Read status/export metadata never claims native Worker application.
+
 - `session fork` uses authenticated Fork/GetSessionFork and preserves accepted job/request identities on bounded wait failure. Keep dispatch in `dispatch_session.go`, retain the two-minute Worker bound with a 145-second command deadline, and never replay creation while observing a job. Follow `docs/cmds-delidev-forks-contract.md`.
 
 - Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.

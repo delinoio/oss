@@ -40,6 +40,14 @@ func (s *Service) RestoreBackup(ctx context.Context, req *connect.Request[pb.Res
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Invalid backup timestamp.", "Use the original inspection timestamp unchanged."), correlation)
 	}
 	actor, _ := domain.PrincipalFrom(ctx)
+	// Native credential intents may be synchronized before their SQL mutation.
+	// Hold the shared credential gate through eligibility and publication so a
+	// concurrent network/account operation cannot cross that private boundary.
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	defer unlock()
 	lifecycle, err := LockLifecycle(s.Store.Root())
 	if err != nil {
 		return nil, rpc.Error(err, correlation)

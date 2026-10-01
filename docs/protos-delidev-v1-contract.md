@@ -401,7 +401,13 @@ paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
 
+### Explicit stopped Codex API account selection
+
 `SessionService.SwitchSessionAccount` is an additive owner/client-only mutation, capability-gated by `STOPPED_CODEX_ACCOUNT_SWITCH_V1` (wire value 5, allocated on main) in System status. Its `Mutation` binds the exact session revision/request and `account_id` selects an original candidate; actor-bound reference receipts return current `SessionChange`. Admission, historical attribution, full native history and explicit Resume follow the [sessions contract](cmds-delidev-sessions-contract.md). It performs no native side effect or automatic execution. Go, TypeScript and Connect Query bindings are generated from the service-owned schema; existing capabilities retain their wire values.
+
+### Server outbound network configuration
+
+`network.proto` owns NetworkService SaveNetworkProfile, DeleteNetworkProfile, SelectNetworkProfile, GetNetworkRoute and ExportWorkerNetworkMetadata. The pre-reserved `SERVER_OUTBOUND_PROXY_V1 = 6`, `NETWORK_PROFILE = 28` and `NETWORK_ROUTE = 29` values preserve every existing main assignment. Definition JSON and write-only credential bytes are separate. Actor-bound UUID-v7 receipts and exact revisions apply; Worker selections have independent desired generations. Export returns signed non-secret metadata only, never credential bytes or native application evidence. Follow [the network contract](cmds-delidev-network-contract.md).
 
 ## Repository inspection metadata allocation prerequisite
 
