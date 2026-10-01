@@ -124,9 +124,11 @@ impl Owner {
                 _ => Err(failure()),
             }
         })();
-        if result.is_err() {
-            // Do not reap the guardian first: its unreaped PID pins the group
-            // identity while the fallback stops the original owned group.
+        if !matches!(&result, Ok(false)) {
+            // An escalation acknowledgement requests the same group-wide kill
+            // from the parent too: helper death alone cannot prove delivery.
+            // Do not reap the guardian first; its unreaped PID pins the group
+            // identity through escalation or a failed helper handshake.
             unsafe {
                 libc::kill(-self.group(), libc::SIGKILL);
             }
