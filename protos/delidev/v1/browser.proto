@@ -1,0 +1,84 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Profile metadata only. Browsing data and native paths never enter this API.
+service BrowserService {
+  rpc GetBrowserCapabilities(GetBrowserCapabilitiesRequest) returns (GetBrowserCapabilitiesResponse);
+  rpc RegisterBrowserProfile(RegisterBrowserProfileRequest) returns (RegisterBrowserProfileResponse);
+  rpc GetBrowserProfile(GetBrowserProfileRequest) returns (GetBrowserProfileResponse);
+  rpc ListBrowserProfiles(ListBrowserProfilesRequest) returns (ListBrowserProfilesResponse);
+  rpc GetAccountBrowserCleanup(GetAccountBrowserCleanupRequest) returns (GetAccountBrowserCleanupResponse);
+  rpc ConfirmBrowserProfileRemoval(ConfirmBrowserProfileRemovalRequest) returns (ConfirmBrowserProfileRemovalResponse);
+}
+message RegisterBrowserProfileRequest {
+  Mutation session = 1;
+  string account_id = 2;
+}
+message RegisterBrowserProfileResponse {
+  BrowserProfile profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetBrowserProfileRequest {
+  string id = 1;
+}
+message GetBrowserProfileResponse {
+  BrowserProfile profile = 1;
+}
+message ListBrowserProfilesRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+message ListBrowserProfilesResponse {
+  repeated BrowserProfile profiles = 1;
+  string next_page_token = 2;
+}
+// The owning device reports only after native shutdown and complete directory removal.
+message ConfirmBrowserProfileRemovalRequest {
+  Mutation mutation = 1;
+  string deletion_request_id = 2;
+}
+message ConfirmBrowserProfileRemovalResponse {
+  BrowserProfile profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message GetAccountBrowserCleanupRequest {
+  string account_id = 1;
+}
+// Counts describe tracked obligations; zero tracked profiles does not attest to external data.
+message GetAccountBrowserCleanupResponse {
+  uint32 active = 1;
+  uint32 pending = 2;
+  uint32 removed = 3;
+}
+
+// The complete wire model contains no browser content or native paths.
+message BrowserProfile {
+  string id = 1;
+  uint64 revision = 2;
+  string server_id = 3;
+  string device_id = 4;
+  string account_id = 5;
+  BrowserProfileState state = 6;
+  string deletion_request_id = 7;
+}
+enum BrowserProfileState {
+  BROWSER_PROFILE_STATE_UNSPECIFIED = 0;
+  BROWSER_PROFILE_STATE_ACTIVE = 1;
+  BROWSER_PROFILE_STATE_REMOVAL_PENDING = 2;
+  BROWSER_PROFILE_STATE_REMOVED = 3;
+}
+enum BrowserCapability {
+  BROWSER_CAPABILITY_UNSPECIFIED = 0;
+  BROWSER_CAPABILITY_PROTECTED_DEVICE_PROFILE_V1 = 1;
+}
+message GetBrowserCapabilitiesRequest {}
+message GetBrowserCapabilitiesResponse {
+  repeated BrowserCapability capabilities = 1;
+}
