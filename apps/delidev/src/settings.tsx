@@ -19,7 +19,8 @@ import { DeviceDetails, DeviceRevocation, Doctor } from "./device-settings";
 import { DoctorTitle } from "./doctor";
 import { AccountConnection } from "./account-connection";
 import { MutationIntents, useRetainedMutation } from "./mutation";
-import { Modal, ModalLayout, Problem } from "./ui";
+import { Problem } from "./ui";
+import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 import { PairingGrant, type PairingAuthority } from "./pairing-grant";
 import { AccountSettings, AccountSettingsSection, type AccountProviderPicker, type AccountProviderSummary } from "./account-settings";
 import { ActiveModelSettings, ApiProviderSettings, providerInventoryReady, type ModelListState } from "./provider-model-settings";
@@ -154,13 +155,13 @@ function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: (
   </article>;
 }
 
-interface SettingsProps { connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
+interface SettingsProps { connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
 export function Settings({ visible = true, ...props }: SettingsProps) {
-  const client = useQueryClient();
-  return visible ? <SettingsLifetime>{(opening) => <MutationIntents><SettingsWorkspace {...props} close={() => { opening.dispose(client); props.close(); }} controlLocalWorker={props.controlLocalWorker ? (action, generation) => opening.native(() => props.controlLocalWorker!(action, generation)) : undefined} /></MutationIntents>}</SettingsLifetime> : null;
+  return visible ? <SettingsLifetime>{(opening) => <MutationIntents><SettingsWorkspace {...props} controlLocalWorker={props.controlLocalWorker ? (action, generation) => opening.native(() => props.controlLocalWorker!(action, generation)) : undefined} /></MutationIntents>}</SettingsLifetime> : null;
 }
 
-function SettingsWorkspace({ connectionSettings, close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: SettingsProps) {
+function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: SettingsProps) {
+  const closeDrawer = useCloseSidebarDrawer();
   const [selectedCategory, setSelectedCategory] = useState(() => entryDestination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : entryDestination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts);
   const [device, setDevice] = useState<Resource>();
   const [page, setPage] = useState("");
@@ -273,6 +274,8 @@ function SettingsWorkspace({ connectionSettings, close, visible = true, controlL
   }, [destinationConsumed, editing, entryDestination, kind, visible, workflowProtected]);
   const projectNameFocused = useCallback(() => setFocusNewProjectName(false), []);
   const chooseCategory = (category: SettingsCategory) => {
+    if (categoryLocked) return;
+    closeDrawer();
     if (isSubscriptionAccounts) subscriptionFilters.current = { providerId: accountProviderID, search: providerSearch, hint: accountProviderHint };
     if (category === SettingsCategory.SubscriptionAccounts) {
       const retained = subscriptionFilters.current;
@@ -306,25 +309,19 @@ function SettingsWorkspace({ connectionSettings, close, visible = true, controlL
     {subscriptionProviderInventory.data && !subscriptionProviderInventory.error && subscriptionProviders.length === 0 ? <p>No eligible subscription providers on this page.</p> : null}
     {subscriptionProviderPage || subscriptionProviderInventory.data?.nextPageToken ? <nav className="settings-pages" aria-label="Subscription provider pages"><button type="button" disabled={categoryLocked || !subscriptionProviderPage || subscriptionProviderInventory.isFetching} onClick={() => setSubscriptionProviderPage("")}>First subscription provider page</button><button type="button" disabled={categoryLocked || !subscriptionProviderInventory.data?.nextPageToken || subscriptionProviderInventory.isFetching} onClick={() => setSubscriptionProviderPage(subscriptionProviderInventory.data!.nextPageToken)}>Next subscription provider page</button></nav> : null}
   </section>;
-  return <Modal title="Settings" close={close} visible={visible} layout={ModalLayout.FullWindow}>
-    <div className="settings-workspace">
-      <aside className="settings-sidebar" aria-label="Settings navigation">
+  return <>
+      <SidebarSurface active title="Settings" className="settings-navigation">
         <nav aria-label="Settings categories">
           {settingsGroups.map((group) => <section className="settings-nav-group" key={group.label}>
             <h2>{group.label}</h2>
-            {group.categories.map((category) => <button type="button" className="settings-category-button" key={category} disabled={categoryLocked} aria-current={selectedCategory === category ? "page" : undefined} aria-pressed={selectedCategory === category} onClick={() => chooseCategory(category)}>
+            {group.categories.map((category) => <button type="button" className="settings-category-button" key={category} data-settings-category={category} disabled={categoryLocked} aria-current={selectedCategory === category ? "page" : undefined} aria-pressed={selectedCategory === category} onClick={() => chooseCategory(category)}>
               <SettingsIcon category={category} /><span>{settingsCategories[category].label}</span>
             </button>)}
           </section>)}
         </nav>
-      </aside>
+      </SidebarSurface>
       <section className={isProjects ? "settings-content settings-projects" : "settings-content"} aria-label="Settings content">
         <div className="settings-content-column">
-        <label className="settings-compact-selector">Settings category
-          <select aria-label="Settings category" value={selectedCategory} disabled={categoryLocked} onChange={(event) => chooseCategory(event.currentTarget.value as SettingsCategory)}>
-            {settingsGroups.map((group) => <optgroup label={group.label} key={group.label}>{group.categories.map((category) => <option key={category} value={category}>{settingsCategories[category].label}</option>)}</optgroup>)}
-          </select>
-        </label>
         <div className={isAgentWorkers ? "settings-agent-column" : undefined}>
         {area !== SettingsArea.Diagnostics && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
           <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : null}<p className={isAgentWorkers ? "settings-agent-scope" : undefined}>{categoryDescription}</p></div>
@@ -372,8 +369,7 @@ function SettingsWorkspace({ connectionSettings, close, visible = true, controlL
         </div>
         </div>
       </section>
-    </div>
-  </Modal>;
+  </>;
 }
 
 function ProjectList({ resources, edit, remove }: { resources: Resource[]; edit: (row: Resource) => void; remove: (row: Resource) => void }) {

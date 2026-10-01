@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #1143 owns the UI-first AI Subscription redesign in `apps/delidev/src/account-settings.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The existing full-window Settings modal, 16 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Native Codex lifecycle/quota work belongs to #1095/#1096; Claude requires independently verified lifecycle support. This stage does not implement those adapters or a new RPC/schema, migration, dependency, feature flag, polling or persistent frontend state.
+Issue #1143 owns the UI-first AI Subscription redesign in `apps/delidev/src/account-settings.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 16 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Native Codex lifecycle/quota work belongs to #1095/#1096; Claude requires independently verified lifecycle support. This stage does not implement those adapters or a new RPC/schema, migration, dependency, feature flag, polling or persistent frontend state.
 
 ## Runtime and Language
 
@@ -26,11 +26,11 @@ Each window preserves its ID, order, remaining fraction, observation time and re
 
 ## Storage
 
-All state belongs to the current Settings opening. Filters, details, Advanced state, drafts, confirmations and retry presentation survive category changes within that opening and are discarded on close/Escape/navigation away under #1138. Accepted server/Worker effects continue; opening disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact.
+All state belongs to the current Settings visit. Filters, details, Advanced state, drafts, confirmations and retry presentation survive category changes within that visit and are discarded on navigation away under #1138. Accepted server/Worker effects continue; visit disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact.
 
 ## Security
 
-No credentials, identity fixtures or quota values enter query keys, logs, browser storage, analytics or background polling. The existing native dialog owns focus containment, Escape and opener restoration. Ellipsis/confirmation Escape is handled locally before reaching the parent dialog; icon actions have accessible labels.
+No credentials, identity fixtures or quota values enter query keys, logs, browser storage, analytics or background polling. Settings itself has no modal focus or Escape-to-leave behavior. Actual child dialogs and the shared compact navigation drawer retain their own focus containment, Escape and opener restoration; ellipsis/confirmation Escape is handled locally; icon actions have accessible labels.
 
 ## Logging
 

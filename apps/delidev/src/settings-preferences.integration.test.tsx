@@ -20,7 +20,7 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   const { transport, runCLI } = fixture;
   const defaults = JSON.parse(await runCLI(["settings", "defaults"])).result;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }, serverRoundTripWait));
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));

@@ -19,7 +19,7 @@ it("drops a closed Settings permission wait without applying its late result to 
   const transport = createRouterTransport(() => {});
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { gcTime: 0 } } });
   client.setQueryData(["native-notification-readiness"], { permission: "shared-sentinel" });
-  const body = (visible: boolean) => <TransportProvider transport={transport}><QueryClientProvider client={client}><Settings visible={visible} close={() => {}} /></QueryClientProvider></TransportProvider>;
+  const body = (visible: boolean) => <TransportProvider transport={transport}><QueryClientProvider client={client}><Settings visible={visible} /></QueryClientProvider></TransportProvider>;
   const view = render(body(true));
   fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
   fireEvent.click(await screen.findByRole("button", { name: "Allow desktop notifications" }));

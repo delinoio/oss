@@ -49,7 +49,7 @@ function fixture() {
     return result;
   } };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
-  const view = (visible: boolean, upstream = transport, controlLocalWorker?: ControlLocalWorker) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents><Sibling /><Settings visible={visible} controlLocalWorker={controlLocalWorker} close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
+  const view = (visible: boolean, upstream = transport, controlLocalWorker?: ControlLocalWorker) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents><Sibling /><Settings visible={visible} controlLocalWorker={controlLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
   return { client, save, waiting, transport, view, delay: (method?: string, code?: Code) => { delay = method; failure = code; } };
 }
 
@@ -60,25 +60,25 @@ function Sibling() {
   return <section><label>Sibling composer<textarea value={composer} onChange={(event) => setComposer(event.target.value)} /></label><span>{query.data ? "Sibling ready" : "Sibling loading"}</span><button onClick={() => void mutation.send({ kind: EntityKind.PROJECT, mutation: { requestId: newRequestId() }, documentJson: encode({ name: "Sibling write" }) })}>Sibling save</button>{mutation.uncertain ? <button onClick={mutation.retry}>Sibling retry</button> : null}</section>;
 }
 
-it.each([["button", "Instructions"], ["cancel", "Instructions"], ["button", "Agent Workers"], ["cancel", "Agent Workers"]])("starts at the first category after closing via %s an unsaved %s editor", async (route, category) => {
+it.each([["navigation", "Instructions"], ["Escape then navigation", "Instructions"], ["navigation", "Agent Workers"], ["Escape then navigation", "Agent Workers"]])("starts at the first category after leaving via %s an unsaved %s editor", async (route, category) => {
   const value = fixture();
   function Harness() {
     const [visible, setVisible] = useState(false);
-    return <TransportProvider transport={value.transport}><QueryClientProvider client={value.client}><button onClick={() => setVisible(true)}>Open fixture settings</button><Settings visible={visible} close={() => setVisible(false)} /></QueryClientProvider></TransportProvider>;
+    return <TransportProvider transport={value.transport}><QueryClientProvider client={value.client}><button onClick={() => setVisible(true)}>Open fixture settings</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Leave Settings fixture</button><Settings visible={visible} /></QueryClientProvider></TransportProvider>;
   }
   render(<StrictMode><Harness /></StrictMode>);
   const opener = screen.getByRole("button", { name: "Open fixture settings" });
   opener.focus();
   fireEvent.click(opener);
-  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   fireEvent.click(screen.getByRole("button", { name: category }));
   fireEvent.click(await screen.findByRole("button", { name: category === "Agent Workers" ? "New Agent Worker" : "New Instructions" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Abandoned draft" } });
-  if (route === "cancel") fireEvent(screen.getByRole("dialog"), new Event("cancel", { bubbles: true, cancelable: true }));
-  else fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
-  expect(document.activeElement).toBe(opener);
+  if (route === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect(screen.getByRole("region", { name: "Settings content" })).toBeTruthy(); }
+  fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
+  expect(document.activeElement).not.toBe(opener);
   fireEvent.click(opener);
-  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: category }));
   expect(await screen.findByRole("button", { name: category === "Agent Workers" ? "New Agent Worker" : "New Instructions" })).toBeTruthy();
