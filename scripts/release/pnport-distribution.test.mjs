@@ -87,7 +87,8 @@ test("publication rejects incomplete, duplicated, extra, or misordered native se
 });
 
 test("publication stays blocked until reviewed release acceptance, independently of source version preparation", () => {
-  assert.throws(() => requireReleaseReady(), /publication is blocked/u);
+  // Exercise both states independently of the reviewed gate in the live source.
+  // A legitimate release preparation must not invalidate this contract test.
   for (const pnportReleaseReady of [undefined, false, "true"]) {
     assert.throws(() => requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady })), /publication is blocked/u);
   }
