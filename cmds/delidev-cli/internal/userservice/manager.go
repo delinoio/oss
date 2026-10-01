@@ -505,6 +505,15 @@ func (m *Manager) Run(ctx context.Context, id domain.ID, run func(context.Contex
 		return err
 	}
 	stage = "cleanup_publication"
+	// Status validates the runtime file's permissions while holding the state
+	// gate. On Windows that inspection can temporarily deny atomic replacement.
+	// Join the observer first, then exclude those readers during publication,
+	// retaining runtime ownership until the positive completion is durable.
+	gate, err = m.stateLock(context.WithoutCancel(ctx))
+	if err != nil {
+		return failure()
+	}
+	defer gate.Close()
 	live.Complete = true
 	if m.saveRuntime(live) != nil {
 		return failure()

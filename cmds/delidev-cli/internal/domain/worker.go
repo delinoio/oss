@@ -23,12 +23,13 @@ const (
 )
 
 type Device struct {
-	Name      string     `json:"name"`
-	Type      DeviceType `json:"type"`
-	MachineID ID         `json:"machine_id,omitempty"`
-	Revoked   bool       `json:"revoked"`
-	PairedAt  time.Time  `json:"paired_at"`
-	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	BrowserProfiles []BrowserProfileRecord `json:"browser_profiles,omitempty"`
+	Name            string                 `json:"name"`
+	Type            DeviceType             `json:"type"`
+	MachineID       ID                     `json:"machine_id,omitempty"`
+	Revoked         bool                   `json:"revoked"`
+	PairedAt        time.Time              `json:"paired_at"`
+	RevokedAt       *time.Time             `json:"revoked_at,omitempty"`
 }
 type Pairing struct {
 	Name      string     `json:"name"`
