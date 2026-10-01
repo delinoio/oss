@@ -384,13 +384,15 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	}
 	defer unlock()
 	result, err := s.Store.Mutate(ctx, input.Lease, "subscription.take", input, func(tx *store.Tx) (any, error) {
-		revision := input.Revision
-		if action == domain.SubscriptionExecute {
-			revision = 0
-		}
-		r, a, err := subscriptionAccount(tx, input.Account, revision)
+		// Take retains the original observation while another lease or metadata
+		// update advances the account. Lifecycle authority is the exact still-queued
+		// operation below; execution authority is its independently checked job.
+		r, a, err := subscriptionAccount(tx, input.Account, 0)
 		if err != nil {
 			return nil, err
+		}
+		if action != domain.SubscriptionExecute && input.Revision > r.Revision {
+			return nil, domain.Fail(domain.Conflict, "The account revision has not been observed.", "Retain the original queued operation and its observed revision.")
 		}
 		state := a.Subscription
 		if state == nil || state.RecoveryRequired {

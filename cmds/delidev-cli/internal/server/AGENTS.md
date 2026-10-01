@@ -54,6 +54,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Managed Codex subscriptions follow `docs/cmds-delidev-subscription-contract.md`. Keep explicit provider selection, a separately authorized Worker lane, one durable per-account login/refresh/execution/logout lease, original actor/revision/generation fences and immutable latest-bundle write-back. Never redistribute a Take receipt or uncertain generation, expose bundles in records/logs, grant API relay authority from subscription registration, or delete unresolved ownership.
 
+- Lifecycle Take retains its original positive account observation across exclusive-lease cleanup and later metadata edits. Reject future revisions and revalidate the exact uncanceled queued operation, action, machine and initiating actor before granting; canceled, replaced or recovery-required state never acquires authority from a stale observation. Keep current-revision owner requests and exact claimed-job execution revisions unchanged.
+
 - Require the selected Worker's negotiated managed Codex capability before claiming subscription execution or consuming its queued input. Ordinary native installation discovery does not establish managed authentication support.
 
 - Initiator revocation must atomically settle its still-queued subscription lifecycle operations without granting a lease or changing credential generations. Preserve accepted logout revocation, independent active leases and all claimed/native ownership; only a fresh authorized request may replace the canceled queued operation. Successful native write-back must preserve logout-revoked health until a fresh authorized logout completes cleanup.
