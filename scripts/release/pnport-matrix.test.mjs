@@ -26,8 +26,10 @@ test("CI and exact-tag release use the package-owned four native hosts", () => {
   assert.ok(source.includes("if (source.dry_run !== 'true') requireReleaseReady();"));
   for (const workflow of [ci, release]) {
     const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
+    assert.equal(job.env.MACOSX_DEPLOYMENT_TARGET, "13.0");
     const commands = job.steps.map(({ run }) => run ?? "").join("\n");
     for (const gate of ["cargo test --locked -p pnport", "test:package", "test:typescript", "install-smoke.mjs"]) assert.ok(commands.includes(gate), gate);
+    assert.ok(commands.includes("-p pnport-core -p pnport-preload"));
     assert.ok(!commands.includes("--test-threads=1"));
   }
 });

@@ -69,6 +69,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     env:
       PNPORT_TARGET: ${{ matrix.target }}
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -97,7 +98,7 @@ jobs:
           else
             cargo build --locked --release -p pnport -p pnport-preload --target "$PNPORT_TARGET"
           fi
-          cargo test --locked -p pnport --target "$PNPORT_TARGET"
+          cargo test --locked -p pnport -p pnport-core -p pnport-preload --target "$PNPORT_TARGET"
       - name: Verify installed consumers and native TypeScript
         shell: bash
         env:

@@ -1760,6 +1760,7 @@ jobs:
       matrix: ${{ fromJSON(needs.changes.outputs.pnport_matrix) }}
     env:
       PNPORT_TARGET: ${{ matrix.target }}
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -1781,7 +1782,7 @@ jobs:
           else
             cargo build --locked --release -p pnport -p pnport-preload --target "$PNPORT_TARGET"
           fi
-          cargo test --locked -p pnport --target "$PNPORT_TARGET"
+          cargo test --locked -p pnport -p pnport-core -p pnport-preload --target "$PNPORT_TARGET"
           binary="target/$PNPORT_TARGET/release/pnport"
           preload="target/$PNPORT_TARGET/release/libpnport_preload.so"
           if [[ "$PNPORT_TARGET" == *apple* ]]; then preload="target/$PNPORT_TARGET/release/libfspy_preload_unix.dylib"; fi
