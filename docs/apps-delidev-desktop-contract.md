@@ -293,7 +293,7 @@ pull requests and CI runs.
 
 ### Settings shell and opening lifetime
 
-Settings is a full-window presentation inside the existing native modal and fills the webview content viewport below the native title bar. It covers the ordinary app sidebar without resizing, maximizing, or entering OS fullscreen; all other modal callers keep the standard dialog layout. Its fixed 64px header contains the Settings title and an accessible Close Settings action with an Esc hint. At desktop widths, the grouped 240px navigation pane and flexible content pane scroll independently. The groups and 16 categories appear once in this order: AI & agents (AI Subscription, AI API Keys, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Runner Devices), and System (Paired devices, Server preferences, Integrations, Connection & diagnostics, Notifications, Import / Export, Backups). Below 760 CSS pixels, the sidebar is visually removed and replaced by a labeled native select with the same groups and selection; category panels stay mounted across selection and responsive changes. Content padding is 40px, reduced to 24px below 1100px. The shell must reflow at 200% zoom without clipping controls or focus outlines.
+Settings is a full-window presentation inside the existing native modal and fills the webview content viewport below the native title bar. It covers the ordinary app sidebar without resizing, maximizing, or entering OS fullscreen; all other modal callers keep the standard dialog layout. Its fixed 64px header contains the Settings title and an accessible Close Settings action with an Esc hint. At desktop widths, the grouped 240px navigation pane and flexible content pane scroll independently. The groups and 17 categories appear once in this order: AI & agents (AI Subscription, AI API Keys, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Runner Devices), and System (Appearance, Paired devices, Server preferences, Integrations, Connection & diagnostics, Notifications, Import / Export, Backups). Below 760 CSS pixels, the sidebar is visually removed and replaced by a labeled native select with the same groups and selection; category panels stay mounted across selection and responsive changes. Content padding is 40px, reduced to 24px below 1100px. The shell must reflow at 200% zoom without clipping controls or focus outlines.
 
 The shared AI Subscription category label is exactly the same in the sidebar, category heading and compact selector. Its category ID remains `subscription-accounts`; the selected English label fits on one line in the existing 240px sidebar at 100% zoom without changes to layout, font or icon styling.
 
@@ -323,6 +323,63 @@ Rows and Manage display Token storage and Identity validation separately, includ
 
 Settings-specific colors and system fonts are scoped to this modal and remain CSP-compatible: white content, pale-gray navigation, 8px control radii, a 12px empty-panel radius, 40px minimum controls, decorative outline icons and non-color selected-state semantics. Do not add a route, native window, dependency, external asset, inline-style exception, public API, persisted schema, storage, authorization, credential, polling or migration change. Component tests do not establish native geometry or keyboard containment; record native desktop smoke evidence separately, including platform and viewport, and report unsupported/unavailable platforms without claiming acceptance.
 
+
+#### Device appearance (issue #1238)
+
+Appearance is the first category in the System group, with the scope description
+“Saved on this computer.” Existing category IDs/order, the ordinary AI Subscription
+entry and targeted New Project/Repositories entries remain unchanged. The desktop
+sidebar and compact native selector expose the same category. Theme is a native
+radio group with System, Light and Dark; System is the fresh-install default.
+Selection saves automatically, with pending and visible failure states and no Save
+button. System observes `prefers-color-scheme` changes while running; explicit Light
+and Dark ignore later OS changes.
+
+`appearance.tsx` mounts above local/saved connection application state. Appearance
+changes update static root selectors without remounting sessions, composer drafts,
+Settings openings or other workflows. Closing Settings disposes its opening as
+before while the device controller and already submitted appearance save remain
+alive. This preference is shared by every live local/saved-server window and loaded
+by newly opened windows, independent of selected server or connectivity.
+
+Native owns bounded, strictly validated `appearance.json` in `app_config_dir()`,
+using `{ "version": 1, "theme": "system" | "light" | "dark" }`. It contains no
+server identifier, secret or user content and stays outside server configuration,
+pairing, backups and configuration transfer. The narrow `read_appearance` and
+`update_appearance` commands authorize the trusted `main` or registered `server-*`
+document using the existing URL/binding checks; no generic path/filesystem or
+Connect/protobuf capability is introduced. URL checks and disk I/O stay off CEF's
+UI loop. One native process store serializes reads/atomic writes; update checks
+the expected process revision and reinspects the stored document before replacement.
+Writes synchronize a same-directory temporary file before atomic replacement, then
+synchronize the Unix parent directory or use Windows write-through replacement.
+Committed changes emit `appearance-changed` only to authorized live webviews.
+Snapshots have non-wrapping unsigned process revisions; delayed reads, replies and
+events cannot restore older state. Equal unchanged inspections retain the revision.
+Brief saved-window binding contention receives bounded event-admission retries.
+A healthy retained window reinspects when focused or made visible to reconcile a
+missed event; an error or uncertain save still requires explicit Reload appearance.
+
+Read/write failures are visible with stable typed messages, without raw OS errors
+or paths. Failed writes retain the prior committed selection. An uncertain IPC or
+post-publication synchronization outcome disables another write until a deliberate
+fresh inspection; it never blindly repeats the mutation. Invalid, oversized, linked,
+unknown-field or unsupported-version files remain untouched, with System fallback
+and visible recovery guidance rather than silent replacement. Logging records only
+the operation and stable outcome/problem, never file bytes or configuration paths.
+
+`themes.css` owns shared semantic light/dark colors for initial connection/loading/
+error presentation, the shell, conversations, forms, dialogs and every Settings
+category, including the scoped Projects, Agent, Activity, schedule, Diagnostics and
+Import / Export treatments. A static OS media-query fallback covers initial paint
+before IPC. The fixed light color descriptions in presentation sections describe their light
+baseline; issue #1238 extends them through semantic dark equivalents. Preserve all
+layout/content/state semantics, selected/disabled/hover/focus states, strict CSP,
+native geometry and decorations. No transparency, blur, custom theme, font/accent
+customization, feature flag, database migration or server-synchronized preference
+is introduced. Record component/build and temporary storage evidence separately
+from actual supported-platform CEF OS/theme/restart/multiwindow, keyboard containment
+and 200% zoom acceptance in PRs/issues/CI, retaining unavailable targets explicitly.
 #### Runner Devices flat list presentation
 Issue #1244 scopes the approved proposal B to Runner Devices list mode (`execution-workers`). Within existing content padding, center one fluid column capped at 1040 CSS pixels. Order the category title/scope/Refresh settings, local Worker, Saved runner devices inventory and existing pages. Use flat white sections with thin `#D8DEE8` dividers, 16px adjacent gaps and 32px section gaps. Keep the system font, 28px semibold category title, 18px section headings, 14px body, 12px full UUID, `#202632` text, `#5B6577` secondary text, `#2563D8` primary/focus and 40px minimum controls with 8px corners and AA control boundaries. At >=1100px retain 40px padding and title-aligned Refresh; below 1100px retain 24px padding and stack header/row actions below metadata. Below 760px retain the grouped select and existing vertical padding with 16px horizontal padding. Long names, help, UUIDs, buttons and focus indicators must reflow at 960×640 and 200% zoom. Machine detail, other categories, the modal shell and native geometry remain unchanged.
 
@@ -403,7 +460,7 @@ Settings lists paired devices with independent authorization, type, pairing/revo
 Issue #1239 defines the **Paired devices-only** compact list in
 `device-settings.tsx` / `device-settings.css` and the existing Settings workspace.
 Keep the shared native window, full-webview modal, 64px header, 240px independently
-scrolling grouped sidebar, all 16 category labels/order/IDs, compact selector and
+scrolling grouped sidebar, all 17 category labels/order/IDs, compact selector and
 other categories unchanged. Center the category in a fluid 100%-width column with
 a 1040px maximum inside the existing 40px/24px/16px responsive padding. The one
 26px semibold title precedes **Pair devices using a short-lived document.** (14px)

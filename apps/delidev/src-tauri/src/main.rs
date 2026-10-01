@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appearance_host;
 mod browser_host;
 mod notification_host;
 mod tray_host;
@@ -10,6 +11,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use appearance_host::{read_appearance, update_appearance};
 use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
     Connection, Connector, DesktopRegistration, LocalServerStatus, LocalWorkerAction,
@@ -1059,6 +1061,8 @@ fn run() -> Result<(), NativeFailure> {
         .manage(connector)
         .manage(Arc::clone(&supervision))
         .invoke_handler(tauri::generate_handler![
+            read_appearance,
+            update_appearance,
             open_browser,
             control_browser,
             browser_state,
@@ -1131,6 +1135,16 @@ fn run() -> Result<(), NativeFailure> {
             }
         })
         .setup(|app| {
+            let config_dir = app.path().app_config_dir().ok();
+            if config_dir.is_none() {
+                tracing::warn!(
+                    operation = "appearance_initialize",
+                    code = "storage-unavailable"
+                );
+            }
+            app.manage(Arc::new(delidev_desktop::appearance::AppearanceStore::new(
+                config_dir,
+            )));
             let result = (|| -> tauri::Result<()> {
                 create_main(app.handle())?;
                 if app.state::<Arc<TrayHost>>().install(app.handle()).is_err() {
