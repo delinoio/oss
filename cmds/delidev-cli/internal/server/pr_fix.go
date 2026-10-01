@@ -539,6 +539,13 @@ func (s *Service) preparePRFixDispatch(ctx context.Context, record store.Record)
 			if err := tx.RequireAutomaticPRSource(value); err != nil {
 				return err
 			}
+			_, policy, err := prFixPolicy(tx, value.GitTarget.Target.RepositoryID)
+			if err != nil {
+				return err
+			}
+			if policy.Digest() != value.Policy.Digest() {
+				return prObservationConflict()
+			}
 		}
 		if value.GitTarget == nil {
 			return firstDispatchConflict()

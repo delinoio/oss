@@ -526,42 +526,50 @@ func TestAutomaticPRFailureReplacementNeverOverridesExplicitControls(t *testing.
 	}
 }
 
-func TestAutomaticPRUnknownCICancelsOnlyUnclaimedInputAndFeedbackProceeds(t *testing.T) {
-	f := newAutomaticPRFixture(t)
-	f.ciFailed.Store(true)
-	f.permission.Store(false)
-	f.savePolicy(t, func(p *domain.RemediationPolicy) { p.CIFailure, p.ReviewFeedback = true, true })
-	if err := f.service.remediateAutomaticPR(f.owner, f.link); err != nil {
-		t.Fatal(err)
-	}
-	attempts, _ := f.attempts(t)
-	if len(attempts) != 1 {
-		t.Fatal("CI attempt missing")
-	}
-	a, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
-	if len(a.Problems) != 1 {
-		t.Fatal("unmatched feedback was selected")
-	}
-	f.ciFailed.Store(false)
-	f.permission.Store(true)
-	selected, _ := f.service.Store.Get(f.owner, domain.SessionKind, a.SessionID)
-	if err := f.service.dispatchExecution(f.owner, selected); domain.SafeError(err).Code != domain.Conflict {
-		t.Fatal("unknown CI claimed work", err)
-	}
-	attempts, set := f.attempts(t)
-	canceled, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
-	if canceled.State != domain.PRRemediationCanceled || set.Remediation.ActiveAttemptID != "" || set.Remediation.AutomaticAttempts != 0 {
-		t.Fatal("unstarted CI retained execution authority")
-	}
-	if err := f.service.remediateAutomaticPR(f.owner, f.link); err != nil {
-		t.Fatal(err)
-	}
-	attempts, _ = f.attempts(t)
-	if len(attempts) != 2 {
-		t.Fatal("independent feedback stalled", len(attempts))
-	}
-	next, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
-	if next.State != domain.PRRemediationBound || len(next.Problems) != 2 {
-		t.Fatal("feedback did not proceed independently")
+func TestAutomaticPRChangedPrerequisiteCancelsOnlyUnclaimedInputAndFeedbackProceeds(t *testing.T) {
+	for _, change := range []string{"unknown-ci", "disabled-ci-policy"} {
+		t.Run(change, func(t *testing.T) {
+			f := newAutomaticPRFixture(t)
+			f.ciFailed.Store(true)
+			f.permission.Store(false)
+			f.savePolicy(t, func(p *domain.RemediationPolicy) { p.CIFailure, p.ReviewFeedback = true, true })
+			if err := f.service.remediateAutomaticPR(f.owner, f.link); err != nil {
+				t.Fatal(err)
+			}
+			attempts, _ := f.attempts(t)
+			if len(attempts) != 1 {
+				t.Fatal("CI attempt missing")
+			}
+			a, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
+			if len(a.Problems) != 1 {
+				t.Fatal("unmatched feedback was selected")
+			}
+			if change == "unknown-ci" {
+				f.ciFailed.Store(false)
+			} else {
+				f.savePolicy(t, func(p *domain.RemediationPolicy) { p.CIFailure = false })
+			}
+			f.permission.Store(true)
+			selected, _ := f.service.Store.Get(f.owner, domain.SessionKind, a.SessionID)
+			if err := f.service.dispatchExecution(f.owner, selected); domain.SafeError(err).Code != domain.Conflict {
+				t.Fatal("changed prerequisite claimed work", err)
+			}
+			attempts, set := f.attempts(t)
+			canceled, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
+			if canceled.State != domain.PRRemediationCanceled || set.Remediation.ActiveAttemptID != "" || set.Remediation.AutomaticAttempts != 0 {
+				t.Fatal("unstarted CI retained execution authority")
+			}
+			if err := f.service.remediateAutomaticPR(f.owner, f.link); err != nil {
+				t.Fatal(err)
+			}
+			attempts, _ = f.attempts(t)
+			if len(attempts) != 2 {
+				t.Fatal("independent feedback stalled", len(attempts))
+			}
+			next, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
+			if next.State != domain.PRRemediationBound || len(next.Problems) != 2 {
+				t.Fatal("feedback did not proceed independently")
+			}
+		})
 	}
 }
