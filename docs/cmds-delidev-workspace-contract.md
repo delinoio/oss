@@ -164,6 +164,12 @@ Explicit startup recovery reuses `ReadPRStartupRejection` under the original ses
 
 ## Bounded Git metadata observations
 
+Worker-owned Git commands enable Windows long paths through a command-local
+`core.longpaths=true` override during preparation and later observations, without
+modifying source repository configuration. Native failures expose only stable
+launch/exit classifications, exit status, owning IDs and read-only/offline flags;
+argv, paths and native output remain excluded from logs.
+
 Compatible administrative path and object-format queries share one owned
 `git rev-parse` invocation. The parser requires the exact record count and
 terminators, rejects ambiguous embedded delimiters and retains path spaces.

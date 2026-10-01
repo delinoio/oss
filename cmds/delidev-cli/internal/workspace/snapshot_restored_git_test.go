@@ -49,11 +49,9 @@ func TestSnapshotRestoredGitIdentityAtLongPrivatePath(t *testing.T) {
 	}
 	root = filepath.Join(root, strings.Repeat("x", rootLength-len(root)-1))
 	m.Root = root
-	// This fixture exercises restored stores, rather than long-path creation.
-	// Native Git for Windows defaults to disabled long paths. Enable them only
-	// in this temporary source for setup, then explicitly disable them before
-	// storage so restoration cannot borrow the source or ambient configuration.
-	gitTest(t, source, "config", "core.longpaths", "true")
+	// Preparation and restored checks must opt in per command, without borrowing
+	// source configuration or changing it to make the private object paths work.
+	gitTest(t, source, "config", "core.longpaths", "false")
 	manifest, err := m.Prepare(context.Background(), prepare)
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +61,6 @@ func TestSnapshotRestoredGitIdentityAtLongPrivatePath(t *testing.T) {
 	if len(repo.Path) > 250 || len(object) <= 280 {
 		t.Fatal("fixture does not separate cwd and object path limits")
 	}
-	gitTest(t, source, "config", "core.longpaths", "false")
 	input := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StoragePreview, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest}
 	preview := storageDo(t, m, input)
 	input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest

@@ -77,13 +77,13 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	bounded, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	commandArgs := []string{"-C", root, "-c", "core.quotePath=false", "-c", "color.ui=false"}
+	// Owned worktree and restored object paths can exceed Windows MAX_PATH even
+	// during preparation. Opt in per command before Git reads repository config;
+	// never rely on or rewrite the source checkout's core.longpaths setting.
+	if runtime.GOOS == "windows" {
+		commandArgs = append(commandArgs, "-c", "core.longpaths=true")
+	}
 	if g.offline {
-		// Private snapshot paths include operation/repository IDs and can exceed
-		// MAX_PATH. Offline checks ignore the system setting, so opt in per command
-		// without changing source configuration while Git for Windows requires it.
-		if runtime.GOOS == "windows" {
-			commandArgs = append(commandArgs, "-c", "core.longpaths=true")
-		}
 		commandArgs = append(commandArgs, "-c", "core.worktree="+root, "-c", "core.bare=false", "-c", "protocol.allow=never", "-c", "core.fsmonitor=false", "-c", "core.hooksPath="+g.HooksDir, "-c", "gc.auto=0", "-c", "maintenance.auto=false")
 	}
 	if g.readOnly {
@@ -131,7 +131,13 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		}
 		var exit interface{ ExitCode() int }
 		if errors.As(err, &exit) {
+			if g.Logger != nil {
+				g.Logger.WarnContext(ctx, "workspace_git_failed", "owner_id", g.OwnerID, "code", domain.Unavailable, "cause", "git_exit", "exit_code", exit.ExitCode(), "read_only", g.readOnly, "offline", g.offline)
+			}
 			return nil, exit.ExitCode(), &domain.Error{Code: domain.Unavailable, Message: "Git could not complete the operation on this Worker.", Guidance: "Check the selected repository, reference, remote access, and Worker Git authentication; no stale fallback was used.", Cause: "git_exit"}
+		}
+		if g.Logger != nil {
+			g.Logger.WarnContext(ctx, "workspace_git_failed", "owner_id", g.OwnerID, "code", domain.Unavailable, "cause", "git_launch", "read_only", g.readOnly, "offline", g.offline)
 		}
 		return nil, -1, &domain.Error{Code: domain.Unavailable, Message: "Git could not be launched on this Worker.", Guidance: "Check the configured executable and filesystem permissions.", Cause: "git_launch"}
 	}
