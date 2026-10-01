@@ -539,7 +539,10 @@ it("discards a nested integration profile draft on close before targeted reposit
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
+  // The initial empty read moves the action from the toolbar into setup guidance.
+  // Wait for that read so the test clicks the current button, not a detached node.
+  await screen.findByRole("heading", { name: "Add your first GitHub profile" });
+  fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
   const name = screen.getByRole("textbox", { name: "Profile name" });
   fireEvent.change(name, { target: { value: "Retained GitHub profile draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
