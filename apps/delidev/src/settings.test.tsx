@@ -667,6 +667,7 @@ it("saves remediation switches, exact reviewer IDs and explicit execution choice
     expect((screen.getByRole("checkbox", { name }) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(screen.getByRole("checkbox", { name }));
   }
+  screen.getByText("Remediation details").closest("details")!.open = true;
   await screen.findByRole("option", { name: "Fix agent" });
   fireEvent.change(screen.getByLabelText("Remediation Agent Worker"), { target: { value: agent.id } });
   fireEvent.change(screen.getByLabelText("Remediation Runner Device"), { target: { value: machine.id } });

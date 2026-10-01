@@ -3,7 +3,7 @@ import { type Server } from "node:http";
 import { createClient } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { EntityKind, ResourceService } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
@@ -22,7 +22,11 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New Server preferences" }, serverRoundTripWait));
+  const create = await screen.findByRole("button", { name: "New Server preferences" }, serverRoundTripWait);
+  await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false), serverRoundTripWait);
+  fireEvent.click(create);
+  expect(screen.getByText("Remediation details").closest("details")!.open).toBe(false);
+  expect(screen.getAllByRole("checkbox")).toHaveLength(4);
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
   const edit = await screen.findByRole("button", { name: "Edit Server preferences" }, serverRoundTripWait);
   const resources = createClient(ResourceService, transport);
@@ -40,5 +44,8 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   expect(latest[0].id).toBe(first[0].id);
   expect(latest[0].revision).toBe(first[0].revision + 1n);
   expect(document(latest[0])).toEqual({ ...defaults, default_routing: "priority", automatic_fetch: false });
+  expect(screen.getByText("priority")).toBeTruthy();
+  expect(screen.getByText("Disabled")).toBeTruthy();
+  expect(screen.getAllByText("Off")).toHaveLength(3);
 }, 15000);
 
