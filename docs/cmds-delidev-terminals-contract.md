@@ -262,7 +262,10 @@ bytes. It retains the single accepted creation resource for immediate selection
 and attachment even when that terminal is beyond the current 50-record history
 page; bounded history pagination remains independent. Send line appends native Enter (carriage return) to the exact UTF-8 draft
 for Unix PTY and Windows ConPTY input, not a full VT/full-screen application emulator. Byte-stream consumers
-retain all native control bytes. Current evidence belongs under `docs/evidence/delidev/issue-1088/`; retain the frozen historical ledger.
+retain all native control bytes. Record source revisions, commands, results and unresolved limits in PR #1226,
+issue #1088 and CI logs/artifacts under the root validation policy. Historical
+validation remains available at its original Git revisions; do not add repository
+evidence documents.
 
 ## Dependencies and Integrations
 
@@ -276,7 +279,7 @@ No new inbound server or external account/provider dependency is introduced.
 ## Change Triggers
 
 Update the project index, session/process/workspace contracts, protocol/client/
-desktop contracts, issue-specific evidence and scoped `AGENTS.md` when terminal
+desktop contracts, validation records in PR/issues/CI and scoped `AGENTS.md` when terminal
 ownership, limits, shell selection, native replay, cleanup or presentation
 contracts change. Generate all Go/TypeScript/Connect Query bindings together.
 
@@ -289,8 +292,9 @@ contracts change. Generate all Go/TypeScript/Connect Query bindings together.
 - [Protocol](protos-delidev-v1-contract.md)
 - [API client](packages-delidev-api-client-contract.md)
 - [Desktop](apps-delidev-desktop-contract.md)
-- [Current issue evidence](evidence/delidev/issue-1088/validation.md)
-- [Retained historical evidence](cmds-delidev-evidence.md)
+- [PR validation](https://github.com/delinoio/oss/pull/1226)
+- [Historical issue validation](https://github.com/delinoio/oss/tree/a7a47662bdabdc652da97ce7d01449a008663b0a/docs/evidence/delidev/issue-1088)
+- [Frozen historical ledger](https://github.com/delinoio/oss/blob/a7a47662bdabdc652da97ce7d01449a008663b0a/docs/cmds-delidev-evidence.md)
 - [Repository defaults](repository-defaults.md)
 - [Issue #1088](https://github.com/delinoio/oss/issues/1088)
 
