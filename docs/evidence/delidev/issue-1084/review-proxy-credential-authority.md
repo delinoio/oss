@@ -1,0 +1,13 @@
+# Issue #1084: credentials belong to one proxy authority
+
+The 2026-09-30 repair addresses security thread `PRRT_kwDORRAKg86no2MC` on reviewed commit `49feceaa855c3fc2b10c453356a2c54d06c02ec7`, after composing main in merge `a0d5eebf4`. The finding is valid: Save copied the owner's existing write-only generation across authorized mode/host/port edits, letting a paired client select a new peer and send that secret there.
+
+Save now retains an omitted credential only when the validated mode, canonical host and port are unchanged. Changing that authority clears the new profile association, unless explicit fresh credential input binds the mutation's own immutable generation. Name/bypass-only edits retain the existing authority. The old vault generation and already selected snapshots remain intact for independently pinned requests; no edit grants native deletion or implicit route selection. Existing actor/request/revision receipts, private write-intent recovery and bounded profile-deletion cleanup remain in force. Existing structured save logs remain content-free.
+
+Verification uses temporary SQLite, an injected vault, an owner and a genuinely paired HTTP client:
+
+- The new tests initially had an unused test import, corrected before execution. The subsequent **pre-fix** run of `GOMAXPROCS=2 go test -race -p 2 ./cmds/delidev-cli/internal/server -run '^TestNetwork(CredentialAuthorityEdits|AuthorityEditCannotSendOwnerCredentialToNewProxy)$' -count=1 -timeout=3m` failed in 7.795s. Host, port and HTTPS/SOCKS5 changes incorrectly retained the credential; Direct conversion remained invalid. The separate local CONNECT recorder observed the old owner's proxy authorization at the changed peer. Name/bypass cases passed.
+- After the fix, `GOMAXPROCS=2 go test -race -p 2 ./cmds/delidev-cli/internal/server -run 'Network' -count=1 -timeout=4m` passed in 124.470s. The same recorder receives a CONNECT without Proxy-Authorization, rejects it with 407 and never opens an origin connection. The destination is a fixture-only invalid DNS name passed through CONNECT; no external origin is contacted.
+- The table also verifies exact replay, unchanged selected old authority, credential-free new selection after authority changes, unchanged vault write/removal counts for metadata edits, and explicit credential re-entry with a fresh generation. Existing network receipt/recovery/routing tests passed in the same run.
+
+Combined validation is recorded separately. These fixtures do not prove enterprise infrastructure, real provider/GitHub accounts, native OS credential lifecycle or other-platform acceptance. No user credentials, endpoint values, generated binaries or native content are committed.

@@ -40,6 +40,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Manual remediation capabilities/fix commands use generated authenticated PullRequestFixService with the same closed original selection and receipt semantics as desktop. Preserve exact revisions/request IDs; reject foreign acknowledgments and avoid authentication/document stdin sharing. Never publish with the server lookup PAT or silently select another harness.
 
+- The `network` command family uses authenticated NetworkService under `docs/cmds-delidev-network-contract.md`. Keep exact decimal revisions and request IDs; definition files, server authentication and proxy credential stdin must be independent. CLI response deadlines exceed bounded server credential work. Read status/export metadata never claims native Worker application.
+
 - `session fork` uses authenticated Fork/GetSessionFork and preserves accepted job/request identities on bounded wait failure. Keep dispatch in `dispatch_session.go`, retain the two-minute Worker bound with a 145-second command deadline, and never replay creation while observing a job. Follow `docs/cmds-delidev-forks-contract.md`.
 
 - Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.

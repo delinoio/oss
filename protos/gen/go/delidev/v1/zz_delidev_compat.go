@@ -12,7 +12,7 @@ import (
 func init() {
 	file_delidev_v1_delidev_proto_init()
 	original := protodesc.ToFileDescriptorProto(File_delidev_v1_delidev_proto)
-	files := []protoreflect.FileDescriptor{File_delidev_v1_account_proto, File_delidev_v1_activity_proto, File_delidev_v1_common_proto, File_delidev_v1_configuration_proto, File_delidev_v1_device_proto, File_delidev_v1_forward_proto, File_delidev_v1_inbox_proto, File_delidev_v1_integration_proto, File_delidev_v1_interaction_proto, File_delidev_v1_pr_fix_proto, File_delidev_v1_provider_proto, File_delidev_v1_resource_proto, File_delidev_v1_schedule_proto, File_delidev_v1_search_proto, File_delidev_v1_session_proto, File_delidev_v1_system_proto, File_delidev_v1_usage_proto, File_delidev_v1_worker_proto}
+	files := []protoreflect.FileDescriptor{File_delidev_v1_account_proto, File_delidev_v1_activity_proto, File_delidev_v1_common_proto, File_delidev_v1_configuration_proto, File_delidev_v1_device_proto, File_delidev_v1_forward_proto, File_delidev_v1_inbox_proto, File_delidev_v1_integration_proto, File_delidev_v1_interaction_proto, File_delidev_v1_network_proto, File_delidev_v1_pr_fix_proto, File_delidev_v1_provider_proto, File_delidev_v1_resource_proto, File_delidev_v1_schedule_proto, File_delidev_v1_search_proto, File_delidev_v1_session_proto, File_delidev_v1_system_proto, File_delidev_v1_usage_proto, File_delidev_v1_worker_proto}
 	owned := map[string]bool{}
 	for _, file := range files {
 		owned[file.Path()] = true

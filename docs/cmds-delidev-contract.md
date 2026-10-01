@@ -106,6 +106,12 @@ Stream reflection checks include decoded JSON key fragments at both global and o
 
 Controller creation failure before native startup removes only the current attempt's original empty scope and synchronizes its parent. Nonempty/replaced evidence and uncertain durability remain recoverable failures; native-started scopes always require their existing ownership proof.
 
+Native relay cancellation retains its original response-writer ownership until
+all started body/deadline callbacks finish. A downstream connection's later
+request cannot inherit an earlier cancellation deadline; revoked tokens fail
+without another key read or upstream attempt. See the
+[relay contract](cmds-delidev-proxy-contract.md).
+
 ## Logging
 Use `log/slog` on stderr with correlation, operation, session, and Worker IDs. Stable typed failures retain safe causes and recovery guidance. Prompts, raw emails, tokens, provider bodies, and internal instructions are excluded. Structured JSON is never mixed with progress.
 
@@ -219,6 +225,10 @@ or content removal. Waiting uses reads only and preserves accepted progress on
 cancellation or failure. Offline/uncertain Worker or backup cleanup stays pending;
 completion requires all managed copies confirmed removed and never invents
 reclaimed disk space. See the [storage contract](cmds-delidev-storage-contract.md).
+
+### Explicit outbound networking
+
+Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. See [the network contract](cmds-delidev-network-contract.md); Worker bootstrap/native proxy application remains separate.
 
 ### Managed database restore commands
 

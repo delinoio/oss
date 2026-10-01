@@ -381,3 +381,6 @@ and scheduler memory without authorizing native input or push replay.
 Post-push cleanliness excludes ignored validation output
 while retaining tracked and ordinary untracked source checks. Typed capability
 consumers accept their known profile alongside additive unknown entries.
+
+### Explicit outbound routing
+All production GitHub identity, repository access and content/rules/check/reviewer adapters use the shared server-selected outbound transport under [the network contract](cmds-delidev-network-contract.md). The fixed official GitHub origin, PAT scope, destination TLS and redirect refusal remain unchanged. Worker profiles cannot alter this route.
