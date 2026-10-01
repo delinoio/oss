@@ -50,8 +50,12 @@ func TestTerminalMissingShutdownConservativelyPreservesOutputLoss(t *testing.T) 
 			a := terminal.Assignment{ID: domain.NewID(), Terminal: domain.Terminal{OwnerInstanceID: domain.NewID(), State: domain.TerminalRunning, Rows: 24, Columns: 80}, Operation: domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalClose}}
 			// Retained empty ownership permits cleanup, independently of missing
 			// shutdown metadata. Neither can establish complete output delivery.
-			if err := security.PrivateDir(filepath.Join(m.processRoot(), string(a.ID))); err != nil {
-				t.Fatal(err)
+			// PrivateDir owns only its final component. Explicitly create both
+			// levels so Windows never inherits a shared DACL for the process root.
+			for _, path := range []string{m.processRoot(), filepath.Join(m.processRoot(), string(a.ID))} {
+				if err := security.PrivateDir(path); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if test.pending {
 				a.Terminal.Pending = &domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalCreate, Claimed: test.claimed}
