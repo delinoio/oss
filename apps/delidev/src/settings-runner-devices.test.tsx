@@ -27,8 +27,8 @@ function fixture(rows: Resource[] = []) {
     router.service(ProviderService, { listProviderInventory: () => ({ entries: [] }), listProviderPresets: () => ({ presetsJson: encode([]) }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
-  const view = (children: React.ReactNode) => <StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}>{children}</QueryClientProvider></TransportProvider></StrictMode>;
-  return { list, get, view };
+  const view = (children: React.ReactNode, currentTransport = transport) => <StrictMode><TransportProvider transport={currentTransport}><QueryClientProvider client={client}>{children}</QueryClientProvider></TransportProvider></StrictMode>;
+  return { list, get, view, transport };
 }
 function open(value: ReturnType<typeof fixture>, control?: ControlLocalWorker) {
   render(value.view(<Settings close={() => {}} controlLocalWorker={control} />));
@@ -111,7 +111,7 @@ it("removes the list-only scope for machine detail and other categories", async 
   expect(content.classList.contains("settings-runner-devices")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); expect(content.classList.contains("settings-runner-devices")).toBe(false);
 });
-it("keeps an uncertain Start through category reflow and same-opening rerender without replay", async () => {
+it("keeps an uncertain Start through category reflow and same-identity transport reconnect without replay", async () => {
   const value = fixture(); let current: LocalWorkerStatus = { ...status(LocalWorkerState.NotStarted), generation: undefined };
   const control = vi.fn(async (action: LocalWorkerAction): Promise<LocalWorkerStatus> => {
     if (action === LocalWorkerAction.Start) { current = { ...status(LocalWorkerState.Starting), controller_active: true }; throw new Error("unknown launch"); }
@@ -120,7 +120,9 @@ it("keeps an uncertain Start through category reflow and same-opening rerender w
   const view = render(value.view(<Settings controlLocalWorker={control} close={() => {}} />)); fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
   fireEvent.click(await screen.findByRole("button", { name: "Start local Worker" })); await screen.findByText("Starting");
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
-  view.rerender(value.view(<Settings controlLocalWorker={control} close={() => {}} />));
+  view.rerender(value.view(<Settings controlLocalWorker={control} close={() => {}} />, fixture().transport));
+  expect(screen.getByText("Starting")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("The local Worker action is unconfirmed.");
   fireEvent.click(screen.getByRole("button", { name: "Refresh local Worker" }));
   await waitFor(() => expect(control.mock.calls.filter(([action]) => action === LocalWorkerAction.Start)).toHaveLength(1));
 });
