@@ -25,6 +25,7 @@ type automaticPRFixture struct {
 	policy        domain.RemediationPolicy
 	calls         atomic.Int32
 	permission    atomic.Bool
+	ciFailed      atomic.Bool
 	queryHook     func(context.Context, domain.RepositoryQuery) error
 }
 
@@ -76,14 +77,14 @@ func newAutomaticPRFixture(t *testing.T) *automaticPRFixture {
 				return gh.RepositoryQueryObservation{}, err
 			}
 		}
-		v := automaticPRObservation(q, f.permission.Load())
+		v := automaticPRObservation(q, f.permission.Load(), f.ciFailed.Load())
 		return v, nil
 	})
 	f.link = f.addLink(t, f.repo, "17")
 	return f
 }
 
-func automaticPRObservation(q domain.RepositoryQuery, permitted bool) gh.RepositoryQueryObservation {
+func automaticPRObservation(q domain.RepositoryQuery, permitted bool, failed ...bool) gh.RepositoryQueryObservation {
 	v := linkObservation(q)
 	v.Items[0].ID = "90071992547409" + q.Number
 	no := false
@@ -115,6 +116,18 @@ func automaticPRObservation(q domain.RepositoryQuery, permitted bool) gh.Reposit
 		v.Items[0].Mergeable = nil
 		item := v.Items[0]
 		v.CI = &domain.PullRequestCI{Rules: domain.PullRequestRules{BaseRef: item.BaseRef, BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, Rules: []domain.ActiveRepositoryRule{}, Digest: domain.ActiveRulesDigest(nil)}, Head: domain.CIRollup{CommitSHA: item.HeadSHA, TotalCount: "0", Contexts: []domain.CIContext{}}, NativeMergeability: "UNKNOWN"}
+		if len(failed) != 0 && failed[0] {
+			yes := true
+			v.Items[0].Mergeable = &yes
+			v.CI.NativeMergeability = "MERGEABLE"
+			completed := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)
+			conclusion, app := "FAILURE", "37"
+			rules := []domain.ActiveRepositoryRule{{Type: "required_status_checks", RulesetID: "71", SourceKind: domain.RulesetRepository, NativeSourceKind: "Repository", Source: "fixture-owner/repo", Digest: strings.Repeat("a", 64), RequiredChecks: &domain.RequiredRuleChecks{Checks: []domain.RequiredRuleCheck{{Context: "Required CI", IntegrationID: &app}}}}}
+			check := domain.CIContext{Evidence: &domain.CIContextEvidence{SuiteNodeID: "SUITE_1", StartedAt: &completed, CompletedAt: &completed}, Kind: domain.CICheckRun, NodeID: "CHECK_1", Name: "Required CI", CommitSHA: item.HeadSHA, Required: true, NativeStatus: "COMPLETED", NativeConclusion: &conclusion, Application: &domain.CheckApplication{ID: app, NodeID: "APP_37", Slug: "fixture-app"}}
+			v.CI.Rules.Rules, v.CI.Rules.Digest = rules, domain.ActiveRulesDigest(rules)
+			v.CI.Head.Contexts, v.CI.Head.TotalCount = []domain.CIContext{check}, "1"
+			v.CI.TestMerge = &domain.CIRollup{CommitSHA: strings.Repeat("c", 40), TotalCount: "0", Contexts: []domain.CIContext{}}
+		}
 		v.CI.Result = v.CI.Evaluate(item)
 	}
 	return v
@@ -510,5 +523,45 @@ func TestAutomaticPRFailureReplacementNeverOverridesExplicitControls(t *testing.
 				t.Fatal("replacement evaded original authority", change)
 			}
 		})
+	}
+}
+
+func TestAutomaticPRUnknownCICancelsOnlyUnclaimedInputAndFeedbackProceeds(t *testing.T) {
+	f := newAutomaticPRFixture(t)
+	f.ciFailed.Store(true)
+	f.permission.Store(false)
+	f.savePolicy(t, func(p *domain.RemediationPolicy) { p.CIFailure, p.ReviewFeedback = true, true })
+	if err := f.service.remediateAutomaticPR(f.owner, f.link); err != nil {
+		t.Fatal(err)
+	}
+	attempts, _ := f.attempts(t)
+	if len(attempts) != 1 {
+		t.Fatal("CI attempt missing")
+	}
+	a, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
+	if len(a.Problems) != 1 {
+		t.Fatal("unmatched feedback was selected")
+	}
+	f.ciFailed.Store(false)
+	f.permission.Store(true)
+	selected, _ := f.service.Store.Get(f.owner, domain.SessionKind, a.SessionID)
+	if err := f.service.dispatchExecution(f.owner, selected); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("unknown CI claimed work", err)
+	}
+	attempts, set := f.attempts(t)
+	canceled, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
+	if canceled.State != domain.PRRemediationCanceled || set.Remediation.ActiveAttemptID != "" || set.Remediation.AutomaticAttempts != 0 {
+		t.Fatal("unstarted CI retained execution authority")
+	}
+	if err := f.service.remediateAutomaticPR(f.owner, f.link); err != nil {
+		t.Fatal(err)
+	}
+	attempts, _ = f.attempts(t)
+	if len(attempts) != 2 {
+		t.Fatal("independent feedback stalled", len(attempts))
+	}
+	next, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
+	if next.State != domain.PRRemediationBound || len(next.Problems) != 2 {
+		t.Fatal("feedback did not proceed independently")
 	}
 }

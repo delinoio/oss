@@ -409,6 +409,12 @@ The ordinary execution dispatcher repeats the original per-kind remote gates
 immediately before its atomic input/account/job claim. No saved observation,
 reservation, receipt, installation or successful native result substitutes for
 current authority. The server lookup PAT never reaches native Git.
+When that fresh preflight rejects a changed prerequisite with a conflict, the
+ordinary queue-removal transaction may cancel only an unclaimed automatic bound
+input and release its PR reservation without charging an execution attempt.
+Claimed/native or uncertain work cannot enter this path. This allows independently
+eligible feedback or conflict work to proceed after required CI becomes unknown;
+explicit source/session controls remain authoritative for any replacement.
 
 One stable remote-PR owner coalesces aliases and duplicate observations across
 sessions and restarts. Eligible linked sessions retain persisted activity ordering

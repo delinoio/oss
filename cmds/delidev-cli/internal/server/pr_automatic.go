@@ -6,11 +6,46 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
 const prAutomaticInterval = 30 * time.Second
+
+func (s *Service) cancelAutomaticPRPreflight(ctx context.Context, attempt store.Record) error {
+	if attempt.ID == "" {
+		return nil
+	}
+	value, err := store.Decode[domain.PRRemediationAttempt](attempt)
+	if err != nil {
+		return err
+	}
+	if value.Mode != domain.PRRemediationAutomatic || value.State != domain.PRRemediationBound {
+		return nil
+	}
+	var input store.Record
+	err = s.Store.Read(ctx, func(tx *store.Tx) error {
+		current, retained, err := tx.GetPRRemediationAttempt(attempt.ID)
+		if err != nil {
+			return err
+		}
+		if current.Revision != attempt.Revision || retained.State != domain.PRRemediationBound {
+			return prObservationConflict()
+		}
+		input, err = tx.Get(domain.QueueKind, retained.InputID)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	_, err = s.changeQueuedInput(ctx, &pb.Mutation{Id: string(input.ID), ExpectedRevision: input.Revision, RequestId: string(domain.NewID())}, value.SessionID, "", true)
+	if err == nil {
+		s.logger.InfoContext(ctx, "automatic_pr_preflight_canceled", "attempt_id", attempt.ID, "input_id", input.ID)
+	}
+	return err
+}
 
 // A retained association selects the project explicitly. Neither a historical
 // problem set nor a repository alias can invent a new project or bypass Stop.
