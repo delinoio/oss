@@ -81,8 +81,12 @@ function ProviderToggle({ entry, presets, changed, refresh }: { entry: ProviderI
   </div>;
 }
 
+export interface ProviderListState { query: string; page: string }
+
 export function ApiProviderSettings({
   active,
+  state,
+  changeState,
   changed,
   createCustom,
   editCustom,
@@ -91,6 +95,8 @@ export function ApiProviderSettings({
   deleteCustom,
 }: {
   active: boolean;
+  state?: ProviderListState;
+  changeState?: (value: ProviderListState) => void;
   changed: () => void;
   createCustom: (data?: Document) => void;
   editCustom: (resource: Resource) => void;
@@ -98,8 +104,11 @@ export function ApiProviderSettings({
   addAccount: (providerID: string, entry: ProviderInventoryEntry) => void;
   deleteCustom: (resource: Resource) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState("");
+  const [localState, setLocalState] = useState<ProviderListState>({ query: "", page: "" });
+  const { query, page } = state ?? localState;
+  const change = changeState ?? setLocalState;
+  const setQuery = (query: string) => change({ query, page: "" });
+  const setPage = (page: string) => change({ query, page });
   const result = useQuery(ProviderQuery.listProviderInventory, { query, enabledOnly: false, pageSize: 50, pageToken: page }, { enabled: active });
   const activeInventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 1, pageToken: "" }, { enabled: active });
   const presetsQuery = useQuery(ProviderQuery.listProviderPresets, {}, { enabled: active });
@@ -108,7 +117,6 @@ export function ApiProviderSettings({
   try {
     if (presetsQuery.data) presets.push(...items(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(presetsQuery.data.presetsJson))).map(object));
   } catch { /* Provider preset defaults remain unavailable when server data is malformed. */ }
-  useEffect(() => { setPage(""); }, [query]);
   const entries = ready ? result.data?.entries ?? [] : [];
   const presetsMain = entries.filter((entry) => hostedPresetOrder.includes(entry.presetId)).sort((left, right) => hostedPresetOrder.indexOf(left.presetId) - hostedPresetOrder.indexOf(right.presetId));
   const local = entries.filter((entry) => [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId));
