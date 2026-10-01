@@ -6,6 +6,20 @@ names and numbers remain unchanged. `protos/delidev/allocations.json` records ma
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 
+Issue #1146's [planned OpenRouter OAuth contract](cmds-delidev-account-oauth-contract.md)
+reserves inventory capability `OPENROUTER_OAUTH_PKCE_V1 = 5` independently of the
+four existing account-flow gates, and `ProviderInventoryEntry.connection_method = 9`.
+The new closed `ProviderConnectionMethod` enum reserves UNSPECIFIED 0,
+API_KEY 1, OAUTH_PKCE 2 and KEYLESS 3. `AccountOAuthState` reserves UNSPECIFIED 0,
+AWAITING_AUTHORIZATION 1, EXCHANGING 2, SAVING 3, CONNECTED 4, CANCELED 5, EXPIRED 6,
+FAILED 7, INTERRUPTED 8 and RECOVERY_REQUIRED 9. Each new-enum member uses explicit
+declaration provenance in the allocation ledger without entering the active
+baseline. Establish these reservations and migration 29 on main before dependent
+implementation. The prerequisite adds no active schema, RPC, generated binding
+or capability advertisement; complete owner/client RPC and CLI support remains
+required before activation. Older servers satisfying the four existing gates
+retain manual connection without an OAuth badge.
+
 The [planned shared compaction contract](cmds-delidev-compaction-contract.md)
 reserves `EntityKind` 32, `SystemCapability` 15, `WorkerCapability` 5 and
 `SessionChange.compaction_job` 9 for issues #1093, #1202 and #1203. These are

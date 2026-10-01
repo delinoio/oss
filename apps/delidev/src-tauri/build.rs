@@ -6,6 +6,8 @@ fn main() {
     #[cfg(feature = "desktop-host")]
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "read_appearance",
+            "update_appearance",
             "open_github",
             "connect_local",
             "launch_local",

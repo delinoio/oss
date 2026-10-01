@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- Issue #1146 reserves `ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1 = 5`, `ProviderInventoryEntry.connection_method = 9` and the exclusively owned `ProviderConnectionMethod` / `AccountOAuthState` enums in `allocations.json`. Each member of a wholly new enum carries `newDeclaration: true`, one original owner and a zero UNSPECIFIED value; do not add planned declarations to the active baseline. Establish reservations on main before dependent implementation and keep them out of active schemas/advertisements until complete support exists. Follow `docs/cmds-delidev-account-oauth-contract.md`; OAuth remains independent of the four existing inventory gates and cannot be inferred from names or copied URLs.
+
 - Issue #1235 reserves `SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` under its owning issue identity. Establish this allocation and storage migration 28 on main before dependent implementation. The reservation does not change schemas, generated clients or advertised support; preserve the independent capability boundary from API provider inventory.
 
 - Use service-specific schema files and preserve the compatibility `delidev.proto` import. Shared numeric additions must match `allocations.json`; reservations do not advertise support. Run the normal generated-source pipeline and never hand-edit generated output. The exact declaration-relocation map preserves FILE compatibility checks without suppressing semantic changes.

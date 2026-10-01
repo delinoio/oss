@@ -45,6 +45,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Session development-server forwarding](cmds-delidev-forwarding-contract.md)
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
+- [Planned OpenRouter account OAuth PKCE](cmds-delidev-account-oauth-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [Native Codex model observations (pending)](cmds-delidev-native-models-contract.md)
@@ -69,6 +70,7 @@ sessions and shared account profiles are preserved. The [storage contract](cmds-
 owns the lifecycle, snapshot-copy deletion integration and remaining database-restore/Sidechat limits.
 
 ## Cross-Domain Invariants
+- Issue #1146 reserves inventory capability 5, entry connection-method field 9, two closed enums and private migration 29 for OpenRouter OAuth. Establish reservations on main before implementation; migration 29 depends on real migrations 26–28. The [planned OAuth contract](cmds-delidev-account-oauth-contract.md) retains the approved server/CLI/native/desktop scope, server-owned credentials, once-only exchange and original local recovery. The prerequisite activates no OAuth support and leaves the issue open.
 - Issue #1235's planned subscription identity split reserves independent System capability 17 and migration 28. Establish both on main before dependent implementation and activate 28 only after real migrations 26/27, preserving their order. The [structure](cmds-delidev-structure-contract.md), [protocol](protos-delidev-v1-contract.md) and [storage](cmds-delidev-storage-contract.md#planned-subscription-retirement-issue-1235) contracts own this prerequisite; it changes no runtime support. The later reset must preserve historical attribution, deny-all restrictions and unsettled native ownership/cleanup gates while keeping subscriptions independent of API Providers.
 - Execution-device presentation uses `Runs on` for the New session machine selector and `Runner Device` / `Runner Devices` for former Execution Worker labels and messages. Agent Worker and technical Worker terminology remain distinct; machine/protocol/storage IDs, CLI commands, logs, error codes and the `execution-workers` Settings category value stay unchanged. The [desktop contract](apps-delidev-desktop-contract.md) owns the presentation boundary.
 - Go owns business logic; clients use authenticated Connect and preserve exact request/revision identities.
@@ -117,6 +119,10 @@ Home (Sessions/New Session) keeps independent bounded 50-record reads and connec
 - Workspace storage and Codex forks share source ownership exclusion: forks require present storage at acceptance, claim and publication, and storage waits for unresolved fork jobs. Stored workspaces require explicit restoration before a fork.
 
 - Workspace storage and session terminals share transactional ownership exclusion: storage waits for every terminal's independently verified process cleanup, while terminal creation, input/resize and non-close dispatch require present storage. Original close and cleanup authority remains available under the [storage](cmds-delidev-storage-contract.md) and [terminal](cmds-delidev-terminals-contract.md) contracts.
+
+## Device appearance invariant
+
+Device appearance is a native desktop-owned preference shared across local and saved-server windows, independent of every server configuration, pairing, backup and configuration transfer. Its controller stays above connection state and follows the [desktop appearance contract](apps-delidev-desktop-contract.md#device-appearance-issue-1238).
 
 ## Session terminal deletion invariant
 
