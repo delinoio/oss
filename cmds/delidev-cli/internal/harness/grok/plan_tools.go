@@ -78,7 +78,28 @@ func planPath(path string) bool {
 	return text(path, 8192) && filepath.IsAbs(path) && filepath.Clean(path) == path
 }
 
-func parsePlanObservation(raw []byte, session domain.ID, prompt string, name fileToolName) (planObservation, error) {
+type planPathPolicy uint8
+
+const (
+	nativePlanPath planPathPolicy = iota
+	retainedPlanLocator
+)
+
+func (p planPathPolicy) valid(path string) bool {
+	switch p {
+	case nativePlanPath:
+		return planPath(path)
+	case retainedPlanLocator:
+		// A public journal can run on a different OS from the original Worker.
+		// Its locator is bounded comparison data, never filesystem authority;
+		// interpreting or normalizing it with this host's rules loses identity.
+		return text(path, 8192)
+	default:
+		return false
+	}
+}
+
+func parsePlanObservation(raw []byte, session domain.ID, prompt string, name fileToolName, pathPolicy planPathPolicy) (planObservation, error) {
 	value := planObservation{Name: name}
 	var envelope struct {
 		Session domain.ID           `json:"sessionId"`
@@ -150,7 +171,7 @@ func parsePlanObservation(raw []byte, session domain.ID, prompt string, name fil
 				Type    string      `json:"type"`
 				Entered planEntered `json:"Entered"`
 			}
-			if decode(completed.Output, &output) != nil || output.Type != "EnterPlanMode" || completed.Title == nil || *completed.Title != "Plan mode entered" || !text(output.Entered.Message, 256<<10) || !planPath(output.Entered.Path) || output.Entered.Hints.Question != string(askQuestionTool) || output.Entered.Hints.Exit != string(exitPlanTool) || output.Entered.Hints.Task != "spawn_subagent" || output.Entered.Seed != "empty" {
+			if decode(completed.Output, &output) != nil || output.Type != "EnterPlanMode" || completed.Title == nil || *completed.Title != "Plan mode entered" || !text(output.Entered.Message, 256<<10) || !pathPolicy.valid(output.Entered.Path) || output.Entered.Hints.Question != string(askQuestionTool) || output.Entered.Hints.Exit != string(exitPlanTool) || output.Entered.Hints.Task != "spawn_subagent" || output.Entered.Seed != "empty" {
 				return value, incompatible()
 			}
 			value.Entered = &output.Entered
@@ -159,7 +180,7 @@ func parsePlanObservation(raw []byte, session domain.ID, prompt string, name fil
 				Type  string    `json:"type"`
 				Ready planReady `json:"PlanReady"`
 			}
-			if decode(completed.Output, &output) != nil || output.Type != "ExitPlanMode" || completed.Title == nil || *completed.Title != "Plan mode exited" || !text(output.Ready.Message, 256<<10) || !text(output.Ready.Content, 256<<10) || !planPath(output.Ready.Path) {
+			if decode(completed.Output, &output) != nil || output.Type != "ExitPlanMode" || completed.Title == nil || *completed.Title != "Plan mode exited" || !text(output.Ready.Message, 256<<10) || !text(output.Ready.Content, 256<<10) || !pathPolicy.valid(output.Ready.Path) {
 				return value, incompatible()
 			}
 			value.Ready = &output.Ready
