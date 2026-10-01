@@ -357,15 +357,122 @@ Connection starts unverified. Validation and model discovery show their independ
 ### Server preferences
 Settings edits the singleton server default account-routing policy and global automatic-fetch gate through the shared configuration RPC. New settings seed the documented Go defaults, verified against `settings defaults` in real integration tests. Once the singleton exists, the UI exposes only revision-bound editing, preserves all unrelated notification values and retained remediation selections and does not offer duplicate creation or generic deletion. Existing execution snapshots retain their original routing; Agent configurations with an explicit policy still override inheritance. Worktree fetch requires both global and repository preferences, and Local checkouts stay unchanged. Native notification delivery and remediation behavior remain separate required features.
 
+Issue #1242 owns only this category's body. Use a centered, full-width column bounded to 820 CSS px on white, retaining the shared outer padding (40px; 24px below 1100px; 20px 16px 24px below 760px), shell/category order and opening lifetime. The title is “Server preferences”, the description is “Default routing, Worktree fetch, and pull request remediation.” and scope is “Saved on the selected server.” Use system fonts with 24px semibold title, 18px panel/form heading, 15px semibold section headings, 14px body and 12px scope/identity; #202632 text, #5b6577 secondary text, #2563d8 primary/focus, #d8dee8 decorative borders and #7b8698 control boundaries. Retain the 3px focus outline, 40px minimum control targets and 8px button radii. Keep Refresh settings and the single New/Edit action at the title's upper right; below 1100px stack the toolbar and fields. Full IDs and controls wrap at compact widths and 200% effective zoom. Other categories and native geometry keep their existing presentation.
+
+A successful final empty first page alone authorizes New, disabled during fetching. Loading, initial errors and empty later/continuation pages cannot authorize creation. The 24px-padded, 1px-bordered, 10px-radius empty panel has no duplicate CTA. Its exact text is “No saved server preferences”; “Review the defaults, then save one preference set for this server.”; “Account routing” / “Choose the default policy for Agent Workers that inherit server routing.”; “Worktree fetch” / “Allow fetching before Worktree preparation. Repository preferences also apply.”; “Pull request remediation” / “Configure remediation policies. Automatic execution is not available yet.”; and “Choose New Server preferences to review and save.” Retain the last successful rows or final-empty panel during refresh and after failure, alongside the sanitized correlated error and existing stale-results notice; failed refresh disables New. Refresh repeats only the current read/page. Keep bounded First/Next controls when a continuation or later page requires them; a final first-page singleton needs no pagination. A supported saved document displays its exact routing enum, fetch Allowed/Disabled and each remediation switch On/Off in three read-only sections, with the complete ID and automatic-execution-unavailable notice. Unsupported schemas, unreadable documents and unknown/missing policy values retain full identity with disabled Edit and explicit unavailable information, never fabricated defaults. There is no New/Delete for a saved singleton.
+
+Keep one mounted ConfigurationEditor and its existing query/mutation owners. Hide the list toolbar while editing. Group Account routing, Worktree preparation and Pull request remediation policy without removing any field/help. The six exact routing values remain fixed, priority, round-robin, remaining-quota, reset-window and sequential-exhaustion; label/help sit left of a 280px native select at wide widths, stacked full-width below 1100px. New documents retain exactly default_routing=sequential-exhaustion, notifications=true, automatic_fetch=true and remediation={ci_failure:false, review_feedback:false, merge_conflict:false, conflict_strategy:merge, session_strategy:reuse, attempt_limit:3}. Always show “Policies are saved on the server. Automatic execution is not available yet.” and native checkboxes “Automatically fix required CI failures”, “Automatically handle matching published feedback”, “Automatically resolve verified merge conflicts”. Shared remediation detail presentation defaults to enum Expanded; only Server preferences selects Collapsible. Its native “Remediation details” disclosure starts closed per editor, with static helper “Session strategy, execution targets, conflicts, attempt limit, and reviewers.” Children stay mounted: session strategy/help, exact Agent Worker/Runner Device choices and unavailable states, conflict strategy/conditional rebase help, integer attempt limit 1–100 and complete reviewer selectors/permissions/addition/removal/help retain their order, exact string numeric/node IDs and limits. Collapsing cannot clear values, reset query/cursor ownership or mutate. Server-preferences-only constraint validation opens the enclosing details before focusing the first invalid control and blocks submission. Repository overrides retain expanded controls and complete-policy inheritance/replacement.
+
+Cancel edit precedes Save Server preferences after a divider in the ordinary right-aligned form flow; retain the exact uncertain retry action, complete-document byte bound, original revision and request bytes, retained unrelated notifications/remediation values and existing validation/revision-drift safeguards. Reflow and same-identity reconnect preserve draft/disclosure within the opening; Close/Escape/navigation disposal, Strict Mode generations and late-result isolation remain unchanged. No autosave, singleton deletion, new API/schema/storage/migration/dependency/native permission/telemetry or execution feature is added. Issue #1236 independently owns the shared Settings screen conversion: integrate this body into its established visit/navigation semantics if it lands, without restoring the old shell. Record frontend/component, browser layout/keyboard and packaged CEF platform results separately in PRs/issues/CI artifacts; browser fixtures do not prove native background inertness, Escape, focus containment or opener restoration.
+
 ### Session budgets
 Session creation and retained-session controls expose the optional estimated-cost budget in the [usage contract](cmds-delidev-usage-contract.md). Keep currency and threshold as exact strings, distinguish absent subtotal from zero, and show incomplete/unpriced/other-currency evidence with no actual-spend or compliance claim. Read the dedicated generated SessionService view and display the inclusive reached warning; the server gates every new turn/Resume and retains pending input without canceling accepted execution.
 
 Budget editing captures the session revision. Preserve stale drafts, require an explicit latest-revision action before a new write, and retain original uncertain mutations for exact retry. Removing the budget is an explicit oneof operation. A raise/removal can permit already eligible queued execution but never itself resumes paused/archived sessions. Read failures mark cached evidence as stale and block new edits, while exact uncertain retries remain available. No display calculation or disabled button replaces server authorization.
 
 ### Devices and diagnostic observations
-Settings lists paired devices with independent authorization, type, pairing/revocation time and optional Worker identity. An authorized device is not automatically online. Revocation opens a confirmation bound to the original revision, identifies this desktop when applicable and warns that self-revocation disconnects it without automatic credential replacement. Stale new confirmations are blocked; uncertain retries preserve the exact original request even after a peer revision. Accepted revocation remains separate from session/native cleanup and private-file erasure. Generic device reads contain no bearer or pairing code.
+Settings lists paired devices with independent authorization, type, pairing/revocation time and optional Worker identity. An authorized device is not automatically online. Revocation opens a confirmation bound to the original revision, identifies this desktop when applicable and independently prevents current-desktop revocation in both the list and direct confirmation path. Stale new confirmations are blocked; uncertain retries preserve the exact original request even after a peer revision. Accepted revocation remains separate from session/native cleanup and private-file erasure. Generic device reads contain no bearer or pairing code.
 
-Paired-device settings explicitly issue single-use client or manually installed Worker grants through direct CreatePairing RPC. Generate 256 random bits with Web Crypto in the trusted app, retain the original name/type/request and native-pinned server origin/ID in one connection-owned component, and send only the SHA-256 verifier. Raw code never enters mutation variables, query keys/caches, Web Storage or logs. A lost response retains the same code/request across settings visibility; no automatic retry, regeneration or discard is allowed while acceptance is uncertain. Match the response request/resource/name/type before exposing any document.
+Issue #1239 defines the **Paired devices-only** compact list in
+`device-settings.tsx` / `device-settings.css` and the existing Settings workspace.
+Keep the shared native window, full-webview modal, 64px header, 240px independently
+scrolling grouped sidebar, all 16 category labels/order/IDs, compact selector and
+other categories unchanged. Center the category in a fluid 100%-width column with
+a 1040px maximum inside the existing 40px/24px/16px responsive padding. The one
+26px semibold title precedes **Pair devices using a short-lived document.** (14px)
+and **Saved on the selected server.** (12px). Refresh settings and exactly one
+eligible blue Create pairing document action share the list toolbar, with a
+decorative plus hidden from assistive technology. Below 1100px the toolbar sits
+below the title and row actions below metadata; below 760px retain the labeled
+native grouped selector and its existing lock. All content wraps at 200% zoom.
+
+Use one white bordered panel with 12px corners and divided semantic articles in
+server order. Each row displays a decorative outline desktop/Worker icon, complete
+inert 15px semibold name, known type as Desktop client/Worker (otherwise Unknown),
+textual Authorized/Revoked/Unknown badge, exact current-desktop marker and 13px
+UTC dates such as **29 Sep 2026, 00:58 UTC**. Missing/unparseable timestamps are
+Unknown; reject impossible calendar dates instead of normalizing them. Do not
+interpret future-schema documents to invent names, authorization or actions.
+Keep **Authorization does not mean this device is currently connected.** once
+above the list and **Local Worker registration is available in Runner Devices.**
+below the list/pagination, without a new navigation action or connectivity inference.
+
+Every row has a collapsed-by-default, keyboard-operable Details control with a
+device-scoped accessible name, announced expansion and associated content.
+Details retains full Device ID, optional `machine_id` as Runner Device ID, original
+paired/revoked timestamps verbatim (including invalid strings), and existing
+additional displayed metadata. Technical values use small monospace text; names
+and values wrap without truncation. Toggling is local and performs no RPC,
+clipboard operation or persistence. The Settings workspace owns expansion
+independently of the generic page token. Retain matching IDs across refresh,
+category visits, same-identity reconnect, revocation/list and responsive changes.
+Only explicit Paired-device First/Next clears the set; Settings disposal clears
+the whole opening. Keep the existing category-selection first-page reset. Bound
+retention to the last successful paired page (at most 50 IDs), prune absent IDs
+after successful replacement and retain the last set during failed refresh.
+
+Only supported authorized non-current devices retain Revoke, with a restrained
+red outlined visible label and device-scoped accessible name. Revoked/unknown or
+unsupported documents gain no mutation authority. The current desktop has no
+Revoke and keeps **This desktop client cannot revoke its own registration.**
+Revision-bound confirmation/result screens and the pairing editor use this same
+column with a 760px maximum inner form. Keep every existing field, help/warning,
+status and explicit action, original request/revision/self guards, current reads,
+polling, stale/permission/read errors, exact uncertain retry, unknown
+acknowledgments and session/native-cleanup/private-file caveats.
+
+Keep one mounted PairingGrant controller for this Settings opening. Only its
+create button is rendered into the heading; the active inline editor consumes
+that button without remounting or duplicating secret/request/query/mutation
+state. Existing pairing authority remains independent of list loading/failure,
+and existing refresh/workflow locks remain authoritative. Focus Device name once
+after explicit creation entry. Cancel/discard restores focus to the stable
+creation control after visible DOM commit. Preserve the 256-byte/NUL validation,
+pinned server/endpoint, 256-bit private code, digest-only RPC, matched acknowledgment,
+fresh matching read before reveal, explicit read-only selection/copy, activity
+hiding, five-minute expiry, irreversible consumed/expired code clearing, exact
+uncertain retry and discard explanation. No automatic clipboard, regeneration or
+replacement grant is introduced. Revocation cancel focuses the initiating Revoke
+if still eligible; Return to devices after a result focuses that row's Details.
+An absent/ineligible control falls back to Refresh settings. Consume these focus
+handoffs once after commit; refresh/reconnect/reflow never steal focus. Settings
+close retains the native modal's outer-opener restoration.
+
+Initial loading, initial read/permission failure, successful emptiness, cached
+refresh and failed retained refresh remain distinct. Keep sanitized Problem and
+correlation metadata and explicit current-query refresh. Only a successful empty
+first page without error/continuation shows **No paired devices yet** and, when
+pairing is available, **Choose Create pairing document to pair a desktop client
+or manually installed Worker.** Otherwise show **Pairing document creation is
+unavailable for this connection.** No duplicate create action is added. An empty
+later/continuation page says **No paired devices on this page** and keeps existing
+First/Next controls. Hide paging only for successful final first-page emptiness;
+retain the 50-resource size, opaque tokens and exact enabled states. Cache rows
+only for their current query/page. Failed refresh keeps **Refresh failed. Showing
+the last successfully loaded results.** and the sanitized error, including after
+cached-empty success, without a definitive empty claim or global count.
+
+Use system fonts, white content, `#f3f5f8` Details background, `#202632` primary
+text, `#5b6577` secondary text, `#2563d8` primary/focus accent and `#d8dee8`
+panel/divider borders. Authorized badges use pale blue/dark-blue text;
+Revoked/Unknown are neutral gray. Keep 1px dividers, 20px row padding, 8px control
+corners, 12px panel corners, at least 40px targets and AA text/control/focus
+contrast. Control boundaries remain independently visible; state has textual
+labels. Use static scoped CSP-compatible CSS without inline exceptions,
+dependencies, external assets, artwork, shadows or gradients. Preserve contained
+modal focus, Close/Escape, category announcements and background inertness.
+
+This presentation changes no public API, generated/schema/storage/native/backend
+interface, credentials, migration, polling, telemetry or feature flag. Keep
+Strict Mode generations, opening disposal, same-identity transport replacement,
+accepted server effects and sibling workflows/caches authoritative; ordinary
+reopen never restores abandoned drafts/disclosures/secrets/exact retries. Record
+actual revisions, commands/results and unresolved limits in issue #1239, its PRs
+and CI artifacts. Fixture/build/package checks remain separate from supported
+native geometry/keyboard acceptance at 1600×1000, 960×640, 720×800, 420×800 and
+200% zoom, with unavailable platforms explicitly named.
+
+Paired-device settings explicitly issue single-use client or manually installed Worker grants through direct CreatePairing RPC. Generate 256 random bits with Web Crypto in the trusted app, retain the original name/type/request and native-pinned server origin/ID in one opening-owned component, and send only the SHA-256 verifier. Raw code never enters mutation variables, query keys/caches, Web Storage or logs. A lost response retains the same code/request across category visibility within the current Settings opening; no automatic retry, regeneration or discard is allowed while acceptance is uncertain. Closing Settings disposes that opening under #1138 without replay or rollback. Match the response request/resource/name/type before exposing any document.
 
 Read the original pairing resource before allowing disclosure, poll only while this area is active and expose unavailable/mismatched observations. The document uses the original pinned endpoint/server/pairing IDs and is hidden until explicit reveal. A read-only textarea supports explicit select/copy without automatic clipboard access. Hide it whenever the area closes and clear the retained raw code after observed consumption or expiry. A consumed/expired grant cannot be revived by a later stale read. Explicit discard clears the window's copy, with an explanation that an issued grant remains usable until consumed/expired; closing the server window also loses this memory-only copy. This is independent of existing paired-device revocation. Cross-computer reachability and remote TLS remain deployment prerequisites.
 
