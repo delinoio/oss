@@ -121,9 +121,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	defer c.transport.CloseIdleConnections()
 	if command != "events" && !(command == "session" && len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start") {
 		limit := 30 * time.Second
-		// Inspection and replacement each own a 30-second server deadline.
-		// Allow the original typed outcome to arrive before the client times out.
-		if command == "backup" && len(rest) > 0 && (rest[0] == "restore" || rest[0] == "inspect") {
+		// Network credential work and backup inspection/replacement own bounded
+		// 30-second server work. Allow its typed outcome to arrive first.
+		if command == "network" || command == "backup" && len(rest) > 0 && (rest[0] == "restore" || rest[0] == "inspect") {
 			limit = 35 * time.Second
 			c.transport.ResponseHeaderTimeout = limit
 		}
@@ -219,6 +219,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 	case "github":
 		if code, handled := dispatchGithub(ctx, c, o, rest, streams); handled {
+			return code
+		}
+	case "network":
+		if code, handled := dispatchNetwork(ctx, c, o, rest, streams); handled {
 			return code
 		}
 	case "integration":

@@ -134,7 +134,8 @@ refresh scheduling; see [Apple's timeline guidance](https://developer.apple.com/
 ## Change Triggers
 
 Update this contract, desktop/packaging contracts, project index, scoped
-`apps/delidev/AGENTS.md`, native tests and evidence ledger together when identity,
+`apps/delidev/AGENTS.md`, native tests and validation records in pull requests,
+issues and CI logs/artifacts together when identity,
 privacy, storage schema, selection, lifecycle, embedding or supported platforms
 change. Record fixture/build results separately from signed installation,
 Notification Center/widget-gallery interactions and real-server/provider evidence.
@@ -145,5 +146,4 @@ Notification Center/widget-gallery interactions and real-server/provider evidenc
 - [Desktop](apps-delidev-desktop-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Requirements](cmds-delidev-requirements.md)
-- [Evidence ledger](cmds-delidev-evidence.md)
 - [Repository defaults](repository-defaults.md)

@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/outbound"
 )
 
 const (
@@ -113,7 +114,7 @@ func (o Observation) Problem() *domain.Error {
 // their documented credential check separately. No inference, retries, fallback,
 // quota interpretation, billing ingestion or account readiness mutation occurs.
 // Callers retain ownership of key and must clear it after the call.
-func Inspect(ctx context.Context, provider domain.Provider, key []byte) (Observation, error) {
+func Inspect(ctx context.Context, provider domain.Provider, key []byte, routing ...outbound.Resolver) (Observation, error) {
 	if err := provider.Validate(); err != nil {
 		return Observation{}, err
 	}
@@ -126,15 +127,18 @@ func Inspect(ctx context.Context, provider domain.Provider, key []byte) (Observa
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
 	transport := &http.Transport{
-		// Environment proxies could redirect a server-owned credential. Explicit
-		// protected network configuration must be integrated here before use.
+		// The server supplies its explicit protected routing resolver.
 		Proxy: nil, DialContext: directDial,
 		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
 		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
 		MaxResponseHeaderBytes: 32 << 10, DisableKeepAlives: true, DisableCompression: true,
 	}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	var rt http.RoundTripper = transport
+	if len(routing) > 0 {
+		rt = &outbound.Transport{Base: transport, Resolve: routing[0]}
+	}
+	client := &http.Client{Transport: rt, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return inspect(ctx, client, provider, key), nil
 }
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/outbound"
 )
 
 const apiOrigin = "https://api.github.com"
@@ -23,14 +24,18 @@ type Client struct{ http *http.Client }
 
 // New has no configurable authority or ambient credential/proxy lookup. Each
 // request is bounded and redirect refusal prevents token forwarding elsewhere.
-func New() *Client {
+func New(routing ...outbound.Resolver) *Client {
 	transport := &http.Transport{
 		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: -1}).DialContext,
 		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
 		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
 		MaxResponseHeaderBytes: 32 << 10, DisableKeepAlives: true, DisableCompression: true,
 	}
-	return &Client{http: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	var rt http.RoundTripper = transport
+	if len(routing) > 0 {
+		rt = &outbound.Transport{Base: transport, Resolve: routing[0]}
+	}
+	return &Client{http: &http.Client{Transport: rt, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
 type IdentityObservation struct {
