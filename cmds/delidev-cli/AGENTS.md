@@ -33,3 +33,5 @@ Native session compaction for issues #1093, #1202 and #1203 follows the planned 
 - Fork workspace preparation validates every repository's manifest eligibility and the complete derived request before creating a child process index or launching Git. Definite manifest rejection must leave no new unpublished child scope; native HEAD/ownership failures retain their recovery classification and process evidence.
 
 - Manual PR Git environment snapshots preserve exact variable names on POSIX and normalize case-insensitive names only on Windows. Retain the last applicable value, deterministic digest ordering and private values; never promote an inert POSIX lowercase entry to an active Git/SSH or PATH setting. Follow `docs/cmds-delidev-integrations-contract.md`.
+
+- Native Codex observations follow `docs/cmds-delidev-native-models-contract.md`: preserve exact executable digests/private-copy identity, fresh credential-free API profiles, complete bounded pages and joined cleanup. Never borrow host login, infer entitlement or automatically register a model; managed subscriptions stay typed unsupported until #1095 is complete.

@@ -5,6 +5,7 @@ import { ConfigurationQuery, EntityKind, ProviderInventoryCapability, ProviderPr
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { More, Problem } from "./ui";
+import { NativeModelSettings } from "./native-model-settings";
 
 const requiredCapabilities = [
   ProviderInventoryCapability.PROVIDER_ACTIVATION,
@@ -171,7 +172,7 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
   active: boolean;
   state: ModelListState;
   changeState: (state: ModelListState) => void;
-  createModel: () => void;
+  createModel: (data?: Document) => void;
   editModel: (resource: Resource) => void;
   priceModel: (resource: Resource) => void;
 }) {
@@ -201,7 +202,7 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
   return <section className="models-list" aria-label="Models from active API providers">
     <header className="models-header">
       <div><h1 aria-live="polite" aria-atomic="true">Models</h1><p>Saved on the selected server.</p></div>
-      <button className="primary" type="button" disabled={!ready} onClick={createModel}><span aria-hidden="true">+</span> New Model</button>
+      <button className="primary" type="button" disabled={!ready} onClick={() => createModel()}><span aria-hidden="true">+</span> New Model</button>
     </header>
     <label className="models-search">Search active provider models
       <span className="models-search-control"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg><input value={query} maxLength={256} placeholder="Search models..." onChange={(event) => changeState({ query: event.target.value, page: "" })} /></span>
@@ -236,5 +237,6 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
     </section>)}
     {ready && !hidePagination ? <nav className="models-pages" aria-label="Model pages"><button type="button" disabled={!page || models.isFetching} onClick={() => changeState({ query, page: "" })}>First page</button><More available={Boolean(models.data?.nextPageToken)} busy={models.isFetching} load={() => changeState({ query, page: models.data!.nextPageToken })} /></nav> : null}
     <p className="models-footnote">New model choices come only from enabled API providers. Existing disabled references stay attached to their original identities.</p>
+    <NativeModelSettings active={active} createModel={createModel} />
   </section>;
 }

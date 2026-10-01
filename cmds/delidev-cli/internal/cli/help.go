@@ -79,6 +79,10 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
     --name creates an independent custom copy; --preset alone creates the managed preset
   provider discover --account-id ID --revision N
   model search [--query TEXT] [--provider-id ID] [--include-hidden] [--enabled-providers-only] [--limit N] [--page-token TOKEN]
+  model native-discover --machine-id ID --revision N --account-id ID --account-revision N [--include-hidden]
+  model native-observation --id JOB_ID
+  model native-list --id JOB_ID [--limit N] [--page-token TOKEN]
+  model native-cancel --id JOB_ID --revision N
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
   session forward start|status|stop|reconcile --session-id ID [--id ID] [--revision N] [--machine-id ID --worker-port N --local-port N]
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
