@@ -52,6 +52,7 @@ type Service struct {
 	delidevv1connect.UnimplementedBrowserServiceHandler
 	delidevv1connect.UnimplementedAccountServiceHandler
 	delidevv1connect.UnimplementedProviderServiceHandler
+	delidevv1connect.UnimplementedNetworkServiceHandler
 	delidevv1connect.UnimplementedIntegrationServiceHandler
 	integrationOnce    sync.Once
 	integrationGate    chan struct{}
