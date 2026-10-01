@@ -182,7 +182,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Project index](project-pnport.md)
 - [Rust foundation](crates-pnport-foundation.md)
 - [fspy source fork and licensing](crates-fspy-vendor-contract.md)
-- [Complete issue #958 requirements](crates-pnport-requirements.md)
+- [Complete issue #958 requirements and staged 0.1.0/0.2.0 releases](crates-pnport-requirements.md)
 - [npm/native distribution](packages-pnport-distribution-contract.md)
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
 

@@ -27,7 +27,7 @@ export function assemble(input, output, { base, tree, sourceRevision }) {
   ensure(hash.test(base) && hash.test(tree) && hash.test(sourceRevision), "Invalid assembly source identity");
   const { version } = metadata();
   for (const directory of ["tarballs", "archives"]) mkdirSync(path.join(output, directory), { recursive: true });
-  ensure(JSON.stringify(readdirSync(input).sort()) === JSON.stringify(targets.map(({ suffix }) => `pnport-native-${suffix}`).sort()), "Six native evidence sets are required");
+  ensure(JSON.stringify(readdirSync(input).sort()) === JSON.stringify(targets.map(({ suffix }) => `pnport-native-${suffix}`).sort()), `Exactly ${targets.length} native evidence sets are required`);
   for (const target of targets) {
     const folder = path.join(input, `pnport-native-${target.suffix}`);
     const evidence = JSON.parse(readFileSync(path.join(folder, "evidence.json"), "utf8"));

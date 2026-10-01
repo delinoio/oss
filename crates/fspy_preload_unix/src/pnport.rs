@@ -48,12 +48,31 @@ impl Guard {
         if !TLS_READY.load(Ordering::Acquire) {
             return None;
         }
-        INSIDE.with(|inside| (!inside.replace(true)).then_some(Self))
+        // Construct lazily: then_some would drop its eagerly created Guard
+        // on reentry and clear the outer guard while its runtime lock is held.
+        INSIDE.with(|inside| (!inside.replace(true)).then(|| Self))
     }
 }
 impl Drop for Guard {
     fn drop(&mut self) {
         INSIDE.with(|inside| inside.set(false));
+    }
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use std::sync::atomic::Ordering;
+
+    use super::{Guard, TLS_READY};
+
+    #[test]
+    fn repeated_reentry_keeps_the_outer_guard_active() {
+        assert!(TLS_READY.load(Ordering::Acquire));
+        let outer = Guard::enter().expect("enter the outer hook");
+        assert!(Guard::enter().is_none());
+        assert!(Guard::enter().is_none());
+        drop(outer);
+        assert!(Guard::enter().is_some());
     }
 }
 

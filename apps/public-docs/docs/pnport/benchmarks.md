@@ -1,6 +1,6 @@
 # Benchmarks
 
-**pnport 0.1.0 is unreleased, and no benchmark results are published yet.** Performance numbers will accompany release acceptance after the complete six-target conformance work. This page specifies how to make future results reproducible; it sets no numerical performance promise.
+**pnport 0.1.0 is unreleased, and no benchmark results are published yet.** Performance numbers will accompany release acceptance after complete conformance on all four macOS and glibc Linux targets. Windows results are planned with its 0.2.0 support. This page specifies how to make future results reproducible; it sets no numerical performance promise.
 
 ## Reproduction protocol
 

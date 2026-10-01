@@ -40,17 +40,20 @@ dynamic and static executables. `doctor` checks the host, companion `.so`, and
 actual syscall tracing before running a command. Unsupported kernel or container
 tracing fails with `PNPORT_UNSUPPORTED_OPERATION` and exit 125. Ubuntu 22.04
 arm64 Docker execution passes the native fixtures and offline TypeScript suite;
-the arm64 host's amd64 emulation does not expose the tracing capability, so
-native x64 execution still needs validation. Windows has no Detours backend.
+the arm64 host's amd64 emulation does not expose the tracing capability and
+does not count as native x64 acceptance. Windows has no Detours backend.
 Current restrictions include incomplete macOS fork/exec/posix_spawnp
 propagation, mutation/handle/watch coverage, complete detached-descendant and
 abrupt-supervisor recovery, and terminal job-control certification. The macOS
-backend is also a development implementation. All six target release gates
-remain open.
+backend is also a development implementation. Full release acceptance remains
+open for all four macOS/glibc Linux x64/arm64 targets planned for 0.1.0.
+Windows x64/arm64 is deferred to 0.2.0 with its complete requirements retained.
 
-Before release, all six native targets must pass the complete filesystem,
-process, installation, privacy and recovery suite. Native/npm packages,
-installers, Homebrew, publication recovery and benchmark results remain open.
+Before 0.1.0, all four macOS/glibc Linux native targets must pass the complete
+filesystem, process, installation, privacy and recovery suite. Windows must
+pass the same complete suite on both architectures before 0.2.0. Native/npm
+packages, installers, Homebrew, publication recovery and benchmark results
+remain open.
 The [public guides](https://oss.delino.io/pnport/) now describe editor setup
 without claiming editor-specific certification. No partial preview is
 permitted. Use [GitHub issues](https://github.com/delinoio/oss/issues) for
