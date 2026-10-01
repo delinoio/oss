@@ -15,7 +15,7 @@ use std::{
 use pnport::cache::{Cache, Operation, State};
 use serde_json::json;
 
-fn binary() -> std::ffi::OsString {
+fn pnport_binary() -> std::ffi::OsString {
     // Repeat the same lifecycle conformance against an explicitly installed
     // native archive as well as Cargo's development executable.
     std::env::var_os("PNPORT_TEST_BINARY").unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into())
@@ -73,7 +73,7 @@ impl Fixture {
             .status()
             .unwrap()
             .success());
-        let child = Command::new(binary())
+        let child = Command::new(pnport_binary())
             .current_dir(root.path())
             .args(["--cache-dir"])
             .arg(root.path().join("store"))
@@ -366,7 +366,7 @@ fn private_owner_rejects_direct_invocation_and_an_untrusted_peer() {
     for inherited in [false, true] {
         let (_peer, socket) = UnixStream::pair().unwrap();
         let fd = socket.as_raw_fd();
-        let mut command = Command::new(binary());
+        let mut command = Command::new(pnport_binary());
         command
             .arg("__pnport_macos_owner")
             .process_group(0)
