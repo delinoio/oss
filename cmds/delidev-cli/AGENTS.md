@@ -12,7 +12,7 @@ Read the relevant owner before changing its behavior, including cross-domain con
 - `cmds/delidev-cli/internal/cli/AGENTS.md`
 - `cmds/delidev-cli/internal/server/AGENTS.md`
 
-Keep implementation evidence in independent files under `docs/evidence/delidev/issue-<number>/`. Update instructions only when their rules or ownership change, not merely to record another validation run.
+Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
 
 - The native API relay in `internal/apiproxy` must join any started body/deadline cancellation callback before its HTTP handler returns. Downstream connection reuse cannot inherit a prior request's late deadline mutation; preserve upstream cancellation, once-only key reads and lease release under `docs/cmds-delidev-proxy-contract.md`.
 

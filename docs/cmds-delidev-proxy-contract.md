@@ -59,7 +59,7 @@ Real loopback HTTP fixtures test all five operations, unchanged native JSON/SSE,
 Depends on the existing provider validation and protected connection contracts. The server supplies durable authority and cancellation; the selected native adapter must supply verified operation compatibility and its own structured output. Primary native protocol references: [OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create), [OpenAI streaming Responses](https://developers.openai.com/api/docs/guides/streaming-responses), [Anthropic Messages](https://platform.claude.com/docs/en/api/messages/create), [Anthropic streaming](https://platform.claude.com/docs/en/build-with-claude/streaming), and [Anthropic token counting](https://platform.claude.com/docs/en/api/messages/count_tokens).
 
 ## Change Triggers
-Update the project index, CLI contract, evidence ledger and scoped AGENTS with authority/lifecycle integration or changes to routes, bounds, secret handling, native references or supported protocols. Add exact native acceptance evidence before marking a harness/provider combination supported. Preserve the complete issue requirements.
+Update the project index, CLI contract, validation records in pull requests, issues and CI logs/artifacts and scoped AGENTS with authority/lifecycle integration or changes to routes, bounds, secret handling, native references or supported protocols. Add exact native acceptance evidence before marking a harness/provider combination supported. Preserve the complete issue requirements.
 
 ## References
 - [Project](project-delidev.md)

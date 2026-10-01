@@ -112,13 +112,13 @@ Imported CEF/Chromium licensing remains distinct from repository ownership.
 ## Change Triggers
 
 Update this contract, scoped `apps/delidev/AGENTS.md`, workflow tests, desktop
-contract and evidence ledger together when targets, runtime pins, bundle layouts,
+contract and validation records in pull requests, issues and CI logs/artifacts
+together when targets, runtime pins, bundle layouts,
 notice sources, verification or publication boundaries change.
 
 ## References
 
 - [Project](project-delidev.md)
 - [Desktop contract](apps-delidev-desktop-contract.md)
-- [Evidence ledger](cmds-delidev-evidence.md)
 - [Repository defaults](repository-defaults.md)
 - [License contract](repository-license-contract.md)

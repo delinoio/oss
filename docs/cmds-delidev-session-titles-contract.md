@@ -68,7 +68,7 @@ Run `go test -race -p 1 ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/.
 
 ## Change Triggers
 
-Update the DeliDev project index, relevant Go/protocol/client/desktop `AGENTS.md` instructions, session/proxy/usage/protocol/client/desktop contracts, generated bindings, and evidence ledger whenever capability, ownership, usage purpose, UI, storage or native cleanup behavior changes.
+Update the DeliDev project index, relevant Go/protocol/client/desktop `AGENTS.md` instructions, session/proxy/usage/protocol/client/desktop contracts, generated bindings, and validation records in pull requests, issues and CI logs/artifacts whenever capability, ownership, usage purpose, UI, storage or native cleanup behavior changes.
 
 ## References
 

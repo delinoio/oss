@@ -236,6 +236,5 @@ RPC changes. Keep desktop contracts/AGENTS synchronized with presentation change
 - [Session contract](cmds-delidev-sessions-contract.md)
 - [Workspace contract](cmds-delidev-workspace-contract.md)
 - [Harness contract](cmds-delidev-harness-contract.md)
-- [Issue #1092 implementation evidence](evidence/delidev/issue-1092/README.md)
 - [Issue #1092](https://github.com/delinoio/oss/issues/1092)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)

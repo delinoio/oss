@@ -22,7 +22,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Protocol contract](protos-delidev-v1-contract.md)
 - [TypeScript client contract](packages-delidev-api-client-contract.md)
-- [Desktop client contract](apps-delidev-desktop-contract.md), including [Agent Worker core/optional presentation](apps-delidev-desktop-contract.md#agent-worker-core-and-optional-presentation) and its [issue #1158 evidence](evidence/delidev/issue-1158/agent-settings.md)
+- [Desktop client contract](apps-delidev-desktop-contract.md), including [Agent Worker core/optional presentation](apps-delidev-desktop-contract.md#agent-worker-core-and-optional-presentation)
 - [AI Subscription settings](apps-delidev-subscription-settings-contract.md)
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Session file explorer and Git comparisons](cmds-delidev-files-contract.md)
@@ -53,7 +53,6 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Retained activity](cmds-delidev-activity-contract.md)
 - [Exact native response usage](cmds-delidev-usage-contract.md)
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
-- [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
 Permanent session deletion uses owner/client Connect and equivalent confirmed CLI
 commands, durable intent outside SQLite, original Worker cleanup acknowledgements
@@ -86,22 +85,20 @@ authenticated Connect, CLI and generated clients. Original candidates,
 provider/model, terminal/cleanup and portable-history gates retain all prior
 attribution; new execution requires explicit Resume and a fresh scoped grant.
 Subscription/provider/model switching and automatic fallback remain excluded.
-See the [sessions contract](cmds-delidev-sessions-contract.md),
-[proxy contract](cmds-delidev-proxy-contract.md) and
-[issue #1097 evidence](evidence/delidev/issue-1097/stopped-account-switch.md)
-for the controlled native A-to-B result and unperformed
-desktop/real-account/platform acceptance.
+See the [sessions contract](cmds-delidev-sessions-contract.md) and
+[proxy contract](cmds-delidev-proxy-contract.md) for the account-switching boundary.
+Record the controlled native A-to-B result separately from unperformed
+desktop/real-account/platform acceptance in pull requests, issues and CI runs.
 
 ## Change Policy
-Update the owning domain contract when behavior changes. Update this index only for ownership, its domain catalog or cross-domain invariants. Record each implementation/validation increment in its own `docs/evidence/delidev/issue-<number>/` file. A validation-only increment does not require editing this index or an AGENTS file.
+Update the owning domain contract when behavior changes. Update this index only for ownership, its domain catalog or cross-domain invariants. Record each implementation/validation increment in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. A validation-only increment does not require editing this index or an AGENTS file.
 
 ## References
 - https://github.com/delinoio/oss/issues/964
 - [Repository defaults](repository-defaults.md)
 - [Project template](project-template.md)
 - [Structure and compatibility](cmds-delidev-structure-contract.md)
-- [Relocation inventory](evidence/delidev/pr-conflict-structure/document-relocations.json)
 
 ## Home navigation invariant
 
-Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md) and [issue #1161 evidence](evidence/delidev/issue-1161/home-navigation.md).
+Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md).
