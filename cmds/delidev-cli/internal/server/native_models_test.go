@@ -155,6 +155,41 @@ func TestNativeModelReceiptRestartPagingAndExplicitRegistration(t *testing.T) {
 	if err != nil || len(list) != 1 {
 		t.Fatal("registration did not retain exactly one manual model")
 	}
+	registered := list[0]
+	later, err := f.service.DiscoverNativeModels(f.ctx, f.request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.complete(t, domain.ID(later.Msg.Job.Id), domain.NativeModelFailure())
+	preserved, err := f.service.Store.Get(f.ctx, domain.ModelKind, registered.ID)
+	if err != nil || preserved.Revision != registered.Revision || string(preserved.Data) != string(registered.Data) {
+		t.Fatal("subsequent failed discovery altered the registered manual entry")
+	}
+}
+
+func TestNativeModelsSubscriptionRemainsExplicitlyUnsupported(t *testing.T) {
+	f := newNativeModelsFixture(t)
+	_, err := f.service.Store.Mutate(f.ctx, domain.NewID(), "fixture.subscription", nil, func(tx *store.Tx) (any, error) {
+		r, err := tx.Get(domain.AccountKind, f.account)
+		if err != nil {
+			return nil, err
+		}
+		a, _ := store.Decode[domain.Account](r)
+		a.Type = domain.SubscriptionAccount
+		return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := f.request()
+	request.Msg.AccountRevision = 2
+	if _, err := f.service.DiscoverNativeModels(f.ctx, request); connect.CodeOf(err) != connect.CodeUnimplemented {
+		t.Fatalf("subscription scope did not return typed unsupported: %v", err)
+	}
+	jobs, err := f.service.Store.List(f.ctx, store.Filter{Kind: domain.JobKind, Limit: 50})
+	if err != nil || len(jobs) != 0 {
+		t.Fatal("unsupported subscription accepted native work")
+	}
 }
 
 func TestNativeModelPublicationFencesAndWorkerDenial(t *testing.T) {
