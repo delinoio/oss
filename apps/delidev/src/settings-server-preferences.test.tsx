@@ -70,7 +70,8 @@ it.each([Code.PermissionDenied, Code.Unavailable])("does not create or claim emp
 });
 
 it("does not authorize creation on empty continuation or later pages", async () => {
-  const value = fixture([], token => ({ resources: [], nextPageToken: token ? "" : "opaque-page-2" }));
+  let failedRefresh = false;
+  const value = fixture([], token => { if (failedRefresh) throw new ConnectError("Refresh unavailable", Code.Unavailable); return { resources: [], nextPageToken: token ? "" : "opaque-page-2" }; });
   render(value.view(<Settings close={() => {}} />)); choosePreferences();
   await screen.findByText("No server preferences on this page.");
   expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
@@ -80,6 +81,11 @@ it("does not authorize creation on empty continuation or later pages", async () 
   expect(screen.queryByRole("region", { name: "No saved server preferences" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).map(([request]) => request.filter?.pageToken)).toEqual(["", "opaque-page-2", "opaque-page-2"]));
+  failedRefresh = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByRole("alert");
+  expect(screen.getByText("No server preferences on this page.")).toBeTruthy();
+  expect(screen.getByText("Refresh failed. Showing the last successfully loaded results.")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
   expect(value.save).not.toHaveBeenCalled();
 });
 

@@ -695,6 +695,7 @@ it("starts a repository override with automation off and removes it only through
   fireEvent.click(screen.getByRole("button", { name: "Set repository policy with automation off" }));
   expect((screen.getByLabelText("Automatically fix required CI failures") as HTMLInputElement).checked).toBe(false);
   expect((screen.getByLabelText("Consecutive automatic attempt limit") as HTMLInputElement).value).toBe("3");
+  expect(screen.queryByText("Remediation details")).toBeNull();
   fireEvent.click(screen.getByLabelText("Automatically fix required CI failures"));
   fireEvent.click(screen.getByRole("button", { name: "Use server remediation policy" }));
   expect(screen.queryByLabelText("Automatically fix required CI failures")).toBeNull();
