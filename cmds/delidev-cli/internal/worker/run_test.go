@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -125,5 +127,26 @@ func TestCodexTitleExecutableUsesVerifiedConfiguredInstallation(t *testing.T) {
 				t.Fatalf("unsupported configured installation selected executable %q", got)
 			}
 		})
+	}
+}
+
+func TestInspectionMetadataCapabilityRequiresServerEcho(t *testing.T) {
+	machine := domain.Machine{Name: "fixture", OS: runtime.GOOS, Architecture: runtime.GOARCH, Version: rpc.Version}
+	raw, _ := json.Marshal(machine)
+	resource := &pb.Resource{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, SchemaVersion: 1, DocumentJson: raw}
+	if machineCapability(resource, domain.RepositoryInspectionMetadataV1) {
+		t.Fatal("legacy machine fabricated metadata acceptance")
+	}
+	machine.WorkerCapabilities = []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1, domain.AutomaticTitlesCodexV1, domain.SessionForwardingV1}
+	raw, _ = json.Marshal(machine)
+	resource.DocumentJson = raw
+	if !machineCapability(resource, domain.RepositoryInspectionMetadataV1) {
+		t.Fatal("independent metadata capability not recognized")
+	}
+	machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1)
+	raw, _ = json.Marshal(machine)
+	resource.DocumentJson = raw
+	if machineCapability(resource, domain.RepositoryInspectionMetadataV1) {
+		t.Fatal("duplicate capability accepted")
 	}
 }

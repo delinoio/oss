@@ -67,6 +67,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1:
+			capabilities = append(capabilities, domain.RepositoryInspectionMetadataV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1:
 			capabilities = append(capabilities, domain.SessionTerminalsV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1:
@@ -159,7 +161,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "worker attached", "machine_id", machine, "instance_id", instance, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID)})
+	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1}})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
@@ -581,6 +583,27 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 					if err := domain.Text(ref, "default reference", 4096, true); err != nil {
 						return nil, err
 					}
+				}
+				machineRecord, err := tx.Get(domain.MachineKind, machine)
+				if err != nil {
+					return nil, err
+				}
+				machineValue, err := store.Decode[domain.Machine](machineRecord)
+				if err != nil {
+					return nil, err
+				}
+				// Presence, including a null field, requires negotiation. A null value
+				// cannot masquerade as legacy omission or a validated metadata map.
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(outputJSON, &fields); err != nil {
+					return nil, domain.Fail(domain.InvalidArgument, "Repository inspection is unreadable.", "Reinspect the repository.")
+				}
+				_, enriched := fields["github_repositories"]
+				if enriched && (output.GitHubRepositories == nil || !slices.Contains(machineValue.WorkerCapabilities, domain.RepositoryInspectionMetadataV1)) {
+					return nil, domain.Fail(domain.InvalidArgument, "Repository metadata was not negotiated.", "Reattach a compatible Worker before reporting enrichment.")
+				}
+				if err := output.ValidateGitHubRepositories(); err != nil {
+					return nil, err
 				}
 				var expected domain.RepositoryInspectionInput
 				if err := domain.Decode(job.Input, &expected); err != nil {

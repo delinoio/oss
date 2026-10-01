@@ -118,3 +118,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Fork status observation and acceptance-receipt reads require current owner/client authority inside the same read transaction before retrieving job or child documents. Worker or missing principals cannot observe this client-only RPC; a stale paired principal cannot bypass current device authorization.
 
 - An accepted uncertain terminal close atomically replaces only its finished close operation with a fresh close identity. Exact report and deletion receipt retries preserve that next intent; original result facts and cleanup barriers remain authoritative. Stream dispatch waits ten seconds after the latest uncertain terminal write, including reconnects, without granting shell creation, input, resize or cross-device authority. Follow `docs/cmds-delidev-terminals-contract.md`.
+
+- Repository metadata support is independently advertised and accepted under issue #1142. Reject all unknown/duplicate capabilities and validate optional GitHub maps against current negotiated Machine support, inspected remote keys, existing identity validators and the 128-remote/1 MiB bounds. Preserve strict input decoding, atomic repository saves and legacy omission.
+
+- Repository inspection enrichment presence, including explicit null, cannot bypass capability validation; a present `github_repositories` must be a non-null validated map.

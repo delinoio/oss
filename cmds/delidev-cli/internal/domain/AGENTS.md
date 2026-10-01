@@ -59,3 +59,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Keep negotiated native accounting unit kinds distinct under the usage contract. GrokClosedInput preserves its supplied uint64 total, original input/history/closure/source references and immutable attribution; it has no pricing or budget contribution.
 
 - Protected browser records contain only canonical server/device/account/profile IDs, monotonic revisions and closed cleanup state. Keep browsing data and paths outside Device metadata and product documents; follow `docs/cmds-delidev-browser-contract.md`.
+
+- Repository-inspection metadata uses the independent `repository-inspection-metadata-v1` Worker capability. Validate/deduplicate it alongside titles/forwarding/terminals without changing existing values or the closed inspection input. Follow the workspace/protocol contracts.
