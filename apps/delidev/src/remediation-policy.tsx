@@ -1,10 +1,11 @@
-import { type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { items, object, text, type Document } from "./documents";
 
 export enum ConflictStrategy { Merge = "merge", Rebase = "rebase" }
 export enum RemediationSessionStrategy { Reuse = "reuse", Dedicated = "dedicated" }
 export enum ReviewerSelectorKind { User = "user", Bot = "bot", App = "app", Permission = "minimum-permission" }
 export enum ReviewerPermission { Read = "READ", Triage = "TRIAGE", Write = "WRITE", Maintain = "MAINTAIN", Admin = "ADMIN" }
+export enum RemediationDetailPresentation { Expanded, Collapsible }
 
 export function defaultRemediationPolicy(): Document {
   return { ci_failure: false, review_feedback: false, merge_conflict: false, conflict_strategy: ConflictStrategy.Merge, session_strategy: RemediationSessionStrategy.Reuse, attempt_limit: 3 };
@@ -18,13 +19,12 @@ function PolicyChoice({ label, value, values, change }: { label: string; value: 
   </select></label>;
 }
 
-export function RemediationPolicyFields({ value, change, children }: { value: Document; change: (value: Document) => void; children: ReactNode }) {
+export function RemediationPolicyFields({ value, change, children, presentation = RemediationDetailPresentation.Expanded }: { value: Document; change: (value: Document) => void; children: ReactNode; presentation?: RemediationDetailPresentation }) {
+  const helperId = useId();
   const field = (key: string, next: unknown) => change({ ...value, [key]: next });
   const selectors = items(value.reviewer_selectors).map(object);
   const update = (index: number, next: Document) => field("reviewer_selectors", selectors.map((selector, i) => i === index ? next : selector));
-  return <fieldset><legend>Pull request remediation policy</legend>
-    <p>Policies are saved on the server. Automatic execution is not available yet.</p>
-    {[["ci_failure", "Automatically fix required CI failures"], ["review_feedback", "Automatically handle matching published feedback"], ["merge_conflict", "Automatically resolve verified merge conflicts"]].map(([key, label]) => <label className="checkbox" key={key}><input type="checkbox" checked={value[key] === true} onChange={event => field(key, event.target.checked)} />{label}</label>)}
+  const details = <>
     <PolicyChoice label="Remediation session strategy" value={value.session_strategy} values={Object.values(RemediationSessionStrategy)} change={next => field("session_strategy", next)} />
     <p>Reuse selects an eligible linked session first. Archived or explicitly paused sessions cannot be resumed automatically. A new session requires the Agent Worker and Runner Device selected below.</p>
     {children}
@@ -45,5 +45,13 @@ export function RemediationPolicyFields({ value, change, children }: { value: Do
       </fieldset></li>)}</ol>
       <button type="button" disabled={selectors.length >= 100} onClick={() => field("reviewer_selectors", [...selectors, { kind: ReviewerSelectorKind.User, id: "", node_id: "" }])}>Add reviewer selector</button>
     </fieldset>
+  </>;
+  return <fieldset><legend>Pull request remediation policy</legend>
+    <p>Policies are saved on the server. Automatic execution is not available yet.</p>
+    {[["ci_failure", "Automatically fix required CI failures"], ["review_feedback", "Automatically handle matching published feedback"], ["merge_conflict", "Automatically resolve verified merge conflicts"]].map(([key, label]) => <label className="checkbox" key={key}><input type="checkbox" checked={value[key] === true} onChange={event => field(key, event.target.checked)} />{label}</label>)}
+    {presentation === RemediationDetailPresentation.Collapsible ? <details className="server-remediation-details">
+      <summary aria-label="Remediation details" aria-describedby={helperId}>Remediation details<span id={helperId} className="server-remediation-helper">Session strategy, execution targets, conflicts, attempt limit, and reviewers.</span></summary>
+      <div className="server-remediation-fields">{details}</div>
+    </details> : details}
   </fieldset>;
 }

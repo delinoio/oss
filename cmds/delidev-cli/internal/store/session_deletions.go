@@ -373,6 +373,9 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 }
 
 func (t *Tx) applySessionDeletion(v SessionDeletion) error {
+	if e := t.StopTerminals(v.SessionID); e != nil {
+		return e
+	}
 	// Deletion closes the same independent socket lifetimes as Archive. Keep
 	// their records until both original peers positively acknowledge cleanup.
 	if e := t.StopForwards(v.SessionID, ""); e != nil {
@@ -507,6 +510,9 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 // foreign keys cascade search/FTS, usage, estimates, assignments and grants.
 // Receipt identities remain but their results lose the deleted content.
 func (t *Tx) purgeSession(v SessionDeletion) error {
+	if e := t.requireTerminalCleanup(v.SessionID); e != nil {
+		return e
+	}
 	pending, e := t.SessionForwardsPending(v.SessionID)
 	if e != nil {
 		return e
@@ -518,7 +524,7 @@ func (t *Tx) purgeSession(v SessionDeletion) error {
 		return e
 	}
 	redacted := []byte(`{"deleted":true}`)
-	if _, e := t.tx.ExecContext(t.ctx, "UPDATE receipts SET result=? WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id IN (SELECT id FROM entities WHERE id=? OR session_id=?))", redacted, v.SessionID, v.SessionID); e != nil {
+	if _, e := t.tx.ExecContext(t.ctx, "UPDATE receipts SET result="+deletedReceiptProjection+" WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id IN (SELECT id FROM entities WHERE id=? OR session_id=?))", redacted, v.SessionID, v.SessionID); e != nil {
 		return storageError(e)
 	}
 	// Read metadata in bounded pages without materializing transcript/job bodies.

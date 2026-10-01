@@ -288,8 +288,15 @@ The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
 forward; offline or uncertain peers keep both forwarding records and database
 removal pending. Original cleanup reports remain authorized during deletion,
-while new socket claims and traffic cannot reopen the session. Other unimplemented
-terminal/browser-profile/snapshot products are not invented by deletion. Uncontrolled filesystem snapshots and external copies are
+while new socket claims and traffic cannot reopen the session. Session terminals participate through their original close claims and independently
+joined cleanup reports under the [terminal contract](cmds-delidev-terminals-contract.md).
+Deletion atomically requests close without replacing an existing close identity,
+withholds workspace-removal work until every terminal confirms cleanup, and
+rechecks cleanup before database purge. New terminal creation/input/resize cannot
+reopen a deleting session. Original cleanup reports and exact receipt retries
+remain admissible. An accepted uncertain terminal close atomically retains the
+cleanup obligation under a fresh close identity; replaying its original report
+cannot change that identity or release workspace deletion. Browser-profile/snapshot products remain separate. Uncontrolled filesystem snapshots and external copies are
 outside the guarantee; platform/process fixtures do not establish native
 Windows/Linux or real-account acceptance.
 
@@ -508,3 +515,14 @@ independent `native_accounting_layout=grok-closed-input-v1` metadata marker.
 Opening any version-25 database without that marker fails before WAL settings,
 migration or Worker state updates, preserving old unmerged version-25 files for
 explicit recovery. A version number alone cannot identify their layout.
+
+## Terminal report acknowledgement after purge
+
+Entity deletion and permanent session purge retain only the closed terminal-report
+receipt kind plus original terminal, machine and paired-device UUIDs, rebuilding
+that allowlist from the accepted receipt. All resource content and other receipt
+fields remain redacted. This lets a same-device replacement confirm an exact
+already-committed report after response loss and retire independently joined
+local ownership evidence. It grants no new report, native operation or resource
+resurrection. Legacy unbound receipts require the original resource to remain
+available. See the [terminal contract](cmds-delidev-terminals-contract.md).
