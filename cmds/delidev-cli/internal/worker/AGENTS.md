@@ -2,6 +2,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Shutdown must synchronize conservative loss for every live terminal, then cancel every terminal before waiting. Join distinct terminal owners concurrently with a shared 25-second reconciliation budget inside the native service's 30-second grace, retaining independent native bounds, complete goroutine joins and uncertainty whenever cleanup cannot be proved.
+
 - Advertise process-owned terminal and forwarding capabilities on every preliminary attach, including reconnect, before probing Codex title support. Only the verified title capability waits for the second negotiation; a probe cannot withdraw access to existing shells.
 
 - A claimed close retains its exact displaced pending-operation ID in terminal-bound private metadata through uncertain reports. Only an acknowledged independently verified cleanup may retire the matching prepared, result-less journal by direct lookup. Preserve claimed/started/finished, foreign and malformed evidence; failed claim RPCs grant no removal authority.

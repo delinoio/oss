@@ -173,8 +173,13 @@ the original resource to remain available. The Worker synchronizes acknowledgeme
 before independent local retirement. Journal scans advance through bounded
 4,096-entry batches rather than refusing every scan of a larger backlog.
 
-Worker shutdown synchronizes an original-terminal/instance-bound loss
-observation before cancelling output, then retains its joined native result
+Worker shutdown synchronizes an original-terminal/instance-bound conservative loss
+observation for every live terminal before cancelling any output. It then cancels
+every terminal before waiting and joins independent native owners concurrently,
+with a shared 25-second reconciliation budget inside the service's 30-second
+stop grace. Existing native termination bounds and joined output/handle ownership
+remain authoritative; an exhausted budget cannot prove cleanup. The manager joins
+every shutdown goroutine and retains each native result
 before dropping the live entry. A replacement reads that observation only for
 an independently claimed close; it carries loss monotonically but still
 reconciles the original process index, never borrowing cleanup authority from

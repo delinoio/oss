@@ -12,11 +12,13 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/terminal"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -94,5 +96,61 @@ func TestTerminalShutdownLossSurvivesReplacementCloseAndResponseLoss(t *testing.
 	defer f.Unlock()
 	if string(f.reports[string(j.ReportID)]) != string(before) {
 		t.Fatal("close retry changed retained loss result")
+	}
+}
+
+func TestTerminalShutdownRecordsEveryOwnerBeforeAnyCancellation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	root := filepath.Join(t.TempDir(), "worker")
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	input := workspace.PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := (&workspace.Manager{Root: root, Logger: logger}).Prepare(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &terminalTransportFixture{assignments: map[domain.ID]terminal.Assignment{}, claims: map[string]bool{}, reports: map[string][]byte{}, lose: map[domain.ID]bool{}}
+	_, handler := delidevv1connect.NewWorkerServiceHandler(f)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	m := newTerminalManager(ctx, Config{Root: root, Logger: logger}, delidevv1connect.NewWorkerServiceClient(http.DefaultClient, server.URL), Credential{MachineID: input.MachineID}, domain.NewID())
+	defer m.close()
+	ids := []domain.ID{domain.NewID(), domain.NewID()}
+	for _, id := range ids {
+		a := terminal.Assignment{ID: id, SessionID: input.SessionID, Terminal: domain.Terminal{MachineID: input.MachineID, InstanceID: m.instance, OwnerInstanceID: m.instance, ShellOverride: "/bin/sh", State: domain.TerminalStarting, Rows: 24, Columns: 80}, Operation: domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalCreate}, Preparation: &input, Manifest: &manifest}
+		f.Lock()
+		f.assignments[a.Operation.ID] = a
+		f.Unlock()
+		if err := m.apply(ctx, a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var cancellations atomic.Int32
+	for _, id := range ids {
+		native := m.live[id]
+		originalCancel := native.cancel
+		native.cancel = func() {
+			if cancellations.Add(1) == 1 {
+				for _, other := range ids {
+					raw, err := security.ReadPrivate(m.shutdownPath(other), terminalOperationJournalMaxBytes)
+					var record terminalShutdownRecord
+					if err != nil || domain.Decode(raw, &record) != nil || record.TerminalID != other || record.OwnerInstanceID != m.instance || !record.Result.OutputLost || record.Result.CleanupVerified || record.Result.State != domain.TerminalUncertain {
+						t.Error("first cancellation preceded another terminal's synchronized loss", err)
+					}
+				}
+			}
+			originalCancel()
+		}
+	}
+	m.close()
+	if len(m.live) != 0 {
+		t.Fatal("shutdown did not join both independent owners")
+	}
+	for _, id := range ids {
+		raw, err := security.ReadPrivate(m.shutdownPath(id), terminalOperationJournalMaxBytes)
+		var record terminalShutdownRecord
+		if err != nil || domain.Decode(raw, &record) != nil || !record.Result.CleanupVerified {
+			t.Fatal("joined shutdown did not retain independent cleanup", err)
+		}
 	}
 }

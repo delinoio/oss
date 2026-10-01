@@ -454,8 +454,15 @@ func (m *terminalManager) reconcile(id domain.ID) error {
 }
 
 func (m *terminalManager) finishNative(id domain.ID, native *nativeTerminal) terminal.Result {
+	result := m.finishNativeResult(context.WithoutCancel(m.ctx), id, native)
+	delete(m.live, id)
+	return result
+}
+
+// Each caller exclusively owns native. Map publication stays under m.mu, so
+// shutdown can join independent terminals concurrently without map races.
+func (m *terminalManager) finishNativeResult(ctx context.Context, id domain.ID, native *nativeTerminal) terminal.Result {
 	if native.finished {
-		delete(m.live, id)
 		return native.result
 	}
 	result := native.result
@@ -470,8 +477,9 @@ func (m *terminalManager) finishNative(id domain.ID, native *nativeTerminal) ter
 	}
 	native.cancel()
 	result.OutputLost = native.outputLost
-	delete(m.live, id)
-	if err := m.reconcile(id); err != nil {
+	reconcile, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if err := process.ReconcileOwnerContext(reconcile, m.processRoot(), id); err != nil {
 		result.State, result.Problem = domain.TerminalUncertain, domain.SafeError(err)
 		native.result, native.finished = result, true
 		return result
@@ -586,9 +594,34 @@ func (m *terminalManager) close() {
 		if err := m.saveShutdown(id, pending); err != nil {
 			m.config.Logger.Warn("terminal_shutdown_journal_unavailable", "terminal_id", id, "code", domain.SafeError(err).Code)
 		}
+	}
+	// Persist every owner's conservative observation, then initiate every
+	// cancellation before joining any handle. One slow shell must not leave the
+	// rest untouched when the installed service's 30-second stop grace expires.
+	for _, native := range m.live {
 		native.cancel()
-		_ = native.handle.Close()
-		result := m.finishNative(id, native)
+	}
+	joinCtx, cancel := context.WithTimeout(context.WithoutCancel(m.ctx), 25*time.Second)
+	defer cancel()
+	type joinedTerminal struct {
+		id     domain.ID
+		native *nativeTerminal
+		result terminal.Result
+	}
+	joined := make(chan joinedTerminal, len(m.live))
+	count := len(m.live)
+	for id, native := range m.live {
+		go func() {
+			if !native.finished {
+				_ = native.handle.Close()
+			}
+			joined <- joinedTerminal{id, native, m.finishNativeResult(joinCtx, id, native)}
+		}()
+	}
+	for range count {
+		entry := <-joined
+		id, native, result := entry.id, entry.native, entry.result
+		delete(m.live, id)
 		if err := m.saveShutdown(id, result); err != nil {
 			// Retain the joined in-memory outcome too when synchronization fails.
 			m.live[id] = native
