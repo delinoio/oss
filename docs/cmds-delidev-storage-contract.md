@@ -587,7 +587,16 @@ repository copy failure or cancellation cannot remove either original repository
 Failures after a namespace transition retain recovery uncertainty and private
 copies. Cancellation/failure after verified snapshot publication but before source
 removal also retains uncertainty: explicit recovery registers that same retained
-snapshot while settling the incomplete cleanup and preserving present sources. Terminal metadata and session state/events commit together after the
+snapshot while settling the incomplete cleanup and preserving present sources.
+Creation promotes its original external staging claim with the exact snapshot
+manifest SHA-256 only after the successful synchronized no-replace rename,
+post-rename content verification and comparison to the original native root
+identity. Snapshot inspection, recovery and permanent deletion require this
+publication proof; creation recovery also matches the entire original request.
+Matching copied bytes or operation IDs cannot establish publication. Missing,
+legacy or mismatched proof leaves foreign snapshots and original staging/source
+data protected behind recovery-required ownership.
+Terminal metadata and session state/events commit together after the
 owning Worker report; malformed reports retain uncertainty instead of authorizing
 Resume. Preview and snapshot SHA-256 reports require exactly 32 bytes encoded as
 canonical lowercase hexadecimal before metadata or workspace state publication;

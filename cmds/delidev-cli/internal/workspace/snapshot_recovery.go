@@ -237,8 +237,11 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if metadata.SessionID != r.Preparation.SessionID || metadata.MachineID != r.Preparation.MachineID || manifestDigest(snapshot.Workspace) != manifestDigest(r.Manifest) || (original.SnapshotDigest != "" && metadata.SHA256 != original.SnapshotDigest) {
 				return result, ResultUncertain()
 			}
-			if (original.Action == StorageCreate || original.Action == StorageCleanup) && snapshot.OperationID != original.OperationID {
-				return result, ResultUncertain()
+			if original.Action == StorageCreate || original.Action == StorageCleanup {
+				claim, err := m.verifySnapshotPublication(snapshot, metadata.SHA256)
+				if err != nil || snapshot.OperationID != original.OperationID || claim.Reference != removalReference(original) || claim.RequestDigest != storageRequestDigest(original) {
+					return result, ResultUncertain()
+				}
 			}
 			result.Snapshot = &metadata
 		}

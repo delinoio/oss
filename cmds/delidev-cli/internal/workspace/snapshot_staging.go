@@ -18,12 +18,13 @@ import (
 // Persist outside scratch so copy inventories and restore payloads remain exact.
 // Missing/legacy proof cannot be reconstructed from a currently occupied name.
 type storageStagingClaim struct {
-	Version           uint32                  `json:"version"`
-	Reference         StorageRemovalReference `json:"reference"`
-	MachineID         domain.ID               `json:"machine_id"`
-	PreparationDigest string                  `json:"preparation_digest"`
-	RequestDigest     string                  `json:"request_digest"`
-	RootIdentity      string                  `json:"root_identity"`
+	PublishedSnapshotDigest string                  `json:"published_snapshot_digest,omitempty"`
+	Version                 uint32                  `json:"version"`
+	Reference               StorageRemovalReference `json:"reference"`
+	MachineID               domain.ID               `json:"machine_id"`
+	PreparationDigest       string                  `json:"preparation_digest"`
+	RequestDigest           string                  `json:"request_digest"`
+	RootIdentity            string                  `json:"root_identity"`
 }
 
 func stagingAction(action StorageAction) bool {
@@ -69,7 +70,7 @@ func (m *Manager) createStorageStaging(r StorageRequest) (string, error) {
 func (m *Manager) readStagingClaim(id domain.ID) (storageStagingClaim, error) {
 	raw, err := security.ReadPrivate(m.stagingClaimPath(id), 4096)
 	var claim storageStagingClaim
-	if err != nil || domain.Decode(raw, &claim) != nil || claim.Version != 1 || claim.Reference.OperationID != id || !stagingAction(claim.Reference.Action) || claim.Reference.SessionID.Validate() != nil || claim.Reference.SnapshotID.Validate() != nil || claim.MachineID.Validate() != nil || !digestValid(claim.PreparationDigest) || !digestValid(claim.RequestDigest) || claim.RootIdentity == "" {
+	if err != nil || domain.Decode(raw, &claim) != nil || claim.Version != 1 || claim.Reference.OperationID != id || !stagingAction(claim.Reference.Action) || claim.Reference.SessionID.Validate() != nil || claim.Reference.SnapshotID.Validate() != nil || claim.MachineID.Validate() != nil || !digestValid(claim.PreparationDigest) || !digestValid(claim.RequestDigest) || claim.RootIdentity == "" || claim.PublishedSnapshotDigest != "" && !digestValid(claim.PublishedSnapshotDigest) {
 		return claim, ResultUncertain()
 	}
 	return claim, nil

@@ -3,6 +3,8 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -25,12 +27,14 @@ func SessionStorageCopyPaths(root string, w domain.SessionDeletionWork) []string
 		for _, directory := range []string{"snapshot-staging", "workspace-removals"} {
 			paths = append(paths, filepath.Join(root, directory, string(copy.JobID)))
 		}
-		for _, directory := range []string{"storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
-			paths = append(paths, filepath.Join(root, directory, string(copy.JobID)+".json"))
-		}
+		// Retain publication authority until its snapshot namespace is removed,
+		// so an interrupted deletion can still verify the original copy on retry.
 		if copy.SnapshotID != "" && !seen[copy.SnapshotID] {
 			seen[copy.SnapshotID] = true
 			paths = append(paths, filepath.Join(root, "snapshots", string(copy.SnapshotID)))
+		}
+		for _, directory := range []string{"storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+			paths = append(paths, filepath.Join(root, directory, string(copy.JobID)+".json"))
 		}
 	}
 	return paths
@@ -59,6 +63,10 @@ func (m *Manager) deletionSnapshotManifest(ctx context.Context, w domain.Session
 		raw, err := security.ReadPrivate(filepath.Join(path, "snapshot.json"), maxSnapshotManifest)
 		var snapshot snapshotManifest
 		if err != nil || domain.DecodeBounded(raw, &snapshot, maxSnapshotManifest) != nil || snapshot.Version != 1 || snapshot.ID != copy.SnapshotID || snapshot.Workspace.SessionID != w.SessionID || snapshot.Workspace.MachineID != w.MachineID || snapshot.Preparation.SessionID != w.SessionID || snapshot.Preparation.MachineID != w.MachineID || snapshot.Preparation.Type == domain.Local || ValidateResult(snapshot.Preparation, snapshot.Workspace, runtime.GOOS) != nil || !slices.Contains(w.PreparationDigests, snapshot.Workspace.InputDigest) {
+			return nil, domain.SessionDeletionPending()
+		}
+		sum := sha256.Sum256(raw)
+		if _, err := m.verifySnapshotPublication(snapshot, hex.EncodeToString(sum[:])); err != nil {
 			return nil, domain.SessionDeletionPending()
 		}
 		original := slices.ContainsFunc(w.Copies, func(c domain.SessionDeletionCopy) bool {

@@ -113,11 +113,18 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
+	if m.storageBeforeSnapshotPublish != nil {
+		m.storageBeforeSnapshotPublish(staging)
+	}
 	if err := renameStorage(staging, m.snapshotPath(r.SnapshotID)); err != nil {
 		return empty, ResultUncertain()
 	}
-	_, metadata, err = m.inspectSnapshot(ctx, r.SnapshotID)
+	_, metadata, err = m.inspectSnapshotContent(ctx, r.SnapshotID)
 	if err != nil {
+		return empty, ResultUncertain()
+	}
+	sum := sha256.Sum256(raw)
+	if metadata.SHA256 != hex.EncodeToString(sum[:]) || m.retainSnapshotPublication(r, metadata) != nil {
 		return empty, ResultUncertain()
 	}
 	return metadata, nil
@@ -310,6 +317,15 @@ func (m *Manager) validateSnapshotGit(ctx context.Context, session domain.ID, re
 	return nil
 }
 func (m *Manager) inspectSnapshot(ctx context.Context, id domain.ID) (snapshotManifest, SnapshotMetadata, error) {
+	snapshot, metadata, err := m.inspectSnapshotContent(ctx, id)
+	if err == nil {
+		_, err = m.verifySnapshotPublication(snapshot, metadata.SHA256)
+	}
+	return snapshot, metadata, err
+}
+
+// Content inspection alone grants no snapshot ownership or removal authority.
+func (m *Manager) inspectSnapshotContent(ctx context.Context, id domain.ID) (snapshotManifest, SnapshotMetadata, error) {
 	var snapshot snapshotManifest
 	var metadata SnapshotMetadata
 	if id.Validate() != nil {
