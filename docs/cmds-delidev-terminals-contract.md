@@ -150,7 +150,12 @@ for a synchronized confirmed current-instance close claim. Missing or changed
 process evidence remains uncertain; adoption cannot create a shell or resend a
 control. Finished results retry their exact report. Confirmed report
 acknowledgements are synchronized as a separate reported phase before metadata
-retirement. Independently verified cleanup then prunes completed native scopes
+retirement. A claimed close retains its exact displaced pending-operation ID in
+terminal-bound private metadata before reporting can clear it, including through
+uncertain close reports and replacement. Acknowledged independently verified
+cleanup retires only that matching prepared, result-less journal by direct bounded
+lookup. Failed claim RPCs grant no removal; claimed/started/finished and foreign or
+malformed evidence retains its independent recovery lifetime. Independently verified cleanup then prunes completed native scopes
 and retires only the empty terminal owner index, its private recovery lock and
 the shutdown observation, before removing the operation journal. Unacknowledged
 or uncertain cleanup retains original process evidence. Interrupted acknowledged

@@ -21,6 +21,9 @@ func (m *terminalManager) retireReported(j terminalOperationJournal) error {
 		if _, live := m.live[j.TerminalID]; live {
 			return domain.TerminalUnavailable()
 		}
+		if err := m.retireSuperseded(j.TerminalID); err != nil {
+			return err
+		}
 		owner := filepath.Join(m.processRoot(), string(j.TerminalID))
 		if _, err := os.Lstat(owner); err == nil {
 			// Reconcile once more to prune completed scopes after Handle.Close

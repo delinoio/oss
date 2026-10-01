@@ -226,6 +226,13 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 			return domain.TerminalUnavailable()
 		}
 		assignment = original
+		if assignment.Operation.Action == domain.TerminalClose && assignment.Terminal.Pending != nil {
+			// Preserve the displaced prepared journal's identity before reporting
+			// clears Pending, including across an uncertain close and replacement.
+			if err := m.saveSuperseded(assignment.ID, assignment.Terminal.Pending.ID); err != nil {
+				return err
+			}
+		}
 		if j.CloseRecovery != nil {
 			j.CloseRecovery.Claimed = true
 		}
