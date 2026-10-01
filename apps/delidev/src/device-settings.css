@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-.settings-paired-column { width: 100%; max-width: 1040px; min-width: 0; margin-inline: auto; color: var(--text); }
+.settings-paired-column { width: 100%; max-width: 1040px; min-width: 0; margin-inline: 0; color: var(--text); }
 .settings-paired-column .settings-category-title h1 { font-size: 26px; font-weight: 600; }
 .settings-paired-column .paired-device-summary { font-size: 14px; }
 .settings-paired-column .paired-device-scope { margin-top: 4px; font-size: 12px; }
@@ -25,7 +25,7 @@
 .settings-paired-column .paired-device-metadata { display: grid; grid-template-columns: minmax(0, 160px) minmax(0, 1fr); gap: 10px 16px; margin: 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .settings-paired-column .paired-device-metadata dt { color: var(--muted); }
 .settings-paired-column .paired-device-metadata dd { min-width: 0; margin: 0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; }
-.settings-paired-column .paired-device-form { width: 100%; max-width: 760px; min-width: 0; margin-bottom: 24px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow-wrap: anywhere; }
+.settings-paired-column .paired-device-form { width: 100%; max-width: 720px; min-width: 0; margin-bottom: 24px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow-wrap: anywhere; }
 .settings-paired-column .paired-device-form p { line-height: 1.5; }
 .settings-paired-column .paired-device-form .paired-device-metadata { margin-bottom: 16px; }
 .settings-paired-column .paired-device-form button { margin: 4px 8px 4px 0; }

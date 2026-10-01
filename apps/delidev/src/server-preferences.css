@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .settings-server-preferences { color: var(--text); background: var(--surface); font-size: 14px; }
-.settings-server-preferences .settings-content-column { width: 100%; max-width: 820px; min-width: 0; margin-inline: auto; }
+.settings-server-preferences .settings-content-column { width: 100%; max-width: 1040px; min-width: 0; margin-inline: 0; }
 .settings-server-preferences .settings-category-heading { flex-wrap: wrap; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
 .settings-server-preferences .settings-category-title { flex: 1 1 260px; }
 .settings-server-preferences .settings-category-title h1 { font-size: 24px; font-weight: 600; letter-spacing: normal; }

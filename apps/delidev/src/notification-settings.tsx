@@ -51,11 +51,18 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
         workflowFocus.current = Boolean(event.target instanceof Node && form.current?.contains(event.target));
       }
     };
+    const discardOnPointer = (event: Event) => {
+      if (focusIntent.current === FocusTarget.Edit && event.target !== edit.current) focusIntent.current = undefined;
+      if (!(event.target instanceof Node && form.current?.contains(event.target))) workflowFocus.current = false;
+    };
+    const discardOnBlur = () => { focusIntent.current = undefined; workflowFocus.current = false; };
     const discardWhenCovered = () => { if (form.current && covered(form.current)) { focusIntent.current = undefined; workflowFocus.current = false; } };
     const observer = new MutationObserver(discardWhenCovered);
     observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "hidden", "inert", "class", "role"] });
     document.addEventListener("focusin", discardOnFocus);
-    return () => { focusIntent.current = undefined; observer.disconnect(); document.removeEventListener("focusin", discardOnFocus); };
+    document.addEventListener("pointerdown", discardOnPointer);
+    window.addEventListener("blur", discardOnBlur);
+    return () => { focusIntent.current = undefined; observer.disconnect(); document.removeEventListener("focusin", discardOnFocus); document.removeEventListener("pointerdown", discardOnPointer); window.removeEventListener("blur", discardOnBlur); };
   }, []);
   useLayoutEffect(() => {
     const intent = focusIntent.current;
@@ -70,19 +77,19 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
     onWorkflowReadyChange?.(Boolean(draft || mutation.busy || mutation.uncertain));
     return () => onWorkflowReadyChange?.(false);
   }, [draft, mutation.busy, mutation.uncertain, onWorkflowReadyChange]);
-  return <section className="notification-settings">{showCategoryIntro ? <div className="notification-intro"><h1>Notifications</h1><p>Choose which events notify you.</p><p className="notification-scope">Applies to this client on the selected server.</p></div> : null}
+  return <section className="notification-settings">{showCategoryIntro ? <div className="notification-intro"><h1>Notifications</h1><p>Choose which updates this client receives.</p><p className="notification-scope">For this client on the selected server</p></div> : null}
     <NativeNotificationSettings active={active} />
     <form ref={form} className="notification-preferences" onSubmit={(event) => { event.preventDefault(); if (!draft || blocked || stale || current.error || current.isFetching) return; void mutation.send({ requestId: newRequestId(), preferences: draft }); }}>
-      <div className="notification-section-heading"><h2 id={`${ids}-preferences`}>Notify this client about</h2>{value && !draft ? <button ref={edit} type="button" disabled={blocked || Boolean(current.error) || current.isFetching} onClick={() => { focusIntent.current = FocusTarget.FirstCheckbox; setDraft({ ...value }); }}>Edit preferences</button> : null}</div>
+      <div className="notification-section-heading"><h2 id={`${ids}-preferences`}>Notify this client about</h2>{value && !draft ? <button ref={edit} type="button" disabled={blocked || Boolean(current.error) || current.isFetching} onClick={() => { focusIntent.current = FocusTarget.FirstCheckbox; setDraft({ ...value }); }}>Edit notification preferences</button> : null}</div>
       <Problem error={current.error} /><Problem error={mutation.error} />
       {current.error && current.data?.preferences ? <p role="status">Notification preferences could not be refreshed. The displayed values may be out of date.</p> : null}
       {!value ? <>{current.isPending && !current.error ? <p role="status">Loading notification preferences…</p> : null}<p>Notification preferences are unavailable until this server can be read.</p></> : <fieldset disabled={blocked} aria-labelledby={`${ids}-preferences`}>
-        <div className="notification-row"><div><label htmlFor={draft ? `${ids}-interactions` : undefined}>Questions and approval requests</label><p id={`${ids}-interaction-help`}>When a session needs your answer or approval.</p></div>{draft ? <input ref={firstCheckbox} id={`${ids}-interactions`} type="checkbox" aria-describedby={`${ids}-interaction-help`} checked={draft.interactions} onChange={(event) => setDraft({ ...draft, interactions: event.target.checked })} /> : <span className="notification-value">{value.interactions ? "On" : "Off"}</span>}</div>
-        <div className="notification-row"><div><label htmlFor={draft ? `${ids}-terminals` : undefined}>Execution completion, failure and interruption</label><p id={`${ids}-terminal-help`}>When an execution succeeds, fails or stops.</p></div>{draft ? <input id={`${ids}-terminals`} type="checkbox" aria-describedby={`${ids}-terminal-help`} checked={draft.terminals} onChange={(event) => setDraft({ ...draft, terminals: event.target.checked })} /> : <span className="notification-value">{value.terminals ? "On" : "Off"}</span>}</div>
+        <div className="notification-row"><div><label htmlFor={draft ? `${ids}-interactions` : undefined}>Questions and approval requests</label><p id={`${ids}-interaction-help`}>When a session needs your answer or approval.</p></div>{draft ? <input ref={firstCheckbox} id={`${ids}-interactions`} type="checkbox" aria-describedby={`${ids}-interaction-help`} checked={draft.interactions} onChange={(event) => setDraft({ ...draft, interactions: event.target.checked })} /> : <span className="notification-value">{value.interactions ? "Enabled" : "Disabled"}</span>}</div>
+        <div className="notification-row"><div><label htmlFor={draft ? `${ids}-terminals` : undefined}>Execution completion, failure and interruption</label><p id={`${ids}-terminal-help`}>When an execution succeeds, fails or stops.</p></div>{draft ? <input id={`${ids}-terminals`} type="checkbox" aria-describedby={`${ids}-terminal-help`} checked={draft.terminals} onChange={(event) => setDraft({ ...draft, terminals: event.target.checked })} /> : <span className="notification-value">{value.terminals ? "Enabled" : "Disabled"}</span>}</div>
       </fieldset>}
       {mutation.busy ? <p role="status">Saving notification preferences…</p> : null}
       {stale ? <p role="alert">These preferences changed elsewhere. Your draft is retained. Cancel this edit and reopen the current preferences before saving.</p> : null}
-      <div className="actions">{draft ? <><button className="primary" disabled={blocked || stale || Boolean(current.error) || current.isFetching}>Save preferences</button><button type="button" disabled={blocked} onClick={finishEdit}>Cancel</button></> : null}
+      <div className="actions">{draft ? <><button className="primary" disabled={blocked || stale || Boolean(current.error) || current.isFetching}>Save notification preferences</button><button type="button" disabled={blocked} onClick={finishEdit}>Cancel notification edit</button></> : null}
         {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same notification preferences</button> : null}
       </div>
     </form>

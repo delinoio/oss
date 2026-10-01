@@ -81,7 +81,7 @@ it("connects direct RPC claims to closed native presentation and disposes only i
 const states = [
   ["not-determined", "none", "Notification permission has not been requested."],
   ["denied", "none", "Notifications are disabled. Enable DeliDev in your operating system's notification settings."],
-  ["granted", "none", "Allowed by the operating system"],
+  ["granted", "none", "Notifications allowed"],
   ["service-available", "none", "The desktop notification service supports actions. This service does not report user permission or whether a banner was shown."],
   ["unavailable", "bundle-required", "Native notifications require the installed DeliDev app bundle."],
   ["unavailable", "actions-unavailable", "This desktop notification service cannot open notification actions."],
@@ -94,8 +94,8 @@ for (const [permission, problem, status] of states) it(`truthfully presents ${pe
   render(<QueryClientProvider client={client}><NativeNotificationSettings active /></QueryClientProvider>);
   await screen.findByText(status);
   expect(Boolean(screen.queryByRole("button", { name: "Allow desktop notifications" }))).toBe(permission === "not-determined");
-  if (permission === "granted") expect(screen.getByText("Focus or Do Not Disturb may still hide banners.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+  if (permission === "granted") expect(screen.getByText("Focus or Do Not Disturb may still suppress banners.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh status for native notifications" }));
   await waitFor(() => expect(native.invoke).toHaveBeenCalledTimes(2));
   expect(native.invoke.mock.calls.every(([command]) => command === "notification_permission")).toBe(true);
 });
@@ -106,14 +106,14 @@ it("exposes checking/pending/error states without treating cached success as cur
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><NativeNotificationSettings active /></QueryClientProvider>);
   expect(screen.getByText("Checking native notification availability…")).toBeTruthy();
-  expect((screen.getByRole("button", { name: "Refresh status" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Refresh status for native notifications" }) as HTMLButtonElement).disabled).toBe(true);
   await act(async () => finish({ permission: "granted", problem: "none" }));
-  await screen.findByText("Allowed by the operating system");
+  await screen.findByText("Notifications allowed");
   native.invoke.mockRejectedValueOnce(new Error("Unavailable"));
-  fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh status for native notifications" }));
   await screen.findByText("Native notification permission could not be confirmed.");
-  expect(screen.queryByText("Allowed by the operating system")).toBeNull();
-  expect(screen.queryByText("Focus or Do Not Disturb may still hide banners.")).toBeNull();
+  expect(screen.queryByText("Notifications allowed")).toBeNull();
+  expect(screen.queryByText("Focus or Do Not Disturb may still suppress banners.")).toBeNull();
 });
 
 it("disables request/Refresh while permission is pending and removes failed request confirmation", async () => {
@@ -123,7 +123,7 @@ it("disables request/Refresh while permission is pending and removes failed requ
   render(<QueryClientProvider client={client}><NativeNotificationSettings active /></QueryClientProvider>);
   fireEvent.click(await screen.findByRole("button", { name: "Allow desktop notifications" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Allow desktop notifications" }) as HTMLButtonElement).disabled).toBe(true));
-  expect((screen.getByRole("button", { name: "Refresh status" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Refresh status for native notifications" }) as HTMLButtonElement).disabled).toBe(true);
   await act(async () => reject(new Error("Unconfirmed")));
   await screen.findByText("Native notification permission could not be confirmed.");
   expect(screen.queryByRole("button", { name: "Allow desktop notifications" })).toBeNull();
@@ -136,8 +136,8 @@ it("allows independently readable preference editing under denied native permiss
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NotificationSettings active /></MutationIntents></QueryClientProvider></TransportProvider>);
   await screen.findByText(/Notifications are disabled/);
-  fireEvent.click(await screen.findByRole("button", { name: "Edit preferences" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save preferences" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save notification preferences" }));
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
   expect(native.invoke.mock.calls.every(([command]) => command === "notification_permission")).toBe(true);
 });
@@ -146,5 +146,5 @@ it("shows desktop guidance without a native read or request in non-desktop execu
   native.desktop = false;
   const client = new QueryClient(); render(<QueryClientProvider client={client}><NativeNotificationSettings active /></QueryClientProvider>);
   expect(screen.getByText("Open DeliDev on your desktop to manage native notifications.")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Refresh status" })).toBeNull(); expect(native.invoke).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Refresh status for native notifications" })).toBeNull(); expect(native.invoke).not.toHaveBeenCalled();
 });

@@ -1,3 +1,4 @@
+import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -457,7 +458,7 @@ function AccountCreationWizard({
     const validationLabel = text(data.health) === "unverified" ? "validation required" : `validation ${validationState}`;
     return <section className="account-wizard api-keys-view" aria-labelledby="api-account-created-title">
       <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>Back to AI API Keys</button>
-      <header className="api-entry-heading"><h1 id="api-account-created-title">{resourceName(current)}</h1><p className="api-entry-scope">Saved on the selected server.</p></header>
+      <SettingsHeading title="AI API Keys" /><h2 id="api-account-created-title">{resourceName(current)}</h2>
       <p>Entry saved. Credential connection is separate from validation and model discovery.</p>
       {!accountTypeFilteringReady ? <p role="status">Connection is paused until this server reports the required provider inventory and account-type filtering capabilities. The saved entry and any exact pending request are retained.</p> : null}
       {create.busy ? <p role="status">Creating entry…</p> : null}
@@ -479,7 +480,7 @@ function AccountCreationWizard({
 
   return <section className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
     <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>Back to AI API Keys</button>
-    <header className="api-entry-heading"><h1 id="api-account-wizard-title">Add AI API key</h1><p className="api-entry-scope">Saved on the selected server.</p></header>
+    <SettingsHeading title="AI API Keys" /><h2 id="api-account-wizard-title">Add AI API key</h2>
     {step === WizardStep.Provider ? <>
       <h2 ref={heading} tabIndex={-1}>Choose an API provider</h2>
       <p>Select a provider to connect your entry.</p>
@@ -677,7 +678,7 @@ export function AccountSettings({
     openApiProviders();
   };
 
-  if (selectedAccount && section === AccountSettingsSection.Api) return <AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} />;
+  if (selectedAccount && section === AccountSettingsSection.Api) return <><SettingsHeading title="AI API Keys" /><AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} /></>;
 
   if (wizard) return <AccountCreationWizard active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
 
@@ -740,9 +741,9 @@ export function AccountSettings({
   const successfulEmpty = accountTypeFilteringReady && rows.data?.resources.length === 0 && !readProblem;
   const finalFirstPage = !pageToken && !rows.data?.nextPageToken;
   return <section className="account-settings api-keys-view" aria-label="AI API Keys settings">
-    <header className="api-entry-heading api-entry-list-heading"><div><h1>AI API Keys</h1><p>Manage AI API keys and keyless local connections. Connection and health are separate states.</p><p className="api-entry-scope">Saved on the selected server.</p></div>
+    <SettingsHeading title="AI API Keys" description="Manage AI API keys and keyless local connections. Connection and health are separate states." actions={<>
       <button className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProvider(undefined); onWorkflowReadyChange?.(true); setWizard(true); }}>Add AI API key</button>
-    </header>
+    </>} />
     {providerIdFilter ? <div className="api-entry-filter"><p>Provider: {providersById.get(providerIdFilter)?.displayName || providerIdFilter}</p><button type="button" onClick={() => { setPage({ section, providerId: "", token: "" }); clearProviderFilter(); }}>Clear provider filter</button></div> : null}
     {accountTypeFilteringLoading ? <p role="status">Loading provider capabilities…</p> : null}
     <Problem error={inventoryProblem} />
@@ -753,7 +754,7 @@ export function AccountSettings({
       <Problem error={rows.error} />
       {rows.error ? <button type="button" disabled={rows.isFetching} onClick={() => { void rows.refetch(); }}>Retry entries</button> : null}
       {readProblem && rows.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded entries.</p> : null}
-      {rows.isFetching && !rows.data ? <p role="status">Loading entries…</p> : null}
+      {rows.isFetching && !rows.data ? <SettingsLoading label="Loading entries…" /> : null}
       {rows.data?.resources.length ? <div className="api-entry-rows">{rows.data.resources.map((row) => {
         const data = document(row);
         const provider = providersById.get(text(data.provider_id));
@@ -772,7 +773,7 @@ export function AccountSettings({
           <div className="actions"><button type="button" disabled={row.schemaVersion !== 1} onClick={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }}>Manage connection</button><button type="button" disabled={row.schemaVersion !== 1} onClick={() => editAccount(row)}>Edit preferences</button><button className="api-entry-delete" type="button" disabled={row.schemaVersion !== 1} onClick={() => deleteAccount(row)}>Delete entry</button></div>
         </article>;
       })}</div> : null}
-      {successfulEmpty ? finalFirstPage && !providerIdFilter ? <section className="api-entry-empty" aria-labelledby="api-entry-empty-title"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="8" cy="8" r="4" /><path d="m11 11 9 9m-3-3 3-3m-6 0 3-3" /></svg><h2 id="api-entry-empty-title">No AI API key entries</h2><p>Add an entry for an enabled API provider.</p><p>Keyless local providers do not require a key.</p></section> : <p className="api-entry-page-empty">{finalFirstPage && providerIdFilter ? "No entries for this provider." : "No entries on this page."}</p> : null}
+      {successfulEmpty ? finalFirstPage && !providerIdFilter ? <SettingsEmpty title="No AI API key entries"><p>Add an entry for an enabled API provider.</p><p>Keyless local providers do not require a key.</p></SettingsEmpty> : <p className="api-entry-page-empty">{finalFirstPage && providerIdFilter ? "No entries for this provider." : "No entries on this page."}</p> : null}
       {pageToken || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label="Entry pages">{pageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>First page</button> : null}{rows.data?.nextPageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>Next page</button> : null}</nav> : null}
     </> : null}
     <p className="api-entry-storage-note">Credentials are stored securely on the selected server.</p>

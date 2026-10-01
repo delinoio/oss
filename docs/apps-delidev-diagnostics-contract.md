@@ -16,7 +16,7 @@ The single server owner and authorized paired desktop clients inspect the select
 
 ### Hierarchy and visible evidence
 
-Doctor owns one level-1 Diagnostics title, the original scope paragraph, right-aligned Refresh diagnostics action and subordinate Observed at row with the exact server-returned UTC string. The outer category heading is suppressed only for Diagnostics; accessible category announcement remains. Three independent cards appear in order: Database read check, Owner credential and Inference probes. Retain known/unknown labels, positive read-success, informational owner-credential and neutral not-performed treatments, with text/icon semantics and no overall health score.
+Doctor owns one level-1 Diagnostics title, the original scope paragraph, right-aligned Refresh diagnostics action and subordinate Observed at row with the exact server-returned UTC string. The outer category heading is suppressed only for Diagnostics; accessible category announcement remains. Three independent summaries appear in order: Database read check, Owner credential and Inference probes. Retain known/unknown labels, positive read-success, informational owner-credential and neutral not-performed treatments, with text/icon semantics and no overall health score.
 
 Issue #1137 renames the existing Settings category to Connection & diagnostics without changing its stable ID. Settings passes that closed title to Doctor's existing header, retaining one category title; standalone Doctor keeps Diagnostics. A separately labelled Connection subsection opens the persistent native controls outside SettingsLifetime. Selecting the category still reads only Doctor; opening, hiding or disposing Settings cannot discard the connection panel's original lifecycle/registration requests and confirmations. Doctor's report, refresh and disclosure lifecycle remain independently read-only.
 
@@ -40,9 +40,9 @@ Native `details/summary` controls are keyboard operable with visible focus. Stat
 
 ### Styling and responsive behavior
 
-Use existing system fonts, white content `#ffffff`, text `#202632`, muted `#5b6577`, border `#d8dee8` and accent `#2563d8`. Panels use 1px borders, 12px corners, 24px padding and 20px gaps; controls are at least 40px high. Exact numeric values use tabular numerals and long values wrap. All CSS is statically scoped to Diagnostics; no assets, fonts, dependency, inline styles or CSP relaxation.
+Use existing system fonts, white content `#ffffff`, text `#202632`, muted `#5b6577`, border `#d8dee8` and accent `#2563d8`. Issue #1256 uses the shared left-aligned 1040px body, flat semantic sections with thin rules, 16px row padding and 24px gaps; controls are at least 40px high. Exact numeric values use tabular numerals and long values wrap. All CSS is statically scoped to Diagnostics; no assets, fonts, dependency, inline styles or CSP relaxation.
 
-Summary cards use three columns at CSS viewport widths of at least 1100px, one below. Server/storage panels use two columns at least 1200px, one below. Preserve Settings padding, independent vertical scrolling, shared application header, 288px/256px context pane and navigation drawer below 760px. Validate 1920×1080, 1440×900, 960×640, 640×480 and 200% zoom for overflow, focus and reachable controls; native window minimum geometry is unchanged.
+Summary cards use three columns at CSS viewport widths of at least 1100px, one below. Server/storage panels use two columns at least 1200px, one below. Preserve Settings padding, independent vertical scrolling, ordinary application page, 52px rail and 288px/256px context pane and navigation drawer below 760px. Validate 1920×1080, 1440×900, 960×640, 640×480 and 200% zoom for overflow, focus and reachable controls; native window minimum geometry is unchanged.
 
 ## Storage
 

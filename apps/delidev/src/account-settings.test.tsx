@@ -526,14 +526,14 @@ it("shows one compact empty list action and no API inventory controls", async ()
   const empty = await screen.findByRole("heading", { name: "No AI API key entries" });
   expect(screen.getAllByRole("heading", { level: 1, name: "AI API Keys" })).toHaveLength(1);
   expect(screen.getAllByRole("button", { name: "Add AI API key" })).toHaveLength(1);
-  expect(empty.closest("section")?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  expect(empty.closest("section")?.querySelector(".settings-empty-icon")?.getAttribute("aria-hidden")).toBe("true");
   expect(screen.queryByRole("searchbox")).toBeNull();
   expect(screen.queryByRole("combobox")).toBeNull();
   expect(screen.queryByRole("button", { name: "More provider filters" })).toBeNull();
   expect(screen.queryByRole("navigation", { name: "Entry pages" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
-  expect(screen.queryByRole("heading", { name: "AI API Keys" })).toBeNull();
-  expect(screen.getAllByRole("heading", { level: 1, name: "Add AI API key" })).toHaveLength(1);
+  expect(screen.getAllByRole("heading", { level: 1, name: "AI API Keys" })).toHaveLength(1);
+  expect(screen.getAllByRole("heading", { level: 2, name: "Add AI API key" })).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
   expect(screen.getByRole("heading", { name: "Connect your entry" })).toBe(document.activeElement);
   expect(screen.queryByRole("button", { name: "Back to provider" })).toBeNull();
