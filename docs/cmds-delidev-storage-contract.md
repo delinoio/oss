@@ -528,12 +528,18 @@ Only inactive prepared DeliDev-owned Worktree and General Chat workspaces are
 eligible. Local checkouts, active executions, unresolved native ownership,
 unconfirmed cleanup, pending titles, dependent queued/claimed/uncertain jobs and
 any forward without both original peer cleanup confirmations block storage.
+Session terminals independently block every storage operation until their original
+process cleanup is verified, including terminals labeled exited, closed or
+uncertain. Agent Stop and accepted Close alone do not release workspace ownership.
 Stopping a forward or labeling it stopped alone cannot release ownership. The server examines the complete bounded session-job inventory,
 not only its first page. Extra resources in the managed root also block parent
 cleanup. Acceptance pauses dispatch and clears continuation intent atomically;
 first dispatch, Resume, continuation, preparation and initial execution claims
 independently require present storage. New forwards and retained live socket
 authority also require present storage; original cleanup reports remain usable.
+Terminal creation, input/resize acceptance and non-close dispatch or claim receipt
+reads likewise require present storage. Original close and cleanup authority
+remains available while storage is pending, uncertain or stored.
 Archive still preserves files. Successful
 restoration and recovery remain paused and require explicit later Resume.
 

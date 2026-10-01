@@ -67,6 +67,15 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 	if pending {
 		return domain.Fail(domain.Conflict, "Session forwards have not confirmed cleanup.", "Stop every forward and wait for both original peers before workspace storage.")
 	}
+	// Terminals outlive Agent Stop and use independent process owners rather
+	// than jobs. An observed exit or accepted close cannot release their roots.
+	pending, err = tx.SessionTerminalsPending(id)
+	if err != nil {
+		return err
+	}
+	if pending {
+		return domain.Fail(domain.Conflict, "Session terminals have not confirmed cleanup.", "Close every terminal and wait for original process cleanup before workspace storage.")
+	}
 	var after domain.ID
 	for inspected := 0; inspected < 4096; {
 		jobs, err := tx.List(store.Filter{Kind: domain.JobKind, SessionID: id, After: after, Limit: store.MaxPage})
