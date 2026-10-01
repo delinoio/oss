@@ -897,3 +897,12 @@ dialog.modal-full-window::backdrop { background: transparent; }
   .integration-steps, .integration-access-note { padding: 16px; }
   .integration-facts { grid-template-columns: minmax(0, 1fr); }
 }
+.session-browser { display: flex; flex-direction: column; gap: 10px; padding: 16px; min-height: 100%; }
+.session-browser header, .browser-address, .browser-tabs li { display: flex; align-items: center; gap: 8px; }
+.session-browser header { justify-content: space-between; }
+.browser-address label { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.browser-address input { width: 100%; }
+.browser-tabs { margin: 0; padding: 0; list-style: none; }
+.browser-tabs li > button:first-child { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.browser-current-address { overflow-wrap: anywhere; font-size: 12px; }
+.browser-viewport { flex: 1; min-height: 400px; border: 1px solid var(--border); }

@@ -1947,6 +1947,11 @@ fn managed_service_forwards_shutdown_output_before_success() {
 
 #[test]
 fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
+    // This process fixture must install the service's TERM trap before its
+    // readiness deadline expires. Native HTTP-client setup and child scheduling
+    // can consume 300ms on a loaded macOS runner; that tests pre-spawn timeout
+    // instead of shutdown-output forwarding. Keep a bounded startup allowance
+    // here until this process fixture can control the readiness clock.
     let home = tempfile::tempdir().unwrap();
     let workload_started = home.path().join("workload-started");
     let workload_marker = format!("WORKLOAD_MARKER={}", workload_started.display());
@@ -2012,7 +2017,7 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
             "--interval",
             "10ms",
             "--ready-timeout",
-            "300ms",
+            "5s",
             "--service",
             &service_marker,
             "sh",
