@@ -276,7 +276,7 @@ Each opening owns a fresh mounted component tree, mutation registry and authenti
 
 Every category has one visible category title and its existing scope/help description above its content. Configuration list toolbars keep Refresh settings and any eligible existing New action together at the upper right; detailed editors retain their existing explicit save/cancel/back actions. Devices and Runner Devices do not gain a generic create action, and Server preferences remains a revision-bound singleton. Providers has one New Provider action and, only after a successful empty first-page read, the single bordered “No providers yet” panel. Initial loading and initial read errors do not render that empty state or enable create. A cached result remains visible during refresh; a refresh error shows its sanitized correlated failure and a stale-results notice. Pagination is hidden only for a successful empty first page with no continuation token; an empty later page still offers First page. Query staleness alone is not a read failure.
 
-The Models list has one bounded, left-aligned column (100% width, maximum 1040 CSS pixels). Its single live-announced 28px semibold Models heading, “Saved on the selected server.” subtitle and capability-gated 40px New Model action share the header; the common category heading remains for editors/pricing and the other categories that use it; Diagnostics retains its own title. The labeled active-provider search is at most 420px wide, at least 40px high and bounded to 256 characters. Provider groups preserve server order, semantic article rows, full model/native identity, CLI alias, NEW/Reviewed, Visible/Hidden, configured harnesses and both Edit model/Token pricing actions. Unsupported schema actions stay disabled. Names, identifiers and actions wrap; below 1100px row actions stack beneath metadata. Groups/empty panels use neutral borders and 12px radii with no new assets or inline styles. The existing Settings padding and 760px selector boundary remain unchanged.
+The Models list has one bounded, left-aligned column (100% width, maximum 1040 CSS pixels). Its single live-announced 28px semibold Models heading, “Saved on the selected server.” subtitle and capability-gated 40px New Model action share the header; the common category heading remains for editors/pricing and the other categories that use it; Diagnostics and Backups retain their own titles. The labeled active-provider search is at most 420px wide, at least 40px high and bounded to 256 characters. Provider groups preserve server order, semantic article rows, full model/native identity, CLI alias, NEW/Reviewed, Visible/Hidden, configured harnesses and both Edit model/Token pricing actions. Unsupported schema actions stay disabled. Names, identifiers and actions wrap; below 1100px row actions stack beneath metadata. Groups/empty panels use neutral borders and 12px radii with no new assets or inline styles. The existing Settings padding and 760px selector boundary remain unchanged.
 
 Only Models search/cursor state is lifted into the opening-owned workspace. A search change resets its model cursor atomically; provider/model cursors remain independent. That state survives list/editor/pricing/category, responsive and same-identity reconnect transitions within one opening. Inactive list reads stay disabled. The existing opening disposal, mutation locks, exact uncertain writes and abort/late-result guards remain authoritative; close/reopen never restores abandoned Models state or retries.
 
@@ -769,6 +769,79 @@ The Exit event precedes CEF shutdown and must never be labeled process exit.
 Even a runtime return is separate from observed process termination. Native
 shutdown latency remains an independently recorded acceptance concern.
 
+
+### Backups presentation
+
+Settings > Backups uses one centered, full-width column bounded at 1120 CSS px,
+inside the authoritative Settings host and its existing 40px/24px/compact padding.
+The Backups controller owns one live-announced 28px semibold heading, the exact
+selected-server description, neutral Refresh backups and a single blue Create
+database backup action. The complete private-data/credentials/browser/Worker scope
+note is a quiet strip. Use white surfaces, #F8F9FB table headers, #202632 ink,
+#5B6577 metadata, #D8DEE8 decorative dividers, #2563D8 accent and #E7EFFF selection;
+controls have 8px radii and 40px minimum height, panels 12px radii. Functional
+outlines and focus indicators meet AA contrast independently of decorative borders.
+The shared Settings navigation, geometry, close/Escape/focus and opening lifetime
+remain authoritative; the separate issue #1236 host change must not be implemented
+or reverted by this category treatment.
+
+Inventory is one semantic table with Modified (UTC) / Backup ID, Size, Integrity
+and action headers. Preserve server order, complete wrapped UUIDs and roughly 92px
+rows. English UTC modification labels include seconds; original fractional
+precision remains in `time.dateTime`, supplementary accessible text and inspection.
+Invalid dates display their original value. Format exact BigInt bytes with English
+grouping without Number conversion or approximate units. Page counts describe only
+the current page. Not checked is neutral; listing never establishes integrity.
+Only the original fresh checked-inspection predicate may show verified inspection.
+Keep the complete listing limitation note and concise Inspect buttons with full-ID
+accessible names. Below 800px of available Backups content, stack the same rows and
+controls with readable labels and explicit table/header associations, independently
+of the host navigation breakpoint. Never duplicate interactive controls or clip
+UUIDs, hashes, actions or focus at narrow widths or zoom.
+
+Explicit Inspect reveals detail immediately below inventory and focuses its heading
+once per activation. Reads, reconnect, category reactivation and reflow cannot move
+focus. Close returns to the originating Inspect button if still present, otherwise
+the database-list heading. Detail retains the full ID, original timestamp, exact
+bytes, schema, complete SHA-256, integrity/server-identity result, observation
+limitation, Recheck and Close. Permanent deletion stays separate with the complete
+warning and full-ID checkbox bound to the exact inspection object. Deactivation,
+failed/in-flight reinspection and replacement clear fresh confirmation; already
+submitted uncertain requests retain their original encoded metadata independently.
+Preserve original active/busy/uncertain/capacity gates and irreversible acceptance.
+
+Accepted operations appear after inventory/detail and before history, independently
+of the selected tab. Retain full backup/job IDs, exact revisions, pending/completed/
+failed/unavailable distinctions, problem codes, individual refresh and terminal-only
+dismissal, with 20 local entries per kind and complete capacity guidance. Operation
+history defaults to Creation jobs and uses opening-local enum selection with stable
+tab/panel IDs. Left/Right/Home/End moves roving focus; Enter/Space selects. Selected
+tabs have text/underline indication; hidden panel controls leave the tab order. Both
+original query owners stay mounted with independent opaque page-size-20 cursors and
+active-only two-second polling even while their tab panel is hidden. Tab activation
+cannot refetch, reset a page, replace a controller or mutate server state.
+
+Retain Refresh creation jobs, every history-row value and both complete guidance
+paragraphs: creation continues after disconnect/restart and past publication is not
+current availability; deletion survives restart, retries failed cleanup and measures
+logical file size rather than free disk space. Distinguish initial loading/error,
+successful emptiness, cached updating and cached refresh failure for each read.
+Initial errors use sanitized Problem alerts/recovery/correlation without empty
+success. Cached rows remain with updating/stale guidance. Inventory empty copy is
+No managed backups. on the first page and No backups on this page. later; history
+uses No creation jobs on this page. / No deletion jobs on this page. and the modest
+144px Accepted jobs will appear here. region. Hide a pager only after a successful
+empty first page without a continuation token; retain disabled First/Next for
+nonempty first pages and First for empty later pages. Keep direct accepted-job
+observation and completion-driven inventory refresh independent of history pages.
+
+The category uses static scoped styles and system fonts, adds no API, persisted
+state, protocol, migration, dependency, polling or native-window behavior, and follows
+ordinary frontend rollout. Opening disposal and Strict Mode/late-continuation guards
+remain unchanged. Component/router fixtures and browser geometry checks do not
+establish packaged CEF, screen-reader or macOS/Windows/X11 acceptance; record actual
+validation revisions, commands, results and unresolved native limits in PRs/issues
+and CI logs/artifacts, never repository evidence documents.
 
 ### Durable backup creation
 

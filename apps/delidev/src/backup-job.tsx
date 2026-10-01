@@ -29,7 +29,7 @@ export function BackupJob({ kind, accepted, active, completed, dismiss }: Tracke
     }
   }, [active, succeeded, job, completed]);
   return <article className="result" aria-label={`Tracked ${kind} ${accepted.id}`}>
-    <h4>Backup {accepted.backupId}</h4><p>Job {accepted.id}{job ? ` · revision ${job.revision.toString()}` : ""}</p>
+    <h4>Backup {accepted.backupId}</h4><p>Job {accepted.id} · revision {(job?.revision ?? accepted.revision).toString()}</p>
     <p role="status">Accepted {kind} {succeeded ? "completed" : failed ? "failed" : pending ? "pending" : "status unavailable"}</p>
     <Problem error={query.error} />
     {job?.problemCode ? <p>Operation needs attention: {job.problemCode}</p> : null}

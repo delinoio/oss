@@ -326,7 +326,7 @@ function SettingsWorkspace({ connectionSettings, close, visible = true, controlL
           </select>
         </label>
         <div className={isAgentWorkers ? "settings-agent-column" : undefined}>
-        {area !== SettingsArea.Diagnostics && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
+        {area !== SettingsArea.Diagnostics && area !== SettingsArea.Backups && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
           <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : null}<p className={isAgentWorkers ? "settings-agent-scope" : undefined}>{categoryDescription}</p></div>
           {configurationList ? <div className="settings-toolbar">
             <button type="button" onClick={() => void result.refetch()}>Refresh settings</button>
