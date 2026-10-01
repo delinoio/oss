@@ -17,8 +17,12 @@ import (
 )
 
 func workspaceStream(t *testing.T, f *accountFixture, identity security.Identity, machine domain.ID) (context.Context, delidevv1connect.WorkerServiceClient, string, *connect.ServerStreamForClient[pb.WatchWorkResponse]) {
+	return workspaceStreamWithLifetime(t, f, identity, machine, 10*time.Second)
+}
+
+func workspaceStreamWithLifetime(t *testing.T, f *accountFixture, identity security.Identity, machine domain.ID, lifetime time.Duration) (context.Context, delidevv1connect.WorkerServiceClient, string, *connect.ServerStreamForClient[pb.WatchWorkResponse]) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	t.Cleanup(cancel)
 	client := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.endpoint.URL)
 	instance := string(domain.NewID())
