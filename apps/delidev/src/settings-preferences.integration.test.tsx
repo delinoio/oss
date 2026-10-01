@@ -44,7 +44,7 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   expect(latest[0].id).toBe(first[0].id);
   expect(latest[0].revision).toBe(first[0].revision + 1n);
   expect(document(latest[0])).toEqual({ ...defaults, default_routing: "priority", automatic_fetch: false });
-  expect(screen.getByText("priority")).toBeTruthy();
+  expect(await screen.findByText("priority", {}, serverRoundTripWait)).toBeTruthy();
   expect(screen.getByText("Disabled")).toBeTruthy();
   expect(screen.getAllByText("Off")).toHaveLength(3);
 }, 15000);
