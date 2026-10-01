@@ -105,3 +105,71 @@ it("invalidates a prior preview when a replacement file exceeds the import limit
   expect(screen.queryByRole("button", { name: "Apply reviewed configuration" })).toBeNull();
   expect(value.apply).not.toHaveBeenCalled();
 });
+
+it("keeps both inputs mounted and exposes state-derived stages without navigation or implicit requests", async () => {
+  const value = fixture(); const rendered = render(value.view());
+  expect(screen.getByRole("heading", { level: 1, name: "Import / Export" })).toBeTruthy();
+  expect(screen.getByText("Move configuration between DeliDev servers.")).toBeTruthy();
+  expect(screen.getByText("Includes providers, models, account preferences, Agent Workers, instructions, repositories, projects and server preferences.")).toBeTruthy();
+  expect(screen.getByText("Imported accounts are disconnected and need a new connection.")).toBeTruthy();
+  expect(screen.getByText("Authentication, device registrations, observed quotas, discovered model evidence and session history are excluded.")).toBeTruthy();
+  const stages = screen.getByRole("list", { name: "Configuration import stages" });
+  const current = () => stages.querySelector('[aria-current="step"]')!;
+  expect(current().textContent).toContain("Load document");
+  expect(stages.querySelectorAll("button, a, input, [tabindex]")).toHaveLength(0);
+  const json = screen.getByRole("textbox", { name: "Configuration JSON" });
+  const file = screen.getByLabelText("Configuration file");
+  expect(json.getAttribute("placeholder")).toBe("Paste a DeliDev configuration export…");
+  expect((screen.getByRole("button", { name: "Load configuration document" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(json, { target: { value: JSON.stringify(value.bundle) } });
+  expect(current().textContent).toContain("Load document");
+  expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Load configuration document" }));
+  expect(current().textContent).toContain("Map configuration");
+  expect(value.preview).not.toHaveBeenCalled(); expect(value.apply).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Preview configuration changes" }));
+  await screen.findByRole("textbox", { name: "Complete change details" });
+  expect(current().textContent).toContain("Review & apply");
+  rendered.rerender(value.view(false)); rendered.rerender(value.view(true));
+  expect(screen.getByRole("textbox", { name: "Configuration JSON" })).toBe(json);
+  expect(screen.getByLabelText("Configuration file")).toBe(file);
+  expect(value.preview).toHaveBeenCalledTimes(1); expect(value.apply).not.toHaveBeenCalled();
+  fireEvent.change(json, { target: { value: "invalid replacement" } });
+  expect(current().textContent).toContain("Load document");
+  expect(screen.queryByRole("textbox", { name: "Complete change details" })).toBeNull();
+});
+
+it("selects the exact exported Unicode and uint64 document for copying without importing", async () => {
+  const value = fixture();
+  const raw = JSON.stringify({ version: 1, entries: [{ id: newRequestId(), kind: "template", document: { name: "한국어", contents: 'Exact "quoted" text\n', revision: "18446744073709551615" } }], machines: [] }).replace('"18446744073709551615"', "18446744073709551615");
+  value.exported.mockResolvedValueOnce({ documentJson: new TextEncoder().encode(raw) });
+  render(value.view()); fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  const exported = await screen.findByRole("textbox", { name: "Exported configuration" }) as HTMLTextAreaElement;
+  expect(exported.value).toBe(raw); expect(exported.readOnly).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Select export for copying" }));
+  expect(document.activeElement).toBe(exported);
+  expect(exported.selectionStart).toBe(0); expect(exported.selectionEnd).toBe(raw.length);
+  expect(value.preview).not.toHaveBeenCalled(); expect(value.apply).not.toHaveBeenCalled();
+});
+
+it("loads a UTF-8 file immediately and retains editable input after invalid UTF-8 or oversized paste", async () => {
+  const value = fixture(); render(value.view());
+  const raw = JSON.stringify(value.bundle);
+  const file = new File([raw], "configuration.json", { type: "application/json" });
+  Object.defineProperty(file, "arrayBuffer", { value: async () => new TextEncoder().encode(raw).buffer });
+  fireEvent.change(screen.getByLabelText("Configuration file"), { target: { files: [file] } });
+  expect(screen.getByRole("status").textContent).toBe("Reading configuration file…");
+  await screen.findByRole("button", { name: "Preview configuration changes" });
+  const json = screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement;
+  expect(json.value).toBe(raw); expect(json.matches(":disabled")).toBe(false);
+  expect(value.preview).not.toHaveBeenCalled(); expect(value.apply).not.toHaveBeenCalled();
+  fireEvent.change(json, { target: { value: "x".repeat(384 * 1024 + 1) } });
+  expect(json.value).toBe(raw);
+  const invalid = new File([new Uint8Array([0xc3, 0x28])], "invalid.json", { type: "application/json" });
+  Object.defineProperty(invalid, "arrayBuffer", { value: async () => new Uint8Array([0xc3, 0x28]).buffer });
+  fireEvent.change(screen.getByLabelText("Configuration file"), { target: { files: [invalid] } });
+  await screen.findByText("The configuration file could not be read as UTF-8.");
+  expect(json.value).toBe(raw); expect(json.matches(":disabled")).toBe(false);
+  expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull();
+  expect(value.apply).not.toHaveBeenCalled();
+});
