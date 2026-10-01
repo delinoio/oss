@@ -42,6 +42,19 @@ func start(ctx context.Context, o options, args []string, streams IO) (any, erro
 	if *origins != "" {
 		configuration.AllowedOrigins = strings.Split(*origins, ",")
 	}
+	if args[0] == "desktop-launch" || args[0] == "desktop-status" || args[0] == "desktop-retry" {
+		if *foreground || *startupID != "" {
+			return nil, usage()
+		}
+		mode := startupDesktopLaunch
+		if args[0] == "desktop-retry" {
+			mode = startupDesktopRetry
+		}
+		if args[0] == "desktop-status" {
+			mode = startupObservation
+		}
+		return detachedStartup(ctx, o, configuration, streams, mode)
+	}
 	if args[0] == "ensure" {
 		if *foreground {
 			return nil, usage()

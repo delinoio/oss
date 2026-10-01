@@ -374,21 +374,17 @@ it("keeps the archive popup open for changes and restores its opener on Escape",
   expect(window.document.activeElement).toBe(opener);
 });
 
-it("keeps the same local/saved management controller mounted through disclosure without invoking actions", async () => {
-  const operation = vi.fn();
-  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }), props: { localServer: <button onClick={operation}>Existing operation</button>, serverPresentation: { kind: ServerPresentationKind.Saved, name: "Original saved name" } } });
-  const summary = await screen.findByRole("button", { name: /Original saved name Server 0.1.0/ });
-  const controller = window.document.querySelector("#sidebar-server-management")!;
-  const button = within(controller as HTMLElement).getByRole("button", { name: "Existing operation", hidden: true });
-  expect(screen.queryByRole("button", { name: "Existing operation" })).toBeNull();
-  fireEvent.click(summary);
-  expect(screen.getByRole("button", { name: "Existing operation" })).toBe(button);
-  fireEvent.click(summary); fireEvent.click(summary);
-  expect(window.document.querySelector("#sidebar-server-management")).toBe(controller);
-  expect(operation).not.toHaveBeenCalled();
-  expect(summary.querySelector(".sidebar-status-running")).toBeNull();
+it("shows generic connection status with the saved name and no lifecycle disclosure", async () => {
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }), props: { serverPresentation: { kind: ServerPresentationKind.Saved, name: "Original saved name" } } });
+  const summary = await screen.findByText("Original saved name · Connected");
+  expect(summary.getAttribute("role")).toBe("status");
+  expect(window.document.querySelector("#sidebar-server-management")).toBeNull();
+  expect(screen.queryByText("Server 0.1.0")).toBeNull();
+  expect(screen.queryByRole("button", { name: /Original saved name/ })).toBeNull();
   value.setProps({ serverPresentation: { kind: ServerPresentationKind.Local } });
-  expect(screen.getByRole("button", { name: /Local server Server 0.1.0/ })).toBe(summary);
+  expect(screen.getByText("This computer · Connected")).toBe(summary);
+  value.setProps({ connectionReady: false });
+  expect(screen.getByText("This computer · Disconnected · previous data may be stale")).toBe(summary);
 });
 
 
