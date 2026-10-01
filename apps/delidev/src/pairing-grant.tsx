@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@connectrpc/connect-query";
 import { DeviceQuery, DeviceType, EntityKind, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, text } from "./documents";
@@ -15,9 +16,9 @@ function grantDetails(resource: Resource | undefined, attempt: Attempt) {
   return { id: resource.id, expiresAt: text(value.expires_at), usedBy: text(value.used_by) };
 }
 
-// Raw grant material stays in one connection-owned component, never mutation
+// Raw grant material stays in one opening-owned component, never mutation
 // variables, query keys, Web Storage or logs. Only the digest crosses CreatePairing.
-export function PairingGrant({ authority, active }: { authority: PairingAuthority; active: boolean }) {
+export function PairingGrant({ authority, active, triggerContainer }: { authority: PairingAuthority; active: boolean; triggerContainer?: HTMLElement | null }) {
   const [editing, setEditing] = useState(false), [name, setName] = useState("");
   const [kind, setKind] = useState(PairingKind.Client);
   const [attempt, setAttempt] = useState<Attempt>();
@@ -28,6 +29,13 @@ export function PairingGrant({ authority, active }: { authority: PairingAuthorit
   const [now, setNow] = useState(Date.now);
   const alive = useRef(false), gate = useRef(false);
   const output = useRef<HTMLTextAreaElement>(null);
+  const nameInput = useRef<HTMLInputElement>(null), trigger = useRef<HTMLButtonElement>(null);
+  const focusName = useRef(false), focusTrigger = useRef(false);
+  useLayoutEffect(() => {
+    if (!active) return;
+    if (editing && focusName.current && nameInput.current) { focusName.current = false; nameInput.current.focus(); }
+    if (!editing && focusTrigger.current && trigger.current) { focusTrigger.current = false; trigger.current.focus(); }
+  }, [active, editing, triggerContainer]);
   useEffect(() => { alive.current = true; return () => { alive.current = false; original.current = undefined; }; }, []);
   useEffect(() => { if (!active) setRevealed(false); }, [active]);
   const mutation = useRetainedMutation("create-device-pairing", DeviceQuery.createPairing, (result) => {
@@ -72,12 +80,13 @@ export function PairingGrant({ authority, active }: { authority: PairingAuthorit
     } catch { if (alive.current) setProblem("Secure pairing material could not be prepared. Use the trusted desktop app and try again."); }
     finally { gate.current = false; if (alive.current) setPreparing(false); }
   };
-  const discard = () => { original.current = undefined; setAttempt(undefined); setAccepted(undefined); setRevealed(false); setName(""); setProblem(""); setEditing(false); };
+  const discard = () => { original.current = undefined; setAttempt(undefined); setAccepted(undefined); setRevealed(false); setName(""); setProblem(""); focusTrigger.current = true; setEditing(false); };
   const json = revealable && attempt && initial ? JSON.stringify({ version: 1, pairing_id: initial.id, server_id: attempt.authority.serverId, endpoint: attempt.authority.endpoint, code: attempt.code }, null, 2) : "";
-  return <section aria-label="Device pairing">
-    {!editing ? <button onClick={() => setEditing(true)}>Create pairing document</button> : <>
+  const createAction = <button type="button" ref={trigger} className="primary" onClick={() => { focusName.current = true; setEditing(true); }}><span aria-hidden="true">+ </span>Create pairing document</button>;
+  return <section aria-label="Device pairing" className={editing ? "paired-device-form" : undefined}>
+    {!editing ? triggerContainer === undefined ? createAction : triggerContainer ? createPortal(createAction, triggerContainer) : null : <>
       <h3>Pair another device</h3><p>This single-use document authorizes one desktop client or manually installed Worker. Share it only with your intended device; it expires five minutes after server issuance.</p><p>Server: {authority.endpoint}</p>
-      {!accepted ? <form onSubmit={(event) => { event.preventDefault(); void submit(); }}><fieldset disabled={blocked || Boolean(attempt)}><label>Device name<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" /></label><label>Device type<select value={kind} onChange={(event) => setKind(event.target.value as PairingKind)}><option value={PairingKind.Client}>Desktop client</option><option value={PairingKind.Worker}>Worker</option></select></label></fieldset><button disabled={blocked || Boolean(attempt) || changed}>Issue single-use document</button></form> : null}
+      {!accepted ? <form onSubmit={(event) => { event.preventDefault(); void submit(); }}><fieldset disabled={blocked || Boolean(attempt)}><label>Device name<input ref={nameInput} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" /></label><label>Device type<select value={kind} onChange={(event) => setKind(event.target.value as PairingKind)}><option value={PairingKind.Client}>Desktop client</option><option value={PairingKind.Worker}>Worker</option></select></label></fieldset><button disabled={blocked || Boolean(attempt) || changed}>Issue single-use document</button></form> : null}
       {accepted === "unknown" ? <p role="alert">Issuance was acknowledged without a matching grant. Inspect the original pairing request; no replacement was issued.</p> : initial ? <><p>Expires: {initial.expiresAt}</p><p role="status">{used ? "Pairing document was used. Its private code has been cleared." : expired ? "Pairing document expired. Its private code has been cleared." : latest && !current.error && !inconsistent ? "Single-use grant issued; the latest read has no paired device." : "Grant issued; current use status is unavailable."}</p><Problem error={current.error} />{inconsistent ? <p role="alert">The grant observation no longer matches the original issuance.</p> : null}<button disabled={current.isFetching} onClick={() => void current.refetch()}>Refresh pairing status</button>{revealable ? <button onClick={() => setRevealed((value) => !value)}>{revealed ? "Hide private document" : "Reveal private document"}</button> : null}{revealed && revealable ? <><label>Private pairing document<textarea ref={output} readOnly value={json} rows={8} spellCheck={false} /></label><button onClick={() => { output.current?.focus(); output.current?.select(); }}>Select private document</button><p>Copy the selected document to the intended device. It remains private when this settings area closes.</p></> : null}</> : null}
       {changed ? <p role="alert">The selected server changed. This original grant cannot be shared or retried through another connection.</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
       {mutation.uncertain ? <button disabled={mutation.busy || changed} onClick={mutation.retry}>Retry original pairing issuance</button> : null}<button disabled={blocked} onClick={discard}>{attempt ? "Discard private pairing document" : "Cancel pairing"}</button>{attempt ? <p>Discarding clears this window's private copy; an already-issued grant remains valid until used or expired. Closing this server window also discards the copy.</p> : null}
