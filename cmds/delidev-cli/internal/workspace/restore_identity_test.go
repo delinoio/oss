@@ -26,8 +26,10 @@ func TestRestoredIdentityRejectsReplacedRepositoryAndGitStore(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(repo.Path, "tracked.txt"), []byte("ordinary new commit\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			gitTest(t, repo.Path, "add", "tracked.txt")
-			gitTest(t, repo.Path, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "ordinary commit")
+			// Restored private object paths exceed Windows MAX_PATH. Opt in for
+			// fixture writes only, leaving source and restored config unchanged.
+			gitTest(t, repo.Path, "-c", "core.longpaths=true", "add", "tracked.txt")
+			gitTest(t, repo.Path, "-c", "core.longpaths=true", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "ordinary commit")
 			if _, err := m.verifyWorkspaceIdentity(context.Background(), input.Preparation, input.Manifest, continuationIdentity); err != nil {
 				t.Fatal("ordinary commit lost restored identity", err)
 			}
