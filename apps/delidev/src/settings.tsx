@@ -97,7 +97,7 @@ const settingsCategories: Record<SettingsCategory, { label: string; description:
   [SettingsCategory.ServerPreferences]: { label: "Server preferences", description: "Saved on the selected server.", kind: EntityKind.SETTINGS, area: SettingsArea.Configuration },
   [SettingsCategory.Integrations]: { label: "Integrations", description: "Manage GitHub profiles for repository access. AI accounts are configured separately.", area: SettingsArea.Integrations },
   [SettingsCategory.Diagnostics]: { label: "Connection & diagnostics", description: "Read-only observations from the selected server. This check does not repair state, connect an account or run model inference.", area: SettingsArea.Diagnostics },
-  [SettingsCategory.Notifications]: { label: "Notifications", description: "These preferences belong to this client on the selected server. Inbox requests stay available when notifications are disabled or cannot be delivered.", area: SettingsArea.Notifications },
+  [SettingsCategory.Notifications]: { label: "Notifications", description: "Applies to this client on the selected server.", area: SettingsArea.Notifications },
   [SettingsCategory.Transfer]: { label: "Import / Export", description: "Move configuration between DeliDev servers.", area: SettingsArea.Transfer },
 };
 
@@ -366,11 +366,11 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
           </section>)}
         </nav>
       </SidebarSurface>
-      <section className={isProjects ? "settings-content settings-projects" : isServerPreferences ? "settings-content settings-server-preferences" : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices && !hasOverlay ? "settings-content settings-runner-devices" : "settings-content"} aria-label="Settings content">
+      <section className={area === SettingsArea.Notifications ? "settings-content settings-notifications" : isProjects ? "settings-content settings-projects" : isServerPreferences ? "settings-content settings-server-preferences" : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices && !hasOverlay ? "settings-content settings-runner-devices" : "settings-content"} aria-label="Settings content">
         <div className="settings-content-column">
         <div ref={deviceContent} className={isAgentWorkers ? "settings-agent-column" : isPairedDevices ? "settings-paired-column" : isRunnerDevices && !hasOverlay ? "settings-runner-column" : area === SettingsArea.Transfer ? "settings-transfer-column" : undefined}>
         {area !== SettingsArea.Diagnostics && area !== SettingsArea.Backups && !isApiAccounts && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
-          <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : isServerPreferences ? <p>Default routing, Worktree fetch, and pull request remediation.</p> : null}<p className={isAgentWorkers ? "settings-agent-scope" : isServerPreferences ? "server-preferences-scope" : isPairedDevices ? "paired-device-summary" : undefined}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">Saved on the selected server.</p> : null}</div>
+          <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{area === SettingsArea.Notifications ? <p>Choose which events notify you.</p> : isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : isServerPreferences ? <p>Default routing, Worktree fetch, and pull request remediation.</p> : null}<p className={area === SettingsArea.Notifications ? "notification-scope" : isAgentWorkers ? "settings-agent-scope" : isServerPreferences ? "server-preferences-scope" : isPairedDevices ? "paired-device-summary" : undefined}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">Saved on the selected server.</p> : null}</div>
           {configurationList ? <div className="settings-toolbar">
             <button type="button" ref={isPairedDevices ? refreshDevices : undefined} onClick={() => void result.refetch()}>Refresh settings</button>
             {isPairedDevices && pairingAuthority ? <span ref={setPairingTriggerContainer} /> : null}
