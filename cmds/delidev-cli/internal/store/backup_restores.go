@@ -567,6 +567,16 @@ func (s *Store) restoreBackupWithBarrier(ctx context.Context, request domain.ID,
 }
 
 func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) error {
+	// These server-owned intents can precede SQL publication. Replacing their
+	// authoritative receipts would make credential recovery uncertain. Any
+	// existing or unexpected object at either private path blocks replacement.
+	for _, name := range []string{"network-save-intent.json", "network-delete-intent.json"} {
+		if _, err := os.Lstat(filepath.Join(s.root, name)); err == nil {
+			return domain.Fail(domain.RecoveryRequired, "Restore requires settled proxy credential ownership.", "Recover the pending network operation before restoring a database.")
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return storageError(err)
+		}
+	}
 	// An unfinished deletion still owns original Worker/forward cleanup and may
 	// be between external intent and SQL publication. Never replace that graph.
 	deletions, err := s.sessionDeletionInventory(ctx)

@@ -113,5 +113,7 @@ service addition does not rewrite a shared serialized descriptor blob.
 The compatibility generator derives owned files from the compiled public imports
 of `delidev.proto`, including newly added services. The relocation manifest remains
 a historical order and breaking-check map; it is not the current service inventory.
-Both aggregate views therefore include `SubscriptionService` without adding its
-declarations to the relocation map.
+Both aggregate views therefore include `NetworkService` and `SubscriptionService`
+without adding their declarations to the relocation map.
+Issue #1084 activates its already reserved wire allocations without changing
+that historical map. Generated service/query facades retain both services.

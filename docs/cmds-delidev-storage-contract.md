@@ -288,7 +288,7 @@ The thirty-second cancellable operation holds both the managed-file gate and
 exclusive store gate under the server's process lock. It checks original actor,
 server identity and exact event revision, then refuses live claimed/uncertain jobs,
 active/running/recovery/archiving sessions, uncertain/stopping workspace ownership,
-pending credential removals/integration operations, and any forward that is not
+pending credential removals/integration operations, any private network credential publication/deletion intent, and any forward that is not
 stopped with both original peer cleanup flags confirmed. Any unfinished external
 session deletion also blocks replacement, including the intent-before-SQL window. Restore never stops a
 Worker to create eligibility. Concurrent mutations/claims cannot cross the final
@@ -317,6 +317,15 @@ clients gain none. Pairing codes and execution grants/references are discarded.
 Workers must pair again; no Worker files or credential payloads are restored.
 Restored account and integration definitions are disconnected, without historical
 connection/validation/removal authority. Protected credential storage stays untouched. Pending, leased or recovery-required managed subscription ownership blocks replacement. Restored subscription metadata retains its historical generation and ownership evidence under a recovery-required fence, with no account connection. The external vault is not restored, so neither an older reference nor database publication authorizes another credential grant.
+
+Current network profiles, immutable credential-generation references and server/Worker route selections are copied from the current safety image with their exact bodies preserved and resource revisions freshened by the ordinary restore rule; historical network routing cannot replace current explicit authority. The server holds the shared credential gate through restore eligibility and publication, preventing a native network/account write from crossing the private-intent-before-SQL boundary.
+
+Current machine descriptors required by retained Worker network routes are also
+copied from the safety image, replacing historical metadata for matching IDs and
+freshening their resource revisions. Owner/client route reads, explicit clearing
+and subsequent profile deletion remain possible even when the backup predates
+the Worker. These descriptors do not retain Worker credential verifiers,
+instances or execution grants; Workers still require fresh pairing.
 
 Every restored session is paused and recovery-required. Nonterminal historical
 jobs are canceled with a typed quarantine problem; schedules are disabled and their
