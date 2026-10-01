@@ -39,6 +39,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   });
   const checkout = join(directory, "checkout");
   await promisify(execFile)("git", ["init", "--quiet", checkout], { timeout: 10000 });
+  await promisify(execFile)("git", ["-C", checkout, "remote", "add", "origin", "https://github.com/delinoio/oss.git"], { timeout: 10000 });
   const canonical = await realpath(checkout);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
@@ -58,6 +59,8 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   await screen.findByRole("heading", { name: "Owned repository" });
   const repositories = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.REPOSITORY } });
   expect(document(repositories.resources[0]).checkouts).toEqual([expect.objectContaining({ path: canonical })]);
+  expect(document(repositories.resources[0])).toMatchObject({ github_owner: "delinoio", github_name: "oss", base: {}, starting: {}, auto_fetch: true });
+  expect(document(repositories.resources[0]).integration_id).toBeUndefined();
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
   fireEvent.click(screen.getByRole("button", { name: "New Project" }));
   change("Name", "Owned project");
@@ -159,4 +162,3 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   await waitFor(() => expect(screen.queryByRole("heading", { name: "Delete Owned project?" })).toBeNull());
   expect((await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.PROJECT } })).resources).toHaveLength(0);
 }, 60000);
-

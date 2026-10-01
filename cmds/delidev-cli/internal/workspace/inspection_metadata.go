@@ -60,8 +60,16 @@ func parseInspectionGitHub(raw string) (GitHubRepository, bool) {
 // EnrichInspection is called only after both peers negotiate the capability.
 // get-url expands insteadOf locally and never invokes a transport or credential
 // helper. An owned-process failure is a failure, not fabricated absent metadata.
-func (g Git) EnrichInspection(ctx context.Context, inspection *Inspection) error {
+func (g Git) EnrichInspection(ctx context.Context, inspection *Inspection) (err error) {
 	g.readOnly = true
+	if g.Logger != nil {
+		g.Logger.InfoContext(ctx, "repository metadata inspection", "phase", "started", "remote_count", len(inspection.Remotes))
+		defer func() {
+			if err != nil {
+				g.Logger.WarnContext(ctx, "repository metadata inspection", "phase", "failed", "code", domain.SafeError(err).Code)
+			}
+		}()
+	}
 	inspection.GitHubRepositories = nil
 	for _, remote := range inspection.Remotes {
 		raw, err := g.run(ctx, inspection.Root, "remote", "get-url", "--all", "--", remote)

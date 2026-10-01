@@ -48,9 +48,9 @@ func TestRepositoryMetadataNegotiationAndReportValidation(t *testing.T) {
 			t.Fatal("invalid/duplicate capability accepted", err)
 		}
 	}
-	negotiated, err := attach([]pb.WorkerCapability{metadata, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1})
+	negotiated, err := attach([]pb.WorkerCapability{metadata, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1})
 	if err != nil || domain.Decode(negotiated.Msg.Machine.DocumentJson, &machine) != nil || !slices.Contains(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
-		t.Fatal("three independent capabilities rejected", err)
+		t.Fatal("four independent capabilities rejected", err)
 	}
 
 	accepted, err := client.InspectRepository(ctx, ownerRequest(owner, &pb.InspectRepositoryRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, Path: "/test/checkout"}))

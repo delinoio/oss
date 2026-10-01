@@ -137,7 +137,7 @@ func TestInspectionMetadataCapabilityRequiresServerEcho(t *testing.T) {
 	if machineCapability(resource, domain.RepositoryInspectionMetadataV1) {
 		t.Fatal("legacy machine fabricated metadata acceptance")
 	}
-	machine.WorkerCapabilities = []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1, domain.AutomaticTitlesCodexV1, domain.SessionForwardingV1}
+	machine.WorkerCapabilities = []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1, domain.AutomaticTitlesCodexV1, domain.SessionForwardingV1, domain.SessionTerminalsV1}
 	raw, _ = json.Marshal(machine)
 	resource.DocumentJson = raw
 	if !machineCapability(resource, domain.RepositoryInspectionMetadataV1) {
