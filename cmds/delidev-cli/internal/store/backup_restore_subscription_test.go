@@ -122,3 +122,58 @@ func TestBackupRestoreQuarantinesHistoricalSubscriptionGeneration(t *testing.T) 
 		t.Fatal("disconnected historical generation regained authority")
 	}
 }
+
+func TestBackupRestoreClearsEmptySubscriptionState(t *testing.T) {
+	for _, allocated := range []bool{false, true} {
+		name := "absent"
+		if allocated {
+			name = "settled-empty"
+		}
+		t.Run(name, func(t *testing.T) {
+			s, root, ctx, in, _ := restoreFixture(t)
+			id := domain.NewID()
+			account := domain.Account{Alias: "fixture", ProviderID: domain.NewID(), Type: domain.SubscriptionAccount, Health: domain.AccountDisconnected}
+			if allocated {
+				account.Subscription = &domain.SubscriptionState{}
+			}
+			_, err := s.Mutate(ctx, domain.NewID(), "fixture.empty-subscription", nil, func(tx *Tx) (any, error) {
+				return tx.Put(domain.AccountKind, id, 0, "", "", account)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			backup, err := s.Backup(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			observed, err := s.InspectBackup(ctx, backup, in.ServerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in.Backup, in.SHA256 = observed.Backup, observed.SHA256
+			in.ExpectedRevision, err = s.RestoreRevision(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err = s.RestoreBackup(ctx, domain.NewID(), in); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := Open(context.Background(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			r, err := reopened.Get(ctx, domain.AccountKind, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			restored, err := Decode[domain.Account](r)
+			if err != nil || restored.Validate() != nil || restored.Subscription != nil || restored.Connection != nil || restored.Health != domain.AccountDisconnected {
+				t.Fatal("restore manufactured ownership for an empty subscription", err)
+			}
+		})
+	}
+}
