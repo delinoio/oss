@@ -10,6 +10,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Use private temporary state/accounts/repositories in tests. Never access user logins, redeem credits, publish to GitHub, or invoke inference from ordinary tests.
 
+- Workspace-recovery replacement-Worker fixtures require the original Ready callback, a bounded allowance covering the existing startup phases, immediate failure on controller exit and content-free startup diagnostics. Startup waiting never substitutes for original journal, independent recovery settlement or joined cleanup proof.
+
 - Preserve durable request receipts, typed revision checks, atomic state/events/routing, independent outcome/archive/recovery, uncertainty before retries, and deletion tombstones.
 
 - Follow `docs/cmds-delidev-providers-contract.md` for non-inference validation. Keep HTTP outside account locks/transactions, cancel on disconnect/revocation, revalidate authority and generation at publication, and replay accepted failed observations without network work. Public/custom model lists do not establish credential validity; unobservable authentication records an unsupported validation state. Never follow redirects, inherit environment proxies, retry provider requests, ingest diagnostic bodies or infer quota recovery/costs from validation.
