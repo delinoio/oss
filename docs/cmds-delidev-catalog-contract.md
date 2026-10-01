@@ -97,7 +97,7 @@ Connect Go/protobuf, SQLite, the protected account lifecycle, provider inspector
 
 ## Change Triggers
 
-Update this contract, provider/account and protocol contracts, the project index, evidence ledger and applicable AGENTS whenever preset identities, observation ownership, discovery scheduling, model identity/provenance or search semantics change.
+Update this contract, provider/account and protocol contracts, the project index, validation records in pull requests, issues and CI logs/artifacts and applicable AGENTS whenever preset identities, observation ownership, discovery scheduling, model identity/provenance or search semantics change.
 
 ## References
 
