@@ -20,6 +20,15 @@ type storageReceipt struct {
 	JobID domain.ID `json:"job_id"`
 }
 
+func (s *Service) workspaceStorageClient(ctx context.Context, correlation string) (domain.Principal, error) {
+	actor, ok := domain.PrincipalFrom(ctx)
+	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+		s.logger.InfoContext(ctx, "workspace_storage_denied", "code", domain.PermissionDenied, "correlation_id", correlation)
+		return domain.Principal{}, domain.Fail(domain.PermissionDenied, "Workspace storage requires an owner or paired client.", "Use an authorized product client.")
+	}
+	return actor, nil
+}
+
 func storageAction(a pb.WorkspaceStorageAction) (workspace.StorageAction, error) {
 	switch a {
 	case pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW:
@@ -113,6 +122,10 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 }
 func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Request[pb.RequestWorkspaceStorageRequest]) (*connect.Response[pb.RequestWorkspaceStorageResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
+	actor, err := s.workspaceStorageClient(ctx, correlation)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
 	meta := req.Msg.Mutation
 	if err := validateSessionMutation(meta); err != nil {
 		return nil, rpc.Error(err, correlation)
@@ -121,7 +134,6 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	actor, _ := domain.PrincipalFrom(ctx)
 	identity := struct {
 		Actor                       domain.Principal
 		ID                          string
@@ -252,6 +264,9 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 func (s *Service) storageOperation(ctx context.Context, id domain.ID) (store.Record, error) {
 	var record store.Record
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
 		var err error
 		record, err = tx.Get(domain.JobKind, id)
 		if err != nil {
@@ -269,6 +284,9 @@ func (s *Service) storageOperation(ctx context.Context, id domain.ID) (store.Rec
 	return record, err
 }
 func (s *Service) GetWorkspaceStorageOperation(ctx context.Context, req *connect.Request[pb.GetWorkspaceStorageOperationRequest]) (*connect.Response[pb.GetWorkspaceStorageOperationResponse], error) {
+	if _, err := s.workspaceStorageClient(ctx, req.Header().Get(rpc.CorrelationHeader)); err != nil {
+		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+	}
 	record, err := s.storageOperation(ctx, domain.ID(req.Msg.Id))
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
@@ -531,10 +549,13 @@ func finishStorageRecovery(tx *store.Tx, input workspace.StorageRequest, output 
 func (s *Service) CancelWorkspaceStorageOperation(ctx context.Context, req *connect.Request[pb.CancelWorkspaceStorageOperationRequest]) (*connect.Response[pb.CancelWorkspaceStorageOperationResponse], error) {
 	meta := req.Msg.Mutation
 	correlation := req.Header().Get(rpc.CorrelationHeader)
+	actor, err := s.workspaceStorageClient(ctx, correlation)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
 	if err := validateSessionMutation(meta); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	actor, _ := domain.PrincipalFrom(ctx)
 	identity := struct {
 		Actor    domain.Principal
 		ID       string

@@ -467,6 +467,12 @@ Backup publication and first-start recovery preserve the original state and sync
 
 ## Worker-local workspace storage (issue #1079)
 
+Every storage RPC checks owner/paired-client role authority at the service boundary
+before processing its request, including direct internal calls without HTTP
+middleware. Reads, mutations and receipt replay recheck current paired-device
+authorization in their owning transaction. Missing or Worker principals cannot
+observe or control storage operations.
+
 `WorkspaceStorageService.RequestWorkspaceStorage` accepts typed preview, create,
 cleanup, inspect, restore, delete and explicit recover actions. Owner/paired-client
 requests bind a UUID-v7 receipt to the authenticated actor, exact session revision,
