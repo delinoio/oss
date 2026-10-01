@@ -30,9 +30,15 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 					source = m.snapshotPath(input.SnapshotID)
 					prefix = "workspace/chat"
 				}
-				// This handle survives the no-replace namespace claim on Unix and
-				// Windows; writes target the original tree, never a replacement path.
-				held, err := os.OpenRoot(source)
+				// Go's Windows OpenRoot(path) omits delete sharing and blocks the
+				// namespace rename. A child opened through its stable parent permits
+				// rename while keeping writes anchored to the original directory.
+				parent, err := os.OpenRoot(filepath.Dir(source))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer parent.Close()
+				held, err := parent.OpenRoot(filepath.Base(source))
 				if err != nil {
 					t.Fatal(err)
 				}
