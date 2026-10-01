@@ -23,7 +23,7 @@ it("revokes a real paired client through settings and reads bounded server diagn
   const paired = createDeliDevTransport({ origin: credential.endpoint as string, getToken: () => credential.token as string });
   await createClient(SystemService, paired).getStatus({});
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
   fireEvent.click(await screen.findByRole("button", { name: "Revoke DeliDev desktop" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Confirm device revocation" }) as HTMLButtonElement).disabled).toBe(false));

@@ -184,14 +184,14 @@ DeliDev is a personal desktop Agent Runner for managing multiple projects, AI ac
 
 ## Desktop Settings, Inbox, and Notifications
 
-**Settings Modal**
+**Settings Application Screen (issue #1236)**
 
-- Provide desktop settings in a dedicated modal inside the main app window, separate from the session surface.
-- Opening or closing settings must preserve the current session and any unsent input. Settings operations use the same server-owned RPC and CLI functionality as other public product capabilities.
+- Provide desktop settings as `Surface.Settings` in main content with the shared navigation rail and category pane/drawer. Settings has no outer modal or Escape-to-leave behavior; actual child dialogs retain their own behavior.
+- Entering or leaving Settings preserves the selected session, unsent input and New session draft. State survives uninterrupted visits, category/reflow/same-identity reconnect and active rail reselection; navigation away disposes drafts, secrets, client waits and retry presentation with scoped late-result/cache guards. Fresh ordinary entry starts at AI Subscription; New Project/Repositories entries remain targeted. Category workflow locks never block global navigation. Settings operations use the same server-owned RPC and CLI functionality as other public product capabilities.
 
 **Integrations: GitHub and Personal Access Tokens**
 
-- **Settings > Integrations > GitHub** opens connection/PAT configuration in the settings modal. Initial provider: GitHub.com; extensible provider identifiers, shared PR/repository models, adapters, and explicit capabilities must permit future services without redesigning sessions/settings.
+- **Settings > Integrations > GitHub** opens connection/PAT configuration in the Settings application screen. Initial provider: GitHub.com; extensible provider identifiers, shared PR/repository models, adapters, and explicit capabilities must permit future services without redesigning sessions/settings.
 - Support multiple named PAT profiles with add/replace/validate/delete and authenticated identity/connection status. Each repository explicitly selects its profile; never fall back to another token/system credential. Deletion removes the secret, stops its use, and leaves affected associations requiring reconfiguration; replacement/revalidation refresh identity/access status.
 - Prefer fine-grained PATs, also support classic. Open official creation forms with required scopes/permissions preselected; verify actual form behavior. Fine-grained profiles target selected repositories and appropriate resource owner, with separate owners using separate profiles. Request Metadata/Pull requests/Checks/Commit statuses and feature-specific read access for issues, rulesets, and reviewer verification.
 - Request no unnecessary classic scopes for public repositories; explain that private-repository `repo` is broader than the supported read-only API feature. Validate each selected repository/feature, not token validity alone. Distinguish invalid/expired/revoked tokens, insufficient permissions, organization approval/SSO, rate limits, and transient/network failures when known.

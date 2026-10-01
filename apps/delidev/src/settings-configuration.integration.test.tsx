@@ -15,7 +15,7 @@ const fixture = useSettingsFixture();
 it("configures a real Go server through the settings forms and explicitly validates a private keyless provider", async () => {
   const { transport, providerOrigin } = fixture;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   const create = await screen.findByRole("button", { name: "Custom provider" });

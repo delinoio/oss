@@ -31,7 +31,7 @@ function fixture(rows: Resource[] = []) {
   return { list, get, view, transport };
 }
 function open(value: ReturnType<typeof fixture>, control?: ControlLocalWorker) {
-  render(value.view(<Settings close={() => {}} controlLocalWorker={control} />));
+  render(value.view(<Settings controlLocalWorker={control} />));
   fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
 }
 function failure(code: Code) {
@@ -117,24 +117,25 @@ it("keeps an uncertain Start through category reflow and same-identity transport
     if (action === LocalWorkerAction.Start) { current = { ...status(LocalWorkerState.Starting), controller_active: true }; throw new Error("unknown launch"); }
     return current;
   });
-  const view = render(value.view(<Settings controlLocalWorker={control} close={() => {}} />)); fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
+  const view = render(value.view(<Settings controlLocalWorker={control} />)); fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
   fireEvent.click(await screen.findByRole("button", { name: "Start local Worker" })); await screen.findByText("Starting");
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
-  view.rerender(value.view(<Settings controlLocalWorker={control} close={() => {}} />, fixture().transport));
+  view.rerender(value.view(<Settings controlLocalWorker={control} />, fixture().transport));
   expect(screen.getByText("Starting")).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toContain("The local Worker action is unconfirmed.");
   fireEvent.click(screen.getByRole("button", { name: "Refresh local Worker" }));
   await waitFor(() => expect(control.mock.calls.filter(([action]) => action === LocalWorkerAction.Start)).toHaveLength(1));
 });
-it.each(["button", "cancel"])("rejects an old native result after %s close and restores the opener", async route => {
+it.each(["navigation", "Escape then navigation"])("rejects an old native result after %s leaves the visit", async route => {
   const value = fixture(), pending = deferred<LocalWorkerStatus>(), original = status(LocalWorkerState.NotStarted), replacement = status(LocalWorkerState.Running);
   let current = original;
   const control = vi.fn(async (action: LocalWorkerAction) => action === LocalWorkerAction.Start ? pending.promise : current);
-  function Harness() { const [visible, show] = useState(false); return <><button onClick={() => show(true)}>Open Settings fixture</button><Settings visible={visible} close={() => show(false)} controlLocalWorker={control} /></>; }
+  function Harness() { const [visible, show] = useState(false); return <><button onClick={() => show(true)}>Open Settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); show(false); }}>Leave Settings fixture</button><Settings visible={visible} controlLocalWorker={control} /></>; }
   render(value.view(<Harness />)); const opener = screen.getByRole("button", { name: "Open Settings fixture" }); opener.focus(); fireEvent.click(opener);
   fireEvent.click(screen.getByRole("button", { name: "Runner Devices" })); fireEvent.click(await screen.findByRole("button", { name: "Start local Worker" }));
-  if (route === "button") fireEvent.click(screen.getByRole("button", { name: "Close Settings" })); else fireEvent(screen.getByRole("dialog"), new Event("cancel", { bubbles: true, cancelable: true }));
-  expect(document.activeElement).toBe(opener); current = replacement; fireEvent.click(opener);
+  if (route === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect(screen.getByRole("region", { name: "Settings content" })).toBeTruthy(); }
+  fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Leave Settings fixture" })); current = replacement; fireEvent.click(opener);
   expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
   await screen.findByText(`Execution machine: ${replacement.machine_id}`); const calls = control.mock.calls.length;
   await act(async () => pending.resolve(status(LocalWorkerState.Uncertain)));

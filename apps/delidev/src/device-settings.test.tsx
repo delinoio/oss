@@ -42,7 +42,7 @@ it("retains the original revocation after uncertainty and a peer revision", asyn
 });
 it("excludes the current desktop from revocation and guards direct confirmations", async () => {
   const value = fixture();
-  const view = render(value.view(<Settings visible currentDeviceId={value.original.id} close={() => {}} />));
+  const view = render(value.view(<Settings visible currentDeviceId={value.original.id} />));
   fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
   await screen.findByText("This desktop client cannot revoke its own registration.");
   expect(screen.queryByRole("button", { name: "Revoke Paired desktop" })).toBeNull();
@@ -57,13 +57,13 @@ it("excludes the current desktop from revocation and guards direct confirmations
 it("discards another device's confirmation on close and reads its new revision", async () => {
   const value = fixture();
   const current = newRequestId();
-  const view = render(value.view(<Settings visible currentDeviceId={current} close={() => {}} />));
+  const view = render(value.view(<Settings visible currentDeviceId={current} />));
   fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
   fireEvent.click(await screen.findByRole("button", { name: "Revoke Paired desktop" }));
-  view.rerender(value.view(<Settings visible={false} currentDeviceId={current} close={() => {}} />));
+  view.rerender(value.view(<Settings visible={false} currentDeviceId={current} />));
   value.state.current = create(ResourceSchema, { ...value.original, revision: 5n });
-  view.rerender(value.view(<Settings visible currentDeviceId={current} close={() => {}} />));
-  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  view.rerender(value.view(<Settings visible currentDeviceId={current} />));
+  expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
   await screen.findByRole("button", { name: "Revoke Paired desktop" });
   expect(screen.queryByRole("button", { name: "Confirm device revocation" })).toBeNull();

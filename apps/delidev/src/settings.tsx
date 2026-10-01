@@ -19,7 +19,8 @@ import { DeviceAction, DeviceRow, DeviceRevocation, DeviceRevocationExit, Doctor
 import { DoctorTitle } from "./doctor";
 import { AccountConnection } from "./account-connection";
 import { MutationIntents, useRetainedMutation } from "./mutation";
-import { Modal, ModalLayout, Problem } from "./ui";
+import { Problem } from "./ui";
+import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 import { PairingGrant, type PairingAuthority } from "./pairing-grant";
 import { AccountSettings, AccountSettingsSection, type AccountProviderPicker, type AccountProviderSummary } from "./account-settings";
 import { ActiveModelSettings, ApiProviderSettings, providerInventoryReady, type ModelListState, type ProviderListState } from "./provider-model-settings";
@@ -161,13 +162,13 @@ function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: (
   </article>;
 }
 
-interface SettingsProps { connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
+interface SettingsProps { connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
 export function Settings({ visible = true, ...props }: SettingsProps) {
-  const client = useQueryClient();
-  return visible ? <SettingsLifetime>{(opening) => <MutationIntents><SettingsWorkspace {...props} close={() => { opening.dispose(client); props.close(); }} controlLocalWorker={props.controlLocalWorker ? (action, generation) => opening.native(() => props.controlLocalWorker!(action, generation)) : undefined} /></MutationIntents>}</SettingsLifetime> : null;
+  return visible ? <SettingsLifetime>{(opening) => <MutationIntents><SettingsWorkspace {...props} controlLocalWorker={props.controlLocalWorker ? (action, generation) => opening.native(() => props.controlLocalWorker!(action, generation)) : undefined} /></MutationIntents>}</SettingsLifetime> : null;
 }
 
-function SettingsWorkspace({ connectionSettings, close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: SettingsProps) {
+function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: SettingsProps) {
+  const closeDrawer = useCloseSidebarDrawer();
   const [selectedCategory, setSelectedCategory] = useState(() => entryDestination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : entryDestination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts);
   const [device, setDevice] = useState<Resource>();
   const [expandedDevices, setExpandedDevices] = useState<ReadonlySet<string>>(() => new Set());
@@ -325,6 +326,8 @@ function SettingsWorkspace({ connectionSettings, close, visible = true, controlL
   }, [destinationConsumed, editing, entryDestination, kind, visible, workflowProtected]);
   const projectNameFocused = useCallback(() => setFocusNewProjectName(false), []);
   const chooseCategory = (category: SettingsCategory) => {
+    if (categoryLocked) return;
+    closeDrawer();
     if (category === SettingsCategory.ApiAccounts) {
       setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined);
     }
@@ -352,25 +355,19 @@ function SettingsWorkspace({ connectionSettings, close, visible = true, controlL
     {subscriptionProviderInventory.data && !subscriptionProviderInventory.error && subscriptionProviders.length === 0 ? <p>No eligible subscription providers on this page.</p> : null}
     {subscriptionProviderPage || subscriptionProviderInventory.data?.nextPageToken ? <nav className="settings-pages" aria-label="Subscription provider pages"><button type="button" disabled={categoryLocked || !subscriptionProviderPage || subscriptionProviderInventory.isFetching} onClick={() => setSubscriptionProviderPage("")}>First subscription provider page</button><button type="button" disabled={categoryLocked || !subscriptionProviderInventory.data?.nextPageToken || subscriptionProviderInventory.isFetching} onClick={() => setSubscriptionProviderPage(subscriptionProviderInventory.data!.nextPageToken)}>Next subscription provider page</button></nav> : null}
   </section>;
-  return <Modal title="Settings" close={close} visible={visible} layout={ModalLayout.FullWindow}>
-    <div className="settings-workspace">
-      <aside className="settings-sidebar" aria-label="Settings navigation">
+  return <>
+      <SidebarSurface active title="Settings" className="settings-navigation">
         <nav aria-label="Settings categories">
           {settingsGroups.map((group) => <section className="settings-nav-group" key={group.label}>
             <h2>{group.label}</h2>
-            {group.categories.map((category) => <button type="button" className="settings-category-button" key={category} disabled={categoryLocked} aria-current={selectedCategory === category ? "page" : undefined} aria-pressed={selectedCategory === category} onClick={() => chooseCategory(category)}>
+            {group.categories.map((category) => <button type="button" className="settings-category-button" key={category} data-settings-category={category} disabled={categoryLocked} aria-current={selectedCategory === category ? "page" : undefined} aria-pressed={selectedCategory === category} onClick={() => chooseCategory(category)}>
               <SettingsIcon category={category} /><span>{settingsCategories[category].label}</span>
             </button>)}
           </section>)}
         </nav>
-      </aside>
+      </SidebarSurface>
       <section className={isProjects ? "settings-content settings-projects" : isServerPreferences ? "settings-content settings-server-preferences" : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices && !hasOverlay ? "settings-content settings-runner-devices" : "settings-content"} aria-label="Settings content">
         <div className="settings-content-column">
-        <label className="settings-compact-selector">Settings category
-          <select aria-label="Settings category" value={selectedCategory} disabled={categoryLocked} onChange={(event) => chooseCategory(event.currentTarget.value as SettingsCategory)}>
-            {settingsGroups.map((group) => <optgroup label={group.label} key={group.label}>{group.categories.map((category) => <option key={category} value={category}>{settingsCategories[category].label}</option>)}</optgroup>)}
-          </select>
-        </label>
         <div ref={deviceContent} className={isAgentWorkers ? "settings-agent-column" : isPairedDevices ? "settings-paired-column" : isRunnerDevices && !hasOverlay ? "settings-runner-column" : area === SettingsArea.Transfer ? "settings-transfer-column" : undefined}>
         {area !== SettingsArea.Diagnostics && area !== SettingsArea.Backups && !isApiAccounts && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
           <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : isServerPreferences ? <p>Default routing, Worktree fetch, and pull request remediation.</p> : null}<p className={isAgentWorkers ? "settings-agent-scope" : isServerPreferences ? "server-preferences-scope" : isPairedDevices ? "paired-device-summary" : undefined}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">Saved on the selected server.</p> : null}</div>
@@ -430,8 +427,7 @@ function SettingsWorkspace({ connectionSettings, close, visible = true, controlL
         </div>
         </div>
       </section>
-    </div>
-  </Modal>;
+  </>;
 }
 
 function ProjectList({ resources, edit, remove }: { resources: Resource[]; edit: (row: Resource) => void; remove: (row: Resource) => void }) {
