@@ -132,9 +132,13 @@ test("reload restores a failed event subscription before enabling writes", async
   scheme(false); const value = fixture();
   vi.mocked(value.bridge.subscribe).mockRejectedValueOnce(new Error("event subscription unavailable"));
   render(<AppearanceProvider bridge={value.bridge}><AppearanceSettings /></AppearanceProvider>);
-  await screen.findByRole("button", { name: "Reload appearance" });
+  const reload = await screen.findByRole("button", { name: "Reload appearance" });
+  // The initial fallback also renders Reload while subscription is pending.
+  // Retry only after that first failed attempt has released its operation guard.
+  await waitFor(() => expect((reload as HTMLButtonElement).disabled).toBe(false));
+  expect(value.bridge.read).not.toHaveBeenCalled();
   expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).matches(":disabled")).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Reload appearance" }));
+  fireEvent.click(reload);
   await waitFor(() => expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).matches(":disabled")).toBe(false));
   expect(value.listeners.size).toBe(1);
   act(() => value.publish({ revision: 2, theme: Theme.Dark, problem: null }));
