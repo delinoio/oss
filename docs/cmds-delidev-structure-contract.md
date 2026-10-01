@@ -3,16 +3,18 @@
 ## Scope
 
 The 2026-09-30 structural change preserves the main implementation while preparing
-independent replacements for the 22 PRs in the immutable conflict-audit snapshot.
+independent replacements for the owner-approved set of 22 PRs.
 Those PRs' unmerged features are not activated by this refactor.
 
 ## Documentation
 
 Project indexes contain ownership, domain links and cross-domain invariants.
-Implementation details belong to domain contracts. Validation records belong to
-independent files under `docs/evidence/delidev/issue-<number>/`; the historical ledger
-is frozen with its original contents and anchors. Source-backed paragraphs and
-rules moved in this change have SHA-256 entries in the relocation inventory.
+Implementation details belong to domain contracts. Record implementation status
+and validation results in pull requests, issues and CI logs/artifacts under the
+root DeliDev validation policy; do not add repository evidence documents. Include
+the source revision, commands, results and unresolved limits. Distinguish fixtures,
+builds and packaging from actual native/account/platform acceptance, and exclude
+secrets, user state and raw native content from validation records.
 Parent AGENTS files route work to scoped owners. Cross-domain changes must read
 all affected owners, even when their rules live outside the edited directory.
 
@@ -51,9 +53,8 @@ preserved and require recovery rather than being inferred from their version alo
 ## Validation and rollout
 
 Use the existing protocol, Go, frontend and CI-contract suites. No new GitHub
-ruleset, required check or merge-queue policy is introduced. Merge the validated
-structural PR first, confirm main, then close only still-open PRs in the snapshot.
-Preserve their branches and linked issues. New PRs are not added to that set.
+ruleset, required check or merge-queue policy is introduced. Record validation and
+remaining acceptance limits in the owning pull request, issue and CI runs.
 
 ## Concrete source boundaries
 
@@ -63,11 +64,6 @@ startup live in `server_http.go`, `server_routes.go`, `server_status.go`, and
 family; shared output framing still observes each command's generated request ID.
 Settings integration files call the common `settings-test-fixture.ts` factory,
 which owns independent temporary directories and child lifetimes per file.
-
-The relocation inventory is an audit of this change, not a permanent prohibition
-on editing live contracts. Set `DELIDEV_VERIFY_RELOCATION=1` to repeat the verbatim
-migration audit; ordinary CI checks the destinations and inventory without freezing
-future authorized policy edits.
 
 ## Migration sequence and replacement dependencies
 
@@ -110,4 +106,4 @@ the explicit split-file layout; canonical runtime type registration remains uniq
 These views are generated from service descriptors at runtime so an independent
 service addition does not rewrite a shared serialized descriptor blob.
 
-New Buf-generated service files participate in legacy reflection and query facades through output discovery; the declaration relocation inventory remains limited to historical declarations and their original order. Issue #1084 activates its already reserved wire allocations without changing that historical map.
+New Buf-generated service files participate in legacy reflection and query facades through output discovery; the legacy declaration map remains limited to historical declarations and their original order. Issue #1084 activates its already reserved wire allocations without changing that historical map.

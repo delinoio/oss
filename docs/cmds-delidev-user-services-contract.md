@@ -50,13 +50,13 @@ Run root `go test -race ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/.
 
 Deterministic controlled-native fixtures cover repeat install/start/stop/remove, exact receipt replay after a newer start, stale revisions, delayed login after Stop, joined cleanup barriers, foreign definitions/PIDs, replaced executable/scope identity, foreground exclusivity, cancellation, revoked authority and unconfirmed native writes. Real Connect/SQLite checks verify actor authorization, typed metadata, correlation, revision conflicts, receipt-only replay and redaction. The TypeScript client reads absent service metadata without invoking a real service manager.
 
-`DELIDEV_NATIVE_USER_SERVICE_TEST=1 go test -race ./cmds/delidev-cli/internal/cli -run '^TestNativeUserServiceLifecycle$' -v` explicitly selects a real native fixture using temporary server/Worker scopes and uniquely named current-user registrations. It preserves authentication/data, verifies Worker attachment, self-Stop acknowledgment and controller cleanup, refuses a competing foreground server and a delayed stopped launch, and repeats server startup/removal. Native Windows/Linux execution, real logout/relogin, platform distribution and account acceptance remain separate evidence requirements; cross-compilation is not native evidence. See the [evidence ledger](cmds-delidev-evidence.md) for actual results.
+`DELIDEV_NATIVE_USER_SERVICE_TEST=1 go test -race ./cmds/delidev-cli/internal/cli -run '^TestNativeUserServiceLifecycle$' -v` explicitly selects a real native fixture using temporary server/Worker scopes and uniquely named current-user registrations. It preserves authentication/data, verifies Worker attachment, self-Stop acknowledgment and controller cleanup, refuses a competing foreground server and a delayed stopped launch, and repeats server startup/removal. Native Windows/Linux execution, real logout/relogin, platform distribution and account acceptance remain separate evidence requirements; cross-compilation is not native evidence. Record actual results and unresolved limits in pull requests, issues and CI logs/artifacts.
 
 ## Dependencies and Integrations
 Reuse the existing protected-file locks, process-birth observation primitives, foreground server/Worker controllers, authenticated Connect transport, Go/TypeScript generators and existing godbus dependency. No dependency or SQLite schema migration is added.
 
 ## Change Triggers
-Update this document, the project and CLI/protocol/client contracts, evidence ledger, and scoped AGENTS whenever registration ownership, authorization, native definitions, intent/receipt semantics, cleanup proof, command shape or platform support changes.
+Update this document, the project and CLI/protocol/client contracts, validation records in pull requests, issues and CI logs/artifacts, and scoped AGENTS whenever registration ownership, authorization, native definitions, intent/receipt semantics, cleanup proof, command shape or platform support changes.
 
 ## References
 - [Microsoft process image observation](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew)

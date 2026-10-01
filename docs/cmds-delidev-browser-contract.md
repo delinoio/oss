@@ -271,9 +271,11 @@ Run the complete DeliDev Go race suite and vet from the root, `pnpm proto:check`
 and hydrate consumed LFS assets before validation; remove generated `dist` output
 before finalizing. Compile the desktop host against the unchanged pinned CEF.
 Regression fixtures use temporary state and controlled native adapters only.
-Record exact results and unresolved platform/native evidence under
-`docs/evidence/delidev/issue-1087/`, distinguishing implementation verification
-from real-account, real-renderer shutdown/flush and release acceptance.
+Record the source revision, commands, exact results and unresolved platform/native
+limits in pull requests, issues and CI logs/artifacts. Do not add repository evidence
+documents. Distinguish implementation verification from real-account, real-renderer
+shutdown/flush and release acceptance; exclude secrets, user state and raw native
+content from validation records.
 
 ## Dependencies and Integrations
 

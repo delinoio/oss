@@ -1,7 +1,7 @@
 # DeliDev command, server, and Worker contract
 
 ## Scope
-`cmds/delidev-cli` produces the `delidev` binary for macOS, Windows, and Linux. It contains the standalone CLI and the identical bundled-sidecar server/Worker entry points. The complete issue is retained in [requirements](cmds-delidev-requirements.md); implementation and verification progress is recorded in the [evidence ledger](cmds-delidev-evidence.md).
+`cmds/delidev-cli` produces the `delidev` binary for macOS, Windows, and Linux. It contains the standalone CLI and the identical bundled-sidecar server/Worker entry points. The complete issue is retained in [requirements](cmds-delidev-requirements.md); record implementation and verification progress in pull requests, issues and CI logs/artifacts.
 
 ## Runtime and Language
 Go, using the root module and pinned dependencies. Business logic is independent of desktop presentation. Initial version is `0.1.0` (unreleased).
@@ -128,7 +128,7 @@ Cross-compilation does not substitute for native platform evidence. Native adapt
 Connect Go/protobuf, modernc SQLite, UUID v7, native Git, and installed Codex/Claude Code/OpenCode/Grok Build interfaces. Harness discovery checks the explicit executable before PATH; never downloads a harness. Read-only GitHub integration uses explicit repository/PAT associations.
 
 ## Change Triggers
-Update this document, the project/protocol contracts, the evidence ledger, and scoped AGENTS when ownership or behavior changes. Preserve the normative requirements snapshot and record any subsequent owner amendments explicitly.
+Update this document, the project/protocol contracts, validation records in pull requests, issues and CI logs/artifacts, and scoped AGENTS when ownership or behavior changes. Preserve the normative requirements snapshot and record any subsequent owner amendments explicitly.
 
 ## References
 - [Project](project-delidev.md)
@@ -181,7 +181,7 @@ Detached `server start`/`ensure` holds controller/lifecycle serialization, probe
 The same question/approval CLI commands now accept original OpenCode direct responses through disjoint JSON: `{"opencode":{"answers":[["First"],[]]}}` preserves one ordered row per original question, and `{"opencode":{"decision":"once"}}` grants one original permission request. Inspect the original native proposal/revision before responding; there are no invented per-question IDs. Preserve empty-string choices versus explicit unanswered rows and native multiple/custom flags. Dedicated Worker claims, exact native body digests, HTTP delivery, original native reply acceptance and request closure remain independently retained. Exact server receipt/outbox retry never resends a native reply or clears earlier uncertainty. The same disjoint JSON also supports native `always`/`reject`, optional `feedback` on rejection and question `reject:true` instead of an answer matrix. Automatic native policy closure is retained independently without another response. The original production Worker now schedules these controls and targeted Stop under its authenticated job lifecycle. Public first dispatch now accepts the exact verified default OpenCode Build/Plan Chat Completions profile. Protected responses, continuation and remaining native profiles stay pending; see the harness and session contracts.
 
 ### Claude registered API authority
-The pinned Claude initial-assignment profile now composes authenticated Worker registration with the revocable server relay. It authorizes only Anthropic Messages creation using the immutable original account/connection/model and shared native settings validation. It retains independent native input, result, idle and cleanup facts; registration alone does not enable public Claude dispatch, publication, continuation, subscription accounts or token counting. See the [relay contract](cmds-delidev-proxy-contract.md) and [evidence ledger](cmds-delidev-evidence.md).
+The pinned Claude initial-assignment profile now composes authenticated Worker registration with the revocable server relay. It authorizes only Anthropic Messages creation using the immutable original account/connection/model and shared native settings validation. It retains independent native input, result, idle and cleanup facts; registration alone does not enable public Claude dispatch, publication, continuation, subscription accounts or token counting. See the [relay contract](cmds-delidev-proxy-contract.md).
 
 ## Portable configuration
 The eight existing editable configuration kinds now share owner/client export, read-only signed previews and atomic imports through Connect, CLI and desktop settings. Explicit machine/checkout mappings, fresh disconnected accounts, unchanged reuse and revision-bound settings replacement prevent implicit authority transfer. New repositories pass every Worker inspection before any configuration commits. See [portable configuration](cmds-delidev-configuration-transfer-contract.md) for limits and remaining portable surfaces.

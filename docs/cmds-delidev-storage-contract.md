@@ -417,7 +417,6 @@ Run DeliDev Go race tests/vet, protocol checks, API-client tests and desktop
 
 - [Project](project-delidev.md)
 - [Complete requirements](cmds-delidev-requirements.md)
-- [Evidence ledger](cmds-delidev-evidence.md)
 
 Creation recovery also validates the published image's original server identity
 against the live scope before accepting an already existing filename. Immutable
@@ -465,7 +464,7 @@ The following source-backed notes were relocated from the project index at `12b3
 
 - `protos/delidev/v1`: versioned Connect RPC schemas.
 
-Backup publication and first-start recovery preserve the original state and synchronize durable names. Completed process scopes are retired only after native completion validation and controller release. Reported pre-launch claim-publication failures can roll back only the current attempt before lease issuance, preserving prior closed ownership and all unexpected evidence. Account deletion retains all live configuration and historical session references; keyless lifecycle operations remain independent of native credential availability. Bounded resource pages account for both wire encodings, and CLI waits distinguish observed completion from timeout/cancellation. Schedule availability restarts with each server process, while Stop/Archive retain their product outcome after later native success. Relay reflection checks cover SSE metadata and sanitized native error codes. These repairs do not close the remaining implementation and platform evidence gaps recorded in the evidence ledger.
+Backup publication and first-start recovery preserve the original state and synchronize durable names. Completed process scopes are retired only after native completion validation and controller release. Reported pre-launch claim-publication failures can roll back only the current attempt before lease issuance, preserving prior closed ownership and all unexpected evidence. Account deletion retains all live configuration and historical session references; keyless lifecycle operations remain independent of native credential availability. Bounded resource pages account for both wire encodings, and CLI waits distinguish observed completion from timeout/cancellation. Schedule availability restarts with each server process, while Stop/Archive retain their product outcome after later native success. Relay reflection checks cover SSE metadata and sanitized native error codes. These repairs do not close the remaining implementation and platform evidence gaps. Record those gaps in pull requests, issues and CI logs/artifacts.
 
 Schema 25 retains the complete schema-24 backup/provider/title layout and adds
 only the future native-accounting table/indexes defined by the [usage

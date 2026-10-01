@@ -52,7 +52,7 @@ The feature does not add feature flags. Older same-version servers that ignore a
 
 Tests cover fresh hosted defaults, one-time migration and rollback, legacy omitted-field reads/updates, explicit false and UUID preservation, preset integrity, custom-copy identity, concurrent unique activation of a local preset, inventory ordering/zero account counts/cursors/capabilities/Worker denial, filtered model pagination, provider-scoped account cursors, import collision and deferred recheck, discovery cancellation, and grant-before/after-disable behavior including Resume and replay. Protocol lint/breaking/freshness and Go race/vet checks are required. Frontend tests cover capability gating, zero-account presentation versus real errors, truthful counts, named switches, pagination, custom copy and active-only models.
 
-Automated fixtures do not establish real desktop layout/keyboard, real provider account or inference acceptance. Record native/manual evidence separately in `cmds-delidev-evidence.md`; do not claim provider readiness from a UI or protocol fixture.
+Automated fixtures do not establish real desktop layout/keyboard, real provider account or inference acceptance. Record native/manual evidence separately in pull requests, issues and CI logs/artifacts; do not claim provider readiness from a UI or protocol fixture.
 
 ## References
 

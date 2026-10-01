@@ -1,7 +1,0 @@
-# PR #1232: unresolved Windows harness CI failure
-
-The repair pass inspected [Windows harness job 110048993839](https://github.com/delinoio/oss/actions/runs/36762617655/job/110048993839) for head `b0e3753e9a337ae38b0fb9a56e82c017b98db946`. The job fails `TestCLISessionAcceptanceQueueAndArchive` at `sessions_test.go:239`, where the first creation-diff observation returns `unavailable` from the owning Worker. The aggregate CI Result fails because that job failed; it is not an independent cause.
-
-The fixture's joined structured log records 19 prepared/resumed/exited native read-process scopes for that read, from `19:06:04.9750905Z` through the read failure at `19:06:24.0735882Z`. The owning files contract permits a 15-second observation plus separately bounded cleanup. Earlier file reads succeeded. The workflow already serializes harness packages with `-p=1`, and the fixture already limits the two-root diff/review reads. These observations establish the failure and elapsed time, not its exact process-latency cause or a safe production fix.
-
-This pass does not enlarge the observation deadline, weaken workspace identity/cleanup checks, remove the acceptance coverage, or repeat the existing fixture workaround. Native Windows reproduction or further current read-process evidence is needed before another repair of this failure. New-head CI will be assessed on the next scheduled maintenance pass; no green CI result is claimed from local browser checks.

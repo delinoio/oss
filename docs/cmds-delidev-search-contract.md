@@ -39,7 +39,7 @@ Tests use real temporary SQLite and loopback Connect/CLI resources: literal Unic
 SQLite FTS5 uses the pinned modernc runtime; Go protobuf and Connect code is generated from the versioned schema. Source publication, session membership, immutable Worker jobs and existing authenticated cursor infrastructure are the only data dependencies.
 
 ## Change Triggers
-Keep this contract, scoped `AGENTS.md`, protocol bindings, CLI help, the project index and evidence ledger synchronized. Any new transcript shape needs an explicit typed search projection; never index raw private protocol envelopes or credential-bearing configuration.
+Keep this contract, scoped `AGENTS.md`, protocol bindings, CLI help, the project index and validation records in pull requests, issues and CI logs/artifacts synchronized. Any new transcript shape needs an explicit typed search projection; never index raw private protocol envelopes or credential-bearing configuration.
 
 ## References
 - [DeliDev project](project-delidev.md)
