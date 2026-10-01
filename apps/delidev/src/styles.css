@@ -773,6 +773,8 @@ dialog.modal-full-window::backdrop { background: transparent; }
   .settings-agent-empty { min-height: 280px; padding: 24px; }
 }
 
+.terminal-output { min-height: 12rem; max-height: 30rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: monospace; background: #14171c; color: #e5e7eb; padding: 0.75rem; }
+
 /* AI Subscription responds to its own content width, including native chrome
    and zoom. Keep every presentation rule scoped to this Settings surface. */
 .subscription-settings { width: 100%; max-width: 1120px; container-type: inline-size; color: #202632; }

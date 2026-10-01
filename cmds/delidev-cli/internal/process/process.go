@@ -26,7 +26,20 @@ type Process struct {
 	Birth    string    `json:"birth"`
 	Group    int       `json:"group,omitempty"`
 }
+type TerminalSize struct {
+	Rows    uint16 `json:"rows"`
+	Columns uint16 `json:"columns"`
+}
+
+func (s TerminalSize) Validate() error {
+	if s.Rows == 0 || s.Columns == 0 || s.Rows > 500 || s.Columns > 1000 {
+		return domain.Fail(domain.InvalidArgument, "Invalid terminal dimensions.", "Use 1–500 rows and 1–1000 columns.")
+	}
+	return nil
+}
+
 type Config struct {
+	Terminal   *TerminalSize
 	Directory  string
 	OwnerID    domain.ID
 	Executable string
@@ -73,6 +86,11 @@ func launchFailure(code domain.Code) *domain.Error {
 func Start(ctx context.Context, config Config) (*Handle, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, domain.SafeError(err)
+	}
+	if config.Terminal != nil {
+		if err := config.Terminal.Validate(); err != nil {
+			return nil, err
+		}
 	}
 	if err := config.OwnerID.Validate(); err != nil {
 		return nil, err
@@ -121,7 +139,7 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 	command.Dir = config.Cwd
 	command.Stdout = config.Stdout
 	command.Stderr = config.Stderr
-	p, err := startProcess(command, scope, config.OwnerID)
+	p, err := startProcess(command, scope, config.OwnerID, config.Terminal)
 	if err != nil {
 		_ = controller.Close()
 		return nil, err
@@ -211,6 +229,13 @@ func (h *Handle) Write(p []byte) (int, error) {
 	}
 	return h.native.write(p)
 }
+func (h *Handle) Resize(size TerminalSize) error {
+	if err := size.Validate(); err != nil {
+		return err
+	}
+	return h.native.resize(size)
+}
+
 func (h *Handle) CloseInput() error     { return h.native.closeInput() }
 func (h *Handle) Wait() error           { <-h.done; return h.result }
 func (h *Handle) Done() <-chan struct{} { return h.done }
