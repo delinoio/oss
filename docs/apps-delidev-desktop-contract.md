@@ -136,7 +136,7 @@ Desktop launch and supervision hold the native server-service control lock befor
 
 Ordinary startup shows **Starting DeliDev…**, followed by the authenticated product after version/server verification. Failure uses an accessible product explanation, **Retry** and **Troubleshooting**. Stable missing-sidecar, timeout, permission, incompatible, credential, service-ownership and evidence distinctions appear only in troubleshooting. Sidebar connectivity uses generic current/disconnected wording without versions, lifecycle buttons or retry internals. Tray groups the main window as **This computer**, preserving timestamps, staleness, counts and saved names. Its explicit exit action reads **Quit DeliDev**; quitting still preserves the independent runtime, Workers and sessions.
 
-The 16 Settings categories are retained; Diagnostics is displayed as **Connection & diagnostics**. Its labelled Connection subsection opens the same persistent native connection panel used before transport. Local lifecycle controls, registration inspection/recovery and Saved servers live there. The panel and connection-scoped Stop mutation registry stay mounted outside the disposable Settings visit, so original confirmations and uncertain request bytes survive hiding and category/navigation changes. Registration confirmation visibility follows the panel without discarding its identity. Native dialogs retain Escape, contained focus and opener restoration. Doctor has its own read-only diagnostics subsection; selecting it never repairs or mutates. Saved windows place their verification and Show local window controls in their own advanced panel and remain connect-only.
+The 17 Settings categories are retained; Diagnostics is displayed as **Connection & diagnostics**. Its labelled Connection subsection opens the same persistent native connection panel used before transport. Local lifecycle controls, registration inspection/recovery and Saved servers live there. The panel and connection-scoped Stop mutation registry stay mounted outside the disposable Settings visit, so original confirmations and uncertain request bytes survive hiding and category/navigation changes. Registration confirmation visibility follows the panel without discarding its identity. Native dialogs retain Escape, contained focus and opener restoration. Doctor has its own read-only diagnostics subsection; selecting it never repairs or mutates. Saved windows place their verification and Show local window controls in their own advanced panel and remain connect-only.
 
 No feature flag, persisted startup preference, migration, product RPC, new dependency, automatic revoked-client replacement, permission repair, reset, account login, Worker startup, Resume or harness activity is introduced. Logs contain bounded lifecycle phases and stable classifications, never credentials, child output or private paths. Record actual native/platform acceptance and unresolved gaps in issue #1137, its pull requests and CI logs/artifacts under the root DeliDev validation policy.
 
@@ -295,17 +295,17 @@ pull requests and CI runs.
 
 Settings selects the internal `Surface.Settings` destination and renders its category content inside `#main`. The bottom Settings rail item has `aria-current="page"`; all ordinary application navigation remains usable. Categories use the shared sidebar outlet and its 52px rail/288px context pane, contracting to 256px at widths up to and including 1100px. Below 760 CSS pixels, **Open settings categories** opens the existing shared navigation drawer. Settings has no outer dialog, modal header, Close action, Escape hint, backdrop, background inertness, focus trap or opener restoration. Escape does not leave this page; actual child dialogs and the compact drawer retain their own dismissal and focus behavior. No native window geometry changes.
 
-The groups and 16 stable category IDs, labels, descriptions and content remain in this order: AI & agents (AI Subscription, AI API Keys, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Runner Devices), and System (Paired devices, Server preferences, Integrations, Connection & diagnostics, Notifications, Import / Export, Backups). Navigation appears once in the shared pane/drawer; there is no separate Settings sidebar or compact category select. Content padding remains 40px, reduced to 24px below 1100px and the existing compact 20px/16px/24px inset. The shared pane and main scroll independently and reflow at 200% zoom without clipping controls or focus outlines. AI Subscription remains `subscription-accounts`, with the same label in navigation and heading.
+The groups and 17 stable category IDs, labels, descriptions and content remain in this order: AI & agents (AI Subscription, AI API Keys, API Providers, Models, Agent Workers, Instructions), Workspace (Projects, Repositories, Runner Devices), and System (Appearance, Paired devices, Server preferences, Integrations, Connection & diagnostics, Notifications, Import / Export, Backups). Navigation appears once in the shared pane/drawer; there is no separate Settings sidebar or compact category select. Content padding remains 40px, reduced to 24px below 1100px and the existing compact 20px/16px/24px inset. The shared pane and main scroll independently and reflow at 200% zoom without clipping controls or focus outlines. AI Subscription remains `subscription-accounts`, with the same label in navigation and heading.
 
 The edit/account/delete/routing/Worker/device/pricing and child-workflow guards lock category changes, while application navigation can always leave and dispose Settings. Category selection exposes current state and visible focus; the active category is announced. A visit is uninterrupted time on Settings. Reselecting its active rail item preserves the current visit, selected category and any deferred entry. Category changes, responsive changes and same-identity reconnect retain that visit. A fresh ordinary visit starts at AI Subscription. Home **New project** and **Create a project** enter Projects creation with once-only Name focus; Pull requests **Repository settings** enters Repositories. Prerequisite, New session guidance and tray entries continue to enter Settings. Entry focus transfers after destination commit/drawer close to visible main or the compact opener, with explicit Name focus remaining authoritative.
 
-Issue #1236 changes navigation and supersedes the modality from #1045 while retaining the #1138 disposal safeguards. Leaving unmounts the visit-owned tree and discards category selection, filters/cursors, details, editors, wizard steps, drafts, confirmations, secrets/disclosures, deferred destinations, pending client waits and uncertain retry presentation. It never restores a former modal opener. There is no discard confirmation, recovery banner, implicit save, abandoned replay, server/native cancellation or rollback. Persisted settings, accepted server/native effects and receipts, authorization, selected conversation/composer, New session drafts and sibling workflows remain authoritative and intact.
+Issue #1236 changes navigation and supersedes the modality from #1045 while retaining the #1138 disposal safeguards. Leaving unmounts the visit-owned tree and discards category selection, filters/cursors, details, editors, wizard steps, drafts, confirmations, secrets/disclosures, deferred destinations, pending client waits and uncertain retry presentation. It never restores a former modal opener. There is no discard confirmation, recovery banner, implicit save, abandoned replay, server/native cancellation or rollback. The device-owned Appearance controller remains above connection state; its committed selection and pending native saves survive Settings presentation disposal and connection changes. Persisted settings, accepted server/native effects and receipts, authorization, selected conversation/composer, New session drafts and sibling workflows remain authoritative and intact.
 
 Each visit owns a fresh mounted component tree, mutation registry and authenticated transport wrapper. Supported RPC requests receive a linked visit abort signal; disposal rejects late outcomes and blocks follow-up RPC/native work even when the underlying operation ignores cancellation. Native Worker and notification permission completions cannot update a replacement visit. Keep the connection QueryClient and successful-save invalidation; cancel/remove only queries keyed by the disposed transport or visit and remove its tagged mutation cache entries. Same-identity reconnects retain the current editor and route subsequent requests through the replacement authenticated transport. Strict Mode setup/cleanup replay creates a fresh un-aborted generation before mounting its readers. Fresh reads may reveal committed changes or pending server jobs; this is authoritative state, never restoration of an abandoned workflow. Issue #1137's native Connection panel is a separate persistent sibling, reached by this visit's Connection controls action; hiding that panel or leaving Settings retains its original lifecycle and registration requests and confirmations.
 
 Every category has one visible category title and its existing scope/help description above its content. Configuration list toolbars keep Refresh settings and any eligible existing New action together at the upper right; detailed editors retain their existing explicit save/cancel/back actions. Devices and Runner Devices do not gain a generic create action, and Server preferences remains a revision-bound singleton. Providers has one New Provider action and, only after a successful empty first-page read, the single bordered “No providers yet” panel. Initial loading and initial read errors do not render that empty state or enable create. A cached result remains visible during refresh; a refresh error shows its sanitized correlated failure and a stale-results notice. Pagination is hidden only for a successful empty first page with no continuation token; an empty later page still offers First page. Query staleness alone is not a read failure.
 
-The Models list has one bounded, left-aligned column (100% width, maximum 1040 CSS pixels). Its single live-announced 28px semibold Models heading, “Saved on the selected server.” subtitle and capability-gated 40px New Model action share the header; the common category heading remains for editors/pricing and the other categories that use it; Diagnostics retains its own title. The labeled active-provider search is at most 420px wide, at least 40px high and bounded to 256 characters. Provider groups preserve server order, semantic article rows, full model/native identity, CLI alias, NEW/Reviewed, Visible/Hidden, configured harnesses and both Edit model/Token pricing actions. Unsupported schema actions stay disabled. Names, identifiers and actions wrap; below 1100px row actions stack beneath metadata. Groups/empty panels use neutral borders and 12px radii with no new assets or inline styles. The existing Settings padding and shared below-760px navigation drawer remain authoritative.
+The Models list has one bounded, left-aligned column (100% width, maximum 1040 CSS pixels). Its single live-announced 28px semibold Models heading, “Saved on the selected server.” subtitle and capability-gated 40px New Model action share the header; the common category heading remains for editors/pricing and the other categories that use it; Diagnostics and Backups retain their own titles. The labeled active-provider search is at most 420px wide, at least 40px high and bounded to 256 characters. Provider groups preserve server order, semantic article rows, full model/native identity, CLI alias, NEW/Reviewed, Visible/Hidden, configured harnesses and both Edit model/Token pricing actions. Unsupported schema actions stay disabled. Names, identifiers and actions wrap; below 1100px row actions stack beneath metadata. Groups/empty panels use neutral borders and 12px radii with no new assets or inline styles. The existing Settings padding and shared below-760px navigation drawer remain authoritative.
 
 Only Models search/cursor state is lifted into the visit-owned workspace. A search change resets its model cursor atomically; provider/model cursors remain independent. That state survives list/editor/pricing/category, responsive and same-identity reconnect transitions within one visit. Inactive list reads stay disabled. The existing visit disposal, mutation locks, exact uncertain writes and abort/late-result guards remain authoritative; leave/reenter never restores abandoned Models state or retries.
 
@@ -325,6 +325,63 @@ Rows and Manage display Token storage and Identity validation separately, includ
 
 Settings-specific colors and system fonts are scoped to this Settings screen and remain CSP-compatible: white content, pale-gray navigation, 8px control radii, a 12px empty-panel radius, 40px minimum controls, decorative outline icons and non-color selected-state semantics. Do not add a route, native window, dependency, external asset, inline-style exception, public API, persisted schema, storage, authorization, credential, polling or migration change. Component tests do not establish native geometry or keyboard containment; record native desktop smoke evidence separately, including platform and viewport, and report unsupported/unavailable platforms without claiming acceptance.
 
+
+#### Device appearance (issue #1238)
+
+Appearance is the first category in the System group, with the scope description
+“Saved on this computer.” Existing category IDs/order, the ordinary AI Subscription
+entry and targeted New Project/Repositories entries remain unchanged. The desktop
+sidebar and compact native selector expose the same category. Theme is a native
+radio group with System, Light and Dark; System is the fresh-install default.
+Selection saves automatically, with pending and visible failure states and no Save
+button. System observes `prefers-color-scheme` changes while running; explicit Light
+and Dark ignore later OS changes.
+
+`appearance.tsx` mounts above local/saved connection application state. Appearance
+changes update static root selectors without remounting sessions, composer drafts,
+Settings openings or other workflows. Closing Settings disposes its opening as
+before while the device controller and already submitted appearance save remain
+alive. This preference is shared by every live local/saved-server window and loaded
+by newly opened windows, independent of selected server or connectivity.
+
+Native owns bounded, strictly validated `appearance.json` in `app_config_dir()`,
+using `{ "version": 1, "theme": "system" | "light" | "dark" }`. It contains no
+server identifier, secret or user content and stays outside server configuration,
+pairing, backups and configuration transfer. The narrow `read_appearance` and
+`update_appearance` commands authorize the trusted `main` or registered `server-*`
+document using the existing URL/binding checks; no generic path/filesystem or
+Connect/protobuf capability is introduced. URL checks and disk I/O stay off CEF's
+UI loop. One native process store serializes reads/atomic writes; update checks
+the expected process revision and reinspects the stored document before replacement.
+Writes synchronize a same-directory temporary file before atomic replacement, then
+synchronize the Unix parent directory or use Windows write-through replacement.
+Committed changes emit `appearance-changed` only to authorized live webviews.
+Snapshots have non-wrapping unsigned process revisions; delayed reads, replies and
+events cannot restore older state. Equal unchanged inspections retain the revision.
+Brief saved-window binding contention receives bounded event-admission retries.
+A healthy retained window reinspects when focused or made visible to reconcile a
+missed event; an error or uncertain save still requires explicit Reload appearance.
+
+Read/write failures are visible with stable typed messages, without raw OS errors
+or paths. Failed writes retain the prior committed selection. An uncertain IPC or
+post-publication synchronization outcome disables another write until a deliberate
+fresh inspection; it never blindly repeats the mutation. Invalid, oversized, linked,
+unknown-field or unsupported-version files remain untouched, with System fallback
+and visible recovery guidance rather than silent replacement. Logging records only
+the operation and stable outcome/problem, never file bytes or configuration paths.
+
+`themes.css` owns shared semantic light/dark colors for initial connection/loading/
+error presentation, the shell, conversations, forms, dialogs and every Settings
+category, including the scoped Projects, Agent, Activity, schedule, Diagnostics and
+Import / Export treatments. A static OS media-query fallback covers initial paint
+before IPC. The fixed light color descriptions in presentation sections describe their light
+baseline; issue #1238 extends them through semantic dark equivalents. Preserve all
+layout/content/state semantics, selected/disabled/hover/focus states, strict CSP,
+native geometry and decorations. No transparency, blur, custom theme, font/accent
+customization, feature flag, database migration or server-synchronized preference
+is introduced. Record component/build and temporary storage evidence separately
+from actual supported-platform CEF OS/theme/restart/multiwindow, keyboard containment
+and 200% zoom acceptance in PRs/issues/CI, retaining unavailable targets explicitly.
 #### Runner Devices flat list presentation
 Issue #1244 scopes the approved proposal B to Runner Devices list mode (`execution-workers`). Within existing content padding, center one fluid column capped at 1040 CSS pixels. Order the category title/scope/Refresh settings, local Worker, Saved runner devices inventory and existing pages. Use flat white sections with thin `#D8DEE8` dividers, 16px adjacent gaps and 32px section gaps. Keep the system font, 28px semibold category title, 18px section headings, 14px body, 12px full UUID, `#202632` text, `#5B6577` secondary text, `#2563D8` primary/focus and 40px minimum controls with 8px corners and AA control boundaries. At >=1100px retain 40px padding and title-aligned Refresh; below 1100px retain 24px padding and stack header/row actions below metadata. Below 760px use the shared navigation drawer and retain existing vertical padding with 16px horizontal padding. Long names, help, UUIDs, buttons and focus indicators must reflow at 960×640 and 200% zoom. Machine detail, other categories and native geometry remain unchanged; issue #1236 owns the shared application shell and category navigation.
 
@@ -405,7 +462,7 @@ Settings lists paired devices with independent authorization, type, pairing/revo
 Issue #1239 defines the **Paired devices-only** compact list in
 `device-settings.tsx` / `device-settings.css` and the existing Settings workspace.
 Keep the shared native window and Settings application screen owned by #1236,
-its shared category context pane/drawer, all 16 category labels/order/IDs and
+its shared category context pane/drawer, all 17 category labels/order/IDs and
 other categories unchanged. Center the category in a fluid 100%-width column with
 a 1040px maximum inside the existing 40px/24px/16px responsive padding. The one
 26px semibold title precedes **Pair devices using a short-lived document.** (14px)
@@ -945,6 +1002,82 @@ The Exit event precedes CEF shutdown and must never be labeled process exit.
 Even a runtime return is separate from observed process termination. Native
 shutdown latency remains an independently recorded acceptance concern.
 
+
+### Backups presentation
+
+Settings > Backups uses one centered, full-width column bounded at 1120 CSS px,
+inside the authoritative Settings host and its existing 40px/24px/compact padding.
+The Backups controller owns one live-announced 28px semibold heading, the exact
+selected-server description, neutral Refresh backups and a single blue Create
+database backup action. The complete private-data/credentials/browser/Worker scope
+note is a quiet strip. Use white surfaces, #F8F9FB table headers, #202632 ink,
+#5B6577 metadata, #D8DEE8 decorative dividers, #2563D8 accent and #E7EFFF selection;
+controls have 8px radii and 40px minimum height, panels 12px radii. Functional
+outlines and focus indicators meet AA contrast independently of decorative borders.
+These light-palette colors map to the shared semantic theme tokens; Backups
+follows the same device-selected Light, Dark or System appearance as its host.
+The shared Settings application navigation, geometry, child-dialog/drawer focus
+and visit lifetime remain authoritative; page-level Escape preserves the visit.
+The separate issue #1236 host change must not be implemented or reverted by this
+category treatment.
+
+Inventory is one semantic table with Modified (UTC) / Backup ID, Size, Integrity
+and action headers. Preserve server order, complete wrapped UUIDs and roughly 92px
+rows. English UTC modification labels include seconds; original fractional
+precision remains in `time.dateTime`, supplementary accessible text and inspection.
+Invalid dates display their original value. Format exact BigInt bytes with English
+grouping without Number conversion or approximate units. Page counts describe only
+the current page. Not checked is neutral; listing never establishes integrity.
+Only the original fresh checked-inspection predicate may show verified inspection.
+Keep the complete listing limitation note and concise Inspect buttons with full-ID
+accessible names. Below 800px of available Backups content, stack the same rows and
+controls with readable labels and explicit table/header associations, independently
+of the host navigation breakpoint. Never duplicate interactive controls or clip
+UUIDs, hashes, actions or focus at narrow widths or zoom.
+
+Explicit Inspect reveals detail immediately below inventory and focuses its heading
+once per activation. Reads, reconnect, category reactivation and reflow cannot move
+focus. Close returns to the originating Inspect button if still present, otherwise
+the database-list heading. Detail retains the full ID, original timestamp, exact
+bytes, schema, complete SHA-256, integrity/server-identity result, observation
+limitation, Recheck and Close. Permanent deletion stays separate with the complete
+warning and full-ID checkbox bound to the exact inspection object. Deactivation,
+failed/in-flight reinspection and replacement clear fresh confirmation; already
+submitted uncertain requests retain their original encoded metadata independently.
+Preserve original active/busy/uncertain/capacity gates and irreversible acceptance.
+
+Accepted operations appear after inventory/detail and before history, independently
+of the selected tab. Retain full backup/job IDs, exact revisions, pending/completed/
+failed/unavailable distinctions, problem codes, individual refresh and terminal-only
+dismissal, with 20 local entries per kind and complete capacity guidance. Operation
+history defaults to Creation jobs and uses visit-local enum selection with stable
+tab/panel IDs. Left/Right/Home/End moves roving focus; Enter/Space selects. Selected
+tabs have text/underline indication; hidden panel controls leave the tab order. Both
+original query owners stay mounted with independent opaque page-size-20 cursors and
+active-only two-second polling even while their tab panel is hidden. Tab activation
+cannot refetch, reset a page, replace a controller or mutate server state.
+
+Retain Refresh creation jobs, every history-row value and both complete guidance
+paragraphs: creation continues after disconnect/restart and past publication is not
+current availability; deletion survives restart, retries failed cleanup and measures
+logical file size rather than free disk space. Distinguish initial loading/error,
+successful emptiness, cached updating and cached refresh failure for each read.
+Initial errors use sanitized Problem alerts/recovery/correlation without empty
+success. Cached rows remain with updating/stale guidance. Inventory empty copy is
+No managed backups. on the first page and No backups on this page. later; history
+uses No creation jobs on this page. / No deletion jobs on this page. and the modest
+144px Accepted jobs will appear here. region. Hide a pager only after a successful
+empty first page without a continuation token; retain disabled First/Next for
+nonempty first pages and First for empty later pages. Keep direct accepted-job
+observation and completion-driven inventory refresh independent of history pages.
+
+The category uses static scoped styles and system fonts, adds no API, persisted
+state, protocol, migration, dependency, polling or native-window behavior, and follows
+ordinary frontend rollout. Navigation-away disposal and Strict Mode/late-continuation guards
+remain unchanged. Component/router fixtures and browser geometry checks do not
+establish packaged CEF, screen-reader or macOS/Windows/X11 acceptance; record actual
+validation revisions, commands, results and unresolved native limits in PRs/issues
+and CI logs/artifacts, never repository evidence documents.
 
 ### Durable backup creation
 

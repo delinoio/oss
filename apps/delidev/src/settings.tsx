@@ -26,6 +26,7 @@ import { AccountSettings, AccountSettingsSection, type AccountProviderPicker, ty
 import { ActiveModelSettings, ApiProviderSettings, providerInventoryReady, type ModelListState, type ProviderListState } from "./provider-model-settings";
 import { revealAgentInvalidControl } from "./agent-configuration";
 import { SettingsLifetime } from "./settings-lifetime";
+import { AppearanceSettings } from "./appearance";
 import { readableServerPreferences, revealServerPreferenceInvalidControl, ServerPreferencesEmpty, ServerPreferencesSummary } from "./server-preferences";
 import "./api-account.css";
 
@@ -70,9 +71,10 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
 }
 
 export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project" }
-enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups }
+enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance }
 enum SettingsWorkflow { Integrations = "integrations", Notifications = "notifications", Transfer = "transfer", Accounts = "accounts" }
 enum SettingsCategory {
+  Appearance = "appearance",
   SubscriptionAccounts = "subscription-accounts", ApiAccounts = "api-accounts", Providers = "providers", Models = "models", AgentWorkers = "agent-workers", Instructions = "instructions",
   Projects = "projects", Repositories = "repositories", ExecutionWorkers = "execution-workers", PairedDevices = "paired-devices",
   ServerPreferences = "server-preferences", Integrations = "integrations", Diagnostics = "diagnostics", Notifications = "notifications", Transfer = "transfer", Backups = "backups",
@@ -80,6 +82,7 @@ enum SettingsCategory {
 enum SettingsGroup { AiAgents = "AI & agents", Workspace = "Workspace", System = "System" }
 
 const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
+  [SettingsCategory.Appearance]: { label: "Appearance", description: "Saved on this computer.", area: SettingsArea.Appearance },
   [SettingsCategory.Backups]: { label: "Backups", description: "Inspect managed database images and follow durable creation and deletion jobs on the selected server.", area: SettingsArea.Backups },
   [SettingsCategory.SubscriptionAccounts]: { label: "AI Subscription", description: "Manage your subscriptions and connect more accounts.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.ApiAccounts]: { label: "AI API Keys", description: "Manage AI API keys and keyless local connections. Connection and health are separate states.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
@@ -101,10 +104,11 @@ const settingsCategories: Record<SettingsCategory, { label: string; description:
 const settingsGroups: { label: SettingsGroup; categories: SettingsCategory[] }[] = [
   { label: SettingsGroup.AiAgents, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.Models, SettingsCategory.AgentWorkers, SettingsCategory.Instructions] },
   { label: SettingsGroup.Workspace, categories: [SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.ExecutionWorkers] },
-  { label: SettingsGroup.System, categories: [SettingsCategory.PairedDevices, SettingsCategory.ServerPreferences, SettingsCategory.Integrations, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups] },
+  { label: SettingsGroup.System, categories: [SettingsCategory.Appearance, SettingsCategory.PairedDevices, SettingsCategory.ServerPreferences, SettingsCategory.Integrations, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups] },
 ];
 
 const settingsIcons: Record<SettingsCategory, string> = {
+  [SettingsCategory.Appearance]: "M12 3a9 9 0 1 0 0 18V3zM12 3a9 9 0 0 1 0 18",
   [SettingsCategory.Backups]: "M4 4h16v16H4zM8 4v6h8V4M8 20v-6h8v6",
   [SettingsCategory.Providers]: "M7 18a4 4 0 1 1 .9-7.9A5.5 5.5 0 0 1 18 9.5 3.5 3.5 0 0 1 18 18z",
   [SettingsCategory.Models]: "M7 7h10v10H7zM4 4h2m12 0h2M4 20h2m12 0h2",
@@ -365,7 +369,7 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
       <section className={isProjects ? "settings-content settings-projects" : isServerPreferences ? "settings-content settings-server-preferences" : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices && !hasOverlay ? "settings-content settings-runner-devices" : "settings-content"} aria-label="Settings content">
         <div className="settings-content-column">
         <div ref={deviceContent} className={isAgentWorkers ? "settings-agent-column" : isPairedDevices ? "settings-paired-column" : isRunnerDevices && !hasOverlay ? "settings-runner-column" : area === SettingsArea.Transfer ? "settings-transfer-column" : undefined}>
-        {area !== SettingsArea.Diagnostics && !isApiAccounts && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
+        {area !== SettingsArea.Diagnostics && area !== SettingsArea.Backups && !isApiAccounts && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
           <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : isServerPreferences ? <p>Default routing, Worktree fetch, and pull request remediation.</p> : null}<p className={isAgentWorkers ? "settings-agent-scope" : isServerPreferences ? "server-preferences-scope" : isPairedDevices ? "paired-device-summary" : undefined}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">Saved on the selected server.</p> : null}</div>
           {configurationList ? <div className="settings-toolbar">
             <button type="button" ref={isPairedDevices ? refreshDevices : undefined} onClick={() => void result.refetch()}>Refresh settings</button>
@@ -377,6 +381,7 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
           </div> : null}
         </div> : null}
         <div className="settings-panels">
+          <div hidden={area !== SettingsArea.Appearance}><AppearanceSettings /></div>
           <div hidden={area !== SettingsArea.Backups}><Backups active={visible && area === SettingsArea.Backups} /></div>
           <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} showCategoryIntro={false} onWorkflowReadyChange={reportIntegrationWorkflow} /></div>
           <div hidden={area !== SettingsArea.Transfer}><ConfigurationTransfer active={visible && area === SettingsArea.Transfer} showCategoryIntro={false} onWorkflowReadyChange={reportTransferWorkflow} /></div>
