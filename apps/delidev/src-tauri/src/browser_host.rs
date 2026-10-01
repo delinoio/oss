@@ -1160,23 +1160,42 @@ impl BrowserHost {
     }
 
     fn close_profile(&self, profile: &str) {
-        let Ok(state) = self.state.lock() else {
-            return;
-        };
-        // Retain each handle until its exact callback. Hide during asynchronous
-        // teardown must still find the original child; close outside state.
-        let closing: Vec<_> = state
+        if let Err(code) = self.close_profile_with(profile, unmap_view) {
+            tracing::warn!(operation = "browser_profile_close", ?code);
+        }
+    }
+
+    fn close_profile_with(
+        &self,
+        profile: &str,
+        mut unmap: impl FnMut(&View) -> Result<()>,
+    ) -> Result<()> {
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        let mut first_failure = None;
+        let mut closing = Vec::new();
+        // Removal must synchronously hide every credential-bearing child before
+        // asynchronous CEF closure. Keep the exact handles for Hide retries and
+        // close callbacks, including when one native unmap fails.
+        for view in state
             .views
-            .values()
+            .values_mut()
             .filter(|view| view.profile == profile)
-            .filter_map(|view| view.browser.clone())
-            .collect();
+        {
+            view.closing = true;
+            if let Err(code) = unmap(view) {
+                first_failure.get_or_insert(code);
+            }
+            if let Some(browser) = &view.browser {
+                closing.push(browser.clone());
+            }
+        }
         drop(state);
         for browser in closing {
             if let Some(host) = browser.host() {
                 host.close_browser(1);
             }
         }
+        first_failure.map_or(Ok(()), Err)
     }
 
     fn forgotten_path(&self, server: &str, device: &str) -> Result<PathBuf> {
@@ -2458,6 +2477,84 @@ mod tests {
             host.state.lock().unwrap().reservations["fixture"],
             replacement
         );
+    }
+
+    #[test]
+    fn profile_removal_unmaps_all_users_and_retains_exact_close_ownership() {
+        for failed_window in [None, Some("fixture")] {
+            let (_temp, host, mut record, view_id, original) = active_storage_fixture();
+            let mut sibling = original.clone();
+            sibling.window = "sibling".into();
+            let mut unrelated = original.clone();
+            unrelated.window = "unrelated".into();
+            {
+                let mut state = host.state.lock().unwrap();
+                for (request, profile) in [
+                    (sibling.clone(), record.id.clone()),
+                    (unrelated, uuid::Uuid::now_v7().to_string()),
+                ] {
+                    state.views.insert(
+                        request.window.clone(),
+                        View {
+                            profile,
+                            generation: request.generation,
+                            request,
+                            browser: None,
+                            failure: None,
+                            creation_pending: false,
+                            closing: false,
+                            view_id: view_id.clone(),
+                        },
+                    );
+                }
+                state.live = 2;
+            }
+            record.revision += 1;
+            record.data.state = ProfileState::RemovalPending;
+            record.data.deletion_request_id = uuid::Uuid::now_v7().to_string();
+            host.prepare_removal(record.clone(), None).unwrap();
+            let mut unmapped = Vec::new();
+            let result = host.close_profile_with(&record.id, |view| {
+                assert!(view.closing);
+                assert_eq!(view.view_id, view_id);
+                assert_eq!(view.generation, original.generation);
+                unmapped.push(view.request.window.clone());
+                if failed_window == Some(view.request.window.as_str()) {
+                    Err(NativeFailure::SidecarFailed)
+                } else {
+                    Ok(())
+                }
+            });
+            assert_eq!(
+                result,
+                failed_window.map_or(Ok(()), |_| Err(NativeFailure::SidecarFailed))
+            );
+            assert_eq!(unmapped, ["fixture", "sibling"]);
+            {
+                let state = host.state.lock().unwrap();
+                assert_eq!(state.live, 2);
+                assert_eq!(state.views.len(), 3);
+                assert!(state.views["fixture"].closing);
+                assert!(state.views["sibling"].closing);
+                assert!(!state.views["unrelated"].closing);
+                assert!(state.profiles[&record.id].path.join("tabs.json").exists());
+            }
+            if failed_window.is_some() {
+                host.hide_with("fixture", &record.id, &view_id, |view| {
+                    assert!(view.closing);
+                    assert_eq!(view.generation, original.generation);
+                    Ok(())
+                })
+                .unwrap();
+            }
+            host.child_closed(&original);
+            host.child_closed(&sibling);
+            let state = host.state.lock().unwrap();
+            assert_eq!(state.live, 0);
+            assert_eq!(state.views.len(), 1);
+            assert!(state.views.contains_key("unrelated"));
+            assert!(state.profiles[&record.id].path.join("tabs.json").exists());
+        }
     }
 
     #[test]

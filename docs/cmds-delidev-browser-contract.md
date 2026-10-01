@@ -102,7 +102,11 @@ before dropping any handle or advancing any generation. Failure retains the
 original views for exact Hide cleanup; no replacement child is created. Presentation
 reservation/open obey the same unmap-before-release rule. Removal and quit retain
 closing handles until their exact callbacks, so Hide can still reach a child whose
-asynchronous close has not completed. Close requests after tab replacement run
+asynchronous close has not completed. Discovered profile removal synchronously
+unmaps every matching child before requesting closure, attempts later users even
+after an unmap failure, and retains each original presentation for exact Hide
+retry or its close callback. Failed unmapping never permits directory purge.
+Close requests after tab replacement and profile removal run
 outside native state; pending old creation callbacks remain generation-guarded.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
