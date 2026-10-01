@@ -368,7 +368,7 @@ function SettingsWorkspace({ connectionSettings, close, visible = true, controlL
           </select>
         </label>
         <div ref={deviceContent} className={isAgentWorkers ? "settings-agent-column" : isPairedDevices ? "settings-paired-column" : isRunnerDevices && !hasOverlay ? "settings-runner-column" : area === SettingsArea.Transfer ? "settings-transfer-column" : undefined}>
-        {area !== SettingsArea.Diagnostics && !isApiAccounts && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
+        {area !== SettingsArea.Diagnostics && area !== SettingsArea.Backups && !isApiAccounts && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
           <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : isServerPreferences ? <p>Default routing, Worktree fetch, and pull request remediation.</p> : null}<p className={isAgentWorkers ? "settings-agent-scope" : isServerPreferences ? "server-preferences-scope" : isPairedDevices ? "paired-device-summary" : undefined}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">Saved on the selected server.</p> : null}</div>
           {configurationList ? <div className="settings-toolbar">
             <button type="button" ref={isPairedDevices ? refreshDevices : undefined} onClick={() => void result.refetch()}>Refresh settings</button>

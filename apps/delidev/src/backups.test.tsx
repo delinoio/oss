@@ -1,29 +1,33 @@
+import { toBinary } from "@bufbuild/protobuf";
+import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { SystemService, BackupCreationState, BackupDeletionState, newRequestId } from "@delinoio/delidev-api-client";
+import { SystemService, BackupCreationState, BackupDeletionState, newRequestId, DeleteBackupRequestSchema, RequestBackupRequestSchema, type DeleteBackupRequest, type RequestBackupRequest } from "@delinoio/delidev-api-client";
 import { Backups } from "./backups";
 import { MutationIntents } from "./mutation";
+import { SettingsLifetime } from "./settings-lifetime";
 
 function fixture() {
   const id = newRequestId();
   const backup = { id, revision: 1n, sizeBytes: 9007199254740993n, modifiedAt: "2026-09-29T00:00:00Z" };
-  const list = vi.fn(async () => ({ backups: [backup] }));
+  const list = vi.fn(async (_input: { pageToken: string }): Promise<{ backups: typeof backup[]; nextPageToken?: string }> => ({ backups: [backup] }));
   const inspect = vi.fn(async () => ({ backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() }));
   const creation = { id: newRequestId(), backupId: id, revision: 1n, state: BackupCreationState.PENDING, problemCode: "" };
   const create = vi.fn(async (_input: unknown) => ({ job: creation, requestId: newRequestId(), replayed: false }));
-  const creations = vi.fn(async () => ({ jobs: [creation] }));
+  const creations = vi.fn(async (_input: { pageToken: string }): Promise<{ jobs: typeof creation[]; nextPageToken?: string }> => ({ jobs: [creation] }));
   const deletion = { id: newRequestId(), backupId: id, revision: 1n, state: BackupDeletionState.PENDING };
   const getCreation = vi.fn(async (_input: { id: string }) => ({ job: creation }));
   const getDeletion = vi.fn(async (_input: { id: string }) => ({ job: deletion }));
   const remove = vi.fn(async (_input: unknown) => ({ job: deletion }));
-  const deletions = vi.fn(async () => ({ jobs: [] }));
+  const deletions = vi.fn(async (_input: { pageToken: string }): Promise<{ jobs: typeof deletion[]; nextPageToken?: string }> => ({ jobs: [] }));
   const transport = createRouterTransport(router => router.service(SystemService, { listBackups: list, inspectBackup: inspect, requestBackup: create, getBackupCreation: getCreation, getBackupDeletion: getDeletion, listBackupCreations: creations, deleteBackup: remove, listBackupDeletions: deletions }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Backups active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { id, list, inspect, create, creation, creations, deletion, getCreation, getDeletion, remove, deletions, client, view };
+  const lifetimeView = (active = true) => <StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsLifetime>{() => <MutationIntents><Backups active={active} /></MutationIntents>}</SettingsLifetime></QueryClientProvider></TransportProvider></StrictMode>;
+  return { id, backup, lifetimeView, list, inspect, create, creation, creations, deletion, getCreation, getDeletion, remove, deletions, client, view };
 }
 
 it("lists metadata without inspecting automatically and preserves exact byte counts", async () => {
@@ -31,7 +35,7 @@ it("lists metadata without inspecting automatically and preserves exact byte cou
   const view = render(f.view(false));
   expect(f.list).not.toHaveBeenCalled();
   view.rerender(f.view());
-  await screen.findByText(/9007199254740993 bytes/);
+  await screen.findByText(/9,007,199,254,740,993 bytes/);
   expect(f.inspect).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: `Inspect backup ${f.id}` }));
   await screen.findByText("Database integrity and original server identity verified.");
@@ -53,7 +57,7 @@ it("retries an uncertain creation with its original request after hiding setting
   expect((screen.getByRole("button", { name: "Create database backup" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Retry the same backup creation" }));
   await waitFor(() => expect(f.create).toHaveBeenCalledTimes(2));
-  expect(f.create.mock.calls[0]![0]).toEqual(f.create.mock.calls[1]![0]);
+  expect(toBinary(RequestBackupRequestSchema, f.create.mock.calls[0]![0] as RequestBackupRequest)).toEqual(toBinary(RequestBackupRequestSchema, f.create.mock.calls[1]![0] as RequestBackupRequest));
   await screen.findByText(`Backup creation accepted: ${f.creation.id}`);
 });
 
@@ -75,7 +79,7 @@ it("requires inspected confirmation and retains the exact deletion after an unce
   view.rerender(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Retry the same backup deletion" }));
   await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(2));
-  expect(f.remove.mock.calls[1]![0]).toEqual(first);
+  expect(toBinary(DeleteBackupRequestSchema, f.remove.mock.calls[1]![0] as DeleteBackupRequest)).toEqual(toBinary(DeleteBackupRequestSchema, first as DeleteBackupRequest));
   await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
 });
 
@@ -170,4 +174,260 @@ it("retains multiple accepted creations and marks a failed direct refresh stale"
   await within(first).findByText("The last observation is stale; current job status is unavailable.");
   expect(within(first).getByText("Accepted creation status unavailable")).toBeTruthy();
   expect(f.create).toHaveBeenCalledTimes(2);
+});
+
+it("renders the approved two-row table with UTC labels, full metadata and inert empty-history paging", async () => {
+  const f = fixture();
+  const backups = [
+    { id: "01a0f137-12d3-73eb-b850-4fca15c1e840", revision: 1n, sizeBytes: 512000n, modifiedAt: "2026-09-30T07:28:33.494524877Z" },
+    { id: "01a0eb55-e84d-7918-a97d-334f1de92886", revision: 1n, sizeBytes: 499712n, modifiedAt: "2026-09-29T04:04:31.251391719Z" },
+  ];
+  f.list.mockResolvedValue({ backups });
+  f.creations.mockResolvedValue({ jobs: [] });
+  render(f.view());
+  const table = await screen.findByRole("table", { name: "Database backups" });
+  await within(table).findByText("512,000 bytes");
+  expect(within(table).getByText("499,712 bytes")).toBeTruthy();
+  expect(within(table).getByText("Sep 30, 2026 · 07:28:33 UTC")).toBeTruthy();
+  expect(within(table).getByText("Sep 29, 2026 · 04:04:31 UTC")).toBeTruthy();
+  expect(within(table).getAllByRole("button").map(button => button.getAttribute("aria-label"))).toEqual(backups.map(backup => `Inspect backup ${backup.id}`));
+  expect(within(table).getAllByText("Not checked")).toHaveLength(2);
+  for (const backup of backups) {
+    expect(within(table).getByText(`Original modification timestamp: ${backup.modifiedAt}`)).toBeTruthy();
+    expect(table.querySelector(`time[datetime="${backup.modifiedAt}"]`)).toBeTruthy();
+  }
+  expect(screen.getByText("2 on this page")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "First backup page" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Next backup page" }) as HTMLButtonElement).disabled).toBe(true);
+  await screen.findByText("No creation jobs on this page.");
+  expect(screen.queryByRole("navigation", { name: "Creation job pages" })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
+  await screen.findByText("No deletion jobs on this page.");
+  expect(screen.queryByRole("navigation", { name: "Deletion job pages" })).toBeNull();
+  expect(f.inspect).not.toHaveBeenCalled();
+  expect(f.create).not.toHaveBeenCalled();
+  expect(f.remove).not.toHaveBeenCalled();
+});
+
+it("preserves fractional timestamps and exact BigInt deletion operands, with raw invalid-date fallback", async () => {
+  const f = fixture();
+  const backup = { ...f.backup, modifiedAt: "2026-09-30T07:28:33.494524877Z" };
+  const invalid = { ...backup, id: newRequestId(), modifiedAt: "unformattable-timestamp" };
+  f.list.mockResolvedValue({ backups: [backup, invalid] });
+  f.inspect.mockResolvedValue({ backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() });
+  render(f.view());
+  await screen.findByText("unformattable-timestamp");
+  fireEvent.click(screen.getByRole("button", { name: `Inspect backup ${f.id}` }));
+  const detail = screen.getByRole("region", { name: "Backup integrity inspection" });
+  await within(detail).findByText("9,007,199,254,740,993 bytes");
+  expect(within(detail).getByText(backup.modifiedAt)).toBeTruthy();
+  fireEvent.click(within(detail).getByRole("checkbox"));
+  fireEvent.click(within(detail).getByRole("button", { name: "Permanently delete selected backup" }));
+  await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(1));
+  expect(f.remove.mock.calls[0]![0]).toMatchObject({ backup, sha256: "a".repeat(64) });
+});
+
+it("keeps three cursor owners independent and changes tabs without extra reads", async () => {
+  const f = fixture();
+  f.list.mockImplementation(async input => ({ backups: [f.backup], nextPageToken: input.pageToken ? "" : "inventory-page-2" }));
+  f.creations.mockImplementation(async input => ({ jobs: [f.creation], nextPageToken: input.pageToken ? "" : "creation-page-2" }));
+  f.deletions.mockImplementation(async input => ({ jobs: [f.deletion], nextPageToken: input.pageToken ? "" : "deletion-page-2" }));
+  render(f.view());
+  await screen.findByText("Backup creation pending");
+  fireEvent.click(screen.getByRole("button", { name: "Next backup page" }));
+  await waitFor(() => expect(f.list.mock.calls.at(-1)![0].pageToken).toBe("inventory-page-2"));
+  fireEvent.click(screen.getByRole("button", { name: "Next creation page" }));
+  await waitFor(() => expect(f.creations.mock.calls.at(-1)![0].pageToken).toBe("creation-page-2"));
+  const before = [f.list.mock.calls.length, f.creations.mock.calls.length, f.deletions.mock.calls.length];
+  fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
+  expect([f.list.mock.calls.length, f.creations.mock.calls.length, f.deletions.mock.calls.length]).toEqual(before);
+  fireEvent.click(screen.getByRole("button", { name: "Next deletion page" }));
+  await waitFor(() => expect(f.deletions.mock.calls.at(-1)![0].pageToken).toBe("deletion-page-2"));
+  fireEvent.click(screen.getByRole("tab", { name: "Creation jobs" }));
+  expect((screen.getByRole("button", { name: "First creation page" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "First backup page" }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
+  expect((screen.getByRole("button", { name: "First deletion page" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(f.inspect).not.toHaveBeenCalled();
+  expect(f.create).not.toHaveBeenCalled();
+  expect(f.remove).not.toHaveBeenCalled();
+});
+
+it("manually activates stable history tabs and excludes hidden controls from keyboard navigation", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByText("Backup creation pending");
+  const creation = screen.getByRole("tab", { name: "Creation jobs" });
+  const deletion = screen.getByRole("tab", { name: "Deletion jobs" });
+  creation.focus();
+  fireEvent.keyDown(creation, { key: "ArrowRight" });
+  expect(document.activeElement).toBe(deletion);
+  expect(deletion.getAttribute("aria-selected")).toBe("false");
+  expect(creation.getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(deletion, { key: "Enter" });
+  expect(deletion.getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByRole("button", { name: "Refresh creation jobs" })).toBeNull();
+  expect(document.getElementById(creation.getAttribute("aria-controls")!)?.hidden).toBe(true);
+  fireEvent.keyDown(deletion, { key: "Home" });
+  expect(document.activeElement).toBe(creation);
+  fireEvent.keyDown(creation, { key: " " });
+  expect(creation.getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(creation, { key: "End" });
+  expect(document.activeElement).toBe(deletion);
+  fireEvent.keyDown(deletion, { key: "ArrowLeft" });
+  expect(document.activeElement).toBe(creation);
+  expect(creation.tabIndex).toBe(0);
+  expect(deletion.tabIndex).toBe(-1);
+});
+
+it("focuses inspection only at activation and restores the opener or list-heading fallback", async () => {
+  const f = fixture();
+  let finish!: (value: Awaited<ReturnType<typeof f.inspect>>) => void;
+  f.inspect.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  render(f.view());
+  const opener = await screen.findByRole("button", { name: `Inspect backup ${f.id}` });
+  fireEvent.click(opener);
+  const heading = screen.getByRole("heading", { name: `Inspection: ${f.id}` });
+  expect(document.activeElement).toBe(heading);
+  const tab = screen.getByRole("tab", { name: "Creation jobs" });
+  tab.focus();
+  await waitFor(() => expect(f.inspect).toHaveBeenCalledTimes(1));
+  await act(async () => finish({ backup: f.backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() }));
+  expect(document.activeElement).toBe(tab);
+  fireEvent.click(screen.getByRole("button", { name: "Close backup inspection" }));
+  expect(document.activeElement).toBe(opener);
+  fireEvent.click(opener);
+  await screen.findByText("Database integrity and original server identity verified.");
+  f.list.mockResolvedValueOnce({ backups: [] });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh backups" }));
+  await screen.findByText("No managed backups.");
+  fireEvent.click(screen.getByRole("button", { name: "Close backup inspection" }));
+  expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Database backups" }));
+});
+
+it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])("keeps initial failures (%s) separate from successful empty reads", async code => {
+  const f = fixture();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const fail = async () => { await gate; throw new ConnectError("private fixture message", code, { "x-delidev-correlation-id": "fixture-reference" }); };
+  f.list.mockImplementation(fail);
+  f.creations.mockImplementation(fail);
+  f.deletions.mockImplementation(fail);
+  render(f.view());
+  expect(screen.getByText("Reading managed backups…")).toBeTruthy();
+  expect(screen.getByText("Reading creation jobs…")).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
+  expect(screen.getByText("Reading deletion jobs…")).toBeTruthy();
+  await act(async () => release());
+  await screen.findAllByRole("alert");
+  expect(screen.queryByText("No managed backups.")).toBeNull();
+  expect(screen.queryByText("No creation jobs on this page.")).toBeNull();
+  expect(screen.queryByText("No deletion jobs on this page.")).toBeNull();
+  expect(screen.queryByText("private fixture message")).toBeNull();
+});
+
+it("retains cached inventory during an updating read and its failed refresh", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByText("9,007,199,254,740,993 bytes");
+  let reject!: (reason: unknown) => void;
+  f.list.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh backups" }));
+  await screen.findByText("Updating managed backups…");
+  expect(screen.getByText(f.id)).toBeTruthy();
+  expect((screen.getByRole("button", { name: `Inspect backup ${f.id}` }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => reject(new ConnectError("refresh failed", Code.Unavailable)));
+  await screen.findByText("The previous backup list is shown. Refresh before relying on it.");
+  expect(screen.getByText("9,007,199,254,740,993 bytes")).toBeTruthy();
+  expect(screen.queryByText("No managed backups.")).toBeNull();
+  expect((screen.getByRole("button", { name: "Create database backup" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("hides only successful empty first-page pagers and retains First on empty later pages", async () => {
+  const f = fixture();
+  f.list.mockResolvedValueOnce({ backups: [], nextPageToken: "inventory-page-2" }).mockResolvedValueOnce({ backups: [] });
+  f.creations.mockResolvedValue({ jobs: [] });
+  render(f.view());
+  await screen.findByText("No managed backups.");
+  expect(screen.getByRole("navigation", { name: "Backup pages" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Next backup page" }));
+  await screen.findByText("No backups on this page.");
+  expect((screen.getByRole("button", { name: "First backup page" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "Next backup page" }) as HTMLButtonElement).disabled).toBe(true);
+  f.list.mockResolvedValueOnce({ backups: [] });
+  fireEvent.click(screen.getByRole("button", { name: "First backup page" }));
+  await screen.findByText("No managed backups.");
+  await waitFor(() => expect(screen.queryByRole("navigation", { name: "Backup pages" })).toBeNull());
+});
+
+it.each(["creation", "deletion"])("preserves %s empty-page scope and continuation paging", async kind => {
+  const f = fixture();
+  if (kind === "creation") f.creations.mockImplementation(async input => ({ jobs: [], nextPageToken: input.pageToken ? "" : "creation-page-2" }));
+  else f.deletions.mockImplementation(async input => ({ jobs: [], nextPageToken: input.pageToken ? "" : "deletion-page-2" }));
+  render(f.view());
+  if (kind === "deletion") fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
+  await screen.findByText(`No ${kind} jobs on this page.`);
+  fireEvent.click(screen.getByRole("button", { name: `Next ${kind} page` }));
+  await waitFor(() => expect((screen.getByRole("button", { name: `First ${kind} page` }) as HTMLButtonElement).disabled).toBe(false));
+  expect((screen.getByRole("button", { name: `Next ${kind} page` }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText(`No ${kind} jobs on this page.`)).toBeTruthy();
+});
+
+it("clears fresh confirmation on a failed or in-flight reinspection", async () => {
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(await screen.findByRole("checkbox"));
+  let fail!: (reason: unknown) => void;
+  f.inspect.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  fireEvent.click(screen.getByRole("button", { name: "Recheck selected backup" }));
+  await screen.findByText("Checking the selected backup…");
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.queryByText("Database integrity and original server identity verified.")).toBeNull();
+  await waitFor(() => expect(f.inspect).toHaveBeenCalledTimes(2));
+  await act(async () => fail(new ConnectError("changed", Code.FailedPrecondition)));
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("button", { name: "Permanently delete selected backup" })).toBeNull();
+  expect(f.remove).not.toHaveBeenCalled();
+});
+
+it("disposes tab, inspection and uncertain-write presentation on a Strict Mode opening replacement", async () => {
+  const f = fixture();
+  f.create.mockRejectedValueOnce(new ConnectError("lost acknowledgement", Code.Unavailable));
+  const view = render(f.lifetimeView());
+  fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  await screen.findByRole("checkbox");
+  fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
+  await screen.findByRole("button", { name: "Retry the same backup creation" });
+  view.rerender(f.lifetimeView(false));
+  view.rerender(f.lifetimeView());
+  expect(screen.getByRole("tab", { name: "Deletion jobs" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("button", { name: "Retry the same backup creation" })).toBeTruthy();
+  view.unmount();
+  render(f.lifetimeView());
+  await screen.findByRole("button", { name: `Inspect backup ${f.id}` });
+  expect(screen.getByRole("tab", { name: "Creation jobs" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByRole("button", { name: "Retry the same backup creation" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Backup integrity inspection" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
+  await screen.findByRole("region", { name: "Accepted backup operations" });
+  expect(f.create).toHaveBeenCalledTimes(2);
+  expect(f.create.mock.calls[0]![0]).not.toEqual(f.create.mock.calls[1]![0]);
+});
+
+it("ignores a late accepted response from a disposed opening without replaying the operation", async () => {
+  const f = fixture();
+  let release!: (value: Awaited<ReturnType<typeof f.create>>) => void;
+  f.create.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const view = render(f.lifetimeView());
+  fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
+  await waitFor(() => expect(f.create).toHaveBeenCalledTimes(1));
+  view.unmount();
+  render(f.lifetimeView());
+  await act(async () => release({ job: f.creation, requestId: newRequestId(), replayed: false }));
+  await screen.findByText("Backup creation pending");
+  expect(screen.queryByRole("region", { name: "Accepted backup operations" })).toBeNull();
+  expect(screen.queryByText(`Backup creation accepted: ${f.creation.id}`)).toBeNull();
+  expect(f.create).toHaveBeenCalledTimes(1);
 });
