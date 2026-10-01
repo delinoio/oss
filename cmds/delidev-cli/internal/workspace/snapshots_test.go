@@ -393,22 +393,25 @@ func TestSnapshotRecoveryContinuesOnlyVerifiedClaimedRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600)
-	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StorageCreate, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
-	output := storageDo(t, m, input)
-	input.Action = StorageCleanup
-	input.PreviewDigest = output.PreviewDigest
-	root := filepath.Join(m.Root, "workspaces", string(prepare.SessionID))
+	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StoragePreview, Preparation: prepare, Manifest: manifest}
+	preview := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest
 	removal := filepath.Join(m.Root, "workspace-removals", string(input.OperationID))
-	if err := m.retainRemovalIntent(context.Background(), input, root); err != nil {
-		t.Fatal(err)
-	}
-	if err := renameStorage(root, removal); err != nil {
-		t.Fatal(err)
-	}
 	// A crash after deleting one known file leaves a subset of the original
 	// synchronized removal inventory. Unknown later files must retain recovery.
-	os.Remove(filepath.Join(removal, "chat", "keep"))
-	os.WriteFile(filepath.Join(removal, "foreign"), []byte("preserve"), 0600)
+	// Use the actual immutable cleanup operation and its publication/removal
+	// claims, rather than changing a completed create request into cleanup.
+	m.storageBeforeRemovalUnlink = func(relative string) {
+		if relative == "chat/keep" {
+			if err := os.WriteFile(filepath.Join(removal, "foreign"), []byte("preserve"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if _, err := m.Storage(context.Background(), input); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("uncaptured write did not retain the original cleanup", err)
+	}
+	m.storageBeforeRemovalUnlink = nil
 	if _, err := m.Storage(context.Background(), recoveryRequest(input)); err == nil {
 		t.Fatal("foreign retained data was deleted")
 	}
