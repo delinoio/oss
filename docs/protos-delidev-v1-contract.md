@@ -374,7 +374,7 @@ deletion enforcement, historical quarantine, bounds and recovery evidence limits
 
 `SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
-System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3` and `PERMANENT_SESSION_DELETION_V1 = 9`; managed restore adds reserved `MANAGED_BACKUP_RESTORE_V1 = 7` and native accounting adds reserved `NATIVE_ACCOUNTING_V1 = 4`. `GetStatus` advertises each implemented capability independently, including stopped-Codex account switching and same-account Codex Fork. Preserve these distinct meanings and regenerate both language bindings from the schema.
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3`, `STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5` and `PERMANENT_SESSION_DELETION_V1 = 9`; managed restore adds reserved `MANAGED_BACKUP_RESTORE_V1 = 7`, native accounting adds reserved `NATIVE_ACCOUNTING_V1 = 4` and same-account Codex Fork adds reserved `CODEX_SESSION_FORK_V1 = 13`. `GetStatus` advertises each implemented capability independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 
@@ -400,6 +400,26 @@ only original session/deletion IDs, plan digest and retained request UUID. No
 paths, prompts, credentials or new execution authority cross this boundary.
 Generate Go and TypeScript/Connect Query sources together and follow the
 [storage contract](cmds-delidev-storage-contract.md).
+
+### Grok original tool and response Resource JSON
+
+Native request observations additionally retain `proposal_json`, the exact UTF-8
+native JSON parameter bytes as a string alongside their typed payload. The pure
+reducer requires the same complete payload, validates the original native request
+and computes its byte-based proposal SHA-256 before interaction publication.
+Notifications cannot carry this request-only evidence. Both representations fit
+the existing 512 KiB public event bound; native request bytes also consume the
+existing reducer aggregate bound. Missing historical bytes remain readable
+evidence but cannot authorize a new request or reply through re-serialization.
+
+Issue #1091 adds typed `grok-tool-observed`/`grok_tool`, exclusive `Interaction.grok`, question/approval response `input.grok`, native current-mode/order/response aggregate progress and the exclusive `grok_tools_terminal` Resource JSON variants. Original method/request-kind/arrival and exact decimal uint64 counters survive without float conversion. Grok numeric request IDs add `{kind: "decimal", decimal: "<original integer spelling>"}` within Resource JSON, preserving the native 19-digit optional-minus grammar and `-0` without narrowing; historical text/signed-number identities remain unchanged. Each interaction references its immutable earlier observation and original native proposal; Plan additionally binds original entry/Write/content digest/revision. Follow the harness contract for complete independent validation, bounds and evidence limits.
+
+Existing `RespondQuestion`, `RespondApproval`, owning-Worker response claims, metadata-only controls, delivery publications and exact receipt replay carry these variants. Accepted original tool results create the server-derived `native-grok-tool-result` evidence; a Worker cannot assert it through generic acceptance publication. Native Plan uses the original approval request and adds no common Plan gate. No protobuf service, generated binding, relational schema migration or Worker permission expansion is required. CLI `interaction respond` and `interaction approve` accept the same exclusive `{"grok": ...}` document through file/stdin after reading and validating the original interaction; credential stdin remains separate. Historical missing variants preserve existing bytes and do not gain this profile's authority.
+
+Original Grok interaction request IDs must match the complete retained value,
+including kind and decimal spelling. Historical numeric and decimal variants
+may share a duplicate-detection namespace key; that key cannot substitute one
+representation for another or grant a reply to a changed request.
 
 ### Explicit stopped Codex API account selection
 

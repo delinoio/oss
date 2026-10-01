@@ -40,7 +40,7 @@ Create and rename keep the original bounded name/owner validation, fine-grained 
 
 Manage separates Connect a token, identity validation and confirmed deletion. The password input is empty, autocomplete-off, spellcheck-off and bounded to 512 visible ASCII characters; an empty/invalid value cannot submit. Stored tokens are never rendered, recovered or revealed. The complete verified official-form guidance appears in an informational native disclosure, initially expanded without a connection and collapsed with a connection. Collapsing preserves its current Classic selection/status; only the existing explicit official-form button requests its revision-bound URL. Preserve all repository-selection, owner, permission, expiry, organization-approval and broad Classic-scope caveats.
 
-The selected server owns OS token storage. Existing original requests/revisions, transient PAT bytes/cache clearing, reentry-only uncertain replacement retries, typed failures, delete confirmation and pending cleanup guards remain unchanged. Category/reflow retention and inactive PAT clearing operate within the shared opening; Close/Escape/navigation disposal follows issue #1138 and cannot restore abandoned drafts/requests. No API/schema, authority, credential storage, polling or migration change is introduced. Component checks and native visual/keyboard acceptance remain separate evidence under `docs/evidence/delidev/issue-1147/`.
+The selected server owns OS token storage. Existing original requests/revisions, transient PAT bytes/cache clearing, reentry-only uncertain replacement retries, typed failures, delete confirmation and pending cleanup guards remain unchanged. Category/reflow retention and inactive PAT clearing operate within the shared opening; Close/Escape/navigation disposal follows issue #1138 and cannot restore abandoned drafts/requests. No API/schema, authority, credential storage, polling or migration change is introduced. Record component checks separately from native visual/keyboard acceptance in pull requests, issues and CI logs/artifacts.
 
 ## Repository Read Access
 
@@ -264,11 +264,11 @@ The credential package owns native storage and immutable generation markers. Exi
 
 ## Change Triggers
 
-Update this document, the credential/protocol/client/desktop contracts, the project index, evidence ledger and scoped AGENTS files when lifecycle, token retention, authority, retry or GitHub capability boundaries change. New GitHub queries/forms/remediation require their own complete permission and real-environment evidence.
+Update this document, the credential/protocol/client/desktop contracts, the project index, validation records in pull requests, issues and CI logs/artifacts and scoped AGENTS files when lifecycle, token retention, authority, retry or GitHub capability boundaries change. New GitHub queries/forms/remediation require their own complete permission and real-environment evidence.
 
 ## References
 
-- [Project index](project-delidev.md), [complete requirements](cmds-delidev-requirements.md), [credential storage](cmds-delidev-credentials-contract.md), [evidence](cmds-delidev-evidence.md).
+- [Project index](project-delidev.md), [complete requirements](cmds-delidev-requirements.md), [credential storage](cmds-delidev-credentials-contract.md).
 - [Repository defaults](repository-defaults.md), [protocol](protos-delidev-v1-contract.md), [desktop](apps-delidev-desktop-contract.md).
 - [GitHub authenticated user API](https://docs.github.com/en/rest/users/users#get-the-authenticated-user).
 - [GitHub PAT management](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
@@ -281,7 +281,7 @@ OS presentation references: [Microsoft ShellExecuteW](https://learn.microsoft.co
 
 CI references: [GitHub required-status troubleshooting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks), [GraphQL Checks](https://docs.github.com/en/graphql/reference/checks), [GraphQL commit rollups](https://docs.github.com/en/graphql/reference/commits), [GraphQL PR test merge](https://docs.github.com/en/graphql/reference/pulls).
 
-Feedback schema references: [GitHub GraphQL pull requests](https://docs.github.com/en/graphql/reference/pulls), [GraphQL issues and conversation comments](https://docs.github.com/en/graphql/reference/issues). Actual fixed-document public response checks are recorded separately in the evidence ledger.
+Feedback schema references: [GitHub GraphQL pull requests](https://docs.github.com/en/graphql/reference/pulls), [GraphQL issues and conversation comments](https://docs.github.com/en/graphql/reference/issues). Record actual fixed-document public response checks separately in pull requests, issues and CI logs/artifacts.
 
 Reviewer identity reference: [Get a user using their durable ID](https://docs.github.com/en/rest/users/users#get-a-user-using-their-id). The single-user collaborator and comment APIs above define the separate permission and App-attribution observations.
 

@@ -88,9 +88,7 @@ Use structured `slog` events for accepted operations, grants, completion, capabi
 
 Run `go test -race ./cmds/delidev-cli/...`, `go vet ./cmds/delidev-cli/...`, `pnpm proto:check`, and the API client's tests/typecheck. Generate bindings through pinned root Buf tooling. Controlled native-process fixtures cover browser/device progress, completion, cancellation, file rotation, unchanged refresh evidence, logout and symlink refusal. Real loopback Connect/SQLite fixtures cover lease races, protected-channel authorization, generation fencing, lost write-back, cancellation, identity uniqueness, independent accounts, API relay denial and secret-free outputs/database files.
 
-These fixtures do not authenticate real accounts, execute hosted inference or establish installed-Codex/desktop/Windows/Linux/release acceptance. Record actual executed checks and their limits in the [issue #1095 evidence](evidence/delidev/issue-1095/validation.md).
-
-The [current-main replacement record](evidence/delidev/issue-1095/replacement-2026-09-30.md) records subsequent integration and regression checks independently of that preserved historical evidence.
+These fixtures do not authenticate real accounts, execute hosted inference or establish installed-Codex/desktop/Windows/Linux/release acceptance. Record actual executed checks, source revisions and unresolved limits in issue #1095, its pull requests and CI logs/artifacts.
 
 ## Dependencies and Integrations
 
@@ -98,7 +96,7 @@ Reuse authenticated Connect, the server vault, current Worker discovery, owned p
 
 ## Change Triggers
 
-Update the account/harness/session/protocol/client contracts and affected scoped `AGENTS.md` owners when the native profile, public operations, generations or recovery boundaries change. Record validation in independent `docs/evidence/delidev/issue-1095/` files, preserving the historical ledger. Update the project index only for ownership, domain catalog or cross-domain invariant changes.
+Update the account/harness/session/protocol/client contracts and affected scoped `AGENTS.md` owners when the native profile, public operations, generations or recovery boundaries change. Record implementation status and validation in issue #1095, its pull requests and CI logs/artifacts; do not add repository evidence documents. Update the project index only for ownership, domain catalog or cross-domain invariant changes.
 
 ## References
 

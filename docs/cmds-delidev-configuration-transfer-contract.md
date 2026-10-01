@@ -55,7 +55,7 @@ Structured import logs contain the request UUID, coordinator job UUID, closed st
 
 ## Build and Test
 
-Run focused server and CLI tests with the race detector, complete DeliDev Go tests/vet, Buf lint and deterministic regeneration, and `pnpm test` in `apps/delidev`. Verify graph remapping, account isolation, exact instructions, all-repository atomicity, stale/revoked authorities, file no-overwrite behavior, signed-preview tampering, reference-only replay, and exact frontend bytes including integers outside JavaScript's safe range. Real Worker/Git integration and actual native desktop interaction remain separately labeled in the evidence ledger.
+Run focused server and CLI tests with the race detector, complete DeliDev Go tests/vet, Buf lint and deterministic regeneration, and `pnpm test` in `apps/delidev`. Verify graph remapping, account isolation, exact instructions, all-repository atomicity, stale/revoked authorities, file no-overwrite behavior, signed-preview tampering, reference-only replay, and exact frontend bytes including integers outside JavaScript's safe range. Label real Worker/Git integration and actual native desktop interaction separately in pull requests, issues and CI logs/artifacts.
 
 ## Dependencies and Integrations
 

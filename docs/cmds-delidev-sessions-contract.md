@@ -241,7 +241,7 @@ Public first-dispatch tests additionally cover configuration-validation rollback
 Uses `ResourceService` for individual reads/snapshots/events and the existing configuration/account/Worker registries. Workspace jobs integrate the owned Git/process boundary. Private core-event publication now integrates the Worker outbox, native adapter and server transcript boundary. Public first dispatch integrates this composition with the harness and API relay lifecycles while preserving their independent ownership contracts. The Worker workspace layer now supplies a private continuation lease with exact closed predecessor history and preserved agent commits/dirty files. The Codex adapter separately verifies the latest native terminal/input checkpoint and original effective settings before allowing a fresh process to continue. Public later-turn dispatch now composes immutable per-turn ownership, current account authorization, queued-input/native-turn deduplication, retained checkpoint/runtime ownership and fresh relay credentials. Neither private primitive alone authorizes public input; explicit native recovery after uncertainty remains pending.
 
 ## Change Triggers
-Update this document, project index, protocol contract, CLI contract, evidence ledger and scoped AGENTS whenever acceptance, lifecycle, origin proof, delivery/retry, migration or execution integration changes. Preserve the complete requirements and distinguish fixtures from actual native evidence.
+Update this document, project index, protocol contract, CLI contract, validation records in pull requests, issues and CI logs/artifacts and scoped AGENTS whenever acceptance, lifecycle, origin proof, delivery/retry, migration or execution integration changes. Preserve the complete requirements and distinguish fixtures from actual native evidence.
 
 ## References
 - [Project](project-delidev.md)
@@ -313,7 +313,7 @@ Native interruption, acknowledged cancellation during native retry backoff, nati
 ### Public OpenCode first execution
 The original first-dispatch transaction now accepts OpenCode `1.18.32` with verified `opencode-http` installation evidence, a current validated Chat Completions API account and the exact default native Build/Plan selection. The Worker shares complete immutable selection validation, independently verifies native effective settings and executes the original accepted input under its workspace lease. Unsupported explicit options, continuation profiles and repository roots without their separately proved profiles do not consume routing or queued input. Windows General Chat uses the dedicated native/global filesystem root profile in the harness contract. Every existing account/model/Agent/project/Worker/preparation check remains active.
 
-The same owner/client first Resume and automatic ready-session dispatch produce one immutable original job. Native creation and stored-input acceptance, transcript/usage/interactions, direct replies, targeted Stop/Archive and owned cleanup report through the existing authenticated outbound Worker flow. Version-1 completion remains paused and cannot authorize another input, process-replacement continuation or recovery via a Codex checkpoint. Actual Execute/Plan loopback evidence and the precise remaining platform/account limits are recorded in the evidence ledger.
+The same owner/client first Resume and automatic ready-session dispatch produce one immutable original job. Native creation and stored-input acceptance, transcript/usage/interactions, direct replies, targeted Stop/Archive and owned cleanup report through the existing authenticated outbound Worker flow. Version-1 completion remains paused and cannot authorize another input, process-replacement continuation or recovery via a Codex checkpoint. Actual Execute/Plan loopback evidence and the precise remaining platform/account limits must be recorded in pull requests, issues and CI logs/artifacts.
 
 
 ### Public OpenCode checkpoint continuation and completed-report recovery
@@ -407,7 +407,7 @@ Owner acceptance and Worker claims reuse the current execution/account/connectio
 
 Native non-interrupting denial additionally emits `tool_result_meta` entries with the original tool ID and `permission-rule` non-execution classification. Preserve that explicit classification separately from `tool_use_result` and require a matching failed original result. Reject unknown, duplicate, empty, null or foreign metadata before completing any tool in the batch. A denied Read cannot acquire the independently proven executed-Read error-history profile. Neither generic error prose nor a reply echo can invent non-execution or effective permission scope.
 
-The pinned official SDK `0.3.236` tool types document question text/string mapping and comma-separated multiple choices; the native CLI remains `2.1.236`. The [official input guide](https://code.claude.com/docs/en/agent-sdk/user-input) describes unchanged-input allow and denial behavior. These sources guide encoding; the private native evidence ledger separately records observed behavior and its limits.
+The pinned official SDK `0.3.236` tool types document question text/string mapping and comma-separated multiple choices; the native CLI remains `2.1.236`. The [official input guide](https://code.claude.com/docs/en/agent-sdk/user-input) describes unchanged-input allow and denial behavior. These sources guide encoding; record observed native behavior and its limits separately in pull requests, issues and CI logs/artifacts.
 
 ### Claude original callback result settlement
 
@@ -579,6 +579,24 @@ Uncertain question/approval response delivery now automatically inspects the ori
 
 Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
 
+### Grok public original tool interactions (issue #1091)
+
+The [original-tool harness profile](cmds-delidev-harness-contract.md#grok-public-original-tools-questions-and-plan-issue-1091)
+extends first dispatch to the verified Execute/Plan General Chat inputs. Initial
+Plan requires its original native mode claim before input; native tools then
+publish immutable ordered observations and original Write/question/Plan requests
+through the existing authenticated response APIs. Each response binds the exact
+request, revision, current execution and authorization. Native Plan follows its
+original transitions without the common synthetic approval gate. Receipt retries
+repeat only the accepted public receipt; they cannot repeat native responses.
+
+Read's pinned automatic permission cycle exposes no user deny operation. Write
+once/session/rejection, questions and revised Plan proposals retain the independently
+validated native semantics. Delivery, result acceptance, terminal outcome and
+process/workspace cleanup remain separate. Uncertain replies or unsupported richer
+Stop evidence retain paused recovery. Existing first-text history/Stop continue to
+use their separate original profiles; repositories and continuation stay gated.
+Tool completion remains version 1, with no automatic next input.
 
 ## Same-account Codex fork boundary (#1092)
 

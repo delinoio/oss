@@ -57,18 +57,19 @@ type planFact struct {
 }
 
 type planObserver struct {
-	session   domain.ID
-	prompt    string
-	path      string
-	mode      NativeMode
-	tools     map[string]planToolState
-	active    string
-	artifact  *planArtifact
-	arrivals  map[domain.ID]bool
-	requests  map[string]bool
-	bytes     int
-	lastEvent uint64
-	seenEvent bool
+	session    domain.ID
+	prompt     string
+	path       string
+	pathPolicy planPathPolicy
+	mode       NativeMode
+	tools      map[string]planToolState
+	active     string
+	artifact   *planArtifact
+	arrivals   map[domain.ID]bool
+	requests   map[string]bool
+	bytes      int
+	lastEvent  uint64
+	seenEvent  bool
 }
 
 func newPlanObserver(session domain.ID, prompt, home, workspace string, mode NativeMode) (*planObserver, error) {
@@ -76,7 +77,7 @@ func newPlanObserver(session domain.ID, prompt, home, workspace string, mode Nat
 	if err != nil || !nativeUUID(prompt, 4) || !planPath(home) || mode != NativeDefaultMode && mode != NativePlanMode {
 		return nil, incompatible()
 	}
-	return &planObserver{session: session, prompt: prompt, path: filepath.Join(home, rel, "plan.md"), mode: mode, tools: map[string]planToolState{}, arrivals: map[domain.ID]bool{}, requests: map[string]bool{}}, nil
+	return &planObserver{session: session, prompt: prompt, path: filepath.Join(home, rel, "plan.md"), pathPolicy: nativePlanPath, mode: mode, tools: map[string]planToolState{}, arrivals: map[domain.ID]bool{}, requests: map[string]bool{}}, nil
 }
 
 func (o *planObserver) observe(event nativewire.Event) (planFact, error) {
@@ -155,7 +156,7 @@ func (o *planObserver) observe(event nativewire.Event) (planFact, error) {
 		if !exists || o.active != id {
 			return fact, incompatible()
 		}
-		observation, err := parsePlanObservation(event.Params, o.session, o.prompt, prior.name)
+		observation, err := parsePlanObservation(event.Params, o.session, o.prompt, prior.name, o.pathPolicy)
 		if err != nil {
 			return fact, err
 		}

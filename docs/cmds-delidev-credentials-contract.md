@@ -75,7 +75,7 @@ docker run --rm --network none delidev-secret-service-test:local
 rm -rf "$delidev_fixture_dir"
 ```
 
-Cross-compilation does not establish native behavior. Passing a temporary keychain/Secret Service test does not establish account login, upstream key validation, provider inference, proxy authorization or full OS service lifecycle acceptance. The [evidence ledger](cmds-delidev-evidence.md) records those boundaries separately.
+Cross-compilation does not establish native behavior. Passing a temporary keychain/Secret Service test does not establish account login, upstream key validation, provider inference, proxy authorization or full OS service lifecycle acceptance. Record those boundaries separately in pull requests, issues and CI logs/artifacts.
 
 ## Direct GitHub PAT storage
 

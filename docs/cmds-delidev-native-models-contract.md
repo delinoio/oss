@@ -140,8 +140,8 @@ with the following issue acceptance scenarios:
    readiness or release of stale credentials.
 
 Keep fixture/native-protocol validation distinct from unperformed real
-subscription, platform and release evidence. Retain new validation in independent
-`docs/evidence/delidev/issue-1206/` files.
+subscription, platform and release evidence. Record new validation in
+pull requests, issues and CI logs/artifacts.
 
 ## Dependencies and Integrations
 
