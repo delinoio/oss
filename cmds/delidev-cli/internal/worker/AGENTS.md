@@ -2,6 +2,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Advertise process-owned terminal and forwarding capabilities on every preliminary attach, including reconnect, before probing Codex title support. Only the verified title capability waits for the second negotiation; a probe cannot withdraw access to existing shells.
+
 - Optional current-user server/Worker services follow `docs/cmds-delidev-user-services-contract.md`. Keep stopped installation, existing foreground exclusivity, current-user/executable/definition/process-birth ownership, durable Stop before native disable, bounded native attempts, actor/revision-bound no-replay receipts, and independently confirmed controller cleanup before removal. Preserve all data/authentication/native session evidence; no system services, passwords, linger or foreign registration replacement.
 
 - Batch compatible native Git metadata queries within one owned process, preserving exact record boundaries, absolute administrative paths and object format. Keep independent before/after identity validation for every repository and the bounded workspace-read deadline; never cache observations across reads.

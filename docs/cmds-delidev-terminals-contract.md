@@ -26,6 +26,9 @@ disconnect and reattach without replacing the shell.
 
 The server advertises `SYSTEM_CAPABILITY_SESSION_TERMINALS_V1` with value 14;
 the Worker must advertise `WORKER_CAPABILITY_SESSION_TERMINALS_V1` with value 4.
+Every preliminary attachment, including reconnect, retains terminal and forwarding
+support before the independent Codex title probe. Only verified title support waits
+for the later capability negotiation; probing cannot withdraw live-shell access.
 These independent enum spaces preserve the merged user-service system value 3.
 Desktop history reads, polling, manual refresh and selection wait for advertised
 system terminal support. Unknown or unsupported status shows its capability

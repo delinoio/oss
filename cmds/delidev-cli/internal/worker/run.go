@@ -193,7 +193,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	ready := false
 	for ctx.Err() == nil {
 		attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
-		attached, err := client.AttachWorker(attempt, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1}}))
+		// Terminal support belongs to this process, independently of the slower
+		// title probe. Reconnect must preserve existing shells' capability gates.
+		attached, err := client.AttachWorker(attempt, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}))
 		cancel()
 		titleCapabilityExpected := false
 		if err == nil && attached.Msg.ServerId != string(credential.ServerID) {
