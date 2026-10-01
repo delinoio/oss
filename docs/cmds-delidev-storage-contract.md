@@ -8,6 +8,34 @@ actual account/private-GitHub access and platform distribution validation remain
 deferred. This document covers managed backup observation, creation/deletion and permanent
 session deletion and database restore. Worker-local snapshots remain pending.
 
+## Planned subscription retirement (issue #1235)
+
+Migration 28 is reserved for [issue #1235](https://github.com/delinoio/oss/issues/1235)
+after the real Claude accounting and request-diagnostics migrations at 26 and
+27. Establish this reservation and independent server capability 17 on main
+before dependent implementation. The executable sequence remains at 25; no
+empty predecessor, schema-version bump or retirement runs in this prerequisite.
+
+The required reset must back up first and atomically retire legacy subscription
+Accounts, native-subscription Providers and their provider-bound Models into
+read-only historical metadata with original IDs, revisions, timestamps and
+document bytes. Tombstone their IDs, exclude them from live configuration/export
+and refuse outstanding or uncertain native ownership, connection/removal or
+cleanup before changes. Never infer services or recreate accounts. Preserve
+surviving Agent account order/weights and Project restriction `configured` flags,
+including configured-empty deny-all; retired model references require explicit
+reconfiguration. Disable only affected schedules with a retained reset reason,
+preserving accepted occurrences and unrelated API configuration.
+
+Keep session, snapshot, transcript and usage bytes/attribution intact. Retired
+subscription sessions require a new explicitly configured session, without
+Resume, dispatch or automatic account fallback. Migrate older backup candidates
+before restore publication; imports/receipts cannot resurrect retired IDs.
+Portable bundle version 2 carries service-native configuration, while API-only
+version-1 imports remain supported and legacy subscription graphs are rejected
+atomically with recreate guidance. Implementation must compose the independent
+managed-account ownership and cleanup boundary from issue #1095.
+
 ## Managed backup observation
 
 `SystemService.CreateBackup`, `ListBackups` and `InspectBackup` are available only
@@ -306,6 +334,11 @@ The safety image supplies current device descriptors/verifiers, merged deletion
 tombstones, deleted-project policies, model suppressions, backup publication claims
 and permanent backup-removal jobs/receipts. Remove tombstoned entities and deleted
 session children, including indexed transcript content through existing cascades.
+Device replacement copies each complete current document, including protected
+browser inventory: original profile identities/revisions, pending deletion
+request IDs and completed cleanup states survive an older source image. Offline
+and revoked clients retain their obligations. The historical Device documents
+are discarded rather than merged back into that current inventory.
 Use the permanent deletion redactor for shared remediation operands and their
 source-linked activity before removing the original session graph.
 Schema-25 native accounting retains its original verified unit, attribution and

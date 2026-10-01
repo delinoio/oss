@@ -106,6 +106,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 ### Migration ownership
 
+- Issue #1235 reserves migration 28 for service-native subscription identity and legacy configuration retirement. Keep versions 26 and 27 in their existing order and implement both real predecessors before activating 28. Reservations use one original `pr` or owning `issue`; retain that provenance after an implementation PR exists. The planned reset is backup-first and atomic, preserves historical bytes/attribution and configured-empty deny-all restrictions, and refuses unsettled native ownership or cleanup without inferring a service.
+
 - Keep the single ordered schema sequence in `migrations.go` and each version's SQL/apply definition in `migration_<version>.go`. Fresh databases and upgrades use the same definitions. Validate the complete sequence; preserve backup, rollback, and recognized mixed-layout repairs.
 - Historical schemas in `testdata/schema/` are fixed input evidence. Never regenerate older fixtures for a new version. Seeded records may be copied into a fixed fixture through the test-only common-column helper; production never guesses unknown layouts this way.
 - `migration-reservations.json` allocates pending work separately from executable migrations. Establish changes to reservations on main before starting dependent branches. Version 25 from an unmerged branch is not proof of schema identity; preserve unidentified data and return recovery-required.
@@ -141,6 +143,10 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Retained ALLGREEN queue failures bind the original queue and entry nodes to the complete CI proof. Deduplicate by evaluated source, queue/entry identity and original native result, so replacement entries retain separate proofs even when their commit/check result is reused. Preserve legacy plain-node records and local decisions without rewriting original evidence. Preserve non-queue history, clear current membership on removal, and require fresh matching queue/entry evidence before another remediation attempt. Follow `docs/cmds-delidev-integrations-contract.md`; no queue state alone creates failure evidence.
 
 - Schema 25 implements the reserved Grok accounting migration with an independent layout marker; reject unmarked unmerged v25 files without modification. Insert one GrokClosedInput only with the original verified completion receipt and independently confirmed cleanup. Preserve history, exact counters, original assignment attribution, atomic replay and future-only retention; no backfill, pricing or budget writes. Follow the usage/storage contracts.
+
+- Protected browser registration and account deletion compose through bounded paired-client Device metadata without a browser-specific migration. Register one account profile per server/device, publish Device events and actor-bound receipts atomically, and mark all offline/revoked device obligations before account deletion. Session erasure and Archive preserve shared profiles. Follow `docs/cmds-delidev-browser-contract.md`.
+
+- Managed restore retains the complete current Device documents from its synchronized external safety image, including browser pending/removed state and original profile/deletion identities. Discard historical Device inventory before copying current records; offline/revoked obligations and completed cleanup cannot be rolled back by an older backup.
 
 - Managed restore refuses any pending private network publication/deletion intent before closing SQLite. Preserve current network profiles, immutable credential generations and server/Worker selections from the safety image, preserving their bodies while freshening resource revisions under the ordinary restore rule; a historical snapshot cannot reactivate outbound authority. The owning server serializes restore with network/account credential operations through the shared gate.
 

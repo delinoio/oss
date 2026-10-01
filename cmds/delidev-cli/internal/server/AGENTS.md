@@ -10,6 +10,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Use private temporary state/accounts/repositories in tests. Never access user logins, redeem credits, publish to GitHub, or invoke inference from ordinary tests.
 
+- Workspace-recovery replacement-Worker fixtures require the original Ready callback, a bounded allowance covering the existing startup phases, immediate failure on controller exit and content-free startup diagnostics. Startup waiting never substitutes for original journal, independent recovery settlement or joined cleanup proof.
+
 - Preserve durable request receipts, typed revision checks, atomic state/events/routing, independent outcome/archive/recovery, uncertainty before retries, and deletion tombstones.
 
 - Follow `docs/cmds-delidev-providers-contract.md` for non-inference validation. Keep HTTP outside account locks/transactions, cancel on disconnect/revocation, revalidate authority and generation at publication, and replay accepted failed observations without network work. Public/custom model lists do not establish credential validity; unobservable authentication records an unsupported validation state. Never follow redirects, inherit environment proxies, retry provider requests, ingest diagnostic bodies or infer quota recovery/costs from validation.
@@ -90,6 +92,12 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Windows OpenCode General Chat dispatch uses the separate root/checkpoint profile in the harness/session contracts. Remove only the OS exclusion; preserve immutable selection, current account/model/Worker and preparation gates. The owning Worker independently verifies exact native `/` and canonical filesystem roots before native work. Continuation and completed-report recovery require the original accepted report/history and independent root/process/workspace proof; no server-native path interpretation, legacy checkpoint promotion or input replay.
 
 - Publish GrokClosedInput accounting only in the original independently verified completion transaction, after matching original input, response, closed history and owned cleanup. Require successful product outcome and no original job cancellation at that commit, including Stop/Archive accepted after native success but before cleanup retention. Preserve native success/cleanup separately and retain units committed before later controls. Echo explicit NATIVE_UNITS_V1 reads, retain legacy response-only coverage and bound the combined units/groups/wire sizes. Advertise native accounting independently with capability value 4; never price Grok categories.
+
+- BrowserService profile operations require the original paired client, current transaction-time authority and exact UUID/revision receipts. Owner/Worker credentials cannot substitute a browser device; owner/client cleanup counts remain independent of account configuration removal. Confirmation attests to separately completed native cleanup and cannot replay native work. Follow `docs/cmds-delidev-browser-contract.md`.
+
+- Strip browser profile inventory from every generic Device resource projection, including Get/List/Snapshot and pairing/revocation responses. Preserve original stored records and other device fields; only device-scoped BrowserService reads expose profile identities and state.
+
+- Browser registration validates the session's continuation account, including a pending explicit account switch before Resume. The previous execution's account remains historical attribution and cannot authorize a new browser registration after that selection changes.
 
 - Before removing a network profile, synchronize one private server-bound deletion intent with original actor/request/revision. Current authorized owner/client mutations recover it independently of original actor revocation. Require an accepted original deletion receipt and authoritative absent profile before native removal; uncertain proof or failed cleanup blocks replacement, while an absent receipt clears metadata only. Retire the intent after confirmed cleanup within the bounded RPC.
 

@@ -26,6 +26,7 @@ type client struct {
 	configuration delidevv1connect.ConfigurationServiceClient
 	devices       delidevv1connect.DeviceServiceClient
 	workers       delidevv1connect.WorkerServiceClient
+	browsers      delidevv1connect.BrowserServiceClient
 	accounts      delidevv1connect.AccountServiceClient
 	prFixes       delidevv1connect.PullRequestFixServiceClient
 	integrations  delidevv1connect.IntegrationServiceClient
@@ -100,6 +101,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
 	return client{
 		transport: transport, endpoint: endpoint, token: token,
+		browsers:      delidevv1connect.NewBrowserServiceClient(httpClient, endpoint, opts...),
 		inbox:         delidevv1connect.NewInboxServiceClient(httpClient, endpoint, opts...),
 		schedules:     delidevv1connect.NewScheduleServiceClient(httpClient, endpoint, opts...),
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),

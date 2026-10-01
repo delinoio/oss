@@ -24,6 +24,7 @@ type fixtureBackend struct {
 	startErr                  error
 	runErr                    error
 	stopGate                  chan struct{}
+	joined                    chan struct{}
 	done                      chan error
 	cancel                    context.CancelFunc
 }
@@ -78,11 +79,15 @@ func (f *fixtureBackend) Start(_ context.Context, s Spec) error {
 			f.mu.Lock()
 			f.pid = os.Getpid()
 			gate := f.stopGate
+			joined := f.joined
 			runErr := f.runErr
 			f.mu.Unlock()
 			<-child.Done()
 			if gate != nil {
 				<-gate
+			}
+			if joined != nil {
+				close(joined)
 			}
 			return runErr
 		})
@@ -240,6 +245,61 @@ func TestStopBlocksDelayedLoginAndWaitsForJoinedCleanup(t *testing.T) {
 	invoked := false
 	if e = m.Run(context.Background(), install.Status.ID, func(context.Context, Spec, bool) error { invoked = true; return nil }); e == nil || invoked {
 		t.Fatal("relogin bypassed durable Stop")
+	}
+}
+
+func TestCompletionPublicationWaitsForStateReaders(t *testing.T) {
+	m, f := fixture(t)
+	installed := control(t, m, Install, 0)
+	f.stopGate = make(chan struct{})
+	f.joined = make(chan struct{})
+	control(t, m, Start, 1)
+	control(t, m, Stop, 2)
+
+	state, err := m.stateLock(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	// A status reader may hold a Windows handle without delete sharing while
+	// validating permissions. Keep that handle until its state gate is released.
+	reader, err := os.Open(m.path("-runtime-" + string(installed.Status.ID) + ".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	f.cancel()
+	close(f.stopGate)
+	select {
+	case <-f.joined:
+	case <-time.After(5 * time.Second):
+		t.Fatal("product controller did not join")
+	}
+	select {
+	case err := <-f.done:
+		t.Fatalf("controller exited during state observation: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	live, err := m.runtime(installed.Status.ID)
+	if err != nil || live.Complete {
+		t.Fatal("completion published before state reader released", live.Complete, err)
+	}
+	if lock, err := security.TryLock(m.path("-runtime.lock")); err == nil {
+		lock.Close()
+		t.Fatal("runtime ownership released before completion publication")
+	} else if domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+	waitStopped(t, m)
+	live, err = m.runtime(installed.Status.ID)
+	if err != nil || !live.Complete {
+		t.Fatal("joined completion was not retained", err)
 	}
 }
 func TestForeignNativeDefinitionAndPIDAreUntouched(t *testing.T) {

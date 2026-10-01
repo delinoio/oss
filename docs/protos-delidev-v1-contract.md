@@ -20,6 +20,17 @@ main-established allocations. No new RPC or generated binding is activated by
 the reservation prerequisite.
 
 ## Scope
+
+Issue #1235 reserves `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17`
+under its owning issue identity. This independent capability will negotiate
+service-bearing subscription Accounts/native Models and retired-reference
+projections at resource schema version 2; unchanged API resources remain version
+1. It must not depend on API provider inventory capabilities. Establish this
+allocation and migration 28 on main before dependent implementation. This
+prerequisite changes no active schema, generated binding or capability
+advertisement; generate clients from reconciled schemas when implementation
+activates the reserved boundary.
+
 `protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 
 ## Runtime and Language
@@ -438,6 +449,10 @@ Each reservation uses the kind of its existing declaration (`enum` or `message`)
 This reservation changes no schema, generated binding, capability advertisement, runtime negotiation or inspection behavior. Merge it into main before publishing the dependent repository-registration implementation, as required by `docs/cmds-delidev-structure-contract.md`.
 
 Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).
+
+## Browser API
+
+[Protected browser ownership and cleanup](cmds-delidev-browser-contract.md) use the service-owned `BrowserService`, typed profile/state/capability models and generated `BrowserQuery` descriptors. Existing shared enum/field numbers and future migration reservations remain unchanged. Browser messages carry ownership metadata only, never native paths or browsing content.
 
 ## Codex session forks (#1092)
 
