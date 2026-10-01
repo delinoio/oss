@@ -185,6 +185,104 @@ Permission reads have a five-second deadline and never prompt. Only the explicit
 
 Native status uses a connection-scoped React Query cache and 30-second reads. Disabled/unavailable permission does not claim candidates. Settings explicitly distinguishes unrequested permission, denial, bundle/action/service/capacity failures and Linux service availability. API submission, platform permission and actual displayed/seen notifications are separate evidence. No browser notification API, network broker, arbitrary native payload or OS-permission request from a timer is allowed. Component tests, cross compilation and native host initialization do not establish real notification acceptance on any platform.
 
+#### Notifications settings presentation (issue #1245)
+
+`notification-settings.tsx` and `notification-settings.css` own the Notifications
+body inside issue #1236's ordinary Settings page. The Notifications-only host
+class centers the title and all body content in one fluid 880px maximum column.
+Use the shared host's single 40px inset, 24px below 1100px and `20px 16px 24px`
+below 760px; do not add another category inset or change the rail/context pane,
+compact category drawer, sibling categories or visit ownership. Main uses the
+shared semantic theme colors (the approved white, #202632, #5b6577, #d8dee8 and
+#2563d8 palette in Light), system font, 28px semibold title, 16px semibold section
+headings, 14px labels/body and 13px supporting text. Flat sections have 28px
+spacing, thin dividers and preference rows at least 88px high. Buttons remain at
+least 40px high with 8px corners and visible contrasting focus. Section actions
+stack below their headings at an available body width of 600px or less; text,
+controls and errors wrap. Decorative outline SVGs are inaccessible. Static CSS
+must remain compatible with the native CSP; the approved bitmap is reference
+material only.
+
+| Position | Exact copy |
+| --- | --- |
+| Title | Notifications |
+| Summary | Choose which events notify you. |
+| Scope | Applies to this client on the selected server. |
+| Native section / read action | On this computer / Refresh status |
+| Preference section / read action | Notify this client about / Edit preferences |
+| Interaction label | Questions and approval requests |
+| Interaction description | When a session needs your answer or approval. |
+| Terminal label | Execution completion, failure and interruption |
+| Terminal description | When an execution succeeds, fails or stops. |
+| Edit actions | Save preferences / Cancel |
+
+Read mode renders server-confirmed noninteractive On/Off text, never disabled
+checkboxes or guessed defaults. Explicit Edit captures the complete original
+preference object and revision, then exposes two native labeled checkboxes with
+separate `aria-describedby` descriptions. Preserve the existing active 5-second
+poll, mutation registry, category locks, fetch/error gates, stale alert and retained
+draft, successful invalidation and exact request-ID/wire-byte uncertainty retry.
+Busy/uncertain operations lock edit controls and Cancel. A peer revision change
+retains the draft and blocks a new save; Cancel returns to current data. Initial
+loading/failure contains no fabricated values and retains “Notification preferences
+are unavailable until this server can be read.” Cached refresh failures retain
+values, visibly disclose that they may be out of date and block new edit/save.
+Saving, typed failures, revision conflicts and the existing “Retry the same
+notification preferences” action remain distinct.
+
+Edit focuses the first checkbox after commit. Cancel and acknowledged Save may
+return focus to enabled Edit only while the workflow owned focus before its
+controls were removed. Keep a one-shot intent through refetch; document/body
+fallback from removal or disablement is not a deliberate transfer. Discard it on
+deliberate focus elsewhere, category inactivity, disposal, hidden/inert ancestry,
+category drawer or visible child dialog. A dialog appearing while refetch waits
+consumes the intent permanently. Late callbacks read current visibility rather
+than their original submission closure. Polling, disclosure changes, stale alerts
+and reconnect never create an intent. Mounted state survives reflow/category
+inactivity and same-identity reconnect within the current Settings visit; departure
+discards it under #1236 without changing accepted server/native effects or sibling
+workflows. Page Escape and active Settings rail reselection preserve that visit.
+
+After the rows, a quiet neutral Inbox strip always says “Inbox requests stay
+available even when notifications are off.” and “Opening a notification never
+marks an item read, answers a request, approves work or resumes a session.” A
+native, initially collapsed “About notification delivery” disclosure retains its
+state only for that visit and contains “A submitted notification does not prove
+that its banner was displayed.” and “Reading an inbox item never answers it.”
+Toggling it performs no read, write or permission request.
+
+Native permission stays independent from readable preferences. Preserve explicit
+request/Refresh admission, deadlines, 30-second reads and visit-scoped late-result
+checks. Only NotDetermined offers Allow desktop notifications; pending request or
+read disables its controls. Granted shows “Allowed by the operating system” and
+“Focus or Do Not Disturb may still hide banners.” Permission scope remains
+“Permission is shared by DeliDev windows on this computer.” A read/request error
+replaces cached permission success with “Native notification permission could not
+be confirmed.” Retain exact checking, unrequested, denied, Linux service-available,
+bundle-required, actions-unavailable, capacity, other unavailable and non-desktop
+recovery copy from the native settings controller outside the collapsed disclosure.
+Linux availability is not user-permission evidence. OS denial never gates otherwise
+readable preference editing. No protocol, schema, native engine, migration,
+dependency, telemetry, Inbox state or execution authority changes are permitted.
+
+| Native state | Exact status / recovery copy |
+| --- | --- |
+| Checking | Checking native notification availability… |
+| NotDetermined | Notification permission has not been requested. |
+| Denied | Notifications are disabled. Enable DeliDev in your operating system's notification settings. |
+| ServiceAvailable | The desktop notification service supports actions. This service does not report user permission or whether a banner was shown. |
+| BundleRequired | Native notifications require the installed DeliDev app bundle. |
+| ActionsUnavailable | This desktop notification service cannot open notification actions. |
+| Capacity | The native notification limit is reached for this app process. Requests remain in the inbox; restart DeliDev to clear its native presentation state. |
+| Other unavailable | Native notification service is unavailable. |
+| Non-desktop | Open DeliDev on your desktop to manage native notifications. |
+
+
+Record component/browser validation, packaging and actual native-window/platform
+acceptance separately in PRs/issues/CI. Browser fixtures cannot prove native
+geometry/keyboard behavior or real macOS/Windows/Linux notification delivery.
+
+
 ### Inbox workspace
 Inbox is one persistent list/detail workspace for retained requests and terminal results. The list starts with no selection and fetches server-filtered pages of 20 using the generated source and read-state enums. Changing either filter resets pagination; expired cursors return to the first page. Rows show the retained Inbox record time and current read state. Selecting a row performs a fresh exact `GetInboxEntry`; opening from a native notification uses the same path and preserves the item's read state. Reading and notification activation never mark an entry read. Read-state changes are explicit revision-bound mutations.
 
