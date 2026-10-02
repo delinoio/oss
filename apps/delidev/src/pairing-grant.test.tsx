@@ -17,7 +17,7 @@ function fixture(expired = false) {
   const resource = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PAIRING, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Other computer", type: "client", expires_at: new Date(Date.now() + (expired ? -1000 : 300000)).toISOString() }) });
   const state = { current: resource };
   const issue = vi.fn(async (input: CreatePairingRequest) => ({ pairing: resource, requestId: input.requestId }));
-  const read = vi.fn(() => ({ resource: state.current }));
+  const read = vi.fn(async () => ({ resource: state.current }));
   const transport = createRouterTransport((router) => { router.service(DeviceService, { createPairing: issue }); router.service(ResourceService, { getResource: read }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><PairingGrant authority={authority} active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
@@ -69,6 +69,27 @@ it("clears the private code after a verified consumption observation", async () 
   await screen.findByText(/Pairing document was used/);
   expect(screen.queryByLabelText("Private pairing document")).toBeNull();
   expect(screen.queryByRole("button", { name: "Reveal private document" })).toBeNull();
+  value.state.current = value.resource;
+  await value.client.invalidateQueries();
+  expect(screen.queryByRole("button", { name: "Reveal private document" })).toBeNull();
+});
+
+it.each([false, true])("requires the first fresh grant read before reveal, failed: %s", async (failed) => {
+  const value = fixture();
+  let resolve!: (result: { resource: typeof value.resource }) => void, reject!: (error: ConnectError) => void;
+  const pending = new Promise<{ resource: typeof value.resource }>((done, fail) => { resolve = done; reject = fail; });
+  value.read.mockImplementationOnce(() => pending);
+  render(value.view()); issue();
+  await waitFor(() => expect(value.read).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("button", { name: "Reveal private document" })).toBeNull();
+  if (failed) {
+    reject(new ConnectError("Synthetic first-read failure", Code.Unavailable));
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: "Reveal private document" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh pairing status" }));
+  } else resolve({ resource: value.resource });
+  await screen.findByRole("button", { name: "Reveal private document" });
+  expect(value.issue).toHaveBeenCalledTimes(1);
 });
 it("blocks malformed acknowledgments and expired grant exposure", async () => {
   const value = fixture(true); render(value.view()); issue();

@@ -75,7 +75,7 @@ func (s *Service) authorizeRequest(r *http.Request) (*http.Request, func(), erro
 	}
 	if actor.Type == domain.WorkerDevice {
 		switch r.URL.Path {
-		case delidevv1connect.SubscriptionServiceWatchSubscriptionProcedure, delidevv1connect.SubscriptionServiceTakeSubscriptionProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionProgressProcedure, delidevv1connect.SubscriptionServiceFinishSubscriptionProcedure, delidevv1connect.WorkerServiceListSessionDeletionWorkProcedure, delidevv1connect.WorkerServiceReportSessionDeletionProcedure, delidevv1connect.WorkerServiceWatchForwardRequestsProcedure, delidevv1connect.ForwardServiceClaimForwardProcedure, delidevv1connect.ForwardServiceWatchForwardProcedure, delidevv1connect.ForwardServiceSendForwardProcedure, delidevv1connect.ForwardServiceReportForwardCleanupProcedure, delidevv1connect.WorkerServiceWatchWorkspaceReadsProcedure, delidevv1connect.WorkerServiceReportWorkspaceReadProcedure, delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceWatchAuxiliaryWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.WorkerServiceClaimQuestionResponseProcedure, delidevv1connect.WorkerServiceClaimApprovalResponseProcedure, delidevv1connect.WorkerServiceClaimSteerInputProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
+		case delidevv1connect.SubscriptionServiceWatchSubscriptionProcedure, delidevv1connect.SubscriptionServiceTakeSubscriptionProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionProgressProcedure, delidevv1connect.SubscriptionServiceFinishSubscriptionProcedure, delidevv1connect.WorkerServiceWatchTerminalsProcedure, delidevv1connect.WorkerServiceClaimTerminalProcedure, delidevv1connect.WorkerServiceReportTerminalProcedure, delidevv1connect.WorkerServicePublishTerminalOutputProcedure, delidevv1connect.WorkerServiceListSessionDeletionWorkProcedure, delidevv1connect.WorkerServiceReportSessionDeletionProcedure, delidevv1connect.WorkerServiceWatchForwardRequestsProcedure, delidevv1connect.ForwardServiceClaimForwardProcedure, delidevv1connect.ForwardServiceWatchForwardProcedure, delidevv1connect.ForwardServiceSendForwardProcedure, delidevv1connect.ForwardServiceReportForwardCleanupProcedure, delidevv1connect.WorkerServiceWatchWorkspaceReadsProcedure, delidevv1connect.WorkerServiceReportWorkspaceReadProcedure, delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceWatchAuxiliaryWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.WorkerServiceClaimQuestionResponseProcedure, delidevv1connect.WorkerServiceClaimApprovalResponseProcedure, delidevv1connect.WorkerServiceClaimSteerInputProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
 		default:
 			return nil, nil, domain.Fail(domain.PermissionDenied, "Worker credentials cannot invoke owner product operations.", "Use an owner or paired client credential.")
 		}
@@ -267,7 +267,11 @@ func (s *Service) PairDevice(ctx context.Context, req *connect.Request[pb.PairDe
 	if device.Revoked {
 		return nil, rpc.Error(domain.Fail(domain.Unauthenticated, "This paired device has been revoked.", "Request a new grant and pair a new device identity."), correlation)
 	}
-	response := &pb.PairDeviceResponse{Device: rpc.Resource(paired.Device), ServerId: string(s.Identity.ServerID), Replayed: result.Replayed}
+	projected, err := resourceProjection(paired.Device)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	response := &pb.PairDeviceResponse{Device: projected, ServerId: string(s.Identity.ServerID), Replayed: result.Replayed}
 	if paired.Machine != nil {
 		response.Machine = rpc.Resource(*paired.Machine)
 	}
@@ -329,6 +333,9 @@ func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[pb.Revo
 			if err := revokeMachineJobs(tx, device.MachineID); err != nil {
 				return nil, err
 			}
+			if err := loseTerminalAuthority(tx, device.MachineID); err != nil {
+				return nil, err
+			}
 		}
 		return updated, nil
 	})
@@ -341,7 +348,11 @@ func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[pb.Revo
 	}
 	s.cancelDevice(record.ID)
 	s.logger.Info("device_revoked", "device_id", record.ID)
-	response := connect.NewResponse(&pb.RevokeDeviceResponse{Device: rpc.Resource(record), RequestId: meta.RequestId, Replayed: result.Replayed})
+	projected, err := resourceProjection(record)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	response := connect.NewResponse(&pb.RevokeDeviceResponse{Device: projected, RequestId: meta.RequestId, Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }

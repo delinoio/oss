@@ -2,6 +2,7 @@ syntax = "proto3";
 package delidev.v1;
 
 import "delidev/v1/common.proto";
+import "delidev/v1/terminal.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
@@ -15,6 +16,10 @@ message ErrorDetail {
 service WorkerService {
   rpc ListSessionDeletionWork(ListSessionDeletionWorkRequest) returns (ListSessionDeletionWorkResponse);
   rpc ReportSessionDeletion(ReportSessionDeletionRequest) returns (ReportSessionDeletionResponse);
+  rpc WatchTerminals(WatchTerminalsRequest) returns (stream WatchTerminalsResponse);
+  rpc ClaimTerminal(ClaimTerminalRequest) returns (ClaimTerminalResponse);
+  rpc ReportTerminal(ReportTerminalRequest) returns (ReportTerminalResponse);
+  rpc PublishTerminalOutput(PublishTerminalOutputRequest) returns (PublishTerminalOutputResponse);
   rpc WatchForwardRequests(WatchForwardRequestsRequest) returns (stream WatchForwardRequestsResponse);
   rpc WatchWorkspaceReads(WatchWorkspaceReadsRequest) returns (stream WatchWorkspaceReadsResponse);
   rpc ReportWorkspaceRead(ReportWorkspaceReadRequest) returns (ReportWorkspaceReadResponse);
@@ -117,11 +122,15 @@ enum WorkerCapability {
   WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1 = 1;
   WORKER_CAPABILITY_SESSION_FORWARDING_V1 = 2;
   WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1 = 3;
+  WORKER_CAPABILITY_SESSION_TERMINALS_V1 = 4;
+  WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1 = 6;
+  WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 7;
 }
 
 message AttachWorkerResponse {
   Resource machine = 1;
   string server_id = 2;
+  repeated WorkerCapability supported_worker_capabilities = 3;
 }
 
 message WatchWorkRequest {

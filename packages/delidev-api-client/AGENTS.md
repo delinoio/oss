@@ -41,6 +41,9 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Preserve legacy generated-path reflection exports as well as declaration imports. Generate the aggregate descriptor view in the compatibility pass, retain original declaration order and canonical TypeScript object identity, and cover both direct enumeration and registry construction in compatibility tests.
 
 - Generated SessionQuery permanent-deletion acceptance/status and Worker cleanup queries preserve original UUIDs, BigInt revisions, pending removal and unknown reclaimed bytes. Generate through the canonical split schema and compatibility pass; no client-side ownership decisions or automatic mutation replay. Follow `docs/cmds-delidev-storage-contract.md`.
+- TerminalQuery and WorkerQuery expose the generated session terminal operations. Preserve exact bigint cursors/revisions, original bytes, explicit output gaps and request identities without persistence or native side-effect retries; follow the terminal contract.
+
+- Export generated PullRequestFixQuery and its typed profile from the additive PR-fix service. Preserve original request bytes/revisions and facade declaration identity; native Git authority remains Worker-local.
 
 - DeliDev API clients export the generated SubscriptionService and closed managed Codex capability/action types. Keep authentication bundles out of Query keys, persistence, synchronization, errors and ordinary resource models. Public clients cannot invoke the protected Worker lane. Follow `docs/cmds-delidev-subscription-contract.md` and retain generation freshness checks.
 
@@ -53,3 +56,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Generated `SessionQuery.switchSessionAccount` preserves the exact session revision, UUID-v7 receipt and explicitly selected account. Gate availability with the typed System capability, retain uncertain requests without automatic mutation retries, and leave stopped-session compatibility/authorization in Go.
 
 - Generated UsageQuery consumers verify the NATIVE_UNITS_V1 echo before interpreting native accounting, preserve decimal totals and distinct unit kinds, and keep legacy response fields separate. Grok pricing and budget contribution remain unavailable.
+
+- Generated BrowserQuery bindings expose only the metadata/cleanup contract in `docs/cmds-delidev-browser-contract.md`. Keep browser URLs, tabs and native paths out of product RPCs and React Query server state; local native presentation is independently authorized and generation-bound.
+
+- Generated NativeModelQuery bindings retain exact bigint revisions, original mutation identities and immutable observation cursors under `docs/cmds-delidev-native-models-contract.md`. Keep canonical registration a separate explicit save and advisory metadata outside any client authorization/readiness engine.

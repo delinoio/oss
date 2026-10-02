@@ -2,7 +2,7 @@
 
 ## Scope
 
-`cmds/delidev-cli/internal/integrations/github`, the domain integration model, server IntegrationService/SessionService handlers and CLI integration commands own named server-side GitHub.com PAT profiles and stable session PR associations. Profile metadata, direct native credential generations, authenticated identity inspection, repository-specific access observations, PR/issue list/search/detail, immutable PR diff, head Checks, commit statuses, complete applicable active PR-base rules, bounded required-CI evaluation, complete published PR feedback, fresh reviewer identity/permission and original App observations, persisted server/repository remediation policies, durable session links, official token forms and closed local browser opening are implemented. HEADGREEN merge-queue, remaining workflow profiles and App-bound-status evaluation, the remediation controller and handled/resolved evidence transitions remain separate required issue #964 work; head observations and endpoint access cannot stand in for them.
+`cmds/delidev-cli/internal/integrations/github`, the domain integration model, server IntegrationService/SessionService handlers and CLI integration commands own named server-side GitHub.com PAT profiles and stable session PR associations. Profile metadata, direct native credential generations, authenticated identity inspection, repository-specific access observations, PR/issue list/search/detail, immutable PR diff, head Checks, commit statuses, complete applicable active PR-base rules, bounded required-CI evaluation, complete published PR feedback, fresh reviewer identity/permission and original App observations, persisted server/repository remediation policies, durable session links, official token forms and closed local browser opening are implemented. HEADGREEN merge-queue, remaining workflow profiles and App-bound-status evaluation and provider-resolved transitions remain separate required issue #964 work; manual/automatic fixes and verified local handling are implemented below; head observations and endpoint access cannot stand in for them.
 
 ## Runtime and Language
 
@@ -188,11 +188,11 @@ The complete result independently validates all original feedback versions, auth
 
 `Settings.remediation` owns the server default. An omitted/null `Repository.remediation` inherits that complete default, including future updates; an explicit object replaces the complete policy. False switches, empty selectors and missing Agent/machine selections never inherit more permissive server fields. Policy snapshots clone the selector list. Both forms share strict validation and existing revision-bound configuration RPC/CLI saves; repository publication still requires every checkout's ordinary fresh Worker validation.
 
-The three automatic switches (`ci_failure`, `review_feedback`, `merge_conflict`) default off. `session_strategy` is `reuse` by default or `dedicated`; `conflict_strategy` is `merge` by default or `rebase`. `attempt_limit` is 1–100 with default 3. Optional `agent_id` and `machine_id` must be canonical local identities referencing the corresponding current resource kind when saved and again before deferred publication. Saving a draft without either choice is allowed; absence cannot authorize new-session creation. Disabled/unready resources, project/account/harness eligibility, current Git access and original PR head require separate execution-time checks.
+The three automatic switches (`ci_failure`, `review_feedback`, `merge_conflict`) default off. `session_strategy` is `reuse` by default or `dedicated`; `conflict_strategy` is `merge` by default; `rebase` requires an explicit effective server/repository policy. `attempt_limit` is 1–100 with default 3. Optional `agent_id` and `machine_id` must be canonical local identities referencing the corresponding current resource kind when saved and again before deferred publication. Saving a draft without either choice is allowed; absence cannot authorize new-session creation. Disabled/unready resources, project/account/harness eligibility, current Git access and original PR head require separate execution-time checks.
 
 `reviewer_selectors` contains at most 100 unique exact User/Bot/App numeric-and-node identities or minimum collaborator-permission selectors. Numeric IDs remain decimal strings, including values outside JavaScript's safe integer range. Identity names, suffixes and arbitrary role names are not selectors. The OR matcher and unknown-proof rules above apply; an empty list remains a valid saved policy with no automatic feedback match. Enabling the review switch cannot supply a missing selector.
 
-Desktop server preferences edit the whole default policy. Repository editing explicitly starts a new complete override with automation off or removes that override to restore inheritance. It retains unrelated fields, exact configuration revision and uncertain mutation bytes, exposes all three switches, execution selections, session/conflict strategy, attempt limit and reviewer identities, and displays unavailable automatic execution truthfully. Persisting policy neither dispatches work nor reads GitHub, consumes an attempt or changes evidence handling. Local version-specific Dismiss is implemented below. The controller, durable chains, handled/resolved transitions and manual Fix now remain required work.
+Desktop server preferences edit the whole default policy. Repository editing explicitly starts a new complete override with automation off or removes that override to restore inheritance. It retains unrelated fields, exact configuration revision and uncertain mutation bytes, exposes all three switches, execution selections, session/conflict strategy, attempt limit and reviewer identities, and explains the linked-PR and current execution prerequisites. Persisting policy itself neither dispatches work nor reads GitHub, consumes an attempt or changes evidence handling; the automatic coordinator below separately observes enabled policies. Local version-specific Dismiss is implemented below. Provider-resolved transitions remain required work. Manual Fix now, durable attempt composition and verified local handling are implemented below.
 
 Version-1 portable configuration retains both policies and original GitHub selectors. It inventories/remaps each policy's local Agent and machine references, including execution machines absent from all checkout lists. Missing/wrong-kind mappings reject the complete preview; deferred publication rechecks dependencies. Stable GitHub actor/App IDs are external identities and are never remapped. No authentication or reviewer observations accompany policy export.
 
@@ -208,7 +208,7 @@ Reference-only actor-bound receipts return current retained metadata on exact li
 
 CLI uses `session pr link --id SESSION --repository-id ID --number N`, `session pr list --id SESSION [--limit N --page-token TOKEN]`, `session pr get --id SESSION --association-id ID` and `session pr unlink --id SESSION --association-id ID --revision N`. All mutation commands preserve the global original `--request-id`. Link processing is bounded to 40 seconds and CLI context/header limits allow 45. CLI validates exact response ownership, original query selection and full-precision identities/revisions.
 
-The desktop session exposes an explicit PR associations panel, with scoped pages, inert historical identities/title, project-restricted named repository choices, canonical decimal number entry, link/unlink and explicit refresh. The main conversation remains mounted. Validate complete retained pages and mutation acknowledgments, preserve original uncertain mutation bytes across navigation, and never silently retry using new IDs or selections. Closing drops association queries; ordinary configuration selectors retain their existing connection-scoped cache policy. Links grant no automatic-fix eligibility or background GitHub polling.
+The desktop session exposes an explicit PR associations panel, with scoped pages, inert historical identities/title, project-restricted named repository choices, canonical decimal number entry, link/unlink and explicit refresh. The main conversation remains mounted. Validate complete retained pages and mutation acknowledgments, preserve original uncertain mutation bytes across navigation, and never silently retry using new IDs or selections. Closing drops association queries; ordinary configuration selectors retain their existing connection-scoped cache policy. A link alone grants no automatic-fix eligibility. Only an independently enabled effective policy admits the bounded background observations described below.
 
 ## Storage
 
@@ -236,7 +236,7 @@ Schema v18 adds one shared `problem` set per GitHub provider/repository numeric 
 
 CLI exposes `github pr problems refresh --repository-id ID --number N`, `github pr problems list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]`, and `github pr problems dismiss --id ID --revision N --content-version SHA256`, using the existing global request UUID for exact retries. The desktop opens shared history from both PR detail and retained session PR links, separates current provider metadata from original content/local handling, renders original text inertly and preserves uncertain mutation identities across closing/reopening the view. Reads use generated Connect Query and are disposed when the view closes.
 
-Published-feedback retention and local dismissal share the CI/conflict storage extension below. Handled/resolved transitions, Fix now, execution-time reviewer/prerequisite verification, durable attempt chains and the remediation controller remain unfinished. Persisted history is not execution authorization, and native provider thread resolution alone does not prove that a specific edited content version was handled.
+Published-feedback retention and local dismissal share the CI/conflict storage extension below. Manual Fix now, fresh manual prerequisites, durable attempt chains and verified local handling are implemented below; automatic reviewer verification, provider-resolved transitions and automatic remediation remain unfinished. Persisted history is not execution authorization, and native provider thread resolution alone does not prove that a specific edited content version was handled.
 
 ## Durable required-CI and conflict evidence
 
@@ -250,7 +250,7 @@ New failed-result versions share one immutable complete original CI proof per co
 
 Conflict state distinguishes verified conflict, mergeable, unknown and not-applicable for closed/merged PRs. GitHub's nullable `mergeable` remains unknown while its background computation is incomplete; see [GitHub's PR detail contract](https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request). A confirmed conflict snapshot binds a UUID-v7 transition, exact base/head refs/commits and original observation. Repeated reads, restart and intervening unknown readings preserve an unresolved transition; unknown never manufactures a conflict or proves resolution. A verified mergeable/closed/merged observation ends current membership. A later confirmed conflict or changed refs/commits receives a new transition/content version. Previous evidence and its local handling remain retained, with unknown latest state separately visible.
 
-Desktop shared history offers explicit independent collection kinds, latest feedback/CI/mergeability observations and original typed evidence. CI rows expose original lifecycle/output and an opt-in complete original rules/result read through ResourceQuery; validate the whole proof against the retained context and original observation, label it historical, and discard its query on close. Conflict rows show original transition/ref/commit provenance. Original proof inspection and local dismissal start no execution. Handled/resolved states and Fix now/automatic remediation remain separate unfinished work, as do the previously documented unsupported CI adapters and their real-platform/account evidence.
+Desktop shared history offers explicit independent collection kinds, latest feedback/CI/mergeability observations and original typed evidence. CI rows expose original lifecycle/output and an opt-in complete original rules/result read through ResourceQuery; validate the whole proof against the retained context and original observation, label it historical, and discard its query on close. Conflict rows show original transition/ref/commit provenance. Original proof inspection and local dismissal start no execution. Manual Fix now and verified handled state are implemented below; provider-resolved state and automatic remediation remain separate unfinished work, as do the previously documented unsupported CI adapters and their real-platform/account evidence.
 
 ## Build and Test
 
@@ -298,7 +298,7 @@ The automatic counter belongs to the PR chain and survives restarts, new result 
 
 A started attempt normally requires the exact server-retained native assignment, terminal progress, completion and confirmed owned cleanup for release. The separate positive pre-native rejection boundary may instead finish it as `not-started`, retaining the exact original rejection job reference; independently verify the accepted assignment/job/session/input/output and original queued-content digest before release. This frees the active chain without undoing its charged automatic attempt or fabricating native completion. Missing or mismatched completion retains uncertain ownership, including when the agent reported success. A completed attempt does not by itself prove a commit/push or mark evidence handled/resolved. Canceling a bound pre-start attempt requires that its exact input has already been removed through the ordinary queue boundary. The prior schema backup and existing evidence bytes/revisions remain unchanged during migration.
 
-This increment is an internal coordination and validation core. Public Fix now, session selection, the background controller, direct-harness commit-push flow, handled/resolved publication, and execution controls still require composition and acceptance evidence. Retained attempt history and explicit allowance resumption are implemented below. The private PR-head preparation/startup preflight and assignment-bound rejection report are implemented separately; explicit interrupted-Worker startup recovery is also implemented through the existing execution recovery operation, while public controller composition remains required. Persisted automatic switches alone still start no work. No real remediation, Git write or PAT acceptance is claimed by the coordination tests.
+This increment is an internal coordination and validation core. These internal primitives alone do not supply public execution. Manual Fix now, session selection, direct-harness commit/push and verified local handling are composed below; automatic execution is composed below, while provider-resolved publication remains required. Retained attempt history and explicit allowance resumption are implemented below. The private PR-head preparation/startup preflight and assignment-bound rejection report are implemented separately; explicit interrupted-Worker startup recovery is also implemented through the existing execution recovery operation, while the automatic coordinator below composes those existing gates. No persistence primitive alone can dispatch work. No real remediation, Git write or PAT acceptance is claimed by the coordination tests.
 
 
 ## Original PR source repository and Git target identity
@@ -310,7 +310,7 @@ The internal version-1 `PRGitTarget` snapshot binds the stable original PR, sour
 Desktop detail validates and displays original source names and exact IDs with separate unavailable and historical-unobserved states. Existing retained CI proofs that predate this additive field remain readable. The generic JSON read envelope is unchanged; there is no protobuf or database migration in this increment.
 
 
-The Worker workspace engine now accepts the original Git target through an explicit PR-only Worktree preparation profile. It verifies the selected base transport, exact current remote base/head refs and original fork before and after object fetch, then retains target provenance in the detached worktree manifest. No user ref, remote configuration or FETCH_HEAD is changed. The [workspace contract](cmds-delidev-workspace-contract.md) defines native authentication, cancellation and publication checks. Public remediation/session selection and later live Git preflight/direct-harness commit-push are still separate unfinished composition; the server does not yet issue this profile from a public Fix now action.
+The Worker workspace engine now accepts the original Git target through an explicit PR-only Worktree preparation profile. It verifies the selected base transport, exact current remote base/head refs and original fork before and after object fetch, then retains target provenance in the detached worktree manifest. No user ref, remote configuration or FETCH_HEAD is changed. The [workspace contract](cmds-delidev-workspace-contract.md) defines native authentication, cancellation and publication checks. The manual Fix now operation below now issues this profile; preparation itself still supplies no native Git write authority.
 
 
 Fresh first execution of the explicit PR-prepared Worktree now uses the common Worker lease's read-only original-head/base/remote/cleanliness preflight before native execution ownership is created. Its synchronized original startup phase distinguishes positive pre-native rejection from interrupted or uncertain inspection. The same job/execution cannot restart after rejection; a separately authorized fresh pair requires current reads and no unresolved prior phase, while preserving blocked files and original history; see the workspace contract. This private proof still needs immutable-assignment-bound Worker reporting and server reconciliation. It does not supply reused-session authority, a public Fix now action or native Git write credentials.
@@ -320,19 +320,139 @@ Fresh first execution of the explicit PR-prepared Worktree now uses the common W
 
 Owner/client `ListPullRequestRemediationAttempts` reads retained attempts by stable remote repository/PR numeric IDs without current configuration or GitHub access. Return the original PR set and newest-first attempts, at most 50 per page and 1 MiB of combined JSON document bytes. Signed cursors bind stable PR identities, normalized page size and a bounded fingerprint of the set revision plus every original attempt ID/sequence/revision; a changed attempt invalidates pagination even if the PR set itself did not change. Reject missing/gapped/corrupt original sequence history instead of returning a partial inventory.
 
-Owner/client `ResumePullRequestRemediation` binds the original PR set ID/revision and actor/request identity. Refuse an active or uncertain attempt, preserve lifetime counts and all records, and explicitly advance the existing allowance baseline with original resumption provenance. Its reference-only retry returns current retained set state without reapplying the baseline. This changes no session, input, routing, account, GitHub state or Worker job and never overrides Archive/pause. A future controller still needs fresh independent prerequisites and execution eligibility. CLI parity uses `github pr remediation list` and `github pr remediation resume`; desktop history exposes the same retained read and exact confirmed mutation, keeping uncertain requests across navigation.
+Owner/client `ResumePullRequestRemediation` binds the original PR set ID/revision and actor/request identity. Refuse an active or uncertain attempt, preserve lifetime counts and all records, and explicitly advance the existing allowance baseline with original resumption provenance. Its reference-only retry returns current retained set state without reapplying the baseline. This changes no session, input, routing, account, GitHub state or Worker job and never overrides Archive/pause. The automatic coordinator still needs fresh independent prerequisites and execution eligibility. CLI parity uses `github pr remediation list` and `github pr remediation resume`; desktop history exposes the same retained read and exact confirmed mutation, keeping uncertain requests across navigation.
 
 ### Read-only remediation session planning
 
 The internal linked-session query uses an explicitly selected project, local repository and original remote numeric/node PR identities. It returns potentially reusable sessions by persisted session activity (`updated_at` descending), then UUID descending for equal millisecond timestamps. Its bounded pages must remain in one database snapshot; the internal position is not a public cursor. Paused, archived/archiving, recovering, unprepared and General Chat sessions are excluded. Duplicate historical links cannot multiply candidates. Candidate metadata does not prove current account eligibility or a matching native workspace; the controller must independently check both before reuse, and may not infer matching HEAD from the original preparation commit.
 
-The internal new-workspace planner requires the policy's explicit Agent/machine and an explicit live project containing the target repository. It reuses the ordinary configuration/template/account routing resolver without reserving an account or advancing rotation, verifies current account validation, native installation/protocol, project restrictions, connected Worker and every project checkout, and rejects read-only Agent permissions and currently unsupported repository harness profiles. The target repository receives the exact current PR base/head commits, original fork identity and explicit fetch. Companion repositories retain their ordinary preparation/fetch policy and order, and the project's primary cwd remains unchanged. Planning creates no session/input/job, does not retrieve GitHub credentials and supplies no native Git authority. Acceptance must replan in its own mutation, while actual dispatch resolves current configuration/account selection again. These primitives are not yet public Fix now, automatic controller execution or commit/push support.
+The internal new-workspace planner requires the policy's explicit Agent/machine and an explicit live project containing the target repository. It reuses the ordinary configuration/template/account routing resolver without reserving an account or advancing rotation, verifies current account validation, native installation/protocol, project restrictions, connected Worker and every project checkout, and rejects read-only Agent permissions and currently unsupported repository harness profiles. The target repository receives the exact current PR base/head commits, original fork identity and explicit fetch. Companion repositories retain their ordinary preparation/fetch policy and order, and the project's primary cwd remains unchanged. Planning creates no session/input/job, does not retrieve GitHub credentials and supplies no native Git authority. Acceptance must replan in its own mutation, while actual dispatch resolves current configuration/account selection again. These primitives alone do not grant execution or publication; the manual composition below supplies separate assignment-bound Git proof. Automatic execution uses the coordinator below and repeats these checks at acceptance and dispatch.
 
 The separate private Worker matching read now observes the actual prepared Local/Worktree path against current original PR head/branch/remotes and clean state, retaining exclusive request-bound metadata without fetching or changing native execution ownership. The server rechecks original candidate revision, current project scope and stable association after the read; pause, Archive, unlink or changed activity invalidates it. See the [workspace matching contract](cmds-delidev-workspace-contract.md#current-native-matching-for-an-existing-pr-session). This is current candidate evidence only: selecting/coalescing the newest eligible session and fresh execution-time Git/API authorization remain controller responsibilities.
 
+
+## Manual PR fix execution (issue #1081)
+
+Every immutable remediation job independently requires Codex Execute mode and
+explicit workspace-write or full-access permission. Dispatch resolves the current
+Agent configuration again; a change to read-only or default permission after
+request acceptance cannot retain manual Git write authority.
+
+Successor continuation assignments clear the preceding remediation selection
+before current-authority validation. Preserve the original checkpoint account/
+connection through explicit stopped-session account selection; only the fresh
+exact queued input and attempt binding can attach new PR Git authority.
+
+Authenticated owner/paired clients use the additive `PullRequestFixService`. Its typed `CODEX_GIT_V1` capability advertises the currently supported Codex API execution profile with explicitly selected workspace-write or full-access permissions. Other harness profiles fail explicitly without fallback or permission elevation. `RequestPullRequestFix` binds an original UUID-v7 request to version-1 JSON with explicit project/repository IDs, original set revision and 1–100 original problem IDs, revisions and content versions. Revisions are canonical decimal strings. Actor-bound reference-only receipts replay current retained attempt/session/set resources without new provider reads, workspace work or inference. Initial identical actor/request selections coalesce through a bounded cancellable in-memory pre-acceptance gate and re-read the durable receipt before provider inspection; foreign input or actors cannot share it. Accepted replay bypasses the gate's capacity. The gate retains no native execution grant across restarts.
+
+Manual feedback may address retained original review comments, approved-review bodies and conversation comments even after provider edits or deletion. Fresh detail still proves the exact open PR and available source. Required CI and conflict fixes also require their fresh independent current prerequisites; unknown CI or mergeability never grants work. Read results are checked against the selected repository revision/profile generation before atomic acceptance, and dispatch rechecks the original target and all gates before consuming the ordinary input/account routing claim.
+
+Reuse inspects linked eligible sessions in descending persisted activity order with deterministic UUID ties. Paused, archived and recovering sessions are excluded; original native/account/project/Worker permissions and current workspace matching must independently pass. Unknown ownership stops selection. Acceptance rechecks session revision and the exact association after asynchronous matching. Otherwise the current complete policy must explicitly configure the Agent and Worker, and the caller must select a current project. The ordinary PR-head Worktree planner preserves every companion repository's preparation policy and the designated primary cwd. Session, original input, PR link, preparation job and stable-PR attempt ownership publish atomically. One active or uncertain attempt owns the stable remote PR across local aliases.
+
+The immutable execution assignment carries only an original target/strategy/attempt selection. The server lookup PAT never enters a Worker assignment or Git environment. While retaining the ordinary execution lease, the Worker independently preflights repository, exact source/base refs, original head and cleanliness, then checks native Git receive-pack access with a dry run. The native harness performs edits, tests and commits, then explicitly invokes the supplied closed Git bridge. `git delidev-target` supplies exact non-secret repository/base/fetch/push operands. The separately owned Worker bridge retains native Git authentication only in parent memory. The harness receives a disposable authenticated canonical loopback capability and a client launcher; no reversible native HOME, SSH-agent, Git configuration or lookup variables enter its environment. Immutable scope/configuration and executable bytes are checked before commands. Local reads/add/commit use a private credential-free lookup home with the captured explicit native commit identity; only closed network operations receive original native authentication. Command waiting and HTTP request capacity are bounded, and native closure cancels and joins the bridge before independent push proof. A separate parent-only key authenticates push claims, so mutable private metadata cannot forge publication proof. It permits supported reads/add/commit, exact conflict operations and one exact source/refspec push. Matching push-only URL rewrites are rejected before receive-pack because read-only URL expansion cannot prove their publication destination; see the [Git configuration contract](https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltbasegtpushInsteadOf). Rebase conflict pushes require `--force-with-lease=refs/heads/<source-ref>:<original-head>`; unrestricted force and substituted destinations are rejected. Existing explicit merge policies remain merge.
+
+The retained native Git environment preserves exact variable-name spelling on POSIX. Lowercase aliases remain separate inert entries and cannot become active Git/SSH or PATH settings after receive-pack preflight. Windows snapshots alone normalize case-insensitive names. Both forms retain the last applicable value and sort the snapshot for its existing digest; environment values remain private and never enter logs. This does not close the separately unresolved executable/configuration verification-to-execution boundary.
+
+Before publication the bridge rechecks original remote head/base and writes one synchronized exclusive push claim. Lost or failed publication cannot authorize another push for that attempt. After native closure and while the original lease is still active, independent Worker reads recheck local repository/transport, source branch or detached head, exact new local/remote commit, clean state and required ancestry. Only an original matching verified proof plus successful native completion and independent cleanup can atomically mark those exact original versions `handled`, retaining attempt/execution/pushed-head audit metadata. Confirmed unchanged remote state releases the completed attempt while leaving evidence unhandled. Missing/mismatched/uncertain push or cleanup retains the active PR owner and pauses session dispatch for explicit reconciliation. Original assignment/report ordering and cleanup are proved through server-observed job state; the Worker observation timestamp is bounded audit metadata and is never compared to the server clock to grant or deny handling. Handling audit timestamps use server transaction time. Local dismissal that races completion remains authoritative; handled proof cannot be erased by dismissal. Native success alone never means handled, and local handling does not resolve a GitHub thread.
+
+Queued fix inputs retain their original evidence/digest. Explicit removal cancels the unstarted attempt in the same transaction; editing cannot reinterpret it. Explicit Resume only unpauses a bound fix for the normal fresh PR dispatcher. Reconnect and recovery never resend a native fix or push. Automatic policy switches remain off by default; the coordinator below uses the same original assignment and push/cleanup boundaries.
+
+CLI equivalents are `delidev github pr remediation capabilities` and `delidev --request-id <uuid-v7> github pr remediation fix --input <path|->`. Input files/stdin use the same closed version-1 selection; authentication stdin requires a separate file for the document. Preserve the same request ID and bytes after uncertainty. Structured diagnostics use opaque local IDs, closed phases, safe failure codes and proof states; never raw paths, native output, Git argv, credentials or problem bodies.
+
+The extension reuses existing PR entities/indexes introduced in schema 24 and adds optional historical fields without a new migration or fabricated proof for old attempts. Main's subsequent migration allocations remain unchanged. Generated service-specific Go/TypeScript clients and forwarding exports reproduce through the normal protocol generator. Isolated fixture/build evidence and remaining real-account/platform acceptance are recorded in `docs/evidence/delidev/issue-1081/`.
+
 ## Unified PR activity projection
 
-The retained Activity contract now publishes metadata-only original problem observations, local dismissals and semantic remediation attempt transitions atomically with their sources. Stable remote PR ownership, exact receipts and unchanged alias collections preserve one history. Failed/uncertain/successful attempts remain distinct from verified handling. The private `RetainPRHandlingVerification` boundary accepts independently verified exact versions and a private proof commitment, preserving the first record for an identical proof. It is fixture-tested but has no production/public caller; implementing the independent verifier, handled/resolved mutations and controller still requires their separate composition and acceptance. There is no retrospective backfill or inferred success. See [retained activity](cmds-delidev-activity-contract.md) for identity, actor, pagination, session cleanup and content boundaries.
+The retained Activity contract now publishes metadata-only original problem observations, local dismissals and semantic remediation attempt transitions atomically with their sources. Stable remote PR ownership, exact receipts and unchanged alias collections preserve one history. Failed/uncertain/successful attempts remain distinct from verified handling. The private `RetainPRHandlingVerification` boundary accepts independently verified exact versions and a private proof commitment, preserving the first record for an identical proof. The manual fix profile above now calls this boundary only after original assignment-bound push and cleanup verification, in the same transaction as exact handled versions. Provider-resolved mutations and real-account/native acceptance remain separate requirements; automatic composition follows below. There is no retrospective backfill or inferred success. See [retained activity](cmds-delidev-activity-contract.md) for identity, actor, pagination, session cleanup and content boundaries.
+
+Manual fix selection requires the exact local repository in the original retained
+set before reading policy/profile authority; a same-remote repository alias cannot
+substitute. Up to four independent provider preflights run outside the ordinary
+execution scan and are canceled and joined at shutdown. The ordinary five-second
+claim bound is preserved. Failed unaccepted manual-fix dispatch attempts retain a
+server-epoch scheduling deadline: 30 seconds initially, doubling to a five-minute
+maximum after consecutive failures. The retained failure block and unrelated
+blocked-session edits cannot reset that deadline. Explicit Stop/Resume or a fresh
+accepted ready input may clear scheduling delay, while all original input, remote,
+configuration and atomic claim checks still apply. Successful dispatch clears the
+entry; abandoned entries expire after a further five minutes. A fresh server epoch
+may inspect the original candidate again. This bounds automatic preflight reads
+and scheduler memory without authorizing native input or push replay.
+Post-push cleanliness excludes ignored validation output
+while retaining tracked and ordinary untracked source checks. Typed capability
+consumers accept their known profile alongside additive unknown entries.
 
 ### Explicit outbound routing
 All production GitHub identity, repository access and content/rules/check/reviewer adapters use the shared server-selected outbound transport under [the network contract](cmds-delidev-network-contract.md). The fixed official GitHub origin, PAT scope, destination TLS and redirect refusal remain unchanged. Worker profiles cannot alter this route.
+
+## Bounded automatic PR remediation (issue #1082)
+
+The server starts and joins an automatic coordinator independently of ordinary
+execution dispatch. It scans retained session PR associations in bounded pages;
+each association supplies its original explicit project and local repository.
+It never discovers unlinked PRs, guesses a project from a problem set, or grants
+authority from a link alone. All three effective switches remain default off.
+Feedback additionally requires at least one configured OR selector; a configured
+empty list permits no feedback polling or execution. Existing configuration
+Connect/CLI operations own policy edits, and retained attempt history and explicit
+allowance resumption use the existing authenticated operations above. The execution
+profile remains the typed Codex Git profile; unsupported harnesses fail explicitly.
+
+Feedback/reviewer, required CI and conflict collection are independent, bounded
+reads through the selected explicit GitHub profile. Failed or unknown CI cannot
+supply a CI problem or veto independently authorized feedback/conflict collection.
+Fresh acceptance observes original source/base/head identity and current reviewer
+identity/permission, filters eligible original versions, and rechecks complete
+policy, repository/profile generation, project membership and source-link controls
+inside the same transaction as attempt/session/queue/workspace publication.
+The ordinary execution dispatcher repeats the original per-kind remote gates
+immediately before its atomic input/account/job claim. No saved observation,
+reservation, receipt, installation or successful native result substitutes for
+current authority. The server lookup PAT never reaches native Git.
+When that fresh preflight rejects a changed prerequisite with a conflict, the
+ordinary queue-removal transaction may cancel only an unclaimed automatic bound
+input and release its PR reservation without charging an execution attempt.
+Claimed/native or uncertain work cannot enter this path. This allows independently
+eligible feedback or conflict work to proceed after required CI becomes unknown;
+explicit source/session controls remain authoritative for any replacement.
+
+One stable remote-PR owner coalesces aliases and duplicate observations across
+sessions and restarts. Eligible linked sessions retain persisted activity ordering
+and independent native workspace matching. Otherwise the explicit configured Agent
+and Runner Device create a fresh PR-head Worktree through ordinary preparation.
+Accepted inputs preserve their complete original evidence and FIFO semantics.
+The chain charges automatic attempts only at execution claim, preserves lifetime
+counts across heads and replacement sessions, defaults to three, and admits only
+explicit extra allowance through policy/resumption. An exhausted reservation
+records its limit without accepting a session/input or resetting any count.
+Uncertain native completion, push or cleanup retains the original active owner.
+Exact independent successful push/cleanup proof alone may handle original versions.
+
+An automatic attempt retains `automatic_link_id` and its canonical decimal-string
+`automatic_link_revision`, independent of its selected execution session. The
+source link and its original session/project are rechecked at admission and final
+execution claim. Pause, Archive, recovery, unlink or association replacement can
+therefore block a queued dedicated fix. The latest attempt's session also gates
+replacement through older links. Explicit Stop/Archive/Restore retain the
+server-owned `automatic_remediation_stopped` bit; a successful explicit Resume
+clears it. A positively settled failed attempt from this automatic profile may
+select a fresh eligible session only with confirmed native cleanup, no active
+execution, no recovery/Archive and no explicit Stop. Its original failed queue
+stays paused. Historical/manual failures cannot acquire this replacement authority.
+If that failed automatic execution ran in the discovery session itself, its
+paused association may retain discovery authority only while its original indexed
+input still proves the same finished automatic attempt/execution and confirmed
+cleanup. The next execution uses a fresh eligible session; it cannot resume that
+old queue. Explicit Stop, Archive, recovery or changed completion proof blocks both
+admission and final claim, including after replacement acceptance.
+
+Four cancellable target lanes, 50-link scan pages, a 30-second cooldown measured
+from completion, and failed-target backoff from 30 seconds to five minutes bound
+background work. Each collection/read family has a 20-second deadline under a
+75-second target lifetime, and all started work is joined before store/vault
+closure. Existing per-profile/global GitHub read gates remain authoritative;
+a busy profile yields a blocked observation rather than another concurrent read.
+Scheduling deduplication/backoff never grants native replay. Logs contain only local
+opaque IDs, closed problem kinds, typed codes and scheduling metadata. Repository
+contracts describe these rules; validation commands, source revisions and actual
+native/account/platform acceptance limits belong in PRs/issues/CI artifacts.

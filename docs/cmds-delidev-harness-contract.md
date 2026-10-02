@@ -12,6 +12,20 @@ Users install and update harnesses themselves. A Worker selects an explicit exec
 ## Interfaces and Contracts
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.
 
+### Codex model observation profile
+
+The [native model contract](cmds-delidev-native-models-contract.md) owns the separate
+Codex 0.151.0 credential-free observation profile. Installation discovery records
+an optional verified executable SHA-256; older Workers without that identity
+cannot launch native observations. The observer verifies a private copy and source
+identity, initializes one keyless runtime and drains all native model pages within
+30 seconds/768 KiB/10,000 entries. Repeated cursors, duplicate picker identities,
+malformed metadata or secret reflection fail the complete observation. Picker and
+executable model IDs remain distinct; metadata never grants entitlement/readiness.
+Join owned descendants and private runtime removal before publication. No host
+login, execution grant, provider endpoint, thread creation or inference is used.
+Managed subscriptions remain unsupported until their protected lifecycle exists.
+
 ### Codex automatic title profile
 Automatic titles use only explicitly verified Codex `0.151.0` with the native Responses profile. Worker startup probes the exact installed binary/version and app-server protocol in a fresh private home without login or inference. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
 

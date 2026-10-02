@@ -17,6 +17,10 @@ use serde::Serialize;
 mod input_watch;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+mod macos_job;
+#[cfg(target_os = "macos")]
+mod macos_owner;
 mod supervisor;
 
 #[derive(Parser)]
@@ -340,6 +344,8 @@ fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<Pa
 fn main() {
     #[cfg(target_os = "linux")]
     linux::dispatch_helper();
+    #[cfg(target_os = "macos")]
+    macos_owner::dispatch_helper();
     let cli = Cli::parse();
     let json = matches!(cli.command, Action::Doctor { json: true });
     let ansi = !json

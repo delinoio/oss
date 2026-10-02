@@ -2,6 +2,7 @@
 package server
 
 import (
+	"container/list"
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -49,6 +50,8 @@ type Service struct {
 	delidevv1connect.UnimplementedDeviceServiceHandler
 	delidevv1connect.UnimplementedForwardServiceHandler
 	delidevv1connect.UnimplementedWorkerServiceHandler
+	delidevv1connect.UnimplementedTerminalServiceHandler
+	delidevv1connect.UnimplementedBrowserServiceHandler
 	delidevv1connect.UnimplementedAccountServiceHandler
 	delidevv1connect.UnimplementedSubscriptionServiceHandler
 	delidevv1connect.UnimplementedProviderServiceHandler
@@ -62,6 +65,10 @@ type Service struct {
 	github               githubIdentity
 	githubAccess         githubRepositoryAccess
 	githubQueries        githubRepositoryQueries
+	terminalOutputMu     sync.Mutex
+	terminalOutputs      map[domain.ID]*terminalOutputRing
+	terminalOutputOrder  list.List
+	prFixRequests        prFixRequestTracker
 	subscriptionOnce     sync.Once
 	subscriptionEpoch    domain.ID
 	subscriptionProgress map[domain.ID]subscriptionProgress

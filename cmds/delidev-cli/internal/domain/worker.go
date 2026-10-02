@@ -23,12 +23,13 @@ const (
 )
 
 type Device struct {
-	Name      string     `json:"name"`
-	Type      DeviceType `json:"type"`
-	MachineID ID         `json:"machine_id,omitempty"`
-	Revoked   bool       `json:"revoked"`
-	PairedAt  time.Time  `json:"paired_at"`
-	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	BrowserProfiles []BrowserProfileRecord `json:"browser_profiles,omitempty"`
+	Name            string                 `json:"name"`
+	Type            DeviceType             `json:"type"`
+	MachineID       ID                     `json:"machine_id,omitempty"`
+	Revoked         bool                   `json:"revoked"`
+	PairedAt        time.Time              `json:"paired_at"`
+	RevokedAt       *time.Time             `json:"revoked_at,omitempty"`
 }
 type Pairing struct {
 	Name      string     `json:"name"`
@@ -88,9 +89,11 @@ const (
 type WorkerCapability string
 
 const (
-	AutomaticTitlesCodexV1      WorkerCapability = "automatic-titles-codex-v1"
-	SessionForwardingV1         WorkerCapability = "session-forwarding-v1"
-	ManagedCodexSubscriptionsV1 WorkerCapability = "managed-codex-subscriptions-v1"
+	RepositoryInspectionMetadataV1 WorkerCapability = "repository-inspection-metadata-v1"
+	SessionTerminalsV1             WorkerCapability = "session-terminals-v1"
+	AutomaticTitlesCodexV1         WorkerCapability = "automatic-titles-codex-v1"
+	SessionForwardingV1            WorkerCapability = "session-forwarding-v1"
+	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
 )
 
 type JobState string
@@ -121,7 +124,7 @@ type Job struct {
 }
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{CreateBackupJob, DeleteBackupJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
+	if !slices.Contains([]JobType{NativeModelsJob, CreateBackupJob, DeleteBackupJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {

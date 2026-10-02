@@ -2,6 +2,7 @@
   "name": "@delino/pnport",
   "version": "0.0.0",
   "private": true,
+  "pnportReleaseReady": false,
   "description": "Native Yarn Plug'n'Play subprocess filesystem",
   "license": "Apache-2.0",
   "engines": { "node": ">=22" },
@@ -11,6 +12,7 @@
     "package:npm": "node scripts/package.mjs",
     "publish:npm": "node scripts/publish.mjs",
     "test:typescript:prepare": "node scripts/typescript-conformance.mjs prepare",
-    "test:typescript": "node scripts/typescript-conformance.mjs run"
+    "test:typescript": "node scripts/typescript-conformance.mjs run",
+    "benchmark": "node scripts/benchmark.mjs"
   }
 }

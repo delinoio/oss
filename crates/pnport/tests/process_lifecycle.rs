@@ -1,0 +1,754 @@
+// SPDX-License-Identifier: Apache-2.0
+#![cfg(any(target_os = "macos", target_os = "linux"))]
+
+use std::{
+    fs,
+    io::Write,
+    os::{
+        fd::{AsRawFd, FromRawFd},
+        unix::{
+            fs::MetadataExt,
+            process::{CommandExt, ExitStatusExt},
+        },
+    },
+    process::{Child, Command, Output, Stdio},
+    time::{Duration, Instant},
+};
+
+use pnport::cache::{Cache, Operation, State};
+use serde_json::json;
+
+fn pnport_binary() -> std::ffi::OsString {
+    // Repeat the same lifecycle conformance against an explicitly installed
+    // native archive as well as Cargo's development executable.
+    std::env::var_os("PNPORT_TEST_BINARY").unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into())
+}
+
+struct Fixture {
+    root: tempfile::TempDir,
+    child: Option<Child>,
+    pids: Vec<i32>,
+}
+
+impl Fixture {
+    fn project(static_binary: bool) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        let data = json!({
+            "enableTopLevelFallback": false,
+            "ignorePatternData": null,
+            "dependencyTreeRoots": [{"name":"root", "reference":"workspace:."}],
+            "fallbackPool": [], "fallbackExclusionList": [],
+            "packageRegistryData": [
+                [null, [[null, {"packageLocation":"./", "packageDependencies":[["dep","npm:1"]], "linkType":"SOFT", "discardFromLookup":true}]]],
+                ["root", [["workspace:.", {"packageLocation":"./", "packageDependencies":[["dep","npm:1"]], "linkType":"SOFT"}]]],
+                ["dep", [["npm:1", {"packageLocation":"./cache.zip/node_modules/dep/", "packageDependencies":[], "linkType":"HARD"}]]]
+            ]
+        });
+        fs::write(
+            root.path().join(".pnp.data.json"),
+            serde_json::to_vec(&data).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            root.path().join(".pnp.cjs"),
+            "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");",
+        )
+        .unwrap();
+        let binary = root.path().join("tree");
+        let mut compiler = Command::new("cc");
+        if static_binary {
+            compiler.arg("-static");
+        }
+        assert!(compiler
+            .arg("-pthread")
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/process-tree.c"))
+            .arg("-o")
+            .arg(&binary)
+            .status()
+            .unwrap()
+            .success());
+        let mut archive =
+            zip::ZipWriter::new(fs::File::create(root.path().join("cache.zip")).unwrap());
+        archive
+            .start_file(
+                "node_modules/dep/file.txt",
+                zip::write::SimpleFileOptions::default().unix_permissions(0o644),
+            )
+            .unwrap();
+        archive.write_all(b"package bytes").unwrap();
+        archive
+            .start_file(
+                "node_modules/dep/bin/tree",
+                zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+            )
+            .unwrap();
+        archive.write_all(&fs::read(&binary).unwrap()).unwrap();
+        for path in [
+            "node_modules/dep/blocked/tree",
+            "node_modules/dep/bin/noexec",
+        ] {
+            archive
+                .start_file(
+                    path,
+                    zip::write::SimpleFileOptions::default().unix_permissions(0o644),
+                )
+                .unwrap();
+            archive.write_all(b"not executable").unwrap();
+        }
+        archive.finish().unwrap();
+        root
+    }
+
+    fn new(mode: &str, static_binary: bool) -> Self {
+        let root = Self::project(static_binary);
+        let binary = root.path().join("tree");
+        let child = Command::new(pnport_binary())
+            .current_dir(root.path())
+            .args(["--cache-dir"])
+            .arg(root.path().join("store"))
+            .args(["run", "--"])
+            .arg(binary)
+            .args(["root", mode])
+            // Test-owned group isolation must not signal the Cargo harness.
+            .process_group(0)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        Self {
+            root,
+            child: Some(child),
+            pids: Vec::new(),
+        }
+    }
+
+    fn terminal(mode: &str) -> (Self, fs::File) {
+        let root = Self::project(false);
+        let driver = root.path().join("terminal-driver");
+        assert!(Command::new("cc")
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/terminal-driver.c"
+            ))
+            .arg("-o")
+            .arg(&driver)
+            .status()
+            .unwrap()
+            .success());
+        let mut master = -1;
+        let mut slave = -1;
+        assert_eq!(
+            unsafe {
+                libc::openpty(
+                    &mut master,
+                    &mut slave,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                )
+            },
+            0
+        );
+        let master = unsafe { fs::File::from_raw_fd(master) };
+        let slave = unsafe { fs::File::from_raw_fd(slave) };
+        let mut settings = unsafe { std::mem::zeroed::<libc::termios>() };
+        assert_eq!(
+            unsafe { libc::tcgetattr(slave.as_raw_fd(), &mut settings) },
+            0
+        );
+        settings.c_lflag |= libc::ICANON | libc::ISIG;
+        settings.c_lflag &= !libc::ECHO;
+        settings.c_cc[libc::VINTR] = 3;
+        settings.c_cc[libc::VSUSP] = 26;
+        assert_eq!(
+            unsafe { libc::tcsetattr(slave.as_raw_fd(), libc::TCSANOW, &settings) },
+            0
+        );
+        // The master is test-owned and must not keep the tty alive in the job.
+        assert_eq!(
+            unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) },
+            0
+        );
+        let mut command = Command::new(driver);
+        command
+            .current_dir(root.path())
+            .arg(pnport_binary())
+            .arg(root.path().join("tree"))
+            .arg(mode)
+            .stdin(slave.try_clone().unwrap())
+            .stdout(slave.try_clone().unwrap())
+            .stderr(slave);
+        unsafe {
+            command.pre_exec(|| {
+                #[cfg(target_os = "macos")]
+                let request = libc::TIOCSCTTY as libc::c_ulong;
+                #[cfg(target_os = "linux")]
+                let request = libc::TIOCSCTTY;
+                if libc::setsid() < 0 || libc::ioctl(0, request, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let child = command.spawn().unwrap();
+        (
+            Self {
+                root,
+                child: Some(child),
+                pids: Vec::new(),
+            },
+            master,
+        )
+    }
+
+    fn wait_marker(&mut self, name: &str) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !self.root.path().join(name).is_file() {
+            let status = self.child.as_mut().unwrap().try_wait().unwrap();
+            assert!(
+                status.is_none(),
+                "terminal driver exited before {name}: {status:?}"
+            );
+            assert!(
+                Instant::now() < deadline,
+                "terminal job did not reach {name}; driver={}, launching={}, running={}, root={}",
+                self.root.path().join("terminal.driver").is_file(),
+                self.root.path().join("terminal.launching").is_file(),
+                self.root.path().join("terminal.running").is_file(),
+                self.root.path().join("root.pid").is_file()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn ready(&mut self) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        for role in ["root", "middle", "leaf"] {
+            loop {
+                if let Ok(value) = fs::read_to_string(self.root.path().join(format!("{role}.pid")))
+                {
+                    if let Ok(pid) = value.parse::<i32>() {
+                        self.pids.push(pid);
+                        break;
+                    }
+                }
+                if self.child.as_mut().unwrap().try_wait().unwrap().is_some() {
+                    let output = self.child.take().unwrap().wait_with_output().unwrap();
+                    panic!(
+                        "fixture initialization failed: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "owned fixture did not become ready"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+
+    fn signal(&self, signal: i32) {
+        assert_eq!(
+            unsafe { libc::kill(self.child.as_ref().unwrap().id() as i32, signal) },
+            0
+        );
+    }
+
+    fn stopped(&mut self) -> Output {
+        let deadline = Instant::now() + Duration::from_secs(12);
+        while self.child.as_mut().unwrap().try_wait().unwrap().is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "supervisor exceeded the cleanup bound"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        while self
+            .pids
+            .iter()
+            .any(|pid| unsafe { libc::kill(*pid, 0) } == 0)
+        {
+            assert!(
+                Instant::now() < deadline,
+                "owned descendants survived cleanup or were not reaped"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        #[cfg(target_os = "macos")]
+        while unsafe { libc::kill(-self.group(), 0) } == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "the private guardian survived cleanup"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        self.pids.clear();
+        self.child.take().unwrap().wait_with_output().unwrap()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn group(&self) -> i32 {
+        fs::read_to_string(self.root.path().join("root.group"))
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+
+    fn cache(&self) -> Cache {
+        Cache::open(self.root.path().join("store")).unwrap()
+    }
+
+    fn assert_active(&self) {
+        let entries = self.cache().entries(Operation::Clean).unwrap();
+        assert!(!entries.is_empty());
+        assert!(
+            entries
+                .iter()
+                .all(|entry| matches!(entry.state, State::Active)),
+            "active execution lost its cache lease"
+        );
+    }
+
+    fn assert_released(&self) {
+        let entries = self.cache().entries(Operation::List).unwrap();
+        assert!(!entries.is_empty());
+        assert!(
+            entries
+                .iter()
+                .all(|entry| matches!(entry.state, State::Complete)),
+            "stopped execution retained a cache lease"
+        );
+        assert!(self
+            .cache()
+            .entries(Operation::Clean)
+            .unwrap()
+            .iter()
+            .all(|entry| matches!(entry.state, State::Removed)));
+        assert!(self.cache().entries(Operation::List).unwrap().is_empty());
+        assert!(!self.root.path().join("node_modules").exists());
+    }
+
+    fn assert_signals(&self, signal: i32) {
+        for role in ["root", "middle", "leaf"] {
+            assert_eq!(
+                fs::read(self.root.path().join(format!("{role}.signal"))).unwrap(),
+                [signal as u8],
+                "wrong descendant termination signal"
+            );
+        }
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        // Verify the native image again before cleaning a failed fixture, so
+        // a recycled PID cannot signal an unrelated process on the host.
+        for pid in &self.pids {
+            if fixture_image(*pid, &self.root.path().join("tree")) {
+                unsafe {
+                    libc::kill(*pid, libc::SIGKILL);
+                }
+            }
+        }
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+fn cancellation(signal: i32) {
+    let mut fixture = Fixture::new("normal", false);
+    fixture.ready();
+    fixture.assert_active();
+    fixture.signal(signal);
+    let output = fixture.stopped();
+    assert_eq!(output.status.code(), Some(128 + signal));
+    fixture.assert_signals(signal);
+    fixture.assert_released();
+}
+
+#[test]
+fn interrupt_reaches_the_owned_tree_and_releases_leases() {
+    cancellation(libc::SIGINT);
+}
+#[test]
+fn termination_reaches_the_owned_tree_and_releases_leases() {
+    cancellation(libc::SIGTERM);
+}
+#[test]
+fn hangup_reaches_the_owned_tree_and_releases_leases() {
+    cancellation(libc::SIGHUP);
+}
+
+#[test]
+fn spawnp_searches_parent_virtual_path_and_restores_replacement_environment() {
+    let mut fixture = Fixture::new("spawnp", false);
+    fixture.ready();
+    fixture.assert_active();
+    fixture.signal(libc::SIGTERM);
+    assert_eq!(fixture.stopped().status.code(), Some(143));
+    fixture.assert_signals(libc::SIGTERM);
+    assert_eq!(
+        fs::read(fixture.root.path().join("spawn-output")).unwrap(),
+        b"11"
+    );
+    fixture.assert_released();
+}
+
+#[test]
+fn concurrent_fork_and_child_callbacks_preserve_the_virtual_view() {
+    let mut fixture = Fixture::new("fork-stress", false);
+    let output = fixture.stopped();
+    assert!(
+        output.status.success(),
+        "{}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fixture.assert_released();
+}
+
+fn terminal_job(mode: &str) {
+    let (mut fixture, mut terminal) = Fixture::terminal(mode);
+    terminal.write_all(b"first\n").unwrap();
+    fixture.wait_marker("terminal.first");
+    fixture.pids.push(
+        fs::read_to_string(fixture.root.path().join("root.pid"))
+            .unwrap()
+            .parse()
+            .unwrap(),
+    );
+    fixture.assert_active();
+    if mode == "interrupt" {
+        terminal.write_all(&[3]).unwrap();
+    } else {
+        if mode == "stop" {
+            terminal.write_all(&[26]).unwrap();
+        }
+        fixture.wait_marker("terminal.stopped");
+        terminal.write_all(b"second\n").unwrap();
+    }
+    assert_eq!(
+        fixture.stopped().status.code(),
+        Some(if mode == "interrupt" { 130 } else { 23 })
+    );
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}
+
+#[test]
+fn controlling_terminal_reads_stop_resume_and_restore_the_caller_group() {
+    terminal_job("stop");
+}
+
+#[test]
+fn command_sigstop_stops_the_supervisor_until_foreground_resume() {
+    terminal_job("self-stop");
+}
+
+#[test]
+fn background_terminal_read_stops_then_foreground_resume_preserves_input() {
+    terminal_job("background");
+}
+
+#[test]
+fn controlling_terminal_interrupt_preserves_the_native_exit_status() {
+    terminal_job("interrupt");
+}
+
+#[test]
+fn redirected_input_keeps_the_callers_terminal_group() {
+    let (mut fixture, _terminal) = Fixture::terminal("redirected");
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}
+
+#[test]
+fn unresponsive_tree_is_killed_after_the_five_second_grace() {
+    let mut fixture = Fixture::new("ignore", false);
+    fixture.ready();
+    fixture.assert_active();
+    let start = Instant::now();
+    fixture.signal(libc::SIGTERM);
+    assert_eq!(fixture.stopped().status.code(), Some(143));
+    assert!(
+        start.elapsed() >= Duration::from_secs(5),
+        "shutdown grace was shortened"
+    );
+    fixture.assert_released();
+}
+
+#[test]
+fn normal_root_exit_stops_surviving_descendants_and_preserves_status() {
+    let mut fixture = Fixture::new("exit", false);
+    fixture.ready();
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    fixture.assert_released();
+}
+
+#[test]
+fn killed_supervisor_stops_the_tree_and_releases_leases() {
+    let mut fixture = Fixture::new("normal", false);
+    fixture.ready();
+    fixture.assert_active();
+    fixture.signal(libc::SIGKILL);
+    assert_eq!(fixture.stopped().status.signal(), Some(libc::SIGKILL));
+    fixture.assert_released();
+}
+
+#[test]
+fn graph_invalidation_stops_the_tree_and_releases_leases() {
+    let mut fixture = Fixture::new("normal", false);
+    fixture.ready();
+    fixture.assert_active();
+    fs::write(fixture.root.path().join(".pnp.data.json"), b"{}").unwrap();
+    let output = fixture.stopped();
+    assert_eq!(output.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("PNPORT_GRAPH_CHANGED"));
+    fixture.assert_signals(libc::SIGTERM);
+    fixture.assert_released();
+}
+
+#[test]
+fn archive_invalidation_stops_the_tree_and_releases_leases() {
+    let mut fixture = Fixture::new("normal", false);
+    fixture.ready();
+    fixture.assert_active();
+    fs::write(fixture.root.path().join("cache.zip"), b"changed").unwrap();
+    let output = fixture.stopped();
+    assert_eq!(output.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("PNPORT_GRAPH_CHANGED"));
+    fixture.assert_signals(libc::SIGTERM);
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn detached_static_tree_is_stopped_and_reaped() {
+    let mut fixture = Fixture::new("detached", true);
+    fixture.ready();
+    fixture.assert_active();
+    fixture.signal(libc::SIGINT);
+    assert_eq!(fixture.stopped().status.code(), Some(130));
+    fixture.assert_signals(libc::SIGINT);
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn killed_supervisor_stops_detached_static_descendants() {
+    let mut fixture = Fixture::new("detached", true);
+    fixture.ready();
+    fixture.assert_active();
+    fixture.signal(libc::SIGKILL);
+    assert_eq!(fixture.stopped().status.signal(), Some(libc::SIGKILL));
+    fixture.assert_released();
+}
+
+fn fixture_image(pid: i32, expected: &std::path::Path) -> bool {
+    #[cfg(target_os = "linux")]
+    let actual = std::path::PathBuf::from(format!("/proc/{pid}/exe"));
+    #[cfg(target_os = "macos")]
+    let actual = {
+        use std::os::unix::ffi::OsStrExt;
+        let mut path = [0; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+        if unsafe { libc::proc_pidpath(pid, path.as_mut_ptr().cast(), path.len() as u32) } <= 0 {
+            return false;
+        }
+        let Some(length) = path.iter().position(|byte| *byte == 0) else {
+            return false;
+        };
+        std::path::PathBuf::from(std::ffi::OsStr::from_bytes(&path[..length]))
+    };
+    match (fs::metadata(actual), fs::metadata(expected)) {
+        (Ok(actual), Ok(expected)) => {
+            actual.dev() == expected.dev() && actual.ino() == expected.ino()
+        }
+        _ => false,
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn private_owner_rejects_direct_invocation_and_an_untrusted_peer() {
+    use std::os::{fd::AsRawFd, unix::net::UnixStream};
+    for role in [None, Some("guardian"), Some("anchor"), Some("bootstrap")] {
+        for inherited in [false, true] {
+            let (_peer, socket) = UnixStream::pair().unwrap();
+            let fd = socket.as_raw_fd();
+            let mut command = Command::new(pnport_binary());
+            command
+                .arg("__pnport_macos_owner")
+                .process_group(0)
+                .env_remove("PNPORT_MACOS_OWNER_FD");
+            if let Some(role) = role {
+                command.arg(role);
+            }
+            if inherited {
+                command.env("PNPORT_MACOS_OWNER_FD", fd.to_string());
+                unsafe {
+                    command.pre_exec(move || {
+                        if libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
+                            return Err(std::io::Error::last_os_error());
+                        }
+                        Ok(())
+                    });
+                }
+            }
+            let mut child = command.spawn().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    assert_eq!(status.code(), Some(125));
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    child.wait().unwrap();
+                    panic!("An untrusted private owner must fail promptly");
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+enum OwnerFailure {
+    Supervisor,
+    Guardian,
+}
+
+#[cfg(target_os = "macos")]
+struct Control(Child);
+
+#[cfg(target_os = "macos")]
+impl Drop for Control {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn stopped_group(mode: &str, failure: OwnerFailure) {
+    let mut fixture = Fixture::new(mode, false);
+    fixture.ready();
+    fixture.assert_active();
+    let group = fixture.group();
+    assert!(unsafe { libc::getpgid(group) } > 0);
+    assert_ne!(
+        unsafe { libc::getpgid(group) },
+        group,
+        "guardian must run outside the command group"
+    );
+    // The unrelated control is a direct child in its own group. Cleanup must
+    // leave it running and never use a host inventory as signalling authority.
+    let mut unrelated = Control(
+        Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap(),
+    );
+    assert_eq!(unsafe { libc::kill(-group, libc::SIGSTOP) }, 0);
+    let supervisor = fixture.child.as_ref().unwrap().id() as i32;
+    for pid in fixture.pids.iter().chain(std::iter::once(&supervisor)) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let mut info = unsafe { std::mem::zeroed::<libc::proc_bsdinfo>() };
+            let size = std::mem::size_of_val(&info) as i32;
+            let count = unsafe {
+                libc::proc_pidinfo(
+                    *pid,
+                    libc::PROC_PIDTBSDINFO,
+                    1,
+                    (&mut info as *mut libc::proc_bsdinfo).cast(),
+                    size,
+                )
+            };
+            assert_eq!(count, size);
+            if info.pbi_status == 4 {
+                // Darwin SSTOP, not merely a queued stop signal.
+                break;
+            }
+            assert!(Instant::now() < deadline, "fixture member did not stop");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    let start = Instant::now();
+    if matches!(failure, OwnerFailure::Supervisor) {
+        fixture.signal(libc::SIGKILL);
+    } else {
+        assert_eq!(unsafe { libc::kill(group, libc::SIGKILL) }, 0);
+        // Root stop propagation can also have parked the supervisor. Resume
+        // that direct child so it can detect the failed guardian and clean up.
+        fixture.signal(libc::SIGCONT);
+    }
+    let output = fixture.stopped();
+    assert!(
+        unrelated.0.try_wait().unwrap().is_none(),
+        "cleanup signalled an unrelated group"
+    );
+    drop(unrelated);
+    if matches!(failure, OwnerFailure::Supervisor) {
+        assert_eq!(output.status.signal(), Some(libc::SIGKILL));
+        if mode == "ignore" {
+            assert!(start.elapsed() >= Duration::from_secs(5));
+        } else {
+            fixture.assert_signals(libc::SIGTERM);
+        }
+    } else {
+        assert_eq!(output.status.code(), Some(125));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("PNPORT_CLEANUP_FAILED"));
+    }
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn killed_supervisor_resumes_a_stopped_group_for_graceful_cleanup() {
+    stopped_group("normal", OwnerFailure::Supervisor);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn killed_supervisor_escalates_a_stopped_unresponsive_group_after_grace() {
+    stopped_group("ignore", OwnerFailure::Supervisor);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn failed_guardian_stops_a_stopped_group_before_reaping_its_identity() {
+    stopped_group("normal", OwnerFailure::Guardian);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn guardian_failure_stops_the_owned_tree_and_fails_closed() {
+    let mut fixture = Fixture::new("normal", false);
+    fixture.ready();
+    fixture.assert_active();
+    assert_eq!(unsafe { libc::kill(fixture.group(), libc::SIGKILL) }, 0);
+    let output = fixture.stopped();
+    assert_eq!(output.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("PNPORT_CLEANUP_FAILED"));
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn killed_supervisor_retains_grace_then_kills_unresponsive_descendants() {
+    let mut fixture = Fixture::new("ignore", false);
+    fixture.ready();
+    fixture.assert_active();
+    let start = Instant::now();
+    fixture.signal(libc::SIGKILL);
+    assert_eq!(fixture.stopped().status.signal(), Some(libc::SIGKILL));
+    assert!(start.elapsed() >= Duration::from_secs(5));
+    fixture.assert_released();
+}

@@ -214,6 +214,13 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
   const newProjectFocused = useRef(false);
   const sessionNavigation = surface === Surface.Sessions || surface === Surface.NewSession;
   const active = sessionNavigation && homeActive && visible && (!compact || drawerOpen);
+  useEffect(() => {
+    if (sessionNavigation) return;
+    // The Home tooltip is portaled outside its hidden source controls.
+    newProjectPointerInside.current = false;
+    newProjectFocused.current = false;
+    setNewProjectTooltip(undefined);
+  }, [sessionNavigation]);
   const projects = useNavigationQuery(home.catalog, HomeScope.Catalog, "", false, active);
   const sessions = useNavigationQuery(home.global, HomeScope.Sessions, "", includeArchived, active);
   useEffect(() => {
@@ -342,7 +349,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
       <SidebarButton label="Schedules" icon="schedules" current={surface === Surface.Schedules} onClick={() => navigate(Surface.Schedules)} />
       <SidebarButton label="Activity" icon="activity" current={surface === Surface.Activity} onClick={() => navigate(Surface.Activity)} />
       <span className="sidebar-rail-spacer" />
-      <SidebarButton label="Settings" icon="settings" onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
+      <SidebarButton label="Settings" icon="settings" current={surface === Surface.Settings} onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
     </nav>
     <dialog ref={drawer} role={compact ? "dialog" : "region"} className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`} aria-label={compact ? "DeliDev navigation" : undefined} onCancel={(event) => { event.preventDefault(); setDrawerOpen(false); }} onClose={() => { modalDrawer.current = false; }}>
     <div className={`sidebar-pane${sessionNavigation ? " is-home" : ""}`}>
@@ -358,7 +365,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
       <div ref={list} className="sidebar-list" onScroll={(event) => surfaceScroll.current.set(sessionNavigation ? Surface.Sessions : surface, event.currentTarget.scrollTop)} aria-label={sessionNavigation ? "Project and session navigation" : "Menu navigation and filters"}>
         <div hidden={!sessionNavigation}>
         <header className="sidebar-projects-heading"><h2>Projects</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label="New project" onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button><button ref={optionsButton} type="button" className="sidebar-options-button" aria-label="Project and conversation options" aria-haspopup="dialog" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((current) => !current)}><Icon name="options" /></button>{optionsOpen ? <div ref={optionsPopup} role="dialog" aria-label="Project and conversation options" className="sidebar-options-popup" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsButton.current?.focus(); } }}><label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />Include archived</label></div> : null}</header>
-        {newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>New project</div>, window.document.body) : null}
+        {sessionNavigation && newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>New project</div>, window.document.body) : null}
         {includeArchived ? <p className="sidebar-archive-indicator">Archived included</p> : null}
         <QueryProblem query={projects} label="projects" retryLabel="Retry project catalog" />
         <QueryProblem query={sessions} label="sessions" retryLabel="Retry global sessions" />

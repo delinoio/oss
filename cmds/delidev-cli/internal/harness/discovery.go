@@ -91,6 +91,14 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 		logger.InfoContext(ctx, "harness discovery started", "harness", i.Harness, "explicit_path", i.ExplicitPath != "")
 		resolved, state := resolve(i.Harness, i.ExplicitPath)
 		i.ResolvedPath, i.State = resolved, state
+		var codexDigest string
+		if i.Harness == domain.Codex && state == domain.InstallationUnchecked {
+			var err error
+			codexDigest, err = InspectExecutable(ctx, resolved)
+			if err != nil {
+				return domain.HarnessDiscoveryOutput{}, err
+			}
+		}
 		if state == domain.InstallationUnchecked {
 			home := filepath.Join(directory, string(i.Harness))
 			env, err := probeEnvironment(home)
@@ -182,6 +190,13 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 			logger.InfoContext(ctx, "harness protocol validation completed", "harness", i.Harness, "state", i.Protocol.State)
 		}
 		logger.InfoContext(ctx, "harness discovery completed", "harness", i.Harness, "state", i.State)
+		if i.Harness == domain.Codex && i.State == domain.InstallationDetected {
+			digest, err := InspectExecutable(ctx, i.ResolvedPath)
+			if err != nil || digest != codexDigest {
+				return domain.HarnessDiscoveryOutput{}, domain.NativeModelFailure()
+			}
+			i.ExecutableSHA256 = digest
+		}
 	}
 	return result, nil
 }

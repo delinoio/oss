@@ -66,6 +66,311 @@ fn fixture() -> tempfile::TempDir {
     root
 }
 
+fn directory_fixture(split: bool) -> tempfile::TempDir {
+    let root = fixture();
+    let mut d = data();
+    d["enableTopLevelFallback"] = json!(false);
+    for index in [0, 1] {
+        d["packageRegistryData"][index][1][0][1]["packageDependencies"] = json!([
+            ["one", ["dep", "virtual:one"]],
+            ["two", ["dep", "virtual:two"]],
+            ["dep", "npm:1"],
+            ["@scope/pkg", "npm:1"],
+            ["workspace", "workspace:packages/app"]
+        ]);
+    }
+    d["packageRegistryData"][2][1] = json!([
+        ["npm:1",{"packageLocation":"./cache.zip/node_modules/dep/","packageDependencies":[],"linkType":"HARD"}],
+        ["virtual:one",{"packageLocation":"./.yarn/__virtual__/dep-one/1/cache.zip/node_modules/dep/","packageDependencies":[["peer",["dep","npm:1"]]],"linkType":"HARD"}],
+        ["virtual:two",{"packageLocation":"./.yarn/__virtual__/dep-two/1/cache.zip/node_modules/dep/","packageDependencies":[["peer",["@scope/pkg","npm:1"]]],"linkType":"HARD"}]
+    ]);
+    d["packageRegistryData"].as_array_mut().unwrap().push(json!(
+        ["workspace",[["workspace:packages/app",{"packageLocation":"./packages/app/","packageDependencies":[],"linkType":"SOFT"}]]]
+    ));
+    fs::create_dir_all(root.path().join("packages/app/nested")).unwrap();
+    fs::create_dir(root.path().join("nested")).unwrap();
+    fs::write(root.path().join("native-entry"), b"native").unwrap();
+    archive(
+        &root.path().join("cache.zip"),
+        &[
+            ("node_modules/dep/file.txt", b"package bytes"),
+            ("node_modules/dep/nested/file.txt", b"nested bytes"),
+            (
+                "node_modules/dep/native-parent/node_modules/retained.txt",
+                b"native directory",
+            ),
+            (
+                "node_modules/@scope/pkg/package.json",
+                br#"{"name":"@scope/pkg"}"#,
+            ),
+        ],
+    );
+    if split {
+        fs::write(
+            root.path().join(".pnp.cjs"),
+            "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join(".pnp.data.json"),
+            serde_json::to_vec(&d).unwrap(),
+        )
+        .unwrap();
+    } else {
+        inline(root.path(), &d);
+    }
+    root
+}
+
+fn unplugged_locations() -> [(&'static str, &'static str); 2] {
+    [
+        (".yarn/unplugged/dep/node_modules", "dep"),
+        (
+            "packages/app/.yarn/unplugged/scoped/node_modules",
+            "@scope/pkg",
+        ),
+    ]
+}
+
+fn unplugged_fixture(split: bool) -> tempfile::TempDir {
+    let root = fixture();
+    let mut value = data();
+    value["packageRegistryData"][2][1][0][1]["packageLocation"] =
+        json!("./.yarn/unplugged/dep/node_modules/dep/");
+    value["packageRegistryData"][2][1][0][1]["packageDependencies"] =
+        json!([["@scope/pkg", "npm:1"]]);
+    value["packageRegistryData"][3][1][0][1]["packageLocation"] =
+        json!("./packages/app/.yarn/unplugged/scoped/node_modules/@scope/pkg/");
+    value["packageRegistryData"][3][1][0][1]["packageDependencies"] = json!([["dep", "npm:1"]]);
+    value["packageRegistryData"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!([
+            "app", [["workspace:packages/app", {
+                "packageLocation":"./packages/app/",
+                "packageDependencies":[["dep","npm:1"],["@scope/pkg","npm:1"]],
+                "linkType":"SOFT"
+            }]]
+        ]));
+    for (container, package) in unplugged_locations() {
+        let container = root.path().join(container);
+        let package = container.join(package);
+        fs::create_dir_all(&package).unwrap();
+        fs::write(package.join("package.json"), b"package bytes").unwrap();
+        for name in ["existing", "@existing/pkg"] {
+            fs::create_dir_all(container.join(name)).unwrap();
+            fs::write(container.join(name).join("file.txt"), b"sibling bytes").unwrap();
+        }
+    }
+    if split {
+        fs::write(
+            root.path().join(".pnp.cjs"),
+            "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join(".pnp.data.json"),
+            serde_json::to_vec(&value).unwrap(),
+        )
+        .unwrap();
+    } else {
+        inline(root.path(), &value);
+    }
+    root
+}
+
+#[test]
+fn directory_eligibility_matches_lookup_without_materializing() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let root_path = fs::canonicalize(root.path()).unwrap();
+        let graph = Graph::load(&root_path.join(".pnp.cjs")).unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            graph,
+            Cache::open(cache.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+        let parents = [
+            "",
+            "nested",
+            "packages/app",
+            "packages/app/nested",
+            "node_modules/dep",
+            "node_modules/one",
+            "node_modules/two",
+            "node_modules/one/nested",
+            "node_modules/dep/native-parent",
+            "node_modules/@scope/pkg",
+        ];
+        for parent in parents {
+            let entry = view
+                .virtual_directory_entry(&root_path.join(parent))
+                .unwrap()
+                .unwrap();
+            assert_eq!(entry.name, "node_modules");
+        }
+        assert!(!session.path().join("views").exists());
+        assert!(!session.path().join("active").exists());
+        for parent in [
+            root_path.join("node_modules"),
+            root_path.join("node_modules/@scope"),
+            cache.path().to_owned(),
+            view.cache.root.join("nested"),
+            session.path().join("views/any"),
+        ] {
+            assert!(
+                view.virtual_directory_entry(&parent).unwrap().is_none(),
+                "{}",
+                parent.display()
+            );
+        }
+        for parent in parents {
+            let directory = view
+                .translate(&root_path.join(parent).join("node_modules"))
+                .unwrap();
+            assert!(directory.readonly && directory.physical.is_dir());
+        }
+        let one = view
+            .translate(&root_path.join("node_modules/one/node_modules"))
+            .unwrap();
+        let two = view
+            .translate(&root_path.join("node_modules/two/node_modules"))
+            .unwrap();
+        assert_ne!(one.logical, two.logical);
+        assert_ne!(
+            fs::read_link(one.physical.join("peer")).unwrap(),
+            fs::read_link(two.physical.join("peer")).unwrap()
+        );
+        assert_eq!(
+            fs::read_dir(
+                view.translate(&root_path.join("packages/app/nested/node_modules"))
+                    .unwrap()
+                    .physical
+            )
+            .unwrap()
+            .count(),
+            0
+        );
+        fs::create_dir(root_path.join("nested/node_modules")).unwrap();
+        assert_eq!(
+            view.virtual_directory_entry(&root_path.join("nested"))
+                .unwrap_err()
+                .code,
+            Code::PnportFilesystemConflict
+        );
+        assert!(root_path.join("nested/node_modules").is_dir());
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn native_parent_listings_match_virtual_lookup_and_stream_lifecycle() {
+    use std::process::Command;
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let cache = tempfile::tempdir().unwrap();
+        let executable = root.path().join("directory-probe");
+        let mut compiler = Command::new("cc");
+        compiler
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/directory-listing.c"
+            ))
+            .args(["-pthread", "-Wno-deprecated-declarations", "-o"])
+            .arg(&executable);
+        assert!(compiler.status().unwrap().success());
+        assert!(Command::new(&executable)
+            .current_dir(root.path())
+            .arg("control")
+            .status()
+            .unwrap()
+            .success());
+        let parents = [
+            ".",
+            "nested",
+            "packages/app",
+            "packages/app/nested",
+            "node_modules/dep",
+            "node_modules/one",
+            "node_modules/two",
+            "node_modules/one/nested",
+            "node_modules/dep/native-parent",
+            "node_modules/@scope/pkg",
+        ];
+        let run = |program: &Path, arguments: &[&str]| {
+            Command::new(env!("CARGO_BIN_EXE_pnport"))
+                .current_dir(root.path())
+                .arg("--cache-dir")
+                .arg(cache.path().join("cache"))
+                .args(["run", "--"])
+                .arg(program)
+                .args(arguments)
+                .output()
+                .unwrap()
+        };
+        let result = run(&executable, &parents);
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "split={split} stdout={} stderr={}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"directory-listings-ok\n");
+        assert_eq!(
+            fs::read(root.path().join("directory-output")).unwrap(),
+            b"native"
+        );
+        assert!(!root.path().join("node_modules").exists());
+        #[cfg(target_os = "linux")]
+        {
+            let executable = root.path().join("directory-static-probe");
+            assert!(Command::new("cc")
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/tests/directory-listing.c"
+                ))
+                .args(["-static", "-pthread", "-Wno-deprecated-declarations", "-o"])
+                .arg(&executable)
+                .status()
+                .unwrap()
+                .success());
+            let result = run(&executable, &parents);
+            assert_eq!(
+                result.status.code(),
+                Some(0),
+                "static split={split} stderr={}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+        let conflict_root = root.path().to_owned();
+        let writer = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            while !conflict_root.join("conflict-entered").exists() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "Conflict fixture never opened its stream"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            fs::create_dir(conflict_root.join("nested/node_modules")).unwrap();
+            fs::write(conflict_root.join("conflict-created"), b"").unwrap();
+        });
+        let conflict = run(&executable, &["conflict"]);
+        writer.join().unwrap();
+        assert_eq!(
+            conflict.status.code(),
+            Some(125),
+            "{}",
+            String::from_utf8_lossy(&conflict.stderr)
+        );
+        assert!(String::from_utf8_lossy(&conflict.stderr).contains("PNPORT_FILESYSTEM_CONFLICT"));
+        assert!(root.path().join("nested/node_modules").is_dir());
+    }
+}
+
 #[test]
 fn inline_and_split_load_without_executing_javascript() {
     let root = fixture();
@@ -336,6 +641,269 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
         String::from_utf8_lossy(&result.stderr)
     );
     assert_eq!(result.stdout, b"protocol-output\nprotocol-output\n");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_fcntl_preserves_native_arguments_during_constructor_reentry() {
+    use std::process::Command;
+
+    // Match the Rust test/CLI slice even when x64 tests run under translation.
+    let architecture = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "x86_64"
+    };
+    let binaries = tempfile::tempdir().unwrap();
+    let loader = binaries.path().join("fcntl-loader");
+    assert!(Command::new("cc")
+        .args(["-arch", architecture, "-Wall", "-Wextra", "-Werror"])
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fcntl-loader.c"))
+        .arg("-o")
+        .arg(&loader)
+        .status()
+        .unwrap()
+        .success());
+    for setfd in [false, true] {
+        for constructor in [false, true] {
+            let mut compiler = Command::new("cc");
+            compiler.args(["-arch", architecture, "-Wall", "-Wextra", "-Werror"]);
+            if setfd {
+                compiler.arg("-DSETFD");
+            }
+            if constructor {
+                compiler.args(["-dynamiclib", "-DCONSTRUCTOR"]);
+            }
+            let binary = binaries.path().join(format!("fcntl-{setfd}-{constructor}"));
+            assert!(compiler
+                .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fcntl.c"))
+                .arg("-o")
+                .arg(&binary)
+                .status()
+                .unwrap()
+                .success());
+        }
+    }
+
+    let mut failures = Vec::new();
+    for split in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let d = json!({
+            "enableTopLevelFallback": true, "ignorePatternData": null,
+            "dependencyTreeRoots": [{"name":"root","reference":"workspace:."}],
+            "fallbackPool": [], "fallbackExclusionList": [],
+            "packageRegistryData": [
+                [null, [[null, {"packageLocation":"./","packageDependencies":[],"linkType":"SOFT","discardFromLookup":true}]]],
+                ["root", [["workspace:.", {"packageLocation":"./","packageDependencies":[],"linkType":"SOFT"}]]]
+            ]
+        });
+        if split {
+            fs::write(
+                root.path().join(".pnp.cjs"),
+                "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");\nthrow \
+                 Error('must never execute');\n",
+            )
+            .unwrap();
+            fs::write(
+                root.path().join(".pnp.data.json"),
+                serde_json::to_vec(&d).unwrap(),
+            )
+            .unwrap();
+        } else {
+            inline(root.path(), &d);
+        }
+        for setfd in [false, true] {
+            for constructor in [false, true] {
+                let binary = binaries.path().join(format!("fcntl-{setfd}-{constructor}"));
+                for mediated in [false, true] {
+                    let mut command = if mediated {
+                        let mut command = Command::new(env!("CARGO_BIN_EXE_pnport"));
+                        command
+                            .arg("--cache-dir")
+                            .arg(cache.path().join("cache"))
+                            .args(["--color", "never", "run", "--"]);
+                        command
+                    } else {
+                        Command::new(if constructor { &loader } else { &binary })
+                    };
+                    if mediated {
+                        command.arg(if constructor { &loader } else { &binary });
+                    }
+                    if constructor {
+                        command.arg(&binary);
+                    }
+                    let result = command.current_dir(root.path()).output().unwrap();
+                    let expected = if setfd {
+                        b"fcntl-setfd-ok\n".as_slice()
+                    } else {
+                        b"fcntl-abi-ok\n".as_slice()
+                    };
+                    if !result.status.success() || result.stdout != expected {
+                        failures.push(format!(
+                            "split={split} setfd={setfd} constructor={constructor} \
+                             mediated={mediated} status={} stdout={} stderr={}",
+                            result.status,
+                            String::from_utf8_lossy(&result.stdout),
+                            String::from_utf8_lossy(&result.stderr)
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(!root.path().join("node_modules").exists());
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_readlinkat_preserves_logical_targets_and_native_controls() {
+    use std::process::Command;
+
+    for split in [false, true] {
+        let root = fixture();
+        let cache = tempfile::tempdir().unwrap();
+        let mut d = data();
+        for index in [0, 1] {
+            d["packageRegistryData"][index][1][0][1]["packageDependencies"] = json!([
+                ["dep", "npm:1"],
+                ["one", ["dep", "virtual:one"]],
+                ["two", ["dep", "virtual:two"]],
+                ["unplugged", "npm:1"]
+            ]);
+        }
+        d["packageRegistryData"][2][1] = json!([
+            ["npm:1",{"packageLocation":"./cache.zip/node_modules/dep/","packageDependencies":[],"linkType":"HARD"}],
+            ["virtual:one",{"packageLocation":"./.yarn/__virtual__/dep-one/1/cache.zip/node_modules/dep/","packageDependencies":[["peer",["dep","npm:1"]]],"linkType":"HARD"}],
+            ["virtual:two",{"packageLocation":"./.yarn/__virtual__/dep-two/1/cache.zip/node_modules/dep/","packageDependencies":[["peer",["@scope/pkg","npm:1"]]],"linkType":"HARD"}]
+        ]);
+        d["packageRegistryData"].as_array_mut().unwrap().push(json!([
+            "unplugged", [["npm:1", {"packageLocation":"./.yarn/unplugged/pkg/node_modules/unplugged/","packageDependencies":[],"linkType":"HARD"}]]
+        ]));
+        let unplugged = root
+            .path()
+            .join(".yarn/unplugged/pkg/node_modules/unplugged");
+        fs::create_dir_all(&unplugged).unwrap();
+        fs::write(unplugged.join("package.json"), br#"{"name":"unplugged"}"#).unwrap();
+        if split {
+            fs::write(
+                root.path().join(".pnp.cjs"),
+                "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");",
+            )
+            .unwrap();
+            fs::write(
+                root.path().join(".pnp.data.json"),
+                serde_json::to_vec(&d).unwrap(),
+            )
+            .unwrap();
+        } else {
+            inline(root.path(), &d);
+        }
+        let executable = root.path().join("readlinkat-fixture");
+        assert!(Command::new("cc")
+            .args([
+                "-arch",
+                if cfg!(target_arch = "aarch64") {
+                    "arm64"
+                } else {
+                    "x86_64"
+                },
+                "-Wall",
+                "-Wextra",
+                "-Werror"
+            ])
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/readlinkat.c"))
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .unwrap()
+            .success());
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(cache.path().join("cache"))
+            .args(["run", "--"])
+            .arg(&executable)
+            .args([
+                "node_modules/dep",
+                "node_modules/one",
+                "node_modules/two",
+                "node_modules/one/node_modules/peer",
+                "node_modules/two/node_modules/peer",
+                "node_modules/unplugged",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "split={split} stdout={} stderr={}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"readlinkat-conformance-ok\n");
+        assert!(!root.path().join("node_modules").exists());
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_io_uring_probe_falls_back_to_mediated_filesystem_calls() {
+    use std::process::Command;
+
+    let root = fixture();
+    let source = root.path().join("io-uring-probe.c");
+    let executable = root.path().join("io-uring-probe");
+    fs::write(
+        &source,
+        r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/io_uring.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    struct io_uring_params parameters = {0};
+    struct io_uring_params unchanged = parameters;
+    if (syscall(SYS_io_uring_setup, 1, &parameters) != -1) return 40;
+    // An enclosing container filter may deny setup before pnport sees it.
+    if (errno != ENOSYS && errno != EPERM) return 41;
+    if (memcmp(&parameters, &unchanged, sizeof(parameters))) return 42;
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 43;
+    char bytes[14] = {0};
+    if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 44;
+    close(fd);
+    errno = 0;
+    if (open("node_modules/dep/file.txt", O_WRONLY) != -1 || errno != EROFS) return 45;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(root.path().join("private-cache"))
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
 }
 
 #[cfg(target_os = "linux")]
@@ -1651,6 +2219,56 @@ int main(void) {
     assert_eq!(
         fs::metadata(content).unwrap().permissions().mode() & 0o777,
         original_mode
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_inherited_duplicate_directory_descriptors_share_virtual_offset() {
+    use std::{
+        os::{fd::AsRawFd, unix::process::CommandExt},
+        process::Command,
+    };
+
+    let root = directory_fixture(false);
+    let cache = tempfile::tempdir().unwrap();
+    let source = fs::File::open(root.path()).unwrap();
+    let source_fd = source.as_raw_fd();
+    let executable = root.path().join("inherited-directory-listing");
+    assert!(Command::new("cc")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/inherited-directory-listing.c"
+        ))
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .status()
+        .unwrap()
+        .success());
+    let mut command = Command::new(env!("CARGO_BIN_EXE_pnport"));
+    command
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&executable);
+    unsafe {
+        command.pre_exec(move || {
+            for fd in [9, 10] {
+                if libc::dup2(source_fd, fd) < 0 || libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+            Ok(())
+        });
+    }
+    let result = command.output().unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
     );
 }
 
@@ -3997,6 +4615,13 @@ fn peer_instances_keep_logical_identity_while_sharing_package_bytes() {
         .unwrap();
     assert_eq!(one.physical, two.physical);
     assert_ne!(one.logical, two.logical);
+    for alias in ["one", "two"] {
+        assert!(
+            view.translate(&root_path.join(format!("node_modules/{alias}/node_modules/peer")))
+                .unwrap()
+                .virtual_link
+        );
+    }
     let peer_one = view
         .translate(&root_path.join("node_modules/one/node_modules/peer/package.json"))
         .unwrap();
@@ -4348,46 +4973,289 @@ int main(int argc, char **argv) {
 
 #[test]
 fn unplugged_installation_containers_are_not_dependency_conflicts() {
-    let root = fixture();
-    let location = "./.yarn/unplugged/dep/node_modules/dep/";
-    let mut value = data();
-    value["packageRegistryData"][2][1][0][1]["packageLocation"] = json!(location);
-    fs::create_dir_all(root.path().join(location)).unwrap();
-    fs::write(
-        root.path().join(location).join("package.json"),
-        r#"{"name":"dep"}"#,
-    )
-    .unwrap();
-    inline(root.path(), &value);
-    let graph = Graph::load(&root.path().join(".pnp.cjs")).unwrap();
-    graph.check_conflicts().unwrap();
-    let canonical = fs::canonicalize(root.path()).unwrap();
-    let mut view = View::new(
-        graph,
-        Cache::open(root.path().join("private-cache")).unwrap(),
-        root.path().join("session"),
-    );
-    let ancestor = canonical.join(".yarn/unplugged/dep/node_modules");
-    assert_eq!(view.translate(&ancestor).unwrap().physical, ancestor);
-    let file = view
-        .translate(&canonical.join("node_modules/dep/package.json"))
-        .unwrap();
-    assert!(file.readonly);
-    assert!(file.physical.is_file());
-    #[cfg(target_os = "linux")]
-    {
-        let result = std::process::Command::new(env!("CARGO_BIN_EXE_pnport"))
-            .current_dir(root.path())
-            .args(["run", "--", "/bin/cat"])
-            .arg(canonical.join("node_modules/dep/package.json"))
-            .output()
-            .unwrap();
-        assert_eq!(
-            result.status.code(),
-            Some(0),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
+    for split in [false, true] {
+        let root = unplugged_fixture(split);
+        let graph = Graph::load(&root.path().join(".pnp.cjs")).unwrap();
+        graph.check_conflicts().unwrap();
+        let canonical = fs::canonicalize(root.path()).unwrap();
+        let mut view = View::new(
+            graph,
+            Cache::open(root.path().join("private-cache")).unwrap(),
+            root.path().join("session"),
         );
-        assert_eq!(result.stdout, b"{\"name\":\"dep\"}");
+        for (container, package) in unplugged_locations() {
+            let container = canonical.join(container);
+            for suffix in ["", "existing", "@existing", "@existing/pkg/file.txt"] {
+                let path = container.join(suffix);
+                let translated = view.translate(&path).unwrap();
+                assert_eq!(translated.physical, path);
+                assert!(!translated.readonly);
+                assert!(fs::metadata(&translated.physical).is_ok());
+            }
+            for suffix in ["missing", "@missing", "@missing/pkg"] {
+                let path = container.join(suffix);
+                let translated = view.translate(&path).unwrap();
+                assert_eq!(translated.physical, path);
+                assert!(!translated.readonly);
+                assert_eq!(
+                    fs::metadata(&translated.physical).unwrap_err().kind(),
+                    std::io::ErrorKind::NotFound
+                );
+            }
+            let package = container.join(package);
+            let file = view.translate(&package.join("package.json")).unwrap();
+            assert!(file.readonly);
+            assert_eq!(fs::read(file.physical).unwrap(), b"package bytes");
+            let nested = view.translate(&package.join("node_modules")).unwrap();
+            assert!(nested.readonly);
+            assert!(nested.physical.is_dir());
+            let dependency = if package.ends_with("dep") {
+                "@scope/pkg"
+            } else {
+                "dep"
+            };
+            let nested_file = view
+                .translate(
+                    &package
+                        .join("node_modules")
+                        .join(dependency)
+                        .join("package.json"),
+                )
+                .unwrap();
+            assert!(nested_file.readonly);
+            assert_eq!(fs::read(nested_file.physical).unwrap(), b"package bytes");
+        }
+        for issuer in ["", "packages/app"] {
+            let file = view
+                .translate(&canonical.join(issuer).join("node_modules/dep/package.json"))
+                .unwrap();
+            assert!(file.readonly);
+            assert_eq!(fs::read(file.physical).unwrap(), b"package bytes");
+            assert!(
+                !view
+                    .translate(&canonical.join(issuer).join("output.txt"))
+                    .unwrap()
+                    .readonly
+            );
+        }
+        // Startup and runtime checks still reject every genuine namespace,
+        // including one reached after crossing an installation component.
+        for issuer in [
+            "",
+            "packages/app",
+            ".yarn/unplugged/dep/node_modules/dep",
+            "packages/app/.yarn/unplugged/scoped/node_modules/@scope/pkg",
+        ] {
+            let namespace = canonical.join(issuer).join("node_modules");
+            fs::create_dir(&namespace).unwrap();
+            fs::write(namespace.join("keep"), b"user bytes").unwrap();
+            assert_eq!(
+                view.graph.check_conflicts().unwrap_err().code,
+                Code::PnportFilesystemConflict
+            );
+            assert_eq!(
+                view.translate(&namespace.join("dep/package.json"))
+                    .unwrap_err()
+                    .code,
+                Code::PnportFilesystemConflict
+            );
+            assert_eq!(fs::read(namespace.join("keep")).unwrap(), b"user bytes");
+            fs::remove_file(namespace.join("keep")).unwrap();
+            fs::remove_dir(namespace).unwrap();
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn native_unplugged_traversal_preserves_siblings_and_conflicts() {
+    use std::{
+        process::{Command, Stdio},
+        time::{Duration, Instant},
+    };
+
+    for split in [false, true] {
+        let root = unplugged_fixture(split);
+        let cache = tempfile::tempdir().unwrap();
+        let source = root.path().join("unplugged.c");
+        fs::write(
+            &source,
+            r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static int probe(const char *path, int missing) {
+    struct stat info;
+    errno = 0;
+    int result = stat(path, &info);
+    return missing ? result == -1 && errno == ENOENT : result == 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc < 2) return 20;
+    if (!strcmp(argv[1], "conflict")) {
+        int fd = open("ready", O_WRONLY | O_CREAT, 0600);
+        if (fd < 0) return 21;
+        close(fd);
+        for (int i = 0; i < 1000 && access("go", F_OK); i++) usleep(10000);
+        if (access("go", F_OK)) return 22;
+        struct stat info;
+        errno = 0;
+        int result = stat(argv[2], &info);
+        return result == -1 && errno == EEXIST ? 0 : 23;
+    }
+    if (argc != 5) return 24;
+    const char *present[] = {"", "existing", "@existing", "@existing/pkg/file.txt"};
+    const char *missing[] = {"missing", "@missing", "@missing/pkg"};
+    char path[4096];
+    for (int i = 0; i < 4; i++) {
+        snprintf(path, sizeof(path), "%s/%s", argv[1], present[i]);
+        if (!probe(path, 0)) return 30 + i;
+    }
+    for (int i = 0; i < 3; i++) {
+        snprintf(path, sizeof(path), "%s/%s", argv[1], missing[i]);
+        if (!probe(path, 1)) return 34 + i;
+    }
+    snprintf(path, sizeof(path), "%s/%s/package.json", argv[1], argv[2]);
+    if (!probe(path, 0)) return 37;
+    // A native control verifies the installation probes without virtualization.
+    if (!strcmp(argv[4], "control")) return 0;
+    errno = 0;
+    int fd = open(path, O_WRONLY);
+    if (fd != -1 || errno != EROFS) return 38;
+    snprintf(path, sizeof(path), "%s/%s/node_modules", argv[1], argv[2]);
+    if (!probe(path, 0)) return 39;
+    snprintf(path, sizeof(path), "%s/%s/node_modules/%s/package.json", argv[1], argv[2], argv[3]);
+    fd = open(path, O_RDONLY);
+    if (fd < 0) return 40;
+    char bytes[32] = {0};
+    if (read(fd, bytes, sizeof(bytes) - 1) != 13 || strcmp(bytes, "package bytes")) return 41;
+    close(fd);
+    snprintf(path, sizeof(path), "%s/existing/output.txt", argv[1]);
+    fd = open(path, O_WRONLY | O_CREAT, 0600);
+    if (fd < 0) return 42;
+    close(fd);
+    fd = open("output.txt", O_WRONLY | O_CREAT, 0600);
+    if (fd < 0) return 43;
+    close(fd);
+    fd = open("packages/app/output.txt", O_WRONLY | O_CREAT, 0600);
+    if (fd < 0) return 44;
+    close(fd);
+    puts("unplugged traversal passed");
+    return 0;
+}
+"#,
+        )
+        .unwrap();
+        let executable = root.path().join("unplugged");
+        assert!(Command::new("cc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .unwrap()
+            .success());
+        let run = || {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_pnport"));
+            command
+                .current_dir(root.path())
+                .arg("--cache-dir")
+                .arg(cache.path().join("cache"))
+                .args(["run", "--"])
+                .arg(&executable);
+            command
+        };
+        for (container, package) in unplugged_locations() {
+            let dependency = if package == "dep" {
+                "@scope/pkg"
+            } else {
+                "dep"
+            };
+            assert!(Command::new(&executable)
+                .current_dir(root.path())
+                .args([container, package, dependency, "control"])
+                .status()
+                .unwrap()
+                .success());
+            let result = run()
+                .args([container, package, dependency, "virtual"])
+                .output()
+                .unwrap();
+            assert_eq!(
+                result.status.code(),
+                Some(0),
+                "split={split} container={container} stdout={} stderr={}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert_eq!(result.stdout, b"unplugged traversal passed\n");
+            assert!(root
+                .path()
+                .join(container)
+                .join("existing/output.txt")
+                .is_file());
+        }
+        assert!(root.path().join("output.txt").is_file());
+        assert!(root.path().join("packages/app/output.txt").is_file());
+        for issuer in [
+            "",
+            "packages/app",
+            ".yarn/unplugged/dep/node_modules/dep",
+            "packages/app/.yarn/unplugged/scoped/node_modules/@scope/pkg",
+        ] {
+            let namespace = root.path().join(issuer).join("node_modules");
+            let lookup = namespace.join("dep/package.json");
+            // The parent creates conflicts outside interception, after child
+            // readiness when testing runtime admission, and removes only its fixture.
+            for late in [false, true] {
+                let create_conflict = || {
+                    fs::create_dir(&namespace).unwrap();
+                    fs::write(namespace.join("keep"), b"user bytes").unwrap();
+                };
+                let result = if late {
+                    let mut child = run()
+                        .arg("conflict")
+                        .arg(&lookup)
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn()
+                        .unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(10);
+                    while !root.path().join("ready").exists() {
+                        if child.try_wait().unwrap().is_some() || Instant::now() >= deadline {
+                            let _ = child.kill();
+                            let result = child.wait_with_output().unwrap();
+                            panic!("child readiness failed: {result:?}");
+                        }
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    create_conflict();
+                    fs::write(root.path().join("go"), b"continue").unwrap();
+                    child.wait_with_output().unwrap()
+                } else {
+                    create_conflict();
+                    run().arg("conflict").arg(&lookup).output().unwrap()
+                };
+                assert_eq!(
+                    result.status.code(),
+                    Some(125),
+                    "split={split} issuer={issuer} late={late} stderr={}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                assert!(
+                    String::from_utf8_lossy(&result.stderr).contains("PNPORT_FILESYSTEM_CONFLICT")
+                );
+                assert_eq!(fs::read(namespace.join("keep")).unwrap(), b"user bytes");
+                fs::remove_file(namespace.join("keep")).unwrap();
+                fs::remove_dir(&namespace).unwrap();
+                for marker in ["ready", "go"] {
+                    let _ = fs::remove_file(root.path().join(marker));
+                }
+            }
+        }
     }
 }

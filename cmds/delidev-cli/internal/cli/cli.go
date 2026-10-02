@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -85,6 +87,18 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		value, err := start(ctx, o, rest, streams)
 		return emit(value, err)
 	}
+	if command == "browser-storage" {
+		if len(rest) != 1 || rest[0] != "prepare" {
+			return emit(nil, domain.Fail(domain.InvalidArgument, "Select browser-storage prepare.", "The native host uses only its fixed private cache root."))
+		}
+		if err := security.PrivateDir(o.dataDir); err != nil {
+			return emit(nil, err)
+		}
+		if err := security.PrivateDir(filepath.Join(o.dataDir, "browser-data")); err != nil {
+			return emit(nil, err)
+		}
+		return emit(map[string]bool{"prepared": true}, nil)
+	}
 	if command == "connection" {
 		value, err := connectionCommand(ctx, o, rest, streams)
 		return emit(value, err)
@@ -119,7 +133,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		return emit(nil, err)
 	}
 	defer c.transport.CloseIdleConnections()
-	if command != "events" && !(command == "session" && len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start") {
+	if command != "events" && !(command == "session" && (followsTerminalOutput(rest) || (len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start"))) {
 		limit := 30 * time.Second
 		// Network credential work and backup inspection/replacement own bounded
 		// 30-second server work. Allow its typed outcome to arrive first.
@@ -129,6 +143,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 		if command == "github" {
 			limit = 40 * time.Second
+			if len(rest) >= 3 && rest[0] == "pr" && rest[1] == "remediation" && rest[2] == "fix" {
+				limit = 80 * time.Second
+			}
 			c.transport.ResponseHeaderTimeout = limit
 		}
 		if command == "integration" {
@@ -225,6 +242,8 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		if code, handled := dispatchIntegration(ctx, c, o, rest, streams); handled {
 			return code
 		}
+	case "browser-profile":
+		return dispatchBrowser(ctx, c, o, rest, streams)
 	case "account":
 		if code, handled := dispatchAccount(ctx, c, o, rest, streams); handled {
 			return code

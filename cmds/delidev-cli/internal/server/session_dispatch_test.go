@@ -122,7 +122,11 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	routing := domain.RoundRobin
 	f.agent = base.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture", Harness: harness, ModelID: domain.ID(model.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(account.Id), Weight: 1}}, Options: domain.AgentOptions{Permission: permission}, Routing: &routing})
 	f.selection = domain.CreateSession{Name: "Fixture", AgentID: domain.ID(f.agent.Id), MachineID: domain.ID(f.machine.Id), Workspace: domain.GeneralChat, Prompt: "first retained input", Mode: mode, Source: domain.ExternalCLISession}
-	ctx, client, instance, stream := workspaceStream(t, base, identity, domain.ID(f.machine.Id))
+	// This primary stream spans discovery, native workspace preparation and the
+	// later test operations. Ten seconds can expire during Windows setup before
+	// a freshly bounded workspace read starts. Keep a separate aggregate fixture
+	// lifetime; the production read and execution admission deadlines still apply.
+	ctx, client, instance, stream := workspaceStreamWithLifetime(t, base, identity, domain.ID(f.machine.Id), time.Minute)
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	f.machine = currentCatalogResource(t, base, f.machine)
 	selections, _ := json.Marshal(domain.ExecutableSelections{Executables: []domain.ExecutableSelection{{Harness: harness, Path: executable}}})
@@ -485,7 +489,7 @@ func TestInitialResumeFailurePreservesPauseAndRemovalOrder(t *testing.T) {
 	wantAccountCode(t, err, domain.Unsupported)
 	unchanged := f.refresh(t)
 	state, _ := store.Decode[domain.Session](unchanged)
-	if unchanged.Revision != stopped.Msg.Change.Session.Revision || state.Dispatch != domain.DispatchPaused || state.InitialExecution != nil {
+	if unchanged.Revision != stopped.Msg.Change.Session.Revision || state.Dispatch != domain.DispatchPaused || state.InitialExecution != nil || !state.AutomaticRemediationStopped {
 		t.Fatal("failed explicit Resume changed paused state")
 	}
 	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 0 })
@@ -506,11 +510,11 @@ func TestInitialResumeFailurePreservesPauseAndRemovalOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	state = sessionBody(t, accepted.Msg.Change.Session)
-	if state.InitialExecution == nil || state.InitialExecution.InputID != domain.ID(second.Msg.Change.Input.Id) || state.PendingInputs != 1 {
+	if state.InitialExecution == nil || state.InitialExecution.InputID != domain.ID(second.Msg.Change.Input.Id) || state.PendingInputs != 1 || state.AutomaticRemediationStopped {
 		t.Fatal("first Resume reused removed head or consumed queued capacity")
 	}
 	old, err := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, stop))
-	if err != nil || !old.Msg.Change.Replayed || sessionBody(t, old.Msg.Change.Session).Dispatch != domain.DispatchClaimed || old.Msg.Change.ExecutionJob.Id != accepted.Msg.Change.ExecutionJob.Id {
+	if err != nil || !old.Msg.Change.Replayed || sessionBody(t, old.Msg.Change.Session).Dispatch != domain.DispatchClaimed || sessionBody(t, old.Msg.Change.Session).AutomaticRemediationStopped || old.Msg.Change.ExecutionJob.Id != accepted.Msg.Change.ExecutionJob.Id {
 		t.Fatal("old Stop replay canceled new ownership", err)
 	}
 }

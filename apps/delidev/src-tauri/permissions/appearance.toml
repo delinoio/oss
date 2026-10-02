@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "device-appearance"
+description = "Read or select the device-local System, Light, or Dark theme; no server state, arbitrary paths, or filesystem access."
+commands.allow = ["read_appearance", "update_appearance"]

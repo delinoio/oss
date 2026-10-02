@@ -67,6 +67,12 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1:
+			capabilities = append(capabilities, domain.RepositoryInspectionMetadataV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1:
+			capabilities = append(capabilities, domain.NativeModelsV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1:
+			capabilities = append(capabilities, domain.SessionTerminalsV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1:
 			capabilities = append(capabilities, domain.SessionForwardingV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1:
@@ -77,7 +83,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported an unknown native capability.", "Upgrade the Worker and report only verified capability identifiers."), correlation)
 		}
 	}
-	if len(capabilities) > 3 || len(slices.Compact(slices.Sorted(slices.Values(capabilities)))) != len(capabilities) {
+	if len(capabilities) != len(slices.Compact(slices.Sorted(slices.Values(capabilities)))) {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported a duplicate native capability.", "Report each verified capability once."), correlation)
 	}
 	input := struct {
@@ -99,6 +105,9 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			return nil, domain.Fail(domain.Conflict, "Another Worker instance still owns this machine.", "Stop that instance and wait for its connection lease to expire.")
 		}
 		if previous != "" && previous != instance {
+			if err := loseTerminalAuthority(tx, machine); err != nil {
+				return nil, err
+			}
 			// A missing connection is not proof that execution never began. Preserve
 			// accepted ownership and require explicit reconciliation, never redispatch.
 			for {
@@ -156,7 +165,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "worker attached", "machine_id", machine, "instance_id", instance, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID)})
+	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1}})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
@@ -322,6 +331,18 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					if j.State != domain.JobQueued {
 						return r, nil
 					}
+					if j.Type == domain.NativeModelsJob {
+						var scope domain.NativeModelScope
+						problem := domain.Decode(j.Input, &scope)
+						if problem == nil {
+							problem = nativeModelAuthority(tx, scope)
+						}
+						if problem != nil {
+							now := time.Now().UTC()
+							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
+							return tx.PutJob(r.ID, r.Revision, "", "", j)
+						}
+					}
 					if j.Type == domain.ForkSessionJob {
 						var input domain.ForkJobInput
 						problem := domain.Decode(j.Input, &input)
@@ -358,7 +379,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				}); err != nil {
 					return rpc.Error(err, correlation)
 				}
-				if err := send(&pb.WatchWorkResponse{Job: rpc.Resource(record), CancelRequested: cancelRequested}); err != nil {
+				if err := send(&pb.WatchWorkResponse{Job: rpc.WorkerAssignment(record), CancelRequested: cancelRequested}); err != nil {
 					return err
 				}
 				inFlight = record.ID
@@ -508,6 +529,12 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if job.Type == domain.ForkSessionJob {
 			return finishSessionFork(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
 		}
+		if job.Type == domain.NativeModelsJob {
+			if record.Revision != meta.ExpectedRevision {
+				return nil, domain.Fail(domain.Conflict, "The observation assignment revision changed.", "Report only the original claimed assignment.")
+			}
+			return finishNativeModels(tx, record, job, req.Msg.OutputJson, problem)
+		}
 		if problem == nil {
 			outputJSON := req.Msg.OutputJson
 			switch job.Type {
@@ -583,6 +610,27 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 					if err := domain.Text(ref, "default reference", 4096, true); err != nil {
 						return nil, err
 					}
+				}
+				machineRecord, err := tx.Get(domain.MachineKind, machine)
+				if err != nil {
+					return nil, err
+				}
+				machineValue, err := store.Decode[domain.Machine](machineRecord)
+				if err != nil {
+					return nil, err
+				}
+				// Presence, including a null field, requires negotiation. A null value
+				// cannot masquerade as legacy omission or a validated metadata map.
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(outputJSON, &fields); err != nil {
+					return nil, domain.Fail(domain.InvalidArgument, "Repository inspection is unreadable.", "Reinspect the repository.")
+				}
+				_, enriched := fields["github_repositories"]
+				if enriched && (output.GitHubRepositories == nil || !slices.Contains(machineValue.WorkerCapabilities, domain.RepositoryInspectionMetadataV1)) {
+					return nil, domain.Fail(domain.InvalidArgument, "Repository metadata was not negotiated.", "Reattach a compatible Worker before reporting enrichment.")
+				}
+				if err := output.ValidateGitHubRepositories(); err != nil {
+					return nil, err
 				}
 				var expected domain.RepositoryInspectionInput
 				if err := domain.Decode(job.Input, &expected); err != nil {
@@ -663,6 +711,13 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		}
 	}
 	s.logger.InfoContext(ctx, "worker job reported", "machine_id", machine, "job_id", meta.Id, "replayed", result.Replayed)
+	if job, err := store.Decode[domain.Job](record); err == nil && job.Type == domain.NativeModelsJob {
+		code := domain.Code("")
+		if job.Problem != nil {
+			code = job.Problem.Code
+		}
+		s.logger.InfoContext(ctx, "native model observation published", "request_id", meta.RequestId, "job_id", meta.Id, "machine_id", machine, "account_id", job.ParentID, "phase", "publish", "state", job.State, "code", code, "replayed", result.Replayed)
+	}
 	response := connect.NewResponse(&pb.ReportWorkResponse{Job: rpc.Resource(record), Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil

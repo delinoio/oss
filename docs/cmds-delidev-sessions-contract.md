@@ -64,6 +64,15 @@ Optional session estimated-cost budgets follow the [usage contract](cmds-delidev
 
 `session rename --id ID --revision N --name NAME` changes only the bounded title. Creation, enqueue, edits/removal, rename and controls use UUID-v7 request receipts and the same server serialization boundary. Mutations requiring an existing revision reject stale writes; retries of an accepted identical request return current referenced records. An old creation/enqueue/edit receipt cannot restore earlier content or repeat dispatch. Unsupported or pre-acceptance validation failures do not claim a successful receipt. No future schedule/remediation/fork source is accepted through this initial external creation schema.
 
+Worker-owned interactive terminals follow the
+[terminal contract](cmds-delidev-terminals-contract.md). They have independent
+UUID-v7 process owners and do not take the agent execution lease. Agent Stop
+preserves them; every Archive publication atomically requests exact selected-
+session closes and remains pending until all native resources confirm cleanup.
+Late agent/title/recovery writes use the same central barrier. Session/terminal
+storage deletion rejects unconfirmed terminal cleanup. Viewing/disconnecting
+does not create or close a shell, and unknown ownership never permits PID cleanup.
+
 ## Storage
 ### First-execution transaction primitive
 `Tx.ClaimInitialExecution` is an internal transaction primitive used by the public first-dispatch coordinator. It requires exact current session/input revisions, transient `dispatch=ready`, no previous execution/snapshot, active archive visibility, no recovery, a successful matching preparation job, and the earliest queued input. The coordinator validates the exact selected configuration and creates its immutable Worker job in the same transaction; any failure rolls back ready state, snapshot, input ownership, routing and job. A database claim alone grants no native capability or API relay credential.
@@ -230,6 +239,14 @@ Structured session acceptance, input acceptance/change and control logs contain 
 - `go test -race ./cmds/delidev-cli/...`
 - `go vet ./cmds/delidev-cli/...`
 - Root Buf formatting/lint and reproducible generation after schema changes.
+
+The replacement-Worker workspace-recovery fixture waits for its original Ready
+callback within a two-minute startup allowance, covering lifecycle publication,
+the separate 30-second attachment/negotiation requests and optional 30-second
+native title probe. It fails immediately on controller exit and records only
+structured startup metadata, stable error codes and elapsed time. This fixture
+allowance does not change product startup deadlines, recovery settlement,
+original-journal comparison or cleanup assertions.
 
 Real temporary SQLite/Connect tests cover creation/restart/replay, immutable input mode/order, concurrent enqueue, scoped pagination, edits and tombstones, revision conflicts, Worker denial, blocked native execution, independent visibility/outcome/pause, uncertainty refusal, and no partial acceptance on invalid selections. CLI tests exercise pairing, configuration, create/queue/edit/remove/archive/restore and refusal to Resume an unprepared workspace. Real CLI/Worker tests additionally prepare isolated General Chat and detached multi-repository workspaces, preserve ready files across Archive and reuse accepted preparation receipts. Server tests cover scoped cancellation, untouched claimed envelopes, independent later jobs, queued retry after restart, malformed-result uncertainty and no premature Archive completion. Schema v5 tests preserve v4 backups and cancellation across restart. Schema v6 tests recover an original v5 claim receipt, preserve it after uncertainty, and remove its retained content with the job. Actual replacement-Worker/Connect tests cover ready and partial-cleanup recovery after restart, original journal preservation, mismatched digest refusal followed by an explicit repaired retry, pending Archive completion and targeted recovery cancellation. Native Git recovery tests retain ready changes, reject changed commits and replacement links, reconcile partial worktree removal and recover interrupted post-removal proof publication. These do not prove live native harness execution. Migration tests retain v3 backups and fail closed on duplicate queue order; large pages prove aggregate byte bounds.
 
@@ -579,6 +596,10 @@ Uncertain question/approval response delivery now automatically inspects the ori
 
 Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
 
+The private server execution-dispatch coordinator establishes its own server-owner context before reading retained PR input ownership. Ordinary initial and continuation dispatch therefore share the same actor boundary regardless of the internal caller. This does not grant any public RPC or paired Worker owner authority; their authorization remains independently enforced.
+
+An empty queue supplies no manual-fix candidate and skips only the optional PR preflight. The ordinary claim transaction still decides lifecycle and empty-input errors, rejecting already active work before emptiness and preserving pause, Archive, routing and original assignment state.
+
 ### Grok public original tool interactions (issue #1091)
 
 The [original-tool harness profile](cmds-delidev-harness-contract.md#grok-public-original-tools-questions-and-plan-issue-1091)
@@ -628,3 +649,14 @@ requirements.
 ## Managed subscription execution
 
 Codex subscription snapshots retain an optional immutable `subscription` selector, omitted from historical API snapshots. Native execution acquires the exact selected account lease without failover, stages only its protected generation, uses the built-in OpenAI provider, preserves existing native history/publication/workspace checks and returns the latest bundle after owned process/file cleanup. A definite busy refusal waits on that account; uncertain delivery never repeats a launch. Publication registration grants no API proxy authority. See [managed subscriptions](cmds-delidev-subscription-contract.md) for fencing, refresh evidence and recovery limits.
+### Automatic PR replacement and explicit controls
+
+Explicit Stop, Archive and Restore retain the server-owned
+`automatic_remediation_stopped` flag atomically with their ordinary control.
+Only successful explicit Resume clears it. Automatic execution failure may pause
+its own queue without setting this flag. The PR coordinator may select a fresh
+session after that separately settled automatic failure only when original native
+cleanup is confirmed and active/recovery/Archive ownership is absent; it never
+resumes the old failed queue. Its current source link and latest attempt session
+still enforce user controls. Historical and manual pauses remain ineligible.
+See the [integration contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).

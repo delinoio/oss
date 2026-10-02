@@ -121,12 +121,12 @@ it("refreshes a window label without replacing transport or open settings and ig
   const view = render(<Desktop />);
   await screen.findByText("Your sessions, in one place");
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  await screen.findByRole("dialog", { name: "Settings" });
+  await screen.findByRole("region", { name: "Settings content" });
   const original = bridge.invoke.getMockImplementation()!;
   bridge.invoke.mockImplementation(async (command: string) => command === "connection_context" ? { ...value.profile, revision: 3, name: "Renamed window" } : original(command));
   await act(async () => changed());
   await screen.findByText("Renamed window · Connected");
-  expect(screen.getByRole("dialog", { name: "Settings" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Settings content" })).toBeTruthy();
   expect(bridge.createTransport).toHaveBeenCalledTimes(1);
   expect(bridge.invoke.mock.calls.filter(([command]) => command === "connect_saved")).toHaveLength(1);
   bridge.invoke.mockImplementation(async (command: string) => command === "connection_context" ? { ...value.profile, revision: 2, name: "Older result" } : original(command));
@@ -207,7 +207,7 @@ it("retains the original Stop and confirmation across diagnostics hiding and Set
   };
   const hide = () => {
     fireEvent.click(within(screen.getByRole("dialog", { name: "Connection & diagnostics" })).getByRole("button", { name: "Close Connection & diagnostics" }));
-    fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   };
   open();
   fireEvent.click(screen.getByText("Local server"));

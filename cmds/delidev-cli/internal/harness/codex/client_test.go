@@ -94,6 +94,9 @@ func init() {
 			if managedFixtureHandle(mode, request.ID, request.Method, request.Params, write) {
 				continue
 			}
+			if strings.HasPrefix(mode, "models-") && modelFixture(request.ID, request.Method, request.Params, mode, write) {
+				continue
+			}
 			if request.Method == "" && mode == "thread-turn-approvals" {
 				if !threads.approvalReply(request.ID, request.Result) {
 					os.Exit(34)

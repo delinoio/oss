@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { AccountSettings, AccountSettingsSection, type AccountProviderSummary } from "./account-settings";
@@ -336,7 +336,7 @@ it("requires a deliberate keyless connection and exposes provider-off state sepa
   const providerResource = create(ResourceSchema, { ...provider, id: providerId });
   const value = fixture({ resources: [account, providerResource], providerId: off.providerId });
   render(value.view(value.settings(AccountSettingsSection.Api, { providers: [off], eligibleProviders: [] })));
-  expect(await screen.findByText("Provider status")).toBeTruthy();
+  expect(await screen.findByText("Provider status:")).toBeTruthy();
   expect(screen.getByText("Off")).toBeTruthy();
   expect(screen.getByText("Disabled")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Manage connection" }));
@@ -424,7 +424,7 @@ it("renders ordered native provider actions, enters once without writes, and ret
   fireEvent.click(screen.getByRole("button", { name: "Change" }));
   expect(screen.getByRole("button", { name: "OpenRouter API key" })).toBe(window.document.activeElement);
   fireEvent.click(screen.getByRole("button", { name: "OpenRouter API key" }));
-  fireEvent.click(screen.getByRole("button", { name: "Back to provider" }));
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
   expect(screen.getByRole("button", { name: "OpenRouter API key" })).toBe(window.document.activeElement);
   expect(value.other).not.toHaveBeenCalled();
   expect(value.save).not.toHaveBeenCalled();
@@ -470,10 +470,10 @@ it("labels stale provider results and excludes disabled, unsaved and subscriptio
 it("labels API entry navigation and omits empty subscription pagination", async () => {
   const value = fixture();
   const view = render(value.view(value.settings(AccountSettingsSection.Api)));
-  expect(await screen.findByText("No AI API key entries. Add an entry for an enabled API provider. Keyless local providers do not require a key.")).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "No AI API key entries" })).toBeTruthy();
   expect(screen.getByRole("region", { name: "AI API Keys settings" })).toBeTruthy();
-  expect(screen.getByRole("combobox", { name: "Filter entries by provider" })).toBeTruthy();
-  expect(screen.getByRole("navigation", { name: "Entry pages" })).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Filter entries by provider" })).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "Entry pages" })).toBeNull();
   view.rerender(value.view(value.settings(AccountSettingsSection.Subscription)));
   expect(await screen.findByRole("heading", { name: "No subscriptions yet" })).toBeTruthy();
   const advanced = screen.getByText("Advanced settings").closest("details")!;
@@ -518,4 +518,114 @@ it("offers a local endpoint retry after a keyless connection failure without req
   expect(screen.queryByText(/Re-enter the key/)).toBeNull();
   expect(screen.getByRole("button", { name: "Connect local endpoint" })).toBeTruthy();
   expect(value.connect.mock.calls[0][0]).toMatchObject({ mutation: { id: entry.id, expectedRevision: 3n }, keyless: true, apiKey: new Uint8Array() });
+});
+
+it("shows one compact empty list action and no API inventory controls", async () => {
+  const value = fixture();
+  render(value.view(value.settings(AccountSettingsSection.Api)));
+  const empty = await screen.findByRole("heading", { name: "No AI API key entries" });
+  expect(screen.getAllByRole("heading", { level: 1, name: "AI API Keys" })).toHaveLength(1);
+  expect(screen.getAllByRole("button", { name: "Add AI API key" })).toHaveLength(1);
+  expect(empty.closest("section")?.querySelector(".settings-empty-icon")?.getAttribute("aria-hidden")).toBe("true");
+  expect(screen.queryByRole("searchbox")).toBeNull();
+  expect(screen.queryByRole("combobox")).toBeNull();
+  expect(screen.queryByRole("button", { name: "More provider filters" })).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "Entry pages" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
+  expect(screen.getAllByRole("heading", { level: 1, name: "AI API Keys" })).toHaveLength(1);
+  expect(screen.getAllByRole("heading", { level: 2, name: "Add AI API key" })).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
+  expect(screen.getByRole("heading", { name: "Connect your entry" })).toBe(document.activeElement);
+  expect(screen.queryByRole("button", { name: "Back to provider" })).toBeNull();
+  expect((screen.getByText("Where to get an API key").closest("details") as HTMLDetailsElement).open).toBe(false);
+  expect((screen.getByText("Advanced preferences").closest("details") as HTMLDetailsElement).open).toBe(false);
+  expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
+});
+
+it("preserves every independent row fact, full fallback identity, server order and action gates", async () => {
+  const providerId = newRequestId(), missing = newRequestId();
+  const value = fixture({ providerId, resources: [
+    resource(EntityKind.ACCOUNT, { alias: "Personal", provider_id: providerId, type: "api", enabled: true, health: "unverified", connection: { id: newRequestId() }, quota: [] }),
+    resource(EntityKind.ACCOUNT, { alias: "Work", provider_id: missing, type: "api", enabled: true, health: "disconnected", quota: [{}] }),
+    create(ResourceSchema, { ...resource(EntityKind.ACCOUNT, { alias: "Disabled cleanup entry", provider_id: providerId, type: "api", enabled: false, health: "disconnected", removal: { request_id: newRequestId() }, confirmed_exhausted: true }), schemaVersion: 1 }),
+    create(ResourceSchema, { ...resource(EntityKind.ACCOUNT, { alias: "Unknown schema", type: "api", provider_id: providerId }), schemaVersion: 2 }),
+  ] });
+  render(value.view(value.settings(AccountSettingsSection.Api)));
+  await screen.findByRole("heading", { name: "Personal" });
+  const rows = screen.getAllByRole("article");
+  expect(rows.map((row) => row.querySelector("h2")?.textContent)).toEqual(["Personal", "Work", "Disabled cleanup entry", "Unnamed"]);
+  expect(new Set(rows.map((row) => row.parentElement)).size).toBe(1);
+  expect(within(rows[0]).getByText("Credential connected")).toBeTruthy();
+  expect(within(rows[0]).getByText("unverified")).toBeTruthy();
+  expect(within(rows[0]).getByText("No quota observation")).toBeTruthy();
+  expect(within(rows[1]).getByText(`Provider unavailable · ${missing}`)).toBeTruthy();
+  expect(within(rows[1]).getByText("Unavailable")).toBeTruthy();
+  expect(within(rows[1]).getByText("1 observations")).toBeTruthy();
+  expect(within(rows[2]).getByText("Credential cleanup pending")).toBeTruthy();
+  expect(within(rows[2]).getByText("Disabled")).toBeTruthy();
+  expect(within(rows[2]).getByText("Confirmed exhausted")).toBeTruthy();
+  for (const row of rows) expect(within(row).getAllByRole("button").map((button) => button.textContent)).toEqual(["Manage connection", "Edit preferences", "Delete entry"]);
+  expect(within(rows[3]).getAllByRole("button").every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+  expect(screen.queryByLabelText("API key")).toBeNull();
+});
+
+it.each([false, true])("distinguishes scoped empty results and empty continuation pages (%s)", async (continued) => {
+  const providerId = newRequestId();
+  const value = fixture({ providerId, listPage: (request) => ({ resources: [], nextPageToken: continued && !request.filter?.pageToken ? "api-page-2" : "" }) });
+  render(value.view(value.settings(AccountSettingsSection.Api, { providerIdFilter: providerId, providerHint: value.providerOption, providers: [] })));
+  await screen.findByText(continued ? "No entries on this page." : "No entries for this provider.");
+  expect(screen.getByText("Provider: API provider")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "No AI API key entries" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
+  if (continued) {
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("button", { name: "First page" });
+    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+    expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ providerId, accountType: 1, filter: { pageSize: 50, pageToken: "api-page-2" } });
+  } else expect(screen.queryByRole("navigation", { name: "Entry pages" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Clear provider filter" }));
+  expect(value.callbacks.clearProviderFilter).toHaveBeenCalledTimes(1);
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([Code.Unavailable, Code.PermissionDenied])("retries only the failed account page and suppresses cached empty success (%s)", async (code) => {
+  const value = fixture({ listPage: (request) => ({ resources: [], nextPageToken: request.filter?.pageToken ? "" : "api-page-2" }) });
+  render(value.view(value.settings(AccountSettingsSection.Api)));
+  fireEvent.click(await screen.findByRole("button", { name: "Next page" }));
+  await screen.findByRole("button", { name: "First page" });
+  const original = value.list.mock.calls.at(-1)?.[0];
+  value.list.mockRejectedValueOnce(new ConnectError("fixture-only read failure", code));
+  await value.client.invalidateQueries();
+  await screen.findByText("Refresh failed. Showing the last successfully loaded entries.");
+  expect(screen.queryByText("No entries on this page.")).toBeNull();
+  let release!: (value: { resources: Resource[] }) => void;
+  value.list.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+  const retry = screen.getByRole("button", { name: "Retry entries" });
+  fireEvent.click(retry);
+  await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(true));
+  expect(value.list.mock.calls.at(-1)?.[0]).toEqual(original);
+  release({ resources: [] });
+  await screen.findByText("No entries on this page.");
+  expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled(); expect(value.other).not.toHaveBeenCalled();
+});
+
+it("keeps inventory loading, denial, missing capabilities and failed cached emptiness distinct", async () => {
+  const value = fixture(), retry = vi.fn();
+  const view = render(value.view(value.settings(AccountSettingsSection.Api, { accountTypeFilteringReady: false, accountTypeFilteringLoading: true })));
+  expect(screen.getByText("Loading provider capabilities…")).toBeTruthy();
+  expect(screen.queryByText(/Update the selected server/)).toBeNull();
+  view.rerender(value.view(value.settings(AccountSettingsSection.Api, { accountTypeFilteringReady: false, accountTypeFilteringProblem: new ConnectError("fixture denial", Code.PermissionDenied), retryAccountCapabilities: retry })));
+  expect(screen.getByText(/Entry access is denied/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retry provider inventory" }));
+  expect(retry).toHaveBeenCalledTimes(1);
+  expect(value.list).not.toHaveBeenCalled();
+  view.rerender(value.view(value.settings(AccountSettingsSection.Api, { accountTypeFilteringReady: false })));
+  expect(screen.getByText(/Update the selected server/)).toBeTruthy();
+  view.rerender(value.view(value.settings(AccountSettingsSection.Api)));
+  await screen.findByRole("heading", { name: "No AI API key entries" });
+  value.list.mockRejectedValueOnce(new ConnectError("fixture failure", Code.Unavailable));
+  await value.client.invalidateQueries();
+  await screen.findByRole("button", { name: "Retry entries" });
+  expect(screen.queryByRole("heading", { name: "No AI API key entries" })).toBeNull();
+  expect(screen.getByText(/last successfully loaded entries/)).toBeTruthy();
 });

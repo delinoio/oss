@@ -56,7 +56,7 @@ test("Git LFS attribute changes force every eligible job", () => {
   }
 });
 
-test("pnport installer changes select six-host native verification on main", () => {
+test("pnport installer changes select four-host native verification on main", () => {
   for (const installer of ["scripts/install/pnport.sh", "scripts/install/pnport.ps1"]) {
     assert.equal(planJobs(Event.Push, [installer]).jobs["pnport-native"], true, installer);
     assert.equal(planJobs(Event.PullRequest, [installer]).jobs["pnport-native"], false, installer);

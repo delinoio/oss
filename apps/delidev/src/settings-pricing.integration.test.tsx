@@ -19,7 +19,7 @@ it("saves and inspects a real immutable model price through desktop settings and
   const provider = await save(EntityKind.PROVIDER, { name: "Pricing API", endpoint: providerOrigin, protocol: "openai-chat", authentication: "keyless", discovery: false });
   const model = await save(EntityKind.MODEL, { name: "Pricing model", provider_id: provider.id, native_id: "pricing-fixture", harnesses: ["codex"], manual: true, metadata_source: "user-declared" });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Models" }));
   const heading = await screen.findByRole("heading", { name: "Pricing model" });
   fireEvent.click(within(heading.closest("article")!).getByRole("button", { name: "Token pricing" }));

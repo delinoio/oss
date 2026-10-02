@@ -8,6 +8,60 @@ actual account/private-GitHub access and platform distribution validation remain
 deferred. This document covers managed backup observation, creation/deletion and permanent
 session deletion and database restore. Worker-local snapshots remain pending.
 
+## Planned subscription retirement (issue #1235)
+
+Migration 28 is reserved for [issue #1235](https://github.com/delinoio/oss/issues/1235)
+after the real Claude accounting and request-diagnostics migrations at 26 and
+27. Establish this reservation and independent server capability 17 on main
+before dependent implementation. The executable sequence remains at 25; no
+empty predecessor, schema-version bump or retirement runs in this prerequisite.
+
+The required reset must back up first and atomically retire legacy subscription
+Accounts, native-subscription Providers and their provider-bound Models into
+read-only historical metadata with original IDs, revisions, timestamps and
+document bytes. Tombstone their IDs, exclude them from live configuration/export
+and refuse outstanding or uncertain native ownership, connection/removal or
+cleanup before changes. Never infer services or recreate accounts. Preserve
+surviving Agent account order/weights and Project restriction `configured` flags,
+including configured-empty deny-all; retired model references require explicit
+reconfiguration. Disable only affected schedules with a retained reset reason,
+preserving accepted occurrences and unrelated API configuration.
+
+Keep session, snapshot, transcript and usage bytes/attribution intact. Retired
+subscription sessions require a new explicitly configured session, without
+Resume, dispatch or automatic account fallback. Migrate older backup candidates
+before restore publication; imports/receipts cannot resurrect retired IDs.
+Portable bundle version 2 carries service-native configuration, while API-only
+version-1 imports remain supported and legacy subscription graphs are rejected
+atomically with recreate guidance. Implementation must compose the independent
+managed-account ownership and cleanup boundary from issue #1095.
+
+## Planned account OAuth attempts (issue #1146)
+
+Migration 29 is reserved for the private `account_oauth_attempts` table under
+[issue #1146](https://github.com/delinoio/oss/issues/1146), following real
+migrations 26–28. Establish the reservation on main before dependent
+implementation; the executable sequence still ends at 25. Do not create empty
+predecessors, reuse an allocated version or activate this table early.
+
+The [planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the
+complete lifecycle. Attempt metadata binds actor/server/provider and revision,
+original start/completion IDs, reserved account/create/connect IDs, process
+generation, state/revision/times, keyed comparison commitments, exact protected
+references and cleanup status. Do not require an existing account foreign key,
+cascade deletion of recovery evidence, or include attempts in public resources,
+snapshots/events or portable export. SQLite, receipts and backup images contain
+no raw verifier, code, key or callback/authorization URL.
+
+Fresh/upgrade paths must share the verified backup-first transaction and preserve
+existing account/provider/settings/claim state and explicit default deletions.
+A durable claim commits before HTTP outside locks; no restart, copied image,
+timeout, cancellation or retry can reacquire exchange authority. Original local
+recovery may finish only an exactly sealed credential or accepted result without
+HTTP. Keep account-less staged references, partial disconnected accounts and
+unresolved cleanup; unknown provider response never proves failure or revocation.
+This reservation implements no table, migration, exchange or restore feature.
+
 ## Managed backup observation
 
 `SystemService.CreateBackup`, `ListBackups` and `InspectBackup` are available only
@@ -260,8 +314,15 @@ The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
 forward; offline or uncertain peers keep both forwarding records and database
 removal pending. Original cleanup reports remain authorized during deletion,
-while new socket claims and traffic cannot reopen the session. Other unimplemented
-terminal/browser-profile/snapshot products are not invented by deletion. Uncontrolled filesystem snapshots and external copies are
+while new socket claims and traffic cannot reopen the session. Session terminals participate through their original close claims and independently
+joined cleanup reports under the [terminal contract](cmds-delidev-terminals-contract.md).
+Deletion atomically requests close without replacing an existing close identity,
+withholds workspace-removal work until every terminal confirms cleanup, and
+rechecks cleanup before database purge. New terminal creation/input/resize cannot
+reopen a deleting session. Original cleanup reports and exact receipt retries
+remain admissible. An accepted uncertain terminal close atomically retains the
+cleanup obligation under a fresh close identity; replaying its original report
+cannot change that identity or release workspace deletion. Browser-profile/snapshot products remain separate. Uncontrolled filesystem snapshots and external copies are
 outside the guarantee; platform/process fixtures do not establish native
 Windows/Linux or real-account acceptance.
 
@@ -306,6 +367,11 @@ The safety image supplies current device descriptors/verifiers, merged deletion
 tombstones, deleted-project policies, model suppressions, backup publication claims
 and permanent backup-removal jobs/receipts. Remove tombstoned entities and deleted
 session children, including indexed transcript content through existing cascades.
+Device replacement copies each complete current document, including protected
+browser inventory: original profile identities/revisions, pending deletion
+request IDs and completed cleanup states survive an older source image. Offline
+and revoked clients retain their obligations. The historical Device documents
+are discarded rather than merged back into that current inventory.
 Use the permanent deletion redactor for shared remediation operands and their
 source-linked activity before removing the original session graph.
 Schema-25 native accounting retains its original verified unit, attribution and
@@ -477,3 +543,26 @@ independent `native_accounting_layout=grok-closed-input-v1` metadata marker.
 Opening any version-25 database without that marker fails before WAL settings,
 migration or Worker state updates, preserving old unmerged version-25 files for
 explicit recovery. A version number alone cannot identify their layout.
+
+## Terminal report acknowledgement after purge
+
+Entity deletion and permanent session purge retain only the closed terminal-report
+receipt kind plus original terminal, machine and paired-device UUIDs, rebuilding
+that allowlist from the accepted receipt. All resource content and other receipt
+fields remain redacted. This lets a same-device replacement confirm an exact
+already-committed report after response loss and retire independently joined
+local ownership evidence. It grants no new report, native operation or resource
+resurrection. Legacy unbound receipts require the original resource to remain
+available. See the [terminal contract](cmds-delidev-terminals-contract.md).
+
+### Automatic PR source ownership
+
+Automatic PR attempts add optional original discovery-link identity/revision
+metadata to the existing attempt document; revisions use canonical decimal
+strings. This requires no new migration, protocol number or fabricated historical
+source proof. The final start transaction verifies that original link's current
+session/project and pause/Archive/recovery state before charging the durable
+stable-PR chain. Explicit session controls retain their separate server-owned
+automation suppression bit, without changing historical outcomes or unpausing a
+failed queue. Missing or replaced source ownership cannot authorize a native claim.
+Follow the [automatic coordinator contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).

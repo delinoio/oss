@@ -16,14 +16,18 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
+pub mod appearance;
+
 // Covers 32 bounded profile records, including JSON-escaped display names.
 const OUTPUT_LIMIT: u64 = 128 << 10;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
 
+pub mod browser;
 mod connections;
 pub use connections::{
-    RemovedConnections, SavedConnection, SavedConnectionState, canonical_id, connection_origin,
+    RemovalMetadata, RemovedConnections, SavedConnection, SavedConnectionState, canonical_id,
+    connection_origin,
 };
 
 mod desktop_recovery;
@@ -126,6 +130,7 @@ pub struct Connector {
     executable: PathBuf,
     root: PathBuf,
     gate: Mutex<()>,
+    command_timeout: Duration,
     listen: String,
     exiting: AtomicBool,
 }
@@ -164,6 +169,7 @@ impl Connector {
             executable,
             root,
             gate: Mutex::new(()),
+            command_timeout: COMMAND_TIMEOUT,
             listen: "127.0.0.1:46310".into(),
             exiting: AtomicBool::new(false),
         })
@@ -437,7 +443,7 @@ impl Connector {
             }
             match child.try_wait() {
                 Ok(Some(status)) => break Ok(status),
-                Ok(None) if started.elapsed() < COMMAND_TIMEOUT => {
+                Ok(None) if started.elapsed() < self.command_timeout => {
                     thread::sleep(Duration::from_millis(25))
                 }
                 Ok(None) => break Err(NativeFailure::TimedOut),
@@ -666,5 +672,52 @@ mod desktop_capability_tests {
             assert_eq!(capability["webviews"], serde_json::json!(labels));
             assert!(!capability["permissions"].as_array().unwrap().is_empty());
         }
+    }
+}
+
+// The picker returns native path bytes only when they fit the existing
+// inspection wire bound. It never canonicalizes or opens the selected
+// directory.
+pub fn repository_folder_path(path: &std::path::Path) -> Result<String> {
+    let value = path.to_str().ok_or(NativeFailure::InvalidEvidence)?;
+    if !path.is_absolute() || value.is_empty() || value.len() > 4096 || value.contains('\0') {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(value.to_owned())
+}
+
+#[cfg(test)]
+mod repository_folder_tests {
+    use super::*;
+    #[test]
+    fn selection_retains_native_path_and_bounds_only() {
+        let root = std::env::temp_dir();
+        let path = root.join("repository with spaces").join("not-created");
+        assert_eq!(
+            repository_folder_path(&path).unwrap(),
+            path.to_str().unwrap()
+        );
+        assert_eq!(
+            repository_folder_path(std::path::Path::new("relative")),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        assert_eq!(
+            repository_folder_path(&root.join("a".repeat(4097))),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        assert_eq!(
+            repository_folder_path(&root.join("invalid\0path")),
+            Err(NativeFailure::InvalidEvidence)
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_selection_cannot_change_wire_path_bytes() {
+        use std::os::unix::ffi::OsStringExt;
+        let path = std::env::temp_dir().join(std::ffi::OsString::from_vec(vec![0xff]));
+        assert_eq!(
+            repository_folder_path(&path),
+            Err(NativeFailure::InvalidEvidence)
+        );
     }
 }

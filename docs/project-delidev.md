@@ -5,6 +5,8 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 
 Issue #1137 makes a fresh main desktop launch sufficient to start/reuse a compatible ordinary local runtime and verify the authenticated product connection. Native-service scope admission remains Go-owned; same-process Stop, renderer lifecycle, saved-window authority and detached server/Worker/session lifetime stay independent. Routine startup/sidebar/tray use product wording; lifecycle, registration and saved-connection controls live in persistent Connection & diagnostics. The [desktop contract](apps-delidev-desktop-contract.md) defines the implementation; record actual platform acceptance and unresolved limits in issue #1137, its pull requests and CI logs/artifacts.
 
+Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows ConPTY processes, authenticated create/control/output operations and equivalent CLI commands. The desktop provides a bounded text terminal view. Agent Stop preserves terminals; Archive and storage deletion join their independent exact cleanup gate. The [terminal contract](cmds-delidev-terminals-contract.md) and [validation records in PR #1226](https://github.com/delinoio/oss/pull/1226) distinguish fixture/cross-build validation from native platform, remote Worker and release acceptance; this increment does not complete the remaining issue #964 scope.
+
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its executable is `delidev`.
 
@@ -19,6 +21,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 ## Domain Contract Documents
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
+- [Protected account browser](cmds-delidev-browser-contract.md)
 - [Storage operations](cmds-delidev-storage-contract.md)
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
@@ -31,6 +34,8 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)
 - [Portable configuration](cmds-delidev-configuration-transfer-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
+- [Worker-owned session terminals](cmds-delidev-terminals-contract.md)
+
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
@@ -41,6 +46,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
+- [Planned OpenRouter account OAuth PKCE](cmds-delidev-account-oauth-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [Native Codex model observations (pending)](cmds-delidev-native-models-contract.md)
@@ -65,6 +71,10 @@ sessions and shared account profiles are preserved. The [storage contract](cmds-
 owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
 
 ## Cross-Domain Invariants
+- New repository registration follows the [folder workflow](apps-delidev-desktop-contract.md#projects-repositories-and-configuration-actions) in issue #1142: the native picker grants selection only, fresh same-computer proof binds the Worker, and Go owns read-only canonical inspection and atomic publication. Optional GitHub identity enrichment uses pre-established Worker capability 6/attachment field 3; raw URLs and credentials stay outside renderer/server metadata. Registration shares the current Settings visit disposal policy, while existing edits preserve explicit configuration.
+- Settings is a regular `Surface.Settings` destination using the shared rail/category pane and compact drawer under issue #1236. Uninterrupted visits retain category/workflow state across reflow and same-identity reconnect; navigation away disposes Settings-local state and late continuations without changing saved effects or connection-owned conversation/New session workflows. Page-level Escape and active rail reselection preserve the visit. Targeted New Project/Repositories entries and visible destination focus follow the [desktop contract](apps-delidev-desktop-contract.md#settings-screen-and-visit-lifetime-issue-1236).
+- Issue #1146 reserves inventory capability 5, entry connection-method field 9, two closed enums and private migration 29 for OpenRouter OAuth. Establish reservations on main before implementation; migration 29 depends on real migrations 26–28. The [planned OAuth contract](cmds-delidev-account-oauth-contract.md) retains the approved server/CLI/native/desktop scope, server-owned credentials, once-only exchange and original local recovery. The prerequisite activates no OAuth support and leaves the issue open.
+- Issue #1235's planned subscription identity split reserves independent System capability 17 and migration 28. Establish both on main before dependent implementation and activate 28 only after real migrations 26/27, preserving their order. The [structure](cmds-delidev-structure-contract.md), [protocol](protos-delidev-v1-contract.md) and [storage](cmds-delidev-storage-contract.md#planned-subscription-retirement-issue-1235) contracts own this prerequisite; it changes no runtime support. The later reset must preserve historical attribution, deny-all restrictions and unsettled native ownership/cleanup gates while keeping subscriptions independent of API Providers.
 - Execution-device presentation uses `Runs on` for the New session machine selector and `Runner Device` / `Runner Devices` for former Execution Worker labels and messages. Agent Worker and technical Worker terminology remain distinct; machine/protocol/storage IDs, CLI commands, logs, error codes and the `execution-workers` Settings category value stay unchanged. The [desktop contract](apps-delidev-desktop-contract.md) owns the presentation boundary.
 - Go owns business logic; clients use authenticated Connect and preserve exact request/revision identities.
 - Grok public request journals preserve typed payloads plus bounded original JSON bytes for independently verified proposal digests. Server admission precedes public response authority; byte evidence never grants native or filesystem access. Follow the [harness contract](cmds-delidev-harness-contract.md).
@@ -81,6 +91,9 @@ owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.
 - Managed database restore preserves current revocations and external permanent deletion obligations, quarantines historical execution and ends the original server epoch. Temporary recovery images participate in permanent erasure; the storage contract owns their lifecycle. Managed subscription operations and uncertain leases block replacement; restored credential references remain fenced because the external vault is not restored.
+- Manual PR fixes use explicit original evidence/project ownership, eligible sessions and Worker Git authentication; the server lookup PAT never authorizes publication. Native completion requires independent push/cleanup proof before exact evidence handling. Bounded automatic fixes reuse the same gates for explicitly linked PRs and independently enabled policies, retaining one durable chain and explicit Stop/Archive authority. Unperformed native/account acceptance remains separate.
+
+- Managed database restore preserves current revocations and external permanent deletion obligations, quarantines historical execution and ends the original server epoch. Temporary recovery images participate in permanent erasure; the storage contract owns their lifecycle.
 - PR activity preserves immutable source/version/actor metadata across Go, generated clients, CLI and desktop. Attempt success cannot establish verified handling; only a dedicated original verification source can project that outcome.
 - Negotiated native usage keeps Codex responses and verified Grok closed inputs as distinct accounting units across Go, CLI and desktop. Grok retention requires original input/history/closure and independently confirmed cleanup; its totals never imply pricing, actual cost or estimated-budget contribution. See the [usage contract](cmds-delidev-usage-contract.md).
 
@@ -106,3 +119,20 @@ Update the owning domain contract when behavior changes. Update this index only 
 ## Home navigation invariant
 
 Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md).
+
+## Device appearance invariant
+
+Device appearance is a native desktop-owned preference shared across local and saved-server windows, independent of every server configuration, pairing, backup and configuration transfer. Its controller stays above connection state and follows the [desktop appearance contract](apps-delidev-desktop-contract.md#device-appearance-issue-1238).
+
+## Session terminal deletion invariant
+
+Interactive terminals belong to the prepared session's original Worker and primary workspace. Accepted input bytes remain private dispatch data for that Worker; all public terminal resources retain pending metadata while omitting those bytes. Agent Stop preserves them. Archive and permanent deletion join their independently confirmed process-tree cleanup; deletion cannot dispatch workspace removal before that join or bypass it during final purge. An accepted uncertain close report atomically retains the cleanup obligation under a fresh close identity; exact receipt replay cannot replace that next assignment or release workspace deletion. Replacement Workers may adopt only exact close reconciliation after a fresh current-instance server claim, preserving original evidence and synchronized shutdown output-loss observations without creating a shell or replaying controls. Missing shutdown observations conservatively expose possible abandoned output, independently of cleanup proof. A synchronized cleanup acknowledgement permits local terminal ownership metadata retirement, with interrupted retirement retained for local retry even after database deletion. Replacement acknowledgement recovery reads only exact committed receipts under the same current device/machine; it cannot revive native work or expose resource content. See the [terminal contract](cmds-delidev-terminals-contract.md) and [storage contract](cmds-delidev-storage-contract.md).
+
+Creation synchronizes the original process-owner index before native-start
+intent. Pre-native restart reconciliation requires that retained index;
+missing or changed ownership cannot establish cleanup or authorize replay.
+
+Desktop terminal history reads, polling, manual refresh and selection require
+advertised system terminal support. Unknown or unsupported status cannot issue
+terminal reads or expose cached terminal errors; see the
+[desktop contract](apps-delidev-desktop-contract.md).

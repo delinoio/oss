@@ -88,6 +88,24 @@ func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Requ
 		if string(v.SessionID) <= req.Msg.AfterSessionId {
 			continue
 		}
+		// Workspace removal may run on a separate Worker lane. Do not dispatch
+		// it until the original terminal lane has joined every owned process.
+		// Deletion admission is already closed, so a clean terminal cannot gain
+		// a replacement shell while this immutable work is in transit.
+		var terminalsPending bool
+		if e := s.Store.Read(ctx, func(tx *store.Tx) error {
+			if e := check(tx); e != nil {
+				return e
+			}
+			var e error
+			terminalsPending, e = tx.SessionTerminalsPending(v.SessionID)
+			return e
+		}); e != nil {
+			return nil, rpc.Error(e, c)
+		}
+		if terminalsPending {
+			continue
+		}
 		for _, w := range v.Workers {
 			if w.Work.DeviceID == actor.DeviceID && w.Work.MachineID == actor.MachineID && !w.Acknowledged {
 				b, _ := json.Marshal(w.Work)
