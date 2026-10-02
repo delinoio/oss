@@ -7,13 +7,13 @@ use libc::{c_char, c_int, stat as stat_struct};
 use crate::client::{convert::PathAt, handle_open};
 use crate::macros::intercept;
 #[cfg(target_os = "macos")]
-use crate::operation::{self, Kind};
+use crate::operation::{self, FinalSymlink};
 
 intercept!(stat(64): unsafe extern "C" fn(path: *const c_char, buf: *mut stat_struct) -> c_int);
 unsafe extern "C" fn stat(path: *const c_char, buf: *mut stat_struct) -> c_int {
     #[cfg(target_os = "macos")]
     // SAFETY: path is the caller's pathname passed unchanged to libc.
-    let operation = unsafe { operation::enter_path(Kind::Metadata, path) };
+    let operation = unsafe { operation::enter_metadata_path(path, FinalSymlink::Follow) };
     super::observe_path(path, AccessMode::READ);
     // SAFETY: calling the original libc stat() with the same arguments forwarded
     // from the interposed function
@@ -27,8 +27,8 @@ intercept!(lstat(64): unsafe extern "C" fn(path: *const c_char, buf: *mut stat_s
 unsafe extern "C" fn lstat(path: *const c_char, buf: *mut stat_struct) -> c_int {
     #[cfg(target_os = "macos")]
     // SAFETY: path is the caller's pathname passed unchanged to libc.
-    let operation = unsafe { operation::enter_path(Kind::Metadata, path) };
-    // TODO: add accessmode ReadNoFollow
+    let operation = unsafe { operation::enter_metadata_path(path, FinalSymlink::NoFollow) };
+    // The legacy access hint has no final-component resolution policy.
     super::observe_path(path, AccessMode::READ);
     // SAFETY: calling the original libc lstat() with the same arguments forwarded
     // from the interposed function
@@ -47,7 +47,17 @@ unsafe extern "C" fn fstatat(
 ) -> c_int {
     #[cfg(target_os = "macos")]
     // SAFETY: pathname is the caller's path passed unchanged to libc.
-    let operation = unsafe { operation::enter_at(Kind::Metadata, dirfd, pathname) };
+    let operation = unsafe {
+        operation::enter_metadata_at(
+            dirfd,
+            pathname,
+            if flags & libc::AT_SYMLINK_NOFOLLOW != 0 {
+                FinalSymlink::NoFollow
+            } else {
+                FinalSymlink::Follow
+            },
+        )
+    };
     super::observe_at(dirfd, pathname, AccessMode::READ);
     // SAFETY: calling the original libc fstatat() with the same arguments forwarded
     // from the interposed function

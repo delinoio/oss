@@ -9,7 +9,8 @@
     "core:event:allow-unlisten",
     "github-presentation",
     "device-appearance",
-    "browser-presentation"
+    "browser-presentation",
+    "repository-folder"
   ],
   "webviews": [
     "server-*"

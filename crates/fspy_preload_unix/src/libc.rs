@@ -1,5 +1,7 @@
 #[cfg(not(all(target_os = "macos", feature = "pnport")))]
 pub use libc::*;
+#[cfg(all(target_os = "macos", feature = "pnport"))]
+use libc::{c_char, c_int, c_void};
 
 unsafe extern "C" {
     // On macOS x86_64, directory functions use $INODE64 symbol suffix for 64-bit
@@ -9,7 +11,6 @@ unsafe extern "C" {
         all(target_os = "macos", target_arch = "x86_64"),
         link_name = "scandir$INODE64"
     )]
-    #[cfg(not(all(target_os = "macos", feature = "pnport")))]
     pub unsafe fn scandir(
         dirname: *const c_char,
         namelist: *mut c_void,

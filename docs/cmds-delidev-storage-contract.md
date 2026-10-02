@@ -389,7 +389,9 @@ Current paired clients retain their present authorization; old/revoked/deleted
 clients gain none. Pairing codes and execution grants/references are discarded.
 Workers must pair again; no Worker files or credential payloads are restored.
 Restored account and integration definitions are disconnected, without historical
-connection/validation/removal authority. Protected credential storage stays untouched. Current network profiles, immutable credential-generation references and server/Worker route selections are copied from the current safety image with their exact bodies preserved and resource revisions freshened by the ordinary restore rule; historical network routing cannot replace current explicit authority. The server holds the shared credential gate through restore eligibility and publication, preventing a native network/account write from crossing the private-intent-before-SQL boundary.
+connection/validation/removal authority. Protected credential storage stays untouched. Pending, leased or recovery-required managed subscription ownership blocks replacement. Restored subscription metadata retains its historical generation and ownership evidence under a recovery-required fence, with no account connection. The external vault is not restored, so neither an older reference nor database publication authorizes another credential grant. Clear an allocated subscription state with no generation, identity, pending operation, lease or recovery fence; settled logout or failed login owns no external reference to quarantine.
+
+Current network profiles, immutable credential-generation references and server/Worker route selections are copied from the current safety image with their exact bodies preserved and resource revisions freshened by the ordinary restore rule; historical network routing cannot replace current explicit authority. The server holds the shared credential gate through restore eligibility and publication, preventing a native network/account write from crossing the private-intent-before-SQL boundary.
 
 Current machine descriptors required by retained Worker network routes are also
 copied from the safety image, replacing historical metadata for matching IDs and
@@ -559,3 +561,15 @@ already-committed report after response loss and retire independently joined
 local ownership evidence. It grants no new report, native operation or resource
 resurrection. Legacy unbound receipts require the original resource to remain
 available. See the [terminal contract](cmds-delidev-terminals-contract.md).
+
+### Automatic PR source ownership
+
+Automatic PR attempts add optional original discovery-link identity/revision
+metadata to the existing attempt document; revisions use canonical decimal
+strings. This requires no new migration, protocol number or fabricated historical
+source proof. The final start transaction verifies that original link's current
+session/project and pause/Archive/recovery state before charging the durable
+stable-PR chain. Explicit session controls retain their separate server-owned
+automation suppression bit, without changing historical outcomes or unpausing a
+failed queue. Missing or replaced source ownership cannot authorize a native claim.
+Follow the [automatic coordinator contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).

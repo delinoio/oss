@@ -142,6 +142,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	child, stop := context.WithCancel(ctx)
 	defer stop()
 	service := &Service{userServiceBackend: config.userServiceBackend, userServiceOptions: userservice.ServerOptions{Listen: config.Listen, TLSCertificate: config.TLSCertificate, TLSKey: config.TLSKey, AllowedOrigins: config.AllowedOrigins}, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
+		return err
+	}
 	defer service.closeAccountSecrets()
 	defer service.closeIntegrationSecrets()
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())
@@ -180,6 +183,13 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		service.runExecutionDispatch(dispatchCtx)
 	}()
 	defer func() { stopDispatch(); <-dispatchDone }()
+	remediationCtx, stopRemediation := context.WithCancel(child)
+	remediationDone := make(chan struct{})
+	go func() {
+		defer close(remediationDone)
+		service.runAutomaticPRRemediation(remediationCtx)
+	}()
+	defer func() { stopRemediation(); <-remediationDone }()
 	scheduleCtx, stopSchedules := context.WithCancel(child)
 	schedulesDone := make(chan struct{})
 	go func() {
@@ -225,6 +235,8 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	stopCatalog()
 	<-catalogDone
+	stopRemediation()
+	<-remediationDone
 	stopDispatch()
 	<-dispatchDone
 	stopSchedules()

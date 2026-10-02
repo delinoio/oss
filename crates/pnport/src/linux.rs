@@ -7,6 +7,7 @@
 //! pnport never attaches to unrelated tasks.
 
 use std::{
+    cell::Cell,
     collections::{HashMap, HashSet, VecDeque},
     ffi::{CString, OsStr, OsString},
     fs::{self, File},
@@ -18,6 +19,7 @@ use std::{
     },
     path::{Component, Path, PathBuf},
     process::{Child, Command},
+    rc::Rc,
     time::{Duration, Instant},
 };
 
@@ -49,6 +51,18 @@ const OPEN_HOW_SIZE: usize = 24;
 const RESOLVE_BENEATH: u64 = 0x08;
 const RESOLVE_IN_ROOT: u64 = 0x10;
 const CLOSE_RANGE_UNSHARE: u32 = 2;
+// Linux KCMP_FILE compares two descriptors' open-file descriptions rather
+// than their current descriptor numbers. Use it when seeding inherited
+// directory descriptors so dup-created handles share the overlay offset.
+const KCMP_FILE: libc::c_int = 0;
+// ext4/overlayfs use i64::MAX for native EOF. A negative lseek result would
+// encode errno, so reserve the adjacent positive cookie and reject a native
+// collision before publishing it rather than confusing the two positions.
+const DIRECTORY_END: i64 = i64::MAX - 1;
+#[cfg(target_arch = "x86_64")]
+const SYS_GETDENTS: i64 = libc::SYS_getdents;
+#[cfg(target_arch = "aarch64")]
+const SYS_GETDENTS: i64 = -1;
 // Linux UAPI assigns this number on both supported 64-bit architectures.
 const SYS_FCHMODAT2: i64 = 452;
 // 64-bit Linux UAPI encodings from include/uapi/linux/fs.h. Only these
@@ -313,6 +327,8 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_dup,
         libc::SYS_dup3,
         libc::SYS_fcntl,
+        libc::SYS_getdents64,
+        libc::SYS_lseek,
         libc::SYS_ioctl,
         libc::SYS_recvmsg,
         libc::SYS_recvmmsg,
@@ -373,6 +389,7 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_mknod,
         libc::SYS_dup2,
         libc::SYS_futimesat,
+        libc::SYS_getdents,
     ]);
     calls
 }
@@ -385,6 +402,9 @@ fn fd_sensitive_syscall(call: i64) -> bool {
             || x == libc::SYS_dup
             || x == libc::SYS_dup3
             || x == libc::SYS_fcntl
+            || x == libc::SYS_getdents64
+            || x == SYS_GETDENTS
+            || x == libc::SYS_lseek
             || x == libc::SYS_ioctl
             || x == libc::SYS_fchdir
             || x == libc::SYS_fchmod
@@ -1204,12 +1224,32 @@ fn resume(pid: i32, syscall_exit: bool, signal: i32) -> Result<()> {
     Ok(())
 }
 
+#[derive(Default)]
+struct DirectoryOffset {
+    emitted: Cell<bool>,
+    virtual_end: Cell<bool>,
+}
+
 #[derive(Clone)]
 enum Pending {
     Open(Translation),
     Close(i32),
     CloseRange(u32, u32),
-    Dup(Option<Translation>),
+    Dup {
+        translation: Option<Translation>,
+        directory: Option<Rc<DirectoryOffset>>,
+    },
+    Directory {
+        fd: i32,
+        output: u64,
+        capacity: usize,
+        legacy: bool,
+    },
+    DirectorySeek {
+        fd: i32,
+        end: bool,
+    },
+    DirectoryEnd,
     ChangeDirectory(Option<PathBuf>),
     LinkMetadata {
         output: u64,
@@ -1253,6 +1293,9 @@ struct Trace<'a> {
     groups: HashMap<i32, i32>,
     pending: HashMap<i32, Pending>,
     fds: HashMap<i32, HashMap<i32, Translation>>,
+    // Cloned descriptors and forked tables share one kernel open-file offset.
+    // Rc retains the matching overlay offset; independent opens get new state.
+    directories: HashMap<i32, HashMap<i32, Rc<DirectoryOffset>>>,
     dup_reservations: HashMap<i32, (i32, Translation)>,
     fd_busy: HashMap<i32, i32>,
     fd_waiting: VecDeque<(i32, i32)>,
@@ -1398,6 +1441,123 @@ impl Trace<'_> {
         })
     }
 
+    fn directory_parent(&self, pid: i32, fd: i32) -> Option<PathBuf> {
+        let live = format!("/proc/{pid}/fd/{fd}");
+        if !fs::metadata(&live).ok()?.is_dir() {
+            return None;
+        }
+        if let Some(entry) = self.descriptor(pid, fd) {
+            if entry.logical != entry.physical {
+                return Some(entry.logical);
+            }
+        }
+        fs::read_link(live).ok()
+    }
+
+    fn directory_state(&mut self, pid: i32, fd: i32) -> Result<Option<Rc<DirectoryOffset>>> {
+        let Some(parent) = self.directory_parent(pid, fd) else {
+            return Ok(None);
+        };
+        if self.view.virtual_directory_entry(&parent)?.is_none() {
+            return Ok(None);
+        }
+        match fs::symlink_metadata(format!("/proc/{pid}/fd/{fd}/node_modules")) {
+            Ok(metadata) if metadata.is_dir() => return Ok(None),
+            Ok(_) => {
+                return Err(Error::new(
+                    Code::PnportFilesystemConflict,
+                    "A backing entry conflicts with the virtual dependency directory.",
+                ))
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(_) => return Err(injection_failed()),
+        }
+        Ok(Some(
+            self.directories
+                .entry(Self::group(pid))
+                .or_default()
+                .entry(fd)
+                .or_insert_with(|| Rc::new(DirectoryOffset::default()))
+                .clone(),
+        ))
+    }
+
+    fn finish_directory(
+        &mut self,
+        pid: i32,
+        regs: &mut Registers,
+        fd: i32,
+        output: u64,
+        capacity: usize,
+        legacy: bool,
+    ) -> Result<()> {
+        let returned = result(regs);
+        if returned < 0 {
+            return Ok(());
+        }
+        let Some(state) = self.directory_state(pid, fd)? else {
+            return Ok(());
+        };
+        if returned > 0 {
+            // Kernel records have a u16 length. Read one at a time so a large
+            // caller buffer cannot cause an equally large supervisor allocation.
+            let mut offset = 0usize;
+            while offset < returned as usize {
+                let header = read_remote(pid, output + offset as u64, 19)?;
+                if header.len() != 19 {
+                    return Err(injection_failed());
+                }
+                if i64::from_ne_bytes(header[8..16].try_into().unwrap()) == DIRECTORY_END {
+                    return Err(unsupported(
+                        "A native directory cookie conflicts with the virtual end position.",
+                    ));
+                }
+                let len = u16::from_ne_bytes(header[16..18].try_into().unwrap()) as usize;
+                let name_start = if legacy { 18 } else { 19 };
+                if len <= name_start || offset + len > returned as usize {
+                    return Err(injection_failed());
+                }
+                let record = read_remote(pid, output + offset as u64, len)?;
+                if record.get(name_start..name_start + 13) == Some(b"node_modules\0") {
+                    state.emitted.set(true);
+                }
+                offset += len;
+            }
+            return Ok(());
+        }
+        if state.emitted.get() {
+            return Ok(());
+        }
+        let mut record = [0u8; 32];
+        record[..8].copy_from_slice(&1u64.to_ne_bytes());
+        record[8..16].copy_from_slice(&DIRECTORY_END.to_ne_bytes());
+        record[16..18].copy_from_slice(&32u16.to_ne_bytes());
+        let name_start = if legacy {
+            record[31] = libc::DT_DIR;
+            18
+        } else {
+            record[18] = libc::DT_DIR;
+            19
+        };
+        record[name_start..name_start + 13].copy_from_slice(b"node_modules\0");
+        if capacity < record.len() {
+            set_result(regs, -(libc::EINVAL as i64));
+        } else if write_remote_or_fault(pid, output, &record)? {
+            state.emitted.set(true);
+            state.virtual_end.set(true);
+            set_result(regs, record.len() as i64);
+            tracing::trace!(
+                action = "linux_directory_overlay",
+                pid,
+                fd,
+                "Emitted a virtual directory entry"
+            );
+        } else {
+            set_result(regs, -(libc::EFAULT as i64));
+        }
+        set_registers(pid, regs)
+    }
+
     fn seed_inherited_descriptors(&mut self) -> Result<()> {
         let pid = self.root;
         let cache_root = fs::canonicalize(&self.view.cache.root).map_err(|_| injection_failed())?;
@@ -1449,6 +1609,74 @@ impl Trace<'_> {
             );
         }
         self.fds.insert(pid, inherited);
+        Ok(())
+    }
+
+    fn seed_inherited_directory_offsets(&mut self) -> Result<()> {
+        let pid = self.root;
+        let mut eligible = Vec::new();
+        for entry in fs::read_dir(format!("/proc/{pid}/fd")).map_err(|_| injection_failed())? {
+            let entry = entry.map_err(|_| injection_failed())?;
+            let Some(fd) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<i32>().ok())
+            else {
+                continue;
+            };
+            if !fs::metadata(entry.path())
+                .map_err(|_| injection_failed())?
+                .is_dir()
+            {
+                continue;
+            }
+            let Some(parent) = self.directory_parent(pid, fd) else {
+                continue;
+            };
+            if self.view.virtual_directory_entry(&parent)?.is_none() {
+                continue;
+            }
+            match fs::symlink_metadata(format!("/proc/{pid}/fd/{fd}/node_modules")) {
+                Ok(metadata) if metadata.is_dir() => continue,
+                Ok(_) => {
+                    return Err(Error::new(
+                        Code::PnportFilesystemConflict,
+                        "A backing entry conflicts with the virtual dependency directory.",
+                    ))
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(_) => return Err(injection_failed()),
+            }
+            eligible.push(fd);
+        }
+
+        let directories = self.directories.entry(pid).or_default();
+        let mut representatives: Vec<(i32, Rc<DirectoryOffset>)> = Vec::new();
+        for fd in eligible {
+            let mut shared = None;
+            for (representative, state) in &representatives {
+                // SAFETY: Both descriptors belong to the stopped root task
+                // and were validated as live directories above. A result
+                // other than equal or unequal cannot establish provenance.
+                let comparison = unsafe {
+                    libc::syscall(libc::SYS_kcmp, pid, pid, KCMP_FILE, *representative, fd)
+                };
+                match comparison {
+                    0 => {
+                        shared = Some(state.clone());
+                        break;
+                    }
+                    1 => {}
+                    _ => return Err(injection_failed()),
+                }
+            }
+            let state = shared.unwrap_or_else(|| {
+                let state = Rc::new(DirectoryOffset::default());
+                representatives.push((fd, state.clone()));
+                state
+            });
+            directories.insert(fd, state);
+        }
         Ok(())
     }
 
@@ -2671,6 +2899,44 @@ impl Trace<'_> {
             call,
             "Intercepted owned child syscall"
         );
+        if call == libc::SYS_getdents64 || call == SYS_GETDENTS {
+            let fd = argument(&regs, 0) as i32;
+            if let Some(state) = self.directory_state(pid, fd)? {
+                if state.virtual_end.get() {
+                    deny_syscall(pid, &mut regs)?;
+                    self.pending.insert(pid, Pending::DirectoryEnd);
+                    return resume(pid, true, 0);
+                }
+                self.pending.insert(
+                    pid,
+                    Pending::Directory {
+                        fd,
+                        output: argument(&regs, 1),
+                        capacity: argument(&regs, 2) as usize,
+                        legacy: call == SYS_GETDENTS,
+                    },
+                );
+                return resume(pid, true, 0);
+            }
+            return self.resume_fd_sensitive(pid);
+        }
+        if call == libc::SYS_lseek {
+            let fd = argument(&regs, 0) as i32;
+            if let Some(state) = self.directory_state(pid, fd)? {
+                let current_end = state.virtual_end.get()
+                    && argument(&regs, 1) == 0
+                    && argument(&regs, 2) as i32 == libc::SEEK_CUR;
+                let end = current_end
+                    || argument(&regs, 1) as i64 == DIRECTORY_END
+                        && argument(&regs, 2) as i32 == libc::SEEK_SET;
+                if end {
+                    deny_syscall(pid, &mut regs)?;
+                }
+                self.pending.insert(pid, Pending::DirectorySeek { fd, end });
+                return resume(pid, true, 0);
+            }
+            return self.resume_fd_sensitive(pid);
+        }
         if call == libc::SYS_io_uring_setup {
             // A ring would bypass pathname/descriptor mediation. Cancel setup
             // before the kernel can allocate it and expose the feature as
@@ -2827,12 +3093,23 @@ impl Trace<'_> {
                 "Owned child path mediation failed"
             );
         })? {
-            if self.pending.get(&pid).is_some_and(
-                |action| matches!(action, Pending::Open(translation) if translation.readonly),
-            ) {
+            let tracked_open = match self.pending.get(&pid) {
+                Some(Pending::Open(translation)) => {
+                    translation.readonly
+                        || (translation.physical.is_dir()
+                            && self
+                                .view
+                                .virtual_directory_entry(&translation.logical)?
+                                .is_some())
+                }
+                _ => false,
+            };
+            if tracked_open {
                 // Native opens can block (for example, a FIFO whose writer
                 // is another thread). Only managed opens need the group FD
                 // barrier, after pathname translation identifies ownership.
+                // Eligible directory opens also publish their overlay offset
+                // before a peer can enumerate the newly installed descriptor.
                 let group = Self::group(pid);
                 if self.fd_busy.contains_key(&group) {
                     tracing::trace!(
@@ -2911,7 +3188,11 @@ impl Trace<'_> {
                         .insert(pid, (argument(&regs, 1) as i32, entry.clone()));
                 }
             }
-            Pending::Dup(source)
+            let directory = self.directory_state(pid, argument(&regs, 0) as i32)?;
+            Pending::Dup {
+                translation: source,
+                directory,
+            }
         } else if call == libc::SYS_getcwd {
             let group = Self::group(pid);
             if let Some(path) = self.cwd.get(&group) {
@@ -2947,26 +3228,67 @@ impl Trace<'_> {
         let returned = result(&regs);
         let group = Self::group(pid);
         match action {
-            Pending::Open(translation) if returned >= 0 && translation.readonly => {
-                self.fds
-                    .entry(group)
-                    .or_default()
-                    .insert(returned as i32, translation);
+            Pending::Open(translation) if returned >= 0 => {
+                let fd = returned as i32;
+                self.directories.entry(group).or_default().remove(&fd);
+                self.fds.entry(group).or_default().remove(&fd);
+                if translation.readonly {
+                    self.fds
+                        .entry(group)
+                        .or_default()
+                        .insert(returned as i32, translation);
+                }
+                self.directory_state(pid, fd)?;
             }
             Pending::Close(fd) if returned == 0 => {
                 self.fds.entry(group).or_default().remove(&fd);
+                self.directories.entry(group).or_default().remove(&fd);
             }
             Pending::CloseRange(first, last) if returned == 0 => {
                 self.fds
                     .entry(group)
                     .or_default()
                     .retain(|fd, _| (*fd as u32) < first || (*fd as u32) > last);
+                self.directories
+                    .entry(group)
+                    .or_default()
+                    .retain(|fd, _| (*fd as u32) < first || (*fd as u32) > last);
             }
-            Pending::Dup(translated) if returned >= 0 => {
+            Pending::Dup {
+                translation: translated,
+                directory,
+            } if returned >= 0 => {
                 let entry = self.fds.entry(group).or_default();
                 entry.remove(&(returned as i32));
                 if let Some(translated) = translated {
                     entry.insert(returned as i32, translated);
+                }
+                let directories = self.directories.entry(group).or_default();
+                directories.remove(&(returned as i32));
+                if let Some(directory) = directory {
+                    directories.insert(returned as i32, directory);
+                }
+            }
+            Pending::Directory {
+                fd,
+                output,
+                capacity,
+                legacy,
+            } => {
+                self.finish_directory(pid, &mut regs, fd, output, capacity, legacy)?;
+            }
+            Pending::DirectoryEnd => {
+                set_result(&mut regs, 0);
+                set_registers(pid, &regs)?;
+            }
+            Pending::DirectorySeek { fd, end } if returned >= 0 || end => {
+                if let Some(state) = self.directory_state(pid, fd)? {
+                    state.emitted.set(end);
+                    state.virtual_end.set(end);
+                }
+                if end {
+                    set_result(&mut regs, DIRECTORY_END);
+                    set_registers(pid, &regs)?;
                 }
             }
             Pending::ChangeDirectory(logical) if returned == 0 => {
@@ -3206,6 +3528,7 @@ impl Trace<'_> {
             }
             if !self.groups.values().any(|tracked| *tracked == group) {
                 self.fds.remove(&group);
+                self.directories.remove(&group);
                 self.cwd.remove(&group);
                 if group == self.root {
                     self.root_result = Some(self.root_exit_code.unwrap_or_else(|| {
@@ -3367,6 +3690,9 @@ impl Trace<'_> {
                     if let Some(fds) = self.fds.get(&parent_group).cloned() {
                         self.fds.insert(child_group, fds);
                     }
+                    if let Some(directories) = self.directories.get(&parent_group).cloned() {
+                        self.directories.insert(child_group, directories);
+                    }
                     if let Some(cwd) = self.cwd.get(&parent_group).cloned() {
                         self.cwd.insert(child_group, cwd);
                     }
@@ -3425,6 +3751,9 @@ impl Trace<'_> {
                 let group = Self::group(pid);
                 if let Some(fds) = self.fds.get_mut(&group) {
                     fds.retain(|fd, _| Path::new(&format!("/proc/{pid}/fd/{fd}")).exists());
+                }
+                if let Some(directories) = self.directories.get_mut(&group) {
+                    directories.retain(|fd, _| Path::new(&format!("/proc/{pid}/fd/{fd}")).exists());
                 }
             }
             resume(pid, false, 0)?;
@@ -3527,6 +3856,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         groups: HashMap::from([(pid, pid)]),
         pending: HashMap::new(),
         fds: HashMap::new(),
+        directories: HashMap::new(),
         dup_reservations: HashMap::new(),
         fd_busy: HashMap::new(),
         fd_waiting: VecDeque::new(),
@@ -3548,6 +3878,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
     };
     let outcome = (|| {
         trace.seed_inherited_descriptors()?;
+        trace.seed_inherited_directory_offsets()?;
         if unsafe { libc::kill(pid, libc::SIGCONT) } != 0 {
             return Err(injection_failed());
         }

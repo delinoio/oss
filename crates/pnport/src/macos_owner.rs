@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Private process-group ownership survives abrupt supervisor termination.
 //!
-//! The guardian creates and pins the group before any command is spawned. Its
-//! authenticated socket is owned only by the supervisor, so EOF also covers
-//! SIGKILL without relying on a signal handler or a destructor in that process.
+//! The guardian's live/unreaped PID reserves the command group identifier. An
+//! inert child keeps that group present while the guardian moves to a private
+//! group before user launch. Command-group SIGSTOP cannot freeze EOF recovery.
 use std::{
     ffi::OsStr,
     fs,
@@ -11,11 +11,7 @@ use std::{
     mem,
     os::{
         fd::{AsRawFd, FromRawFd},
-        unix::{
-            fs::MetadataExt,
-            net::UnixStream,
-            process::{CommandExt, ExitStatusExt},
-        },
+        unix::{fs::MetadataExt, net::UnixStream, process::CommandExt},
     },
     path::Path,
     process::{Child, Command, Stdio},
@@ -26,7 +22,73 @@ use pnport::diagnostic::{Code, Error, Result};
 
 const MODE: &str = "__pnport_macos_owner";
 const SOCKET_ENV: &str = "PNPORT_MACOS_OWNER_FD";
+#[cfg(test)]
+const ROLE_ENV: &str = "PNPORT_MACOS_OWNER_ROLE";
 const DEADLINE: Duration = Duration::from_secs(7);
+
+#[derive(Clone, Copy)]
+enum Role {
+    Guardian,
+    Anchor,
+    Bootstrap,
+}
+
+impl Role {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Guardian => "guardian",
+            Self::Anchor => "anchor",
+            Self::Bootstrap => "bootstrap",
+        }
+    }
+
+    fn parse(value: &OsStr) -> Option<Self> {
+        match value.to_str()? {
+            "guardian" => Some(Self::Guardian),
+            "anchor" => Some(Self::Anchor),
+            "bootstrap" => Some(Self::Bootstrap),
+            _ => None,
+        }
+    }
+}
+
+fn launch(role: Role) -> Result<(Child, UnixStream)> {
+    let (socket, helper) = UnixStream::pair().map_err(|_| failure())?;
+    socket
+        .set_read_timeout(Some(DEADLINE))
+        .map_err(|_| failure())?;
+    socket
+        .set_write_timeout(Some(DEADLINE))
+        .map_err(|_| failure())?;
+    let fd = helper.as_raw_fd();
+    let mut command = Command::new(std::env::current_exe().map_err(|_| failure())?);
+    command.env_clear();
+    #[cfg(not(test))]
+    command.args([MODE, role.name()]);
+    #[cfg(test)]
+    command
+        .args(["macos_owner::tests::private_owner_entrypoint", "--exact"])
+        .env(ROLE_ENV, role.name());
+    command
+        .env(SOCKET_ENV, fd.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if !matches!(role, Role::Anchor) {
+        command.process_group(0);
+    }
+    unsafe {
+        command.pre_exec(move || {
+            if libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let child = command.spawn().map_err(|_| failure())?;
+    drop(helper);
+    Ok((child, socket))
+}
 
 fn failure() -> Error {
     Error::new(
@@ -43,36 +105,7 @@ pub struct Owner {
 
 impl Owner {
     pub fn start() -> Result<Self> {
-        let (socket, helper) = UnixStream::pair().map_err(|_| failure())?;
-        socket
-            .set_read_timeout(Some(DEADLINE))
-            .map_err(|_| failure())?;
-        socket
-            .set_write_timeout(Some(DEADLINE))
-            .map_err(|_| failure())?;
-        let fd = helper.as_raw_fd();
-        let mut command = Command::new(std::env::current_exe().map_err(|_| failure())?);
-        #[cfg(not(test))]
-        command.arg(MODE);
-        #[cfg(test)]
-        command.args(["macos_owner::tests::private_owner_entrypoint", "--exact"]);
-        command
-            .env_clear()
-            .env(SOCKET_ENV, fd.to_string())
-            .process_group(0)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        unsafe {
-            command.pre_exec(move || {
-                if libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-        let child = command.spawn().map_err(|_| failure())?;
-        drop(helper);
+        let (child, socket) = launch(Role::Guardian)?;
         let mut owner = Self {
             child,
             socket,
@@ -110,6 +143,11 @@ impl Owner {
     }
 
     pub fn stop(&mut self, signal: i32) -> Result<()> {
+        tracing::debug!(
+            action = "macos_owner_cleanup_requested",
+            signal,
+            "Stopping the owned command group"
+        );
         let result = (|| {
             self.socket
                 .write_all(&[signal as u8])
@@ -124,9 +162,15 @@ impl Owner {
                 _ => Err(failure()),
             }
         })();
+        tracing::debug!(
+            action = "macos_owner_cleanup_acknowledged",
+            escalated = matches!(&result, Ok(true)),
+            failed = result.is_err(),
+            "Private process owner reported its cleanup outcome"
+        );
         if !matches!(&result, Ok(false)) {
-            // An escalation acknowledgement requests the same group-wide kill
-            // from the parent too: helper death alone cannot prove delivery.
+            // Repeat escalation before reaping the direct guardian child. Its
+            // PID reserves the command PGID even though it runs outside it.
             // Do not reap the guardian first; its unreaped PID pins the group
             // identity through escalation or a failed helper handshake.
             unsafe {
@@ -139,7 +183,7 @@ impl Owner {
                 self.finished = true;
                 return match result {
                     Ok(false) if status.success() => Ok(()),
-                    Ok(true) if status.signal() == Some(libc::SIGKILL) => Ok(()),
+                    Ok(true) if status.success() => Ok(()),
                     _ => Err(failure()),
                 };
             }
@@ -176,7 +220,7 @@ fn image(pid: i32) -> Option<fs::Metadata> {
     fs::metadata(Path::new(OsStr::from_bytes(&bytes[..end]))).ok()
 }
 
-fn authenticated_socket() -> Option<UnixStream> {
+fn authenticated_socket(role: Role) -> Option<UnixStream> {
     let fd = std::env::var(SOCKET_ENV)
         .ok()?
         .parse::<i32>()
@@ -208,7 +252,11 @@ fn authenticated_socket() -> Option<UnixStream> {
     if parent.dev() != current.dev() || parent.ino() != current.ino() {
         return None;
     }
-    if unsafe { libc::getpgrp() } != unsafe { libc::getpid() } {
+    let expected_group = match role {
+        Role::Anchor => peer,
+        Role::Guardian | Role::Bootstrap => unsafe { libc::getpid() },
+    };
+    if unsafe { libc::getpgrp() } != expected_group {
         return None;
     }
     if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
@@ -237,8 +285,8 @@ fn members(group: i32) -> io::Result<Vec<i32>> {
     }
 }
 
-fn running(pid: i32, group: i32) -> io::Result<bool> {
-    if pid == group || pid <= 0 {
+fn running(pid: i32, group: i32, anchor: i32) -> io::Result<bool> {
+    if pid == anchor || pid <= 0 {
         return Ok(false);
     }
     let mut info = mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
@@ -272,14 +320,21 @@ enum Cleanup {
     Escalate,
 }
 
-fn stop_group(group: i32, signal: i32) -> io::Result<Cleanup> {
+fn stop_group(group: i32, anchor: i32, signal: i32) -> io::Result<Cleanup> {
     unsafe {
-        libc::kill(-group, signal);
+        if libc::kill(-group, signal) != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // Queue termination before resuming stopped members so their handlers
+        // receive the original signal during the unchanged five-second grace.
+        if libc::kill(-group, libc::SIGCONT) != 0 {
+            return Err(io::Error::last_os_error());
+        }
     }
     let live = || -> io::Result<Vec<i32>> {
         members(group)?
             .into_iter()
-            .filter_map(|pid| match running(pid, group) {
+            .filter_map(|pid| match running(pid, group, anchor) {
                 Ok(true) => Some(Ok(pid)),
                 Ok(false) => None,
                 Err(error) => Some(Err(error)),
@@ -303,55 +358,159 @@ pub fn dispatch_helper() {
     if args.next().as_deref() != Some(OsStr::new(MODE)) {
         return;
     }
-    if args.next().is_some() {
+    let role = args.next().and_then(|value| Role::parse(&value));
+    if role.is_none() || args.next().is_some() {
         unsafe {
             libc::_exit(125);
         }
     }
-    run_helper();
+    run_helper(role.unwrap());
 }
 
-fn run_helper() -> ! {
+struct Member {
+    child: Child,
+    socket: UnixStream,
+    reaped: bool,
+}
+
+impl Member {
+    fn start(role: Role) -> Result<Self> {
+        let (child, socket) = launch(role)?;
+        let mut member = Self {
+            child,
+            socket,
+            reaped: false,
+        };
+        let mut ready = [0];
+        member
+            .socket
+            .read_exact(&mut ready)
+            .map_err(|_| failure())?;
+        if ready != *b"R" {
+            return Err(failure());
+        }
+        Ok(member)
+    }
+}
+
+impl Drop for Member {
+    fn drop(&mut self) {
+        // This is our direct, unreaped child, never an inventory PID. It is
+        // safe to reap only after the group's final signal has been issued.
+        if !self.reaped {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
+}
+
+fn independent_group() -> Result<Member> {
+    let anchor = Member::start(Role::Anchor)?;
+    let mut bootstrap = Member::start(Role::Bootstrap)?;
+    // setpgid cannot create a new group with another live PID. The bootstrap
+    // supplies an existing private group in the same session; the anchor
+    // preserves the original group until user processes can join it.
+    if unsafe { libc::setpgid(0, bootstrap.child.id() as i32) } != 0 {
+        return Err(failure());
+    }
+    bootstrap.socket.write_all(b"X").map_err(|_| failure())?;
+    let status = bootstrap.child.wait().map_err(|_| failure())?;
+    bootstrap.reaped = true;
+    if !status.success() {
+        return Err(failure());
+    }
+    Ok(anchor)
+}
+
+fn cleanup_signal(socket: &mut UnixStream, anchor: &Member) -> io::Result<i32> {
+    let mut events = [
+        libc::pollfd {
+            fd: socket.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        },
+        libc::pollfd {
+            fd: anchor.socket.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        },
+    ];
+    loop {
+        if unsafe { libc::poll(events.as_mut_ptr(), events.len() as _, -1) } < 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::EINTR) {
+                continue;
+            }
+            return Err(error);
+        }
+        if events[1].revents != 0 {
+            return Err(io::Error::other("Private group anchor failed"));
+        }
+        if events[0].revents != 0 {
+            let mut command = [0];
+            return Ok(match socket.read(&mut command) {
+                Ok(1)
+                    if matches!(
+                        i32::from(command[0]),
+                        libc::SIGINT | libc::SIGTERM | libc::SIGHUP
+                    ) =>
+                {
+                    i32::from(command[0])
+                }
+                _ => libc::SIGTERM,
+            });
+        }
+    }
+}
+
+fn run_helper(role: Role) -> ! {
     let result = (|| -> Option<()> {
-        let mut socket = authenticated_socket()?;
+        let mut socket = authenticated_socket(role)?;
         unsafe {
-            for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+            for signal in [
+                libc::SIGINT,
+                libc::SIGTERM,
+                libc::SIGHUP,
+                libc::SIGTSTP,
+                libc::SIGTTIN,
+                libc::SIGTTOU,
+            ] {
                 libc::signal(signal, libc::SIG_IGN);
             }
         }
-        socket.write_all(b"R").ok()?;
-        let mut command = [0];
-        let signal = match socket.read(&mut command) {
-            Ok(1)
-                if matches!(
-                    i32::from(command[0]),
-                    libc::SIGINT | libc::SIGTERM | libc::SIGHUP
-                ) =>
-            {
-                i32::from(command[0])
-            }
-            _ => libc::SIGTERM,
-        };
-        let stopped = stop_group(unsafe { libc::getpgrp() }, signal);
-        match stopped {
-            Ok(Cleanup::Complete) => {
-                socket.write_all(b"C").ok();
-            }
-            result => {
-                // Kill the pinned group atomically, including its guardian,
-                // rather than signalling a reusable PID from an inventory.
-                // K permits the parent to accept this deliberate helper death;
-                // F preserves an inventory failure as cleanup failure.
-                socket
-                    .write_all(if result.is_ok() { b"K" } else { b"F" })
-                    .ok();
-                unsafe {
-                    libc::kill(-libc::getpgrp(), libc::SIGKILL);
-                    libc::_exit(125);
-                }
-            }
+        if !matches!(role, Role::Guardian) {
+            socket.write_all(b"R").ok()?;
+            socket.set_read_timeout(None).ok()?;
+            let mut command = [0];
+            // EOF also releases a bootstrap/anchor after startup failure or
+            // guardian death. The guardian PID stays reserved until its parent
+            // has issued its fallback group signal and reaped that child.
+            return match socket.read(&mut command) {
+                Ok(0) => Some(()),
+                Ok(1) if command == *b"X" => Some(()),
+                _ => None,
+            };
         }
-        Some(())
+        let group = unsafe { libc::getpid() };
+        let anchor = independent_group().ok()?;
+        socket.write_all(b"R").ok()?;
+        let signal = cleanup_signal(&mut socket, &anchor);
+        let stopped = stop_group(
+            group,
+            anchor.child.id() as i32,
+            *signal.as_ref().unwrap_or(&libc::SIGTERM),
+        );
+        // The guardian is outside this group and retains its PID reservation
+        // through the final group signal, member reaping and acknowledgement.
+        let killed = unsafe { libc::kill(-group, libc::SIGKILL) } == 0;
+        drop(anchor);
+        let completed = match (&signal, &stopped, killed) {
+            (Ok(_), Ok(Cleanup::Complete), true) => b'C',
+            (Ok(_), Ok(Cleanup::Escalate), true) => b'K',
+            _ => b'F',
+        };
+        socket.write_all(&[completed]).ok();
+        (completed != b'F').then_some(())
     })();
     unsafe {
         libc::_exit(if result.is_some() { 0 } else { 125 });
@@ -365,7 +524,10 @@ mod tests {
         // Unit scenarios run the supervisor inside a fresh copy of the test
         // executable. Use that same image for the authenticated guardian too.
         if std::env::var_os(super::SOCKET_ENV).is_some() {
-            super::run_helper();
+            let role = std::env::var_os(super::ROLE_ENV)
+                .and_then(|value| super::Role::parse(&value))
+                .unwrap();
+            super::run_helper(role);
         }
     }
 }

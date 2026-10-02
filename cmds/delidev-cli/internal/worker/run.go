@@ -27,16 +27,17 @@ import (
 )
 
 type Config struct {
-	terminals        *terminalManager
-	Root             string
-	StartupID        domain.ID
-	Logger           *slog.Logger
-	Ready            func(domain.ID)
-	execution        *PublicationConfig
-	executionContext context.Context
-	questionControls <-chan *pb.QuestionResponseControl
-	approvalControls <-chan *pb.ApprovalResponseControl
-	steerControls    <-chan *pb.SteerInputControl
+	inspectionMetadata bool
+	terminals          *terminalManager
+	Root               string
+	StartupID          domain.ID
+	Logger             *slog.Logger
+	Ready              func(domain.ID)
+	execution          *PublicationConfig
+	executionContext   context.Context
+	questionControls   <-chan *pb.QuestionResponseControl
+	approvalControls   <-chan *pb.ApprovalResponseControl
+	steerControls      <-chan *pb.SteerInputControl
 }
 type journalState string
 
@@ -78,6 +79,10 @@ func authenticated[T any](credential Credential, message *T) *connect.Request[T]
 }
 
 func auxiliaryTitleCapability(resource *pb.Resource) bool {
+	return machineCapability(resource, domain.AutomaticTitlesCodexV1)
+}
+
+func machineCapability(resource *pb.Resource, capability domain.WorkerCapability) bool {
 	if resource == nil || resource.Kind != pb.EntityKind_ENTITY_KIND_MACHINE || resource.SchemaVersion != 1 {
 		return false
 	}
@@ -85,7 +90,7 @@ func auxiliaryTitleCapability(resource *pb.Resource) bool {
 	if domain.Decode(resource.DocumentJson, &machine) != nil || machine.Validate() != nil {
 		return false
 	}
-	return slices.Contains(machine.WorkerCapabilities, domain.AutomaticTitlesCodexV1)
+	return slices.Contains(machine.WorkerCapabilities, capability)
 }
 
 func codexTitleExecutable(resource *pb.Resource) string {
@@ -198,10 +203,13 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		attached, err := client.AttachWorker(attempt, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}))
 		cancel()
 		titleCapabilityExpected := false
+		managedCapabilityExpected := false
+		metadataExpected := false
 		if err == nil && attached.Msg.ServerId != string(credential.ServerID) {
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
 		}
 		if err == nil {
+			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			executable := codexTitleExecutable(attached.Msg.Machine)
 			verifiedTitleProfile := false
 			if executable != "" {
@@ -216,19 +224,43 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 					config.Logger.WarnContext(ctx, "automatic title capability probe failed", "machine_id", credential.MachineID, "code", domain.SafeError(probeErr).Code)
 				}
 			}
+			if executable != "" {
+				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
+				managedCapabilityExpected, err = verifyManagedSubscriptionProfile(probeCtx, config, executable)
+				stopProbe()
+				if err != nil {
+					if domain.SafeError(err).Code == domain.RecoveryRequired {
+						return err
+					}
+					config.Logger.InfoContext(ctx, "managed_subscription_profile_unavailable", "code", domain.SafeError(err).Code)
+					err = nil
+				}
+			}
 			titleCapabilityExpected = verifiedTitleProfile
 			profile := executable
+			if managedCapabilityExpected {
+				profile += "\x00managed"
+			}
 			if verifiedTitleProfile {
 				profile += "\x00verified"
 			} else {
 				profile += "\x00unsupported"
 			}
+			if metadataExpected {
+				profile += "\x00inspection-metadata-v1"
+			}
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			if managedCapabilityExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1)
+			}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
+			}
+			if metadataExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			}
 			negotiate, stopNegotiation := context.WithTimeout(ctx, 30*time.Second)
 			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}))
@@ -254,7 +286,8 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if titleCapabilityExpected && !auxiliary {
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
-			err = watchAttached(ctx, config, client, credential, instance, auxiliary)
+			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
+			err = watchAttached(ctx, config, client, credential, instance, auxiliary, managedCapabilityExpected && managedSubscriptionCapability(attached.Msg.Machine))
 			if time.Since(started) > 30*time.Second {
 				backoff = time.Second
 			}
@@ -283,7 +316,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	return nil
 }
 
-func watchAttached(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, auxiliary bool) error {
+func watchAttached(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, auxiliary bool, managed ...bool) error {
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	deletionsDone := make(chan struct{})
@@ -292,12 +325,16 @@ func watchAttached(ctx context.Context, config Config, client delidevv1connect.W
 		watchSessionDeletions(watchCtx, config, client, credential, instance)
 	}()
 	defer func() { cancel(); <-deletionsDone }()
-	results := make(chan error, 2)
+	results := make(chan error, 3)
 	go func() { results <- watch(watchCtx, config, client, credential, instance) }()
 	count := 1
 	if auxiliary {
 		count++
 		go func() { results <- watchAuxiliary(watchCtx, config, client, credential, instance) }()
+	}
+	if len(managed) == 1 && managed[0] {
+		count++
+		go func() { results <- watchSubscriptions(watchCtx, config, credential, instance) }()
 	}
 	err := <-results
 	cancel()
@@ -744,6 +781,10 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 		} else {
 			output, err := execute(ctx, config, domain.ID(resource.Id), job)
 			if err != nil {
+				var managed *managedExecutionUncertain
+				if errors.As(err, &managed) {
+					return journal{}, err
+				}
 				result.Problem = domain.SafeError(err)
 			} else {
 				result.Output = output
@@ -870,6 +911,11 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		for _, remote := range remotes {
 			if !slices.Contains(inspection.Remotes, remote) {
 				return nil, domain.Fail(domain.InvalidArgument, "The configured remote is missing on this Worker.", "Refresh inspection and select an existing remote.")
+			}
+		}
+		if config.inspectionMetadata {
+			if err := git.EnrichInspection(ctx, &inspection); err != nil {
+				return nil, err
 			}
 		}
 		return json.Marshal(inspection)

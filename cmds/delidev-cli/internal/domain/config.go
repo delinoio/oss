@@ -329,13 +329,14 @@ const (
 )
 
 type Provider struct {
-	Name           string            `json:"name"`
-	Endpoint       string            `json:"endpoint"`
-	Protocol       APIProtocol       `json:"protocol"`
-	Authentication Authentication    `json:"authentication"`
-	Discovery      bool              `json:"discovery"`
-	Enabled        *bool             `json:"enabled,omitempty"`
-	PresetID       *ProviderPresetID `json:"preset_id,omitempty"`
+	Name                string            `json:"name"`
+	Endpoint            string            `json:"endpoint"`
+	Protocol            APIProtocol       `json:"protocol"`
+	Authentication      Authentication    `json:"authentication"`
+	Discovery           bool              `json:"discovery"`
+	Enabled             *bool             `json:"enabled,omitempty"`
+	PresetID            *ProviderPresetID `json:"preset_id,omitempty"`
+	SubscriptionHarness *Harness          `json:"subscription_harness,omitempty"`
 }
 
 // EnabledValue keeps pre-activation provider documents available by default.
@@ -344,6 +345,9 @@ func (p Provider) EnabledValue() bool { return p.Enabled == nil || *p.Enabled }
 func (p *Provider) SetEnabled(enabled bool) { p.Enabled = &enabled }
 
 func (p Provider) Validate() error {
+	if p.SubscriptionHarness != nil && (p.Protocol != NativeSubscription || *p.SubscriptionHarness != Codex) {
+		return Fail(InvalidArgument, "Unsupported managed subscription harness.", "Use codex only on a native subscription provider.")
+	}
 	if err := Text(p.Name, "provider name", 256, true); err != nil {
 		return err
 	}
@@ -522,9 +526,15 @@ type Account struct {
 	Removal               *AccountRemoval     `json:"removal,omitempty"`
 	Validation            *AccountValidation  `json:"validation,omitempty"`
 	Catalog               *CatalogObservation `json:"catalog,omitempty"`
+	Subscription          *SubscriptionState  `json:"subscription,omitempty"`
 }
 
 func (a Account) Validate() error {
+	if a.Subscription != nil {
+		if err := a.Subscription.Validate(a); err != nil {
+			return err
+		}
+	}
 	if err := Text(a.Alias, "account alias", 256, true); err != nil {
 		return err
 	}
@@ -643,7 +653,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1) || seenCapabilities[capability] {
+		if (capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

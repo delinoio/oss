@@ -654,3 +654,18 @@ Its action result, cleanup, history checkpoint and failure/Resume rules remain
 separate from conversation outcomes and the existing automatic observation family.
 See [the owning compaction contract](cmds-delidev-claude-compaction-contract.md); earlier
 private/manual and automatic-only evidence scopes above retain their qualifications.
+
+## Managed subscription execution
+
+Codex subscription snapshots retain an optional immutable `subscription` selector, omitted from historical API snapshots. Native execution acquires the exact selected account lease without failover, stages only its protected generation, uses the built-in OpenAI provider, preserves existing native history/publication/workspace checks and returns the latest bundle after owned process/file cleanup. A definite busy refusal waits on that account; uncertain delivery never repeats a launch. Publication registration grants no API proxy authority. See [managed subscriptions](cmds-delidev-subscription-contract.md) for fencing, refresh evidence and recovery limits.
+### Automatic PR replacement and explicit controls
+
+Explicit Stop, Archive and Restore retain the server-owned
+`automatic_remediation_stopped` flag atomically with their ordinary control.
+Only successful explicit Resume clears it. Automatic execution failure may pause
+its own queue without setting this flag. The PR coordinator may select a fresh
+session after that separately settled automatic failure only when original native
+cleanup is confirmed and active/recovery/Archive ownership is absent; it never
+resumes the old failed queue. Its current source link and latest attempt session
+still enforce user controls. Historical and manual pauses remain ineligible.
+See the [integration contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).
