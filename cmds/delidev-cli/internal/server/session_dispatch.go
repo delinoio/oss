@@ -260,6 +260,14 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 	// ticker caller; public RPC and Worker authorization remain independent.
 	ctx = domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice})
 	attempt, observations, prepareErr := s.preparePRFixDispatch(ctx, record)
+	if prepareErr != nil && domain.SafeError(prepareErr).Code == domain.Conflict {
+		// A changed prerequisite cannot leave a never-started automatic input
+		// holding the PR indefinitely and vetoing another independent kind.
+		// The ordinary removal transaction refuses claimed/native work.
+		if err := s.cancelAutomaticPRPreflight(ctx, attempt); err != nil {
+			return err
+		}
+	}
 	identity := struct {
 		Session  domain.ID
 		Revision uint64

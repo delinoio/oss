@@ -62,8 +62,16 @@ int main(int argc, char **argv) {
     struct stat link_info = info;
     char target[4096];
     if (readlink("node_modules/dep", target, sizeof(target)) != link_info.st_size) return 32;
+    char at_target[4096];
+    if (readlinkat(AT_FDCWD, "node_modules/dep", at_target, sizeof(at_target)) != link_info.st_size
+        || memcmp(target, at_target, link_info.st_size)) return 52;
     dir = opendir("node_modules");
     if (!dir) return 35;
+    int directory_copy = dup(dirfd(dir));
+    if (directory_copy < 0) return 53;
+    if (readlinkat(directory_copy, "dep", at_target, sizeof(at_target)) != link_info.st_size
+        || memcmp(target, at_target, link_info.st_size)) return 54;
+    close(directory_copy);
     if (fstatat(dirfd(dir), "dep", &info, AT_SYMLINK_NOFOLLOW)
         || !S_ISLNK(info.st_mode) || info.st_size != link_info.st_size) return 36;
     if (fstatat(AT_FDCWD, "node_modules/dep", &info, AT_SYMLINK_NOFOLLOW)

@@ -90,9 +90,14 @@ type PRRemediationAttempt struct {
 	GitTarget             *PRGitTarget              `json:"git_target,omitempty"`
 	ProjectID             ID                        `json:"project_id,omitempty"`
 	StartupRejectionJobID ID                        `json:"startup_rejection_job_id,omitempty"`
+	AutomaticLinkID       ID                        `json:"automatic_link_id,omitempty"`
+	AutomaticLinkRevision uint64                    `json:"automatic_link_revision,omitempty,string"`
 }
 
 func (v PRRemediationAttempt) Validate() error {
+	if (v.AutomaticLinkID == "") != (v.AutomaticLinkRevision == 0) || v.AutomaticLinkID != "" && (v.Mode != PRRemediationAutomatic || v.AutomaticLinkID.Validate() != nil || v.GitTarget == nil || v.AutomaticLinkRevision >= 1<<63) {
+		return invalidPRRemediation()
+	}
 	if (v.GitTarget == nil) != (v.ProjectID == "") || (v.GitTarget != nil && (v.GitTarget.Validate() != nil || v.ProjectID.Validate() != nil)) {
 		return invalidPRRemediation()
 	}

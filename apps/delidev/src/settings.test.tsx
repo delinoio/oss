@@ -654,7 +654,7 @@ it("saves remediation switches, exact reviewer IDs and explicit execution choice
   const machine = resource(EntityKind.MACHINE, { name: "Fix machine" });
   const value = fixture([agent, machine]);
   render(value.view(<ConfigurationEditor kind={EntityKind.SETTINGS} active saved={() => {}} cancel={() => {}} />));
-  expect(screen.getByText(/Automatic execution is not available yet/)).toBeTruthy();
+  expect(screen.getByText(/Enabled policies run bounded fixes/)).toBeTruthy();
   for (const name of ["Automatically fix required CI failures", "Automatically handle matching published feedback", "Automatically resolve verified merge conflicts"]) {
     expect((screen.getByRole("checkbox", { name }) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(screen.getByRole("checkbox", { name }));

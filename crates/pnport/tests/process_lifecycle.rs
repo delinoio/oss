@@ -4,9 +4,12 @@
 use std::{
     fs,
     io::Write,
-    os::unix::{
-        fs::MetadataExt,
-        process::{CommandExt, ExitStatusExt},
+    os::{
+        fd::{AsRawFd, FromRawFd},
+        unix::{
+            fs::MetadataExt,
+            process::{CommandExt, ExitStatusExt},
+        },
     },
     process::{Child, Command, Output, Stdio},
     time::{Duration, Instant},
@@ -28,7 +31,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new(mode: &str, static_binary: bool) -> Self {
+    fn project(static_binary: bool) -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
         let data = json!({
             "enableTopLevelFallback": false,
@@ -51,6 +54,19 @@ impl Fixture {
             "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");",
         )
         .unwrap();
+        let binary = root.path().join("tree");
+        let mut compiler = Command::new("cc");
+        if static_binary {
+            compiler.arg("-static");
+        }
+        assert!(compiler
+            .arg("-pthread")
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/process-tree.c"))
+            .arg("-o")
+            .arg(&binary)
+            .status()
+            .unwrap()
+            .success());
         let mut archive =
             zip::ZipWriter::new(fs::File::create(root.path().join("cache.zip")).unwrap());
         archive
@@ -60,19 +76,32 @@ impl Fixture {
             )
             .unwrap();
         archive.write_all(b"package bytes").unwrap();
-        archive.finish().unwrap();
-        let binary = root.path().join("tree");
-        let mut compiler = Command::new("cc");
-        if static_binary {
-            compiler.arg("-static");
+        archive
+            .start_file(
+                "node_modules/dep/bin/tree",
+                zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+            )
+            .unwrap();
+        archive.write_all(&fs::read(&binary).unwrap()).unwrap();
+        for path in [
+            "node_modules/dep/blocked/tree",
+            "node_modules/dep/bin/noexec",
+        ] {
+            archive
+                .start_file(
+                    path,
+                    zip::write::SimpleFileOptions::default().unix_permissions(0o644),
+                )
+                .unwrap();
+            archive.write_all(b"not executable").unwrap();
         }
-        assert!(compiler
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/process-tree.c"))
-            .arg("-o")
-            .arg(&binary)
-            .status()
-            .unwrap()
-            .success());
+        archive.finish().unwrap();
+        root
+    }
+
+    fn new(mode: &str, static_binary: bool) -> Self {
+        let root = Self::project(static_binary);
+        let binary = root.path().join("tree");
         let child = Command::new(pnport_binary())
             .current_dir(root.path())
             .args(["--cache-dir"])
@@ -90,6 +119,105 @@ impl Fixture {
             root,
             child: Some(child),
             pids: Vec::new(),
+        }
+    }
+
+    fn terminal(mode: &str) -> (Self, fs::File) {
+        let root = Self::project(false);
+        let driver = root.path().join("terminal-driver");
+        assert!(Command::new("cc")
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/terminal-driver.c"
+            ))
+            .arg("-o")
+            .arg(&driver)
+            .status()
+            .unwrap()
+            .success());
+        let mut master = -1;
+        let mut slave = -1;
+        assert_eq!(
+            unsafe {
+                libc::openpty(
+                    &mut master,
+                    &mut slave,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                )
+            },
+            0
+        );
+        let master = unsafe { fs::File::from_raw_fd(master) };
+        let slave = unsafe { fs::File::from_raw_fd(slave) };
+        let mut settings = unsafe { std::mem::zeroed::<libc::termios>() };
+        assert_eq!(
+            unsafe { libc::tcgetattr(slave.as_raw_fd(), &mut settings) },
+            0
+        );
+        settings.c_lflag |= libc::ICANON | libc::ISIG;
+        settings.c_lflag &= !libc::ECHO;
+        settings.c_cc[libc::VINTR] = 3;
+        settings.c_cc[libc::VSUSP] = 26;
+        assert_eq!(
+            unsafe { libc::tcsetattr(slave.as_raw_fd(), libc::TCSANOW, &settings) },
+            0
+        );
+        // The master is test-owned and must not keep the tty alive in the job.
+        assert_eq!(
+            unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) },
+            0
+        );
+        let mut command = Command::new(driver);
+        command
+            .current_dir(root.path())
+            .arg(pnport_binary())
+            .arg(root.path().join("tree"))
+            .arg(mode)
+            .stdin(slave.try_clone().unwrap())
+            .stdout(slave.try_clone().unwrap())
+            .stderr(slave);
+        unsafe {
+            command.pre_exec(|| {
+                #[cfg(target_os = "macos")]
+                let request = libc::TIOCSCTTY as libc::c_ulong;
+                #[cfg(target_os = "linux")]
+                let request = libc::TIOCSCTTY;
+                if libc::setsid() < 0 || libc::ioctl(0, request, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let child = command.spawn().unwrap();
+        (
+            Self {
+                root,
+                child: Some(child),
+                pids: Vec::new(),
+            },
+            master,
+        )
+    }
+
+    fn wait_marker(&mut self, name: &str) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !self.root.path().join(name).is_file() {
+            let status = self.child.as_mut().unwrap().try_wait().unwrap();
+            assert!(
+                status.is_none(),
+                "terminal driver exited before {name}: {status:?}"
+            );
+            assert!(
+                Instant::now() < deadline,
+                "terminal job did not reach {name}; driver={}, launching={}, running={}, root={}",
+                self.root.path().join("terminal.driver").is_file(),
+                self.root.path().join("terminal.launching").is_file(),
+                self.root.path().join("terminal.running").is_file(),
+                self.root.path().join("root.pid").is_file()
+            );
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -255,6 +383,90 @@ fn hangup_reaches_the_owned_tree_and_releases_leases() {
 }
 
 #[test]
+fn spawnp_searches_parent_virtual_path_and_restores_replacement_environment() {
+    let mut fixture = Fixture::new("spawnp", false);
+    fixture.ready();
+    fixture.assert_active();
+    fixture.signal(libc::SIGTERM);
+    assert_eq!(fixture.stopped().status.code(), Some(143));
+    fixture.assert_signals(libc::SIGTERM);
+    assert_eq!(
+        fs::read(fixture.root.path().join("spawn-output")).unwrap(),
+        b"11"
+    );
+    fixture.assert_released();
+}
+
+#[test]
+fn concurrent_fork_and_child_callbacks_preserve_the_virtual_view() {
+    let mut fixture = Fixture::new("fork-stress", false);
+    let output = fixture.stopped();
+    assert!(
+        output.status.success(),
+        "{}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fixture.assert_released();
+}
+
+fn terminal_job(mode: &str) {
+    let (mut fixture, mut terminal) = Fixture::terminal(mode);
+    terminal.write_all(b"first\n").unwrap();
+    fixture.wait_marker("terminal.first");
+    fixture.pids.push(
+        fs::read_to_string(fixture.root.path().join("root.pid"))
+            .unwrap()
+            .parse()
+            .unwrap(),
+    );
+    fixture.assert_active();
+    if mode == "interrupt" {
+        terminal.write_all(&[3]).unwrap();
+    } else {
+        if mode == "stop" {
+            terminal.write_all(&[26]).unwrap();
+        }
+        fixture.wait_marker("terminal.stopped");
+        terminal.write_all(b"second\n").unwrap();
+    }
+    assert_eq!(
+        fixture.stopped().status.code(),
+        Some(if mode == "interrupt" { 130 } else { 23 })
+    );
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}
+
+#[test]
+fn controlling_terminal_reads_stop_resume_and_restore_the_caller_group() {
+    terminal_job("stop");
+}
+
+#[test]
+fn command_sigstop_stops_the_supervisor_until_foreground_resume() {
+    terminal_job("self-stop");
+}
+
+#[test]
+fn background_terminal_read_stops_then_foreground_resume_preserves_input() {
+    terminal_job("background");
+}
+
+#[test]
+fn controlling_terminal_interrupt_preserves_the_native_exit_status() {
+    terminal_job("interrupt");
+}
+
+#[test]
+fn redirected_input_keeps_the_callers_terminal_group() {
+    let (mut fixture, _terminal) = Fixture::terminal("redirected");
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}
+
+#[test]
 fn unresponsive_tree_is_killed_after_the_five_second_grace() {
     let mut fixture = Fixture::new("ignore", false);
     fixture.ready();
@@ -363,40 +575,156 @@ fn fixture_image(pid: i32, expected: &std::path::Path) -> bool {
 #[test]
 fn private_owner_rejects_direct_invocation_and_an_untrusted_peer() {
     use std::os::{fd::AsRawFd, unix::net::UnixStream};
-    for inherited in [false, true] {
-        let (_peer, socket) = UnixStream::pair().unwrap();
-        let fd = socket.as_raw_fd();
-        let mut command = Command::new(pnport_binary());
-        command
-            .arg("__pnport_macos_owner")
-            .process_group(0)
-            .env_remove("PNPORT_MACOS_OWNER_FD");
-        if inherited {
-            command.env("PNPORT_MACOS_OWNER_FD", fd.to_string());
-            unsafe {
-                command.pre_exec(move || {
-                    if libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    Ok(())
-                });
+    for role in [None, Some("guardian"), Some("anchor"), Some("bootstrap")] {
+        for inherited in [false, true] {
+            let (_peer, socket) = UnixStream::pair().unwrap();
+            let fd = socket.as_raw_fd();
+            let mut command = Command::new(pnport_binary());
+            command
+                .arg("__pnport_macos_owner")
+                .process_group(0)
+                .env_remove("PNPORT_MACOS_OWNER_FD");
+            if let Some(role) = role {
+                command.arg(role);
+            }
+            if inherited {
+                command.env("PNPORT_MACOS_OWNER_FD", fd.to_string());
+                unsafe {
+                    command.pre_exec(move || {
+                        if libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
+                            return Err(std::io::Error::last_os_error());
+                        }
+                        Ok(())
+                    });
+                }
+            }
+            let mut child = command.spawn().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    assert_eq!(status.code(), Some(125));
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    child.wait().unwrap();
+                    panic!("An untrusted private owner must fail promptly");
+                }
+                std::thread::sleep(Duration::from_millis(10));
             }
         }
-        let mut child = command.spawn().unwrap();
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+enum OwnerFailure {
+    Supervisor,
+    Guardian,
+}
+
+#[cfg(target_os = "macos")]
+struct Control(Child);
+
+#[cfg(target_os = "macos")]
+impl Drop for Control {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn stopped_group(mode: &str, failure: OwnerFailure) {
+    let mut fixture = Fixture::new(mode, false);
+    fixture.ready();
+    fixture.assert_active();
+    let group = fixture.group();
+    assert!(unsafe { libc::getpgid(group) } > 0);
+    assert_ne!(
+        unsafe { libc::getpgid(group) },
+        group,
+        "guardian must run outside the command group"
+    );
+    // The unrelated control is a direct child in its own group. Cleanup must
+    // leave it running and never use a host inventory as signalling authority.
+    let mut unrelated = Control(
+        Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap(),
+    );
+    assert_eq!(unsafe { libc::kill(-group, libc::SIGSTOP) }, 0);
+    let supervisor = fixture.child.as_ref().unwrap().id() as i32;
+    for pid in fixture.pids.iter().chain(std::iter::once(&supervisor)) {
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
-            if let Some(status) = child.try_wait().unwrap() {
-                assert_eq!(status.code(), Some(125));
+            let mut info = unsafe { std::mem::zeroed::<libc::proc_bsdinfo>() };
+            let size = std::mem::size_of_val(&info) as i32;
+            let count = unsafe {
+                libc::proc_pidinfo(
+                    *pid,
+                    libc::PROC_PIDTBSDINFO,
+                    1,
+                    (&mut info as *mut libc::proc_bsdinfo).cast(),
+                    size,
+                )
+            };
+            assert_eq!(count, size);
+            if info.pbi_status == 4 {
+                // Darwin SSTOP, not merely a queued stop signal.
                 break;
             }
-            if Instant::now() >= deadline {
-                child.kill().unwrap();
-                child.wait().unwrap();
-                panic!("An untrusted private owner must fail promptly");
-            }
+            assert!(Instant::now() < deadline, "fixture member did not stop");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+    let start = Instant::now();
+    if matches!(failure, OwnerFailure::Supervisor) {
+        fixture.signal(libc::SIGKILL);
+    } else {
+        assert_eq!(unsafe { libc::kill(group, libc::SIGKILL) }, 0);
+        // Root stop propagation can also have parked the supervisor. Resume
+        // that direct child so it can detect the failed guardian and clean up.
+        fixture.signal(libc::SIGCONT);
+    }
+    let output = fixture.stopped();
+    assert!(
+        unrelated.0.try_wait().unwrap().is_none(),
+        "cleanup signalled an unrelated group"
+    );
+    drop(unrelated);
+    if matches!(failure, OwnerFailure::Supervisor) {
+        assert_eq!(output.status.signal(), Some(libc::SIGKILL));
+        if mode == "ignore" {
+            assert!(start.elapsed() >= Duration::from_secs(5));
+        } else {
+            fixture.assert_signals(libc::SIGTERM);
+        }
+    } else {
+        assert_eq!(output.status.code(), Some(125));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("PNPORT_CLEANUP_FAILED"));
+    }
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn killed_supervisor_resumes_a_stopped_group_for_graceful_cleanup() {
+    stopped_group("normal", OwnerFailure::Supervisor);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn killed_supervisor_escalates_a_stopped_unresponsive_group_after_grace() {
+    stopped_group("ignore", OwnerFailure::Supervisor);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn failed_guardian_stops_a_stopped_group_before_reaping_its_identity() {
+    stopped_group("normal", OwnerFailure::Guardian);
 }
 
 #[cfg(target_os = "macos")]

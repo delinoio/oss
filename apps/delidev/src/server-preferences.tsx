@@ -24,7 +24,7 @@ export function ServerPreferencesEmpty() {
     <p>Review the defaults, then save one preference set for this server.</p>
     <section className="server-preference-section"><h3>Account routing</h3><p>Choose the default policy for Agent Workers that inherit server routing.</p></section>
     <section className="server-preference-section"><h3>Worktree fetch</h3><p>Allow fetching before Worktree preparation. Repository preferences also apply.</p></section>
-    <section className="server-preference-section"><h3>Pull request remediation</h3><p>Configure remediation policies. Automatic execution is not available yet.</p></section>
+    <section className="server-preference-section"><h3>Pull request remediation</h3><p>Configure bounded automatic fixes for linked pull requests. All automatic policies default off.</p></section>
     <p className="server-preferences-footnote">Choose New Server preferences to review and save.</p>
   </section>;
 }
@@ -37,7 +37,7 @@ export function ServerPreferencesSummary({ row }: { row: Resource }) {
       <section className="server-preference-section"><h3>Account routing</h3><dl><dt>Default account routing</dt><dd>{text(data.default_routing)}</dd></dl></section>
       <section className="server-preference-section"><h3>Worktree fetch</h3><dl><dt>Automatic fetch before Worktree preparation</dt><dd>{data.automatic_fetch ? "Allowed" : "Disabled"}</dd></dl></section>
       <section className="server-preference-section"><h3>Pull request remediation</h3>
-        <p>Policies are saved on the server. Automatic execution is not available yet.</p>
+        <p>Enabled policies run bounded fixes for linked pull requests when the Agent, Runner Device, and current evidence are eligible.</p>
         <dl>{[["ci_failure", "Automatically fix required CI failures"], ["review_feedback", "Automatically handle matching published feedback"], ["merge_conflict", "Automatically resolve verified merge conflicts"]].map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{policy[key] ? "On" : "Off"}</dd></div>)}</dl>
       </section>
     </> : <p role="status">{row.schemaVersion !== 1 ? "Unsupported server preferences schema. Policy values are unavailable." : "Server preferences are unreadable or contain unsupported policy values. Policy values are unavailable."}</p>}
