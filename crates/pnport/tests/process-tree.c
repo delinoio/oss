@@ -85,6 +85,7 @@ int main(int argc, char **argv) {
             if (sigprocmask(SIG_SETMASK, NULL, &mask) || !sigismember(&mask, SIGUSR1)) return 64;
             value = getenv("PATH");
             if (!value || strcmp(value, "/absent-child-path") != 0) return 65;
+            if (write(9, "1", 1) != 1) return 74;
         }
     }
     int result = dependency();
@@ -135,12 +136,13 @@ int main(int argc, char **argv) {
         char *environment[] = {"PNPORT_TEST_ENV=replacement", "PATH=/absent-child-path", NULL};
         pid_t child;
         if (strcmp(mode, "spawnp") == 0) {
-            char path[4096];
-            if (!getcwd(path, sizeof(path))) return 59;
-            size_t length = strlen(path);
-            if (length + strlen("/node_modules/dep/bin") >= sizeof(path)) return 60;
-            strcat(path, "/node_modules/dep/bin");
+            char cwd[4096], path[16384];
+            if (!getcwd(cwd, sizeof(cwd))) return 59;
+            int length = snprintf(path, sizeof(path), "%s/node_modules/dep/missing:%s/node_modules/dep/blocked:%s/node_modules/dep/bin", cwd, cwd, cwd);
+            if (length < 0 || (size_t)length >= sizeof(path)) return 60;
             if (setenv("PATH", path, 1)) return 61;
+            if (posix_spawnp(&child, "absent", NULL, NULL, args, environment) != ENOENT ||
+                posix_spawnp(&child, "noexec", NULL, NULL, args, environment) != EACCES) return 75;
             // Absolute PATH candidates retain opaque actions and attributes.
             posix_spawn_file_actions_t actions;
             posix_spawnattr_t attributes;
@@ -148,6 +150,7 @@ int main(int argc, char **argv) {
             sigemptyset(&mask);
             sigaddset(&mask, SIGUSR1);
             if (posix_spawn_file_actions_init(&actions) || posix_spawnattr_init(&attributes) ||
+                posix_spawn_file_actions_addopen(&actions, 9, "spawn-output", O_WRONLY | O_CREAT | O_APPEND, 0600) ||
                 posix_spawnattr_setsigmask(&attributes, &mask) ||
                 posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGMASK)) return 62;
             result = posix_spawnp(&child, "tree", &actions, &attributes, args, environment);

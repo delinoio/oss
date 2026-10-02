@@ -83,6 +83,18 @@ impl Fixture {
             )
             .unwrap();
         archive.write_all(&fs::read(&binary).unwrap()).unwrap();
+        for path in [
+            "node_modules/dep/blocked/tree",
+            "node_modules/dep/bin/noexec",
+        ] {
+            archive
+                .start_file(
+                    path,
+                    zip::write::SimpleFileOptions::default().unix_permissions(0o644),
+                )
+                .unwrap();
+            archive.write_all(b"not executable").unwrap();
+        }
         archive.finish().unwrap();
         root
     }
@@ -378,6 +390,10 @@ fn spawnp_searches_parent_virtual_path_and_restores_replacement_environment() {
     fixture.signal(libc::SIGTERM);
     assert_eq!(fixture.stopped().status.code(), Some(143));
     fixture.assert_signals(libc::SIGTERM);
+    assert_eq!(
+        fs::read(fixture.root.path().join("spawn-output")).unwrap(),
+        b"11"
+    );
     fixture.assert_released();
 }
 

@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
         pid_t expected = strcmp(argv[3], "background") == 0 ? getpgrp() : child;
         if (tcgetpgrp(0) != expected) return 79;
         marker("terminal.stopped");
-        if (tcsetpgrp(0, child) || kill(child, SIGCONT)) return 80;
+        if (tcsetpgrp(0, child) || kill(-child, SIGCONT)) return 80;
     }
     if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return 81;
     // pnport must return the terminal to its caller group before completion.
