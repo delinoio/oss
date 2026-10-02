@@ -26,6 +26,12 @@ const SchemaVersion = 25
 const applicationID = 0x444c4456
 const MaxPage = 200
 
+// Compaction input is bounded at 3 MiB in the domain model but contains both
+// the immutable source and fresh restore assignments. Keep a small envelope
+// headroom here until those assignments can be stored by reference; this
+// exception applies only to the typed compaction job and remains finite.
+const maxCompactionJobEntityBytes = 4 << 20
+
 type Store struct {
 	db                  *sql.DB
 	root                string
@@ -569,6 +575,12 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 			if err != nil {
 				return Record{}, err
 			}
+			// A manual action owns native cleanup separately from the preceding
+			// conversation. No other late completion may archive over its claim.
+			var compaction domain.ID
+			if rawClaim, present := fields["compaction_job_id"]; present && (json.Unmarshal(rawClaim, &compaction) != nil || compaction != "") {
+				pending = true
+			}
 			if pending {
 				fields["archive"], _ = json.Marshal(domain.ArchivePending)
 				raw, err := json.Marshal(fields)
@@ -580,8 +592,12 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 		}
 	}
 	body, err := json.Marshal(value)
-	if err != nil || len(body) > 1<<20 {
-		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid entity document.", "Use a validated entity no larger than 1 MiB.")
+	maxBodyBytes := 1 << 20
+	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.CompactSessionJob {
+		maxBodyBytes = maxCompactionJobEntityBytes
+	}
+	if err != nil || len(body) > maxBodyBytes {
+		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid entity document.", "Use a validated bounded entity document.")
 	}
 	var tombstone string
 	err = t.tx.QueryRowContext(t.ctx, "SELECT id FROM tombstones WHERE id=?", id).Scan(&tombstone)
@@ -909,7 +925,16 @@ func (s *Store) Events(ctx context.Context, after uint64, session domain.ID, lim
 
 func Decode[T any](r Record) (T, error) {
 	var result T
-	err := domain.Decode(r.Data, &result)
+	maxBytes := 1 << 20
+	if r.Kind == domain.JobKind {
+		var envelope struct {
+			Type domain.JobType `json:"type"`
+		}
+		if json.Unmarshal(r.Data, &envelope) == nil && envelope.Type == domain.CompactSessionJob {
+			maxBytes = maxCompactionJobEntityBytes
+		}
+	}
+	err := domain.DecodeWithLimit(r.Data, &result, maxBytes)
 	return result, err
 }
 func (s *Store) Backup(ctx context.Context) (domain.ID, error) {

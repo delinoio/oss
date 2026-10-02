@@ -63,6 +63,14 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Repeated native history-mode observations must revalidate live execution authority through a read-only path when the retained sticky mode is unchanged; do not create a receipt or wake store watchers for each provider request. Recheck authority and history mode at the commit boundary for actual transitions.
 
+- Native context and manual compaction follow `docs/cmds-delidev-claude-compaction-contract.md`. Owner/client-only acceptance atomically pauses FIFO and retains one revision/request-bound job; reference-only receipt replay must support compaction. Preserve prior outcomes, exact native result/cleanup and queued versus claimed cancellation, including account disconnect. Worker revocation releases canceled undispatched compaction ownership while keeping FIFO paused and the preceding checkpoint intact; claimed jobs retain native uncertainty. Context reads cannot infer current utilization or expose private assignment paths.
+
+- Forwarding and other late Archive completions must preserve unresolved `compaction_job_id` ownership; conversation cleanup or forwarding cleanup alone cannot release a manual action.
+
+- Manual-compaction mutation receipts bind the original owner/client principal as well as session/revision/request. Recheck authorization before replay; another authorized client cannot reuse the accepted receipt. Keep credentials outside its digest input under `docs/cmds-delidev-claude-compaction-contract.md`.
+
+- A valid late report cannot release a canceled claimed compaction. Retain its observed result on the uncertain job, original ownership and prior checkpoint; require recovery and leave Archive pending. Cancellation cannot grant successor dispatch.
+
 - Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.
 
 - Managed Codex subscriptions follow `docs/cmds-delidev-subscription-contract.md`. Keep explicit provider selection, a separately authorized Worker lane, one durable per-account login/refresh/execution/logout lease, original actor/revision/generation fences and immutable latest-bundle write-back. Never redistribute a Take receipt or uncertain generation, expose bundles in records/logs, grant API relay authority from subscription registration, or delete unresolved ownership.

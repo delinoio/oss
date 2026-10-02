@@ -515,6 +515,9 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if job.State != domain.JobClaimed {
 			return nil, domain.Fail(domain.Conflict, "The job is no longer awaiting this result.", "Inspect its current accepted outcome.")
 		}
+		if job.Type == domain.CompactSessionJob {
+			return finishSessionCompaction(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
+		}
 		if job.Type == domain.ExecuteSessionJob {
 			if problem == nil {
 				if saved, handled, err := s.finishPRStartupRejection(tx, actor, record, job, meta.ExpectedRevision, req.Msg.OutputJson); handled {
@@ -701,7 +704,7 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 			if err != nil {
 				return err
 			}
-			if job.MachineID != machine || job.InstanceID != instance || (job.Type != domain.ExecuteSessionJob && job.Type != domain.RecoverExecutionJob) {
+			if job.MachineID != machine || job.InstanceID != instance || (job.Type != domain.ExecuteSessionJob && job.Type != domain.RecoverExecutionJob && job.Type != domain.CompactSessionJob) {
 				return executionEventConflict()
 			}
 			return nil

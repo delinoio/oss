@@ -47,6 +47,35 @@ func create(t *testing.T, s *Store, id domain.ID, value string) Record {
 	return record
 }
 
+func TestCompactionJobEntityAllowsItsBoundedInputEnvelope(t *testing.T) {
+	s, _ := openTest(t)
+	input, err := json.Marshal(strings.Repeat("x", 2<<20))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved Record
+	_, err = s.Mutate(context.Background(), domain.NewID(), "compact.test", nil, func(tx *Tx) (any, error) {
+		var e error
+		saved, e = tx.PutJob(domain.NewID(), 0, "", "", domain.Job{
+			Type:      domain.CompactSessionJob,
+			State:     domain.JobQueued,
+			MachineID: domain.NewID(),
+			Input:     input,
+		})
+		return saved, e
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := Decode[domain.Job](saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(job.Input) != len(input) {
+		t.Fatalf("stored input length = %d, want %d", len(job.Input), len(input))
+	}
+}
+
 func TestDurableDeduplicationConcurrentRetry(t *testing.T) {
 	s, root := openTest(t)
 	ctx := context.Background()

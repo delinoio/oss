@@ -282,21 +282,44 @@ func TestSessionDeletionJoinsProductionFinalReportPublication(t *testing.T) {
 
 func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
 	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
-	for _, kind := range []domain.JobType{domain.ExecuteSessionJob, domain.GenerateSessionTitleJob} {
+	for _, kind := range []domain.JobType{domain.ExecuteSessionJob, domain.GenerateSessionTitleJob, domain.CompactSessionJob} {
 		copy := domain.SessionDeletionCopy{JobID: domain.NewID(), Type: kind, Revision: 1, Digest: w.Copies[0].Digest, InstanceID: w.Copies[0].InstanceID}
 		if kind == domain.ExecuteSessionJob {
 			copy.ExecutionID = domain.NewID()
+		}
+		if kind == domain.CompactSessionJob {
+			copy.ActionID = domain.NewID()
 		}
 		if err := writeJSON(filepath.Join(c.Root, "jobs", string(copy.JobID)+".json"), journal{Version: 1, JobID: copy.JobID, InstanceID: copy.InstanceID, Revision: copy.Revision, Digest: copy.Digest, State: journalReported, ReportID: domain.NewID()}); err != nil {
 			t.Fatal(err)
 		}
 		w.Copies = append(w.Copies, copy)
 	}
+	action := w.Copies[3].ActionID
+	owned := []string{filepath.Join(c.Root, "runtimes", string(action), "content"), filepath.Join(c.Root, "compaction-checkpoints", string(action)+".json")}
+	unrelated := filepath.Join(c.Root, "compaction-checkpoints", string(domain.NewID())+".json")
+	for _, path := range append(owned, unrelated) {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("private native history"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	proof, err := deleteSessionCopies(context.Background(), c, w)
 	if err != nil || !proof.Complete {
 		t.Fatal(proof, err)
 	}
+	for _, path := range owned {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatal("owned compaction history survived deletion", err)
+		}
+	}
+	if data, err := os.ReadFile(unrelated); err != nil || string(data) != "private native history" {
+		t.Fatal("another session's checkpoint changed", err)
+	}
 	job, execution, title := w.Copies[0], w.Copies[1], w.Copies[2]
+	compaction := w.Copies[3]
 	paths := []string{
 		filepath.Join("processes", string(job.JobID), "restored.json"),
 		filepath.Join("processes", string(job.JobID)+".recovery.lock"),
@@ -304,6 +327,8 @@ func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
 		filepath.Join("processes", string(w.SessionID)+".recovery.lock"),
 		filepath.Join("title-runtimes", string(title.JobID)+"-restored", "content"),
 		filepath.Join("runtimes", string(execution.ExecutionID), "content"),
+		filepath.Join("runtimes", string(compaction.ActionID), "content"),
+		filepath.Join("compaction-checkpoints", string(compaction.ActionID)+".json"),
 		filepath.Join("pr-git", string(execution.ExecutionID), "scope.json"),
 		filepath.Join("jobs", string(job.JobID), "outbox"),
 		filepath.Join("jobs", string(job.JobID)+".json"),

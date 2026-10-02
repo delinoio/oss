@@ -63,6 +63,8 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	switch action {
 	case "delete", "deletion":
 		return sessionDeletionCommand(ctx, c, o, args)
+	case "compact", "context":
+		return sessionCompactionCommand(ctx, c, o, args)
 	case "terminal":
 		return sessionTerminalCommand(ctx, c, o, args[1:], streams)
 	case "forward":

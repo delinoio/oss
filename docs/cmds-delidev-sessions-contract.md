@@ -646,6 +646,15 @@ The [harness contract](cmds-delidev-harness-contract.md#windows-opencode-general
 owns exact root, isolation, Plan-policy, version-1 compatibility and native-evidence
 requirements.
 
+## Explicit native context and manual compaction composition
+
+The independent issue-1093 composition adds owner/client context reads and a
+durable manual action after a verified successful Claude 2.1.236 API boundary.
+Its action result, cleanup, history checkpoint and failure/Resume rules remain
+separate from conversation outcomes and the existing automatic observation family.
+See [the owning compaction contract](cmds-delidev-claude-compaction-contract.md); earlier
+private/manual and automatic-only evidence scopes above retain their qualifications.
+
 ## Managed subscription execution
 
 Codex subscription snapshots retain an optional immutable `subscription` selector, omitted from historical API snapshots. Native execution acquires the exact selected account lease without failover, stages only its protected generation, uses the built-in OpenAI provider, preserves existing native history/publication/workspace checks and returns the latest bundle after owned process/file cleanup. A definite busy refusal waits on that account; uncertain delivery never repeats a launch. Publication registration grants no API proxy authority. See [managed subscriptions](cmds-delidev-subscription-contract.md) for fencing, refresh evidence and recovery limits.

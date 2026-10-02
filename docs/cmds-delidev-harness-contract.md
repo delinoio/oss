@@ -1720,6 +1720,17 @@ loopback providers for Build/Plan, FIFO, Stop/Resume and first/resumed lost-repo
 recovery. A separately supplied canonical writable
 `DELIDEV_NATIVE_OPENCODE_WINDOWS_WORKSPACE_PARENT` on another local drive enables
 the native cross-drive Plan fixture. Neither deterministic tests nor
+cross-compilation establish installed Windows/account acceptance. See the
+independent [issue evidence](evidence/delidev/issue-1205/windows-root-validation.md).
+
+## Explicit native context and manual compaction composition
+
+The independent issue-1093 composition adds owner/client context reads and a
+durable manual action after a verified successful Claude 2.1.236 API boundary.
+Its action result, cleanup, history checkpoint and failure/Resume rules remain
+separate from conversation outcomes and the existing automatic observation family.
+See [the owning compaction contract](cmds-delidev-claude-compaction-contract.md); earlier
+private/manual and automatic-only evidence scopes above retain their qualifications.
 cross-compilation establish installed Windows/account acceptance. Record actual
 Windows results and unresolved limits independently in issue #1205, its pull
 requests and CI runs.
