@@ -3525,6 +3525,8 @@ fn macos_incomplete_record(
         CaptureFailure::Timeout => FailureClass::Timeout,
         CaptureFailure::Cancellation => FailureClass::Cancellation,
         CaptureFailure::Cleanup => FailureClass::Cleanup,
+        CaptureFailure::EventLimit => FailureClass::EventLimit,
+        CaptureFailure::ByteLimit => FailureClass::ByteLimit,
     };
     CompleteRecord {
         header: Header {
@@ -4182,6 +4184,37 @@ pub fn execute(command: Command) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_incomplete_record_preserves_receiver_failure_classes_and_encoding_bounds() {
+        use crate::{macos::supervise::CaptureFailure, record::FailureClass};
+
+        let directory = tempfile::tempdir().unwrap();
+        for (failure, classification) in [
+            (CaptureFailure::EventLimit, FailureClass::EventLimit),
+            (CaptureFailure::ByteLimit, FailureClass::ByteLimit),
+            (CaptureFailure::TraceLoss, FailureClass::TraceLoss),
+            (CaptureFailure::Cleanup, FailureClass::Cleanup),
+        ] {
+            let record = macos_incomplete_record(directory.path(), failure);
+            assert!(!record.summary.complete);
+            assert_eq!(record.summary.failure, Some(classification));
+            let mut encoded = Vec::new();
+            record::serialize(&record, &mut encoded, 2, record::DEFAULT_BYTE_LIMIT).unwrap();
+            assert_eq!(encoded.iter().filter(|byte| **byte == b'\n').count(), 2);
+            assert_eq!(
+                record::parse(encoded.as_slice(), 2, record::DEFAULT_BYTE_LIMIT).err(),
+                Some(record::ParseFailure::Incomplete)
+            );
+            let mut output = Vec::new();
+            assert_eq!(
+                record::serialize(&record, &mut output, 2, encoded.len() as u64 - 1),
+                Err(record::ParseFailure::ByteLimit)
+            );
+            assert!(output.is_empty());
+        }
+    }
+
     use clap::Parser;
 
     use super::*;

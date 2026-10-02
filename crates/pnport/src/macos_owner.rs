@@ -315,7 +315,14 @@ fn run_helper() -> ! {
     let result = (|| -> Option<()> {
         let mut socket = authenticated_socket()?;
         unsafe {
-            for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+            for signal in [
+                libc::SIGINT,
+                libc::SIGTERM,
+                libc::SIGHUP,
+                libc::SIGTSTP,
+                libc::SIGTTIN,
+                libc::SIGTTOU,
+            ] {
                 libc::signal(signal, libc::SIG_IGN);
             }
         }
