@@ -92,6 +92,8 @@
 
 - Run the pnport TypeScript conformance suite on glibc Linux as well as macOS. Linux checks the official native compiler's static ELF machine and runs inline/split builds offline; record Docker architecture and tracing limitations without counting emulated amd64 as native x64 release evidence.
 
+- pnport offline benchmarks use already prepared synthetic TypeScript fixtures, a native executable with an explicit declared build revision, and a new private output directory. Repeat identical filesystem and compiler workloads at least five times for each cold/warm cache condition; reset compiler incremental state in both conditions. Record tool/source/artifact/fixture identities, median and range, instrumented filesystem calls/read bytes, sampled descendant RSS with its limits, and inode-aware cache disk bytes. Never publish raw process inventories, child output or environment values. Development measurements do not open the release gate or replace minimum-OS/four-target acceptance.
+
 ### React Forge Rules
 
 - Figma sessions follow `docs/packages-react-forge-figma-contract.md`: local React rendering, explicit remote publication, credential-free receipts, official MCP, shared rate admission and reconciliation before uncertain-write retries. Isolate these exceptions from Office/PDF. CI uses fake MCP and synthetic credentials.

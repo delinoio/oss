@@ -12,6 +12,7 @@
     "package:npm": "node scripts/package.mjs",
     "publish:npm": "node scripts/publish.mjs",
     "test:typescript:prepare": "node scripts/typescript-conformance.mjs prepare",
-    "test:typescript": "node scripts/typescript-conformance.mjs run"
+    "test:typescript": "node scripts/typescript-conformance.mjs run",
+    "benchmark": "node scripts/benchmark.mjs"
   }
 }
