@@ -182,6 +182,14 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			settings.Options.Permission = domain.PermissionFullAccess
 		}
 	}
+	if input.Configuration.Subscription {
+		if settings.Options.Permission != domain.PermissionReadOnly && settings.Options.Permission != domain.PermissionWorkspaceWrite {
+			return nil, domain.Fail(domain.Unsupported, "Managed subscription execution requires an explicit bounded native sandbox.", "Choose read-only or workspace-write permissions; default and full-access execution cannot protect the managed authentication file from native tools.")
+		}
+		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
+			return nil, err
+		}
+	}
 	var managed *managedSubscriptionLease
 	var managedLatest []byte
 	var closeManagedRPC func()
@@ -491,4 +499,50 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		logger.InfoContext(ctx, "native_execution_checkpoint_retained")
 		return json.Marshal(completion)
 	}
+}
+
+// validateManagedAuthenticationHome keeps the managed auth bundle outside every
+// native workspace root. The native read-only/workspace-write sandbox then
+// keeps tool commands from reading CODEX_HOME; unrestricted same-user access
+// to the Worker process remains outside this guarantee.
+func validateManagedAuthenticationHome(home string, workspaceRoots []string) error {
+	canonicalHome, err := canonicalManagedPath(home, "The managed authentication home is not a private directory.", "Preserve the execution for reconciliation; do not materialize credentials through a path alias.")
+	if err != nil {
+		return err
+	}
+	for _, root := range workspaceRoots {
+		canonicalRoot, err := canonicalManagedPath(root, "A managed execution workspace root is not a real directory.", "Preserve the execution for reconciliation; do not start native work with ambiguous credential confinement.")
+		if err != nil {
+			return err
+		}
+		if managedPathsOverlap(canonicalHome, canonicalRoot) {
+			return domain.Fail(domain.RecoveryRequired, "The managed authentication home overlaps a native workspace root.", "Choose a private Worker runtime outside the workspace roots before materializing subscription credentials.")
+		}
+	}
+	return nil
+}
+
+func canonicalManagedPath(path, message, remediation string) (string, error) {
+	if !filepath.IsAbs(path) {
+		return "", domain.Fail(domain.RecoveryRequired, message, remediation)
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", domain.Fail(domain.RecoveryRequired, message, remediation)
+	}
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", domain.Fail(domain.RecoveryRequired, message, remediation)
+	}
+	return canonical, nil
+}
+
+func managedPathsOverlap(first, second string) bool {
+	for _, pair := range [][2]string{{first, second}, {second, first}} {
+		relative, err := filepath.Rel(pair[0], pair[1])
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }

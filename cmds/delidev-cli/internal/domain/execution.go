@@ -106,6 +106,9 @@ func (c ExecutionConfiguration) Validate() error {
 	if c.Subscription && c.Harness != Codex {
 		return Fail(Unsupported, "Only Codex has a managed subscription execution profile.", "Keep other harnesses on their separately supported API profiles.")
 	}
+	if c.Subscription && c.Options.Permission != PermissionReadOnly && c.Options.Permission != PermissionWorkspaceWrite {
+		return Fail(Unsupported, "Managed subscription execution requires an explicit bounded native sandbox.", "Choose read-only or workspace-write permissions; default and full-access execution cannot protect the managed authentication file from native tools.")
+	}
 	if c.GrokContext != nil && (c.Harness != GrokBuild || c.GrokContext.Validate() != nil) {
 		return Fail(RecoveryRequired, "The retained Grok model context is invalid.", "Preserve the original model selection and its metadata provenance.")
 	}
