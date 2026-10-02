@@ -258,6 +258,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 		}
 		if err == nil {
+			if err := replayPendingStorageReports(ctx, config, client, credential); err != nil {
+				return err
+			}
 			if !ready {
 				ready = true
 				if config.Ready != nil {
@@ -648,6 +651,9 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 	}
 	if ctx.Err() != nil {
 		return context.Cause(ctx)
+	}
+	if err := prepareStorageRetirement(config, job, result); err != nil {
+		return err
 	}
 	report := &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(result.ReportID), Id: string(result.JobID), ExpectedRevision: result.Revision}, MachineId: string(credential.MachineID), InstanceId: string(instance), OutputJson: result.Output}
 	if result.Problem != nil {

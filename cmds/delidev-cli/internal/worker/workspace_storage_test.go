@@ -119,6 +119,14 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 				input = workspace.StorageRequest{Version: 1, OperationID: domain.NewID(), Action: workspace.StorageRecover, Preparation: prepare, Manifest: manifest, SnapshotID: original.SnapshotID, Recovery: &workspace.StorageRecovery{Original: original, Claims: []workspace.StorageJournalClaim{claim}, InstanceID: instance, Revision: 2, AssignmentDigest: result.Digest}}
 				job, resource, result = makeJob(input)
 			}
+			if err := prepareStorageRetirement(config, job, result); err != nil {
+				t.Fatal("pre-report retirement was not durable", err)
+			}
+			retirementRaw, err := security.ReadPrivate(filepath.Join(manager.Root, "storage-removal-retirements", string(result.JobID)+".json"), 4096)
+			var pending storageRetirement
+			if err != nil || domain.Decode(retirementRaw, &pending) != nil || !pending.PendingReport {
+				t.Fatal("pre-report retirement was not marked pending", err)
+			}
 			intent := filepath.Join(manager.Root, "storage-removal-intents", string(original.OperationID)+".json")
 			claimPath := filepath.Join(manager.Root, "storage-removal-claims", string(original.OperationID)+".json")
 			accepted := job
