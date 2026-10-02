@@ -5,6 +5,7 @@ import { document, object, resourceName, text, type Document } from "./documents
 import { Authentication } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import "./api-account.css";
 
 function Observation({ label, value }: { label: string; value: unknown }) {
   const observation = object(value), problem = object(observation.problem);
@@ -40,7 +41,7 @@ export function AccountConnection({ initial, active, close }: { initial: Resourc
     if (!text(removal.request_id) || !Number.isSafeInteger(removal.expected_revision)) return;
     void disconnect.send({ mutation: { id: initial.id, requestId: text(removal.request_id), expectedRevision: BigInt(removal.expected_revision as number) } });
   };
-  return <section><header><h3>{resourceName(current)}</h3><button onClick={close}>{isApi ? "Back to AI API Keys" : "Back to accounts"}</button></header><p>Health: {text(data.health)} · {data.connection ? "Credential connected" : "Disconnected"}</p><p>Provider: {resourceName(provider.data?.resource)} · {text(metadata.authentication)} · {provider.data?.resource ? providerEnabled ? "Enabled" : "Off" : "Unavailable"}</p>
+  return <section className={isApi ? "api-entry-workflow" : undefined}>{isApi ? <><button className="api-entry-back" onClick={close}>Back to AI API Keys</button><header className="api-entry-heading"><h2>Manage connection</h2><p>{resourceName(current)}</p><p className="api-entry-scope">Saved on the selected server.</p></header></> : <header><h3>{resourceName(current)}</h3><button onClick={close}>Back to accounts</button></header>}<p>Health: {text(data.health)} · {data.connection ? "Credential connected" : "Disconnected"}</p><p>Provider: {resourceName(provider.data?.resource)} · {text(metadata.authentication)} · {provider.data?.resource ? providerEnabled ? "Enabled" : "Off" : "Unavailable"}</p>
     {data.type === "subscription" ? <p>Subscription login is not implemented yet. No existing system login will be used.</p> : disconnected ? <><form onSubmit={(event) => {
       event.preventDefault(); if (blocked || !providerEnabled || !provider.data?.resource || (!keyless && !/^[!-~]{1,8192}$/.test(key))) return;
       const input = { mutation: mutation(), keyless, apiKey: keyless ? new Uint8Array() : new TextEncoder().encode(key) };

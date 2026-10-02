@@ -2,11 +2,11 @@
 
 ## Scope
 
-Issue #1143 owns the UI-first AI Subscription redesign in `apps/delidev/src/account-settings.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The existing full-window Settings modal, 16 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Native Codex lifecycle/quota work belongs to #1095/#1096; Claude requires independently verified lifecycle support. This stage does not implement those adapters or a new RPC/schema, migration, dependency, feature flag, polling or persistent frontend state.
+Issue #1143 owns the UI-first AI Subscription redesign in `apps/delidev/src/account-settings.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Native Codex lifecycle/quota work belongs to #1095/#1096; Claude requires independently verified lifecycle support. This stage does not implement those adapters or a new RPC/schema, migration, dependency, feature flag, polling or persistent frontend state.
 
 ## Runtime and Language
 
-React/TypeScript presentation uses the existing system font, Settings colors, 40px/24px shell padding and controls at least 40px high. Content is capped at 1120px. One thin-bordered list with 12px corners contains flat rows with a 40px mark, provider/alias, separate connection state, up to two ordered quota windows and Refresh/Disconnect/ellipsis controls. Your subscriptions precedes Connect a subscription and the initially collapsed Advanced settings disclosure. Container queries wrap identity/actions and quotas below 1050px content width. Provider cards use three columns at 900px+, two at 600px+ and one below 600px; the existing compact navigation remains intact.
+React/TypeScript presentation follows the shared issue #1256 Settings body contract: system font, semantic light/dark tokens, left-aligned 1040px maximum column, 32px/24px/compact padding, 40px controls and 8px corners. Flat divided rows preserve the 40px provider mark, alias, separate connection state, up to two ordered quota windows and Refresh/Disconnect/ellipsis controls. Your subscriptions precedes Connect a subscription and the initially collapsed Advanced settings disclosure. Successful empty inventory uses the shared 160px-minimum horizontal icon/help region. Container queries retain wrapping identity/actions/quotas; planned providers are flat ChatGPT/For Codex, Claude/For Claude Code and Grok/For Grok Build rows with disabled Coming soon controls. Shared context-pane/drawer navigation and all original lifecycle/metadata guards remain intact.
 
 ## Users and Operators
 
@@ -26,11 +26,11 @@ Each window preserves its ID, order, remaining fraction, observation time and re
 
 ## Storage
 
-All state belongs to the current Settings opening. Filters, details, Advanced state, drafts, confirmations and retry presentation survive category changes within that opening and are discarded on close/Escape/navigation away under #1138. Accepted server/Worker effects continue; opening disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact.
+All state belongs to the current Settings visit. Filters, details, Advanced state, drafts, confirmations and retry presentation survive category changes within that visit and are discarded on navigation away under #1138. Accepted server/Worker effects continue; visit disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact.
 
 ## Security
 
-No credentials, identity fixtures or quota values enter query keys, logs, browser storage, analytics or background polling. The existing native dialog owns focus containment, Escape and opener restoration. Ellipsis/confirmation Escape is handled locally before reaching the parent dialog; icon actions have accessible labels.
+No credentials, identity fixtures or quota values enter query keys, logs, browser storage, analytics or background polling. Settings itself has no modal focus or Escape-to-leave behavior. Actual child dialogs and the shared compact navigation drawer retain their own focus containment, Escape and opener restoration; ellipsis/confirmation Escape is handled locally; icon actions have accessible labels.
 
 ## Logging
 
@@ -38,7 +38,7 @@ Read and mutation failures use the existing typed, redacted transport diagnostic
 
 ## Build and Test
 
-Run `pnpm test` from `apps/delidev`, after generating required client inputs and hydrating consumed LFS assets. Presentation quota/callback/state fixtures, generated router/account regression fixtures, Settings disposal checks and the feature-specific temporary Go-server integration cover the UI boundary. Bundle original mark notices with frontend output; remove generated `dist` directories from the final worktree. Record browser and native visual/keyboard evidence separately under `docs/evidence/delidev/issue-1143/`. Component/browser fixture success establishes no real-provider login, native quota collection or native platform acceptance.
+Run `pnpm test` from `apps/delidev`, after generating required client inputs and hydrating consumed LFS assets. Presentation quota/callback/state fixtures, generated router/account regression fixtures, Settings disposal checks and the feature-specific temporary Go-server integration cover the UI boundary. Bundle original mark notices with frontend output; remove generated `dist` directories from the final worktree. Record browser and native visual/keyboard evidence separately in pull requests, issues and CI logs/artifacts. Component/browser fixture success establishes no real-provider login, native quota collection or native platform acceptance.
 
 ## Dependencies and Integrations
 

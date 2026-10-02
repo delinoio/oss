@@ -86,10 +86,9 @@ Run package Go tests and vet from `cmds/delidev-cli`. Ordinary tests cover exact
 - [Native harness contract](cmds-delidev-harness-contract.md)
 - [Session and durable event contract](cmds-delidev-sessions-contract.md)
 - [Connect protocol](protos-delidev-v1-contract.md)
-- [Evidence ledger](cmds-delidev-evidence.md)
 
 ## Change Triggers
-Update this contract, the project index, protocol/session/harness docs, evidence ledger and `cmds/delidev-cli/AGENTS.md` when usage scope, deduplication, pricing, cost evidence, migrations or dashboard interfaces change. Do not promote fixture evidence into actual billing or cross-platform acceptance.
+Update this contract, the project index, protocol/session/harness docs, validation records in pull requests, issues and CI logs/artifacts and `cmds/delidev-cli/AGENTS.md` when usage scope, deduplication, pricing, cost evidence, migrations or dashboard interfaces change. Do not promote fixture evidence into actual billing or cross-platform acceptance.
 
 ## References
 - [DeliDev project](project-delidev.md)

@@ -40,7 +40,8 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 				return store.Record{}, err
 			}
 		}
-		verified = completion.Version == 1 && (ordinary || stopped) && input.Input.Mode == domain.ExecuteMode
+		tools := progress.GrokToolsTerminal != nil && progress.GrokTerminal == nil && progress.GrokStop == nil && progress.GrokToolsTerminal.Validate(progress.NativeThreadID) == nil && progress.GrokToolsTerminal.Outcome() == completion.Outcome && progress.GrokToolsTerminal.Model == input.Configuration.NativeModel
+		verified = completion.Version == 1 && (tools || (ordinary || stopped) && input.Input.Mode == domain.ExecuteMode)
 	}
 	if input.Configuration.Harness == domain.ClaudeCode {
 		// A digest alone cannot grant continuation after a changed permission,
@@ -83,9 +84,8 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 		}
 		if session.Recovery == domain.NoRecovery {
 			session.ActiveExecutionID = ""
-			// Agent cleanup is independent of session-owned TCP lifetimes.
-			// Store.Put keeps Archive pending until both original forward
-			// peers confirm their socket cleanup.
+			// Agent cleanup proves only its own process graph. Store.Put
+			// separately waits for original terminal and forward cleanup.
 			if session.Archive == domain.ArchivePending {
 				session.Archive = domain.Archived
 			}

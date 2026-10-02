@@ -119,6 +119,32 @@ func TestExecutionLeaseCannotClaimCleanupFromMissingProcessIndex(t *testing.T) {
 	}
 }
 
+func TestExecutionLeaseReconcilesNativeBeforeReleasingWorkspace(t *testing.T) {
+	m, input, manifest := chatExecutionFixture(t)
+	job := domain.NewID()
+	lease, err := m.ClaimFirstExecution(context.Background(), job, domain.NewID(), input, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = lease.Close() })
+	if err := lease.ReconcileNative(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := m.readExecutionClaim(input.SessionID)
+	if err != nil || claim.State != executionClaimActive {
+		t.Fatal("native reconciliation released the assignment", err)
+	}
+	if _, err := m.Prepare(context.Background(), input); err == nil {
+		t.Fatal("native reconciliation released the workspace lock")
+	}
+	if err := os.Remove(filepath.Join(m.Git.ProcessRoot, string(job))); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.ReconcileNative(context.Background()); err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("missing original process evidence became a cleanup barrier", err)
+	}
+}
+
 func TestExecutionClaimRequiresExactReadyManifestAndNativeWorktree(t *testing.T) {
 	root, err := filepath.EvalSymlinks(repository(t))
 	if err != nil {

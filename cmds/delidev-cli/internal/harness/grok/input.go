@@ -71,6 +71,7 @@ const (
 	mixedToolInput    inputProfile = "mixed-tools"
 	planQuestionInput inputProfile = "plan-questions"
 	planningInput     inputProfile = "planning"
+	publicFirstInput  inputProfile = "public-first"
 )
 
 func (p inputProfile) mixed() bool { return p == mixedToolInput || p == planningInput }
@@ -109,6 +110,7 @@ type InputObservation struct {
 	QuestionOffer  *QuestionOffer
 	Plan           *planFact
 	PlanOffer      *PlanOffer
+	ToolEvent      *domain.GrokToolEvent
 }
 
 type promptParams struct {
@@ -166,6 +168,13 @@ func (a *apiConnection) RunTools(ctx context.Context, request domain.ID, input s
 }
 
 func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error, profile inputProfile) (result PromptResult, returned error) {
+	public := profile == publicFirstInput
+	if public {
+		profile = plainTextInput
+		if a.profile.mode == domain.PlanMode {
+			profile = planningInput
+		}
+	}
 	if profile != plainTextInput && profile != readFileInput && profile != fileWriteInput && !profile.questionsOnly() && !profile.mixed() {
 		return result, apiConfigurationError()
 	}
@@ -335,6 +344,24 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		}
 		return nil
 	}
+	upgradeTools := func() error {
+		if !public || profile != plainTextInput {
+			return nil
+		}
+		control.mu.Lock()
+		defer control.mu.Unlock()
+		if control.stop != nil || !queue.running || queue.cleared {
+			return sessionUncertain()
+		}
+		var err error
+		mixed, err = newPlanningTools(a.session, queue.prompt, filepath.Dir(a.profile.path), a.workspace, NativeDefaultMode)
+		if err != nil {
+			return err
+		}
+		profile, control.profile = planningInput, planningInput
+		fileTools, questions = mixed.files, mixed.questions
+		return nil
+	}
 	publishMixed := func(event nativewire.Event) (returned error) {
 		stage := "original-tool"
 		defer func() {
@@ -349,9 +376,13 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		if err != nil {
 			return err
 		}
+		original, err := publicToolEvent(event, fact)
+		if err != nil {
+			return err
+		}
 		if fact.Plan != nil {
 			stage = "original-plan-response"
-			observation := InputObservation{Kind: InputPlan, Plan: fact.Plan}
+			observation := InputObservation{Kind: InputPlan, Plan: fact.Plan, ToolEvent: original}
 			if event.Kind == nativewire.ServerRequest {
 				offer, err := control.offerPlan(event, *fact.Plan)
 				if err != nil {
@@ -385,7 +416,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			return publish(observation)
 		}
 		if fact.Question != nil {
-			observation := InputObservation{Kind: InputQuestion, Question: fact.Question}
+			observation := InputObservation{Kind: InputQuestion, Question: fact.Question, ToolEvent: original}
 			if event.Kind == nativewire.ServerRequest {
 				offer, err := control.offerQuestion(event, *fact.Question)
 				if err != nil {
@@ -405,7 +436,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		if fact.File == nil {
 			return incompatible()
 		}
-		observation := InputObservation{Kind: InputFileTool, FileTool: fact.File}
+		observation := InputObservation{Kind: InputFileTool, FileTool: fact.File, ToolEvent: original}
 		if event.Kind == nativewire.ServerRequest {
 			offer, err := control.offerFilePermission(event, *fact.File)
 			if err != nil {
@@ -462,6 +493,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			return result, domain.Fail(domain.ResourceExhausted, "Native input observations reached their bound.", "Retain the original input and reconcile its native runtime.")
 		}
 		if event.Kind == nativewire.ServerRequest {
+			if err := upgradeTools(); err != nil {
+				return result, err
+			}
 			if profile.mixed() {
 				if err := publishMixed(event); err != nil {
 					return result, err
@@ -564,6 +598,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			diagnosticStage = inputDiagnosticUpdate
 			switch variant.Update.Kind {
 			case "tool_call_delta_chunk", "tool_call", "tool_call_update", "pending_interaction", "interaction_resolved", "current_mode_update":
+				if err := upgradeTools(); err != nil {
+					return result, err
+				}
 				if profile.mixed() {
 					if err := publishMixed(event); err != nil {
 						return result, err
@@ -812,6 +849,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		if err := a.Close(); err != nil {
 			return result, sessionUncertain()
 		}
+		if public {
+			a.completedTools = &completedTools{request: request, prompt: queue.prompt, terminal: TextTerminal{Result: denied.Result, Turn: rejectedTurn.Turn, Prompt: rejectedPrompt.Completion}, rejection: &denied.Context, accounting: accounting, idle: true, output: hex.EncodeToString(output.Sum(nil)), chunks: append([][32]byte(nil), settled.chunks...)}
+		}
 		// Owned cleanup cancels the native publication context. Publish the
 		// correlated rejection on the original caller context after joining it.
 		if err := emit(ctx, InputObservation{Kind: InputPermissionRejected, InputID: request, NativePromptID: queue.prompt, Rejection: &denied}); err != nil {
@@ -902,6 +942,19 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	}
 	if len(settled.retries) != 0 {
 		return result, incompatible()
+	}
+	if public && profile.mixed() {
+		if mixed == nil || !control.plansSettled(mixed.plans) {
+			return result, incompatible()
+		}
+		if err := a.waitStopIdle(life, &settled, queue.prompt); err != nil {
+			return result, err
+		}
+		facts, err := retainTextTerminal(result, turn, completed)
+		if err != nil {
+			return result, err
+		}
+		a.completedTools = &completedTools{request: request, prompt: queue.prompt, terminal: facts, accounting: accounting, idle: settled.idle, output: hex.EncodeToString(output.Sum(nil)), chunks: append([][32]byte(nil), settled.chunks...)}
 	}
 	if err := publish(InputObservation{Kind: InputCompleted, Result: &result}); err != nil {
 		return result, err

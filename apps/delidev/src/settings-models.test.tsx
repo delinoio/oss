@@ -41,7 +41,7 @@ function fixture() {
     router.service(UsageService, { getModelPricing: readPrice, setModelPricing: price });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
-  const view = (visible = true, upstream = transport) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><Settings visible={visible} close={() => {}} /></QueryClientProvider></TransportProvider></StrictMode>;
+  const view = (visible = true, upstream = transport) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><Settings visible={visible} /></QueryClientProvider></TransportProvider></StrictMode>;
   return { provider, models, entry, inventory, search, save, price, readPrice, transport, client, view };
 }
 function openModels() { fireEvent.click(screen.getByRole("button", { name: "Models" })); }
@@ -53,7 +53,7 @@ it("composes one Models heading/action and a neutral successful empty page with 
   await screen.findByRole("heading", { name: "No models yet" });
   expect(screen.getAllByRole("heading", { name: "Models", level: 1 })).toHaveLength(1);
   expect(screen.getAllByRole("button", { name: "New Model" })).toHaveLength(1);
-  expect(screen.getByText("Saved on the selected server.")).toBeTruthy();
+  expect(screen.getByText("Saved on the selected server.", { selector: ".models-list .settings-scope" })).toBeTruthy();
   expect(screen.getByText("Add models manually using New Model.")).toBeTruthy();
   expect(screen.getByText("You can add models without an API account.")).toBeTruthy();
   expect(screen.getByText("Connect an account only for automatic model discovery.")).toBeTruthy();
@@ -242,13 +242,13 @@ it("retains list state across edit/pricing/category/responsive/reconnect transit
   const replacement = vi.fn();
   const upstream: Transport = { ...value.transport, unary: (...args) => { replacement(); return value.transport.unary(...args); } };
   view.rerender(value.view(true, upstream));
-  fireEvent.change(screen.getByRole("combobox", { name: "Settings category" }), { target: { value: "models" } });
+  fireEvent.click(screen.getByRole("button", { name: "Models" }));
   expect(searchInput().value).toBe("Example");
   await waitFor(() => expect(value.search.mock.calls.at(-1)?.[0]).toMatchObject({ query: "Example", pageToken: "model-page-2" }));
   expect(replacement).toHaveBeenCalled();
 });
 
-it.each(["button", "cancel"])("discards Models search/page and read Retry on close via %s, restoring the opener", async (route) => {
+it.each(["navigation", "Escape then navigation"])("discards Models search/page and read Retry after %s without restoring an opener", async (route) => {
   const value = fixture();
   value.search.mockImplementation(async (request) => {
     if (request.pageToken) throw new ConnectError("Later page temporarily unavailable", Code.Unavailable);
@@ -256,7 +256,7 @@ it.each(["button", "cancel"])("discards Models search/page and read Retry on clo
   });
   function Harness() {
     const [visible, setVisible] = useState(false);
-    return <TransportProvider transport={value.transport}><QueryClientProvider client={value.client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><Settings visible={visible} close={() => setVisible(false)} /></QueryClientProvider></TransportProvider>;
+    return <TransportProvider transport={value.transport}><QueryClientProvider client={value.client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Leave Settings fixture</button><Settings visible={visible} /></QueryClientProvider></TransportProvider>;
   }
   render(<StrictMode><Harness /></StrictMode>);
   const opener = screen.getByRole("button", { name: "Open Settings fixture" }); opener.focus(); fireEvent.click(opener); openModels();
@@ -264,9 +264,9 @@ it.each(["button", "cancel"])("discards Models search/page and read Retry on clo
   fireEvent.change(searchInput(), { target: { value: "Example" } });
   fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
   await screen.findByRole("button", { name: "Retry" });
-  if (route === "cancel") fireEvent(screen.getByRole("dialog"), new Event("cancel", { bubbles: true, cancelable: true }));
-  else fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
-  expect(document.activeElement).toBe(opener);
+  if (route === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect(screen.getByRole("region", { name: "Settings content" })).toBeTruthy(); }
+  fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
+  expect(document.activeElement).not.toBe(opener);
   fireEvent.click(opener);
   expect(screen.getByRole("heading", { name: "AI Subscription", level: 1 })).toBeTruthy(); openModels();
   await screen.findByRole("heading", { name: "Example model A" });
@@ -291,7 +291,7 @@ it("retains the original uncertain model write and list scope through reconnect 
   fireEvent.click(screen.getByRole("button", { name: "Save Model" }));
   await screen.findByRole("button", { name: "Retry the same configuration" });
   expect((screen.getByRole("button", { name: "Instructions" }) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(true);
   const original = value.save.mock.calls[0][0];
   const upstream: Transport = { ...value.transport, unary: (...args) => value.transport.unary(...args) };
   view.rerender(value.view(true, upstream));

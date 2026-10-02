@@ -1,4 +1,4 @@
-import { defaultRemediationPolicy, RemediationPolicyFields } from "./remediation-policy";
+import { defaultRemediationPolicy, RemediationDetailPresentation, RemediationPolicyFields } from "./remediation-policy";
 import { useContext, useEffect, useState } from "react";
 import { AgentConfiguration, AgentReadProblem } from "./agent-configuration";
 import { Code, ConnectError } from "@connectrpc/connect";
@@ -13,7 +13,7 @@ import { providerInventoryReady } from "./provider-model-settings";
 export enum Harness { Codex = "codex", Claude = "claude-code", OpenCode = "opencode", Grok = "grok-build" }
 export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Anthropic = "anthropic-messages", Subscription = "native-subscription" }
 export enum Authentication { Bearer = "bearer", Key = "api-key", Keyless = "keyless", Subscription = "subscription" }
-enum Routing { Fixed = "fixed", Priority = "priority", RoundRobin = "round-robin", Quota = "remaining-quota", Reset = "reset-window", Sequential = "sequential-exhaustion" }
+export enum Routing { Fixed = "fixed", Priority = "priority", RoundRobin = "round-robin", Quota = "remaining-quota", Reset = "reset-window", Sequential = "sequential-exhaustion" }
 enum Permission { Default = "default", Read = "read-only", Workspace = "workspace-write", Full = "full-access" }
 enum ClaudePermission { Default = "default", Plan = "plan", AcceptEdits = "acceptEdits", DontAsk = "dontAsk", Bypass = "bypassPermissions" }
 export const editableKinds = [EntityKind.PROVIDER, EntityKind.MODEL, EntityKind.ACCOUNT, EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.PROJECT, EntityKind.REPOSITORY, EntityKind.SETTINGS];
@@ -64,7 +64,7 @@ function Check({ label, value, change }: { label: string; value: unknown; change
 
 // Selectors retain only one bounded page. An already selected identity outside
 // that page remains explicit rather than falling back to its first result.
-export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string }) {
+export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string }) {
   const reportRead = useContext(AgentReadProblem);
   const agentPresentation = Boolean(reportRead) || markRequired;
   const [page, setPage] = useState("");
@@ -118,7 +118,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
       statusMessage = `The selected ${resourceLabel} is outside this page or unavailable. Its identity is retained; no other choice was selected.`;
     }
   }
-  return <div className="resource-choice"><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<select aria-label={markRequired ? label : undefined} disabled={disabled} required={required} value={value} onChange={(event) => change(event.target.value, document(rows.find((row) => row.id === event.target.value)), rows.find((row) => row.id === event.target.value))}><option value="">{emptyLabel ?? `Select ${resourceLabel.toLowerCase()}`}</option>{value && !rows.some((row) => row.id === value) ? <option value={value} disabled>Selected {kindNames[kind]} · {value}</option> : null}{rows.map((row) => { const off = row.id === value && selectedProviderOff; const name = resourceName(row); return <option key={row.id} value={row.id} disabled={off}>{off ? `Off provider · ${name}` : name}{kind === EntityKind.ACCOUNT ? ` · ${text(document(row).health)}` : ""}</option>; })}</select></label>
+  return <div className="resource-choice"><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<select autoFocus={autoFocus} aria-label={markRequired ? label : undefined} disabled={disabled} required={required} value={value} onChange={(event) => change(event.target.value, document(rows.find((row) => row.id === event.target.value)), rows.find((row) => row.id === event.target.value))}><option value="">{emptyLabel ?? `Select ${resourceLabel.toLowerCase()}`}</option>{value && !rows.some((row) => row.id === value) ? <option value={value} disabled>Selected {kindNames[kind]} · {value}</option> : null}{rows.map((row) => { const off = row.id === value && selectedProviderOff; const name = resourceName(row); return <option key={row.id} value={row.id} disabled={off}>{off ? `Off provider · ${name}` : name}{kind === EntityKind.ACCOUNT ? ` · ${text(document(row).health)}` : ""}</option>; })}</select></label>
     {statusMessage ? <p role="status">{statusMessage}</p> : null}
     {needsProviderCapability && active && !ready && (!agentPresentation || (!inventory.isFetching && !failure)) ? <p role="status">Provider and model choices require a server that reports the provider inventory capabilities.</p> : null}
     {kind === EntityKind.PROVIDER && needsProviderCapability ? <>
@@ -148,7 +148,11 @@ interface FieldsProps { data: Document; change: (value: Document) => void; activ
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   const { data, change, active, existing } = props;
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
-  if (kind === EntityKind.SETTINGS) return <><Choice label="Default account routing" value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>Used by Agent Workers that inherit the server default. Existing execution snapshots keep their original selection and routing.</p><Check label="Allow automatic fetch before Worktree preparation" value={data.automatic_fetch} change={field("automatic_fetch")} /><p>Fetching requires both this server preference and the repository's fetch preference. Disabling it uses retained remote-tracking references or reports missing references. Local checkouts remain unchanged.</p><RemediationFields value={object(data.remediation)} change={field("remediation")} active={active} /></>;
+  if (kind === EntityKind.SETTINGS) return <>
+    <section className="server-preference-section"><h4>Account routing</h4><div className="server-routing-field"><Choice label="Default account routing" value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>Used by Agent Workers that inherit the server default. Existing execution snapshots keep their original selection and routing.</p></div></section>
+    <section className="server-preference-section"><h4>Worktree preparation</h4><Check label="Allow automatic fetch before Worktree preparation" value={data.automatic_fetch} change={field("automatic_fetch")} /><p>Fetching requires both this server preference and the repository's fetch preference. Disabling it uses retained remote-tracking references or reports missing references. Local checkouts remain unchanged.</p></section>
+    <section className="server-preference-section"><RemediationFields value={object(data.remediation)} change={field("remediation")} active={active} presentation={RemediationDetailPresentation.Collapsible} /></section>
+  </>;
   if (kind === EntityKind.PROJECT) return <ProjectFields {...props} />;
   if (kind === EntityKind.REPOSITORY) return <RepositoryFields {...props} />;
   if (kind === EntityKind.PROVIDER) return <ProviderFields {...props} />;
@@ -195,9 +199,9 @@ export function ReferenceFields({ label, value, change }: { label: string; value
   const reference = object(value);
   return <fieldset><legend>{label}</legend><label>{label} type<select value={text(reference.type)} onChange={(event) => change(event.target.value ? { type: event.target.value, name: text(reference.name), ...(event.target.value === ReferenceType.Remote ? { remote: text(reference.remote) } : {}) } : {})}><option value="">Use inspected default</option>{Object.values(ReferenceType).map((type) => <option key={type} value={type}>{type}</option>)}</select></label>{reference.type ? <><TextField label={`${label} name`} value={reference.name} required max={1024} change={(name) => change({ ...reference, name })} />{reference.type === ReferenceType.Remote ? <TextField label={`${label} remote`} value={reference.remote} required change={(remote) => change({ ...reference, remote })} /> : null}</> : null}</fieldset>;
 }
-function RemediationFields({ value, change, active }: { value: Document; change: (value: Document) => void; active: boolean }) {
+function RemediationFields({ value, change, active, presentation = RemediationDetailPresentation.Expanded }: { value: Document; change: (value: Document) => void; active: boolean; presentation?: RemediationDetailPresentation }) {
   const identity = (key: string, id: string) => { const next = { ...value }; if (id) next[key] = id; else delete next[key]; change(next); };
-  return <RemediationPolicyFields value={value} change={change}>
+  return <RemediationPolicyFields value={value} change={change} presentation={presentation}>
     <ResourceChoice label="Remediation Agent Worker" kind={EntityKind.AGENT} value={text(value.agent_id)} active={active} change={id => identity("agent_id", id)} />
     <ResourceChoice label="Remediation Runner Device" kind={EntityKind.MACHINE} value={text(value.machine_id)} active={active} change={id => identity("machine_id", id)} />
   </RemediationPolicyFields>;

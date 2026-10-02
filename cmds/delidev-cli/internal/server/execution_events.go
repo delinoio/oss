@@ -119,14 +119,11 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.ExecutionEventKind) bool {
 	switch input.Configuration.Harness {
 	case domain.Codex:
-		return kind != domain.ExecutionGrokTextObserved && kind != domain.ExecutionGrokUsageObserved && kind != domain.ExecutionOpenCodeUsageObserved && kind != domain.ExecutionClaudeMessageObserved && kind != domain.ExecutionClaudeUsageObserved && kind != domain.ExecutionClaudeToolObserved && kind != domain.ExecutionClaudeReplyEchoObserved && kind != domain.ExecutionClaudeCallbackSettled && kind != domain.ExecutionClaudeInterruptionObserved && kind != domain.ExecutionClaudeProgressObserved
+		return kind != domain.ExecutionGrokToolObserved && kind != domain.ExecutionGrokTextObserved && kind != domain.ExecutionGrokUsageObserved && kind != domain.ExecutionOpenCodeUsageObserved && kind != domain.ExecutionClaudeMessageObserved && kind != domain.ExecutionClaudeUsageObserved && kind != domain.ExecutionClaudeToolObserved && kind != domain.ExecutionClaudeReplyEchoObserved && kind != domain.ExecutionClaudeCallbackSettled && kind != domain.ExecutionClaudeInterruptionObserved && kind != domain.ExecutionClaudeProgressObserved
 	case domain.ClaudeCode:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionMessageCompleted || kind == domain.ExecutionClaudeMessageObserved || kind == domain.ExecutionClaudeUsageObserved || kind == domain.ExecutionClaudeToolObserved || kind == domain.ExecutionClaudeReplyEchoObserved || kind == domain.ExecutionClaudeCallbackSettled || kind == domain.ExecutionClaudeInterruptionObserved || kind == domain.ExecutionClaudeProgressObserved || kind == domain.ExecutionTurnFinished || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed) && len(executionAPIOperations(input, domain.AnthropicMessages)) != 0
 	case domain.GrokBuild:
-		if kind == domain.ExecutionTurnFinished && input.Input.Mode != domain.ExecuteMode {
-			return false
-		}
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionGrokTextObserved || kind == domain.ExecutionGrokUsageObserved || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionGrokTextObserved || kind == domain.ExecutionGrokUsageObserved || kind == domain.ExecutionGrokToolObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	case domain.OpenCode:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionQuestionAccepted || kind == domain.ExecutionApprovalAccepted || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
@@ -137,7 +134,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
-	if (event.GrokUserMessageID != "" || event.GrokText != nil || event.GrokUsage != nil || event.GrokTerminal != nil || event.GrokStop != nil) && input.Configuration.Harness != domain.GrokBuild {
+	if (event.GrokToolsTerminal != nil || event.GrokTool != nil || event.GrokUserMessageID != "" || event.GrokText != nil || event.GrokUsage != nil || event.GrokTerminal != nil || event.GrokStop != nil) && input.Configuration.Harness != domain.GrokBuild {
 		return executionEventConflict()
 	}
 	if (event.ClaudeTerminal != nil || event.ClaudeStop != nil || event.ClaudeDenial != nil) != (input.Configuration.Harness == domain.ClaudeCode && event.Kind == domain.ExecutionTurnFinished) || event.ClaudeTerminal != nil && event.ClaudeStop != nil {
@@ -156,7 +153,7 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 		return executionEventConflict()
 	}
 	if u := event.Interaction; u != nil && event.Kind == domain.ExecutionInteractionRequested {
-		if (input.Configuration.Harness == domain.ClaudeCode) != (u.Claude != nil) || (input.Configuration.Harness == domain.OpenCode) != (u.OpenCode != nil) || u.OpenCode != nil && u.OpenCode.NativeMessageID == event.NativeTurnID {
+		if (input.Configuration.Harness == domain.GrokBuild) != (u.Grok != nil) || (input.Configuration.Harness == domain.ClaudeCode) != (u.Claude != nil) || (input.Configuration.Harness == domain.OpenCode) != (u.OpenCode != nil) || u.OpenCode != nil && u.OpenCode.NativeMessageID == event.NativeTurnID {
 			return executionEventConflict()
 		}
 	}
@@ -216,6 +213,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 		if err := event.Observed.ValidateForInput(input.Configuration, input.Input.Mode); err != nil {
 			return err
 		}
+		if f := input.Fork; f != nil && string(f.NativeThreadID) != event.NativeThreadID {
+			return executionEventConflict()
+		}
 		if c := input.Continuation; c != nil {
 			previous := c.Previous.Observed
 			if input.Configuration.Harness == domain.OpenCode {
@@ -231,7 +231,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 		}
-		progress = &domain.ExecutionProgress{JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
+		progress = &domain.ExecutionProgress{NativeHistory: session.CurrentNativeHistory, JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
 		session.Execution = progress
 	} else {
 		if event.Kind == domain.ExecutionThreadBound || progress.JobID != job.ID || progress.ExecutionID != input.ExecutionID || progress.InputID != input.InputID || progress.NativeThreadID != event.NativeThreadID || event.Sequence != progress.LastSequence+1 {
@@ -256,6 +256,11 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 			if c := input.Continuation; c != nil && c.Previous.NativeTurnID == event.NativeTurnID {
+				return executionEventConflict()
+			}
+			// The inherited last turn belongs to the source history, never to
+			// the child's newly accepted input, even before child turn indexing.
+			if f := input.Fork; f != nil && string(f.NativeTurnID) == event.NativeTurnID {
 				return executionEventConflict()
 			}
 			completed, err := tx.NativeTurnCompleted(sr.ID, event.NativeThreadID, event.NativeTurnID)
@@ -295,7 +300,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 			if event.Kind == domain.ExecutionTurnFinished {
 				if input.Configuration.Harness == domain.GrokBuild {
 					publish := publishGrokTerminal
-					if event.GrokStop != nil {
+					if event.GrokToolsTerminal != nil {
+						publish = publishGrokToolsTerminal
+					} else if event.GrokStop != nil {
 						publish = publishGrokStop
 					}
 					if err := publish(tx, input, sr, progress, event); err != nil {
@@ -403,6 +410,10 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				// process cleanup. Inbox read state never changes this evidence.
 				terminal := domain.InboxTerminal{JobID: job.ID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, Sequence: event.Sequence, Outcome: event.Outcome}
 				if _, err := tx.CreateInboxEntry(sr.ID, sr.ProjectID, domain.InboxEntry{Source: domain.ExecutionTerminalInbox, SourceID: input.ExecutionID, ReadState: domain.InboxUnread, Terminal: &terminal}); err != nil {
+					return err
+				}
+			} else if event.Kind == domain.ExecutionGrokToolObserved {
+				if err := publishGrokTool(tx, input, sr, progress, event); err != nil {
 					return err
 				}
 			} else if event.Kind == domain.ExecutionGrokTextObserved || event.Kind == domain.ExecutionGrokUsageObserved {

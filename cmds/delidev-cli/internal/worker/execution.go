@@ -94,6 +94,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			output, returned = nil, err
 		}
 	}()
+	var prGit *workspace.PRGitTool
+	if input.Remediation != nil {
+		prGit, err = lease.PreparePRGitTool(ctx, *input.Remediation, preparation, manifest)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if err := prGit.Close(); err != nil {
+				output, returned = nil, err
+			}
+		}()
+	}
 	// The private runtime is retained for native resume/reconciliation. Never
 	// inherit an existing directory after an interrupted first execution.
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
@@ -117,7 +129,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		var promptDigest [sha256.Size]byte
 		copy(promptDigest[:], rawDigest)
-		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+		account, connection := input.AccountID, input.ConnectionID
+		if c.PreviousAccountID != "" {
+			account, connection = c.PreviousAccountID, c.PreviousConnectionID
+		}
+		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
 		if err != nil {
 			return nil, err
 		}
@@ -134,8 +150,36 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		logger.InfoContext(ctx, "native_execution_predecessor_verified", "previous_execution_id", c.Previous.ExecutionID)
 	}
+	if f := input.Fork; f != nil {
+		native, err := readForkCheckpoint(manager.Root, input)
+		if err != nil {
+			return nil, err
+		}
+		checkpoint.Native = native
+		nativeHome = filepath.Join(runtimeRoot, string(f.RuntimeID), "codex")
+		env, err = replaceCodexHome(env, nativeHome)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if prGit != nil {
+		env = prGit.Environment(env)
+	}
 	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codex.APIProvider, Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: input.Configuration.Instructions, Options: input.Configuration.Options}
 	settings.WorkspaceRoots = nativeWorkspaceRoots(manifest)
+	if input.Fork != nil {
+		settings.Effort = valueOrEmpty(checkpoint.Native.Effective.Effort)
+		settings.Options.ServiceTier = valueOrEmpty(checkpoint.Native.Effective.ServiceTier)
+		settings.Options.ApprovalPolicy = string(checkpoint.Native.Effective.ApprovalPolicy)
+		switch checkpoint.Native.Effective.Sandbox.Type {
+		case codex.ReadOnly:
+			settings.Options.Permission = domain.PermissionReadOnly
+		case codex.WorkspaceWrite:
+			settings.Options.Permission = domain.PermissionWorkspaceWrite
+		case codex.FullAccess:
+			settings.Options.Permission = domain.PermissionFullAccess
+		}
+	}
 	if err := codex.ValidateThreadSettings(settings); err != nil {
 		return nil, err
 	}
@@ -205,6 +249,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				intent = codex.ResumeAfterTerminal
 			}
 			_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)
+		}
+	} else if f := input.Fork; f != nil {
+		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
+		if err == nil {
+			_, err = client.VerifyContinuation(ctx, f.HistoryRequestID, checkpoint.Native, codex.ContinueAfterSuccess)
 		}
 	} else {
 		bound, err = client.StartThread(ctx, input.ThreadRequestID, settings)
@@ -294,6 +343,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err := client.Close(); err != nil {
 			return nil, err
 		}
+		var push *domain.PRPushProof
+		if prGit != nil {
+			if err := prGit.Close(); err != nil {
+				return nil, err
+			}
+			bounded, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			// VerifyPush first joins the original native process owner while the
+			// lease remains active; lease.Close is the later release boundary.
+			proof := prGit.VerifyPush(bounded)
+			cancel()
+			push = &proof
+		}
 		if err := lease.Close(); err != nil {
 			return nil, err
 		}
@@ -311,7 +372,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		default:
 			return nil, publicationUncertain()
 		}
-		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), LastSequence: sequence, Outcome: outcome, CleanupVerified: true}
+		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), LastSequence: sequence, Outcome: outcome, CleanupVerified: true, PRPush: push}
 		if err := completion.Validate(); err != nil {
 			return nil, err
 		}

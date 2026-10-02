@@ -422,6 +422,32 @@ func (t *Tx) FinishPRRemediation(id domain.ID, expected uint64) (Record, error) 
 		v.State = domain.PRRemediationUncertain
 		return t.putPRRemediationAttempt(id, expected, v)
 	}
+	if v.GitTarget != nil {
+		jr, err := t.Get(domain.JobKind, p.JobID)
+		if err != nil {
+			return r, err
+		}
+		job, err := Decode[domain.Job](jr)
+		if err != nil {
+			return r, err
+		}
+		var input domain.ExecutionJobInput
+		var done domain.ExecutionCompletion
+		if domain.Decode(job.Input, &input) != nil || domain.Decode(job.Output, &done) != nil {
+			return r, prRemediationConflict()
+		}
+		confirmed, err := t.finishPRFixPush(id, v, input, done)
+		if err != nil {
+			return r, err
+		}
+		if !confirmed {
+			if v.State == domain.PRRemediationUncertain {
+				return r, nil
+			}
+			v.State = domain.PRRemediationUncertain
+			return t.putPRRemediationAttempt(id, expected, v)
+		}
+	}
 	v.State, v.Outcome, v.FinishedAt = domain.PRRemediationFinished, p.Outcome, &t.now
 	return t.releasePRRemediation(r, v)
 }

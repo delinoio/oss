@@ -41,10 +41,19 @@ func TestWorkspaceReadRelayWhileExecutionRemainsClaimed(t *testing.T) {
 	}
 	// Claim the durable native assignment without resolving it. The independent
 	// file stream must remain usable while this job blocks subsequent work.
-	if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
+	var execution *pb.Resource
+	for f.workerStream.Receive() {
+		// Setup can leave a periodic liveness frame ahead of the assignment.
+		// Only the actual job establishes the durable work tested below.
+		if f.workerStream.Msg().Heartbeat {
+			continue
+		}
+		execution = f.workerStream.Msg().Job
+		break
+	}
+	if execution == nil {
 		t.Fatal("missing native assignment", f.workerStream.Err())
 	}
-	execution := f.workerStream.Msg().Job
 	stream, err := f.workerClient.WatchWorkspaceReads(ctx, ownerRequest(f.workerIdentity, &pb.WatchWorkspaceReadsRequest{MachineId: f.machine.Id, InstanceId: f.workerInstance}))
 	if err != nil {
 		t.Fatal(err)

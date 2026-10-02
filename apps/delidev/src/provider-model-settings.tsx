@@ -1,3 +1,4 @@
+import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
@@ -5,6 +6,7 @@ import { ConfigurationQuery, EntityKind, ProviderInventoryCapability, ProviderPr
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { More, Problem } from "./ui";
+import { NativeModelSettings } from "./native-model-settings";
 
 const requiredCapabilities = [
   ProviderInventoryCapability.PROVIDER_ACTIVATION,
@@ -81,8 +83,12 @@ function ProviderToggle({ entry, presets, changed, refresh }: { entry: ProviderI
   </div>;
 }
 
+export interface ProviderListState { query: string; page: string }
+
 export function ApiProviderSettings({
   active,
+  state,
+  changeState,
   changed,
   createCustom,
   editCustom,
@@ -91,6 +97,8 @@ export function ApiProviderSettings({
   deleteCustom,
 }: {
   active: boolean;
+  state?: ProviderListState;
+  changeState?: (value: ProviderListState) => void;
   changed: () => void;
   createCustom: (data?: Document) => void;
   editCustom: (resource: Resource) => void;
@@ -98,8 +106,11 @@ export function ApiProviderSettings({
   addAccount: (providerID: string, entry: ProviderInventoryEntry) => void;
   deleteCustom: (resource: Resource) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState("");
+  const [localState, setLocalState] = useState<ProviderListState>({ query: "", page: "" });
+  const { query, page } = state ?? localState;
+  const change = changeState ?? setLocalState;
+  const setQuery = (query: string) => change({ query, page: "" });
+  const setPage = (page: string) => change({ query, page });
   const result = useQuery(ProviderQuery.listProviderInventory, { query, enabledOnly: false, pageSize: 50, pageToken: page }, { enabled: active });
   const activeInventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 1, pageToken: "" }, { enabled: active });
   const presetsQuery = useQuery(ProviderQuery.listProviderPresets, {}, { enabled: active });
@@ -108,7 +119,6 @@ export function ApiProviderSettings({
   try {
     if (presetsQuery.data) presets.push(...items(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(presetsQuery.data.presetsJson))).map(object));
   } catch { /* Provider preset defaults remain unavailable when server data is malformed. */ }
-  useEffect(() => { setPage(""); }, [query]);
   const entries = ready ? result.data?.entries ?? [] : [];
   const presetsMain = entries.filter((entry) => hostedPresetOrder.includes(entry.presetId)).sort((left, right) => hostedPresetOrder.indexOf(left.presetId) - hostedPresetOrder.indexOf(right.presetId));
   const local = entries.filter((entry) => [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId));
@@ -134,16 +144,16 @@ export function ApiProviderSettings({
     </article>;
   };
   return <section aria-label="API provider inventory">
-    <header><p>Provider availability is saved on the selected server.</p><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>Refresh providers</button></header>
-    <div className="search-form"><label>Search API providers<input value={query} maxLength={256} onChange={(event) => setQuery(event.target.value)} /></label><button className="primary" type="button" disabled={!ready} onClick={() => createCustom()}>Custom provider</button></div>
+    <SettingsHeading title="API Providers" description="Manage API providers and their availability." actions={<><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>Refresh providers</button><button className="primary" type="button" disabled={!ready} onClick={() => createCustom()}>Custom provider</button></>} />
+    <div className="search-form"><label>Search API providers<input value={query} maxLength={256} onChange={(event) => setQuery(event.target.value)} /></label></div>
     {result.isFetching && result.data ? <p role="status">Refreshing provider state. Displayed switches show the last confirmed server state.</p> : null}
     <Problem error={result.error || activeInventory.error || presetsQuery.error} />
     {!result.error && result.data && !ready ? <p role="alert">This server does not report the provider activation, active model filtering and account provider filtering capabilities required here. Update the server before changing provider or model settings.</p> : null}
-    {result.isLoading ? <p role="status">Loading provider inventory…</p> : null}
+    {result.isLoading ? <SettingsLoading label="Loading provider inventory…" /> : null}
     {ready && !query && noEnabledProviders ? <p className="notice">No API providers are enabled. Turn on a preset or create a custom provider to start new work.</p> : null}
     {ready && presetsMain.length ? <section><h3>Presets</h3>{presetsMain.map(row)}</section> : null}
     {ready && local.length ? <section><h3>Local API servers</h3>{local.map(row)}</section> : null}
-    {ready && custom.length ? <section><h3>Custom providers</h3>{custom.map(row)}</section> : null}
+    {ready && custom.length ? <section><h3>Custom providers</h3>{custom.map(row)}</section> : ready && !result.error && !query && !page && !result.data?.nextPageToken ? <section><h3>Custom providers</h3><SettingsEmpty title="No custom providers yet"><p>Use Custom provider to configure another API endpoint.</p></SettingsEmpty></section> : null}
     {ready && !entries.length ? <p className="empty">No providers match this search.</p> : null}
     <nav aria-label="Provider pages"><button type="button" disabled={!page || result.isFetching} onClick={() => setPage("")}>First page</button><More available={Boolean(result.data?.nextPageToken)} busy={result.isFetching} load={() => setPage(result.data!.nextPageToken)} /></nav>
   </section>;
@@ -163,7 +173,7 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
   active: boolean;
   state: ModelListState;
   changeState: (state: ModelListState) => void;
-  createModel: () => void;
+  createModel: (data?: Document) => void;
   editModel: (resource: Resource) => void;
   priceModel: (resource: Resource) => void;
 }) {
@@ -191,27 +201,24 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
     grouped.set(providerID, entries);
   }
   return <section className="models-list" aria-label="Models from active API providers">
-    <header className="models-header">
-      <div><h1 aria-live="polite" aria-atomic="true">Models</h1><p>Saved on the selected server.</p></div>
-      <button className="primary" type="button" disabled={!ready} onClick={createModel}><span aria-hidden="true">+</span> New Model</button>
-    </header>
+    <SettingsHeading title="Models" actions={<>
+      <button className="primary" type="button" disabled={!ready} onClick={() => createModel()}><span aria-hidden="true">+</span> New Model</button>
+    </>} />
     <label className="models-search">Search active provider models
       <span className="models-search-control"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg><input value={query} maxLength={256} placeholder="Search models..." onChange={(event) => changeState({ query: event.target.value, page: "" })} /></span>
     </label>
-    {inventory.isLoading ? <p role="status">Loading provider inventory…</p> : null}
+    {inventory.isLoading ? <SettingsLoading label="Loading provider inventory…" /> : null}
     {inventory.isFetching && inventory.data ? <p role="status">Refreshing provider inventory.</p> : null}
     <ModelReadProblem error={inventory.error} busy={inventory.isFetching || !active} retry={inventory.refetch} label="Provider inventory read failure" />
     {inventory.error && inventory.data ? <p role="status">Provider refresh failed. Showing the last successfully loaded provider state.</p> : null}
     {!inventory.error && inventory.data && !ready ? <p role="alert">This server does not report the required provider and active-model filtering capabilities. Update the server before using model settings.</p> : null}
-    {ready && models.isLoading ? <p role="status">Loading active provider models…</p> : null}
+    {ready && models.isLoading ? <SettingsLoading label="Loading active provider models…" /> : null}
     {ready && models.isFetching && models.data ? <p role="status">Refreshing active provider models.</p> : null}
     <ModelReadProblem error={models.error} busy={models.isFetching || !active || !ready} retry={models.refetch} label="Model search read failure" />
     {ready && models.data && (models.error || inventory.error) ? <p role="status">Refresh failed. Showing the last successfully loaded results.</p> : null}
-    {emptyFirstPage ? <section className="models-empty" aria-label="No models yet">
-      <span className="models-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7h10v10H7zM9 3v4m6-4v4M9 17v4m6-4v4M3 9h4m-4 6h4m10-6h4m-4 6h4" /></svg></span>
-      <h2>No models yet</h2><p>Add models manually using New Model.</p>
+    {emptyFirstPage ? <SettingsEmpty title="No models yet"><p>Add models manually using New Model.</p>
       {knownZeroAccounts ? <div className="models-account-guidance"><p>You can add models without an API account.</p><p>Connect an account only for automatic model discovery.</p></div> : null}
-    </section> : hasEmptyResults ? <p className="models-empty-message">{noEnabledProviders ? "No API providers are enabled. Turn on a provider in API Providers." : page ? "No models on this page." : "No models match this search."}</p> : null}
+    </SettingsEmpty> : hasEmptyResults ? <p className="models-empty-message">{noEnabledProviders ? "No API providers are enabled. Turn on a provider in API Providers." : page ? "No models on this page." : "No models match this search."}</p> : null}
     {ready && [...grouped.entries()].map(([providerID, entries]) => <section className="models-provider-group" key={providerID} aria-label={`Models from ${resourceName(providers.get(providerID))}`}>
       <h3>{resourceName(providers.get(providerID))}</h3>
       <div className="models-rows">{entries.map((model) => {
@@ -228,5 +235,6 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
     </section>)}
     {ready && !hidePagination ? <nav className="models-pages" aria-label="Model pages"><button type="button" disabled={!page || models.isFetching} onClick={() => changeState({ query, page: "" })}>First page</button><More available={Boolean(models.data?.nextPageToken)} busy={models.isFetching} load={() => changeState({ query, page: models.data!.nextPageToken })} /></nav> : null}
     <p className="models-footnote">New model choices come only from enabled API providers. Existing disabled references stay attached to their original identities.</p>
+    <NativeModelSettings active={active} createModel={createModel} />
   </section>;
 }

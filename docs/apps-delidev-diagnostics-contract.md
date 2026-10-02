@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #1144's approved v2 layout reorganizes Settings Diagnostics for the single server owner and authorized paired clients. `apps/delidev/src/doctor.tsx` and `doctor.css` own presentation of the existing read-only report. The [desktop contract](apps-delidev-desktop-contract.md) retains modal ownership; the [diagnostics contract](cmds-delidev-diagnostics-contract.md) retains observations, authorization and report bounds.
+Issue #1144's approved v2 layout reorganizes Settings Diagnostics for the single server owner and authorized paired clients. `apps/delidev/src/doctor.tsx` and `doctor.css` own presentation of the existing read-only report. The [desktop contract](apps-delidev-desktop-contract.md) retains Settings page and visit ownership; the [diagnostics contract](cmds-delidev-diagnostics-contract.md) retains observations, authorization and report bounds.
 
 ## Runtime and Language
 
@@ -16,7 +16,9 @@ The single server owner and authorized paired desktop clients inspect the select
 
 ### Hierarchy and visible evidence
 
-Doctor owns one level-1 Diagnostics title, the original scope paragraph, right-aligned Refresh diagnostics action and subordinate Observed at row with the exact server-returned UTC string. The outer category heading is suppressed only for Diagnostics; accessible category announcement remains. Three independent cards appear in order: Database read check, Owner credential and Inference probes. Retain known/unknown labels, positive read-success, informational owner-credential and neutral not-performed treatments, with text/icon semantics and no overall health score.
+Doctor owns one level-1 Diagnostics title, the original scope paragraph, right-aligned Refresh diagnostics action and subordinate Observed at row with the exact server-returned UTC string. The outer category heading is suppressed only for Diagnostics; accessible category announcement remains. Three independent summaries appear in order: Database read check, Owner credential and Inference probes. Retain known/unknown labels, positive read-success, informational owner-credential and neutral not-performed treatments, with text/icon semantics and no overall health score.
+
+Issue #1137 renames the existing Settings category to Connection & diagnostics without changing its stable ID. Settings passes that closed title to Doctor's existing header, retaining one category title; standalone Doctor keeps Diagnostics. A separately labelled Connection subsection opens the persistent native controls outside SettingsLifetime. Selecting the category still reads only Doctor; opening, hiding or disposing Settings cannot discard the connection panel's original lifecycle/registration requests and confirmations. Doctor's report, refresh and disclosure lifecycle remain independently read-only.
 
 Server information aligns version, OS/architecture, protocol version, database schema and bound endpoint in semantic label/value rows. Server identity is a closed native disclosure. Keep the owner-credential caveat visible.
 
@@ -34,17 +36,17 @@ Strict UTF-8/1 MiB and legacy/future/malformed handling remain unchanged. Legacy
 
 Validate canonical decimal-string uint64 values and format through BigInt. Preserve measured zero and exact large values; missing/null/numeric/noncanonical/overflow bytes are Unavailable, invalid resource counts Unknown. No floating-point conversion, sums, ratios, percentages or reclaimable estimates.
 
-Native `details/summary` controls are keyboard operable with visible focus. State follows server identity, machine identity and account/connection identity, never array position. Missing identities receive response-scoped keys; changed identities and another connection cannot inherit open state. Category navigation and responsive changes retain state within one opening. Pass actual Settings visibility to the local reset boundary; inactivity alone is not close. Actual Close, Escape or navigation-driven hiding clears all disclosures; the merged issue #1138 opening disposal is authoritative and ordinary reopening starts at AI Subscription. Closing disclosures saves/replays nothing and introduces no server/native cancellation. State remains memory-only.
+Native `details/summary` controls are keyboard operable with visible focus. State follows server identity, machine identity and account/connection identity, never array position. Missing identities receive response-scoped keys; changed identities and another connection cannot inherit open state. Category navigation and responsive changes retain state within one visit. Pass actual Settings visibility to the local reset boundary; category inactivity alone is not departure. Navigation away clears all disclosures; page-level Escape preserves them; the merged issue #1138 visit disposal is authoritative and ordinary reopening starts at AI Subscription. Disposing disclosures saves/replays nothing and introduces no server/native cancellation. State remains memory-only.
 
 ### Styling and responsive behavior
 
-Use existing system fonts, white content `#ffffff`, text `#202632`, muted `#5b6577`, border `#d8dee8` and accent `#2563d8`. Panels use 1px borders, 12px corners, 24px padding and 20px gaps; controls are at least 40px high. Exact numeric values use tabular numerals and long values wrap. All CSS is statically scoped to Diagnostics; no assets, fonts, dependency, inline styles or CSP relaxation.
+Use existing system fonts, white content `#ffffff`, text `#202632`, muted `#5b6577`, border `#d8dee8` and accent `#2563d8`. Issue #1256 uses the shared left-aligned 1040px body, flat semantic sections with thin rules, 16px row padding and 24px gaps; controls are at least 40px high. Exact numeric values use tabular numerals and long values wrap. All CSS is statically scoped to Diagnostics; no assets, fonts, dependency, inline styles or CSP relaxation.
 
-Summary cards use three columns at CSS viewport widths of at least 1100px, one below. Server/storage panels use two columns at least 1200px, one below. Preserve Settings padding, independent vertical scrolling, fixed header, 240px sidebar and compact category select below 760px. Validate 1920×1080, 1440×900, 960×640, 640×480 and 200% zoom for overflow, focus and reachable controls; native window minimum geometry is unchanged.
+Summary cards use three columns at CSS viewport widths of at least 1100px, one below. Server/storage panels use two columns at least 1200px, one below. Preserve Settings padding, independent vertical scrolling, ordinary application page, 52px rail and 288px/256px context pane and navigation drawer below 760px. Validate 1920×1080, 1440×900, 960×640, 640×480 and 200% zoom for overflow, focus and reachable controls; native window minimum geometry is unchanged.
 
 ## Storage
 
-Disclosures are native memory-only presentation state within the original connection and Settings opening. There is no Web Storage, persisted settings, file output or new query cache. Exact server-returned values remain observations under the existing query owner.
+Disclosures are native memory-only presentation state within the original connection and Settings visit. There is no Web Storage, persisted settings, file output or new query cache. Exact server-returned values remain observations under the existing query owner.
 
 ## Security
 
@@ -56,15 +58,15 @@ Preserve existing service operational logs. This presentation adds no logging of
 
 ## Build and Test
 
-Run `pnpm test` in `apps/delidev`, including `doctor.test.tsx`, existing device diagnostics fixtures and isolated temporary Go server integration. Fixtures cover hierarchy/all fields, failure ownership, canonical integers, query/lifecycle/disclosure identities, deferred refresh, permissions/correlation, compatibility/inventory bounds and inert HTML-like text. Browser geometry and keyboard smoke, actual zoom and packaged platform/CEF acceptance are independent evidence. Record commands, revision and unavailable checks in `docs/evidence/delidev/issue-1144/`; preserve the frozen historical ledger. Prepare generated/LFS inputs as needed and remove generated repository-owned `dist` after validation.
+Run `pnpm test` in `apps/delidev`, including `doctor.test.tsx`, existing device diagnostics fixtures and isolated temporary Go server integration. Fixtures cover hierarchy/all fields, failure ownership, canonical integers, query/lifecycle/disclosure identities, deferred refresh, permissions/correlation, compatibility/inventory bounds and inert HTML-like text. Browser geometry and keyboard smoke, actual zoom and packaged platform/CEF acceptance are independent evidence. Record commands, revision and unavailable checks in pull requests, issues and CI logs/artifacts. Prepare generated/LFS inputs as needed and remove generated repository-owned `dist` after validation.
 
 ## Dependencies and Integrations
 
-Reuse React, Connect Query, the existing shared QueryClient and native `details/summary`; there is no new package, font or external asset. Settings retains authoritative category, opening, modal and connection ownership.
+Reuse React, Connect Query, the existing shared QueryClient and native `details/summary`; there is no new package, font or external asset. Settings retains authoritative category, visit, shared navigation and connection ownership.
 
 ## Change Triggers
 
-No API/schema/generated binding, backend, persistence, authorization, credential access, migration, feature flag, dependency or release/deployment behavior changes. Do not log report content, identity or endpoint. Preserve AI Subscription, Backups, modal focus containment, opener restoration, navigation locks and underlying session/composer behavior.
+No API/schema/generated binding, backend, persistence, authorization, credential access, migration, feature flag, dependency or release/deployment behavior changes. Do not log report content, identity or endpoint. Preserve AI Subscription, Backups, child-dialog/drawer focus containment and opener restoration, category locks with global navigation available and underlying session/composer behavior.
 
 Update this presentation contract, the desktop/diagnostics links and scoped frontend AGENTS when hierarchy, lifecycle, bounds or styling guarantees change. Update the project index for domain ownership/catalog changes and record validation independently.
 

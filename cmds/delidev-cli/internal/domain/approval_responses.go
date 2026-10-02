@@ -13,6 +13,7 @@ const MaxApprovalResponseBytes = 256 << 10
 // selects one original decision or a bounded native permission grant, never
 // another request, command, question answer or execution policy.
 type ApprovalResponseInput struct {
+	Grok     *GrokApprovalResponse       `json:"grok,omitempty"`
 	Claude   *ClaudePermissionResponse   `json:"claude,omitempty"`
 	OpenCode *OpenCodePermissionResponse `json:"opencode,omitempty"`
 	Decision *CodexApprovalDecision      `json:"decision,omitempty"`
@@ -29,6 +30,9 @@ func (r *ApprovalResponseInput) UnmarshalJSON(raw []byte) error {
 	if _, exists := fields["claude"]; exists && (len(fields) != 1 || value.Claude == nil) {
 		return invalidApprovalResponse()
 	}
+	if _, exists := fields["grok"]; exists && (len(fields) != 1 || value.Grok == nil) {
+		return invalidApprovalResponse()
+	}
 	*r = ApprovalResponseInput(value)
 	return nil
 }
@@ -38,7 +42,7 @@ func invalidApprovalResponse() error {
 }
 
 func (r ApprovalResponseInput) Validate(original *ApprovalRequest) error {
-	if r.Claude != nil || r.OpenCode != nil || original == nil || original.Validate() != nil {
+	if r.Grok != nil || r.Claude != nil || r.OpenCode != nil || original == nil || original.Validate() != nil {
 		return invalidApprovalResponse()
 	}
 	a := original.Codex
@@ -169,3 +173,5 @@ func (u ExecutionApprovalAcceptanceUpdate) Validate() error {
 	}
 	return nil
 }
+
+const NativeGrokApprovalResult ApprovalAcceptanceEvidence = "native-grok-tool-result"

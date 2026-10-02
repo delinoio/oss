@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"slices"
 	"sync"
 	"time"
@@ -15,6 +16,11 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
+
+// Mutate creates a durable receipt even for a successful no-op. Roll back only
+// raced, unchanged history observations using this private signal; remove it if
+// the store gains a conditional observation transaction without request receipts.
+var errHistoryObservationUnchanged = domain.Fail(domain.Conflict, "The native history mode is already recorded.", "Preserve the original observation.")
 
 type executionAuthority struct {
 	service *Service
@@ -288,6 +294,13 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			if _, err := a.scope(tx, grant); err != nil {
 				return err
 			}
+			_, session, err := sessionRecord(tx, scope.SessionID)
+			if err != nil {
+				return err
+			}
+			if len(session.AccountChanges) != 0 {
+				return domain.Fail(domain.PermissionDenied, "Account-switched execution requires full native history.", "Provider conversation and previous-response references cannot cross account selections.")
+			}
 			exists, err := tx.HasExecutionReference(reference(kind, nativeID))
 			if err != nil {
 				return err
@@ -297,6 +310,48 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			}
 			return nil
 		})
+	}
+	if scope.Purpose != domain.SessionTitleUsage && scope.Provider.Protocol == domain.OpenAIResponses {
+		lease.ObserveHistory = func(ctx context.Context, accountBound bool) error {
+			if leaseContext.Err() != nil {
+				return executionDenied()
+			}
+			// Most provider requests retain the already known mode. Revalidate
+			// authority without creating a receipt or waking store watchers.
+			pending := false
+			err := a.service.Store.Read(ctx, func(tx *store.Tx) error {
+				_, _, mode, err := a.historyObservation(tx, grant, accountBound)
+				pending = mode != ""
+				return err
+			})
+			if err != nil || !pending {
+				return err
+			}
+			_, err = a.service.Store.Mutate(ctx, domain.NewID(), "execution.observe-history-mode", struct {
+				Execution    domain.ID
+				AccountBound bool
+			}{scope.ExecutionID, accountBound}, func(tx *store.Tx) (any, error) {
+				// The read above grants no write authority. Another request or
+				// revocation may have changed ownership or sticky history.
+				sr, session, mode, err := a.historyObservation(tx, grant, accountBound)
+				if err != nil {
+					return nil, err
+				}
+				if mode == "" {
+					return nil, errHistoryObservationUnchanged
+				}
+				session.CurrentNativeHistory = mode
+				if session.Execution != nil {
+					session.Execution.NativeHistory = mode
+				}
+				_, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
+				return struct{}{}, err
+			})
+			if errors.Is(err, errHistoryObservationUnchanged) {
+				return nil
+			}
+			return err
+		}
 	}
 	lease.ObserveReference = func(ctx context.Context, kind apiproxy.ReferenceKind, nativeID string) error {
 		if leaseContext.Err() != nil {
@@ -317,6 +372,36 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		return nil, err
 	}
 	return lease, nil
+}
+
+// historyObservation returns a pending mode only after fresh durable authority
+// checks. An empty mode means the existing sticky observation is unchanged.
+func (a *executionAuthority) historyObservation(tx *store.Tx, grant store.ExecutionGrant, accountBound bool) (store.Record, domain.Session, domain.NativeHistoryMode, error) {
+	if err := tx.Authorize(); err != nil {
+		return store.Record{}, domain.Session{}, "", err
+	}
+	scope, err := a.scope(tx, grant)
+	if err != nil {
+		return store.Record{}, domain.Session{}, "", err
+	}
+	sr, session, err := sessionRecord(tx, scope.SessionID)
+	if err != nil {
+		return store.Record{}, domain.Session{}, "", err
+	}
+	if session.Execution != nil && session.Execution.ExecutionID != scope.ExecutionID {
+		return store.Record{}, domain.Session{}, "", executionDenied()
+	}
+	mode := domain.FullNativeHistory
+	if accountBound {
+		if len(session.AccountChanges) != 0 {
+			return store.Record{}, domain.Session{}, "", executionDenied()
+		}
+		mode = domain.AccountBoundHistory
+	}
+	if session.CurrentNativeHistory == domain.AccountBoundHistory || session.CurrentNativeHistory == mode {
+		return sr, session, "", nil
+	}
+	return sr, session, mode, nil
 }
 
 func (a *executionAuthority) cancel() {

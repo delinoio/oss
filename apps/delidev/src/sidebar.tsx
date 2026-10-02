@@ -188,8 +188,8 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   </section>;
 }
 
-export function Sidebar({ surface, selectedSessionId, localServer, serverPresentation, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  surface: Surface; selectedSessionId: string; localServer?: ReactNode; serverPresentation?: ServerPresentation; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
+export function Sidebar({ surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const [compact, setCompact] = useState(false);
@@ -204,7 +204,6 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsButton = useRef<HTMLButtonElement>(null);
   const optionsPopup = useRef<HTMLDivElement>(null);
-  const [serverExpanded, setServerExpanded] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(() => new Set());
   const [collapsedFallbacks, setCollapsedFallbacks] = useState<ReadonlySet<string>>(() => new Set());
@@ -215,6 +214,13 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
   const newProjectFocused = useRef(false);
   const sessionNavigation = surface === Surface.Sessions || surface === Surface.NewSession;
   const active = sessionNavigation && homeActive && visible && (!compact || drawerOpen);
+  useEffect(() => {
+    if (sessionNavigation) return;
+    // The Home tooltip is portaled outside its hidden source controls.
+    newProjectPointerInside.current = false;
+    newProjectFocused.current = false;
+    setNewProjectTooltip(undefined);
+  }, [sessionNavigation]);
   const projects = useNavigationQuery(home.catalog, HomeScope.Catalog, "", false, active);
   const sessions = useNavigationQuery(home.global, HomeScope.Sessions, "", includeArchived, active);
   useEffect(() => {
@@ -232,8 +238,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
     return () => window.document.removeEventListener("pointerdown", outside);
   }, [optionsOpen]);
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
-  const serverName = serverPresentation?.kind === ServerPresentationKind.Saved ? serverPresentation.name : "Local server";
-  const serverStatus = status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable";
+  const serverName = serverPresentation?.kind === ServerPresentationKind.Saved ? serverPresentation.name : "This computer";
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const media = window.matchMedia("(max-width: 759px)");
@@ -344,7 +349,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
       <SidebarButton label="Schedules" icon="schedules" current={surface === Surface.Schedules} onClick={() => navigate(Surface.Schedules)} />
       <SidebarButton label="Activity" icon="activity" current={surface === Surface.Activity} onClick={() => navigate(Surface.Activity)} />
       <span className="sidebar-rail-spacer" />
-      <SidebarButton label="Settings" icon="settings" onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
+      <SidebarButton label="Settings" icon="settings" current={surface === Surface.Settings} onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
     </nav>
     <dialog ref={drawer} role={compact ? "dialog" : "region"} className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`} aria-label={compact ? "DeliDev navigation" : undefined} onCancel={(event) => { event.preventDefault(); setDrawerOpen(false); }} onClose={() => { modalDrawer.current = false; }}>
     <div className={`sidebar-pane${sessionNavigation ? " is-home" : ""}`}>
@@ -360,7 +365,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
       <div ref={list} className="sidebar-list" onScroll={(event) => surfaceScroll.current.set(sessionNavigation ? Surface.Sessions : surface, event.currentTarget.scrollTop)} aria-label={sessionNavigation ? "Project and session navigation" : "Menu navigation and filters"}>
         <div hidden={!sessionNavigation}>
         <header className="sidebar-projects-heading"><h2>Projects</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label="New project" onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button><button ref={optionsButton} type="button" className="sidebar-options-button" aria-label="Project and conversation options" aria-haspopup="dialog" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((current) => !current)}><Icon name="options" /></button>{optionsOpen ? <div ref={optionsPopup} role="dialog" aria-label="Project and conversation options" className="sidebar-options-popup" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsButton.current?.focus(); } }}><label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />Include archived</label></div> : null}</header>
-        {newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>New project</div>, window.document.body) : null}
+        {sessionNavigation && newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>New project</div>, window.document.body) : null}
         {includeArchived ? <p className="sidebar-archive-indicator">Archived included</p> : null}
         <QueryProblem query={projects} label="projects" retryLabel="Retry project catalog" />
         <QueryProblem query={sessions} label="sessions" retryLabel="Retry global sessions" />
@@ -381,9 +386,7 @@ export function Sidebar({ surface, selectedSessionId, localServer, serverPresent
         <div className="sidebar-surface-outlet" ref={setContextTarget} />
       </div>
       <footer className="sidebar-footer">
-        <button type="button" hidden={!sessionNavigation} className="sidebar-server-summary" aria-label={`${serverName} ${serverStatus}`} aria-expanded={serverExpanded} aria-controls="sidebar-server-management" onClick={() => setServerExpanded((current) => !current)}><Icon name="server" /><span className="sidebar-server-label"><span>{serverPresentation?.kind === ServerPresentationKind.Saved ? serverPresentation.name : "Local server"}</span><span role="status">{status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable"}</span></span><Icon name="chevron" className={`sidebar-disclosure ${serverExpanded ? "is-expanded" : ""}`} /></button>
-        {!sessionNavigation ? <p role="status">{status.error ? "Server unavailable" : status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable"}</p> : null}
-        <div id="sidebar-server-management" className="sidebar-server-management" hidden={sessionNavigation && !serverExpanded}>{localServer}</div>
+        <p role="status">{serverName} · {status.error || !connectionReady || status.data?.stopping ? "Disconnected · previous data may be stale" : status.data ? "Connected" : status.isPending ? "Connecting…" : "Disconnected"}</p>
       </footer>
     </div>
     </dialog>

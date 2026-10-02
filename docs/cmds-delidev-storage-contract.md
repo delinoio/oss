@@ -6,7 +6,61 @@ Go owns managed database backups, session deletion, Worker snapshots and recover
 The approved completion work includes every remaining issue #964 requirement;
 actual account/private-GitHub access and platform distribution validation remain
 deferred. This document covers managed backup observation, creation/deletion and permanent
-session deletion. Workspace snapshots and restoration remain pending.
+session deletion and database restore. Worker-local snapshots remain pending.
+
+## Planned subscription retirement (issue #1235)
+
+Migration 28 is reserved for [issue #1235](https://github.com/delinoio/oss/issues/1235)
+after the real Claude accounting and request-diagnostics migrations at 26 and
+27. Establish this reservation and independent server capability 17 on main
+before dependent implementation. The executable sequence remains at 25; no
+empty predecessor, schema-version bump or retirement runs in this prerequisite.
+
+The required reset must back up first and atomically retire legacy subscription
+Accounts, native-subscription Providers and their provider-bound Models into
+read-only historical metadata with original IDs, revisions, timestamps and
+document bytes. Tombstone their IDs, exclude them from live configuration/export
+and refuse outstanding or uncertain native ownership, connection/removal or
+cleanup before changes. Never infer services or recreate accounts. Preserve
+surviving Agent account order/weights and Project restriction `configured` flags,
+including configured-empty deny-all; retired model references require explicit
+reconfiguration. Disable only affected schedules with a retained reset reason,
+preserving accepted occurrences and unrelated API configuration.
+
+Keep session, snapshot, transcript and usage bytes/attribution intact. Retired
+subscription sessions require a new explicitly configured session, without
+Resume, dispatch or automatic account fallback. Migrate older backup candidates
+before restore publication; imports/receipts cannot resurrect retired IDs.
+Portable bundle version 2 carries service-native configuration, while API-only
+version-1 imports remain supported and legacy subscription graphs are rejected
+atomically with recreate guidance. Implementation must compose the independent
+managed-account ownership and cleanup boundary from issue #1095.
+
+## Planned account OAuth attempts (issue #1146)
+
+Migration 29 is reserved for the private `account_oauth_attempts` table under
+[issue #1146](https://github.com/delinoio/oss/issues/1146), following real
+migrations 26–28. Establish the reservation on main before dependent
+implementation; the executable sequence still ends at 25. Do not create empty
+predecessors, reuse an allocated version or activate this table early.
+
+The [planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the
+complete lifecycle. Attempt metadata binds actor/server/provider and revision,
+original start/completion IDs, reserved account/create/connect IDs, process
+generation, state/revision/times, keyed comparison commitments, exact protected
+references and cleanup status. Do not require an existing account foreign key,
+cascade deletion of recovery evidence, or include attempts in public resources,
+snapshots/events or portable export. SQLite, receipts and backup images contain
+no raw verifier, code, key or callback/authorization URL.
+
+Fresh/upgrade paths must share the verified backup-first transaction and preserve
+existing account/provider/settings/claim state and explicit default deletions.
+A durable claim commits before HTTP outside locks; no restart, copied image,
+timeout, cancellation or retry can reacquire exchange authority. Original local
+recovery may finish only an exactly sealed credential or accepted result without
+HTTP. Keep account-less staged references, partial disconnected accounts and
+unresolved cleanup; unknown provider response never proves failure or revocation.
+This reservation implements no table, migration, exchange or restore feature.
 
 ## Managed backup observation
 
@@ -267,15 +321,150 @@ The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
 forward; offline or uncertain peers keep both forwarding records and database
 removal pending. Original cleanup reports remain authorized during deletion,
-while new socket claims and traffic cannot reopen the session. Other unimplemented
-terminal/browser-profile/snapshot products are not invented by deletion. Uncontrolled filesystem snapshots and external copies are
+while new socket claims and traffic cannot reopen the session. Session terminals participate through their original close claims and independently
+joined cleanup reports under the [terminal contract](cmds-delidev-terminals-contract.md).
+Deletion atomically requests close without replacing an existing close identity,
+withholds workspace-removal work until every terminal confirms cleanup, and
+rechecks cleanup before database purge. New terminal creation/input/resize cannot
+reopen a deleting session. Original cleanup reports and exact receipt retries
+remain admissible. An accepted uncertain terminal close atomically retains the
+cleanup obligation under a fresh close identity; replaying its original report
+cannot change that identity or release workspace deletion. Browser-profile/snapshot products remain separate. Uncontrolled filesystem snapshots and external copies are
 outside the guarantee; platform/process fixtures do not establish native
 Windows/Linux or real-account acceptance.
 
+## Managed database restore
+
+Issue #1080 adds owner/paired-client `SystemService.RestoreBackup` and
+`GetBackupRestore`, with the `MANAGED_BACKUP_RESTORE_V1` status capability (wire
+value 7, preserving published session-forwarding value 2 and user-services value 3).
+`InspectBackup` also returns the exact committed live `restore_revision`. Inspection
+is an observation; eligibility is independently rechecked at replacement.
+
+`delidev backup restore --id ID --expected-revision 1 --size-bytes BYTES
+--modified-at TIME --sha256 SHA256 --expected-restore-revision REV --confirm`
+uses the original inspected image metadata, digest and live revision. Preserve the
+global UUID-v7 `--request-id` on uncertain responses. `backup restore-status
+--id REQUEST-ID` observes that exact original receipt after restarting the server.
+No command implicitly starts a server. Omitted live revision differs from explicit
+zero. Workers and revoked clients cannot inspect, restore or read restore receipts.
+Receipt reads require the exact original owner or paired-client principal recorded
+in the external journal, including after rollback and restart. Another currently
+authorized actor cannot read the receipt by knowing its request UUID.
+
+The thirty-second cancellable operation holds both the managed-file gate and
+exclusive store gate under the server's process lock. It checks original actor,
+server identity and exact event revision, then refuses live claimed/uncertain jobs,
+active/running/recovery/archiving sessions, uncertain/stopping workspace ownership,
+pending credential removals/integration operations, any private network credential publication/deletion intent, and any forward that is not
+stopped with both original peer cleanup flags confirmed. Any unfinished external
+session deletion also blocks replacement, including the intent-before-SQL window. Restore never stops a
+Worker to create eligibility. Concurrent mutations/claims cannot cross the final
+validation boundary; a second restore cannot publish in the old epoch.
+
+Copy the image through the inspection identity/hash/sidecar checks into a private
+staging file. The 8 GiB image bound still applies. Reject corrupt, newer-schema,
+foreign-server, replaced or deletion-obligated images without changing live logical
+state or the source. Supported older schemas migrate only in staging through the
+existing backup-first migration, retaining the pre-migration copy until recovery settles. Capture a
+synchronized current `VACUUM INTO` safety image, including committed WAL content,
+outside the replaceable database. Transform only the candidate in one transaction.
+
+The safety image supplies current device descriptors/verifiers, merged deletion
+tombstones, deleted-project policies, model suppressions, backup publication claims
+and permanent backup-removal jobs/receipts. Remove tombstoned entities and deleted
+session children, including indexed transcript content through existing cascades.
+Device replacement copies each complete current document, including protected
+browser inventory: original profile identities/revisions, pending deletion
+request IDs and completed cleanup states survive an older source image. Offline
+and revoked clients retain their obligations. The historical Device documents
+are discarded rather than merged back into that current inventory.
+Use the permanent deletion redactor for shared remediation operands and their
+source-linked activity before removing the original session graph.
+Schema-25 native accounting retains its original verified unit, attribution and
+first-retention timestamp from the selected image without backfill. Current
+session tombstones remove its derived rows through the same foreign-key cascade;
+retained accounting cannot grant execution or restore native ownership.
+Current paired clients retain their present authorization; old/revoked/deleted
+clients gain none. Pairing codes and execution grants/references are discarded.
+Workers must pair again; no Worker files or credential payloads are restored.
+Restored account and integration definitions are disconnected, without historical
+connection/validation/removal authority. Protected credential storage stays untouched. Current network profiles, immutable credential-generation references and server/Worker route selections are copied from the current safety image with their exact bodies preserved and resource revisions freshened by the ordinary restore rule; historical network routing cannot replace current explicit authority. The server holds the shared credential gate through restore eligibility and publication, preventing a native network/account write from crossing the private-intent-before-SQL boundary.
+
+Current machine descriptors required by retained Worker network routes are also
+copied from the safety image, replacing historical metadata for matching IDs and
+freshening their resource revisions. Owner/client route reads, explicit clearing
+and subsequent profile deletion remain possible even when the backup predates
+the Worker. These descriptors do not retain Worker credential verifiers,
+instances or execution grants; Workers still require fresh pairing.
+
+Every restored session is paused and recovery-required. Nonterminal historical
+jobs are canceled with a typed quarantine problem; schedules are disabled and their
+next-run timestamps cleared. Historical assignment copies cannot grant native
+recovery/continuation authority. Historical forwards transition through their
+ordinary Stop model without reopening sockets or fabricating claimed-peer cleanup;
+unknown original cleanup remains stopping. Keep original evidence in the unchanged
+source and temporary safety images through recovery, without manufacturing cleanup or replaying input. Permanent backup-removal
+jobs alone retain their current external obligation and controller semantics.
+Restore request UUIDs remain globally reserved across rollback and unjournaled
+crash evidence, without filesystem reads inside ordinary mutations. Historical
+receipt digests remain reserved, while ordinary receipt contents are
+replaced by a quarantine marker that `Replay`/`Mutate` reject as recovery-required.
+Replacement resource revisions exceed both versions; the event high-water mark
+advances beyond both timelines and expires older cursors for a coherent resnapshot.
+
+`backup-restores/` is synchronized in its parent before staging or closing the
+live database, so a newly created journal root is durable before replacement.
+Failure preserves live state and the source without accepting an attempt.
+It retains at most 64 attempt directories, without eviction. Each
+temporarily contains the synchronized safety image, candidate/staging evidence and a versioned
+actor/server/request/image-bound receipt. `active.json` is the external publication
+barrier, binding original live, safety and candidate SHA-256 values. After a confirmed
+WAL checkpoint and SQLite closure, synchronize that barrier before atomic
+same-volume platform replacement and synchronization of both directories. No
+restore code unlinks live WAL/SHM/journal files. The source backup remains unchanged.
+
+Before atomic replacement, the server synchronizes stopped lifecycle intent under
+the same lifecycle gate. A failed stop-intent barrier preserves the original live
+image behind the prepared journal; startup records rollback. A crash after rename
+cannot leave running intent that permits automatic `server ensure`. Exact receipt
+replay does not suppress a later explicitly restarted epoch. Publication ends the
+old server epoch and returns `published`, which is distinct from verified startup. Any uncertain outcome
+after SQLite closure also ends the epoch. Startup, under the exclusive server lock
+and before opening SQLite, accepts exactly the journal-pinned original or candidate
+fingerprint: preserve the original and record `rolled-back`, or record `restored`
+for the replacement. Changed safety/live bytes, foreign identity, sidecars or
+conflicting journal evidence fail closed without overwriting either outcome.
+Recovery synchronizes the observed outcome and its receipt before retiring the
+active barrier. Each completed external receipt must still match its immutable
+SQLite request marker before startup migration or authorization. Manual replacement
+with an older image cannot silently bypass that safety boundary. A lost acknowledgment or exact retry reads the retained receipt,
+never publishes another image. Unjournaled interrupted staging remains evidence;
+it is not an accepted restore and cannot be blindly resumed.
+
+After the active barrier is durably retired and the completed SQLite marker is
+validated, startup removes the receipt-owned safety, candidate and staging-migration
+images under exclusive process ownership before serving. The prepared external
+journal pins each staging-migration copy's original UUID, metadata and SHA-256,
+with a bounded unique inventory captured before publication. Exact fingerprints,
+private paths and original server identity are checked first; changed or unexpected
+images remain recovery-required. Legacy journals without this inventory cannot
+adopt retained migration copies from their current bytes; empty or already-removed
+copy directories still permit synchronized cleanup. A retry finishes directory synchronization after
+an interrupted unlink. Metadata-only journals remain reserved for exact retries.
+Unaccepted staging is preserved; any remaining restore database image blocks the
+final permanent-session backup acknowledgement. The selected source backup is
+never removed by restore. This closes the restore namespace over later permanent
+erasure without inventing cleanup of uncertain original images.
+
+Restore logs contain only validated request/backup UUIDs, closed state, correlation
+and safe error codes. Hashes, paths, database bodies and credentials are not logged.
+This operation proves database replacement/recovery only; it does not establish
+real-account, Worker workspace, native harness or platform-distribution acceptance.
+
 ## Remaining implementation
 
-Restoration must preserve session and image deletion obligations outside the
-replaced database and apply them before serving restored state. Worker-local snapshots must
+Worker-local snapshots must
 faithfully preserve all repositories, ignored files, unpushed commits and symlinks
 before deleting any managed source. Those operations are not yet exposed by the
 backup observation APIs; the complete requirements remain authoritative.
@@ -296,7 +485,6 @@ Run DeliDev Go race tests/vet, protocol checks, API-client tests and desktop
 
 - [Project](project-delidev.md)
 - [Complete requirements](cmds-delidev-requirements.md)
-- [Evidence ledger](cmds-delidev-evidence.md)
 
 Creation recovery also validates the published image's original server identity
 against the live scope before accepting an already existing filename. Immutable
@@ -344,7 +532,7 @@ The following source-backed notes were relocated from the project index at `12b3
 
 - `protos/delidev/v1`: versioned Connect RPC schemas.
 
-Backup publication and first-start recovery preserve the original state and synchronize durable names. Completed process scopes are retired only after native completion validation and controller release. Reported pre-launch claim-publication failures can roll back only the current attempt before lease issuance, preserving prior closed ownership and all unexpected evidence. Account deletion retains all live configuration and historical session references; keyless lifecycle operations remain independent of native credential availability. Bounded resource pages account for both wire encodings, and CLI waits distinguish observed completion from timeout/cancellation. Schedule availability restarts with each server process, while Stop/Archive retain their product outcome after later native success. Relay reflection checks cover SSE metadata and sanitized native error codes. These repairs do not close the remaining implementation and platform evidence gaps recorded in the evidence ledger.
+Backup publication and first-start recovery preserve the original state and synchronize durable names. Completed process scopes are retired only after native completion validation and controller release. Reported pre-launch claim-publication failures can roll back only the current attempt before lease issuance, preserving prior closed ownership and all unexpected evidence. Account deletion retains all live configuration and historical session references; keyless lifecycle operations remain independent of native credential availability. Bounded resource pages account for both wire encodings, and CLI waits distinguish observed completion from timeout/cancellation. Schedule availability restarts with each server process, while Stop/Archive retain their product outcome after later native success. Relay reflection checks cover SSE metadata and sanitized native error codes. These repairs do not close the remaining implementation and platform evidence gaps. Record those gaps in pull requests, issues and CI logs/artifacts.
 
 Schema 25 retains the complete schema-24 backup/provider/title layout and adds
 only the future native-accounting table/indexes defined by the [usage
@@ -360,3 +548,14 @@ independent `native_accounting_layout=grok-closed-input-v1` metadata marker.
 Opening any version-25 database without that marker fails before WAL settings,
 migration or Worker state updates, preserving old unmerged version-25 files for
 explicit recovery. A version number alone cannot identify their layout.
+
+## Terminal report acknowledgement after purge
+
+Entity deletion and permanent session purge retain only the closed terminal-report
+receipt kind plus original terminal, machine and paired-device UUIDs, rebuilding
+that allowlist from the accepted receipt. All resource content and other receipt
+fields remain redacted. This lets a same-device replacement confirm an exact
+already-committed report after response loss and retire independently joined
+local ownership evidence. It grants no new report, native operation or resource
+resurrection. Legacy unbound receipts require the original resource to remain
+available. See the [terminal contract](cmds-delidev-terminals-contract.md).

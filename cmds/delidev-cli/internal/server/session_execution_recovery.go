@@ -167,6 +167,11 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 	if input.Continuation != nil {
 		history = input.Continuation.HistoryExecutionID
 	}
+	if input.Fork != nil {
+		// The child's first execution resumes the native home created by Fork;
+		// its fresh execution ID owns the report, not the retained history.
+		history = input.Fork.RuntimeID
+	}
 	result = domain.ExecutionRecoveryRequest{
 		Version: 1, ServerID: serverID, DeviceID: grant.DeviceID, InstanceID: claim.InstanceID, JobID: original.ID, SessionID: sr.ID, MachineID: session.MachineID,
 		AssignmentRevision: assigned.Revision, AssignmentDigest: continuationDigest(assigned.Data), AssignmentInputDigest: continuationDigest(claim.Input), ConfigurationDigest: input.ConfigurationDigest,

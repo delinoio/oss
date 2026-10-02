@@ -17,6 +17,7 @@ import (
 )
 
 type client struct {
+	nativeModels  delidevv1connect.NativeModelServiceClient
 	transport     *http.Transport
 	system        delidevv1connect.SystemServiceClient
 	resources     delidevv1connect.ResourceServiceClient
@@ -26,10 +27,14 @@ type client struct {
 	configuration delidevv1connect.ConfigurationServiceClient
 	devices       delidevv1connect.DeviceServiceClient
 	workers       delidevv1connect.WorkerServiceClient
+	browsers      delidevv1connect.BrowserServiceClient
 	accounts      delidevv1connect.AccountServiceClient
+	prFixes       delidevv1connect.PullRequestFixServiceClient
 	integrations  delidevv1connect.IntegrationServiceClient
+	network       delidevv1connect.NetworkServiceClient
 	providers     delidevv1connect.ProviderServiceClient
 	forwards      delidevv1connect.ForwardServiceClient
+	terminals     delidevv1connect.TerminalServiceClient
 	sessions      delidevv1connect.SessionServiceClient
 	interactions  delidevv1connect.InteractionServiceClient
 	inbox         delidevv1connect.InboxServiceClient
@@ -97,14 +102,19 @@ func connectClient(o options, input io.Reader) (client, error) {
 	httpClient, transport := rpc.HTTPClient()
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
 	return client{
-		transport: transport, endpoint: endpoint, token: token,
+		nativeModels: delidevv1connect.NewNativeModelServiceClient(httpClient, endpoint, opts...),
+		transport:    transport, endpoint: endpoint, token: token,
+		browsers:      delidevv1connect.NewBrowserServiceClient(httpClient, endpoint, opts...),
 		inbox:         delidevv1connect.NewInboxServiceClient(httpClient, endpoint, opts...),
 		schedules:     delidevv1connect.NewScheduleServiceClient(httpClient, endpoint, opts...),
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),
 		sessions:      delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...),
 		forwards:      delidevv1connect.NewForwardServiceClient(httpClient, endpoint, opts...),
+		terminals:     delidevv1connect.NewTerminalServiceClient(httpClient, endpoint, opts...),
 		accounts:      delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...),
+		prFixes:       delidevv1connect.NewPullRequestFixServiceClient(httpClient, endpoint, opts...),
 		integrations:  delidevv1connect.NewIntegrationServiceClient(httpClient, endpoint, opts...),
+		network:       delidevv1connect.NewNetworkServiceClient(httpClient, endpoint, opts...),
 		providers:     delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...),
 		devices:       delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...),
 		workers:       delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...),

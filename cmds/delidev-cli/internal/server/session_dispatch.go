@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -20,6 +21,8 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 	var providerID domain.ID
 	if session.InitialExecution != nil {
 		providerID = session.InitialExecution.Configuration.ProviderID
+	} else if session.Fork != nil {
+		providerID = session.Fork.Snapshot.Configuration.ProviderID
 	} else {
 		agentRecord, err := tx.Get(domain.AgentKind, session.AgentID)
 		if err != nil {
@@ -57,6 +60,9 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 // transient ready state, snapshot/routing claim and job are one transaction;
 // validating the selected configuration after the claim cannot partially commit.
 func queueInitialExecution(tx *store.Tx, sr store.Record, session domain.Session, explicitResume bool) (store.Record, error) {
+	if session.Fork != nil {
+		return queueForkInitialExecution(tx, sr, session, explicitResume)
+	}
 	if session.InitialExecution != nil || session.CurrentExecution != nil || session.NextExecutionIntent != "" || session.ActiveExecutionID != "" || session.Outcome != domain.ExecutionNotStarted || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || (session.Dispatch != domain.DispatchBlocked && session.Dispatch != domain.DispatchReady && !(explicitResume && session.Dispatch == domain.DispatchPaused)) {
 		return store.Record{}, firstDispatchConflict()
 	}
@@ -134,7 +140,7 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 		if input.Version != 1 || input.Continuation != nil {
 			return empty, domain.Fail(domain.Unsupported, "Grok continuation requires separately verified native history.", "Preserve the original completed input without creating a replacement session.")
 		}
-		if _, err := c.GrokFirstTextContext(input.Input.Mode); err != nil {
+		if _, err := c.GrokFirstInputContext(input.Input.Mode); err != nil {
 			return empty, err
 		}
 		version, protocol = domain.GrokProtocolVersion, domain.OpenAIChat
@@ -249,25 +255,38 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 }
 
 func (s *Service) dispatchExecution(ctx context.Context, record store.Record) error {
+	// This private server coordinator owns dispatch, including its retained PR
+	// history read. Establish its own owner context instead of depending on the
+	// ticker caller; public RPC and Worker authorization remain independent.
+	ctx = domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice})
+	attempt, observations, prepareErr := s.preparePRFixDispatch(ctx, record)
 	identity := struct {
 		Session  domain.ID
 		Revision uint64
 	}{record.ID, record.Revision}
-	result, err := s.Store.Mutate(ctx, domain.NewID(), "session.dispatch.execution", identity, func(tx *store.Tx) (any, error) {
-		sr, session, err := sessionRecord(tx, record.ID)
-		if err != nil {
-			return nil, err
-		}
-		if sr.Revision != record.Revision {
-			return nil, firstDispatchConflict()
-		}
-		if session.InitialExecution == nil {
-			_, err = queueInitialExecution(tx, sr, session, false)
-		} else {
-			_, err = queueContinuation(tx, sr, session, false)
-		}
-		return sessionReceipt{SessionID: sr.ID}, err
-	})
+	var result store.Result
+	err := prepareErr
+	if err == nil {
+		result, err = s.Store.Mutate(ctx, domain.NewID(), "session.dispatch.execution", identity, func(tx *store.Tx) (any, error) {
+			sr, session, err := sessionRecord(tx, record.ID)
+			if err != nil {
+				return nil, err
+			}
+			if sr.Revision != record.Revision {
+				return nil, firstDispatchConflict()
+			}
+			var job store.Record
+			if session.InitialExecution == nil {
+				job, err = queueInitialExecution(tx, sr, session, false)
+			} else {
+				job, err = queueContinuation(tx, sr, session, false)
+			}
+			if err == nil {
+				err = bindPRFixAssignment(tx, attempt, job, observations)
+			}
+			return sessionReceipt{SessionID: sr.ID}, err
+		})
+	}
 	if err == nil {
 		s.logger.InfoContext(ctx, "session_execution_queued", "session_id", record.ID, "request_id", result.RequestID)
 		return nil
@@ -276,7 +295,7 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 	if problem.Code == domain.ProviderDisabled {
 		s.logger.InfoContext(ctx, "session_dispatch_denied", "operation", "new_execution", "session_id", record.ID, "reason", problem.Code, "enabled", false)
 	}
-	if ctx.Err() != nil || problem.Code == domain.Conflict || problem.Code == domain.Internal || problem.Cause != "" {
+	if ctx.Err() != nil || (problem.Code == domain.Conflict && prepareErr == nil) || problem.Code == domain.Internal || problem.Cause != "" {
 		return err
 	}
 	// A failed native/configuration check rolls back the complete claim first.
@@ -307,20 +326,49 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 	return err
 }
 
-// No provider/native work runs here. Each bounded claim transaction commits an
-// immutable job for the outbound Worker stream, which revalidates real native
-// settings and filesystem/process ownership before it can send the assigned input.
+// Manual PR fixes perform bounded provider reads before their claim transaction.
+// Each claim commits an immutable job for the outbound Worker stream; only that
+// Worker revalidates native settings and filesystem/process ownership, executes
+// the harness and verifies its push. No native publication runs on the server.
 func (s *Service) runExecutionDispatch(parent context.Context) {
-	ctx := domain.WithPrincipal(parent, domain.Principal{Type: domain.OwnerDevice})
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	s.runExecutionDispatchTicks(parent, ticker.C)
+}
+
+func (s *Service) runExecutionDispatchTicks(parent context.Context, ticks <-chan time.Time) {
+	ctx := domain.WithPrincipal(parent, domain.Principal{Type: domain.OwnerDevice})
 	var after domain.ID
+	var fixAfter domain.ID
+	// Slow provider reads occupy a separate bounded lane, never the ordinary
+	// serial queue scan. Keep each original session unique and join on shutdown.
+	active := map[domain.ID]bool{}
+	completed := make(chan struct {
+		record store.Record
+		failed bool
+	}, 4)
+	retries := prFixDispatchRetries{}
+	var fixes sync.WaitGroup
+	defer fixes.Wait()
 	for {
+		var now time.Time
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case now = <-ticks:
 		}
+		for len(completed) > 0 {
+			result := <-completed
+			delete(active, result.record.ID)
+			if result.failed {
+				delay := retries.failed(result.record, now)
+				s.logger.InfoContext(ctx, "manual_pr_fix_retry_scheduled", "session_id", result.record.ID, "delay_ms", delay.Milliseconds())
+			} else {
+				delete(retries, result.record.ID)
+			}
+		}
+		retries.expire(now)
+		fixAfter = s.reconcilePRFixes(ctx, fixAfter)
 		page, more, err := s.Store.ExecutionCandidates(ctx, after, 50)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -333,8 +381,37 @@ func (s *Service) runExecutionDispatch(parent context.Context) {
 				return
 			}
 			after = record.ID
+			if active[record.ID] {
+				continue
+			}
+			manual, err := s.isPRFixCandidate(ctx, record.ID)
+			if err != nil {
+				s.logger.WarnContext(ctx, "manual_pr_fix_candidate_failed", "session_id", record.ID, "code", domain.SafeError(err).Code)
+				continue
+			}
+			if manual {
+				if len(active) >= cap(completed) || !retries.ready(record, now) {
+					continue
+				}
+				active[record.ID] = true
+				fixes.Add(1)
+				go func() {
+					defer fixes.Done()
+					bounded, cancel := context.WithTimeout(ctx, 75*time.Second)
+					defer cancel()
+					err := s.dispatchExecution(bounded, record)
+					if err != nil && ctx.Err() == nil {
+						s.logger.WarnContext(ctx, "manual_pr_fix_dispatch_failed", "session_id", record.ID, "code", domain.SafeError(err).Code)
+					}
+					completed <- struct {
+						record store.Record
+						failed bool
+					}{record, err != nil}
+				}()
+				continue
+			}
 			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err := s.dispatchExecution(bounded, record)
+			err = s.dispatchExecution(bounded, record)
 			cancel()
 			if err != nil && (domain.SafeError(err).Cause != "" || domain.SafeError(err).Code == domain.Internal) && ctx.Err() == nil {
 				s.logger.WarnContext(ctx, "session_execution_storage_failed", "session_id", record.ID, "code", domain.SafeError(err).Code)

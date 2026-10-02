@@ -3,16 +3,18 @@
 ## Scope
 
 The 2026-09-30 structural change preserves the main implementation while preparing
-independent replacements for the 22 PRs in the immutable conflict-audit snapshot.
+independent replacements for the owner-approved set of 22 PRs.
 Those PRs' unmerged features are not activated by this refactor.
 
 ## Documentation
 
 Project indexes contain ownership, domain links and cross-domain invariants.
-Implementation details belong to domain contracts. Validation records belong to
-independent files under `docs/evidence/delidev/issue-<number>/`; the historical ledger
-is frozen with its original contents and anchors. Source-backed paragraphs and
-rules moved in this change have SHA-256 entries in the relocation inventory.
+Implementation details belong to domain contracts. Record implementation status
+and validation results in pull requests, issues and CI logs/artifacts under the
+root DeliDev validation policy; do not add repository evidence documents. Include
+the source revision, commands, results and unresolved limits. Distinguish fixtures,
+builds and packaging from actual native/account/platform acceptance, and exclude
+secrets, user state and raw native content from validation records.
 Parent AGENTS files route work to scoped owners. Cross-domain changes must read
 all affected owners, even when their rules live outside the edited directory.
 
@@ -33,6 +35,12 @@ Reservations do not advertise capability support or activate implementation.
 New allocations must be established on main before dependent feature branches use
 them. Existing shared message semantics still require explicit composition.
 
+Wholly new closed enums use explicit `newDeclaration: true` member reservations
+under one original owner, including their zero UNSPECIFIED member. Keep these
+planned declarations out of the immutable active baseline; the allocation check
+validates their unique numbers and later active schema declarations without
+requiring premature runtime support.
+
 ## Runtime and storage
 
 Server lifecycle, authorization, route registration and status have separate owners.
@@ -51,9 +59,8 @@ preserved and require recovery rather than being inferred from their version alo
 ## Validation and rollout
 
 Use the existing protocol, Go, frontend and CI-contract suites. No new GitHub
-ruleset, required check or merge-queue policy is introduced. Merge the validated
-structural PR first, confirm main, then close only still-open PRs in the snapshot.
-Preserve their branches and linked issues. New PRs are not added to that set.
+ruleset, required check or merge-queue policy is introduced. Record validation and
+remaining acceptance limits in the owning pull request, issue and CI runs.
 
 ## Concrete source boundaries
 
@@ -63,11 +70,6 @@ startup live in `server_http.go`, `server_routes.go`, `server_status.go`, and
 family; shared output framing still observes each command's generated request ID.
 Settings integration files call the common `settings-test-fixture.ts` factory,
 which owns independent temporary directories and child lifetimes per file.
-
-The relocation inventory is an audit of this change, not a permanent prohibition
-on editing live contracts. Set `DELIDEV_VERIFY_RELOCATION=1` to repeat the verbatim
-migration audit; ordinary CI checks the destinations and inventory without freezing
-future authorized policy edits.
 
 ## Migration sequence and replacement dependencies
 
@@ -81,6 +83,26 @@ Claude accounting must compose with the Grok accounting schema and shared usage
 meaning established by the preceding change. Request diagnostics follows both
 implemented versions. If that product order changes, revise the ledger on main
 before branching; do not insert empty migrations to skip unfinished work.
+
+Issue #1235 reserves migration 28 for service-native subscription identity and
+legacy configuration retirement, after the real implementations of 26 and 27.
+Its independent `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1` allocation is
+17. Both reservations must land on main before dependent implementation; neither
+activates runtime support. Migration provenance uses one original PR or owning
+issue when no implementation PR exists yet, preserving that identity thereafter.
+The [storage contract](cmds-delidev-storage-contract.md#planned-subscription-retirement-issue-1235)
+owns the reset boundary. Compose later account/native ownership and restore
+changes with the subscription lifecycle work for issue #1095 rather than
+replacing its unsettled-ownership and cleanup gates.
+
+Issue #1146 reserves migration 29 for private OpenRouter OAuth attempt metadata,
+after real migrations 26–28, together with inventory capability 5, inventory-entry
+field 9 and the exclusively owned connection-method/attempt-state enums. The
+[planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the complete
+future lifecycle and acceptance. Establish these allocations on main before
+dependent implementation; no placeholder migration, active protobuf declaration,
+generated binding or OAuth capability is introduced by this prerequisite. Keep
+the existing sequence and issue open until full implementation is accepted.
 
 The storage suite covers every fixed schema from 1 through 24 and the recognized
 21/22 backup and 23 title variants. It compares upgraded DDL with a fresh database,
@@ -109,3 +131,5 @@ without registering duplicate global symbols. Physical descriptor ownership foll
 the explicit split-file layout; canonical runtime type registration remains unique.
 These views are generated from service descriptors at runtime so an independent
 service addition does not rewrite a shared serialized descriptor blob.
+
+New Buf-generated service files participate in legacy reflection and query facades through output discovery; the legacy declaration map remains limited to historical declarations and their original order. Issue #1084 activates its already reserved wire allocations without changing that historical map.

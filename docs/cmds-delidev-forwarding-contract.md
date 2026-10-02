@@ -24,6 +24,7 @@ The server owner or an authorized paired client can create a forward for a curre
 - `session forward start --session-id ID --revision N --machine-id ID --worker-port N [--local-port N]` runs in the foreground until Stop, Archive, loss or cancellation. It emits a readiness JSON envelope with the exact local endpoint, followed by an independent final envelope when its lifetime ends. Repeating `--request-id` returns the original record and starts no listener.
 - `session forward status --session-id ID --id ID`, `stop ... --revision N`, and `reconcile ...` share the same authenticated operations. Reconcile submits only an existing positive original local cleanup receipt; it cannot infer cleanup from process absence or reopen sockets. Opening the returned endpoint is an explicit user action.
 - Typed server and Worker `SESSION_FORWARDING_V1` capabilities gate availability independently of automatic-title capability. Older Workers retain their existing primary behavior and cannot forward without negotiation.
+- Managed database replacement requires every current forward to be stopped with both independent original peer cleanup flags. Restored historical forwards pass through Stop without reopening sockets or manufacturing cleanup; an unknown historical claimed lifetime stays stopping. Server capability wire value 2 remains forwarding, published user services retain value 3, and managed backup restore uses reserved value 7.
 
 ## Storage
 Forward resources use the existing schema-24 generic entity, session, revision, event and receipt storage; no relational migration or destructive schema change is needed. Each record retains only ownership, ports, endpoint, state and cleanup flags. Actor-bound receipts store references, not traffic. Existing records are preserved.
@@ -43,7 +44,7 @@ Run `go test -race ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...` f
 The existing authenticated primary Worker stream and connection lease remain mandatory. Forwarding is independent of workspace observation, title execution, model API routing and agent job ownership. Additive `delidev.v1` schemas generate Go and TypeScript/Connect Query bindings; `ForwardQuery` is exported by the client package. No new upstream dependency is needed.
 
 ## Change Triggers
-Update this contract, the project index, protocol/client contracts, evidence ledger and relevant command/protocol/package `AGENTS.md` when ownership, cleanup, bounds, capabilities, CLI shapes or wire schemas change.
+Update this contract, the project index, protocol/client contracts, validation records in pull requests, issues and CI logs/artifacts and relevant command/protocol/package `AGENTS.md` when ownership, cleanup, bounds, capabilities, CLI shapes or wire schemas change.
 
 ## References
 - [DeliDev project](project-delidev.md)

@@ -239,6 +239,7 @@ type Session struct {
 	LastCompactionJobID    ID                         `json:"last_compaction_job_id,omitempty"`
 	CompactionJobID        ID                         `json:"compaction_job_id,omitempty"`
 	Compaction             *SessionCompactionRef      `json:"compaction,omitempty"`
+	Fork                   *ForkOrigin                `json:"fork,omitempty"`
 	EstimatedCostBudget    *EstimatedCostBudget       `json:"estimated_cost_budget,omitempty"`
 	ScheduleOrigin         *ScheduleOrigin            `json:"schedule_origin,omitempty"`
 	LocalOrigin            *LocalOrigin               `json:"local_origin,omitempty"`
@@ -274,6 +275,11 @@ type Session struct {
 	NextExecutionIntent    ExecutionIntent            `json:"next_execution_intent,omitempty"`
 	Execution              *ExecutionProgress         `json:"execution,omitempty"`
 	StartupRejection       *ExecutionStartupRejection `json:"startup_rejection,omitempty"`
+
+	AccountChanges []SessionAccountChange `json:"account_changes,omitempty"`
+	// Current grant observations can precede native thread publication. They
+	// are copied into progress and reset only when a fresh execution is claimed.
+	CurrentNativeHistory NativeHistoryMode `json:"current_native_history,omitempty"`
 }
 
 type PreparationState string

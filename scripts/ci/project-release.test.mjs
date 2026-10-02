@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import yaml from "js-yaml";
 import { Bump, Project, requiresCargoPublish } from "../release/project.mjs";
+import { nativeMatrix as pnportMatrix } from "../../packages/pnport/scripts/native-matrix.mjs";
 
 const source = (file) => readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
 const workflow = yaml.load(source(".github/workflows/release-project.yml"));
@@ -57,7 +58,8 @@ test("pnport native and complete-set gates belong to its tag workflow", () => {
   const coordinator = source(".github/workflows/release-project.yml");
   assert.doesNotMatch(coordinator, /pnport-candidate|pnport-native|pnport-complete|RELEASE_CANDIDATE|test:typescript|install-smoke\.mjs/u);
   const release = yaml.load(source(".github/workflows/release-pnport.yml"));
-  assert.equal(release.jobs.build.strategy.matrix.include.length, 6);
+  assert.equal(release.jobs.build.strategy.matrix, "${{ fromJSON(needs.prepare.outputs.matrix) }}");
+  assert.equal(pnportMatrix.include.length, 4);
   assert.deepEqual(release.jobs.build.needs, "prepare");
   const native = release.jobs.build.steps.map((step) => step.run ?? "").join("\n");
   for (const gate of ["cargo test", "test:package", "test:typescript", "install-smoke.mjs", "evidence.mjs record"]) assert.match(native, new RegExp(gate, "u"));
@@ -73,7 +75,8 @@ test("pnport publication defaults to a credential-free dry run and exact tag", (
   const release = yaml.load(source(".github/workflows/release-pnport.yml"));
   assert.equal(release.on.workflow_dispatch.inputs.dry_run.default, "true");
   assert.deepEqual(release.permissions, { contents: "read" });
-  assert.equal(release.jobs.build.strategy.matrix.include.length, 6);
+  assert.equal(release.jobs.build.strategy.matrix, "${{ fromJSON(needs.prepare.outputs.matrix) }}");
+  assert.equal(pnportMatrix.include.length, 4);
   for (const jobName of ["publish-npm", "publish-release", "homebrew"]) {
     const job = release.jobs[jobName];
     assert.match(job.if, /needs\.prepare\.outputs\.dry_run == 'false'/u);

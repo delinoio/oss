@@ -11,9 +11,9 @@ const { targets, selectTarget } = require("../src/platforms.cjs");
 const { resolveBinary, launch, Failure } = require("../src/launcher.cjs");
 const revision = "a".repeat(40);
 
-test("manifests pin six exact native packages and request Yarn unplugging", () => {
+test("manifests pin four exact native packages and request Yarn unplugging", () => {
   const manifest = launcherManifest("0.1.0", revision);
-  assert.equal(Object.keys(manifest.optionalDependencies).length, 6);
+  assert.equal(Object.keys(manifest.optionalDependencies).length, 4);
   assert.equal(manifest.scripts, undefined);
   for (const target of targets) {
     const native = nativeManifest(target.suffix, "0.1.0", revision);
@@ -26,7 +26,15 @@ test("manifests pin six exact native packages and request Yarn unplugging", () =
   }
   assert.equal(selectTarget("linux", "x64", "musl"), undefined);
   assert.equal(selectTarget("darwin", "ia32"), undefined);
+  assert.equal(selectTarget("win32", "x64"), undefined);
+  assert.equal(selectTarget("win32", "arm64"), undefined);
+  assert.throws(() => nativeManifest("win32-x64-msvc", "0.1.0", revision));
+  assert.throws(() => nativeManifest("win32-arm64-msvc", "0.1.0", revision));
   assert.throws(() => nativeManifest("linux-x64-musl", "0.1.0", revision));
+});
+
+test("unsupported targets fail before reading or launching an installed package", () => {
+  assert.throws(() => resolveBinary("/nonexistent/pnport/package.json", null), error => error.code === Failure.Unsupported && /Windows support is planned for pnport 0\.2\.0/u.test(error.message));
 });
 
 test("resolve only the exact installed native package and require its companion", () => {

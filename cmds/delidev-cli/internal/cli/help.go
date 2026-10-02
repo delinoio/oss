@@ -44,11 +44,20 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account disconnect --id ID --revision N
   account validate --id ID --revision N
   account status --id ID
+  browser-profile capabilities | status --id PROFILE | account-status --account-id ACCOUNT
+  browser-profile list [--page-size N --page-token TOKEN]
+  browser-profile register --id SESSION --revision N --account-id ACCOUNT
+  browser-profile confirm-removal --id PROFILE --revision N --deletion-request-id REQUEST
   account list [--provider-id ID] [--account-type api|subscription] [--limit N] [--page-token TOKEN]
   integration create --input FILE|-
   integration edit --id ID --revision N --input FILE|-
   integration replace-token --id ID --revision N --pat-stdin
   integration validate|delete --id ID --revision N
+  network profile save --input FILE|- [--id ID --revision N] [--credential-stdin | --clear-credential]
+  network profile list|get|delete [--id ID --revision N] [--limit N --page-token TOKEN]
+  network select [--id ROUTE_ID --revision N] [--machine-id ID] [--profile-id ID --profile-revision N]
+  network status [--machine-id ID]
+  network export-metadata --machine-id ID --revision DESIRED_GENERATION
   integration list|get|snapshot [--id ID]
   integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]
   integration inspect-repository --repository-id ID
@@ -61,6 +70,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   github pr problems list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]
   github pr problems dismiss --id ID --revision N --content-version SHA256
   github pr remediation list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]
+  github pr remediation capabilities
+  github pr remediation fix --input PATH|-
   github pr remediation resume --id SET_ID --revision N
   provider presets
   provider inventory [--query TEXT] [--enabled-only] [--limit N] [--page-token TOKEN]
@@ -68,6 +79,10 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
     --name creates an independent custom copy; --preset alone creates the managed preset
   provider discover --account-id ID --revision N
   model search [--query TEXT] [--provider-id ID] [--include-hidden] [--enabled-providers-only] [--limit N] [--page-token TOKEN]
+  model native-discover --machine-id ID --revision N --account-id ID --account-revision N [--include-hidden]
+  model native-observation --id JOB_ID
+  model native-list --id JOB_ID [--limit N] [--page-token TOKEN]
+  model native-cancel --id JOB_ID --revision N
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
   session forward start|status|stop|reconcile --session-id ID [--id ID] [--revision N] [--machine-id ID --worker-port N --local-port N]
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
@@ -76,6 +91,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session review create|edit|delete|submit|list|get --id SESSION [--review-id ID] [--revision N] [--input PATH]
   session pr link --id SESSION --repository-id ID --number N
   session pr list|get|unlink --id SESSION [--association-id ID] [--revision N]
+  session terminal create|list|inspect|input|resize|output|reattach|close --id ID
   session create --input FILE|- [--wait]
   session delete --id ID --revision REV --confirm [--wait]
   session deletion --id ID
@@ -88,6 +104,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session stop|archive|restore|resume --id ID --revision N
   session compact --id ID --revision N
   session context --id ID
+  session switch-account --id ID --revision N --account-id ID
   session rename --id ID --revision N --name NAME
   schedule create --input FILE|- [--local-worker-dir PATH]
   schedule edit --id ID --revision N --input FILE|- [--local-worker-dir PATH]
@@ -127,6 +144,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   backup creations [--limit N] [--page-token TOKEN]
   backup list [--limit N] [--page-token TOKEN]
   backup inspect --id ID
+  backup restore --id ID --expected-revision REV --size-bytes BYTES --modified-at TIME --sha256 SHA256 --expected-restore-revision REV --confirm
+  backup restore-status --id REQUEST-ID
   backup delete --id ID --expected-revision REV --size-bytes BYTES --modified-at TIME --sha256 SHA256 --confirm
   backup deletion --id JOB-ID
   backup deletions [--limit N] [--page-token TOKEN]

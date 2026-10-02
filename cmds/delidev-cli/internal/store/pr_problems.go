@@ -23,6 +23,19 @@ func prProblemMissing() error {
 	return domain.Fail(domain.NotFound, "No retained problem inventory exists for this PR.", "Collect the current PR's published feedback first.")
 }
 
+func prCIProblemIndexNode(value domain.PRCIProblemEvidence) string {
+	// These separators are private to SQLite. Validated native identities cannot
+	// contain NULs, so scoped keys cannot collide with legacy plain-node keys.
+	return string(value.Source) + "\x00" + value.Context.NodeID + "\x00" + value.QueueNodeID + "\x00" + value.QueueEntryNodeID
+}
+
+func prProblemIndexNode(value domain.PRProblem) string {
+	if value.Kind == domain.PRCIProblem && value.CI != nil {
+		return prCIProblemIndexNode(*value.CI)
+	}
+	return value.NativeNode()
+}
+
 func (t *Tx) FindPRProblemSet(provider domain.IntegrationProvider, repository, pullRequest string) (Record, domain.PRProblemSet, error) {
 	if _, err := t.prProblemActor(); err != nil {
 		return Record{}, domain.PRProblemSet{}, err
@@ -94,7 +107,7 @@ func (t *Tx) GetPRProblem(id domain.ID) (Record, domain.PRProblem, error) {
 	if err = t.tx.QueryRowContext(t.ctx, "SELECT set_id,kind,native_node,content_version,current,ci_observation_id FROM pr_problem_records WHERE id=?", id).Scan(&set, &kind, &node, &version, &current, &proofID); err != nil {
 		return r, v, storageError(err)
 	}
-	if set != v.SetID || kind != v.Kind || node != v.NativeNode() || version != v.ContentVersion || current != v.Current {
+	if set != v.SetID || kind != v.Kind || (node != prProblemIndexNode(v) && node != v.NativeNode()) || version != v.ContentVersion || current != v.Current {
 		return r, v, prProblemConflict()
 	}
 	if v.Kind == domain.PRCIProblem {
@@ -134,7 +147,7 @@ func (t *Tx) putPRProblem(id domain.ID, expected uint64, value domain.PRProblem)
 		if value.CI != nil {
 			proofID = value.CI.ObservationID
 		}
-		_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pr_problem_records(id,set_id,kind,native_node,content_version,current,ci_observation_id) VALUES(?,?,?,?,?,?,?)", id, value.SetID, value.Kind, value.NativeNode(), value.ContentVersion, value.Current, proofID)
+		_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pr_problem_records(id,set_id,kind,native_node,content_version,current,ci_observation_id) VALUES(?,?,?,?,?,?,?)", id, value.SetID, value.Kind, prProblemIndexNode(value), value.ContentVersion, value.Current, proofID)
 	} else {
 		_, err = t.tx.ExecContext(t.ctx, "UPDATE pr_problem_records SET current=? WHERE id=?", value.Current, id)
 	}
@@ -304,6 +317,9 @@ func (t *Tx) DismissPRProblem(id domain.ID, expected uint64, version string) (Re
 	}
 	if r.Revision != expected || value.ContentVersion != version {
 		return r, prProblemConflict()
+	}
+	if value.State == domain.PRProblemHandled {
+		return r, domain.Fail(domain.Conflict, "This original problem already has verified push evidence.", "Inspect its retained handling record; dismissal cannot erase it.")
 	}
 	if value.State == domain.PRProblemDismissed {
 		return r, nil

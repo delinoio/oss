@@ -1,6 +1,6 @@
 {
   "identifier": "main",
-  "description": "Only the trusted DeliDev main window can bootstrap its local connection.",
+  "description": "Trusted DeliDev main document: local bootstrap, owned browser presentation, and device-local appearance.",
   "permissions": [
     "local-bootstrap",
     "saved-manage",
@@ -8,7 +8,9 @@
     "notification-presentation",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
-    "github-presentation"
+    "github-presentation",
+    "device-appearance",
+    "browser-presentation"
   ],
   "webviews": [
     "main"

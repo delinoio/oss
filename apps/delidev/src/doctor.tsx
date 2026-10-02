@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsHeading } from "./settings-presentation";
 import "./doctor.css";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -10,7 +11,6 @@ enum DiagnosticState { Observed = "observed", Unavailable = "unavailable", Uncon
 const stateNames: Record<DiagnosticState, string> = {
   [DiagnosticState.Observed]: "Observed", [DiagnosticState.Unavailable]: "Unavailable", [DiagnosticState.Unconfigured]: "Not configured", [DiagnosticState.NotApplicable]: "Not applicable", [DiagnosticState.Failed]: "Failed", [DiagnosticState.Superseded]: "Connection changed during inspection",
 };
-const scope = "Read-only observations from the selected server. This check does not repair state, connect an account or run model inference.";
 const ownerCaveat = "Owner credential availability does not verify protected account storage, account readiness or quota.";
 function observation(value: unknown, success = "Observed") {
   const result = object(value), state = text(result.state);
@@ -88,12 +88,13 @@ function Report({ report }: { report: Document }) {
     </div>
   </>;
 }
-export function Doctor({ active, visible = true }: { active: boolean; visible?: boolean }) {
+export enum DoctorTitle { Diagnostics = "Diagnostics", ConnectionDiagnostics = "Connection & diagnostics" }
+export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics, connectionControls }: { active: boolean; visible?: boolean; title?: DoctorTitle; connectionControls?: ReactNode }) {
   const result = useQuery(SystemQuery.getDoctor, {}, { enabled: active });
   const [opening, setOpening] = useState(0);
   useEffect(() => {
     // Category inactivity is not a close. Reset only this presentation subtree
-    // when the actual Settings modal hides; queries and operations stay owned.
+    // when the actual Settings visit ends; queries and operations stay owned.
     if (!visible) setOpening((value) => value + 1);
   }, [visible]);
   const { report, unsupported } = useMemo(() => {
@@ -111,7 +112,8 @@ export function Doctor({ active, visible = true }: { active: boolean; visible?: 
   const unknownServer = useRef({ report, key: 0 });
   if (unknownServer.current.report !== report) unknownServer.current = { report, key: unknownServer.current.key + 1 };
   return <section className="diagnostics">
-    <header className="diagnostics-header"><div><h1 aria-live="polite" aria-atomic="true">Diagnostics</h1><p>{scope}</p></div><button disabled={!active || result.isFetching} onClick={() => void result.refetch()}>Refresh diagnostics</button></header>
+    <SettingsHeading title={title} description="Read-only observations from the selected server." scope="This check does not repair state, connect an account or run model inference." actions={<button disabled={!active || result.isFetching} onClick={() => void result.refetch()}>Refresh diagnostics</button>} />
+    {connectionControls ? <section aria-label="Connection"><h2>Connection</h2>{connectionControls}</section> : null}
     <Problem error={result.error} />{result.isFetching && active ? <p role="status">Reading server diagnostics…</p> : null}{result.error && report ? <p role="alert">Refresh failed. The report below is the last returned observation.</p> : null}
     {report ? <Report key={JSON.stringify([opening, text(report.server_id) || unknownServer.current.key])} report={report} /> : result.data ? <p role="alert">{unsupported ? "This diagnostic report version is unsupported. No health result can be inferred." : "The diagnostic report is unavailable or malformed. No health result can be inferred."}</p> : null}
     <p className="diagnostics-guidance">{ownerCaveat} Use AI accounts for validation and Runner Devices for discovery and connection recovery.</p>

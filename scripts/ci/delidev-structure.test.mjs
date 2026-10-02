@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
@@ -8,42 +7,21 @@ import test from 'node:test';
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const read = path => readFileSync(resolve(root, path), 'utf8');
-const hash = value => createHash('sha256').update(value).digest('hex');
-const blocks = text => text.split(/\n\s*\n|\n(?=- )/u).map(value => value.trim()).filter(Boolean);
-
-test('DeliDev relocation inventory retains readable destinations', () => {
-  const inventory = JSON.parse(read('docs/evidence/delidev/pr-conflict-structure/document-relocations.json'));
-  const destinations = new Map();
-  for (const item of inventory.blocks) {
-    if (!destinations.has(item.destination)) destinations.set(item.destination, new Set(blocks(read(item.destination)).map(hash)));
-    if (process.env.DELIDEV_VERIFY_RELOCATION === '1') assert.ok(destinations.get(item.destination).has(item.sha256), `${item.source} -> ${item.destination}: ${item.sha256}`);
-  }
-});
-
-test('PR closure inventory remains restricted to the owner-approved 22 PRs', () => {
-  const snapshot = JSON.parse(read('docs/evidence/delidev/pr-conflict-structure/pr-snapshot.json'));
-  assert.equal(snapshot.repository, 'delinoio/oss');
-  assert.deepEqual(snapshot.pullRequests.map(pr => pr.number).sort((a, b) => a - b), [1108,1109,1110,1111,1112,1113,1114,1115,1116,1117,1118,1121,1122,1124,1125,1126,1127,1140,1141,1151,1154,1159]);
-  for (const pr of snapshot.pullRequests) {
-    assert.match(pr.headRefOid, /^[a-f0-9]{40}$/u);
-    assert.equal(pr.url, `https://github.com/delinoio/oss/pull/${pr.number}`);
-    assert.ok(pr.issues.length > 0);
-  }
-});
 
 test('pending database versions are ordered reservations independent of executable migrations', () => {
   const ledger = JSON.parse(read('cmds/delidev-cli/internal/store/migration-reservations.json'));
   let previous = ledger.baselineVersion;
-  let previousPR = 0;
   const seen = new Set();
   for (const entry of ledger.reservations) {
     assert.equal(entry.version, previous + 1);
-    assert.ok(entry.pr > previousPR);
+    assert.notEqual(Object.hasOwn(entry, 'pr'), Object.hasOwn(entry, 'issue'), 'a migration has one original PR or owning issue');
+    const owner = entry.pr ?? entry.issue;
+    assert.ok(Number.isSafeInteger(owner) && owner > 0, 'migration provenance is a positive GitHub number');
+    assert.ok(!seen.has(owner), 'migration owners are unique');
     if ([1108, 1115, 1117].includes(entry.pr)) assert.equal(entry.originalBranchVersion, 25);
     for (const dependency of entry.dependsOn ?? []) assert.ok(seen.has(dependency));
     previous = entry.version;
-    previousPR = entry.pr;
-    seen.add(entry.pr);
+    seen.add(owner);
   }
   for (const originalPR of [1108, 1115, 1117]) assert.ok(seen.has(originalPR));
 });

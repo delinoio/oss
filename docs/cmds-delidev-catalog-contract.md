@@ -2,7 +2,13 @@
 
 ## Scope
 
-The server owns provider presets, API model discovery, catalog publication and canonical model selection in `cmds/delidev-cli/internal/providers`, `internal/server`, `internal/store` and the corresponding CLI commands. The complete [issue #964 requirements](cmds-delidev-requirements.md) remain normative. This contract implements the API catalog boundary; native harness model discovery, selected-model execution capability and subscription authentication remain separate required work. API proxy execution and first-dispatch snapshots follow their own implemented authority contracts; a catalog cannot authorize them.
+Native Codex observations and explicit registration are owned
+by [the native model contract](cmds-delidev-native-models-contract.md). Its separate
+Worker job and immutable pages do not alter the HTTP catalog, account readiness or
+manual entries. Registration uses the existing model-save boundary with the selected
+account provider and observed executable model ID, retaining manual provenance.
+
+The server owns provider presets, API model discovery, catalog publication and canonical model selection in `cmds/delidev-cli/internal/providers`, `internal/server`, `internal/store` and the corresponding CLI commands. The complete [issue #964 requirements](cmds-delidev-requirements.md) remain normative. This contract implements the API catalog boundary; native harness observations, selected-model execution capability and subscription authentication retain their separate authority contracts. API proxy execution and first-dispatch snapshots follow their own implemented authority contracts; a catalog cannot authorize them.
 
 ## Runtime and Language
 
@@ -93,7 +99,7 @@ Connect Go/protobuf, SQLite, the protected account lifecycle, provider inspector
 
 ## Change Triggers
 
-Update this contract, provider/account and protocol contracts, the project index, evidence ledger and applicable AGENTS whenever preset identities, observation ownership, discovery scheduling, model identity/provenance or search semantics change.
+Update this contract, provider/account and protocol contracts, the project index, validation records in pull requests, issues and CI logs/artifacts and applicable AGENTS whenever preset identities, observation ownership, discovery scheduling, model identity/provenance or search semantics change.
 
 ## References
 

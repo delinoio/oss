@@ -4,8 +4,10 @@ export * as ResourceQuery from "./gen/delidev/v1/delidev-ResourceService_connect
 export * as ConfigurationQuery from "./gen/delidev/v1/delidev-ConfigurationService_connectquery.js";
 export * as DeviceQuery from "./gen/delidev/v1/delidev-DeviceService_connectquery.js";
 export * as WorkerQuery from "./gen/delidev/v1/delidev-WorkerService_connectquery.js";
+export * as BrowserQuery from "./gen/delidev/v1/delidev-BrowserService_connectquery.js";
 export * as AccountQuery from "./gen/delidev/v1/delidev-AccountService_connectquery.js";
 export * as ProviderQuery from "./gen/delidev/v1/delidev-ProviderService_connectquery.js";
+export * as NativeModelQuery from "./gen/delidev/v1/native_models-NativeModelService_connectquery.js";
 export * as SessionQuery from "./gen/delidev/v1/delidev-SessionService_connectquery.js";
 export * as InteractionQuery from "./gen/delidev/v1/delidev-InteractionService_connectquery.js";
 export * as InboxQuery from "./gen/delidev/v1/delidev-InboxService_connectquery.js";
@@ -18,4 +20,8 @@ export * from "./errors.js";
 export * from "./validation.js";
 export * as UsageQuery from "./gen/delidev/v1/delidev-UsageService_connectquery.js";
 export * as IntegrationQuery from "./gen/delidev/v1/delidev-IntegrationService_connectquery.js";
+
+export * as TerminalQuery from "./gen/delidev/v1/delidev-TerminalService_connectquery.js";
+export * as NetworkQuery from "./gen/delidev/v1/network-NetworkService_connectquery.js";
 export * as ForwardQuery from "./gen/delidev/v1/delidev-ForwardService_connectquery.js";
+export * as PullRequestFixQuery from "./gen/delidev/v1/pr_fix-PullRequestFixService_connectquery.js";

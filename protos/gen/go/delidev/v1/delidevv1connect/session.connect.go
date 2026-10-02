@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SessionServiceForkSessionProcedure is the fully-qualified name of the SessionService's
+	// ForkSession RPC.
+	SessionServiceForkSessionProcedure = "/delidev.v1.SessionService/ForkSession"
+	// SessionServiceGetSessionForkProcedure is the fully-qualified name of the SessionService's
+	// GetSessionFork RPC.
+	SessionServiceGetSessionForkProcedure = "/delidev.v1.SessionService/GetSessionFork"
 	// SessionServiceDeleteSessionProcedure is the fully-qualified name of the SessionService's
 	// DeleteSession RPC.
 	SessionServiceDeleteSessionProcedure = "/delidev.v1.SessionService/DeleteSession"
@@ -111,10 +117,15 @@ const (
 	// SessionServiceSubmitLocalReviewProcedure is the fully-qualified name of the SessionService's
 	// SubmitLocalReview RPC.
 	SessionServiceSubmitLocalReviewProcedure = "/delidev.v1.SessionService/SubmitLocalReview"
+	// SessionServiceSwitchSessionAccountProcedure is the fully-qualified name of the SessionService's
+	// SwitchSessionAccount RPC.
+	SessionServiceSwitchSessionAccountProcedure = "/delidev.v1.SessionService/SwitchSessionAccount"
 )
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	ForkSession(context.Context, *connect.Request[v1.ForkSessionRequest]) (*connect.Response[v1.ForkSessionResponse], error)
+	GetSessionFork(context.Context, *connect.Request[v1.GetSessionForkRequest]) (*connect.Response[v1.GetSessionForkResponse], error)
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	GetSessionDeletion(context.Context, *connect.Request[v1.GetSessionDeletionRequest]) (*connect.Response[v1.GetSessionDeletionResponse], error)
 	CompactSession(context.Context, *connect.Request[v1.CompactSessionRequest]) (*connect.Response[v1.CompactSessionResponse], error)
@@ -141,6 +152,7 @@ type SessionServiceClient interface {
 	EditLocalReviewComment(context.Context, *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error)
 	DeleteLocalReviewComment(context.Context, *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error)
 	SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error)
+	SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error)
 }
 
 // NewSessionServiceClient constructs a client for the delidev.v1.SessionService service. By
@@ -154,6 +166,18 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		forkSession: connect.NewClient[v1.ForkSessionRequest, v1.ForkSessionResponse](
+			httpClient,
+			baseURL+SessionServiceForkSessionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ForkSession")),
+			connect.WithClientOptions(opts...),
+		),
+		getSessionFork: connect.NewClient[v1.GetSessionForkRequest, v1.GetSessionForkResponse](
+			httpClient,
+			baseURL+SessionServiceGetSessionForkProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("GetSessionFork")),
+			connect.WithClientOptions(opts...),
+		),
 		deleteSession: connect.NewClient[v1.DeleteSessionRequest, v1.DeleteSessionResponse](
 			httpClient,
 			baseURL+SessionServiceDeleteSessionProcedure,
@@ -310,11 +334,19 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("SubmitLocalReview")),
 			connect.WithClientOptions(opts...),
 		),
+		switchSessionAccount: connect.NewClient[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse](
+			httpClient,
+			baseURL+SessionServiceSwitchSessionAccountProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("SwitchSessionAccount")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	forkSession              *connect.Client[v1.ForkSessionRequest, v1.ForkSessionResponse]
+	getSessionFork           *connect.Client[v1.GetSessionForkRequest, v1.GetSessionForkResponse]
 	deleteSession            *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
 	getSessionDeletion       *connect.Client[v1.GetSessionDeletionRequest, v1.GetSessionDeletionResponse]
 	compactSession           *connect.Client[v1.CompactSessionRequest, v1.CompactSessionResponse]
@@ -341,6 +373,17 @@ type sessionServiceClient struct {
 	editLocalReviewComment   *connect.Client[v1.EditLocalReviewCommentRequest, v1.EditLocalReviewCommentResponse]
 	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
 	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
+	switchSessionAccount     *connect.Client[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse]
+}
+
+// ForkSession calls delidev.v1.SessionService.ForkSession.
+func (c *sessionServiceClient) ForkSession(ctx context.Context, req *connect.Request[v1.ForkSessionRequest]) (*connect.Response[v1.ForkSessionResponse], error) {
+	return c.forkSession.CallUnary(ctx, req)
+}
+
+// GetSessionFork calls delidev.v1.SessionService.GetSessionFork.
+func (c *sessionServiceClient) GetSessionFork(ctx context.Context, req *connect.Request[v1.GetSessionForkRequest]) (*connect.Response[v1.GetSessionForkResponse], error) {
+	return c.getSessionFork.CallUnary(ctx, req)
 }
 
 // DeleteSession calls delidev.v1.SessionService.DeleteSession.
@@ -473,8 +516,15 @@ func (c *sessionServiceClient) SubmitLocalReview(ctx context.Context, req *conne
 	return c.submitLocalReview.CallUnary(ctx, req)
 }
 
+// SwitchSessionAccount calls delidev.v1.SessionService.SwitchSessionAccount.
+func (c *sessionServiceClient) SwitchSessionAccount(ctx context.Context, req *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error) {
+	return c.switchSessionAccount.CallUnary(ctx, req)
+}
+
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	ForkSession(context.Context, *connect.Request[v1.ForkSessionRequest]) (*connect.Response[v1.ForkSessionResponse], error)
+	GetSessionFork(context.Context, *connect.Request[v1.GetSessionForkRequest]) (*connect.Response[v1.GetSessionForkResponse], error)
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	GetSessionDeletion(context.Context, *connect.Request[v1.GetSessionDeletionRequest]) (*connect.Response[v1.GetSessionDeletionResponse], error)
 	CompactSession(context.Context, *connect.Request[v1.CompactSessionRequest]) (*connect.Response[v1.CompactSessionResponse], error)
@@ -501,6 +551,7 @@ type SessionServiceHandler interface {
 	EditLocalReviewComment(context.Context, *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error)
 	DeleteLocalReviewComment(context.Context, *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error)
 	SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error)
+	SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -510,6 +561,18 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
+	sessionServiceForkSessionHandler := connect.NewUnaryHandler(
+		SessionServiceForkSessionProcedure,
+		svc.ForkSession,
+		connect.WithSchema(sessionServiceMethods.ByName("ForkSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceGetSessionForkHandler := connect.NewUnaryHandler(
+		SessionServiceGetSessionForkProcedure,
+		svc.GetSessionFork,
+		connect.WithSchema(sessionServiceMethods.ByName("GetSessionFork")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceDeleteSessionHandler := connect.NewUnaryHandler(
 		SessionServiceDeleteSessionProcedure,
 		svc.DeleteSession,
@@ -666,8 +729,18 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("SubmitLocalReview")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceSwitchSessionAccountHandler := connect.NewUnaryHandler(
+		SessionServiceSwitchSessionAccountProcedure,
+		svc.SwitchSessionAccount,
+		connect.WithSchema(sessionServiceMethods.ByName("SwitchSessionAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceForkSessionProcedure:
+			sessionServiceForkSessionHandler.ServeHTTP(w, r)
+		case SessionServiceGetSessionForkProcedure:
+			sessionServiceGetSessionForkHandler.ServeHTTP(w, r)
 		case SessionServiceDeleteSessionProcedure:
 			sessionServiceDeleteSessionHandler.ServeHTTP(w, r)
 		case SessionServiceGetSessionDeletionProcedure:
@@ -720,6 +793,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceDeleteLocalReviewCommentHandler.ServeHTTP(w, r)
 		case SessionServiceSubmitLocalReviewProcedure:
 			sessionServiceSubmitLocalReviewHandler.ServeHTTP(w, r)
+		case SessionServiceSwitchSessionAccountProcedure:
+			sessionServiceSwitchSessionAccountHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -728,6 +803,14 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) ForkSession(context.Context, *connect.Request[v1.ForkSessionRequest]) (*connect.Response[v1.ForkSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ForkSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) GetSessionFork(context.Context, *connect.Request[v1.GetSessionForkRequest]) (*connect.Response[v1.GetSessionForkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetSessionFork is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.DeleteSession is not implemented"))
@@ -831,4 +914,8 @@ func (UnimplementedSessionServiceHandler) DeleteLocalReviewComment(context.Conte
 
 func (UnimplementedSessionServiceHandler) SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SubmitLocalReview is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) SwitchSessionAccount(context.Context, *connect.Request[v1.SwitchSessionAccountRequest]) (*connect.Response[v1.SwitchSessionAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SwitchSessionAccount is not implemented"))
 }

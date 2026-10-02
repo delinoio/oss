@@ -23,3 +23,47 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Follow `docs/cmds-delidev-credentials-contract.md` for protected server secrets. Keep wrapping material in the native OS store, payloads authenticated-encrypted, and immutable request references/deletion markers durable across uncertainty. Never silently unlock, enumerate user credentials, replace a missing sealed key, or use a plaintext fallback. Native tests must use temporary keychains/UUID entries or an explicitly disposable Secret Service container; never lock a user's shared collection. A stored secret does not establish account readiness.
 
 - Native desktop registration inspection/recovery must pass the compiled fixed endpoint as a Go-side guard before recovery intent or pairing. An endpoint mismatch cannot create or publish a replacement; post-publication connection validation is additional defense, never the first endpoint check.
+
+- Protected browser contexts follow `docs/cmds-delidev-browser-contract.md`. Reserve exact presentation IDs on the UI loop before asynchronous Go reads, releasing the superseded raw child and invalidating late creation even if replacement preparation fails. Keep raw external CEF children outside Tauri browser-side IPC handlers and initialization scripts, explicitly reject their process messages despite the pinned runtime's shared renderer stub, and count native creation/close callbacks through exit. Never remove a profile before poller join, all native close proofs and independently observed CEF shutdown return; retain original offline removal intents and exact acknowledgment retries.
+
+- Before forgetting a saved connection, persist its original browser scope for local purge. Discover completed CLI removals through retained connection tombstones; deny reopen and purge only after independently completed CEF shutdown, without using deleted client credentials or claiming remote acknowledgment.
+
+- Browser validation, profile reads and durable writes run on serialized workers without holding native state during I/O. Post only CEF/native presentation work to the UI loop, recheck trusted documents and exact generations after preparation, coalesce bounded address updates, and join their worker before post-shutdown purge.
+
+- Stage durable tab-control writes before exact reservation validation. Fence final publication against UI reservation acceptance from a blocking worker; the UI callback must never acquire that fence or wait for storage, and stale preparations must leave the prior tabs intact.
+
+- First-tab initialization must use the same staged publication fence and reservation check; a superseded initial open cannot publish its starting address into a replacement profile.
+
+- Bound the worker's UI-reservation wait and cancel unexecuted late callbacks before releasing its publication fence. Native shutdown must not leave the address-worker join waiting for a reservation callback that the UI loop can no longer deliver.
+
+- Observed-address writes must stage first and recheck the profile, child generation and current reservation under the same worker publication fence before replacing durable tabs.
+
+- Quit closes address-callback acceptance under the bounded queue gate and drains previously accepted updates on the tracked worker. Shutdown alone cannot discard them; exact generation, reservation and removal checks still reject invalid writes. Join that worker before profile purge without making the UI wait for storage.
+
+- Retain asynchronous raw-child creation failure only for its exact profile, generation and reservation. Native state polling and ordinary controls must surface the typed failure until explicit presentation retry; stale creation failures must not poison replacements or hide tracked removal.
+
+- Initial native geometry/host failures in the after-created callback follow the same exact failure retention before requesting child closure. The close callback clears the child handle without clearing that failure; an explicit replacement presentation starts fresh.
+
+- Shared-profile tab replacement must attempt every affected child even when an earlier creation fails. Retain each exact view's failure and return the first failure only after all replacements have been attempted.
+
+- Replace shared browser children only when their selected tab identity changes. Closing a background tab or selecting the current tab preserves page state, navigation history, pending creation and exact retained failure.
+
+- Before replacing a selected/final tab child or superseding a presentation, synchronously unmap every old child before dropping handles or advancing generations. An unmap failure retains the original views and cleanup identity; request asynchronous close only after releasing native state. Removal/quit retain each child handle until its exact callback, so concurrent Hide cannot mistake a delayed close for invisibility.
+
+- Discovered profile removal synchronously unmaps every matching child before requesting asynchronous CEF closure. Attempt every user even if one unmap fails, retain original handles and presentation identities for exact Hide retries, and release native state before close requests. Failed unmapping never grants profile-purge authority.
+
+- Browser Hide is idempotent for an exact original view: synchronously hide only its matching native child before acknowledging success, or retain ownership until its exact close callback proves absence. Pending native creation and failed native hiding keep the original identity pending and deny ordinary controls. Confirm absence without touching a superseding view and return no browsing data from cleanup, including absent or unrelated-window requests. Preserve trusted-document checks and offline closure; native close accounting still gates process shutdown.
+
+- Actual native window close and explicit saved-window destruction must invalidate its browser reservation and pending context creation and request raw-child closure on the UI loop before destroying the parent. The saved-window Destroyed fallback checks the original binding instance before closing its exact window view and releasing the binding. Tray hiding preserves presentation; window closure retains profiles and native callback counts until independent shutdown.
+
+- Browser cleanup discovery uses an independent read-only controller with a two-second joined-child deadline; never hold the interactive connector gate through offline polling. Stage saved-connection purge only after fallible window setup, bind its exact original removal identity, and require a fresh retained Go removal receipt plus complete CEF shutdown before deleting bytes. Unchanged paired evidence cancels only the unaccepted intent; uncertain acceptance and independent account removal remain pending. Follow `docs/cmds-delidev-browser-contract.md`.
+
+- Advance the durable account-removal cursor before acknowledgment attempts, rotating retained intents across process exits so offline receipts cannot starve later local profile purges. Keep original request/revision ownership and the existing per-exit bounds.
+
+- Forgotten-scope and account-removal cleanup have independent 45-second/64-intent budgets after native shutdown. A depleted forgotten-scope budget cannot prevent account cursor advancement or local account-profile purge.
+
+- Quit denies presentations immediately but retains the CEF event loop until the worker's final bounded removal discovery finishes and every raw child closes. Perform that final discovery even when quit arrives during the poll sleep; never move its sidecar reads or durable intent writes onto the UI loop.
+
+- Fresh main hosts own one joined launch before supervision; helpers/saved windows/renderer observations cannot replay it. Recheck current durable Stop and fixed client authority before returning cached success. Explicit Retry preserves Stop; advanced Start shares Go desktop-launch service admission and cannot bypass installed registration ownership. Advanced Start/recovery adopt only verified outcomes. Go automatic/desktop startup uses one 35-second aggregate wait budget below the native 40-second command bound; never reset it per joined phase. Cancel and join short controllers on Quit, retaining detached lifetimes. Keep lifecycle logs bounded and secret/output/path-free.
+
+- Device appearance follows issue #1238 and the desktop contract. Only trusted `main` and registered `server-*` documents may read/update the versioned `appearance.json` in `app_config_dir()`. Keep it outside server data, pairing, backup and configuration transfer. Serialize bounded validated reads and atomic synchronized writes, publish committed changes to trusted windows only, and order snapshots with non-wrapping process revisions. Preserve invalid/newer files with System fallback; failed writes retain the last committed preference and uncertain outcomes require inspection before retry. Never grant generic filesystem authority or expose file paths/raw OS errors in diagnostics. Tests inject temporary directories.

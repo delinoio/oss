@@ -1,13 +1,15 @@
 {
   "identifier": "saved",
-  "description": "A trusted saved-server window can read only its native pinned connection and show the connection manager.",
+  "description": "Trusted saved-server document: its fixed native connection, owned browser presentation, and device-local appearance.",
   "permissions": [
     "saved-use",
     "tray-presentation",
     "notification-presentation",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
-    "github-presentation"
+    "github-presentation",
+    "device-appearance",
+    "browser-presentation"
   ],
   "webviews": [
     "server-*"

@@ -22,6 +22,77 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 )
 
+func TestBackupRestoreCLIConfirmsOriginalInspectionAndObservesRestart(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "state")
+	start := func() (context.CancelFunc, chan error) {
+		ctx, cancel := context.WithCancel(context.Background())
+		ready, done := make(chan struct{}), make(chan error, 1)
+		go func() {
+			done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(server.Endpoint) { close(ready) })
+		}()
+		select {
+		case <-ready:
+		case err := <-done:
+			cancel()
+			t.Fatal(err)
+		case <-time.After(10 * time.Second):
+			cancel()
+			t.Fatal("startup timeout")
+		}
+		return cancel, done
+	}
+	cancel, done := start()
+	joined := false
+	defer func() {
+		cancel()
+		if !joined {
+			if err := <-done; err != nil {
+				t.Error(err)
+			}
+		}
+	}()
+	code, value := cliRun(t, root, []string{"backup", "create", "--wait"}, "")
+	if code != 0 {
+		t.Fatal(code, value)
+	}
+	id := value["result"].(map[string]any)["job"].(map[string]any)["backup_id"].(string)
+	code, value = cliRun(t, root, []string{"backup", "inspect", "--id", id}, "")
+	if code != 0 {
+		t.Fatal(code, value)
+	}
+	inspection := value["result"].(map[string]any)
+	metadata := inspection["backup"].(map[string]any)
+	requestID := string(domain.NewID())
+	args := []string{"--request-id", requestID, "backup", "restore", "--id", id, "--expected-revision", metadata["revision"].(string), "--size-bytes", metadata["size_bytes"].(string), "--modified-at", metadata["modified_at"].(string), "--sha256", inspection["sha256"].(string), "--expected-restore-revision", inspection["restore_revision"].(string)}
+	if code, _ := cliRun(t, root, args, ""); code == 0 {
+		t.Fatal("unconfirmed restore accepted")
+	}
+	code, value = cliRun(t, root, append(args, "--confirm"), "")
+	if code != 0 || value["result"].(map[string]any)["receipt"].(map[string]any)["state"] != "BACKUP_RESTORE_STATE_PUBLISHED" {
+		t.Fatal(code, value)
+	}
+	select {
+	case err := <-done:
+		joined = true
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("restore did not join original server")
+	}
+	cancel()
+	cancel, done = start()
+	joined = false
+	code, value = cliRun(t, root, []string{"backup", "restore-status", "--id", requestID}, "")
+	if code != 0 || value["result"].(map[string]any)["receipt"].(map[string]any)["state"] != "BACKUP_RESTORE_STATE_RESTORED" {
+		t.Fatal(code, value)
+	}
+	code, value = cliRun(t, root, append(args, "--confirm"), "")
+	if code != 0 || value["result"].(map[string]any)["replayed"] != true {
+		t.Fatal("exact retry republished or failed", code, value)
+	}
+}
+
 func TestBackupCLIUsesServerInventoryAndChecksOriginalImage(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "state")
 	ctx, cancel := context.WithCancel(context.Background())

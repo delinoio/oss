@@ -254,6 +254,20 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 
 func (l *ExecutionLease) WorkingDirectory() string { return l.cwd }
 
+// ReconcileNative follows native-client and capability closure, but retains the
+// active workspace claim and lock for independent post-native observations.
+// Missing or changed process evidence cannot become a cleanup barrier.
+func (l *ExecutionLease) ReconcileNative(ctx context.Context) error {
+	retained, err := l.manager.readExecutionClaim(l.claim.SessionID)
+	if err != nil || retained != l.claim {
+		return ResultUncertain()
+	}
+	if err := process.ReconcileOwnerContext(ctx, l.manager.Git.ProcessRoot, l.claim.JobID); err != nil {
+		return ResultUncertain()
+	}
+	return nil
+}
+
 // Close must follow the native client's own Close/join. It independently checks
 // every indexed process scope before recording cleanup and unlocking. Unproven
 // cleanup leaves the durable claim active after the OS lock is released. A
@@ -271,14 +285,9 @@ func (l *ExecutionLease) Close() error {
 				l.manager.Logger.Info("workspace_execution_closed", "session_id", l.claim.SessionID, "job_id", l.claim.JobID, "execution_id", l.claim.ExecutionID)
 			}
 		}()
-		retained, err := l.manager.readExecutionClaim(l.claim.SessionID)
-		if err != nil || retained != l.claim {
-			l.closeError = ResultUncertain()
-			return
-		}
 		bounded, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := process.ReconcileOwnerContext(bounded, l.manager.Git.ProcessRoot, l.claim.JobID); err != nil {
+		if err := l.ReconcileNative(bounded); err != nil {
 			l.closeError = ResultUncertain()
 			return
 		}

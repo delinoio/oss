@@ -4,12 +4,14 @@ import { EntityKind, IntegrationQuery, ResourceQuery, PullRequestProblemCollecti
 import { document, object, text, type Document } from "./documents";
 import { bounded, date, positive, sha, uuid } from "./github-query-model";
 import { useRetainedMutation } from "./mutation";
+import { selectedCIRollup } from "./github-ci-queue";
 import { CIOriginalEvidence, PRCI, validCIContext, validPRCI } from "./github-ci";
 import { Problem } from "./ui";
 import { prSelectionKey, usePRWorkflow } from "./pr-workflow";
+import { PRFixAction } from "./pr-fix";
 import { OpenPRRemediationHistory } from "./pr-remediation-history";
 
-enum LocalState { Unhandled = "unhandled", Dismissed = "locally-dismissed" }
+enum LocalState { Unhandled = "unhandled", Dismissed = "locally-dismissed", Handled = "handled" }
 export type PRProblemSelection = { repositoryId: string; remoteRepositoryId: string; pullRequestId: string; number: string };
 const options = { retry: false, gcTime: 0, staleTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false };
 const envelope = (row: Resource) => row.schemaVersion === 1 && row.kind === EntityKind.PROBLEM && uuid(row.id) && row.revision > 0n && row.revision < 1n << 63n && !row.sessionId && !row.projectId && row.documentJson.byteLength <= 1 << 20;
@@ -19,14 +21,16 @@ function targetValid(target: Document, selection: PRProblemSelection) {
 function observationValid(value: Document) { return sha(value.base_sha) && sha(value.head_sha) && date(value.observed_at); }
 function conflictSnapshotValid(value: Document) { return uuid(value.transition_id) && bounded(value.base_ref, 1024) && bounded(value.head_ref, 1024) && observationValid(object(value.observation)); }
 function localDecisionValid(value: Document) {
- const dismissal = object(value.dismissal);
+ const dismissal = object(value.dismissal), handling = object(value.handling);
+ if (value.state === LocalState.Handled) return value.dismissal == null && uuid(handling.attempt_id) && uuid(handling.execution_id) && sha(handling.pushed_head) && date(handling.at);
+ if (value.handling != null) return false;
  return value.state === LocalState.Unhandled ? value.dismissal == null : value.state === LocalState.Dismissed && uuid(dismissal.request_id) && date(dismissal.at) && (dismissal.actor_type === "client" ? uuid(dismissal.device_id) : dismissal.actor_type === "owner" && dismissal.device_id == null);
 }
 export function readPRProblemSet(row: Resource, selection: PRProblemSelection): Document | undefined {
  const value = document(row), ci = object(value.ci), conflict = object(value.conflict);
  if (!envelope(row) || value.version !== 1 || value.type !== "pull-request-set" || !targetValid(object(value.target), selection) || (value.feedback == null && value.ci == null && value.conflict == null)) return;
  if (value.feedback != null && !observationValid(object(value.feedback))) return;
- if (value.ci != null && (!observationValid(object(ci.observation)) || !["unknown", "missing", "pending", "non-failing", "terminal-failure", "not-required"].includes(text(ci.state)) || !["head", "test-merge", "unknown"].includes(text(ci.source)) || !/^[a-f0-9]{64}$/.test(text(ci.rules_digest)) || (ci.source === "unknown" ? ci.evaluated_sha != null || ci.state !== "unknown" : !sha(ci.evaluated_sha)))) return;
+ if (value.ci != null && (!observationValid(object(ci.observation)) || !["unknown", "missing", "pending", "non-failing", "terminal-failure", "not-required"].includes(text(ci.state)) || !["head", "test-merge", "merge-queue", "unknown"].includes(text(ci.source)) || !/^[a-f0-9]{64}$/.test(text(ci.rules_digest)) || (ci.source === "unknown" ? ci.evaluated_sha != null || ci.state !== "unknown" : !sha(ci.evaluated_sha)))) return;
  if (value.conflict != null && (!observationValid(object(conflict.observation)) || !bounded(conflict.base_ref, 1024) || !bounded(conflict.head_ref, 1024) || !["unknown", "mergeable", "conflicting", "not-applicable"].includes(text(conflict.state)) || !["open", "closed"].includes(text(conflict.pull_request_state)) || typeof conflict.merged !== "boolean" || (conflict.mergeable != null && typeof conflict.mergeable !== "boolean") || (conflict.active != null && !conflictSnapshotValid(object(conflict.active))))) return;
  return value;
 }
@@ -36,7 +40,8 @@ export function readPRProblem(row: Resource, set: Resource, selection: PRProblem
   if (value.kind === "ci-failure") {
     const ci = object(value.ci), context = object(ci.context);
     const terminal = context.kind === "check-run" ? context.native_status === "COMPLETED" && ["FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE"].includes(text(context.native_conclusion)) : context.kind === "commit-status" && ["FAILURE", "ERROR"].includes(text(context.native_status));
-    if (value.feedback != null || value.original_provider != null || value.latest_provider != null || value.conflict != null || !uuid(ci.observation_id) || !validCIContext(context) || context.required !== true || !terminal || !["head", "test-merge"].includes(text(ci.source)) || !/^[a-f0-9]{64}$/.test(text(ci.rules_digest))) return;
+    if (value.feedback != null || value.original_provider != null || value.latest_provider != null || value.conflict != null || !uuid(ci.observation_id) || !validCIContext(context) || context.required !== true || !terminal || !["head", "test-merge", "merge-queue"].includes(text(ci.source)) || !/^[a-f0-9]{64}$/.test(text(ci.rules_digest))) return;
+    if (ci.source === "merge-queue" ? !bounded(ci.queue_node_id, 256) || !bounded(ci.queue_entry_node_id, 256) : ci.queue_node_id != null || ci.queue_entry_node_id != null) return;
     return value;
   }
   if (value.kind === "merge-conflict") {
@@ -85,11 +90,11 @@ function OriginalCIProofRead({ value, selection }: { value: Document; selection:
   const ci = object(value.ci), context = object(ci.context);
   const query = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROBLEM, id: text(ci.observation_id) }, options);
   const row = query.data?.resource, proof = document(row), observation = object(proof.observation), evaluation = object(proof.ci), result = object(evaluation.result);
-  const item = { base_ref: proof.base_ref, head_ref: proof.head_ref, base_sha: observation.base_sha, head_sha: observation.head_sha, state: proof.pull_request_state, merged: proof.merged, mergeable: proof.mergeable };
-  const selected = result.source === "test-merge" ? object(evaluation.test_merge) : object(evaluation.head);
+  const item = { node_id: object(proof.target).pull_request_node_id, number: object(proof.target).number, base_ref: proof.base_ref, head_ref: proof.head_ref, base_sha: observation.base_sha, head_sha: observation.head_sha, state: proof.pull_request_state, merged: proof.merged, mergeable: proof.mergeable };
+  const selected = selectedCIRollup(evaluation);
   const contexts = Array.isArray(selected.contexts) ? selected.contexts as Document[] : [];
   const matches = contexts.find(candidate => candidate.node_id === context.node_id);
-  const valid = Boolean(row && envelope(row) && row.id === ci.observation_id && proof.version === 1 && proof.type === "pull-request-ci-observation" && proof.set_id === value.set_id && targetValid(object(proof.target), selection) && observationValid(observation) && sameJSON(proof.observation, value.observation) && validPRCI(evaluation, item) && result.state === "terminal-failure" && result.source === ci.source && object(evaluation.rules).digest === ci.rules_digest && matches && sameJSON(matches, context));
+  const valid = Boolean(row && envelope(row) && row.id === ci.observation_id && proof.version === 1 && proof.type === "pull-request-ci-observation" && proof.set_id === value.set_id && targetValid(object(proof.target), selection) && observationValid(observation) && sameJSON(proof.observation, value.observation) && validPRCI(evaluation, item) && result.state === "terminal-failure" && result.source === ci.source && object(evaluation.rules).digest === ci.rules_digest && (ci.source !== "merge-queue" || (object(evaluation.merge_queue).node_id === ci.queue_node_id && object(object(evaluation.merge_queue).entry).node_id === ci.queue_entry_node_id && object(evaluation.merge_queue).repository_node_id === object(proof.target).repository_node_id)) && matches && sameJSON(matches, context));
   return <><Problem error={query.error} />{query.isPending ? <p>Reading original CI evaluation…</p> : !valid ? <p role="alert">The original CI proof does not match this result version.</p> : <PRCI value={evaluation} historical />}</>;
 }
 function OriginalCIProof({ value, selection }: { value: Document; selection: PRProblemSelection }) {
@@ -97,19 +102,20 @@ function OriginalCIProof({ value, selection }: { value: Document; selection: PRP
   return <section><p>Original evaluated {text(ci.source)} commit: <code>{text(context.commit_sha)}</code> · rules digest <code>{text(ci.rules_digest)}</code></p><CIOriginalEvidence row={context} /><button aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Close original CI evaluation" : "Inspect original CI rules and results"}</button>{open ? <OriginalCIProofRead value={value} selection={selection} /> : null}</section>;
 }
 
-function ProblemRow({ row, value, selection, disabled, refreshed }: { row: Resource; value: Document; selection: PRProblemSelection; disabled: boolean; refreshed: () => void }) {
-  const feedback = object(value.feedback), latest = object(value.latest_provider), original = object(value.original_provider), observation = object(value.observation), dismissal = object(value.dismissal), code = object(feedback.code), ci = object(value.ci), conflict = object(value.conflict);
+function ProblemRow({ row, set, value, selection, disabled, refreshed }: { row: Resource; set: Resource; value: Document; selection: PRProblemSelection; disabled: boolean; refreshed: () => void }) {
+  const feedback = object(value.feedback), latest = object(value.latest_provider), original = object(value.original_provider), observation = object(value.observation), dismissal = object(value.dismissal), handling = object(value.handling), code = object(feedback.code), ci = object(value.ci), conflict = object(value.conflict);
   const title = value.kind === "ci-failure" ? `Required CI failure · ${text(object(ci.context).name)}` : value.kind === "merge-conflict" ? `Merge conflict · ${text(conflict.head_ref)} → ${text(conflict.base_ref)}` : `${text(feedback.kind)} · ${text(object(feedback.author).login) || "Author unavailable"}`;
   const dismiss = useRetainedMutation(`pr-problem-dismiss:${row.id}`, IntegrationQuery.dismissPullRequestProblem, refreshed);
   return <article className="result" aria-label={title}><h5>{title}</h5>
-    <p>Local handling: {value.state === LocalState.Dismissed ? "Locally dismissed" : "Unhandled"} · {value.current ? "Present in latest complete collection" : "Retained earlier version or absent from latest collection"}</p>
+    <p>Local handling: {value.state === LocalState.Dismissed ? "Locally dismissed" : value.state === LocalState.Handled ? "Handled after verified push" : "Unhandled"} · {value.current ? "Present in latest complete collection" : "Retained earlier version or absent from latest collection"}</p>
     {value.kind === "review-feedback" ? <><p>Original provider state: {text(original.native_state) || "Published comment"}{original.review_state ? ` · Review ${text(original.review_state)}` : ""}. Latest observed provider state: {text(latest.native_state) || "Published comment"}{latest.review_state ? ` · Review ${text(latest.review_state)}` : ""}.</p>
       {typeof latest.thread_resolved === "boolean" ? <p>Latest thread observation: {latest.thread_resolved ? "resolved" : "unresolved"}{latest.thread_outdated ? " · outdated code position" : ""}. This does not mark this content version handled.</p> : null}
       <pre>{text(feedback.body) || "Empty published body."}</pre>
       {feedback.code != null ? <details><summary>Original code context · {text(code.path)}</summary><p>Original line: {code.original_line == null ? "Unavailable" : String(code.original_line)}</p><pre>{text(code.diff_hunk)}</pre></details> : null}
       <details><summary>Original feedback identity</summary><p>Source: <code>{text(feedback.url)}</code></p><p>Provider ID {text(feedback.id)} · Node <code>{text(feedback.node_id)}</code> · Author ID {text(object(feedback.author).id) || "Unavailable"}</p><p>Published {text(feedback.published_at)}{feedback.last_edited_at ? ` · Edited ${text(feedback.last_edited_at)}` : ""}</p></details></> : value.kind === "ci-failure" ? <OriginalCIProof value={value} selection={selection} /> : <p>Verified conflict transition: <code>{text(conflict.transition_id)}</code>. A new confirmed transition or changed refs/commits creates a separate version; an unknown reading does not.</p>}
     <details><summary>Original problem provenance</summary><p>Content version: <code>{text(value.content_version)}</code></p><p>First observed {text(observation.observed_at)} · head <code>{text(observation.head_sha)}</code> · base <code>{text(observation.base_sha)}</code></p><p>Problem {row.id} · revision {row.revision.toString()}</p></details>
-    {value.state === LocalState.Dismissed ? <p>Dismissed locally at {text(dismissal.at)} by {text(dismissal.actor_type)}{dismissal.device_id ? ` ${text(dismissal.device_id)}` : ""} · request {text(dismissal.request_id)}</p> : <button disabled={disabled || dismiss.busy || dismiss.uncertain} onClick={() => void dismiss.send({ mutation: { id: row.id, expectedRevision: row.revision, requestId: newRequestId() }, contentVersion: text(value.content_version) })}>Dismiss this content version</button>}
+    {value.state === LocalState.Handled ? <p>Verified push: <code>{text(handling.pushed_head)}</code> · attempt <code>{text(handling.attempt_id)}</code> · execution <code>{text(handling.execution_id)}</code> · handled at <time dateTime={text(handling.at)}>{text(handling.at)}</time></p> : value.state === LocalState.Dismissed ? <p>Dismissed locally at {text(dismissal.at)} by {text(dismissal.actor_type)}{dismissal.device_id ? ` ${text(dismissal.device_id)}` : ""} · request {text(dismissal.request_id)}</p> : <button disabled={disabled || dismiss.busy || dismiss.uncertain} onClick={() => void dismiss.send({ mutation: { id: row.id, expectedRevision: row.revision, requestId: newRequestId() }, contentVersion: text(value.content_version) })}>Dismiss this content version</button>}
+    {value.state === LocalState.Unhandled ? <PRFixAction row={row} set={set} value={value} selection={selection} disabled={disabled || dismiss.busy || dismiss.uncertain} refreshed={refreshed} /> : null}
     <Problem error={dismiss.error} />{dismiss.uncertain ? <button disabled={dismiss.busy} onClick={dismiss.retry}>Retry original dismissal</button> : null}
   </article>;
 }
@@ -129,7 +135,7 @@ export function PRProblemHistory({ selection }: { selection: PRProblemSelection 
   return <section aria-label="Retained PR problems"><h4>Retained PR problems</h4><p>Original feedback, required CI failures and verified merge conflicts are retained on the server. Local dismissal affects only the selected version. Provider changes do not handle retained evidence, and collection or dismissal does not run an agent.</p>
     <label>Problem collection kind<select disabled={busy} value={kind} onChange={event => workflow.setCollectionKind(collectionKey, Number(event.target.value) as PullRequestProblemCollectionKind)}><option value={PullRequestProblemCollectionKind.FEEDBACK}>Published feedback</option><option value={PullRequestProblemCollectionKind.CI}>Required CI</option><option value={PullRequestProblemCollectionKind.CONFLICT}>Merge conflict</option></select></label><button disabled={busy} onClick={() => void collect.send({ repositoryId: selection.repositoryId, number: selection.number, requestId: newRequestId(), kind })}>Collect selected PR problems</button><button disabled={history.isFetching} onClick={refreshed}>Refresh retained history</button>
     <Problem error={collect.error || history.error} />{collect.uncertain ? <button disabled={collect.busy} onClick={collect.retry}>Retry original problem collection</button> : null}
-    {history.isPending ? <p role="status">Reading retained PR problems…</p> : !valid ? <p role="alert">The retained problem page is inconsistent. Refresh its original PR selection.</p> : <>{history.error ? <p>Previous retained history is shown; refresh failed.</p> : null}{set ? <div><p>Inventory revision {set.revision.toString()}</p>{summary.feedback != null ? <p>Latest feedback collection: {text(object(summary.feedback).observed_at)}</p> : null}{summary.ci != null ? <p>Latest CI evaluation: {text(latestCI.state)} · {text(latestCI.reason)} · {text(object(latestCI.observation).observed_at)}</p> : null}{summary.conflict != null ? <p>Latest mergeability: {text(latestConflict.state)} · {text(object(latestConflict.observation).observed_at)}</p> : null}</div> : <p>No problems have been collected for this PR.</p>}{rows.map((row, index) => <ProblemRow key={row.id} row={row} value={values[index]!} selection={selection} disabled={busy || Boolean(history.error)} refreshed={refreshed} />)}{set && !rows.length ? <p>No retained problems on this page.</p> : null}</>}
+    {history.isPending ? <p role="status">Reading retained PR problems…</p> : !valid ? <p role="alert">The retained problem page is inconsistent. Refresh its original PR selection.</p> : <>{history.error ? <p>Previous retained history is shown; refresh failed.</p> : null}{set ? <div><p>Inventory revision {set.revision.toString()}</p>{summary.feedback != null ? <p>Latest feedback collection: {text(object(summary.feedback).observed_at)}</p> : null}{summary.ci != null ? <p>Latest CI evaluation: {text(latestCI.state)} · {text(latestCI.reason)} · {text(object(latestCI.observation).observed_at)}</p> : null}{summary.conflict != null ? <p>Latest mergeability: {text(latestConflict.state)} · {text(object(latestConflict.observation).observed_at)}</p> : null}</div> : <p>No problems have been collected for this PR.</p>}{rows.map((row, index) => <ProblemRow key={row.id} row={row} set={set!} value={values[index]!} selection={selection} disabled={busy || Boolean(history.error)} refreshed={refreshed} />)}{set && !rows.length ? <p>No retained problems on this page.</p> : null}</>}
     <nav aria-label="Retained problem pages"><button disabled={!page || busy} onClick={() => setPage("")}>First problem page</button><button disabled={!valid || !history.data?.nextPageToken || busy || Boolean(history.error)} onClick={() => setPage(history.data!.nextPageToken)}>Next problem page</button></nav>
   </section>;
 }

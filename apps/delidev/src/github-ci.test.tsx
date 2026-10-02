@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import { PRCI, validPRCI } from "./github-ci";
 
 const item = { state: "open", merged: false, base_ref: "main", base_sha: "a".repeat(40), head_sha: "b".repeat(40) };
-import { ciObservation } from "./github-ci-fixture";
+import { ciObservation, queueCIObservation } from "./github-ci-fixture";
 
 it("shows required failure with exact rule, App and evaluated commit provenance", () => {
   const value = ciObservation();
@@ -59,4 +59,42 @@ it("rejects missing or mixed lifecycle proof, impossible attempts and oversized 
   expect(validPRCI(large, item)).toBe(false);
   const mixed = ciObservation();
   expect(validPRCI({ ...mixed, head: { ...mixed.head, contexts: [{ ...mixed.head.contexts[0], evidence: { ...mixed.head.contexts[0].evidence, description: "status-only evidence" } }] } }, item)).toBe(false);
+});
+
+it("shows ALLGREEN queue commit evidence and keeps queue state independent of failed checks", () => {
+  const value = queueCIObservation(), queueItem = { ...item, node_id: "ITEM_stable", number: "17", repository_node_id: "R_37" };
+  expect(validPRCI(value, queueItem)).toBe(true);
+  render(<PRCI value={value} />);
+  expect(screen.getByText(value.merge_queue.entry.head_sha)).toBeTruthy();
+  expect(screen.getByText(/entry ENTRY_E.*strategy ALLGREEN/)).toBeTruthy();
+  expect(screen.getByText(/UNMERGEABLE does not establish a failed check/)).toBeTruthy();
+  expect(screen.getByText(/merge_group/)).toBeTruthy();
+  expect(screen.queryByText(item.head_sha)).toBeNull();
+});
+
+it("rejects mixed queue membership, foreign commits, HEADGREEN and unverified original workflows", () => {
+  const queueItem = { ...item, node_id: "ITEM_stable", number: "17", repository_node_id: "R_37" };
+  for (const mode of ["HEADGREEN", "entry", "repository", "position", "partial", "head", "event", "app", "workflow", "source"]) {
+    const value = queueCIObservation(), queue = value.merge_queue, run = queue.rollup.contexts[0];
+    if (mode === "HEADGREEN") queue.strategy = "HEADGREEN";
+    if (mode === "entry") queue.entry.pull_request_node_id = "FOREIGN";
+    if (mode === "repository") queue.repository_node_id = "FOREIGN";
+    if (mode === "position") queue.entry = { ...queue.entry, position: "2" };
+    if (mode === "partial") queue.total_count = "2";
+    if (mode === "head") run.commit_sha = item.head_sha;
+    if (mode === "event") run.workflow_event = "pull_request";
+    if (mode === "app") run.application.id = "99";
+    if (mode === "workflow") run.evidence.workflow.commit_sha = item.head_sha;
+    if (mode === "source") value.result.source = "head";
+    expect(validPRCI(value, queueItem), mode).toBe(false);
+  }
+});
+
+it("preserves an unknown queue strategy without presenting historical head failures as current", () => {
+  const value = queueCIObservation();
+  const unknown = { ...value, merge_queue: { ...value.merge_queue, strategy: "HEADGREEN" }, result: { source: "unknown", state: "unknown", reason: "commit-unverified", requirements: [] } };
+  expect(validPRCI(unknown, { ...item, node_id: "ITEM_stable", number: "17" })).toBe(true);
+  render(<PRCI value={unknown} />);
+  expect(screen.getByRole("status").textContent).toBe("Unknown");
+  expect(screen.queryByText(/Inspected check/)).toBeNull();
 });

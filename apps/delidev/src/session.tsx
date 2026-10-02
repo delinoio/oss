@@ -1,4 +1,6 @@
+import { NativeGrokTool } from "./native-grok-interactions";
 import { NativeGrokText, NativeGrokUser } from "./native-grok";
+import { SessionBrowser } from "./session-browser";
 import { SessionFiles } from "./session-files";
 import { SessionDiff } from "./session-diff";
 import { NativeBuiltin, NativeWorkspaceEvent } from "./native-builtin";
@@ -25,6 +27,8 @@ import { document as readDocument, encode, items, Mode, object, resourceName, te
 import { useRetainedMutation } from "./mutation";
 import { Failure, Problem } from "./ui";
 import { Interaction } from "./interactions";
+import { SessionTerminals } from "./session-terminals";
+import { SessionForkAction } from "./session-fork";
 import { SessionTools } from "./session-tools";
 import { SessionPullRequests } from "./session-pull-requests";
 import { QueuedInput } from "./queue";
@@ -128,7 +132,8 @@ export function interactionRows(base: readonly Resource[], live: ReadonlyMap<str
 
 const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
   const data = readDocument(resource);
-  if (Object.hasOwn(data, "grok_user")) return <NativeGrokUser data={data} />;
+  if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
+ if (Object.hasOwn(data, "grok_user")) return <NativeGrokUser data={data} />;
   if (data.grok_text != null) return <NativeGrokText data={data} />;
   if (data.claude_progress != null) return <NativeClaudeProgress data={data} />;
   if (data.claude_interruption != null) return <NativeClaudeInterruption data={data} />;
@@ -181,13 +186,15 @@ const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Re
   </article>;
 });
 
-enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff" }
+enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser" }
 
 export function SessionView({ id, draft, setDraft }: { id: string; draft: string; setDraft: (value: string) => void }) {
   const live = useSessionStream(id);
   const [panel, setPanel] = useState(SessionPanel.Closed);
+  const terminalsButton = useRef<HTMLButtonElement>(null);
   const filesButton = useRef<HTMLButtonElement>(null);
   const diffButton = useRef<HTMLButtonElement>(null);
+  const browserButton = useRef<HTMLButtonElement>(null);
  const [budgetBlocked,setBudgetBlocked]=useState(false);
   const [page, setPage] = useState("");
   const [queuePage, setQueuePage] = useState("");
@@ -201,6 +208,12 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   const observed = live.resources.get(id);
   const session = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
   const data = readDocument(session);
+  // A paused account switch selects the next account without rewriting the
+  // preceding execution. Match the server's continuation selection immediately.
+  const accountChanges = items(data.account_changes);
+  const browserAccountId = accountChanges.length
+    ? text(object(accountChanges.at(-1)).account_id)
+    : text(object(data.current_execution).account_id) || text(object(data.initial_execution).initial_account_id);
   const titlePresentation = sessionTitlePresentation(data);
   const rows = useMemo(() => {
     // The stream records creation order. UUIDs from different Workers are not
@@ -223,7 +236,7 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   };
   return <div className={`session-workspace${panel !== SessionPanel.Closed ? " files-open" : ""}`}><section className="session" aria-label="Current session">
     <header className="session-header"><div><h2>{resourceName(session)}</h2><p>{workspaceNames[text(data.workspace) as Workspace] || "Workspace"} · {text(data.outcome)} · {text(data.dispatch)} · {text(data.archive)}</p>{titlePresentation ? <p className="session-title-status" role="status">{titlePresentation.label}{titlePresentation.detail ? ` · ${titlePresentation.detail}` : ""}</p> : null}</div>
-      <div className="actions"><button ref={filesButton} aria-expanded={panel === SessionPanel.Files} aria-controls={`files-${id}`} onClick={() => setPanel(panel === SessionPanel.Files ? SessionPanel.Closed : SessionPanel.Files)}>Files</button><button ref={diffButton} aria-expanded={panel === SessionPanel.Diff} aria-controls={`diff-${id}`} onClick={() => setPanel(panel === SessionPanel.Diff ? SessionPanel.Closed : SessionPanel.Diff)}>Diff</button><button disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>Stop</button>
+      <div className="actions">{session ? <SessionForkAction source={session} /> : null}<button ref={terminalsButton} aria-expanded={panel === SessionPanel.Terminals} aria-controls={`terminals-${id}`} onClick={() => setPanel(panel === SessionPanel.Terminals ? SessionPanel.Closed : SessionPanel.Terminals)}>Terminals</button><button ref={filesButton} aria-expanded={panel === SessionPanel.Files} aria-controls={`files-${id}`} onClick={() => setPanel(panel === SessionPanel.Files ? SessionPanel.Closed : SessionPanel.Files)}>Files</button><button ref={diffButton} aria-expanded={panel === SessionPanel.Diff} aria-controls={`diff-${id}`} onClick={() => setPanel(panel === SessionPanel.Diff ? SessionPanel.Closed : SessionPanel.Diff)}>Diff</button><button ref={browserButton} aria-expanded={panel === SessionPanel.Browser} aria-controls={`browser-${id}`} onClick={() => setPanel(panel === SessionPanel.Browser ? SessionPanel.Closed : SessionPanel.Browser)}>Browser</button><button disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>Stop</button>
         <button disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? "Restore" : "Archive"}</button>
         <button disabled={!session || control.busy || control.uncertain || budgetBlocked || Object.hasOwn(data, "startup_rejection") || text(data.archive) !== "active"} onClick={() => action(SessionAction.RESUME)}>Resume</button></div></header>
     <p className="connection" role="status">{live.state === ConnectionState.Live ? "Connected" : live.state === ConnectionState.Reconnecting ? "Connection lost · Retained state shown" : live.state === ConnectionState.Failed ? "Connection requires attention" : "Connecting…"}</p>
@@ -249,5 +262,5 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
       <div className="actions"><label>Mode <select value={mode} disabled={locked} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>Execute</option><option value={Mode.Plan}>Plan</option></select></label><button className="primary" disabled={locked || !draft.trim() || text(data.archive) !== "active"}>Queue message</button></div>
       <Problem error={send.error} />{send.uncertain ? <button type="button" disabled={send.busy} onClick={send.retry}>Retry the same message</button> : null}
     </form>
-  </section>{panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={() => { setPanel(SessionPanel.Closed); filesButton.current?.focus(); }} /></div> : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={() => { setPanel(SessionPanel.Closed); diffButton.current?.focus(); }} /></div> : null}</div>;
+  </section>{panel === SessionPanel.Terminals && session ? <div id={`terminals-${id}`} className="session-app-panel"><SessionTerminals key={id} session={session} close={() => { setPanel(SessionPanel.Closed); terminalsButton.current?.focus(); }} /></div> : panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={() => { setPanel(SessionPanel.Closed); filesButton.current?.focus(); }} /></div> : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={() => { setPanel(SessionPanel.Closed); diffButton.current?.focus(); }} /></div> : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={() => { setPanel(SessionPanel.Closed); browserButton.current?.focus(); }} /></div> : null}</div>;
 }

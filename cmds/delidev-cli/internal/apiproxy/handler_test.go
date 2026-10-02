@@ -31,6 +31,7 @@ type fixtureAuthority struct {
 	keys, releases, acquires atomic.Int32
 	authorize                func(context.Context, ReferenceKind, string) error
 	observe                  func(context.Context, ReferenceKind, string) error
+	history                  func(context.Context, bool) error
 }
 
 func (a *fixtureAuthority) Acquire(ctx context.Context, token string) (*Lease, error) {
@@ -45,7 +46,7 @@ func (a *fixtureAuthority) Acquire(ctx context.Context, token string) (*Lease, e
 			key = fixtureKey
 		}
 		return []byte(key), ctx.Err()
-	}, AuthorizeReference: a.authorize, ObserveReference: a.observe}, nil
+	}, AuthorizeReference: a.authorize, ObserveReference: a.observe, ObserveHistory: a.history}, nil
 }
 
 type lockedLog struct {
@@ -342,8 +343,12 @@ func TestProxyRevocationCancelsUpstreamAndRefusesLaterRequests(t *testing.T) {
 		t.Fatal("revoked request did not return")
 	}
 	response, _, err := f.request(t, "/chat/completions", `{"model":"fixed-model"}`, nil)
-	if err != nil || response.StatusCode != 401 || f.calls.Load() != 1 || f.authority.keys.Load() != 1 {
-		t.Fatal("revoked execution reused upstream credential")
+	status := 0
+	if response != nil {
+		status = response.StatusCode
+	}
+	if err != nil || status != 401 || f.calls.Load() != 1 || f.authority.keys.Load() != 1 {
+		t.Fatalf("revoked request: status=%d error=%v upstream_calls=%d key_reads=%d releases=%d", status, err, f.calls.Load(), f.authority.keys.Load(), f.authority.releases.Load())
 	}
 }
 

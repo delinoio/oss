@@ -329,6 +329,7 @@ func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
 		filepath.Join("runtimes", string(execution.ExecutionID), "content"),
 		filepath.Join("runtimes", string(compaction.ActionID), "content"),
 		filepath.Join("compaction-checkpoints", string(compaction.ActionID)+".json"),
+		filepath.Join("pr-git", string(execution.ExecutionID), "scope.json"),
 		filepath.Join("jobs", string(job.JobID), "outbox"),
 		filepath.Join("jobs", string(job.JobID)+".json"),
 		filepath.Join("workspace-recovery", string(job.JobID)+".json"),
@@ -356,7 +357,7 @@ func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
 			if err := os.Remove(path); err != nil {
 				t.Fatal(err)
 			}
-			if filepath.Base(path) == "restored.json" || filepath.Base(path) == "content" || filepath.Base(path) == "outbox" {
+			if filepath.Base(path) == "restored.json" || filepath.Base(path) == "content" || filepath.Base(path) == "outbox" || filepath.Base(path) == "scope.json" {
 				if err := os.Remove(filepath.Dir(path)); err != nil {
 					t.Fatal(err)
 				}

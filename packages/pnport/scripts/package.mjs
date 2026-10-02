@@ -127,8 +127,8 @@ export function verifySet(directory, sourceRevision = revision()) {
   const names = packageNames(version);
   const tarballs = path.join(directory, "tarballs");
   const archives = path.join(directory, "archives");
-  ensure(JSON.stringify(readdirSync(tarballs).sort()) === JSON.stringify([...names].sort()), "Expected exactly seven pnport npm tarballs");
-  ensure(JSON.stringify(readdirSync(archives).sort()) === JSON.stringify(targets.map(archiveName).sort()), "Expected exactly six native archives");
+  ensure(JSON.stringify(readdirSync(tarballs).sort()) === JSON.stringify([...names].sort()), `Expected exactly ${names.length} pnport npm tarballs`);
+  ensure(JSON.stringify(readdirSync(archives).sort()) === JSON.stringify(targets.map(archiveName).sort()), `Expected exactly ${targets.length} native archives`);
   const packages = names.map((name) => inspectTarball(path.join(tarballs, name), version, sourceRevision));
   const native = targets.map((target) => inspectArchive(path.join(archives, archiveName(target)), target, path.join(tarballs, tarballName(target.name, version))));
   return { version, revision: sourceRevision, packages, native };

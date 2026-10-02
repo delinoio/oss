@@ -46,7 +46,7 @@ export function MutationIntents({ children }: { children: ReactNode }) {
 // Exact pending requests outlive session navigation. Only switching the whole
 // connection discards that registry. Settings owns a nested opening registry;
 // closing it discards only its intents, and late results cannot reach a replacement.
-export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void) {
+export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void, acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean) {
   const registry = useContext(Context);
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
   const opening = useSettingsOpening();
@@ -84,6 +84,14 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       return;
     }
     if (!registry.alive || opening?.disposed) return;
+    if (acknowledge) {
+      try {
+        if (!acknowledge(result, retained)) throw new ConnectError("The accepted response could not be verified. Retry only the original request or inspect retained attempts.", Code.Internal);
+      } catch (error) {
+        registry.put(key, { busy: false, uncertain: true, input: retained, bytes, error });
+        return;
+      }
+    }
     registry.put(key, empty);
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.

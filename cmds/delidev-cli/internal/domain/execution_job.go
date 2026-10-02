@@ -11,6 +11,7 @@ import (
 // arrives separately through an authenticated digest-only grant registration;
 // upstream credentials and raw execution tokens never belong in this document.
 type ExecutionJobInput struct {
+	Fork                *ForkExecution         `json:"fork,omitempty"`
 	Version             uint32                 `json:"version"`
 	SessionID           ID                     `json:"session_id"`
 	MachineID           ID                     `json:"machine_id"`
@@ -26,6 +27,7 @@ type ExecutionJobInput struct {
 	Installation        Installation           `json:"installation"`
 	Preparation         json.RawMessage        `json:"preparation"`
 	Manifest            json.RawMessage        `json:"manifest"`
+	Remediation         *PRFixExecution        `json:"remediation,omitempty"`
 	Continuation        *ExecutionContinuation `json:"continuation,omitempty"`
 }
 
@@ -43,7 +45,8 @@ type ExecutionCompletion struct {
 	CleanupVerified bool             `json:"cleanup_verified"`
 	// Version 2 binds the exact immutable Worker-private continuation file.
 	// Version 1 remains readable historical evidence but cannot prove this file.
-	NativeCheckpointDigest string `json:"native_checkpoint_digest,omitempty"`
+	NativeCheckpointDigest string       `json:"native_checkpoint_digest,omitempty"`
+	PRPush                 *PRPushProof `json:"pr_push,omitempty"`
 }
 
 func (c ExecutionCompletion) Validate() error {
@@ -53,6 +56,9 @@ func (c ExecutionCompletion) Validate() error {
 }
 
 func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
+	if c.PRPush != nil && c.PRPush.Validate() != nil {
+		return invalidPRRemediation()
+	}
 	if harness == GrokBuild && (c.Version != 1 || (c.Outcome != ExecutionSucceeded && c.Outcome != ExecutionStopped) || c.NativeCheckpointDigest != "") {
 		return Fail(Unsupported, "Grok Build completion requires the closed original first-text profile.", "Original terminal, Stop and cleanup evidence remain independent of this envelope; continuation requires its own profile.")
 	}
@@ -79,7 +85,10 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 }
 
 func (i ExecutionJobInput) Validate() error {
-	if !((i.Version == 1 && i.Continuation == nil) || (i.Version == 2 && i.Continuation != nil)) || i.Installation.Harness != i.Configuration.Harness {
+	if i.Remediation != nil && (i.Remediation.Validate() != nil || i.Input.Mode != ExecuteMode || i.Configuration.Harness != Codex || (i.Configuration.Options.Permission != PermissionWorkspaceWrite && i.Configuration.Options.Permission != PermissionFullAccess)) {
+		return Fail(Unsupported, "This assignment lacks the verified manual Git profile.", "Select the Codex execution profile with explicit write permission for manual PR fixes.")
+	}
+	if !((i.Version == 1 && i.Continuation == nil && i.Fork == nil) || (i.Version == 2 && i.Continuation != nil && i.Fork == nil) || (i.Version == 3 && i.Continuation == nil && i.Fork != nil)) || i.Installation.Harness != i.Configuration.Harness {
 		return Fail(Unsupported, "The execution assignment profile is incompatible.", "Use a matching server and Worker native profile.")
 	}
 	for _, id := range []ID{i.SessionID, i.MachineID, i.ExecutionID, i.InputID, i.ThreadRequestID, i.TurnRequestID, i.AccountID, i.ConnectionID} {
@@ -108,6 +117,9 @@ func (i ExecutionJobInput) Validate() error {
 	}
 	if i.Continuation != nil {
 		return i.Continuation.Validate(i)
+	}
+	if i.Fork != nil {
+		return i.Fork.Validate(i)
 	}
 	return nil
 }

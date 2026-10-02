@@ -186,6 +186,9 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 	if e := t.Authorize(); e != nil {
 		return v, false, e
 	}
+	if e := s.checkRestoreRequestReservation(request); e != nil {
+		return v, false, e
+	}
 	old, e := s.readSessionDeletion(session)
 	if e == nil {
 		if old.RequestID != request || old.Actor != actor || old.ServerID != server || old.ExpectedRevision != revision {
@@ -201,7 +204,7 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 				return old, true, e
 			}
 		}
-		if e := sessionDeletionReceipt(ctx, sqltx, old); e != nil {
+		if e := s.sessionDeletionReceipt(ctx, sqltx, old); e != nil {
 			return old, true, e
 		}
 		if e := sqltx.Commit(); e != nil {
@@ -234,6 +237,31 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 	}
 	if row.Revision != revision {
 		return v, false, deletionConflict()
+	}
+	// An unresolved native fork can own an unpublished workspace. Preserve its
+	// reservation until the original operation proves cleanup or publication.
+	if e := t.RequireNoSessionFork(session); e != nil {
+		return v, false, e
+	}
+	value, e := Decode[domain.Session](row)
+	if e != nil {
+		return v, false, e
+	}
+	if value.Fork != nil {
+		f := value.Fork
+		if f.Validate() != nil || value.Preparation == nil {
+			return v, false, domain.SessionDeletionPending()
+		}
+		prepared, e := t.Get(domain.JobKind, value.Preparation.JobID)
+		if e != nil {
+			return v, false, e
+		}
+		j, e := Decode[domain.Job](prepared)
+		if e != nil || prepared.SessionID != session || j.Type != domain.PrepareWorkspaceJob || j.State != domain.JobSucceeded {
+			return v, false, domain.SessionDeletionPending()
+		}
+		digest := sha256.Sum256(j.Input)
+		v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: server, SessionID: session, MachineID: value.MachineID, DeviceID: f.WorkerDeviceID, Copies: []domain.SessionDeletionCopy{}, PreparationDigests: []string{hex.EncodeToString(digest[:])}, Fork: &domain.SessionDeletionFork{JobID: f.JobID, RuntimeID: f.RuntimeID, CheckpointDigest: f.CheckpointDigest, JobInputDigest: f.JobInputDigest}}})
 	}
 	// Every current session-owned Worker operation contributes its original
 	// claimed metadata. Never reconstruct ownership from a mutable terminal job.
@@ -311,6 +339,15 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 			}
 			copy.ActionID = input.ActionID
 		}
+		if j.Type == domain.ForkSessionJob && j.State != domain.JobSucceeded {
+			var input domain.ForkJobInput
+			if domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.SourceSessionID != session {
+				return v, false, domain.SessionDeletionPending()
+			}
+			// Definite failed/canceled forks never published a child. Their empty or
+			// partially prepared private runtime remains owned by the source job.
+			copy.ExecutionID = input.RuntimeID
+		}
 		if j.Type == domain.PrepareWorkspaceJob {
 			h := sha256.Sum256(original.Input)
 			w.PreparationDigests = append(w.PreparationDigests, hex.EncodeToString(h[:]))
@@ -343,6 +380,9 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 }
 
 func (t *Tx) applySessionDeletion(v SessionDeletion) error {
+	if e := t.StopTerminals(v.SessionID); e != nil {
+		return e
+	}
 	// Deletion closes the same independent socket lifetimes as Archive. Keep
 	// their records until both original peers positively acknowledge cleanup.
 	if e := t.StopForwards(v.SessionID, ""); e != nil {
@@ -477,6 +517,9 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 // foreign keys cascade search/FTS, usage, estimates, assignments and grants.
 // Receipt identities remain but their results lose the deleted content.
 func (t *Tx) purgeSession(v SessionDeletion) error {
+	if e := t.requireTerminalCleanup(v.SessionID); e != nil {
+		return e
+	}
 	pending, e := t.SessionForwardsPending(v.SessionID)
 	if e != nil {
 		return e
@@ -488,7 +531,7 @@ func (t *Tx) purgeSession(v SessionDeletion) error {
 		return e
 	}
 	redacted := []byte(`{"deleted":true}`)
-	if _, e := t.tx.ExecContext(t.ctx, "UPDATE receipts SET result=? WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id IN (SELECT id FROM entities WHERE id=? OR session_id=?))", redacted, v.SessionID, v.SessionID); e != nil {
+	if _, e := t.tx.ExecContext(t.ctx, "UPDATE receipts SET result="+deletedReceiptProjection+" WHERE id IN (SELECT request_id FROM receipt_entities WHERE entity_id IN (SELECT id FROM entities WHERE id=? OR session_id=?))", redacted, v.SessionID, v.SessionID); e != nil {
 		return storageError(e)
 	}
 	// Read metadata in bounded pages without materializing transcript/job bodies.
@@ -562,12 +605,12 @@ func (s *Store) RestoreSessionDeletionIntents(ctx context.Context, server domain
 			e = t.purgeSession(v)
 		}
 		if e == nil {
-			e = sessionDeletionReceipt(ctx, tx, v)
+			e = s.sessionDeletionReceipt(ctx, tx, v)
 		}
 		if e == nil {
 			for _, w := range v.Workers {
 				if w.Acknowledged {
-					if _, e = sessionDeletionAckReceipt(ctx, tx, v, w); e != nil {
+					if _, e = s.sessionDeletionAckReceipt(ctx, tx, v, w); e != nil {
 						break
 					}
 				}
@@ -665,7 +708,7 @@ func (s *Store) persistSessionDeletionAck(ctx context.Context, v SessionDeletion
 		return storageError(e)
 	}
 	defer tx.Rollback()
-	existing, e := sessionDeletionAckReceipt(ctx, tx, v, w)
+	existing, e := s.sessionDeletionAckReceipt(ctx, tx, v, w)
 	if e != nil {
 		return e
 	}
@@ -688,7 +731,10 @@ func (s *Store) persistSessionDeletionAck(ctx context.Context, v SessionDeletion
 }
 
 // sessionDeletionAckReceipt returns whether an exact receipt already existed.
-func sessionDeletionAckReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion, w SessionDeletionWorker) (bool, error) {
+func (s *Store) sessionDeletionAckReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion, w SessionDeletionWorker) (bool, error) {
+	if e := s.checkRestoreRequestReservation(w.RequestID); e != nil {
+		return false, e
+	}
 	digest, e := mutationDigest(w.RequestID, "session.delete.ack", struct {
 		Server, Session, Deletion, Device, Machine domain.ID
 		Work                                       string
@@ -714,7 +760,10 @@ func sessionDeletionAckReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletio
 	return false, storageError(e)
 }
 
-func sessionDeletionReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion) error {
+func (s *Store) sessionDeletionReceipt(ctx context.Context, tx *sql.Tx, v SessionDeletion) error {
+	if e := s.checkRestoreRequestReservation(v.RequestID); e != nil {
+		return e
+	}
 	digest, e := sessionDeletionDigest(v)
 	if e != nil {
 		return e

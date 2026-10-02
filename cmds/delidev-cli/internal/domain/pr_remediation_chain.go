@@ -87,10 +87,15 @@ type PRRemediationAttempt struct {
 	StartedAt             *time.Time                `json:"started_at,omitempty"`
 	FinishedAt            *time.Time                `json:"finished_at,omitempty"`
 	Outcome               ExecutionOutcome          `json:"outcome,omitempty"`
+	GitTarget             *PRGitTarget              `json:"git_target,omitempty"`
+	ProjectID             ID                        `json:"project_id,omitempty"`
 	StartupRejectionJobID ID                        `json:"startup_rejection_job_id,omitempty"`
 }
 
 func (v PRRemediationAttempt) Validate() error {
+	if (v.GitTarget == nil) != (v.ProjectID == "") || (v.GitTarget != nil && (v.GitTarget.Validate() != nil || v.ProjectID.Validate() != nil)) {
+		return invalidPRRemediation()
+	}
 	if v.StartupRejectionJobID != "" && (v.State != PRRemediationFinished || v.Outcome != ExecutionNotStarted || v.StartupRejectionJobID.Validate() != nil) {
 		return invalidPRRemediation()
 	}

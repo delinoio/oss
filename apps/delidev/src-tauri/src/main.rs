@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appearance_host;
+mod browser_host;
 mod notification_host;
 mod tray_host;
 mod widget_host;
@@ -9,6 +11,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use appearance_host::{read_appearance, update_appearance};
 use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
     Connection, Connector, DesktopRegistration, LocalServerStatus, LocalWorkerAction,
@@ -66,6 +69,31 @@ async fn open_github(
     result
 }
 
+// Observation joins the native-owned attempt; it never bootstraps or pairs.
+#[tauri::command]
+async fn launch_local(
+    window: WebviewWindow<Cef>,
+    supervision: tauri::State<'_, Arc<Supervision>>,
+) -> Result<Option<Connection>, NativeFailure> {
+    trusted_main(&window)?;
+    let supervision = Arc::clone(supervision.inner());
+    tauri::async_runtime::spawn_blocking(move || supervision.launch_connection())
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?
+}
+
+#[tauri::command]
+async fn retry_local(
+    window: WebviewWindow<Cef>,
+    supervision: tauri::State<'_, Arc<Supervision>>,
+) -> Result<Connection, NativeFailure> {
+    trusted_main(&window)?;
+    let supervision = Arc::clone(supervision.inner());
+    tauri::async_runtime::spawn_blocking(move || supervision.retry_launch())
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?
+}
+
 #[tauri::command]
 async fn connect_local(
     window: WebviewWindow<Cef>,
@@ -86,6 +114,7 @@ async fn connect_local(
     if connection.endpoint != "http://127.0.0.1:46310" {
         return Err(NativeFailure::Incompatible);
     }
+    supervision.adopt(&connection);
     Ok(connection)
 }
 
@@ -104,6 +133,7 @@ async fn inspect_local_registration(
 #[tauri::command]
 async fn recover_local_registration(
     window: WebviewWindow<Cef>,
+    supervision: tauri::State<'_, Arc<Supervision>>,
     connector: tauri::State<'_, Arc<Connector>>,
     device_id: String,
     revision: String,
@@ -119,6 +149,7 @@ async fn recover_local_registration(
     if connection.endpoint != "http://127.0.0.1:46310" {
         return Err(NativeFailure::Incompatible);
     }
+    supervision.adopt(&connection);
     Ok(connection)
 }
 
@@ -267,11 +298,19 @@ async fn retained_worker_control(
     .await
     .map_err(|_| NativeFailure::SidecarFailed)?
 }
+// Tauri injects trusted framework state separately from the closed IPC fields.
+// Keep this exception on the command; remove it if those injected states are
+// consolidated.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri-injected state is separate from typed IPC input"
+)]
 #[tauri::command]
 async fn remove_connection(
     window: WebviewWindow<Cef>,
     app: AppHandle<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
+    browser: tauri::State<'_, Arc<browser_host::BrowserHost>>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     id: String,
     request_id: String,
@@ -297,6 +336,7 @@ async fn remove_connection(
     }
     let label = format!("server-{id}");
     let instance = uuid::Uuid::now_v7().to_string();
+    let original_profile = profile.clone();
     let original = {
         let mut values = windows.0.lock().map_err(|_| NativeFailure::Busy)?;
         if let Some(binding) = values.get(&label).filter(|binding| binding.closing) {
@@ -318,9 +358,25 @@ async fn remove_connection(
     };
     // The explicit UI confirmation includes losing this window's unsent drafts.
     // Block reopen and late token delivery before beginning private cleanup.
-    if let Some(saved) = app.get_webview_window(&label)
-        && saved.destroy().is_err()
-    {
+    let destroyed = if let Some(saved) = app.get_webview_window(&label) {
+        let host = Arc::clone(browser.inner());
+        let (send, receive) = tokio::sync::oneshot::channel();
+        match app.run_on_main_thread(move || {
+            let result = host
+                .close_window(saved.label())
+                .and_then(|()| saved.destroy().map_err(|_| NativeFailure::SidecarFailed));
+            let _ = send.send(result);
+        }) {
+            Ok(()) => receive
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)
+                .and_then(|result| result),
+            Err(_) => Err(NativeFailure::SidecarFailed),
+        }
+    } else {
+        Ok(())
+    };
+    if destroyed.is_err() {
         let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
         if let Some(original) = original {
             values.insert(label, original);
@@ -329,10 +385,38 @@ async fn remove_connection(
         }
         return Err(NativeFailure::SidecarFailed);
     }
+    // All fallible window setup precedes durable browser staging. A staged
+    // marker alone cannot authorize purge: Go's exact retained removal receipt
+    // is independently checked after CEF shutdown.
+    let mut planned = original_profile.clone();
+    if planned.removal.is_none() {
+        planned.state = SavedConnectionState::Removing;
+        planned.revision = revision
+            .checked_add(1)
+            .ok_or(NativeFailure::InvalidEvidence)?;
+        planned.removal = Some(delidev_desktop::RemovalMetadata {
+            request_id: request_id.clone(),
+            expected_revision: revision,
+        });
+    }
     let retry_lookup = Arc::clone(&connector);
     let retry_id = id.clone();
     let retry_request = request_id.clone();
+    let host = Arc::clone(browser.inner());
+    let staged = planned.clone();
+    let close_app = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        host.prepare_forget(&staged)?;
+        let close_host = Arc::clone(&host);
+        if close_app
+            .run_on_main_thread(move || close_host.close_scope(&staged))
+            .is_err()
+        {
+            tracing::warn!(
+                operation = "browser_scope_close",
+                code = "window-unavailable"
+            );
+        }
         connector.remove_saved(&id, &request_id, revision)
     })
     .await
@@ -346,16 +430,32 @@ async fn remove_connection(
         && let Ok(Ok(observed)) =
             tauri::async_runtime::spawn_blocking(move || retry_lookup.inspect_saved(&retry_id))
                 .await
-        && observed.state == SavedConnectionState::Removing
-        && observed.removal.as_ref().is_some_and(|removal| {
-            removal.request_id == retry_request && removal.expected_revision == revision
-        })
     {
-        let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
-        if let Some(binding) = values.get_mut(&label)
-            && binding.instance == instance
+        if observed.state == SavedConnectionState::Paired
+            && observed.same_authority(&original_profile)
         {
-            binding.profile = observed;
+            let host = Arc::clone(browser.inner());
+            tauri::async_runtime::spawn_blocking(move || host.cancel_unaccepted_forget(&planned))
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)??;
+            let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
+            if values
+                .get(&label)
+                .is_some_and(|binding| binding.instance == instance)
+            {
+                values.remove(&label);
+            }
+        } else if observed.state == SavedConnectionState::Removing
+            && observed.removal.as_ref().is_some_and(|removal| {
+                removal.request_id == retry_request && removal.expected_revision == revision
+            })
+        {
+            let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
+            if let Some(binding) = values.get_mut(&label)
+                && binding.instance == instance
+            {
+                binding.profile = observed;
+            }
         }
     }
     if result
@@ -693,6 +793,7 @@ async fn open_connection(
     match created {
         Ok(window) => {
             let windows = Arc::clone(windows.inner());
+            let browser = Arc::clone(app.state::<Arc<browser_host::BrowserHost>>().inner());
             window.on_window_event(move |event| {
                 if matches!(event, WindowEvent::Destroyed)
                     && let Ok(mut values) = windows.0.lock()
@@ -700,7 +801,14 @@ async fn open_connection(
                         .get(&label)
                         .is_some_and(|binding| binding.instance == instance && !binding.closing)
                 {
-                    values.remove(&label);
+                    // Instance ownership is checked before invalidating the raw
+                    // child; an old window event cannot close its replacement.
+                    match browser.close_window(&label) {
+                        Ok(()) => {
+                            values.remove(&label);
+                        }
+                        Err(code) => tracing::warn!(operation = "browser_window_close", ?code),
+                    }
                 }
             });
             tracing::info!(operation = "saved_window", state = "opened");
@@ -714,6 +822,212 @@ async fn open_connection(
             Err(NativeFailure::SidecarFailed)
         }
     }
+}
+
+// Tauri injects trusted framework state separately from the closed IPC fields.
+// Keep this exception on the command; remove it if those injected states are
+// consolidated.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri-injected state is separate from typed IPC input"
+)]
+#[tauri::command]
+async fn open_browser(
+    window: WebviewWindow<Cef>,
+    app: AppHandle<Cef>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
+    profile_id: String,
+    view_id: String,
+    url: String,
+    bounds: browser_host::Bounds,
+) -> Result<browser_host::BrowserState, NativeFailure> {
+    let binding = if window.label() == "main" {
+        trusted_main(&window)?;
+        None
+    } else {
+        Some(saved_binding(&window, &windows)?)
+    };
+    let scope = binding.as_ref().map(|b| b.profile.clone());
+    let reservation_host = Arc::clone(host.inner());
+    let label = window.label().to_string();
+    let reservation_view = view_id.clone();
+    let reservation_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        reservation_host.reserve_on_worker(reservation_app, label, reservation_view)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)??;
+    let connector = Arc::clone(connector.inner());
+    let scope_copy = scope.clone();
+    let record = tauri::async_runtime::spawn_blocking(move || {
+        connector.browser_profile(scope_copy.as_ref(), &profile_id)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)??;
+    if let Some(original) = &binding {
+        let current = saved_binding(&window, &windows)?;
+        if current.instance != original.instance
+            || !current.profile.same_authority(&original.profile)
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    } else {
+        trusted_main(&window)?;
+    }
+    let storage_host = Arc::clone(host.inner());
+    let storage_scope = scope.clone();
+    let storage_record = record.clone();
+    let label = window.label().to_string();
+    let storage_view = view_id.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        storage_host.prepare_open(&label, &storage_view, storage_scope, storage_record, &url)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)??;
+    if let Some(original) = &binding {
+        let current = saved_binding(&window, &windows)?;
+        if current.instance != original.instance
+            || !current.profile.same_authority(&original.profile)
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    } else {
+        trusted_main(&window)?;
+    }
+    let host = Arc::clone(host.inner());
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let copy = app.clone();
+    app.run_on_main_thread(move || {
+        let _ = send.send(host.open(&copy, &window, scope, record, bounds, view_id));
+    })
+    .map_err(|_| NativeFailure::SidecarFailed)?;
+    receive.await.map_err(|_| NativeFailure::SidecarFailed)?
+}
+// Tauri injects trusted framework state separately from the closed IPC fields.
+// Keep this exception on the command; remove it if those injected states are
+// consolidated.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri-injected state is separate from typed IPC input"
+)]
+#[tauri::command]
+async fn control_browser(
+    window: WebviewWindow<Cef>,
+    app: AppHandle<Cef>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
+    profile_id: String,
+    view_id: String,
+    action: browser_host::Action,
+    url: Option<String>,
+    tab_id: Option<String>,
+    bounds: Option<browser_host::Bounds>,
+) -> Result<browser_host::BrowserState, NativeFailure> {
+    let binding = if window.label() == "main" {
+        trusted_main(&window)?;
+        None
+    } else {
+        Some(saved_binding(&window, &windows)?)
+    };
+    let scope = binding.as_ref().map(|b| b.profile.clone());
+    // Hide closes an existing owned view even while its server is offline.
+    if !matches!(
+        action,
+        browser_host::Action::Hide | browser_host::Action::Resize
+    ) {
+        let c = Arc::clone(connector.inner());
+        let id = profile_id.clone();
+        let record =
+            tauri::async_runtime::spawn_blocking(move || c.browser_profile(scope.as_ref(), &id))
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)??;
+        if record.data.state != delidev_desktop::browser::ProfileState::Active {
+            return Err(NativeFailure::Stopped);
+        }
+    }
+    if let Some(original) = &binding {
+        let current = saved_binding(&window, &windows)?;
+        if current.instance != original.instance
+            || !current.profile.same_authority(&original.profile)
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    } else {
+        trusted_main(&window)?;
+    }
+    let prepared_revision = if matches!(
+        action,
+        browser_host::Action::Hide | browser_host::Action::Resize
+    ) {
+        None
+    } else {
+        let storage_host = Arc::clone(host.inner());
+        let label = window.label().to_string();
+        let storage_profile = profile_id.clone();
+        let storage_view = view_id.clone();
+        let storage_url = url.clone();
+        Some(
+            tauri::async_runtime::spawn_blocking(move || {
+                storage_host.prepare_control(
+                    &label,
+                    &storage_profile,
+                    &storage_view,
+                    action,
+                    storage_url.as_deref(),
+                    tab_id.as_deref(),
+                )
+            })
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)??,
+        )
+    };
+    if let Some(original) = &binding {
+        let current = saved_binding(&window, &windows)?;
+        if current.instance != original.instance
+            || !current.profile.same_authority(&original.profile)
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    } else {
+        trusted_main(&window)?;
+    }
+    let host = Arc::clone(host.inner());
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let copy = app.clone();
+    app.run_on_main_thread(move || {
+        let _ = send.send(host.control(
+            &copy,
+            &window,
+            browser_host::Control {
+                profile: profile_id,
+                view_id,
+                action,
+                url,
+                prepared_revision,
+                bounds,
+            },
+        ));
+    })
+    .map_err(|_| NativeFailure::SidecarFailed)?;
+    receive.await.map_err(|_| NativeFailure::SidecarFailed)?
+}
+#[tauri::command]
+async fn browser_state(
+    window: WebviewWindow<Cef>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
+    profile_id: String,
+    view_id: String,
+) -> Result<browser_host::BrowserState, NativeFailure> {
+    if window.label() == "main" {
+        trusted_main(&window)?
+    } else {
+        saved_binding(&window, &windows)?;
+    };
+    host.status(window.label(), &profile_id, &view_id)
 }
 
 fn run() -> Result<(), NativeFailure> {
@@ -733,15 +1047,29 @@ fn run() -> Result<(), NativeFailure> {
     let supervision = Arc::new(Supervision::new(Arc::clone(&connector)));
     let tray = Arc::new(TrayHost::default());
     let notifications = Arc::new(NotificationHost::default());
+    let browser_cache = connector.prepare_browser_storage()?;
+    let browser = Arc::new(browser_host::BrowserHost::new(
+        browser_cache.clone(),
+        Arc::clone(&connector),
+    )?);
     let app = tauri::Builder::<Cef>::new()
+        .root_cache_path(&browser_cache)
+        .manage(Arc::clone(&browser))
         .manage(Arc::new(SavedWindows::default()))
         .manage(Arc::clone(&tray))
         .manage(Arc::clone(&notifications))
         .manage(connector)
         .manage(Arc::clone(&supervision))
         .invoke_handler(tauri::generate_handler![
+            read_appearance,
+            update_appearance,
+            open_browser,
+            control_browser,
+            browser_state,
             open_github,
             connect_local,
+            launch_local,
+            retry_local,
             inspect_local_registration,
             recover_local_registration,
             local_server_status,
@@ -779,9 +1107,25 @@ fn run() -> Result<(), NativeFailure> {
                 {
                     if window.hide().is_ok() {
                         api.prevent_close();
+                        return;
                     } else {
                         tracing::warn!(operation = "window_hide", code = "window-unavailable");
                     }
+                }
+                // A real native close must release external children before the
+                // pinned runtime destroys their parent. Tray hiding preserves them.
+                if let Err(code) = window
+                    .state::<Arc<browser_host::BrowserHost>>()
+                    .close_window(window.label())
+                {
+                    api.prevent_close();
+                    tracing::warn!(operation = "browser_window_close", ?code);
+                } else if let Ok(mut values) = window.state::<Arc<SavedWindows>>().0.lock()
+                    && values
+                        .get(window.label())
+                        .is_some_and(|binding| !binding.closing)
+                {
+                    values.remove(window.label());
                 }
             } else if matches!(event, WindowEvent::Destroyed) {
                 window
@@ -791,6 +1135,16 @@ fn run() -> Result<(), NativeFailure> {
             }
         })
         .setup(|app| {
+            let config_dir = app.path().app_config_dir().ok();
+            if config_dir.is_none() {
+                tracing::warn!(
+                    operation = "appearance_initialize",
+                    code = "storage-unavailable"
+                );
+            }
+            app.manage(Arc::new(delidev_desktop::appearance::AppearanceStore::new(
+                config_dir,
+            )));
             let result = (|| -> tauri::Result<()> {
                 create_main(app.handle())?;
                 if app.state::<Arc<TrayHost>>().install(app.handle()).is_err() {
@@ -809,10 +1163,16 @@ fn run() -> Result<(), NativeFailure> {
         })
         .build(tauri::generate_context!())
         .map_err(|_| NativeFailure::SidecarFailed)?;
+    let exiting_supervision = Arc::clone(&supervision);
     let exiting = Arc::clone(&tray);
     let exiting_notifications = Arc::clone(&notifications);
+    browser.start(app.handle().clone());
+    let exiting_browser = Arc::clone(&browser);
     app.run(move |_app, event| {
-        if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+        if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+            if exiting_browser.begin_exit(code.unwrap_or(0)) {
+                api.prevent_exit();
+            }
             tracing::info!(operation = "desktop_exit", state = "runtime-requested");
         }
         #[cfg(target_os = "macos")]
@@ -831,7 +1191,10 @@ fn run() -> Result<(), NativeFailure> {
             // This event precedes CEF shutdown. Keep host task joins and the
             // return from app.run separate so an exit event cannot imply that
             // the native runtime has actually finished.
+            exiting_browser.stop();
+            exiting_browser.close_all();
             tracing::info!(operation = "desktop_exit", state = "runtime-exit-event");
+            exiting_supervision.stop();
             exiting_notifications.stop();
             tracing::info!(operation = "desktop_exit", state = "notifications-joined");
             exiting.stop();
@@ -839,8 +1202,10 @@ fn run() -> Result<(), NativeFailure> {
         }
     });
     tracing::info!(operation = "desktop_exit", state = "runtime-returned");
+    supervision.stop();
     notifications.stop();
     tray.stop();
+    browser.finish_removals()?;
     Ok(())
 }
 
