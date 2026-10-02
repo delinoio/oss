@@ -123,6 +123,13 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	if g.diffIndexFile != "" {
 		environment = append(environment, "GIT_INDEX_FILE="+g.diffIndexFile)
 	}
+	if runtime.GOOS == "windows" {
+		// Commands such as worktree add spawn internal Git operations while
+		// populating the private checkout. Propagate the bounded override through
+		// Git's config environment so those children receive the same long-path
+		// capability without changing the source repository configuration.
+		environment = append(environment, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.longpaths", "GIT_CONFIG_VALUE_0=true")
+	}
 	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: environment, Cwd: root, Stdout: &out, Stderr: io.Discard, Logger: g.Logger})
 	if err != nil {
 		if domain.SafeError(err).Code == domain.RecoveryRequired {
