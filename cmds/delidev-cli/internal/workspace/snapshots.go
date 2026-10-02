@@ -337,6 +337,15 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if err := ctx.Err(); err != nil {
 				return result, err
 			}
+			if err := validateStorageRoot(root, live); err != nil {
+				return result, err
+			}
+			// Persist the immutable removal intent before the final cancellation
+			// boundary. A canceled caller must leave enough private evidence to
+			// distinguish an unpublished removal from a later namespace claim.
+			if err := m.retainRemovalIntent(ctx, r, root, result.Snapshot.SHA256); err != nil {
+				return result, err
+			}
 			if m.storageBeforeRemovalClaim != nil {
 				m.storageBeforeRemovalClaim()
 			}
@@ -348,7 +357,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if err := validateStorageRoot(root, live); err != nil {
 				return result, err
 			}
-			if err := m.retainRemovalIntent(ctx, r, root, result.Snapshot.SHA256); err != nil {
+			if err := ctx.Err(); err != nil {
 				return result, err
 			}
 			if err := renameStorage(root, removal); err != nil {
