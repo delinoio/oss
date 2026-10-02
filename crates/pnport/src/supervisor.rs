@@ -193,9 +193,14 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         command.env(variable, artifact);
         #[cfg(not(target_os = "macos"))]
         command.env(variable, artifact);
+        #[cfg(target_os = "macos")]
+        let mut owner = crate::macos_owner::Owner::start()?;
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
+            #[cfg(target_os = "macos")]
+            command.process_group(owner.group());
+            #[cfg(not(target_os = "macos"))]
             command.process_group(0);
         }
         tracing::debug!(action = "spawn", "Starting the owned process tree");
@@ -221,6 +226,8 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         let ready = view.session.join("ready").join(pid.to_string());
         let mut initialization_started = false;
         let result = (|| loop {
+            #[cfg(target_os = "macos")]
+            owner.check()?;
             if SIGNAL.load(Ordering::SeqCst) != 0 {
                 return Ok(128 + SIGNAL.load(Ordering::SeqCst));
             }
@@ -300,7 +307,12 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
                 "Owned execution failed before cleanup"
             );
         }
-        #[cfg(unix)]
+        #[cfg(target_os = "macos")]
+        let cleanup = owner.stop(match SIGNAL.load(Ordering::SeqCst) {
+            signal @ (libc::SIGINT | libc::SIGTERM | libc::SIGHUP) => signal,
+            _ => libc::SIGTERM,
+        });
+        #[cfg(all(unix, not(target_os = "macos")))]
         unsafe {
             libc::kill(-pid, libc::SIGTERM);
             let deadline = Instant::now() + Duration::from_secs(5);
@@ -320,6 +332,8 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
                 )
             })?;
         }
+        #[cfg(target_os = "macos")]
+        cleanup?;
         tracing::debug!(action = "cleanup", "Owned process group stopped");
         result
     }
