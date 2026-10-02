@@ -194,14 +194,10 @@ fn directory_eligibility_matches_lookup_without_materializing() {
         );
         let parents = [
             "",
-            "nested",
             "packages/app",
-            "packages/app/nested",
             "node_modules/dep",
             "node_modules/one",
             "node_modules/two",
-            "node_modules/one/nested",
-            "node_modules/dep/native-parent",
             "node_modules/@scope/pkg",
         ];
         for parent in parents {
@@ -214,6 +210,10 @@ fn directory_eligibility_matches_lookup_without_materializing() {
         assert!(!session.path().join("views").exists());
         assert!(!session.path().join("active").exists());
         for parent in [
+            root_path.join("nested"),
+            root_path.join("packages/app/nested"),
+            root_path.join("node_modules/one/nested"),
+            root_path.join("node_modules/dep/native-parent"),
             root_path.join("node_modules"),
             root_path.join("node_modules/@scope"),
             cache.path().to_owned(),
@@ -245,7 +245,7 @@ fn directory_eligibility_matches_lookup_without_materializing() {
         );
         assert_eq!(
             fs::read_dir(
-                view.translate(&root_path.join("packages/app/nested/node_modules"))
+                view.translate(&root_path.join("packages/app/node_modules"))
                     .unwrap()
                     .physical
             )
@@ -254,13 +254,28 @@ fn directory_eligibility_matches_lookup_without_materializing() {
             0
         );
         fs::create_dir(root_path.join("nested/node_modules")).unwrap();
+        let native = view
+            .translate(&root_path.join("nested/node_modules"))
+            .unwrap();
+        assert!(!native.readonly);
+        assert_eq!(native.physical, root_path.join("nested/node_modules"));
+        assert!(view
+            .virtual_directory_entry(&root_path.join("nested"))
+            .unwrap()
+            .is_none());
+        let retained = view
+            .translate(&root_path.join("node_modules/dep/native-parent/node_modules/retained.txt"))
+            .unwrap();
+        assert!(retained.readonly);
+        assert_eq!(fs::read(retained.physical).unwrap(), b"native directory");
+        fs::create_dir(root_path.join("packages/app/node_modules")).unwrap();
         assert_eq!(
-            view.virtual_directory_entry(&root_path.join("nested"))
+            view.virtual_directory_entry(&root_path.join("packages/app"))
                 .unwrap_err()
                 .code,
             Code::PnportFilesystemConflict
         );
-        assert!(root_path.join("nested/node_modules").is_dir());
+        assert!(root_path.join("packages/app/node_modules").is_dir());
     }
 }
 
@@ -289,14 +304,10 @@ fn native_parent_listings_match_virtual_lookup_and_stream_lifecycle() {
             .success());
         let parents = [
             ".",
-            "nested",
             "packages/app",
-            "packages/app/nested",
             "node_modules/dep",
             "node_modules/one",
             "node_modules/two",
-            "node_modules/one/nested",
-            "node_modules/dep/native-parent",
             "node_modules/@scope/pkg",
         ];
         let run = |program: &Path, arguments: &[&str]| {
@@ -355,7 +366,7 @@ fn native_parent_listings_match_virtual_lookup_and_stream_lifecycle() {
                 );
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            fs::create_dir(conflict_root.join("nested/node_modules")).unwrap();
+            fs::create_dir(conflict_root.join("packages/app/node_modules")).unwrap();
             fs::write(conflict_root.join("conflict-created"), b"").unwrap();
         });
         let conflict = run(&executable, &["conflict"]);
@@ -367,7 +378,7 @@ fn native_parent_listings_match_virtual_lookup_and_stream_lifecycle() {
             String::from_utf8_lossy(&conflict.stderr)
         );
         assert!(String::from_utf8_lossy(&conflict.stderr).contains("PNPORT_FILESYSTEM_CONFLICT"));
-        assert!(root.path().join("nested/node_modules").is_dir());
+        assert!(root.path().join("packages/app/node_modules").is_dir());
     }
 }
 

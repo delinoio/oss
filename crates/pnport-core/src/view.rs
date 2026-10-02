@@ -81,10 +81,10 @@ impl View {
         }
     }
 
-    /// Match direct lookup, including nested issuers and peer-specific logical
-    /// paths. The caller must establish that the parent is a live
-    /// directory. This query never extracts archives or creates a
-    /// dependency view in the session.
+    /// Match direct lookup at registered package roots, including nested
+    /// dependencies and peer-specific logical aliases. The caller must
+    /// establish that the parent is a live directory. This query never
+    /// extracts archives or creates a dependency view in the session.
     pub fn virtual_directory_entry(&self, parent: &Path) -> Result<Option<VirtualDirectoryEntry>> {
         let mut candidate = parent.join("node_modules");
         loop {
@@ -142,11 +142,18 @@ impl View {
         for (i, part) in components.iter().enumerate() {
             // Classify the installation component itself, not the requested
             // suffix: unregistered siblings still belong to its native tree.
-            // Continue walking so a later package-owned node_modules remains
-            // a virtual dependency namespace with normal conflict checks.
+            // Only the locator root owns a virtual dependency namespace.
+            // Native resolvers ascend from source subdirectories to that root;
+            // inventing node_modules in every descendant makes recursive tool
+            // discovery enter synthetic trees and makes output cleanup read-only.
+            // Continue walking into later locator roots, retaining peer context
+            // and normal conflict checks.
             if part.as_os_str() != "node_modules"
                 || self.graph.is_location_ancestor(&prefix.join(part))
-                || self.graph.package(&prefix).is_none()
+                || !self
+                    .graph
+                    .package(&prefix)
+                    .is_some_and(|package| normalize(&package.package_location) == prefix)
             {
                 prefix.push(part);
                 continue;
