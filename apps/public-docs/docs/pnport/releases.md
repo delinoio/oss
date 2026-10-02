@@ -1,6 +1,8 @@
 # Releases and rollback
 
-**pnport 0.1.0 is not published.** There is no preview release, public native package, npm package, installer, or Homebrew formula to select or roll back to today.
+**pnport 0.1.0 is not published.** The experimental npm next version `0.1.0-next.1` is being prepared and has not been published yet. Check [installation and availability](/pnport/installation) for the registry check before testing. Stable installation and Homebrew remain unavailable.
+
+Experimental versions use `pnport@v0.1.0-next.N`, with matching native and npm versions. They provide four macOS/glibc Linux native packages through npm next and signed GitHub prerelease archives after candidate validation. They do not change the npm latest channel or provide Homebrew. Full feature, minimum-OS and benchmark acceptance remains unfinished, and intermittent native initialization failures remain under investigation. Preview availability does not establish stable readiness or Windows support. Pin an exact published preview version when reporting failures or rolling back.
 
 ## Release readiness
 

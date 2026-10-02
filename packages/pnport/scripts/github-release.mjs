@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ensure, event, isMain, packageRoot, requireReleaseReady, revision } from './common.mjs';
+import { ensure, event, isMain, packageRoot, requirePublicationReady, revision } from './common.mjs';
+import { publicationChannel } from './version.mjs';
 import { archiveName, verifySet } from './package.mjs';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -10,6 +11,20 @@ import { verifyBundle } from '../../../scripts/release/linux-packages/release-in
 const require = createRequire(import.meta.url);
 const { targets } = require('../src/platforms.cjs');
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+export async function findRelease(api, tag) {
+  const matches = [];
+  // The by-tag endpoint discovers published releases only. List every page so
+  // an interrupted draft is reused and duplicate same-tag drafts fail closed.
+  for (let page = 1; ; page++) {
+    const releases = await api('GET', `/repos/delinoio/oss/releases?per_page=100&page=${page}`);
+    ensure(Array.isArray(releases) && releases.every((item) => Number.isSafeInteger(item?.id) && item.id > 0 && typeof item.tag_name === 'string'), 'Invalid release discovery response');
+    matches.push(...releases.filter((item) => item.tag_name === tag));
+    if (releases.length < 100) break;
+  }
+  ensure(matches.length <= 1, 'Ambiguous same-tag releases');
+  return matches[0] ?? null;
+}
 
 export function stage(directory, output, sourceRevision) {
   const artifacts = verifySet(directory, sourceRevision);
@@ -26,6 +41,7 @@ export function stage(directory, output, sourceRevision) {
 // A draft is the recovery boundary. Existing bytes and signatures are verified
 // before any writes; public assets are immutable and a complete retry is read-only.
 export async function publish({ plan, files }, { api, download, upload, sign, verify, report = event }) {
+  const { prerelease } = publicationChannel(plan.version);
   const prefix = '/repos/delinoio/oss';
   let object = (await api('GET', `${prefix}/git/ref/tags/${encodeURIComponent(plan.tag)}`)).object;
   for (let depth = 0; object?.type === 'tag' && depth < 4; depth++) {
@@ -33,11 +49,16 @@ export async function publish({ plan, files }, { api, download, upload, sign, ve
     object = (await api('GET', `${prefix}/git/tags/${object.sha}`)).object;
   }
   ensure(object?.type === 'commit' && object.sha === plan.revision, 'Release tag does not match the exact source commit');
-  let release = await api('GET', `${prefix}/releases/tags/${encodeURIComponent(plan.tag)}`, undefined, true);
+  let release = await findRelease(api, plan.tag);
+  if (release) {
+    const pinned = await api('GET', `${prefix}/releases/${release.id}`);
+    ensure(pinned.id === release.id, 'Release ID changed');
+    release = pinned;
+  }
   const expected = [...files.keys()].flatMap((name) => [name, `${name}.sigstore.json`]);
   const existing = new Map();
   if (release) {
-    ensure(release.tag_name === plan.tag && release.prerelease === false && (!release.draft || release.target_commitish === plan.revision), 'Conflicting release identity');
+    ensure(release.tag_name === plan.tag && release.prerelease === prerelease && release.target_commitish === plan.revision, 'Conflicting release identity');
     for (const asset of release.assets) {
       ensure(expected.includes(asset.name) && !existing.has(asset.name), 'Unexpected release asset');
       existing.set(asset.name, await download(asset));
@@ -51,7 +72,8 @@ export async function publish({ plan, files }, { api, download, upload, sign, ve
       report('github_reuse', { tag: plan.tag }); return;
     }
   }
-  if (!release) release = await api('POST', `${prefix}/releases`, { tag_name: plan.tag, target_commitish: plan.revision, name: plan.tag, draft: true, prerelease: false, generate_release_notes: true });
+  if (!release) release = await api('POST', `${prefix}/releases`, { tag_name: plan.tag, target_commitish: plan.revision, name: plan.tag, draft: true, prerelease, generate_release_notes: true, ...(prerelease ? { make_latest: 'false', body: 'Experimental npm next preview for macOS and glibc Linux x64/arm64. Install with npm install --global @delino/pnport@next. Windows remains unsupported. Full feature, minimum-OS, and benchmark acceptance is incomplete; intermittent native initialization failures remain under investigation. This preview does not establish stable 0.1.0 readiness. Report reproducible failures in issue #958 with the version, OS/architecture and sanitized doctor diagnostics.' } : {}) });
+  ensure(Number.isSafeInteger(release?.id) && release.id > 0 && release.draft === true && release.tag_name === plan.tag && release.target_commitish === plan.revision && release.prerelease === prerelease, 'Created draft identity mismatch');
   for (const [name, bytes] of files) {
     if (!existing.has(name)) await upload(release, name, bytes);
     report('github_asset', { tag: plan.tag, asset: name, reused: existing.has(name) });
@@ -62,7 +84,7 @@ export async function publish({ plan, files }, { api, download, upload, sign, ve
     }
   }
   const ready = await api('GET', `${prefix}/releases/${release.id}`);
-  ensure(ready.draft === true && ready.tag_name === plan.tag && ready.target_commitish === plan.revision && ready.prerelease === false, 'Draft identity changed');
+  ensure(ready.id === release.id && ready.draft === true && ready.tag_name === plan.tag && ready.target_commitish === plan.revision && ready.prerelease === prerelease, 'Draft identity changed');
   ensure(ready.assets.length === expected.length && new Set(ready.assets.map(({ name }) => name)).size === expected.length, 'Incomplete signed release');
   for (const [name, bytes] of files) {
     const asset = ready.assets.find((item) => item.name === name);
@@ -70,7 +92,9 @@ export async function publish({ plan, files }, { api, download, upload, sign, ve
     ensure(asset && signature && (await download(asset)).equals(bytes), 'Release readback mismatch');
     await verify(name, bytes, await download(signature));
   }
-  await api('PATCH', `${prefix}/releases/${release.id}`, { draft: false });
+  ensure((await findRelease(api, plan.tag))?.id === release.id, 'Draft is no longer the sole same-tag release');
+  const published = await api('PATCH', `${prefix}/releases/${release.id}`, { draft: false, ...(prerelease ? { make_latest: 'false' } : {}) });
+  ensure(published.id === release.id && published.draft === false && published.tag_name === plan.tag && published.prerelease === prerelease && published.target_commitish === plan.revision, 'Release publication unconfirmed');
   report('github_publish', { tag: plan.tag, revision: plan.revision });
 }
 
@@ -79,7 +103,7 @@ export async function main() {
   const output = path.join(packageRoot, 'dist/github');
   const candidate = stage(path.join(packageRoot, 'dist'), output, revision());
   if (!process.argv.includes('--publish')) return;
-  requireReleaseReady();
+  requirePublicationReady();
   const { plan } = candidate;
   ensure(process.env.GITHUB_REPOSITORY === 'delinoio/oss' && process.env.GITHUB_REF === `refs/tags/${plan.tag}` && process.env.GITHUB_SHA === plan.revision, 'Publication requires the exact first-party tag and commit');
   ensure(process.env.GH_TOKEN && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN, 'GitHub token and Actions OIDC are required');

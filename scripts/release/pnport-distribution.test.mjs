@@ -8,9 +8,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { buildPackage, nativeArchive, packageNames, tarEntries } from "../../packages/pnport/scripts/package.mjs";
-import { publishArtifacts } from "../../packages/pnport/scripts/publish.mjs";
-import { publish as publishGithub } from "../../packages/pnport/scripts/github-release.mjs";
-import { metadata, requireReleaseReady } from "../../packages/pnport/scripts/common.mjs";
+import { publishArtifacts, registryTags, validatePreviewTags } from "../../packages/pnport/scripts/publish.mjs";
+import { findRelease, publish as publishGithub } from "../../packages/pnport/scripts/github-release.mjs";
+import { metadata, requireReleaseReady, requirePublicationReady } from "../../packages/pnport/scripts/common.mjs";
+import { isPreviewVersion, publicationChannel } from "../../packages/pnport/scripts/version.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -98,6 +99,33 @@ test("publication stays blocked until reviewed release acceptance, independently
   requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady: true }));
 });
 
+test("only the exact authorized next version bypasses stable acceptance", () => {
+  const source = { version: "0.1.0-next.1", pnportPreviewVersion: "0.1.0-next.1", pnportReleaseReady: false };
+  assert.deepEqual(requirePublicationReady(() => JSON.stringify(source)), { channel: "next", prerelease: true });
+  assert.throws(() => requireReleaseReady(() => JSON.stringify(source)), /publication is blocked/u);
+  for (const pnportPreviewVersion of [undefined, true, "0.1.0-next.2", "0.1.0"]) assert.throws(() => requirePublicationReady(() => JSON.stringify({ ...source, pnportPreviewVersion })), /exact reviewed/u);
+  assert.throws(() => requirePublicationReady(() => JSON.stringify({ ...source, version: "0.1.0" })), /publication is blocked/u);
+  for (const version of ["0.1.0-rc.1", "0.1.0-next.0", "0.1.0-next.01", "0.2.0-next.1", "0.1.0-next.1+build", "0.1.0-next.1\n", "0.1.0-next.18446744073709551616"]) {
+    assert.equal(isPreviewVersion(version), false);
+    assert.throws(() => publicationChannel(version), /Unsupported/u);
+  }
+});
+
+test("preview npm tags preserve latest and reject a newer or foreign next", async () => {
+  for (const tags of [{}, { next: "0.1.0-next.1" }, { latest: "0.1.0", next: "0.1.0-next.1" }]) validatePreviewTags(tags, "0.1.0-next.2");
+  for (const tags of [{ next: "0.1.0-next.3" }, { next: "0.2.0" }, { latest: "0.1.0-next.1" }]) assert.throws(() => validatePreviewTags(tags, "0.1.0-next.2"));
+  assert.deepEqual(await registryTags("@delino/pnport", async () => ({ status: 404 })), {});
+  await assert.rejects(registryTags("@delino/pnport", async () => ({ ok: true, json: async () => ({ name: "@delino/pnport", "dist-tags": [] }) })), /Invalid npm/u);
+});
+
+test("native channel confirmation failure prevents launcher publication", async () => {
+  const artifacts = [...targets.map(({ name }) => ({ name, version: "0.1.0-next.1", integrity: name })), { name: "@delino/pnport", version: "0.1.0-next.1", integrity: "main" }];
+  const remote = new Map();
+  const writes = [];
+  await assert.rejects(publishArtifacts(artifacts, { dryRun: false, lookup: async ({ name }) => remote.get(name) ?? null, publish: async (artifact) => { writes.push(artifact.name); remote.set(artifact.name, artifact.integrity); }, confirm: async () => { throw new Error("channel mismatch"); }, report: () => {} }), /channel mismatch/u);
+  assert.deepEqual(writes, [artifacts[0].name]);
+});
+
 test("an older pnport retry cannot downgrade the Homebrew tap", (t) => {
   const directory = fixture(t);
   const remote = path.join(directory, "tap.git");
@@ -123,19 +151,24 @@ test("an older pnport retry cannot downgrade the Homebrew tap", (t) => {
   assert.equal(execFileSync("git", ["show", "main:Formula/pnport.rb"], { cwd: remote, encoding: "utf8" }), current);
 });
 
-test("signed GitHub release resumes an identical partial draft and rejects conflicting bytes", async () => {
-  const plan = { project: "pnport", version: "0.1.0", revision, tag: "pnport@v0.1.0" };
+for (const version of ["0.1.0", "0.1.0-next.1"]) test(`signed GitHub ${version} resumes an identical partial draft and rejects conflicting bytes`, async () => {
+  const prerelease = publicationChannel(version).prerelease;
+  const plan = { project: "pnport", version, revision, tag: `pnport@v${version}` };
   const files = new Map([["pnport-darwin-arm64.tar.gz", Buffer.from("native archive")]]);
-  const release = { id: 7, tag_name: plan.tag, target_commitish: revision, draft: true, prerelease: false, assets: [] };
+  const release = { id: 7, tag_name: plan.tag, target_commitish: revision, draft: true, prerelease, assets: [] };
   const bytes = new Map();
   const uploads = [];
   let interrupt = true;
   const deps = {
     api: async (method, route, body) => {
       if (route.includes("/git/ref/tags/")) return { object: { type: "commit", sha: revision } };
-      if (route.includes("/releases/tags/")) return release.assets.length ? release : null;
-      if (method === "POST") return release;
-      if (method === "PATCH") { release.draft = body.draft; return release; }
+      if (route.includes("/releases?")) return release.assets.length ? [release] : [];
+      if (method === "POST") {
+        assert.equal(body.prerelease, prerelease);
+        if (prerelease) { assert.equal(body.make_latest, "false"); assert.match(body.body, /acceptance is incomplete/u); }
+        return release;
+      }
+      if (method === "PATCH") { if (prerelease) assert.equal(body.make_latest, "false"); release.draft = body.draft; return release; }
       return release;
     },
     download: async ({ name }) => bytes.get(name),
@@ -159,30 +192,42 @@ test("signed GitHub release resumes an identical partial draft and rejects confl
   assert.equal(uploads.length, 2);
   await assert.rejects(publishGithub({ plan, files: new Map([["pnport-darwin-arm64.tar.gz", Buffer.from("other bytes")]]) }, deps), /Conflicting immutable asset/u);
   assert.equal(uploads.length, 2);
+  release.prerelease = !prerelease;
+  await assert.rejects(publishGithub({ plan, files }, deps), /Conflicting release identity/u);
+  assert.equal(uploads.length, 2);
 });
 
-test("POSIX installer verifies the complete archive before changing the active version", (t) => {
+test("GitHub preview discovery includes later drafts and rejects ambiguous or uncertain state", async () => {
+  const tag = "pnport@v0.1.0-next.1";
+  const draft = { id: 1, tag_name: tag };
+  const unrelated = Array.from({ length: 100 }, (_, index) => ({ id: index + 100, tag_name: `other@v${index}` }));
+  assert.deepEqual(await findRelease(async (_method, route) => route.endsWith("page=1") ? unrelated : [draft], tag), draft);
+  await assert.rejects(findRelease(async (_method, route) => route.endsWith("page=1") ? [draft, ...unrelated.slice(1)] : [{ ...draft, id: 2 }], tag), /Ambiguous/u);
+  for (const response of [null, {}, [null], [{ id: "1", tag_name: tag }]]) await assert.rejects(findRelease(async () => response, tag), /Invalid release discovery/u);
+});
+
+for (const version of ["0.0.0", "0.1.0-next.1"]) test(`POSIX installer verifies ${version} before changing the active version`, (t) => {
   const target = selectTarget();
   if (!target || target.os === "win32") return t.skip("POSIX host required");
   const temporary = fixture(t);
   const release = path.join(temporary, "release");
   const install = path.join(temporary, "bin");
   mkdirSync(release);
-  const binary = Buffer.from("#!/bin/sh\nprintf 'pnport 0.0.0\\n'\n");
+  const binary = Buffer.from(`#!/bin/sh\nprintf 'pnport ${version}\\n'\n`);
   const archive = nativeArchive(target, binary, Buffer.from("companion"));
   const name = `pnport-${target.suffix}.tar.gz`;
   writeFileSync(path.join(release, name), archive);
   writeFileSync(path.join(release, "SHA256SUMS"), `${sha256(archive)}  ${name}\n`);
-  const command = [path.join(root, "scripts/install/pnport.sh"), "--version", "0.0.0", "--source-dir", release, "--install-dir", install];
+  const command = [path.join(root, "scripts/install/pnport.sh"), "--version", version, "--source-dir", release, "--install-dir", install];
   const installed = spawnSync("bash", command, { encoding: "utf8" });
   assert.equal(installed.status, 0, installed.stderr);
-  assert.equal(execFileSync(path.join(install, "pnport"), ["--version"], { encoding: "utf8" }).trim(), "pnport 0.0.0");
-  assert.equal(readFileSync(path.join(install, ".pnport/versions/0.0.0", target.os === "darwin" ? "libpnport_preload.dylib" : "libpnport_preload.so"), "utf8"), "companion");
+  assert.equal(execFileSync(path.join(install, "pnport"), ["--version"], { encoding: "utf8" }).trim(), `pnport ${version}`);
+  assert.equal(readFileSync(path.join(install, ".pnport/versions", version, target.os === "darwin" ? "libpnport_preload.dylib" : "libpnport_preload.so"), "utf8"), "companion");
   writeFileSync(path.join(release, "SHA256SUMS"), `${"0".repeat(64)}  ${name}\n`);
   const rejected = spawnSync("bash", command, { encoding: "utf8" });
   assert.notEqual(rejected.status, 0);
   assert.match(rejected.stderr, /checksum mismatch/u);
-  assert.equal(execFileSync(path.join(install, "pnport"), ["--version"], { encoding: "utf8" }).trim(), "pnport 0.0.0");
+  assert.equal(execFileSync(path.join(install, "pnport"), ["--version"], { encoding: "utf8" }).trim(), `pnport ${version}`);
 });
 
 test("POSIX latest search scans all release pages and selects the highest pnport version", (t) => {
@@ -196,7 +241,7 @@ test("POSIX latest search scans all release pages and selects the highest pnport
   mkdirSync(pages);
   writeFileSync(path.join(pages, "1.json"), JSON.stringify(Array.from({ length: 100 }, (_, index) => ({ tag_name: `other@v${index}.0.0` })), null, 2));
   writeFileSync(path.join(pages, "2.json"), JSON.stringify([{ tag_name: "pnport@v0.1.0" }], null, 2));
-  writeFileSync(path.join(pages, "3.json"), JSON.stringify([{ tag_name: "pnport@v0.2.0" }], null, 2));
+  writeFileSync(path.join(pages, "3.json"), JSON.stringify([{ tag_name: "pnport@v0.2.0" }, { tag_name: "pnport@v0.1.0-next.9", prerelease: true }], null, 2));
   writeFileSync(path.join(pages, "4.json"), "[]\n");
   const curl = path.join(mockBin, "curl");
   writeFileSync(curl, `#!/bin/sh

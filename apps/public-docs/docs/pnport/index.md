@@ -4,6 +4,8 @@ pnport is a command-line tool in development for running subprocesses against an
 
 **pnport 0.1.0 is not released. No npm package, native archive, installer, or Homebrew formula is currently available for installation.** These guides describe the CLI interface and the requirements for a future complete release; they are not a compatibility certification for arbitrary tools.
 
+An experimental npm next preview is being prepared for external testing. See [installation and availability](/pnport/installation) for the registry check and known limits. Preparation does not mean that the package has been published.
+
 ## Release targets
 
 The 0.1.0 release targets macOS 13+ and Ubuntu 22.04-equivalent glibc Linux, each on x64 and arm64. All four targets must pass native execution and installation checks before release. Windows 10 22H2+ with MSVC on x64 and arm64 is planned for 0.2.0, with the same complete validation requirements. Linux static child executables are part of the first release gate. Musl hosts and mixed-architecture execution are outside the target set.

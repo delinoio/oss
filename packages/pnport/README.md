@@ -7,6 +7,20 @@ project without generating a physical `node_modules` tree.
 is available from this implementation.** Do not treat the presence of launcher
 source as evidence that all four initial native targets work.
 
+An experimental `0.1.0-next.1` npm next preview is being prepared for external
+testing and has not been published yet. Check availability before installing:
+
+```sh
+npm view @delino/pnport@next version && npm install --save-dev --ignore-scripts @delino/pnport@next
+```
+
+Keep optional dependencies enabled. Full feature, minimum-OS and benchmark
+acceptance is incomplete, and intermittent native initialization failures remain
+under investigation. Preview availability does not establish stable readiness;
+Windows and preview Homebrew remain unavailable. Pin the exact returned version
+when reporting a reproducible failure in issue #958, and share only sanitized
+diagnostics without credentials, private paths or project content.
+
 The command interface is:
 
 ```text

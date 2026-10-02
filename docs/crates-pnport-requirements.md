@@ -171,7 +171,7 @@ There are no hosted dashboards, alerting requirements, or external security-cert
 
 ### Distribution, rollout, documentation, and support
 
-Ship version `0.1.0` only after all four macOS/glibc Linux targets pass actual execution and installation validation. Version `0.2.0` adds Windows x64/arm64 only after its complete requirements pass; retain Windows Detours, private ACL ownership, process, filesystem, watch, native loading, PowerShell installation, npm and recovery requirements. The issue remains open through that acceptance. There is no partial preview release, fixed deadline, or support-response SLA.
+Ship version `0.1.0` only after all four macOS/glibc Linux targets pass actual execution and installation validation. Version `0.2.0` adds Windows x64/arm64 only after its complete requirements pass; retain Windows Detours, private ACL ownership, process, filesystem, watch, native loading, PowerShell installation, npm and recovery requirements. The issue remains open through that acceptance. An owner-authorized experimental npm next preview may publish an exact reviewed `0.1.0-next.N` version after the complete four-target candidate execution/install, TypeScript, artifact and benchmark gates. It must disclose incomplete full-feature/minimum-OS acceptance and unresolved intermittent initialization failures, preserve the closed stable gate and all safety requirements, and exclude Homebrew. There is no fixed deadline or support-response SLA.
 
 Provide:
 
@@ -186,11 +186,11 @@ The npm launcher forwards execution to the matching installed package without in
 
 Native distributions include the required injection artifacts from the same verified build. Standalone installations do not require Node.js merely to start pnport.
 
-Extend the manual `Release Project` workflow with `pnport` and the immutable release identity `pnport@v<MAJOR.MINOR.PATCH>`. Synchronize native and npm versions. Skip crates.io publication and Cargo registry credentials.
+Extend the manual `Release Project` workflow with `pnport` and the immutable release identity `pnport@v<MAJOR.MINOR.PATCH>`, or `pnport@v0.1.0-next.N` for the explicitly authorized experimental channel. Synchronize native and npm versions. Skip crates.io publication and Cargo registry credentials.
 
 The coordinator retains the repository’s existing behavior; downstream publication must validate the complete native/package set before obtaining publication authority. Publish and verify native npm packages before the launcher. Use npm provenance, source-bound release verification, immutable assets, and recoverable retries that never overwrite conflicting published bytes.
 
-CI and release dry runs remain credential-free and non-publishing. The private `pnportReleaseReady` source gate remains false until full native, minimum-OS and benchmark acceptance is reviewed; source version preparation does not enable publication. Public documentation continues through the existing consolidated publisher.
+CI and release dry runs remain credential-free and non-publishing. The private `pnportReleaseReady` source gate remains false until full native, minimum-OS and benchmark acceptance is reviewed; source version preparation does not enable stable publication. Experimental npm next publication requires exact `pnportPreviewVersion` source authorization instead, preserves npm latest and signed GitHub prerelease identity, and never publishes Homebrew. Public documentation continues through the existing consolidated publisher.
 
 Updates and rollback use explicit version installation. Do not add automatic update checks, self-update, Apple notarization, or Windows Authenticode.
 
@@ -253,5 +253,5 @@ Run focused pnport tests and repository-required root `cargo test`, Rust formatt
 - Security sandboxing, hostile-process containment, and external security certification.
 - Hosted accounts, remote control, runtime telemetry, feature flags, dashboards, and automatic updates.
 - APT/RPM distribution, Apple notarization, and Windows Authenticode.
-- Partial preview releases, numerical performance guarantees, support-response SLAs, and fixed release deadlines.
+- Unreviewed or incomplete-target preview releases, numerical performance guarantees, support-response SLAs, and fixed release deadlines.
 

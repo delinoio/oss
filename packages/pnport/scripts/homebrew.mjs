@@ -6,6 +6,11 @@ import { stage } from "./github-release.mjs";
 export function main() {
   ensure(process.argv.slice(2).every((arg) => arg === "--publish") && process.argv.length <= 3, "Unknown Homebrew argument");
   const candidate = stage(path.join(packageRoot, "dist"), path.join(packageRoot, "dist/github"), revision());
+  if (candidate.plan.version.includes("-")) {
+    ensure(!process.argv.includes("--publish"), "pnport previews cannot publish Homebrew");
+    event("homebrew_skipped", { tag: candidate.plan.tag, reason: "preview" });
+    return;
+  }
   const args = ["--project", "pnport", "--version", candidate.plan.version];
   for (const [suffix, flag] of [["darwin-x64", "darwin-amd64"], ["darwin-arm64", "darwin-arm64"], ["linux-x64-gnu", "linux-amd64"], ["linux-arm64-gnu", "linux-arm64"]]) {
     const name = `pnport-${suffix}.tar.gz`;
