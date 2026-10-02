@@ -205,9 +205,9 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         }
         tracing::debug!(action = "spawn", "Starting the owned process tree");
         #[cfg(target_os = "macos")]
-        admission.verify_at_launch()?;
-        #[cfg(target_os = "macos")]
         let job = crate::macos_job::Job::start(owner.group(), &mut command)?;
+        #[cfg(target_os = "macos")]
+        admission.verify_at_launch()?;
         let mut child = command.spawn().map_err(|e| {
             Error::new(
                 if e.kind() == std::io::ErrorKind::NotFound {
