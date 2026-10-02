@@ -1028,15 +1028,16 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         fs::create_dir(directory.path().join("real")).unwrap();
         fs::write(directory.path().join("real/input.txt"), b"input").unwrap();
+        let target = Path::new("real").join("input.txt");
         stage_symlink(
             &directory.path().join("real/input.txt"),
-            Path::new("real/input.txt"),
+            &target,
             &directory.path().join("alias.txt"),
         )
         .unwrap();
         let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
         let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
-        let target = PathBuf::from("real/input.txt");
+        let target = PathBuf::from("real").join("input.txt");
         let expected = snapshot.files.get(&target).unwrap();
         assert!(snapshot.selected_path_has_identity(Path::new("alias.txt"), expected.identity));
         let required = BTreeSet::from([PathBuf::from("alias.txt")]);
@@ -1063,9 +1064,10 @@ mod tests {
     fn preserves_raw_file_symlink_target_spelling() {
         let directory = tempfile::tempdir().unwrap();
         fs::write(directory.path().join("input.txt"), b"input").unwrap();
+        let target = Path::new(".").join("input.txt");
         stage_symlink(
             &directory.path().join("input.txt"),
-            Path::new("./input.txt"),
+            &target,
             &directory.path().join("alias.txt"),
         )
         .unwrap();
@@ -1080,7 +1082,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             fs::read_link(candidate.path().join("alias.txt")).unwrap(),
-            Path::new("./input.txt")
+            target
         );
     }
 
