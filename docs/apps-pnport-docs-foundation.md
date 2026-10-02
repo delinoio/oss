@@ -16,6 +16,8 @@ Cover installation, commands, supported filesystem behavior, limitations, editor
 
 The stable clean routes are `/pnport/`, `/pnport/installation`, `/pnport/getting-started`, `/pnport/commands`, `/pnport/filesystem-and-processes`, `/pnport/editors`, `/pnport/cache`, `/pnport/diagnostics`, `/pnport/benchmarks`, and `/pnport/releases`. The shared selector and Rspress sidebar expose the complete guide set. Installation guidance must never imply that a source-only development build is a published release.
 
+Benchmark guidance distinguishes released performance from development observations. Cold/warm comparisons retain identical child work and incremental/application cache state, use at least five samples with median/range, identify instrumentation overhead and filesystem count level, and disclose sampled-memory resolution/shared-page limits. Keep internal harness paths and validation records out of the public guide; publication of release numbers remains gated by full four-target acceptance.
+
 ## Storage
 Static Markdown and shared site assets only. No application storage or remote uploads. Generated output stays ignored.
 

@@ -575,40 +575,156 @@ fn fixture_image(pid: i32, expected: &std::path::Path) -> bool {
 #[test]
 fn private_owner_rejects_direct_invocation_and_an_untrusted_peer() {
     use std::os::{fd::AsRawFd, unix::net::UnixStream};
-    for inherited in [false, true] {
-        let (_peer, socket) = UnixStream::pair().unwrap();
-        let fd = socket.as_raw_fd();
-        let mut command = Command::new(pnport_binary());
-        command
-            .arg("__pnport_macos_owner")
-            .process_group(0)
-            .env_remove("PNPORT_MACOS_OWNER_FD");
-        if inherited {
-            command.env("PNPORT_MACOS_OWNER_FD", fd.to_string());
-            unsafe {
-                command.pre_exec(move || {
-                    if libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    Ok(())
-                });
+    for role in [None, Some("guardian"), Some("anchor"), Some("bootstrap")] {
+        for inherited in [false, true] {
+            let (_peer, socket) = UnixStream::pair().unwrap();
+            let fd = socket.as_raw_fd();
+            let mut command = Command::new(pnport_binary());
+            command
+                .arg("__pnport_macos_owner")
+                .process_group(0)
+                .env_remove("PNPORT_MACOS_OWNER_FD");
+            if let Some(role) = role {
+                command.arg(role);
+            }
+            if inherited {
+                command.env("PNPORT_MACOS_OWNER_FD", fd.to_string());
+                unsafe {
+                    command.pre_exec(move || {
+                        if libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
+                            return Err(std::io::Error::last_os_error());
+                        }
+                        Ok(())
+                    });
+                }
+            }
+            let mut child = command.spawn().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    assert_eq!(status.code(), Some(125));
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    child.wait().unwrap();
+                    panic!("An untrusted private owner must fail promptly");
+                }
+                std::thread::sleep(Duration::from_millis(10));
             }
         }
-        let mut child = command.spawn().unwrap();
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+enum OwnerFailure {
+    Supervisor,
+    Guardian,
+}
+
+#[cfg(target_os = "macos")]
+struct Control(Child);
+
+#[cfg(target_os = "macos")]
+impl Drop for Control {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn stopped_group(mode: &str, failure: OwnerFailure) {
+    let mut fixture = Fixture::new(mode, false);
+    fixture.ready();
+    fixture.assert_active();
+    let group = fixture.group();
+    assert!(unsafe { libc::getpgid(group) } > 0);
+    assert_ne!(
+        unsafe { libc::getpgid(group) },
+        group,
+        "guardian must run outside the command group"
+    );
+    // The unrelated control is a direct child in its own group. Cleanup must
+    // leave it running and never use a host inventory as signalling authority.
+    let mut unrelated = Control(
+        Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap(),
+    );
+    assert_eq!(unsafe { libc::kill(-group, libc::SIGSTOP) }, 0);
+    let supervisor = fixture.child.as_ref().unwrap().id() as i32;
+    for pid in fixture.pids.iter().chain(std::iter::once(&supervisor)) {
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
-            if let Some(status) = child.try_wait().unwrap() {
-                assert_eq!(status.code(), Some(125));
+            let mut info = unsafe { std::mem::zeroed::<libc::proc_bsdinfo>() };
+            let size = std::mem::size_of_val(&info) as i32;
+            let count = unsafe {
+                libc::proc_pidinfo(
+                    *pid,
+                    libc::PROC_PIDTBSDINFO,
+                    1,
+                    (&mut info as *mut libc::proc_bsdinfo).cast(),
+                    size,
+                )
+            };
+            assert_eq!(count, size);
+            if info.pbi_status == 4 {
+                // Darwin SSTOP, not merely a queued stop signal.
                 break;
             }
-            if Instant::now() >= deadline {
-                child.kill().unwrap();
-                child.wait().unwrap();
-                panic!("An untrusted private owner must fail promptly");
-            }
+            assert!(Instant::now() < deadline, "fixture member did not stop");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+    let start = Instant::now();
+    if matches!(failure, OwnerFailure::Supervisor) {
+        fixture.signal(libc::SIGKILL);
+    } else {
+        assert_eq!(unsafe { libc::kill(group, libc::SIGKILL) }, 0);
+        // Root stop propagation can also have parked the supervisor. Resume
+        // that direct child so it can detect the failed guardian and clean up.
+        fixture.signal(libc::SIGCONT);
+    }
+    let output = fixture.stopped();
+    assert!(
+        unrelated.0.try_wait().unwrap().is_none(),
+        "cleanup signalled an unrelated group"
+    );
+    drop(unrelated);
+    if matches!(failure, OwnerFailure::Supervisor) {
+        assert_eq!(output.status.signal(), Some(libc::SIGKILL));
+        if mode == "ignore" {
+            assert!(start.elapsed() >= Duration::from_secs(5));
+        } else {
+            fixture.assert_signals(libc::SIGTERM);
+        }
+    } else {
+        assert_eq!(output.status.code(), Some(125));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("PNPORT_CLEANUP_FAILED"));
+    }
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn killed_supervisor_resumes_a_stopped_group_for_graceful_cleanup() {
+    stopped_group("normal", OwnerFailure::Supervisor);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn killed_supervisor_escalates_a_stopped_unresponsive_group_after_grace() {
+    stopped_group("ignore", OwnerFailure::Supervisor);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn failed_guardian_stops_a_stopped_group_before_reaping_its_identity() {
+    stopped_group("normal", OwnerFailure::Guardian);
 }
 
 #[cfg(target_os = "macos")]
