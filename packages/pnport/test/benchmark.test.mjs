@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { diskUsage, processTreeRss, summarize } from "../scripts/benchmark.mjs";
+import { diskUsage, processTreeRss, requireCleanSource, summarize } from "../scripts/benchmark.mjs";
 
 test("sample summaries include slow outliers and require repeated finite measurements", () => {
   assert.deepEqual(summarize([10, 2, 3, 1, 100]), { median: 3, min: 1, max: 100 });
@@ -33,5 +34,28 @@ test("disk measurements count hard-linked bytes once and do not traverse externa
     assert.equal(measured.logicalBytes, 3 + "../external".length);
     assert(measured.allocatedBytes >= 0);
     assert.deepEqual(diskUsage(join(root, "missing")), { logicalBytes: 0, allocatedBytes: 0, files: 0 });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("revision records reject tracked, staged and untracked source changes but allow ignored output", () => {
+  const root = mkdtempSync(join(tmpdir(), "pnport-benchmark-source-"));
+  const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: { ...process.env,
+    GIT_AUTHOR_NAME: "Fixture", GIT_AUTHOR_EMAIL: "fixture@example.invalid", GIT_COMMITTER_NAME: "Fixture", GIT_COMMITTER_EMAIL: "fixture@example.invalid" } }).trim();
+  try {
+    git("init", "-q");
+    writeFileSync(join(root, ".gitignore"), "generated\n");
+    writeFileSync(join(root, "source"), "committed bytes\n");
+    git("add", ".");
+    git("update-ref", "HEAD", git("commit-tree", git("write-tree"), "-m", "Synthetic fixture"));
+    requireCleanSource(root);
+    writeFileSync(join(root, "generated"), "ignored measurement\n");
+    requireCleanSource(root);
+    writeFileSync(join(root, "source"), "uncommitted bytes\n");
+    assert.throws(() => requireCleanSource(root));
+    git("add", "source");
+    assert.throws(() => requireCleanSource(root));
+    git("reset", "--hard", "-q", "HEAD");
+    writeFileSync(join(root, "untracked"), "new source\n");
+    assert.throws(() => requireCleanSource(root));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

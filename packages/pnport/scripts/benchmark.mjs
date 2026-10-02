@@ -60,6 +60,15 @@ function execute(program, args, cwd) {
   return result.stdout.trim();
 }
 
+export function requireCleanSource(directory) {
+  // Compare content against HEAD. A transported index can retain macOS stat
+  // metadata (notably for LFS assets) that Linux status reports as modified
+  // even when diff confirms identical bytes. Untracked source is rejected too.
+  execute("git", ["diff", "--quiet", "HEAD"], directory);
+  assert(!execute("git", ["ls-files", "--others", "--exclude-standard"], directory),
+    "Commit benchmark sources before collecting revision-bound evidence.");
+}
+
 async function measure(program, args, cwd) {
   let peak = 0, observations = 0, measurementFailed = false, polling;
   const start = performance.now();
@@ -135,7 +144,7 @@ async function main(args) {
   assert(!existsSync(output), "Output must be a new directory; existing data is never replaced.");
   const sourceRevision = execute("git", ["rev-parse", "HEAD"], repository);
   assert.equal(execute("git", ["cat-file", "-t", nativeSourceRevision], repository), "commit");
-  assert(!execute("git", ["status", "--porcelain", "--untracked-files=normal"], repository), "Commit benchmark sources before collecting revision-bound evidence.");
+  requireCleanSource(repository);
   const image = readFileSync(binary).subarray(0, 4).toString("hex");
   assert(["7f454c46", "cffaedfe", "feedfacf"].includes(image), "Supply the native pnport executable rather than an installer/npm wrapper.");
   const nativeDigest = digest(binary);
