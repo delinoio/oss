@@ -1795,6 +1795,7 @@ jobs:
           pnpm --filter @delino/pnport test:typescript "$fixture" "$binary"
           node packages/pnport/scripts/package.mjs binary --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
           node packages/pnport/scripts/install-smoke.mjs --target "$PNPORT_TARGET"
+          PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test process_lifecycle --target "$PNPORT_TARGET"
       - name: Measure identical cold and warm workloads on this native host
         shell: bash
         run: |
