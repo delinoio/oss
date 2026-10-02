@@ -23,7 +23,8 @@ test("CI and exact-tag release use the package-owned four native hosts", () => {
   assert.equal(release.jobs.build.strategy.matrix, "${{ fromJSON(needs.prepare.outputs.matrix) }}");
   const source = release.jobs.prepare.steps.find(({ id }) => id === "source").run;
   assert.match(source, /matrix: JSON\.stringify\(nativeMatrix\)/u);
-  assert.ok(source.includes("if (source.dry_run !== 'true') requireReleaseReady();"));
+  assert.ok(source.includes("if (source.dry_run !== 'true') requirePublicationReady();"));
+  assert.ok(release.jobs.homebrew.if.includes("needs.prepare.outputs.channel == 'latest'"));
   for (const workflow of [ci, release]) {
     const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
     assert.equal(job.env.MACOSX_DEPLOYMENT_TARGET, "13.0");

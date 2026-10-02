@@ -25,13 +25,17 @@ const absent = async () => ({ status: 404 });
 
 for (const project of Object.values(Project)) for (const bump of Object.values(Bump)) {
   test(`${project} ${bump} changes only the selected version sources`, () => {
-    if (project === Project.Pnport && bump !== Bump.Minor) {
+    if (bump === Bump.Next && project !== Project.Pnport) {
+      assert.throws(() => versionChanges(project, bump, read), /next bump is reserved for pnport/u);
+      return;
+    }
+    if (project === Project.Pnport && ![Bump.Minor, Bump.Next].includes(bump)) {
       assert.throws(() => versionChanges(project, bump, read), /first public release requires a minor bump/u);
       return;
     }
     const plan = versionChanges(project, bump, read);
     assert.equal(plan.previous_version, readVersion(project, read));
-    assert.equal(plan.version, bumpVersion(plan.previous_version, bump));
+    assert.equal(plan.version, bump === Bump.Next ? "0.1.0-next.1" : bumpVersion(plan.previous_version, bump));
     const updated = { ...sources, ...plan.changes };
     for (const candidate of Object.values(Project)) assert.equal(readVersion(candidate, (file) => updated[file]), candidate === project ? plan.version : readVersion(candidate, read));
     assert.equal(Object.keys(plan.changes).length, project === Project.Pnport ? 5 : project === Project.AsyncCommitHook ? 4 : project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
@@ -77,6 +81,24 @@ test("clibox releases synchronize Cargo and npm and reject npm drift before vers
   const drift = (file) => file === "packages/clibox/package.json" ? read(file).replace(`"version": "${plan.previous_version}"`, '"version": "99.0.0"') : read(file);
   assert.throws(() => versionChanges(Project.Clibox, Bump.Patch, drift), /versions disagree/u);
   assert.throws(() => sourceMetadata({ project: Project.Clibox, event: "push", ref: `refs/tags/clibox@v${plan.previous_version}` }, drift), /versions disagree/u);
+});
+
+test("pnport next preparation retains exact authorization, source identity, and stable readiness", () => {
+  const preview = versionChanges(Project.Pnport, Bump.Next, read);
+  assert.equal(preview.version, "0.1.0-next.1");
+  const updated = (file) => preview.changes[file] ?? read(file);
+  const manifest = JSON.parse(updated("packages/pnport/package.json"));
+  assert.equal(manifest.pnportReleaseReady, false);
+  assert.equal(manifest.pnportPreviewVersion, preview.version);
+  assert.equal(readVersion(Project.Pnport, updated), preview.version);
+  assert.deepEqual(sourceMetadata({ project: Project.Pnport, event: "push", ref: `refs/tags/${preview.tag}` }, updated), { version: preview.version, tag: preview.tag, dry_run: "false" });
+  assert.throws(() => versionChanges(Project.Pnport, Bump.Next, updated), /exact reviewed/u);
+  const authorized = (file) => file === "packages/pnport/package.json" ? updated(file).replace('"pnportPreviewVersion": "0.1.0-next.1"', '"pnportPreviewVersion": "0.1.0-next.2"') : updated(file);
+  assert.equal(versionChanges(Project.Pnport, Bump.Next, authorized).version, "0.1.0-next.2");
+  assert.throws(() => sourceMetadata({ project: Project.Pnport, event: "push", ref: `refs/tags/${preview.tag}` }, authorized), /exact authorized/u);
+  assert.equal(versionChanges(Project.Pnport, Bump.Minor, updated).version, "0.1.0");
+  for (const bump of [Bump.Patch, Bump.Major]) assert.throws(() => versionChanges(Project.Pnport, bump, updated), /preview promotion/u);
+  assert.throws(() => bumpVersion("0.0.0", Bump.Next), /stable version bump/u);
 });
 
 test("pnport first minor bump produces 0.1.0 with CLI, preload, npm, and lockstep versions", () => {

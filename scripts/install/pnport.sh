@@ -41,7 +41,7 @@ if [ "$version" = latest ]; then
   [ -n "$versions" ] || { echo '[install.pnport] no published pnport version' >&2; exit 1; }
   version=$(printf '%s\n' "$versions" | awk -F . 'NF == 3 && (best == "" || $1 > major || ($1 == major && $2 > minor) || ($1 == major && $2 == minor && $3 > patch)) { major=$1; minor=$2; patch=$3; best=$0 } END { print best }')
 fi
-[[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo '[install.pnport] exact stable version required' >&2; exit 2; }
+[[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || "$version" =~ ^0\.1\.0-next\.[1-9][0-9]*$ ]] || { echo '[install.pnport] exact stable or pnport next version required' >&2; exit 2; }
 [ -n "$install_dir" ] || { echo '[install.pnport] install directory required' >&2; exit 2; }
 
 case "$(uname -s)" in

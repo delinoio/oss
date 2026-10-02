@@ -3,7 +3,7 @@
 ## Scope
 `apps/public-docs/docs/pnport` owns English guides at https://oss.delino.io/pnport, using the existing consolidated documentation app and publisher.
 
-The content and navigation are implemented at `/pnport` before the first release. The guides state that 0.1.0 remains unreleased and that no native, npm, installer, or Homebrew distribution is available from the current development source.
+The content and navigation are implemented at `/pnport` before the first release. The guides retain the stable 0.1.0 unreleased notice. An owner-authorized experimental `0.1.0-next.N` npm channel may be documented separately, with a published registry check, known feature/minimum-OS/initialization limits, and no Homebrew availability. Prepared sources do not establish published availability.
 
 ## Runtime and Language
 Rspress, shared accessible navigation and Cloudflare Pages. Use pnpm dev:public-docs on fixed loopback port 46302. No standalone app, publisher or port.
@@ -12,7 +12,7 @@ Rspress, shared accessible navigation and Cloudflare Pages. Use pnpm dev:public-
 Developers, CI users and editor users; support through GitHub issues with no response SLA.
 
 ## Interfaces and Contracts
-Cover installation, commands, supported filesystem behavior, limitations, editor configuration, cache management, diagnostics, reproducible benchmarks and explicit version rollback. Show future npm/Yarn, hosted direct-installer, and Homebrew commands only behind an explicit unreleased warning and a published-version check. Explain unsupported protected executables, static Linux requirements, graph-change restart behavior, read-only dependencies and ordinary source writes. Do not claim arbitrary-tool or version-specific certification. CLI help/errors/README are English and consistent with the Rust/npm contracts. Explain four-target 0.1.0 availability and planned Windows x64/arm64 support in 0.2.0 truthfully; no preview release or undocumented installation target.
+Cover installation, commands, supported filesystem behavior, limitations, editor configuration, cache management, diagnostics, reproducible benchmarks and explicit version rollback. Show future npm/Yarn, hosted direct-installer, and Homebrew commands only behind an explicit unreleased warning and a published-version check. Explain unsupported protected executables, static Linux requirements, graph-change restart behavior, read-only dependencies and ordinary source writes. Do not claim arbitrary-tool or version-specific certification. CLI help/errors/README are English and consistent with the Rust/npm contracts. Explain four-target 0.1.0 availability and planned Windows x64/arm64 support in 0.2.0 truthfully; only the explicitly authorized experimental npm next preview, with no undocumented installation target.
 
 The stable clean routes are `/pnport/`, `/pnport/installation`, `/pnport/getting-started`, `/pnport/commands`, `/pnport/filesystem-and-processes`, `/pnport/editors`, `/pnport/cache`, `/pnport/diagnostics`, `/pnport/benchmarks`, and `/pnport/releases`. The shared selector and Rspress sidebar expose the complete guide set. Installation guidance must never imply that a source-only development build is a published release.
 

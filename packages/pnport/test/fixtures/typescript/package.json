@@ -5,6 +5,9 @@
   "workspaces": [
     "packages/*"
   ],
+  "resolutions": {
+    "@fixture/peer-consumer": "file:./fixture-packages/peer-consumer"
+  },
   "devDependencies": {
     "@fixture/scoped": "file:./fixture-packages/scoped",
     "@types/node": "22.15.30",

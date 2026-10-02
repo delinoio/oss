@@ -1,6 +1,6 @@
 # Getting started
 
-**pnport 0.1.0 is unreleased; the commands below describe the CLI interface, not an available installation.** Prepare an installed Yarn 4 Plug'n'Play project first. The project must have `.pnp.cjs`; inline and split PnP data are part of the release contract.
+**pnport 0.1.0 is unreleased; the commands below describe the CLI interface.** Check [installation and availability](/pnport/installation) before using an experimental preview. Prepare an installed Yarn 4 Plug'n'Play project first. The project must have `.pnp.cjs`; inline and split PnP data are part of the release contract.
 
 ## Check the project
 

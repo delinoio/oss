@@ -3,9 +3,22 @@
 pnport is being developed to run subprocesses in an installed Yarn 4 Plug'n'Play
 project without generating a physical `node_modules` tree.
 
-**0.1.0 has not met its release acceptance gates. No npm or native distribution
-is available from this implementation.** Do not treat the presence of launcher
+**Stable 0.1.0 has not met its release acceptance gates.** Do not treat the presence of launcher
 source as evidence that all four initial native targets work.
+
+Experimental `0.1.0-next.N` npm next previews are intended for external
+testing. Check registry availability before installing:
+
+```sh
+npm view @delino/pnport@next version && npm install --save-dev --ignore-scripts @delino/pnport@next
+```
+
+Keep optional dependencies enabled. Full feature, minimum-OS and benchmark
+acceptance is incomplete, and intermittent native initialization failures remain
+under investigation. Preview availability does not establish stable readiness;
+Windows and preview Homebrew remain unavailable. Pin the exact returned version
+when reporting a reproducible failure in issue #958, and share only sanitized
+diagnostics without credentials, private paths or project content.
 
 The command interface is:
 

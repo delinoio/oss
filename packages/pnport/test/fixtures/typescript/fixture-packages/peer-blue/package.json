@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/peer-provider",
+  "version": "1.0.0",
+  "type": "module",
+  "types": "index.d.ts"
+}
