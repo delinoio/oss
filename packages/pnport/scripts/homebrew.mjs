@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { ensure, event, isMain, packageRoot, revision, root } from "./common.mjs";
+import { ensure, event, isMain, packageRoot, requireReleaseReady, revision, root } from "./common.mjs";
 import { stage } from "./github-release.mjs";
 
 export function main() {
@@ -16,6 +16,7 @@ export function main() {
     args.push(`--${flag}-url`, `https://github.com/delinoio/oss/releases/download/${candidate.plan.tag}/${name}`, `--${flag}-sha256`, checksum);
   }
   if (process.argv.includes("--publish")) {
+    requireReleaseReady();
     ensure(process.env.GITHUB_REPOSITORY === "delinoio/oss" && process.env.GITHUB_REF === `refs/tags/${candidate.plan.tag}` && process.env.GITHUB_SHA === candidate.plan.revision && process.env.HOMEBREW_TAP_GH_TOKEN, "Homebrew publication requires exact tag and tap-only token");
   } else args.push("--dry-run");
   execFileSync("bash", [path.join(root, "scripts/release/update-homebrew.sh"), ...args], { cwd: root, stdio: "inherit" });

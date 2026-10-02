@@ -10,7 +10,7 @@ import { createRequire } from "node:module";
 import { buildPackage, nativeArchive, packageNames, tarEntries } from "../../packages/pnport/scripts/package.mjs";
 import { publishArtifacts } from "../../packages/pnport/scripts/publish.mjs";
 import { publish as publishGithub } from "../../packages/pnport/scripts/github-release.mjs";
-import { metadata } from "../../packages/pnport/scripts/common.mjs";
+import { metadata, requireReleaseReady } from "../../packages/pnport/scripts/common.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -61,7 +61,7 @@ test("native install smoke executes the activated POSIX launcher", { skip: proce
   assert.match(result.stdout, /"event":"pnport_install_smoke"/u);
 });
 
-test("npm publication confirms six native dependencies before launcher and fails before writing on conflict", async () => {
+test("npm publication confirms four native dependencies before launcher and fails before writing on conflict", async () => {
   assert.deepEqual(packageNames("0.1.0"), [...targets.map(({ name }) => `delino-${name.split("/")[1]}-0.1.0.tgz`), "delino-pnport-0.1.0.tgz"]);
   const artifacts = [...targets.map(({ name }) => ({ name, version: "0.1.0", integrity: name })), { name: "@delino/pnport", version: "0.1.0", integrity: "main" }];
   const remote = new Map();
@@ -70,12 +70,32 @@ test("npm publication confirms six native dependencies before launcher and fails
   await publishArtifacts(artifacts, options);
   assert.deepEqual(writes, artifacts.map(({ name }) => name));
   await publishArtifacts(artifacts, options);
-  assert.equal(writes.length, 7);
-  remote.set(artifacts[5].name, "conflicting-bytes");
+  assert.equal(writes.length, 5);
+  remote.set(artifacts[targets.length - 1].name, "conflicting-bytes");
   await assert.rejects(() => publishArtifacts(artifacts, options), /Conflicting npm integrity/u);
-  assert.equal(writes.length, 7);
+  assert.equal(writes.length, 5);
   await publishArtifacts(artifacts, { ...options, dryRun: true });
-  assert.equal(writes.length, 7);
+  assert.equal(writes.length, 5);
+});
+
+test("publication rejects incomplete, duplicated, extra, or misordered native sets before registry access", async () => {
+  const artifacts = [...targets.map(({ name }) => ({ name })), { name: "@delino/pnport" }];
+  const candidates = [artifacts.slice(1), [...artifacts, { name: "@delino/pnport-win32-x64-msvc" }], [artifacts.at(-1), ...artifacts.slice(0, -1)], [artifacts[0], artifacts[0], ...artifacts.slice(2)]];
+  for (const candidate of candidates) {
+    await assert.rejects(() => publishArtifacts(candidate, { dryRun: false, lookup: () => assert.fail("Incomplete inputs reached the registry"), publish: () => assert.fail("Incomplete inputs were published") }), /complete native package set/u);
+  }
+});
+
+test("publication stays blocked until reviewed release acceptance, independently of source version preparation", () => {
+  // Exercise both states independently of the reviewed gate in the live source.
+  // A legitimate release preparation must not invalidate this contract test.
+  for (const pnportReleaseReady of [undefined, false, "true"]) {
+    assert.throws(() => requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady })), /publication is blocked/u);
+  }
+  for (const version of [undefined, "", "0.0.0", "0.1.0-preview", "01.0.0"]) {
+    assert.throws(() => requireReleaseReady(() => JSON.stringify({ version, pnportReleaseReady: true })), /publication is blocked/u);
+  }
+  requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady: true }));
 });
 
 test("an older pnport retry cannot downgrade the Homebrew tap", (t) => {

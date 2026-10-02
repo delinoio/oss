@@ -6,8 +6,6 @@ const Libc = Object.freeze({ Glibc: "glibc", Musl: "musl" });
 const targets = Object.freeze([
   { suffix: "darwin-x64", os: Platform.Darwin, cpu: Architecture.X64, rust: "x86_64-apple-darwin" },
   { suffix: "darwin-arm64", os: Platform.Darwin, cpu: Architecture.Arm64, rust: "aarch64-apple-darwin" },
-  { suffix: "win32-x64-msvc", os: Platform.Windows, cpu: Architecture.X64, rust: "x86_64-pc-windows-msvc" },
-  { suffix: "win32-arm64-msvc", os: Platform.Windows, cpu: Architecture.Arm64, rust: "aarch64-pc-windows-msvc" },
   { suffix: "linux-x64-gnu", os: Platform.Linux, cpu: Architecture.X64, libc: Libc.Glibc, rust: "x86_64-unknown-linux-gnu" },
   { suffix: "linux-arm64-gnu", os: Platform.Linux, cpu: Architecture.Arm64, libc: Libc.Glibc, rust: "aarch64-unknown-linux-gnu" },
 ].map((target) => Object.freeze({ ...target, name: `@delino/pnport-${target.suffix}`, binary: target.os === Platform.Windows ? "pnport.exe" : "pnport" })));

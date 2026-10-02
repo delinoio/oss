@@ -2,6 +2,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { matchesGlob, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { nativeMatrix as pnportMatrix } from "../../packages/pnport/scripts/native-matrix.mjs";
 
 export const jobPaths = JSON.parse(readFileSync(new URL("./job-paths.json", import.meta.url), "utf8"));
 export const nativeMatrices = JSON.parse(readFileSync(new URL("./native-matrices.json", import.meta.url), "utf8"));
@@ -25,6 +26,7 @@ export function matricesForEvent(event) {
   return {
     desktopMatrix: { include: nativeMatrices["devhud-desktop"].filter((row) => full || row.os !== "macos") },
     reactForgeMatrix: { include: nativeMatrices["react-forge"].filter((row) => full || row.platform !== "darwin") },
+    pnportMatrix,
   };
 }
 
@@ -94,7 +96,7 @@ export function main(env = process.env) {
   const oldRules = range.paths.includes("scripts/ci/job-paths.json") ? previousJobPaths(range.base) : jobPaths;
   const plan = planJobs(env.GITHUB_EVENT_NAME, range.paths, oldRules);
   const matrices = matricesForEvent(env.GITHUB_EVENT_NAME);
-  const outputs = { base: range.base, head: range.head, event: env.GITHUB_EVENT_NAME, jobs: JSON.stringify(plan.jobs), forced: JSON.stringify(plan.forced), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix) };
+  const outputs = { base: range.base, head: range.head, event: env.GITHUB_EVENT_NAME, jobs: JSON.stringify(plan.jobs), forced: JSON.stringify(plan.forced), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), pnport_matrix: JSON.stringify(matrices.pnportMatrix) };
   appendFileSync(env.GITHUB_OUTPUT, Object.entries(outputs).map(([key, value]) => `${key}=${value}\n`).join(""));
   console.log(JSON.stringify({ event: "ci_plan", mode: env.GITHUB_EVENT_NAME, base: range.base, head: range.head, changedFiles: range.paths.length, ...plan, ...matrices }));
   if (env.GITHUB_STEP_SUMMARY) {

@@ -5,7 +5,7 @@ project without generating a physical `node_modules` tree.
 
 **0.1.0 has not met its release acceptance gates. No npm or native distribution
 is available from this implementation.** Do not treat the presence of launcher
-source as evidence that all six native targets work.
+source as evidence that all four initial native targets work.
 
 The command interface is:
 
@@ -24,8 +24,9 @@ and `--color=never` or `NO_COLOR` to disable color. Diagnostics go to stderr;
 child standard streams are inherited. `doctor --json` emits one ANSI-free JSON
 object with schemaVersion 1, ready, and typed checks.
 
-The intended platforms are macOS 13+, Windows 10 22H2+ MSVC, and Ubuntu
-22.04-equivalent glibc, each on x64 and arm64. Musl and mixed architectures are
+Version 0.1.0 targets macOS 13+ and Ubuntu 22.04-equivalent glibc, each on
+x64 and arm64. Windows 10 22H2+ MSVC on x64 and arm64 is planned for 0.2.0;
+this release rejects Windows execution and installation. Musl and mixed architectures are
 excluded. Universal executable compatibility is not claimed.
 
 The launcher requires Node.js 22+ and forwards literal arguments to the matching

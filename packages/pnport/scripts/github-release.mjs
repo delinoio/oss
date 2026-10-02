@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ensure, event, isMain, packageRoot, revision } from './common.mjs';
+import { ensure, event, isMain, packageRoot, requireReleaseReady, revision } from './common.mjs';
 import { archiveName, verifySet } from './package.mjs';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -79,6 +79,7 @@ export async function main() {
   const output = path.join(packageRoot, 'dist/github');
   const candidate = stage(path.join(packageRoot, 'dist'), output, revision());
   if (!process.argv.includes('--publish')) return;
+  requireReleaseReady();
   const { plan } = candidate;
   ensure(process.env.GITHUB_REPOSITORY === 'delinoio/oss' && process.env.GITHUB_REF === `refs/tags/${plan.tag}` && process.env.GITHUB_SHA === plan.revision, 'Publication requires the exact first-party tag and commit');
   ensure(process.env.GH_TOKEN && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN, 'GitHub token and Actions OIDC are required');

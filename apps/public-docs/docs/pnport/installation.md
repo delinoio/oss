@@ -4,17 +4,17 @@
 
 ## Planned distribution
 
-A complete release is planned to provide prebuilt GitHub archives with checksums and signed verification material, direct installers for POSIX and PowerShell, prebuilt Homebrew packages, and the `@delino/pnport` npm launcher. The npm launcher will require Node.js 22 or newer and the matching native optional package. The standalone native CLI will not need Node.js merely to start.
+A complete 0.1.0 release is planned to provide prebuilt GitHub archives with checksums and signed verification material, a direct POSIX installer, prebuilt Homebrew packages, and the `@delino/pnport` npm launcher for macOS and glibc Linux. Windows and its PowerShell installer are planned for 0.2.0. The npm launcher will require Node.js 22 or newer and one of the four matching native optional packages. The standalone native CLI will not need Node.js merely to start.
 
 The release targets are:
 
-| Host | Architectures |
-| --- | --- |
-| macOS 13 or newer | x64, arm64 |
-| Windows 10 22H2 or newer, MSVC | x64, arm64 |
-| Ubuntu 22.04-equivalent glibc Linux | x64, arm64 |
+| Host | Architectures | Planned first release |
+| --- | --- | --- |
+| macOS 13 or newer | x64, arm64 | 0.1.0 |
+| Ubuntu 22.04-equivalent glibc Linux | x64, arm64 | 0.1.0 |
+| Windows 10 22H2 or newer, MSVC | x64, arm64 | 0.2.0 |
 
-Linux support includes static child executables as a release requirement. Musl hosts and mixed-architecture execution are excluded. These are **release targets, not a claim of current package availability or verified compatibility**. Every target must pass execution and installation validation before 0.1.0 is published; there is no partial preview release.
+Linux support includes static child executables as a release requirement. Musl hosts and mixed-architecture execution are excluded. These are **release targets, not a claim of current package availability or verified compatibility**. Every macOS and glibc Linux target must pass execution and installation validation before 0.1.0 is published; both Windows targets must meet the same requirements before 0.2.0. There is no partial preview release. The 0.1.x npm launcher reports Windows as unsupported without downloading or starting another executable.
 
 ## Before a future install
 
@@ -37,7 +37,7 @@ curl -fsSLo pnport-install.sh https://oss.delino.io/pnport/install.sh
 bash pnport-install.sh --version '<published-version>'
 ```
 
-On Windows, use the <a href="/pnport/install.ps1">PowerShell installer</a>:
+Windows installation is planned for a verified 0.2.0 release. The current <a href="/pnport/install.ps1">PowerShell installer</a> rejects requests before downloading or installing files. Keep the following example for a future published Windows-supported version only:
 
 ```powershell
 Invoke-WebRequest https://oss.delino.io/pnport/install.ps1 -OutFile pnport-install.ps1

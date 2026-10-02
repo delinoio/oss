@@ -2671,11 +2671,24 @@ impl Trace<'_> {
             call,
             "Intercepted owned child syscall"
         );
+        if call == libc::SYS_io_uring_setup {
+            // A ring would bypass pathname/descriptor mediation. Cancel setup
+            // before the kernel can allocate it and expose the feature as
+            // unavailable, so probing runtimes can use their ordinary syscall
+            // backend. Ring submission/registration still fails closed below.
+            deny_syscall(pid, &mut regs)?;
+            self.pending.insert(pid, Pending::ForcedError(libc::ENOSYS));
+            tracing::debug!(
+                action = "linux_feature_unavailable",
+                interface = "io_uring",
+                "Ring creation is unavailable under filesystem mediation"
+            );
+            return resume(pid, true, 0);
+        }
         if matches!(
             call,
             libc::SYS_fanotify_mark
                 | libc::SYS_open_by_handle_at
-                | libc::SYS_io_uring_setup
                 | libc::SYS_io_uring_enter
                 | libc::SYS_io_uring_register
         ) {

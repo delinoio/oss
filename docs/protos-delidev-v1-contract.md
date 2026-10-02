@@ -27,11 +27,15 @@ ledger reservations only: no schema declaration, generated binding, RPC or
 capability advertisement is activated by the reservation change. The owning
 issue is recorded directly when no implementation PR exists yet.
 
-Issue #1206's pending [native Codex model observation contract](cmds-delidev-native-models-contract.md)
-reserves server capability 16 and Worker capability 7. Keep these out of active
-schemas and capability advertisements until a dependent implementation follows
-main-established allocations. No new RPC or generated binding is activated by
-the reservation prerequisite.
+Issue #1206's [native Codex model observation contract](cmds-delidev-native-models-contract.md)
+activates main-established server capability 16 and Worker capability 7.
+`native_models.proto` owns the owner/client-only NativeModelService acceptance,
+status, immutable bounded page and cancellation operations. Request receipts bind
+original actors and exact machine/account revisions; Worker WatchWork/ReportWork
+retain original assignment/device/instance ownership. Generic public job resources
+omit executable paths and full observations. Generate service-specific Go and
+Connect Query bindings plus historical facades; subscription support remains typed
+unsupported until #1095 supplies its protected lifecycle.
 
 ## Scope
 
