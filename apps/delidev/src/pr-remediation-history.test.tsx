@@ -69,3 +69,11 @@ it("preserves a charged startup rejection separately from native completion", ()
   expect(readRemediationAttempt(f.resource(f.attempts[0].id, rejected), f.set)?.outcome).toBe("not-started");
   expect(readRemediationAttempt(f.resource(f.attempts[0].id, { ...rejected, startup_rejection_job_id: undefined }), f.set)).toBeUndefined();
 });
+
+it("validates the exact optional automatic source link revision without rounding", () => {
+  const f = fixture(), original = document(f.attempts[0]);
+  const linked = { ...original, project_id: newRequestId(), git_target: { version: 1, target: f.value.target, head_repository: { provider: "github.com", id: f.value.target.remote_repository_id, node_id: f.value.target.repository_node_id, owner: f.value.target.owner, name: f.value.target.name, private: false }, base_ref: "main", head_ref: "feature", base_sha: "a".repeat(40), head_sha: "b".repeat(40) }, automatic_link_id: newRequestId(), automatic_link_revision: "9007199254740993" };
+  expect(readRemediationAttempt(f.resource(f.attempts[0].id, linked), f.set)?.automatic_link_revision).toBe("9007199254740993");
+  for (const revision of [9007199254740992, "0", "01", "9223372036854775808", undefined]) expect(readRemediationAttempt(f.resource(f.attempts[0].id, { ...linked, automatic_link_revision: revision }), f.set)).toBeUndefined();
+  expect(readRemediationAttempt(f.resource(f.attempts[0].id, { ...linked, mode: "manual" }), f.set)).toBeUndefined();
+});

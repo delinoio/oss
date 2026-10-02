@@ -15,11 +15,13 @@ use std::{
     path::{Path, PathBuf},
     ptr,
     sync::{
-        Mutex, OnceLock,
+        OnceLock,
         atomic::{AtomicBool, Ordering},
     },
 };
 
+mod fork_mutex;
+use fork_mutex::ForkMutex;
 #[cfg(target_os = "linux")]
 use libc::{__errno_location, RTLD_NEXT, dlsym};
 use libc::{
@@ -81,8 +83,31 @@ struct Runtime {
     descriptors: HashMap<c_int, Translation>,
     cwd: Option<PathBuf>,
 }
-static RUNTIME: OnceLock<Mutex<Runtime>> = OnceLock::new();
+static RUNTIME: OnceLock<Box<ForkMutex<Runtime>>> = OnceLock::new();
 static SESSION: OnceLock<PathBuf> = OnceLock::new();
+
+unsafe extern "C" fn before_fork() {
+    // Wait for all runtime operations to finish before libSystem copies the
+    // address space. A plain Rust mutex can otherwise retain a vanished owner.
+    if let Some(runtime) = RUNTIME.get()
+        && runtime.prepare().is_err()
+    {
+        _exit(125);
+    }
+}
+
+unsafe extern "C" fn after_fork() {
+    if let Some(runtime) = RUNTIME.get() {
+        runtime.release();
+    }
+}
+
+unsafe extern "C" fn in_fork_child() {
+    after_fork();
+    // A dlopen initializer may fork from inside the outer hook. Its child
+    // must start intercepting immediately, including later child callbacks.
+    INSIDE.with(|inside| inside.set(false));
+}
 
 unsafe fn errno(value: c_int) {
     #[cfg(target_os = "macos")]
@@ -109,15 +134,51 @@ fn fail(code: Code) -> c_int {
         _ => EIO,
     }
 }
+
+unsafe fn path_bytes(path: *const c_char) -> std::result::Result<Vec<u8>, c_int> {
+    if path.is_null() {
+        return Err(EFAULT);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut bytes = Vec::new();
+        for index in 0..=PATH_MAX as usize {
+            let mut byte = 0u8;
+            let mut copied = 0;
+            #[expect(deprecated, reason = "the injected client avoids a mach2 dependency")]
+            let status = mach_vm_read_overwrite(
+                libc::mach_task_self_,
+                path.cast::<u8>().add(index) as u64,
+                1,
+                (&raw mut byte) as u64,
+                &raw mut copied,
+            );
+            if status != libc::KERN_SUCCESS || copied != 1 {
+                return Err(EFAULT);
+            }
+            if byte == 0 {
+                return Ok(bytes);
+            }
+            if index == PATH_MAX as usize {
+                return Err(ENAMETOOLONG);
+            }
+            bytes.push(byte);
+        }
+        unreachable!("the bounded pathname reader always returns");
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(CStr::from_ptr(path).to_bytes().to_vec())
+    }
+}
+
 unsafe fn path_from(
     path: *const c_char,
     dirfd: c_int,
     runtime: &Runtime,
 ) -> std::result::Result<PathBuf, c_int> {
-    if path.is_null() {
-        return Err(EFAULT);
-    }
-    let path = Path::new(OsStr::from_bytes(CStr::from_ptr(path).to_bytes()));
+    let path_bytes = path_bytes(path)?;
+    let path = Path::new(OsStr::from_bytes(&path_bytes));
     if path.as_os_str().is_empty() {
         return Err(ENOENT);
     }
@@ -134,7 +195,8 @@ unsafe fn path_from(
                 .raw_os_error()
                 .unwrap_or(EBADF));
         }
-        if metadata.assume_init().st_mode & S_IFMT != S_IFDIR {
+        let metadata = metadata.assume_init();
+        if metadata.st_mode & S_IFMT != S_IFDIR {
             return Err(ENOTDIR);
         }
     }
@@ -145,25 +207,101 @@ unsafe fn path_from(
             .or_else(|| std::env::current_dir().ok())
             .ok_or(EIO)?
     } else if let Some(translation) = runtime.descriptors.get(&dirfd) {
-        translation.logical.clone()
+        if translation.readonly {
+            translation.logical.clone()
+        } else {
+            live_directory_path(dirfd)?
+        }
     } else {
-        #[cfg(target_os = "macos")]
-        {
-            let mut buffer = [0u8; PATH_MAX as usize];
-            if fcntl(dirfd, F_GETPATH, buffer.as_mut_ptr()) < 0 {
-                return Err(EBADF);
-            }
-            PathBuf::from(OsStr::from_bytes(
-                CStr::from_ptr(buffer.as_ptr().cast()).to_bytes(),
-            ))
-        }
-        #[cfg(target_os = "linux")]
-        {
-            fs::read_link(format!("/proc/self/fd/{dirfd}")).map_err(|_| EBADF)?
-        }
+        live_directory_path(dirfd)?
     };
     Ok(base.join(path))
 }
+
+unsafe fn live_directory_path(dirfd: c_int) -> std::result::Result<PathBuf, c_int> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut buffer = [0u8; PATH_MAX as usize];
+        if fcntl(dirfd, F_GETPATH, buffer.as_mut_ptr()) < 0 {
+            return Err(EBADF);
+        }
+        return Ok(PathBuf::from(OsStr::from_bytes(
+            CStr::from_ptr(buffer.as_ptr().cast()).to_bytes(),
+        )));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        fs::read_link(format!("/proc/self/fd/{dirfd}")).map_err(|_| EBADF)
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c_int {
+    let original = libc::fcntl as unsafe extern "C" fn(c_int, c_int, ...) -> c_int;
+    let Some(_guard) = Guard::enter() else {
+        return original(fd, command);
+    };
+
+    // Only duplication carries logical directory provenance. An inode lookup
+    // cannot distinguish an fcntl duplicate from an independent open of shared
+    // peer backing, so record the duplicate at the actual duplication call.
+    let result = match command {
+        libc::F_DUPFD
+        | libc::F_DUPFD_CLOEXEC
+        | libc::F_SETFD
+        | libc::F_SETFL
+        | libc::F_RDAHEAD
+        | libc::F_NOCACHE
+        | libc::F_FREEZE_FS
+        | libc::F_THAW_FS
+        | libc::F_GLOBAL_NOCACHE
+        | libc::F_NODIRECT => {
+            let argument = args.arg::<c_int>();
+            original(fd, command, argument)
+        }
+        libc::F_GETLK
+        | libc::F_SETLK
+        | libc::F_SETLKW
+        | libc::F_PREALLOCATE
+        | libc::F_RDADVISE
+        | libc::F_LOG2PHYS
+        | libc::F_LOG2PHYS_EXT
+        | libc::F_GETPATH
+        | libc::F_GETPATH_NOFIRMLINK
+        | libc::F_PUNCHHOLE
+        | libc::F_TRIM_ACTIVE_FILE
+        | libc::F_SPECULATIVE_READ
+        | libc::F_TRANSFEREXTENTS => {
+            let argument = args.arg::<*mut c_void>();
+            original(fd, command, argument)
+        }
+        libc::F_GETFD | libc::F_GETFL | libc::F_FULLFSYNC | libc::F_BARRIERFSYNC => {
+            original(fd, command)
+        }
+        // Keep the native ABI for future integer-valued Darwin commands until
+        // libc exposes a typed constant for them.
+        _ => original(fd, command, args.arg::<c_int>()),
+    };
+    if result >= 0
+        && matches!(command, libc::F_DUPFD | libc::F_DUPFD_CLOEXEC)
+        && let Some(runtime) = RUNTIME.get()
+        && let Ok(mut runtime) = runtime.lock()
+        && let Some(translation) = runtime.descriptors.get(&fd).cloned()
+    {
+        runtime.descriptors.insert(result, translation);
+    }
+    result
+}
+
+#[cfg(target_os = "macos")]
+const _: () = {
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut ENTRY: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_fcntl as _,
+        _old: libc::fcntl as _,
+    };
+};
 
 unsafe fn translate(
     path: *const c_char,
@@ -284,12 +422,18 @@ unsafe extern "C" fn initialize() {
         let cache = Cache::open(PathBuf::from(std::env::var_os("PNPORT_CACHE")?)).ok()?;
         let view = View::new(graph, cache, session.clone());
         RUNTIME
-            .set(Mutex::new(Runtime {
-                view,
-                descriptors: HashMap::new(),
-                cwd: None,
-            }))
+            .set(
+                ForkMutex::new(Runtime {
+                    view,
+                    descriptors: HashMap::new(),
+                    cwd: None,
+                })
+                .ok()?,
+            )
             .ok()?;
+        if libc::pthread_atfork(Some(before_fork), Some(after_fork), Some(in_fork_child)) != 0 {
+            return None;
+        }
         fs::create_dir_all(session.join("ready")).ok()?;
         fs::write(session.join("ready").join(getpid().to_string()), b"1").ok()?;
         if let Some(token) = std::env::var_os("PNPORT_LAUNCH_TOKEN") {
@@ -488,16 +632,109 @@ hook!(realpath, pnport_realpath, (path:*const c_char, output:*mut c_char) -> *mu
     if output.is_null() { errno(ENOMEM); return output; }
     ptr::copy_nonoverlapping(bytes.as_ptr(),output.cast(),bytes.len()); *output.add(bytes.len())=0; output
 });
+unsafe extern "C" {
+    fn mach_vm_read_overwrite(
+        target_task: libc::mach_port_t,
+        address: libc::mach_vm_address_t,
+        size: libc::mach_vm_size_t,
+        data: libc::mach_vm_address_t,
+        outsize: *mut libc::mach_vm_size_t,
+    ) -> libc::kern_return_t;
+}
+
+unsafe fn read_logical_link(
+    translation: &Translation,
+    output: *mut c_char,
+    size: size_t,
+) -> ssize_t {
+    let bytes = translation.logical.as_os_str().as_bytes();
+    let count = size.min(bytes.len());
+    // Darwin permits an empty buffer, even an invalid pointer, for a link.
+    if count == 0 {
+        return 0;
+    }
+    // Kernel copyout validates the caller's destination, including read-only
+    // mappings. A Rust pointer copy would crash instead of returning EFAULT.
+    // Keep the same narrow Mach ABI as the generic fspy pointer reader until
+    // the preload adopts a shared Mach binding dependency.
+    let mut copied = 0;
+    #[expect(deprecated, reason = "the injected client avoids a mach2 dependency")]
+    let status = mach_vm_read_overwrite(
+        libc::mach_task_self_,
+        bytes.as_ptr() as u64,
+        count as u64,
+        output as u64,
+        &raw mut copied,
+    );
+    if status != libc::KERN_SUCCESS || copied != count as u64 {
+        errno(EFAULT);
+        return -1;
+    }
+    count.cast_signed()
+}
+
+unsafe fn terminal_lookup_suffix(
+    path: *const c_char,
+) -> std::result::Result<Option<&'static [u8]>, c_int> {
+    let bytes = path_bytes(path)?;
+    Ok(if bytes.ends_with(b"/.") {
+        Some(b"/.")
+    } else if bytes.last() == Some(&b'/') {
+        Some(b"/")
+    } else {
+        None
+    })
+}
+
+fn append_terminal_lookup(
+    physical: &CString,
+    suffix: &[u8],
+) -> std::result::Result<CString, c_int> {
+    let mut bytes = physical.as_bytes().to_vec();
+    bytes.extend_from_slice(suffix);
+    CString::new(bytes).map_err(|_| EINVAL)
+}
+
 hook!(readlink, pnport_readlink, (path:*const c_char, output:*mut c_char, size:size_t) -> ssize_t, {
     let original = original!(readlink,unsafe extern "C" fn(*const c_char,*mut c_char,size_t)->ssize_t);
     let Some(_guard) = Guard::enter() else { return original(path,output,size); };
     if RUNTIME.get().is_none() { return original(path,output,size); }
+    // Darwin rejects oversized buffers before looking up the pathname.
+    if size > c_int::MAX as usize { errno(EINVAL); return -1; }
+    let terminal = match terminal_lookup_suffix(path) {
+        Ok(value) => value,
+        Err(error) => { errno(error); return -1; }
+    };
     let (physical,translation) = translated!(path,AT_FDCWD,false,-1);
+    if let Some(suffix) = terminal {
+        let physical = match append_terminal_lookup(&physical, suffix) {
+            Ok(value) => value,
+            Err(error) => { errno(error); return -1; }
+        };
+        return original(physical.as_ptr(), output, size);
+    }
     if !translation.virtual_link { return original(physical.as_ptr(),output,size); }
-    if size == 0 { errno(EINVAL); return -1; }
-    if output.is_null() { errno(EFAULT); return -1; }
-    let bytes = translation.logical.as_os_str().as_bytes(); let count = size.min(bytes.len());
-    ptr::copy_nonoverlapping(bytes.as_ptr(),output.cast(),count); count.cast_signed()
+    read_logical_link(&translation, output, size)
+});
+hook!(readlinkat, pnport_readlinkat, (dirfd:c_int, path:*const c_char, output:*mut c_char, size:size_t) -> ssize_t, {
+    let original = original!(readlinkat,unsafe extern "C" fn(c_int,*const c_char,*mut c_char,size_t)->ssize_t);
+    let Some(_guard) = Guard::enter() else { return original(dirfd,path,output,size); };
+    if RUNTIME.get().is_none() { return original(dirfd,path,output,size); }
+    if size > c_int::MAX as usize { errno(EINVAL); return -1; }
+    let terminal = match terminal_lookup_suffix(path) {
+        Ok(value) => value,
+        Err(error) => { errno(error); return -1; }
+    };
+    let (physical,translation) = translated!(path,dirfd,false,-1);
+    if let Some(suffix) = terminal {
+        let physical = match append_terminal_lookup(&physical, suffix) {
+            Ok(value) => value,
+            Err(error) => { errno(error); return -1; }
+        };
+        return original(AT_FDCWD, physical.as_ptr(), output, size);
+    }
+    if !translation.virtual_link { return original(AT_FDCWD,physical.as_ptr(),output,size); }
+    read_logical_link(&translation, output, size)
 });
 hook!(chdir, pnport_chdir, (path:*const c_char) -> c_int, {
     let original = original!(chdir, unsafe extern "C" fn(*const c_char)->c_int);
@@ -556,7 +793,15 @@ hook!(fchdir, pnport_fchdir, (fd:c_int) -> c_int, {
     let original=original!(fchdir,unsafe extern "C" fn(c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd);};
     let result=original(fd);
-    if result==0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {runtime.cwd=runtime.descriptors.get(&fd).map(|t|t.logical.clone());}result
+    if result==0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {
+        runtime.cwd=runtime.descriptors.get(&fd).and_then(|translation| {
+            if translation.readonly {
+                Some(translation.logical.clone())
+            } else {
+                live_directory_path(fd).ok()
+            }
+        });
+    }result
 });
 hook!(dup, pnport_dup, (fd:c_int) -> c_int, {
     let original=original!(dup,unsafe extern "C" fn(c_int)->c_int);
@@ -719,24 +964,156 @@ hook!(execve,pnport_execve,(path:*const c_char,argv:*const *const c_char,envp:*c
     errno(saved_errno);
     result
 });
+unsafe fn spawn_admitted(
+    pid: *mut pid_t,
+    path: *const c_char,
+    actions: *const posix_spawn_file_actions_t,
+    attributes: *const posix_spawnattr_t,
+    argv: *const *mut c_char,
+    envp: *const *mut c_char,
+) -> c_int {
+    let original = original!(
+        posix_spawn,
+        unsafe extern "C" fn(
+            *mut pid_t,
+            *const c_char,
+            *const posix_spawn_file_actions_t,
+            *const posix_spawnattr_t,
+            *const *mut c_char,
+            *const *mut c_char,
+        ) -> c_int
+    );
+    // Opaque file actions can change the child's cwd before resolving a
+    // relative image. Until the actions can be inspected, reject this shape
+    // instead of resolving and launching a different image in the parent cwd.
+    if !actions.is_null()
+        && !path.is_null()
+        && !Path::new(OsStr::from_bytes(CStr::from_ptr(path).to_bytes())).is_absolute()
+    {
+        return fail(Code::PnportUnsupportedOperation);
+    }
+    let mut env = match child_env(envp.cast()) {
+        Ok(env) => env,
+        Err(code) => return code,
+    };
+    let image = match prepare_child_image(path, argv.cast(), &env) {
+        Ok(image) => image,
+        Err(code) => return code,
+    };
+    let marker = match launch_marker(&mut env) {
+        Ok(marker) => marker,
+        Err(code) => return code,
+    };
+    let script_argv = image.script_argv.as_ref().map(|args| {
+        let mut pointers: Vec<_> = args.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
+        pointers.push(ptr::null_mut());
+        pointers
+    });
+    let argv = script_argv.as_ref().map_or(argv, Vec::as_ptr);
+    let mut pointers: Vec<_> = env.iter().map(|e| e.as_ptr().cast_mut()).collect();
+    pointers.push(ptr::null_mut());
+    if let Err(error) = image.admission.verify_at_launch() {
+        let _ = fs::remove_file(&marker);
+        return fail(error.code);
+    }
+    let result = original(
+        pid,
+        image.path.as_ptr(),
+        actions,
+        attributes,
+        argv,
+        pointers.as_ptr(),
+    );
+    if result != 0 {
+        let _ = fs::remove_file(&marker);
+    }
+    result
+}
+
 hook!(posix_spawn,pnport_spawn,(pid:*mut pid_t,path:*const c_char,actions:*const posix_spawn_file_actions_t,attributes:*const posix_spawnattr_t,argv:*const *mut c_char,envp:*const *mut c_char)->c_int,{
     let original=original!(posix_spawn,unsafe extern "C" fn(*mut pid_t,*const c_char,*const posix_spawn_file_actions_t,*const posix_spawnattr_t,*const *mut c_char,*const *mut c_char)->c_int);
     let Some(_guard)=Guard::enter() else {return original(pid,path,actions,attributes,argv,envp);};
     if RUNTIME.get().is_none() {return original(pid,path,actions,attributes,argv,envp);}
-    // Opaque file actions can change the child's cwd before resolving a
-    // relative image. Until the actions can be inspected, reject this shape
-    // instead of resolving and launching a different image in the parent cwd.
-    if !actions.is_null() && !path.is_null() && !Path::new(OsStr::from_bytes(CStr::from_ptr(path).to_bytes())).is_absolute() {
-        return fail(Code::PnportUnsupportedOperation);
+    spawn_admitted(pid,path,actions,attributes,argv,envp)
+});
+
+unsafe fn spawn_path(
+    file: *const c_char,
+    actions: *const posix_spawn_file_actions_t,
+) -> std::result::Result<CString, c_int> {
+    if file.is_null() {
+        return Err(EFAULT);
     }
-    let mut env=match child_env(envp.cast()) {Ok(env)=>env,Err(code)=>return code};
-    let image=match prepare_child_image(path,argv.cast(),&env) {Ok(image)=>image,Err(code)=>return code};
-    let marker=match launch_marker(&mut env) {Ok(marker)=>marker,Err(code)=>return code};
-    let script_argv=image.script_argv.as_ref().map(|args| {let mut pointers:Vec<_>=args.iter().map(|arg|arg.as_ptr().cast_mut()).collect();pointers.push(ptr::null_mut());pointers});
-    let argv=script_argv.as_ref().map_or(argv,Vec::as_ptr);
-    let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr().cast_mut()).collect();pointers.push(ptr::null_mut());
-    if let Err(error)=image.admission.verify_at_launch() {let _=fs::remove_file(&marker);return fail(error.code);}
-    let result=original(pid,image.path.as_ptr(),actions,attributes,argv,pointers.as_ptr());
-    if result!=0 {let _=fs::remove_file(&marker);}
-    result
+    let file = CStr::from_ptr(file).to_bytes();
+    if file.is_empty() {
+        return Err(ENOENT);
+    }
+    if file.contains(&b'/') {
+        return CString::new(file).map_err(|_| EINVAL);
+    }
+    // Darwin's posix_spawnp searches the parent's PATH, even when envp replaces
+    // the child's environment. Its absent-PATH default comes from paths.h.
+    let inherited = libc::getenv(c"PATH".as_ptr());
+    let search = if inherited.is_null() {
+        b"/usr/bin:/bin".as_slice()
+    } else {
+        CStr::from_ptr(inherited).to_bytes()
+    };
+    let mut denied = false;
+    let runtime = RUNTIME.get().ok_or(EIO)?;
+    for directory in std::env::split_paths(OsStr::from_bytes(search)) {
+        if !actions.is_null() && !directory.is_absolute() {
+            // File actions execute before a relative candidate is looked up.
+            // Inspecting it in the parent could select a different child image.
+            return Err(fail(Code::PnportUnsupportedOperation));
+        }
+        let candidate = CString::new(
+            directory
+                .join(OsStr::from_bytes(file))
+                .as_os_str()
+                .as_bytes(),
+        )
+        .map_err(|_| EINVAL)?;
+        let logical = {
+            let runtime = runtime.lock().map_err(|_| EIO)?;
+            path_from(candidate.as_ptr(), AT_FDCWD, &runtime)?
+        };
+        let translation = runtime.lock().map_err(|_| EIO)?.view.translate(&logical);
+        let translation = match translation {
+            Ok(translation) => translation,
+            Err(error)
+                if matches!(
+                    error.code,
+                    Code::PnportResolutionFailed | Code::PnportCommandNotFound
+                ) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(fail(error.code)),
+        };
+        match fs::metadata(&translation.physical) {
+            Ok(metadata) => {
+                let physical = CString::new(translation.physical.as_os_str().as_bytes())
+                    .map_err(|_| EINVAL)?;
+                if metadata.is_file() && libc::access(physical.as_ptr(), libc::X_OK) == 0 {
+                    return CString::new(logical.as_os_str().as_bytes()).map_err(|_| EINVAL);
+                }
+                denied = true;
+            }
+            Err(error) => match error.raw_os_error().unwrap_or(EIO) {
+                ENOENT | ENOTDIR => {}
+                libc::EACCES => denied = true,
+                code => return Err(code),
+            },
+        }
+    }
+    Err(if denied { libc::EACCES } else { ENOENT })
+}
+
+hook!(posix_spawnp,pnport_spawnp,(pid:*mut pid_t,path:*const c_char,actions:*const posix_spawn_file_actions_t,attributes:*const posix_spawnattr_t,argv:*const *mut c_char,envp:*const *mut c_char)->c_int,{
+    let original=original!(posix_spawnp,unsafe extern "C" fn(*mut pid_t,*const c_char,*const posix_spawn_file_actions_t,*const posix_spawnattr_t,*const *mut c_char,*const *mut c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(pid,path,actions,attributes,argv,envp);};
+    if RUNTIME.get().is_none() {return original(pid,path,actions,attributes,argv,envp);}
+    let path=match spawn_path(path,actions) {Ok(path)=>path,Err(code)=>return code};
+    spawn_admitted(pid,path.as_ptr(),actions,attributes,argv,envp)
 });

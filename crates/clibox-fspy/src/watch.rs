@@ -1,7 +1,7 @@
 //! Dependency extraction and loss-aware native file watching.
 
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeSet, HashMap, VecDeque},
     path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -43,6 +43,7 @@ pub struct Dependencies {
     directories: BTreeSet<PathBuf>,
     absent: BTreeSet<PathBuf>,
     writes: BTreeSet<PathBuf>,
+    equivalent_prefixes: HashMap<PathBuf, bool>,
 }
 
 #[derive(Clone, Copy)]
@@ -134,17 +135,54 @@ fn normalize_absolute_target(root: &Path, target: &Path) -> Option<PathBuf> {
     Some(root.join(suffix))
 }
 
+#[cfg(test)]
 fn logical_relative(path: &AccessPath, root: &Path) -> Option<PathBuf> {
+    let mut equivalent_prefixes = HashMap::new();
+    logical_relative_with_cache(path, root, &mut equivalent_prefixes)
+}
+
+fn logical_relative_with_cache(
+    path: &AccessPath,
+    root: &Path,
+    equivalent_prefixes: &mut HashMap<PathBuf, bool>,
+) -> Option<PathBuf> {
     #[cfg(not(windows))]
     let logical = native_relative(&path.logical)?;
     #[cfg(windows)]
     let logical = crate::windows::watch_logical_path(&path.logical)?;
-    if !path_prefix(root, &logical) {
-        return None;
-    }
+    let prefix = if path_prefix(root, &logical) {
+        root
+    } else {
+        // Resolve only ancestors that could name the captured root. Resolving
+        // the full input would replace an internal alias with its target.
+        if !logical.is_absolute() {
+            return None;
+        }
+        // Prefer the outermost equivalent prefix, retaining even an internal
+        // directory alias that happens to point back to the root itself.
+        let prefix = logical
+            .ancestors()
+            .skip(1)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .find(|prefix| {
+                *equivalent_prefixes
+                    .entry(prefix.to_path_buf())
+                    .or_insert_with(|| {
+                        std::fs::canonicalize(prefix)
+                            .is_ok_and(|resolved| same_path(&resolved, root))
+                    })
+            })?;
+        tracing::debug!(
+            stage = "watch_alias_prefix",
+            "verified equivalent root prefix"
+        );
+        prefix
+    };
     let relative = logical
         .components()
-        .skip(root.components().count())
+        .skip(prefix.components().count())
         .collect::<PathBuf>();
     if relative.as_os_str().is_empty()
         || !relative
@@ -244,7 +282,9 @@ impl Dependencies {
         let Some(relative) = native_relative(relative) else {
             return;
         };
-        let alias = root.and_then(|root| logical_relative(path, root));
+        let alias = root.and_then(|root| {
+            logical_relative_with_cache(path, root, &mut self.equivalent_prefixes)
+        });
         if matches!(
             operation,
             Operation::Write | Operation::PositionalWrite | Operation::Mutation
@@ -306,6 +346,9 @@ impl Dependencies {
                     self.include_links(root, alias);
                 }
                 self.directories.insert(relative);
+                if let Some(alias) = alias {
+                    self.directories.insert(alias);
+                }
             }
             Operation::Close
             | Operation::Write
@@ -354,7 +397,9 @@ impl Dependencies {
     }
 
     fn relevant(&self, path: &Path) -> bool {
-        self.files.iter().any(|file| same_path(file, path))
+        self.files
+            .iter()
+            .any(|file| same_path(file, path) || path_prefix(path, file))
             || self.links.iter().any(|link| same_path(link, path))
             || self
                 .directories
@@ -392,6 +437,25 @@ impl Dependencies {
             }
             if anchor.starts_with(root) {
                 anchors.insert(anchor);
+            }
+            // A nonrecursive watch on a symlinked directory follows its
+            // target. Also watch each lexical parent so replacing the link
+            // itself invalidates dependencies beneath that suffix.
+            let mut component_path = root.to_path_buf();
+            for component in relative.components() {
+                let std::path::Component::Normal(component) = component else {
+                    break;
+                };
+                component_path.push(component);
+                if std::fs::symlink_metadata(&component_path)
+                    .is_ok_and(|metadata| metadata.file_type().is_symlink())
+                {
+                    if let Some(parent) = component_path.parent() {
+                        if parent.starts_with(root) {
+                            anchors.insert(parent.to_path_buf());
+                        }
+                    }
+                }
             }
             // Directory deletion must also be noticed through its parent.
             if self.directories.contains(relative) {
@@ -557,10 +621,10 @@ impl WatchSession {
         let mut relevant = false;
         for event in events {
             let event = event.map_err(|_| WatchFailure::WatchLoss)?;
-            // Linux inotify reports open and close notifications for files in
-            // every watch mask. Reads by the supervised command must not
-            // restart autowatch; only changes that can invalidate the
-            // captured dependency set are relevant here.
+            // notify's inotify backend includes open and close notifications in
+            // every watch mask. Reads by the supervised command must not restart
+            // autowatch; only create, remove, rename, and content/metadata changes
+            // can invalidate the captured dependency set.
             if event.kind.is_access() {
                 continue;
             }
@@ -841,6 +905,213 @@ mod tests {
         assert!(dependencies.files.contains(alias));
         assert!(dependencies.files.contains(target));
         assert!(dependencies.relevant(alias));
+    }
+
+    #[test]
+    fn internal_directory_alias_and_target_are_both_dependencies() {
+        #[cfg(unix)]
+        let root = Path::new("/project");
+        #[cfg(windows)]
+        let root = Path::new(r"C:\project");
+        let alias = Path::new("current");
+        let target = Path::new("targets/input");
+        let access = AccessPath {
+            class: PathClass::Project,
+            logical: native(&root.join(alias)),
+            resolved: Some(native(&root.join(target))),
+            project_relative: Some(native(target)),
+            identity: None,
+        };
+        let selector = Selector::new(&["**".to_owned()], &[]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(
+            &access,
+            &selector,
+            Observed {
+                operation: Operation::Directory,
+                open_mutates: false,
+                native_result: 0,
+                native_error: None,
+            },
+            Some(root),
+        );
+        assert!(dependencies.directories.contains(alias));
+        assert!(dependencies.directories.contains(target));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn equivalent_root_prefix_keeps_lossless_alias_and_missing_suffix() {
+        use std::{
+            ffi::OsStr,
+            fs,
+            os::unix::{ffi::OsStrExt, fs::symlink},
+        };
+
+        let directory = tempfile::tempdir().unwrap();
+        let base = directory.path().canonicalize().unwrap();
+        let root = base.join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("one"), b"input").unwrap();
+        let alias = Path::new("current");
+        symlink("one", root.join(alias)).unwrap();
+        symlink(".", root.join("again")).unwrap();
+        symlink("root", base.join("outer")).unwrap();
+        symlink("outer", base.join("nested")).unwrap();
+        symlink(&base, base.join("parent-prefix")).unwrap();
+        let selector = Selector::new(&["**".to_owned()], &[]).unwrap();
+        for prefix in [
+            root.clone(),
+            base.join("outer"),
+            base.join("nested"),
+            base.join("parent-prefix/root"),
+        ] {
+            let access = AccessPath {
+                class: PathClass::Project,
+                logical: native(&prefix.join(alias)),
+                resolved: Some(native(&root.join("one"))),
+                project_relative: Some(native(Path::new("one"))),
+                identity: None,
+            };
+            let original = access.logical.clone();
+            let mut dependencies = Dependencies::default();
+            dependencies.include_path(
+                &access,
+                &selector,
+                Observed {
+                    operation: Operation::Read,
+                    open_mutates: false,
+                    native_result: 1,
+                    native_error: None,
+                },
+                Some(&root),
+            );
+            assert_eq!(
+                dependencies.files,
+                BTreeSet::from([alias.to_path_buf(), PathBuf::from("one")])
+            );
+            assert_eq!(access.logical, original);
+
+            // Invalid UTF-8 need not be accepted by the host filesystem to
+            // remain lossless during dependency extraction.
+            let raw_alias = Path::new(OsStr::from_bytes(b"current-\xff"));
+            let raw_access = AccessPath {
+                logical: native(&prefix.join(raw_alias)),
+                ..access.clone()
+            };
+            assert_eq!(
+                logical_relative(&raw_access, &root),
+                Some(raw_alias.to_path_buf())
+            );
+            assert_eq!(raw_access.logical, native(&prefix.join(raw_alias)));
+
+            let nested_alias = AccessPath {
+                logical: native(&prefix.join("again").join(alias)),
+                ..access.clone()
+            };
+            assert_eq!(
+                logical_relative(&nested_alias, &root),
+                Some(PathBuf::from("again").join(alias))
+            );
+
+            let missing = AccessPath {
+                logical: native(&prefix.join("missing/leaf")),
+                resolved: Some(native(&root.join("missing/leaf"))),
+                project_relative: Some(native(Path::new("missing/leaf"))),
+                ..access
+            };
+            assert_eq!(
+                logical_relative(&missing, &root),
+                Some(PathBuf::from("missing/leaf"))
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unverifiable_and_outside_prefixes_cannot_promote_aliases() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let base = directory.path().canonicalize().unwrap();
+        let root = base.join("root");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(base.join("outside")).unwrap();
+        symlink("outside", base.join("outer")).unwrap();
+        symlink("loop", base.join("loop")).unwrap();
+        let selector = Selector::new(&["**".to_owned()], &[]).unwrap();
+        for logical in [
+            base.join("outer/input"),
+            base.join("absent/input"),
+            base.join("loop/input"),
+        ] {
+            let access = AccessPath {
+                class: PathClass::Project,
+                logical: native(&logical),
+                resolved: Some(native(&root.join("input"))),
+                project_relative: Some(native(Path::new("input"))),
+                identity: None,
+            };
+            assert_eq!(logical_relative(&access, &root), None);
+            let mut dependencies = Dependencies::default();
+            dependencies.include_path(
+                &access,
+                &selector,
+                Observed {
+                    operation: Operation::Read,
+                    open_mutates: false,
+                    native_result: 1,
+                    native_error: None,
+                },
+                Some(&root),
+            );
+            assert_eq!(dependencies.files, BTreeSet::from([PathBuf::from("input")]));
+            let external = AccessPath {
+                class: PathClass::External,
+                ..access
+            };
+            let mut dependencies = Dependencies::default();
+            dependencies.include_path(
+                &external,
+                &selector,
+                Observed {
+                    operation: Operation::Read,
+                    open_mutates: false,
+                    native_result: 1,
+                    native_error: None,
+                },
+                Some(&root),
+            );
+            assert!(dependencies.is_empty());
+        }
+        let escaping = AccessPath {
+            class: PathClass::Project,
+            logical: native(&base.join("root/../outside/input")),
+            resolved: None,
+            project_relative: None,
+            identity: None,
+        };
+        assert_eq!(logical_relative(&escaping, &root), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_suffix_watches_lexical_parent() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(root.join("target")).unwrap();
+        symlink("target", root.join("link")).unwrap();
+
+        let mut dependencies = Dependencies::default();
+        dependencies.files.insert(PathBuf::from("link/input"));
+        let anchors = dependencies.anchors(&root);
+
+        assert!(anchors.contains(&root.join("link")));
+        assert!(anchors.contains(&root));
+        assert!(dependencies.relevant(Path::new("link")));
     }
 
     #[test]
