@@ -504,6 +504,31 @@ func TestAutomaticPRRemediationBlockedTargetCannotStallAndShutdownJoins(t *testi
 	}
 }
 
+func TestAutomaticPRDetailObservationHasBoundedDeadline(t *testing.T) {
+	f := newAutomaticPRFixture(t)
+	var observedDeadline time.Time
+	f.queryHook = func(ctx context.Context, q domain.RepositoryQuery) error {
+		if q.Operation == domain.RepositoryDetail {
+			var ok bool
+			observedDeadline, ok = ctx.Deadline()
+			if !ok {
+				t.Fatal("detail observation has no deadline")
+			}
+		}
+		return nil
+	}
+	link, err := store.Decode[domain.SessionPullRequest](f.link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.service.automaticPRObservations(f.owner, link, nil); err != nil {
+		t.Fatal(err)
+	}
+	if remaining := time.Until(observedDeadline); remaining <= 0 || remaining > 20*time.Second {
+		t.Fatalf("detail deadline was not bounded: %s", remaining)
+	}
+}
+
 // Keep test diagnostics free of the fixture's fake lookup token and feedback.
 func TestAutomaticPRSelectionPreservesOriginalHeadAtDispatch(t *testing.T) {
 	f := newAutomaticPRFixture(t)

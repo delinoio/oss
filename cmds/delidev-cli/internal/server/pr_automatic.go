@@ -303,7 +303,9 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 }
 
 func (s *Service) automaticPRObservations(ctx context.Context, link domain.SessionPullRequest, problems []domain.PRProblem) (domain.PRGitTarget, map[domain.PRProblemKind]domain.RepositoryQueryResult, error) {
-	detail, err := s.readProblemObservation(ctx, link.RepositoryID, link.Number, domain.RepositoryDetail, "")
+	detailCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	detail, err := s.readProblemObservation(detailCtx, link.RepositoryID, link.Number, domain.RepositoryDetail, "")
+	cancel()
 	if err != nil {
 		return domain.PRGitTarget{}, nil, err
 	}
