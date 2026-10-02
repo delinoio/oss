@@ -220,6 +220,9 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 		if set.Remediation != nil && set.Remediation.ActiveAttemptID != "" {
 			return nil
 		}
+		if set.Remediation != nil && !set.Remediation.CanStartAutomatic(policy) {
+			return nil
+		}
 		input = domain.PRFixRequest{SetID: row.ID, SetRevision: row.Revision, ProjectID: original.ProjectID, RepositoryID: link.RepositoryID}
 		var after domain.ID
 		for len(input.Problems) < 100 {
