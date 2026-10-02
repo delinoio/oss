@@ -112,6 +112,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       const status = await native(() => controlLocalWorker(LocalWorkerAction.Status));
       if (!live()) throw new ConnectError("Settings closed.", Code.Canceled);
       if (status.machine_id !== id) throw new ConnectError("This computer's Worker changed. Verify its registration and retry.", Code.FailedPrecondition);
+      if (status.state === LocalWorkerState.Uncertain) throw new ConnectError("This computer's Worker exit is unconfirmed. Inspect its private log and original session recovery before retrying.", Code.FailedPrecondition);
       if ([LocalWorkerState.NotStarted, LocalWorkerState.Exited, LocalWorkerState.Stopping].includes(status.state)) throw new ConnectError(status.state === LocalWorkerState.Exited ? "This computer's Worker exited. Open Runner Devices to start it, then retry." : "This computer's Worker is stopped. Open Runner Devices to start it, then retry.", Code.FailedPrecondition);
     }
     return id;

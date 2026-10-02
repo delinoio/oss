@@ -200,6 +200,14 @@ it.each([LocalWorkerState.NotStarted, LocalWorkerState.Exited])("retains the fol
   expect(f.inspected).not.toHaveBeenCalled(); expect(f.control.mock.calls).toEqual([["status", undefined]]);
 });
 
+it("rejects an exit-uncertain Worker before submitting inspection", async () => {
+  const f = fixture(); f.control.mockResolvedValueOnce({ machine_id: f.machine.id, state: LocalWorkerState.Uncertain, controller_active: false });
+  f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await screen.findByText(/Worker exit is unconfirmed/);
+  expect((screen.getByRole("textbox", { name: "Absolute checkout path" }) as HTMLInputElement).value).toBe("/alias/repo");
+  expect(f.inspected).not.toHaveBeenCalled(); expect(f.control.mock.calls).toEqual([["status", undefined]]);
+});
+
 it.each([
   ["busy", /Another window is choosing a folder/],
   ["invalid-evidence", /selected folder cannot be used/],
