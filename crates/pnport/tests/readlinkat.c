@@ -102,9 +102,20 @@ int main(int argc, char **argv) {
     CHECK(symlink("ordinary-target", "source-link") == 0);
     CHECK(check_link("./source-link") == 0);
     CHECK(check_renamed_native_directory() == 0);
+    CHECK(mkdir("native-directory-target", 0700) == 0);
+    CHECK(symlink("native-directory-target", "native-directory-link") == 0);
+    char output[4096];
+    errno = 0;
+    CHECK(readlink("native-directory-link/", output, sizeof(output)) == -1);
+    int native_terminal_error = errno;
+    errno = 0;
+    CHECK(readlink("node_modules/dep/", output, sizeof(output)) == -1 && errno == native_terminal_error);
+    errno = 0;
+    CHECK(readlink("node_modules/dep/.", output, sizeof(output)) == -1 && errno == native_terminal_error);
+    CHECK(unlink("native-directory-link") == 0);
+    CHECK(rmdir("native-directory-target") == 0);
     int file = open("ordinary-file", O_CREAT | O_RDONLY, 0600);
     CHECK(file >= 0);
-    char output[4096];
     const char *paths[] = {"ordinary-file", "node_modules/dep/package.json", "missing", "node_modules/missing"};
     for (int i = 0; i < 4; i++) {
         errno = 0;

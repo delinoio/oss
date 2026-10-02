@@ -673,13 +673,46 @@ unsafe fn read_logical_link(
     count.cast_signed()
 }
 
+unsafe fn terminal_lookup_suffix(
+    path: *const c_char,
+) -> std::result::Result<Option<&'static [u8]>, c_int> {
+    let bytes = path_bytes(path)?;
+    Ok(if bytes.ends_with(b"/.") {
+        Some(b"/.")
+    } else if bytes.last() == Some(&b'/') {
+        Some(b"/")
+    } else {
+        None
+    })
+}
+
+fn append_terminal_lookup(
+    physical: &CString,
+    suffix: &[u8],
+) -> std::result::Result<CString, c_int> {
+    let mut bytes = physical.as_bytes().to_vec();
+    bytes.extend_from_slice(suffix);
+    CString::new(bytes).map_err(|_| EINVAL)
+}
+
 hook!(readlink, pnport_readlink, (path:*const c_char, output:*mut c_char, size:size_t) -> ssize_t, {
     let original = original!(readlink,unsafe extern "C" fn(*const c_char,*mut c_char,size_t)->ssize_t);
     let Some(_guard) = Guard::enter() else { return original(path,output,size); };
     if RUNTIME.get().is_none() { return original(path,output,size); }
     // Darwin rejects oversized buffers before looking up the pathname.
     if size > c_int::MAX as usize { errno(EINVAL); return -1; }
+    let terminal = match terminal_lookup_suffix(path) {
+        Ok(value) => value,
+        Err(error) => { errno(error); return -1; }
+    };
     let (physical,translation) = translated!(path,AT_FDCWD,false,-1);
+    if let Some(suffix) = terminal {
+        let physical = match append_terminal_lookup(&physical, suffix) {
+            Ok(value) => value,
+            Err(error) => { errno(error); return -1; }
+        };
+        return original(physical.as_ptr(), output, size);
+    }
     if !translation.virtual_link { return original(physical.as_ptr(),output,size); }
     read_logical_link(&translation, output, size)
 });
@@ -688,7 +721,18 @@ hook!(readlinkat, pnport_readlinkat, (dirfd:c_int, path:*const c_char, output:*m
     let Some(_guard) = Guard::enter() else { return original(dirfd,path,output,size); };
     if RUNTIME.get().is_none() { return original(dirfd,path,output,size); }
     if size > c_int::MAX as usize { errno(EINVAL); return -1; }
+    let terminal = match terminal_lookup_suffix(path) {
+        Ok(value) => value,
+        Err(error) => { errno(error); return -1; }
+    };
     let (physical,translation) = translated!(path,dirfd,false,-1);
+    if let Some(suffix) = terminal {
+        let physical = match append_terminal_lookup(&physical, suffix) {
+            Ok(value) => value,
+            Err(error) => { errno(error); return -1; }
+        };
+        return original(AT_FDCWD, physical.as_ptr(), output, size);
+    }
     if !translation.virtual_link { return original(AT_FDCWD,physical.as_ptr(),output,size); }
     read_logical_link(&translation, output, size)
 });
