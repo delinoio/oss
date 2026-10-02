@@ -88,6 +88,22 @@ func init() {
 		case "initialized":
 		case "thread/loaded/list":
 			write(request.ID, map[string]any{"data": []string{}, "nextCursor": nil})
+		case "thread/list":
+			// Root completion performs the same state-DB-only descendant inventory
+			// as production. This managed-auth fixture has no children, but it must
+			// answer that read before terminal authentication capture and Close.
+			var params struct {
+				Ancestor    string   `json:"ancestorThreadId"`
+				Limit       int      `json:"limit"`
+				Cursor      *string  `json:"cursor"`
+				SourceKinds []string `json:"sourceKinds"`
+				StateDBOnly bool     `json:"useStateDbOnly"`
+			}
+			raw, err := json.Marshal(request.Params)
+			if err != nil || json.Unmarshal(raw, &params) != nil || params.Ancestor != string(thread["id"].(domain.ID)) || params.Limit != 128 || params.Cursor != nil || !slices.Equal(params.SourceKinds, []string{"subAgent", "subAgentThreadSpawn", "subAgentOther"}) || !params.StateDBOnly {
+				os.Exit(87)
+			}
+			write(request.ID, map[string]any{"data": []any{}, "nextCursor": nil, "backwardsCursor": nil})
 		case "config/read":
 			write(request.ID, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}}, "origins": nil, "layers": nil})
 		case "thread/start":
