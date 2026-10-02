@@ -137,6 +137,39 @@ fn staged_link_target(
         .ok_or(ReproFailure::Unavailable)
 }
 
+fn normalize_relative(path: &Path) -> Result<PathBuf, ReproFailure> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(name) => normalized.push(name),
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return Err(ReproFailure::ExternalLink);
+                }
+            }
+            Component::Prefix(_) | Component::RootDir => {
+                return Err(ReproFailure::ExternalLink);
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+fn raw_target_relative(
+    root: &Path,
+    link: &Path,
+    raw_target: &Path,
+) -> Result<Option<PathBuf>, ReproFailure> {
+    if raw_target.is_absolute() {
+        return match raw_target.strip_prefix(root) {
+            Ok(relative) => normalize_relative(relative).map(Some),
+            Err(_) => Ok(None),
+        };
+    }
+    normalize_relative(&link.parent().unwrap_or(Path::new(".")).join(raw_target)).map(Some)
+}
+
 #[cfg(target_os = "linux")]
 fn opened_path(file: &File) -> Result<PathBuf, ReproFailure> {
     fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
@@ -516,9 +549,10 @@ impl Snapshot {
                         prefix.clone(),
                         SnapshotLink {
                             target: target.clone(),
-                            raw_target,
+                            raw_target: raw_target.clone(),
                         },
                     );
+                    self.record_raw_link_chain(&prefix, &raw_target)?;
                 }
                 let suffix = relative
                     .strip_prefix(&prefix)
@@ -605,6 +639,46 @@ impl Snapshot {
         Ok(())
     }
 
+    fn record_raw_link_chain(
+        &mut self,
+        link: &Path,
+        raw_target: &Path,
+    ) -> Result<(), ReproFailure> {
+        let Some(relative_target) = raw_target_relative(&self.root, link, raw_target)? else {
+            return Ok(());
+        };
+        let mut prefix = PathBuf::new();
+        for component in relative_target.components() {
+            prefix.push(component.as_os_str());
+            let source = self.root.join(&prefix);
+            let metadata = fs::symlink_metadata(&source).map_err(|_| ReproFailure::Unavailable)?;
+            if !metadata.file_type().is_symlink() {
+                continue;
+            }
+            let raw_target = fs::read_link(&source).map_err(|_| ReproFailure::Unavailable)?;
+            let resolved = fs::canonicalize(&source).map_err(|_| ReproFailure::Unavailable)?;
+            let target = resolved
+                .strip_prefix(&self.root)
+                .map_err(|_| ReproFailure::ExternalLink)?
+                .to_path_buf();
+            if denied(&target) {
+                return Err(ReproFailure::BlockedInput);
+            }
+            if !self.links.contains_key(&prefix) {
+                self.claim_entry()?;
+                self.links.insert(
+                    prefix.clone(),
+                    SnapshotLink {
+                        target,
+                        raw_target: raw_target.clone(),
+                    },
+                );
+                self.record_raw_link_chain(&prefix, &raw_target)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Recheck only collected source objects after the original execution.
     pub fn verify_required(&self, required: &BTreeSet<PathBuf>) -> Result<(), ReproFailure> {
         for relative in required {
@@ -678,6 +752,27 @@ impl Snapshot {
         Ok(())
     }
 
+    fn stage_raw_link_chain(
+        &self,
+        link: &Path,
+        raw_target: &Path,
+        candidate: &Path,
+        staged: &mut BTreeMap<PathBuf, SnapshotFile>,
+        staged_identities: &mut BTreeMap<FileIdentity, PathBuf>,
+    ) -> Result<(), ReproFailure> {
+        let Some(relative_target) = raw_target_relative(&self.root, link, raw_target)? else {
+            return Ok(());
+        };
+        let mut prefix = PathBuf::new();
+        for component in relative_target.components() {
+            prefix.push(component.as_os_str());
+            if self.links.contains_key(&prefix) {
+                self.stage_path(&prefix, candidate, staged, staged_identities)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Stage only the observed selected inputs. The candidate is a separate
     /// working directory owned by the caller; no source file is moved.
     pub fn stage_required(
@@ -711,6 +806,13 @@ impl Snapshot {
                     .map_err(|_| ReproFailure::Unavailable)?;
                 self.stage_path(
                     &append_link_suffix(&link.target, suffix),
+                    candidate,
+                    staged,
+                    staged_identities,
+                )?;
+                self.stage_raw_link_chain(
+                    &prefix,
+                    &link.raw_target,
                     candidate,
                     staged,
                     staged_identities,
@@ -1080,6 +1182,37 @@ mod tests {
             b"alpha"
         );
         assert!(!candidate.path().join("real/b.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_intermediate_symlinks_used_by_a_raw_target() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir(directory.path().join("real")).unwrap();
+        fs::write(directory.path().join("real/input.txt"), b"input").unwrap();
+        symlink("real", directory.path().join("bridge")).unwrap();
+        symlink("bridge/input.txt", directory.path().join("alias.txt")).unwrap();
+        let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 100).unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(
+                &BTreeSet::from([PathBuf::from("alias.txt")]),
+                candidate.path(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read_link(candidate.path().join("bridge")).unwrap(),
+            Path::new("real")
+        );
+        assert_eq!(
+            fs::read_link(candidate.path().join("alias.txt")).unwrap(),
+            Path::new("bridge/input.txt")
+        );
+        assert_eq!(
+            fs::read(candidate.path().join("alias.txt")).unwrap(),
+            b"input"
+        );
     }
 
     #[test]
