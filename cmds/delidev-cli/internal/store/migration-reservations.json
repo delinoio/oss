@@ -27,6 +27,29 @@
         1108,
         1115
       ]
+    },
+    {
+      "version": 28,
+      "issue": 1235,
+      "feature": "Service-native subscription identity and legacy configuration retirement",
+      "dependsOn": [
+        1108,
+        1115,
+        1117
+      ],
+      "composition": "Activate only after real migrations 26 and 27. Back up first, retire legacy subscription configuration atomically without inferring services, preserve historical attribution and configured-empty restrictions, and refuse unsettled native ownership or cleanup."
+    },
+    {
+      "version": 29,
+      "issue": 1146,
+      "feature": "OpenRouter OAuth PKCE account attempts",
+      "dependsOn": [
+        1108,
+        1115,
+        1117,
+        1235
+      ],
+      "composition": "Activate only after real migrations 26 through 28. Add private metadata-only account_oauth_attempts with durable once-only exchange claims, original actor/request/process and reserved-account identities, protected-reference and cleanup evidence. Never persist plaintext verifier, code, key or callback/authorization URL, cascade recovery evidence, or create placeholder predecessors."
     }
   ],
   "policy": "Reservations are not executable. Implement in order, or revise the reservation sequence on main before starting replacements; never fill a gap with a no-op migration. An unmerged version-25 database is an unknown layout and requires preservation and explicit recovery."

@@ -7,3 +7,4 @@
 - Run relevant release fixtures and workflow contracts when changing templates or publication. Keep README and public installation guidance synchronized with actual supported distribution channels.
 
 - clibox supports macOS x64/arm64 only, using its version-bound signed Darwin archives. Preserve full LICENSE, NOTICE and LICENSE.fspy during installation. Test and audit the identical Formula on both native Mac architectures before acquiring tap-only credentials; reject downgrades and changed same-version Formula bytes. Never validate by mutating a developer's Homebrew installation. Follow `docs/packages-clibox-distribution-contract.md`.
+- Select clibox's architecture-specific `url` and `sha256` with `Hardware::CPU.arm?` conditionals; Homebrew's `on_arm`/`on_intel` blocks do not permit those source declarations. Keep rendered Formula lines within the strict audit limit and validate both branch selections in release fixtures.

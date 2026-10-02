@@ -597,6 +597,7 @@ const (
 )
 
 type Installation struct {
+	ExecutableSHA256 string               `json:"executable_sha256,omitempty"`
 	Harness          Harness              `json:"harness"`
 	State            InstallationState    `json:"state"`
 	ExplicitPath     string               `json:"explicit_path,omitempty"`
@@ -642,7 +643,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != AutomaticTitlesCodexV1 && capability != SessionForwardingV1) || seenCapabilities[capability] {
+		if (capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

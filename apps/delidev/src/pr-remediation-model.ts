@@ -1,6 +1,7 @@
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
 import { bounded, positive, uuid } from "./github-query-model";
+import { validPRSource } from "./github-pr-source";
 import { utcTimestamp } from "./timestamp";
 
 export enum AttemptState { Reserved = "reserved", Bound = "bound", Running = "running", Uncertain = "uncertain", Finished = "finished", Canceled = "canceled" }
@@ -36,6 +37,11 @@ function policyValid(value: Document): boolean {
 export function readRemediationAttempt(row: Resource, set: Resource): Document | undefined {
   const v = document(row), chain = readRemediationChain(document(set).remediation), reserved = object(v.reserved);
   if (!chain || row.kind !== EntityKind.PROBLEM || row.schemaVersion !== 1 || !uuid(row.id) || row.revision <= 0n || row.revision >= 1n << 63n || row.sessionId || row.projectId || row.documentJson.byteLength > 1 << 20 || v.version !== 1 || v.type !== "pull-request-remediation-attempt" || v.set_id !== set.id || v.chain_id !== chain.id || !count(v.sequence, Number(chain.sequence)) || v.sequence === 0 || !["manual", "automatic"].includes(text(v.mode)) || !Object.values(AttemptState).includes(v.state as AttemptState) || activeAttempt(v.state) !== (chain.active_attempt_id === row.id) || !audit(reserved) || !policyValid(object(v.policy))) return;
+  if (absent(v.git_target) !== absent(v.project_id)) return;
+  if (!absent(v.git_target)) {
+    const git = object(v.git_target), target = object(git.target), original = object(document(set).target);
+    if (!uuid(v.project_id) || git.version !== 1 || target.version !== 1 || target.provider !== "github.com" || !uuid(target.repository_id) || !uuid(original.repository_id) || !["remote_repository_id", "repository_node_id", "pull_request_id", "pull_request_node_id", "number"].every(key => target[key] === original[key]) || !bounded(target.title, 4096, false) || !utcTimestamp(target.observed_at) || !["base_sha", "head_sha"].every(key => /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(text(git[key]))) || !["base_ref", "head_ref"].every(key => bounded(git[key], 1024) && !/[\x00-\x20\x7f~^:?*\[\\]/.test(text(git[key]))) || !validPRSource({ state: "available", repository: { provider: target.provider, id: target.remote_repository_id, node_id: target.repository_node_id, owner: target.owner, name: target.name, private: false } }, { id: target.remote_repository_id, node_id: target.repository_node_id, owner: target.owner, name: target.name }) || !validPRSource({ state: "available", repository: git.head_repository }, { id: target.remote_repository_id, node_id: target.repository_node_id, owner: target.owner, name: target.name })) return;
+  }
   if (!Array.isArray(v.problems) || v.problems.length < 1 || v.problems.length > 1001) return;
   const seen = new Set<string>();
   for (const raw of v.problems) { const ref = object(raw); if (!uuid(ref.id) || !digest(ref.content_version) || seen.has(text(ref.id))) return; seen.add(text(ref.id)); }

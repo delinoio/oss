@@ -29,12 +29,12 @@ export function BackupJob({ kind, accepted, active, completed, dismiss }: Tracke
     }
   }, [active, succeeded, job, completed]);
   return <article className="result" aria-label={`Tracked ${kind} ${accepted.id}`}>
-    <h4>Backup {accepted.backupId}</h4><p>Job {accepted.id}{job ? ` · revision ${job.revision.toString()}` : ""}</p>
+    <h4>Backup {accepted.backupId}</h4><p>Job {accepted.id} · revision {(job?.revision ?? accepted.revision).toString()}</p>
     <p role="status">Accepted {kind} {succeeded ? "completed" : failed ? "failed" : pending ? "pending" : "status unavailable"}</p>
     <Problem error={query.error} />
     {job?.problemCode ? <p>Operation needs attention: {job.problemCode}</p> : null}
     {query.error && query.data ? <p>The last observation is stale; current job status is unavailable.</p> : null}
-    <button disabled={!active || query.isFetching} onClick={() => void query.refetch()}>Refresh tracked {kind} {accepted.id}</button>
-    {succeeded || failed ? <button disabled={!active} onClick={dismiss}>Dismiss completed {kind} tracking {accepted.id}</button> : null}
+    <button aria-label={`Refresh tracked ${kind} ${accepted.id}`} disabled={!active || query.isFetching} onClick={() => void query.refetch()}>Refresh</button>
+    {succeeded || failed ? <button aria-label={`Dismiss tracking for completed ${kind} ${accepted.id}`} disabled={!active} onClick={dismiss}>Dismiss tracking</button> : null}
   </article>;
 }

@@ -7,6 +7,10 @@ import { ConfigurationService, EntityKind, InboxService, InboxSource, Integratio
 import { App } from "./App";
 import { encode } from "./documents";
 
+// Full Settings mounts and sequential navigation share this aggregate fixture
+// budget. Per-observation waits and product RPC/native deadlines remain unchanged.
+const fullShellTimeoutMs = 60_000;
+
 function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false, automaticTitles = false, selectorFailure?: Code, emptyAgents = false, agentGate?: Promise<void>) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
@@ -28,6 +32,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const readStates = vi.fn(() => ({}));
   const responses = vi.fn(() => ({}));
   const preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false });
+  const saveNotificationPreferences = vi.fn(async () => ({ preferences }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status });
     router.service(SessionService, { listSessions: (request) => {
@@ -51,13 +56,13 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
         await new Promise<void>((resolve) => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); });
       },
     });
-    router.service(InboxService, { listInbox: inboxReads, setInboxReadState: readStates, getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: async () => ({ preferences }) });
+    router.service(InboxService, { listInbox: inboxReads, setInboxReadState: readStates, getNotificationPreferences: () => ({ preferences }), setNotificationPreferences: saveNotificationPreferences });
     router.service(SearchService, { searchConversations: searches });
     router.service(InteractionService, { respondQuestion: responses, respondApproval: responses });
     router.service(IntegrationService, { queryRepositoryIntegration: githubQuery });
     router.service(ConfigurationService, { saveConfiguration });
   });
-  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, projectRequests, sessionRequests, agent, machine, searches, inboxReads, readStates, responses };
+  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, saveNotificationPreferences, projectRequests, sessionRequests, agent, machine, searches, inboxReads, readStates, responses };
 }
 
 it("creates an automatically named session from the first message and explicit Workers", async () => {
@@ -126,7 +131,7 @@ it("shows selector loading while the current page has not returned", async () =>
   expect(await screen.findByRole("option", { name: "Agent One" })).toBeTruthy();
 });
 
-it("opens a fresh New Project form from the plus button and restores opener focus", async () => {
+it("opens a fresh New Project form from the plus button with visible destination focus", async () => {
   const value = fixture();
   render(<StrictMode><App transport={value.transport} /></StrictMode>);
   const opener = await screen.findByRole("button", { name: "New project" });
@@ -134,6 +139,7 @@ it("opens a fresh New Project form from the plus button and restores opener focu
   expect(opener.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   fireEvent.click(opener);
   expect(await screen.findByRole("heading", { name: "New Project" })).toBeTruthy();
+  expect(window.document.querySelector(".sidebar-action-tooltip")).toBeNull();
   const name = screen.getByRole("textbox", { name: "Name" });
   await waitFor(() => expect(window.document.activeElement).toBe(name));
   fireEvent.change(name, { target: { value: "Retained project" } });
@@ -141,8 +147,8 @@ it("opens a fresh New Project form from the plus button and restores opener focu
   expect(value.enqueues).not.toHaveBeenCalled();
   expect(value.controls).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
-  expect(window.document.activeElement).toBe(opener);
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect(window.document.activeElement).toBe(screen.getByRole("main"));
   fireEvent.click(opener);
   expect(screen.getByRole("textbox", { name: "Name" })).not.toBe(name);
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
@@ -150,7 +156,7 @@ it("opens a fresh New Project form from the plus button and restores opener focu
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
 
-it("defers a targeted entry within an opening and clears it when that opening closes", async () => {
+it("preserves a protected draft on active Settings reselection and discards it on departure", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -158,13 +164,13 @@ it("defers a targeted entry within an opening and clears it when that opening cl
   fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
   const providerName = screen.getByRole("textbox", { name: "Name" });
   fireEvent.change(providerName, { target: { value: "Retained instructions draft" } });
-  fireEvent.click(screen.getByRole("button", { name: "New project" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   expect(screen.getByRole("textbox", { name: "Name" })).toBe(providerName);
   expect((providerName as HTMLInputElement).value).toBe("Retained instructions draft");
   expect(screen.getByRole("button", { name: "Save Instructions" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
@@ -183,7 +189,7 @@ it("abandons an uncertain New Project save without replay when reopening", async
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await screen.findByRole("button", { name: "Retry the same configuration" });
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(opener);
   expect(screen.getByRole("textbox", { name: "Name" })).not.toBe(name);
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
@@ -191,7 +197,7 @@ it("abandons an uncertain New Project save without replay when reopening", async
   expect(value.saveConfiguration).toHaveBeenCalledTimes(1);
   expect(value.enqueues).not.toHaveBeenCalled();
   expect(value.controls).not.toHaveBeenCalled();
-});
+}, fullShellTimeoutMs);
 
 it("invalidates the loaded sidebar pages after saving without resetting their cursors or archive filter", async () => {
   const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository" }) });
@@ -228,7 +234,7 @@ it("invalidates the loaded sidebar pages after saving without resetting their cu
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   expect(await screen.findByRole("button", { name: "New Project" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   await waitFor(() => expect(value.projectRequests.filter((page) => page === "project-next")).toHaveLength(currentProjectReads + 1));
   await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === "" && request.includeArchived && request.pageToken === "global-next")).toHaveLength(currentGlobalReads + 1));
   await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === project.id && request.includeArchived && request.pageToken === "project-session-next")).toHaveLength(currentProjectSessionReads + 1));
@@ -238,7 +244,7 @@ it("invalidates the loaded sidebar pages after saving without resetting their cu
 // This full-shell scenario performs several sequential pagination and settings
 // interactions. Bound its aggregate CI duration separately from the unchanged
 // per-observation deadlines; the default five seconds is not a product SLA.
-}, 15_000);
+}, fullShellTimeoutMs);
 
 it("keeps the draft and session mounted across settings and navigation, and renders native text inertly", async () => {
   const value = fixture();
@@ -246,10 +252,17 @@ it("keeps the draft and session mounted across settings and navigation, and rend
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Keep my unsent input" } });
+  fireEvent.click(screen.getByRole("button", { name: "Browser" }));
+  expect(screen.getByRole("region", { name: "Session browser" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep my unsent input");
+  fireEvent.click(screen.getByRole("button", { name: "Close browser" }));
+  expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Browser" }));
+
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  expect(screen.getByRole("dialog")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
-  expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Settings" }));
+  expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect(window.document.activeElement).toBe(screen.getByRole("main"));
   expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Keep my unsent input");
   fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
   await screen.findByText("No retained requests or execution results.");
@@ -259,18 +272,18 @@ it("keeps the draft and session mounted across settings and navigation, and rend
   expect(await screen.findByText('<script>window.invalid = true</script>')).toBeTruthy();
   expect(window.document.querySelector("script")).toBeNull();
   expect(value.enqueues).not.toHaveBeenCalled();
-});
+}, fullShellTimeoutMs);
 
 it("refreshes reads after recovery without replacing the connection's session draft", async () => {
   const value = fixture();
   value.status.mockRejectedValueOnce(new ConnectError("Server is stopped", Code.Unavailable));
   const view = render(<App transport={value.transport} connectionReady={false} />);
-  await screen.findByText("Server unavailable");
+  await screen.findByText("This computer · Disconnected · previous data may be stale");
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Retain this across server restart" } });
   view.rerender(<App transport={value.transport} connectionReady connectionEpoch={1} />);
-  await screen.findByText("Server 0.1.0");
+  await screen.findByText("This computer · Connected");
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe("Retain this across server restart");
   expect(value.enqueues).not.toHaveBeenCalled();
@@ -352,14 +365,14 @@ it("drops connection-scoped drafts and caches when the selected transport change
 it("does not present cached server status as current connectivity after a failed refresh", async () => {
   const value = fixture();
   const view = render(<App transport={value.transport} />);
-  await screen.findByText("Server 0.1.0");
+  await screen.findByText("This computer · Connected");
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Keep while disconnected" } });
   value.status.mockRejectedValue(new ConnectError("Server disconnected", Code.Unavailable));
   view.rerender(<App transport={value.transport} connectionEpoch={1} />);
-  await screen.findByText("Server unavailable");
-  expect(screen.queryByText("Server 0.1.0")).toBeNull();
+  await screen.findByText("This computer · Disconnected · previous data may be stale");
+  expect(within(screen.getByLabelText("Application sidebar")).queryByText("This computer · Connected")).toBeNull();
   expect((composer as HTMLTextAreaElement).value).toBe("Keep while disconnected");
   expect(value.enqueues).not.toHaveBeenCalled();
 });
@@ -511,7 +524,7 @@ it("discards an Instructions draft when navigating away and preserves targeted r
   fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
   const name = await screen.findByRole("textbox", { name: "Name" });
   fireEvent.change(name, { target: { value: "Retained instructions draft" } });
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   expect(await within(screen.getByRole("main")).findByRole("heading", { name: "Pull requests" })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
@@ -527,10 +540,13 @@ it("discards a nested integration profile draft on close before targeted reposit
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
+  // The initial empty read moves the action from the toolbar into setup guidance.
+  // Wait for that read so the test clicks the current button, not a detached node.
+  await screen.findByRole("heading", { name: "Add your first GitHub profile" });
+  fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
   const name = screen.getByRole("textbox", { name: "Profile name" });
   fireEvent.change(name, { target: { value: "Retained GitHub profile draft" } });
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
   expect(screen.queryByRole("textbox", { name: "Profile name" })).toBeNull();
@@ -547,14 +563,17 @@ it("discards a notification draft on close without saving", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
   fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Questions and approval requests" }));
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
   expect(screen.queryByRole("button", { name: "Cancel notification edit" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
-  expect((await screen.findByRole("checkbox", { name: "Questions and approval requests" }) as HTMLInputElement).checked).toBe(true);
+  await screen.findByRole("button", { name: "Edit notification preferences" });
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(within(screen.getByRole("group", { name: "Notify this client about" })).getByText("Enabled")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(value.saveNotificationPreferences).not.toHaveBeenCalled();
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
 
@@ -565,7 +584,7 @@ it("discards an import draft on close before targeted repository entry without s
   fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
   const importDraft = screen.getByRole("textbox", { name: "Configuration JSON" });
   fireEvent.change(importDraft, { target: { value: "{\"version\":1" } });
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
   expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true");
@@ -712,10 +731,10 @@ it.each(["replacement", "settings", "resize"])("consumes or discards header focu
   if (mode === "replacement") expect(document.activeElement).toBe(screen.getByRole("button", { name: "Pull requests" }));
   else if (mode === "settings") {
     expect(document.activeElement?.closest("dialog")?.classList.contains("sidebar-pane-dialog")).not.toBe(true);
-    expect(document.activeElement).not.toBe(screen.getByRole("main"));
-    fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
     flushFrames();
-    expect(document.activeElement).not.toBe(screen.getByRole("main"));
+    expect(document.activeElement).toBe(screen.getByRole("main"));
   } else expect(document.activeElement).toBe(screen.getByRole("main"));
   expectNoNavigationWrites(value);
 });
@@ -743,5 +762,48 @@ it("keeps a New session draft and a selected conversation across both header des
     expect(screen.getByRole("textbox", { name: "First message" })).toBe(firstMessage);
     expect((firstMessage as HTMLTextAreaElement).value).toBe("Keep my creation draft");
   }
+  expectNoNavigationWrites(value);
+});
+
+
+it.each([false, true])("uses shared Settings navigation and preserves a visit through Escape, reselection and reflow (compact %s)", async (compact) => {
+  const resize = viewport(compact);
+  const value = fixture();
+  const view = render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  const rail = within(screen.getByRole("navigation", { name: "Primary navigation" }));
+  fireEvent.click(rail.getByRole("button", { name: "Settings" }));
+  expect(rail.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBe("page");
+  expect(rail.getByRole("button", { name: "Sessions" }).getAttribute("aria-current")).toBeNull();
+  const main = screen.getByRole("main");
+  const content = within(main).getByRole("region", { name: "Settings content" });
+  expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Close Settings" })).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Settings category" })).toBeNull();
+  expect(document.activeElement).toBe(compact ? screen.getByRole("button", { name: "Open settings categories" }) : main);
+  if (compact) fireEvent.click(screen.getByRole("button", { name: "Open settings categories" }));
+  const categories = screen.getByRole("navigation", { name: "Settings categories" });
+  expect(categories.closest(".sidebar-surface-outlet")).toBeTruthy();
+  expect(categories.closest("main")).toBeNull();
+  fireEvent.click(within(categories).getByRole("button", { name: "Instructions" }));
+  if (compact) expect(document.querySelector(".sidebar-pane-dialog")?.hasAttribute("open")).toBe(false);
+  fireEvent.click(await within(content).findByRole("button", { name: "New Instructions" }));
+  const name = screen.getByRole("textbox", { name: "Name" });
+  name.focus();
+  fireEvent.change(name, { target: { value: "Visit draft" } });
+  fireEvent.keyDown(name, { key: "Escape" });
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect(rail.getByRole("button", { name: "Usage" }).hasAttribute("disabled")).toBe(false);
+  fireEvent.click(rail.getByRole("button", { name: "Settings" }));
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  act(() => resize(!compact));
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  view.rerender(<StrictMode><App transport={value.transport} connectionEpoch={1} /></StrictMode>);
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Visit draft");
+  fireEvent.click(rail.getByRole("button", { name: "Usage" }));
+  expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
+  expect(document.activeElement).toBe(!compact ? screen.getByRole("button", { name: "Open usage filters" }) : main);
+  fireEvent.click(rail.getByRole("button", { name: "Settings" }));
+  expect(within(main).getByRole("heading", { name: "AI Subscription", level: 1 })).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   expectNoNavigationWrites(value);
 });

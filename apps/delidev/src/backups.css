@@ -1,0 +1,79 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Backups responds to available content width independently of Settings navigation. */
+.backups-settings { width: 100%; max-width: 1040px; min-width: 0; margin-inline: 0; container-type: inline-size; color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.backups-settings * { min-width: 0; }
+.backups-settings [hidden] { display: none !important; }
+.backups-settings p { overflow-wrap: anywhere; }
+.backups-settings code { font-size: 12px; overflow-wrap: anywhere; }
+.backups-settings button { min-height: 40px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--control-border); border-radius: 8px; color: var(--text); background: var(--surface); font: inherit; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
+.backups-settings button:hover:enabled { background: var(--background); }
+.backups-settings button:disabled { border-color: var(--border); color: var(--muted); background: var(--background); opacity: .65; }
+.backups-settings :focus-visible, .backups-settings h2:focus { outline: 3px solid var(--focus); outline-offset: 3px; }
+.backups-settings button.backups-primary { border-color: var(--accent); color: var(--on-accent); background: var(--accent); }
+.backups-settings button.backups-primary:hover:enabled { background: var(--accent-hover); }
+.backups-settings h1 { margin: 0 0 8px; font-size: 28px; font-weight: 600; line-height: 1.2; }
+.backups-settings h2 { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.backups-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; margin-bottom: 24px; }
+.backups-header > div:first-child { flex: 1 1 340px; }
+.backups-header p { margin: 0; color: var(--muted); }
+.backups-actions { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.backups-header .backups-actions { flex: 0 1 auto; justify-content: flex-end; }
+.backups-scope { margin: 0 0 24px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--background); font-size: 13px; }
+.backups-panel { margin-top: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.backups-panel-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; padding: 16px 24px; }
+.backups-panel-header > span { color: var(--muted); font-size: 13px; }
+.backups-read-state { padding-inline: 24px; }
+.backups-read-state:empty { display: none; }
+.backups-inventory table { width: 100%; margin: 0; border-collapse: collapse; table-layout: fixed; }
+.backups-inventory th { padding: 12px 24px; color: var(--muted); background: var(--background); font-size: 12px; font-weight: 600; text-align: left; }
+.backups-inventory th:first-child { width: 44%; }
+.backups-inventory th:nth-child(2) { width: 23%; }
+.backups-inventory th:nth-child(3) { width: 19%; }
+.backups-inventory th:last-child { width: 14%; }
+.backups-inventory td { height: 92px; padding: 16px 24px; border-top: 1px solid var(--border); vertical-align: middle; overflow-wrap: anywhere; }
+.backups-id { display: block; margin-top: 6px; color: var(--muted); }
+.backups-integrity { display: inline-block; padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); background: var(--background); font-size: 12px; }
+.backups-selected { background: var(--selected-background); }
+.backups-cell-label { display: none; }
+.backups-inventory-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--border); }
+.backups-inventory-footer > p { flex: 1 1 220px; margin: 0; color: var(--muted); font-size: 13px; }
+.backups-inspection, .backups-accepted, .backups-history { padding: 24px; }
+.backups-inspection dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
+.backups-inspection dl > div:last-child { grid-column: 1 / -1; }
+.backups-inspection dt { color: var(--muted); font-size: 13px; }
+.backups-inspection dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.backups-deletion { margin: 24px 0; padding: 16px; border: 1px solid var(--danger-border); border-radius: 8px; }
+.backups-deletion legend { color: var(--danger-text); font-weight: 600; }
+.backups-deletion label { display: flex; align-items: flex-start; gap: 8px; min-height: 40px; margin-block: 12px; overflow-wrap: anywhere; }
+.backups-deletion input { flex: 0 0 18px; width: 18px; height: 18px; margin: 2px 0; accent-color: var(--danger-text); }
+.backups-settings button.backups-destructive { border-color: var(--danger-text); color: var(--danger-text); }
+.backups-history { margin-top: 32px; }
+.backups-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; border-bottom: 1px solid var(--border); }
+.backups-tabs button { margin-bottom: -1px; padding-inline: 8px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; color: var(--muted); background: transparent; }
+.backups-tabs button[aria-selected="true"] { border-bottom-color: var(--link); color: var(--link); font-weight: 600; }
+.backups-history-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.backups-history [role="tabpanel"] > p { color: var(--muted); font-size: 13px; }
+.backups-empty-history { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 144px; gap: 8px; color: var(--muted); text-align: center; }
+.backups-empty-history p { margin: 0; }
+.backups-empty-history p:last-child { font-size: 13px; }
+.backups-empty-history svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.backups-job, .backups-accepted .result { margin: 0; padding: 16px 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; overflow-wrap: anywhere; }
+.backups-job h3, .backups-accepted .result h4 { margin: 0; font-size: 14px; font-weight: 600; }
+.backups-job p, .backups-accepted .result p { margin: 8px 0; }
+.backups-accepted .result button { margin: 4px 8px 4px 0; }
+.backups-history [role="tabpanel"] > nav { margin-top: 16px; }
+.backups-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* Explicit roles and headers retain table associations when rows stack. The one
+   row/button tree survives reflow, keeping inspection origin references stable. */
+@container (max-width: 799px) {
+  .backups-header .backups-actions { justify-content: flex-start; width: 100%; }
+  .backups-inventory thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .backups-inventory tbody { display: block; }
+  .backups-inventory tr { display: grid; grid-template-columns: minmax(0, 1fr); padding: 16px; border-top: 1px solid var(--border); }
+  .backups-inventory td { display: block; height: auto; padding: 4px 0; border: 0; }
+  .backups-cell-label { display: inline; margin-right: 8px; color: var(--muted); font-size: 12px; }
+  .backups-inventory td:last-child { padding-top: 12px; }
+  .backups-panel-header, .backups-inventory-footer { padding: 16px; }
+  .backups-inspection, .backups-accepted, .backups-history { padding: 16px; }
+  .backups-inspection dl { grid-template-columns: minmax(0, 1fr); }
+}

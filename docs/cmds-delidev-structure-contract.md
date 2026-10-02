@@ -35,6 +35,12 @@ Reservations do not advertise capability support or activate implementation.
 New allocations must be established on main before dependent feature branches use
 them. Existing shared message semantics still require explicit composition.
 
+Wholly new closed enums use explicit `newDeclaration: true` member reservations
+under one original owner, including their zero UNSPECIFIED member. Keep these
+planned declarations out of the immutable active baseline; the allocation check
+validates their unique numbers and later active schema declarations without
+requiring premature runtime support.
+
 ## Runtime and storage
 
 Server lifecycle, authorization, route registration and status have separate owners.
@@ -77,6 +83,26 @@ Claude accounting must compose with the Grok accounting schema and shared usage
 meaning established by the preceding change. Request diagnostics follows both
 implemented versions. If that product order changes, revise the ledger on main
 before branching; do not insert empty migrations to skip unfinished work.
+
+Issue #1235 reserves migration 28 for service-native subscription identity and
+legacy configuration retirement, after the real implementations of 26 and 27.
+Its independent `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1` allocation is
+17. Both reservations must land on main before dependent implementation; neither
+activates runtime support. Migration provenance uses one original PR or owning
+issue when no implementation PR exists yet, preserving that identity thereafter.
+The [storage contract](cmds-delidev-storage-contract.md#planned-subscription-retirement-issue-1235)
+owns the reset boundary. Compose later account/native ownership and restore
+changes with the subscription lifecycle work for issue #1095 rather than
+replacing its unsettled-ownership and cleanup gates.
+
+Issue #1146 reserves migration 29 for private OpenRouter OAuth attempt metadata,
+after real migrations 26–28, together with inventory capability 5, inventory-entry
+field 9 and the exclusively owned connection-method/attempt-state enums. The
+[planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the complete
+future lifecycle and acceptance. Establish these allocations on main before
+dependent implementation; no placeholder migration, active protobuf declaration,
+generated binding or OAuth capability is introduced by this prerequisite. Keep
+the existing sequence and issue open until full implementation is accepted.
 
 The storage suite covers every fixed schema from 1 through 24 and the recognized
 21/22 backup and 23 title variants. It compares upgraded DDL with a fresh database,

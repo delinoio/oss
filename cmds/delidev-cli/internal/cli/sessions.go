@@ -65,6 +65,8 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 		return sessionSubagents(ctx, c, args[1:])
 	case "delete", "deletion":
 		return sessionDeletionCommand(ctx, c, o, args)
+	case "terminal":
+		return sessionTerminalCommand(ctx, c, o, args[1:], streams)
 	case "forward":
 		return sessionForward(ctx, c, o, args[1:], streams)
 	case "pr":

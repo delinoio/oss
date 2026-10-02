@@ -6,6 +6,7 @@ type ExecutionEventKind string
 
 const (
 	ExecutionSubagentObserved           ExecutionEventKind = "subagent-observed"
+	ExecutionGrokToolObserved           ExecutionEventKind = "grok-tool-observed"
 	ExecutionGrokTextObserved           ExecutionEventKind = "grok-text-observed"
 	ExecutionGrokUsageObserved          ExecutionEventKind = "grok-usage-observed"
 	ExecutionClaudeProgressObserved     ExecutionEventKind = "claude-progress-observed"
@@ -177,8 +178,10 @@ type ExecutionMessageUpdate struct {
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
 	Subagents          []SubagentObservation              `json:"subagents,omitempty"`
+	GrokTool           *ExecutionGrokToolUpdate           `json:"grok_tool,omitempty"`
 	GrokUserMessageID  ID                                 `json:"grok_user_message_id,omitempty"`
 	GrokStop           *GrokStopObservation               `json:"grok_stop,omitempty"`
+	GrokToolsTerminal  *GrokToolsTerminal                 `json:"grok_tools_terminal,omitempty"`
 	GrokTerminal       *GrokTextTerminal                  `json:"grok_terminal,omitempty"`
 	GrokText           *GrokTextUpdate                    `json:"grok_text,omitempty"`
 	GrokUsage          *GrokResponseUsage                 `json:"grok_usage,omitempty"`
@@ -250,6 +253,10 @@ func (e ExecutionEvent) Validate() error {
 			if child.Validate() != nil {
 				return invalidSubagent()
 			}
+		}
+	case ExecutionGrokToolObserved:
+		if e.GrokTool == nil || e.GrokTool.Validate() != nil {
+			return invalidGrokContent()
 		}
 	case ExecutionGrokTextObserved:
 		if e.GrokText == nil || e.GrokText.Validate(e.NativeThreadID) != nil {
@@ -427,6 +434,9 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
+	if e.GrokToolsTerminal != nil && (e.Kind != ExecutionTurnFinished || e.GrokToolsTerminal.Validate(e.NativeThreadID) != nil || e.Outcome != e.GrokToolsTerminal.Outcome() || e.ProblemCode != "" || e.GrokTerminal != nil || e.GrokStop != nil || e.ClaudeTerminal != nil || e.ClaudeStop != nil || e.ClaudeDenial != nil || e.OpenCodeStop != nil) {
+		return invalidGrokContent()
+	}
 	if e.GrokStop != nil && (e.Kind != ExecutionTurnFinished || e.GrokStop.Validate(e.NativeThreadID) != nil || e.Outcome != e.GrokStop.Outcome() || e.ProblemCode != "" || e.GrokTerminal != nil || e.ClaudeTerminal != nil || e.ClaudeStop != nil || e.ClaudeDenial != nil || e.OpenCodeStop != nil) {
 		return invalidGrokContent()
 	}
@@ -442,7 +452,7 @@ func (e ExecutionEvent) Validate() error {
 	if e.ClaudeTerminal != nil && (e.Kind != ExecutionTurnFinished || e.ClaudeTerminal.Validate() != nil || e.Outcome != e.ClaudeTerminal.Outcome() || e.ProblemCode != "") {
 		return invalidClaudeTerminal()
 	}
-	if (e.Kind != ExecutionGrokTextObserved && e.GrokText != nil) || (e.Kind != ExecutionGrokUsageObserved && e.GrokUsage != nil) || (e.Kind != ExecutionClaudeProgressObserved && e.ClaudeProgress != nil) || (e.Kind != ExecutionClaudeInterruptionObserved && e.ClaudeInterruption != nil) || (e.Kind != ExecutionClaudeCallbackSettled && e.ClaudeSettlement != nil) || (e.Kind != ExecutionClaudeReplyEchoObserved && e.ClaudeReplyEcho != nil) || (e.Kind != ExecutionClaudeToolObserved && e.ClaudeTool != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.ClaudeUsage != nil) || (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionGrokUsageObserved && e.Kind != ExecutionClaudeUsageObserved && e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionGrokToolObserved && e.GrokTool != nil) || (e.Kind != ExecutionGrokTextObserved && e.GrokText != nil) || (e.Kind != ExecutionGrokUsageObserved && e.GrokUsage != nil) || (e.Kind != ExecutionClaudeProgressObserved && e.ClaudeProgress != nil) || (e.Kind != ExecutionClaudeInterruptionObserved && e.ClaudeInterruption != nil) || (e.Kind != ExecutionClaudeCallbackSettled && e.ClaudeSettlement != nil) || (e.Kind != ExecutionClaudeReplyEchoObserved && e.ClaudeReplyEcho != nil) || (e.Kind != ExecutionClaudeToolObserved && e.ClaudeTool != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.ClaudeUsage != nil) || (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionGrokUsageObserved && e.Kind != ExecutionClaudeUsageObserved && e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	if e.OpenCodeStop != nil && e.Kind != ExecutionTurnFinished {
@@ -456,9 +466,14 @@ func (e ExecutionEvent) Validate() error {
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
 	Subagents              SubagentState               `json:"subagents,omitempty"`
+	GrokCurrentMode        GrokMode                    `json:"grok_current_mode,omitempty"`
+	GrokLastNativeEvent    string                      `json:"grok_last_native_event,omitempty"`
+	GrokToolObservations   uint32                      `json:"grok_tool_observations,omitempty"`
 	NativeHistory          NativeHistoryMode           `json:"native_history,omitempty"`
 	GrokUserMessageID      ID                          `json:"grok_user_message_id,omitempty"`
 	GrokStop               *GrokStopObservation        `json:"grok_stop,omitempty"`
+	GrokToolsTerminal      *GrokToolsTerminal          `json:"grok_tools_terminal,omitempty"`
+	GrokResponseTotals     *GrokResponseCounts         `json:"grok_response_totals,omitempty"`
 	GrokTerminal           *GrokTextTerminal           `json:"grok_terminal,omitempty"`
 	GrokContent            *GrokContentState           `json:"grok_content,omitempty"`
 	ClaudeCompaction       *ClaudeCompactionState      `json:"claude_compaction,omitempty"`
@@ -493,6 +508,7 @@ type ExecutionProgress struct {
 }
 
 type ExecutionMessage struct {
+	GrokTool           *GrokToolEvent             `json:"grok_tool,omitempty"`
 	GrokUser           *GrokUserHistory           `json:"grok_user,omitempty"`
 	GrokText           *GrokTextContent           `json:"grok_text,omitempty"`
 	ClaudeProgress     *ClaudeProgressObservation `json:"claude_progress,omitempty"`

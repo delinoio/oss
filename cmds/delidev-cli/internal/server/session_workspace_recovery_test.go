@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -121,7 +122,7 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 			var workerErr error
 			go func() {
 				defer close(done)
-				workerErr = worker.Run(workerCtx, worker.Config{Root: workerRoot, Ready: func(domain.ID) { close(ready) }})
+				workerErr = worker.Run(workerCtx, worker.Config{Root: workerRoot, Logger: slog.Default(), Ready: func(domain.ID) { close(ready) }})
 			}()
 			defer func() {
 				stop()
@@ -134,10 +135,24 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 					t.Error("Worker cleanup timed out")
 				}
 			}()
+			// Readiness follows private lifecycle publication and two separately
+			// bounded 30-second attachments, with an optional 30-second native
+			// title probe between them. Five seconds races valid Windows work.
+			// Keep that startup allowance separate from recovery/cleanup proof.
+			attachedAt := time.Now()
+			attachDeadline := time.NewTimer(2 * time.Minute)
+			defer attachDeadline.Stop()
+			t.Log("workspace_replacement_worker_starting")
 			select {
 			case <-ready:
-			case <-time.After(5 * time.Second):
-				t.Fatal("replacement Worker did not attach")
+				t.Logf("workspace_replacement_worker_ready elapsed_ms=%d", time.Since(attachedAt).Milliseconds())
+			case <-done:
+				if workerErr != nil {
+					t.Fatalf("replacement Worker exited before readiness: code=%s elapsed_ms=%d", domain.SafeError(workerErr).Code, time.Since(attachedAt).Milliseconds())
+				}
+				t.Fatal("replacement Worker exited before readiness without an error")
+			case <-attachDeadline.C:
+				t.Fatalf("replacement Worker readiness timed out: elapsed_ms=%d", time.Since(attachedAt).Milliseconds())
 			}
 			current := currentCatalogResource(t, f, initial.Session)
 			if sessionBody(t, current).Preparation.State != domain.PreparationUncertain {

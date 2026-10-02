@@ -19,11 +19,11 @@ import (
 func grokAccountingSummary(t *testing.T, f *publicationFixture, profile pb.UsageAccountingProfile) *pb.GetUsageSummaryResponse {
 	t.Helper()
 	c := delidevv1connect.NewUsageServiceClient(f.http.Client(), f.http.URL)
-	// Accounting fixtures inspect all completed writes. The default exclusive
-	// upper bound can share their millisecond and correctly exclude a fresh row.
-	// Use an explicit bounded fixture range; production time selection is unchanged.
-	until := time.Now().UTC().Add(time.Hour).UnixMilli()
-	response, err := c.GetUsageSummary(context.Background(), ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{UntilUnixMs: until, AccountingProfile: profile, Granularity: pb.UsageTimeGranularity_USAGE_TIME_GRANULARITY_DAY, TimeZone: "UTC"}))
+	// Accounting fixtures include the records they just retained. The exclusive
+	// default upper bound can share their retention millisecond; advance this
+	// explicit bound until the fixture owns a clock independent of RPC timing.
+	until := time.Now().UTC().Add(time.Millisecond).UnixMilli()
+	response, err := c.GetUsageSummary(context.Background(), ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{AccountingProfile: profile, Granularity: pb.UsageTimeGranularity_USAGE_TIME_GRANULARITY_DAY, TimeZone: "UTC", UntilUnixMs: until}))
 	if err != nil {
 		t.Fatal(err)
 	}

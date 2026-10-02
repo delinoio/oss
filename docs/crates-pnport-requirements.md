@@ -1,14 +1,14 @@
 # pnport 0.1 requirements
 
-Normative source: [issue #958](https://github.com/delinoio/oss/issues/958). The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation.
+Normative source: [issue #958](https://github.com/delinoio/oss/issues/958). The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation. The owner-approved 2026-10-01 amendment stages full macOS/glibc Linux x64/arm64 acceptance in 0.1.0 and defers the original Windows x64/arm64 requirements to 0.2.0. #958 stays open until both stages are complete.
 
 ## Summary
 
 Implement **pnport**, a Rust CLI that lets subprocesses use an installed Yarn 4 Plug’n’Play project through a virtual `node_modules` filesystem and transparent access to ZIP-backed packages.
 
-Version **0.1.0** targets local developers and CI users on macOS, Linux, and Windows. It supports finite commands, development servers, watch processes, and language servers. Users invoke `pnport run -- <command> [args...]` without generating a physical project `node_modules` directory.
+Version **0.1.0** targets local developers and CI users on macOS and glibc Linux. Version **0.2.0** adds Windows after its full native acceptance. It supports finite commands, development servers, watch processes, and language servers. Users invoke `pnport run -- <command> [args...]` without generating a physical project `node_modules` directory.
 
-Release acceptance is based on filesystem and process conformance fixtures executed on all six supported OS/architecture targets. Version-specific certification of individual development tools is deferred. Universal compatibility with arbitrary executables is not claimed.
+Release acceptance is based on filesystem and process conformance fixtures executed on all four 0.1.0 OS/architecture targets; 0.2.0 adds both Windows targets with the same acceptance standard. Version-specific certification of individual development tools is deferred. Universal compatibility with arbitrary executables is not claimed.
 
 ## Evidence
 
@@ -40,7 +40,7 @@ Support x64 and arm64 on:
 | Platform | Minimum supported environment |
 |---|---|
 | macOS | macOS 13+ |
-| Windows | Windows 10 22H2+, native MSVC targets |
+| Windows (planned for 0.2.0) | Windows 10 22H2+, native MSVC targets |
 | Linux | Ubuntu 22.04-equivalent glibc and kernel capabilities |
 
 Linux support includes dynamically linked and fully static child executables. Musl hosts and mixed-architecture execution are excluded.
@@ -171,16 +171,16 @@ There are no hosted dashboards, alerting requirements, or external security-cert
 
 ### Distribution, rollout, documentation, and support
 
-Ship version `0.1.0` only after all six targets pass actual execution and installation validation. There is no partial preview release, fixed deadline, or support-response SLA.
+Ship version `0.1.0` only after all four macOS/glibc Linux targets pass actual execution and installation validation. Version `0.2.0` adds Windows x64/arm64 only after its complete requirements pass; retain Windows Detours, private ACL ownership, process, filesystem, watch, native loading, PowerShell installation, npm and recovery requirements. The issue remains open through that acceptance. There is no partial preview release, fixed deadline, or support-response SLA.
 
 Provide:
 
-- GitHub prebuilt archives for all six targets, checksums, and Sigstore verification material.
-- POSIX and PowerShell installers.
+- GitHub prebuilt archives for all four 0.1.0 targets, adding both Windows targets in 0.2.0, checksums, and Sigstore verification material.
+- POSIX installers in 0.1.0; PowerShell installation in 0.2.0. Until Windows acceptance, the retained PowerShell script rejects requests before downloads or installation.
 - Prebuilt Homebrew distribution for supported macOS and Linux targets.
-- `@delino/pnport`, supporting Node.js 22+, with six exact-version native optional dependencies.
+- `@delino/pnport`, supporting Node.js 22+, with four exact-version native optional dependencies in 0.1.0 and six after Windows acceptance in 0.2.0.
 
-Use npm platform suffixes `darwin-x64`, `darwin-arm64`, `win32-x64-msvc`, `win32-arm64-msvc`, `linux-x64-gnu`, and `linux-arm64-gnu`.
+Use npm platform suffixes `darwin-x64`, `darwin-arm64`, `linux-x64-gnu`, and `linux-arm64-gnu` in 0.1.0. Retain `win32-x64-msvc` and `win32-arm64-msvc` for 0.2.0; do not declare unpublished Windows dependencies in 0.1.x.
 
 The npm launcher forwards execution to the matching installed package without install scripts, runtime downloads, compilation, or fallback to an unrelated PATH binary. Platform packages use Yarn’s [`preferUnplugged`](https://yarnpkg.com/configuration/manifest#preferUnplugged) metadata so the launcher can start under Yarn 4 PnP before pnport virtualization exists.
 
@@ -190,7 +190,7 @@ Extend the manual `Release Project` workflow with `pnport` and the immutable rel
 
 The coordinator retains the repository’s existing behavior; downstream publication must validate the complete native/package set before obtaining publication authority. Publish and verify native npm packages before the launcher. Use npm provenance, source-bound release verification, immutable assets, and recoverable retries that never overwrite conflicting published bytes.
 
-CI and release dry runs remain credential-free and non-publishing. Public documentation continues through the existing consolidated publisher.
+CI and release dry runs remain credential-free and non-publishing. The private `pnportReleaseReady` source gate remains false until full native, minimum-OS and benchmark acceptance is reviewed; source version preparation does not enable publication. Public documentation continues through the existing consolidated publisher.
 
 Updates and rollback use explicit version installation. Do not add automatic update checks, self-update, Apple notarization, or Windows Authenticode.
 
@@ -204,7 +204,7 @@ Provide English CLI help, errors, README, and public documentation covering inst
 
 - A PnP-unaware fixture can traverse virtual dependencies and read ZIP-backed files without a physical project `node_modules`.
 - Yarn 4 inline and split manifests, workspace relationships, aliases, fallback settings, and peer-specific identities behave as documented.
-- All six supported targets pass native filesystem, process, watch, binary-loading, and installation conformance.
+- All four 0.1.0 supported targets pass native filesystem, process, watch, binary-loading, and installation conformance. Both Windows targets must meet the same requirements before 0.2.0 and issue completion.
 - Linux static-child fixtures work through the syscall interception path.
 - Dependency writes fail while ordinary source/output writes retain native behavior.
 - Existing physical `node_modules` conflicts are reported without modifying user files.
@@ -230,7 +230,7 @@ Provide English CLI help, errors, README, and public documentation covering inst
 9. Test normal exit, child failure, unsupported injection, supervisor failure, cancellation, five-second escalation, lingering descendants, and ownership recovery after abrupt termination.
 10. Test concurrent extraction, reuse, partial publication, cache corruption, disk exhaustion, permission loss, prune/clean during active runs, and coexistence of cache formats.
 11. Use canary data to verify that file contents, environment values, full argv, and child output never enter pnport logs. Verify JSON and ANSI separation.
-12. Verify six-target artifact completeness, checksums, Sigstore material, version consistency, npm platform selection, missing optional dependencies, and immutable partial-publication recovery.
+12. Verify the selected release's complete target inventory (four in 0.1.0; six after Windows acceptance in 0.2.0), checksums, Sigstore material, version consistency, npm platform selection, missing optional dependencies, and immutable partial-publication recovery.
 13. Install prepared packages in temporary npm and Yarn 4 PnP consumers with scripts disabled. Verify launcher startup without pnport already active and absence of runtime downloads or compilation.
 14. Verify fixed-version install/update/rollback, installer failure handling, Homebrew prebuilt selection, and documentation installation guidance.
 15. Validate public routes, navigation accessibility, CLI help, internal-content boundaries, release dry-run isolation, and CI selection/aggregation.

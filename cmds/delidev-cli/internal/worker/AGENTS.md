@@ -505,3 +505,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Windows global OpenCode runtime context must also be a canonical local-drive directory before launch. Refuse UNC/device/root-relative contexts during initialization, including Build, rather than discovering incompatible runtime ownership only at Plan comparison or native checkpoint retention.
 
 - Repeated Claude child-history inspection revalidates original file/sidecar ownership and deduplicates each exact child/leaf/projected-telemetry digest only after its receipt acknowledgment, including exact replay. Keep a bounded 65,536-entry execution-local identity set; independently verified new leaves or native metadata finalization remain distinct observations. Neither a duplicate read nor deduplication grants root completion or native cleanup.
+
+- Terminal shutdown synchronizes original terminal/instance-bound output loss before cancellation and retains the joined outcome. Replacement close claims may carry that loss, but must independently reconcile original process ownership; shutdown observations grant no create/input/resize or spontaneous report authority.
+
+- Native model discovery uses the original durable job journal and one isolated Codex runtime under `docs/cmds-delidev-native-models-contract.md`. Pin executable bytes, collect every bounded page, and confirm process/file cleanup before reporting success; reconnect or receipt replay cannot relaunch a claimed observation.

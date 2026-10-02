@@ -18,6 +18,13 @@ The DeliDev desktop client connects to one explicitly selected authenticated loc
 Generated `EntityKind.SUBAGENT` and `SystemCapability.SUBAGENT_OBSERVATION_V1` support [session child-observation reads](cmds-delidev-subagents-contract.md) through existing Resource/System Connect Query descriptors. Preserve exact native IDs, independent requested/observed models, partial output and nullable string counters. Native usage reports are exact JSON strings. No client mutation or native control is derived from observations.
 
 
+`NativeModelQuery` exports generated discovery/status/list/cancel descriptors
+under the [native model contract](cmds-delidev-native-models-contract.md). Keep
+exact bigint revisions, UUID-v7 mutation identities and immutable job/page
+selection. Private executable selection and full observations never enter generic
+public Resource documents; observation pages remain advisory. Client parsing and
+registration preparation grant no authorization or implicit model save.
+
 Generated `ListResourcesRequest` exposes optional account-only provider and account-type selectors. Keep these fields in the list request and its query key/cursor input; do not move them into the shared `Filter` used by snapshots or event streams. The Go server performs filtering before pagination and binds both fields into continuation cursors. Provider inventory reports `ACCOUNT_TYPE_FILTER` separately from its activation/model/provider-filter capabilities; split account views require all of them.
 - `buf.gen.yaml` generates messages and Connect Query descriptors exclusively from `delidev.v1`. Root generation/freshness and Turbo input/output tracking include the package. Existing Go/DevHud/ach output remains reproducible.
 - `ActivityQuery` exposes typed PR handling metadata and the `PR_HANDLING_V1` capability. Preserve original numeric identity strings, bigint revisions, content-version references and separate dismissal/attempt/verified outcomes. Explicit ResourceQuery source inspection reads original retained resources without mutation or handling inference; see the [activity contract](cmds-delidev-activity-contract.md).
@@ -31,6 +38,13 @@ Generated `ListResourcesRequest` exposes optional account-only provider and acco
 - The helper bounds live resource metadata/document accounting, defaults to 1,000 resources and 4 MiB, permits at most 10,000 resources/16 MiB, and retains at most 512 event IDs. It holds no growing transcript copy or retry queue. Native notification deduplication, paginated large-history presentation and desktop lifecycle remain separate required work.
 
 Additional explicit `watchKinds` may share the primary kind snapshot cursor, loading only changed identities of those kinds. Their initial state must be paginated separately; they are never invented as members of the primary snapshot. All watched kinds share the memory/revision bounds.
+
+`TerminalQuery` exports generated creation/control/output descriptors under the
+[terminal contract](cmds-delidev-terminals-contract.md). Terminal observations use
+the existing resource filter, while raw output is a cancellable streaming read.
+Consumers retain bigint sequence precision, incremental decoding state and an
+explicit epoch/gap boundary; mutation retries retain the exact original request.
+Canceling a read cannot close or recreate the native terminal.
 
 ## Storage
 No implicit persistence. Tokens remain caller-owned; cursors, resource revision/size accounting and duplicate IDs exist only during the selected connection. No SQLite, workspace, account browser or secure-vault access is implemented here. A client switches server/device only after canceling prior streams and clearing their query/resource caches.
@@ -168,11 +182,17 @@ protocol without duplicating Go ownership logic. Preserve original request IDs,
 BigInt revisions and pending/unknown removal state; no automatic mutation replay.
 See the [storage contract](cmds-delidev-storage-contract.md).
 
+Generated `PullRequestFixQuery` provides typed manual-fix capability and acceptance operations. Callers preserve exact original version-1 selection/request bytes and validate original attempt/session/set acknowledgments. Uncertain responses permit only same-request receipt replay; server lookup credentials never become native Git authority. See the integration contract.
+
 ### Explicit outbound networking
 
 Generated `NetworkQuery` exposes authenticated configuration operations and typed capability/resources. Consumers retain exact decimal revisions and treat credentials as write-only request input, never query-cache data. Signed Worker metadata proves only the server export scope, not native installation or encrypted credential transfer. Follow [the network contract](cmds-delidev-network-contract.md).
 
 Issue #1100 generates the native accounting profile and unit enums with the existing UsageQuery descriptor. Consumers must require the echoed NATIVE_UNITS_V1 profile before interpreting UsageTotals.accounting, preserve exact decimal totals and distinct CodexResponse/GrokClosedInput unit kinds, and retain response-only legacy fields. Grok cost and budget contribution remain unavailable; clients cannot normalize or price the separate response dimensions.
+
+## Browser client
+
+[Protected browser ownership and cleanup](cmds-delidev-browser-contract.md) use the service-owned `BrowserService`, typed profile/state/capability models and generated `BrowserQuery` descriptors. Existing shared enum/field numbers and future migration reservations remain unchanged. Browser messages carry ownership metadata only, never native paths or browsing content.
 
 ## Codex fork clients (#1092)
 

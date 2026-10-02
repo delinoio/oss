@@ -42,6 +42,7 @@ Each project must have one project index document and one or more domain contrac
 ### delidev
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
+- [Protected account browser](cmds-delidev-browser-contract.md)
 - [Storage operations](cmds-delidev-storage-contract.md)
 - [Project index](project-delidev.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
@@ -56,6 +57,8 @@ Each project must have one project index document and one or more domain contrac
 - [Session file explorer](cmds-delidev-files-contract.md)
 - [Portable configuration](cmds-delidev-configuration-transfer-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
+- [Worker-owned session terminals](cmds-delidev-terminals-contract.md)
+
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
@@ -180,7 +183,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Project index](project-pnport.md)
 - [Rust foundation](crates-pnport-foundation.md)
 - [fspy source fork and licensing](crates-fspy-vendor-contract.md)
-- [Complete issue #958 requirements](crates-pnport-requirements.md)
+- [Complete issue #958 requirements and staged 0.1.0/0.2.0 releases](crates-pnport-requirements.md)
 - [npm/native distribution](packages-pnport-distribution-contract.md)
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
 

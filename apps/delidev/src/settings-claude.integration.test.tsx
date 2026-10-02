@@ -32,7 +32,7 @@ it("persists native Claude permission selection through the desktop and real Go 
       return transport.unary(method, signal, timeoutMs, header, input, contextValues);
     },
   };
-  render(<TransportProvider transport={slowTransport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={slowTransport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });

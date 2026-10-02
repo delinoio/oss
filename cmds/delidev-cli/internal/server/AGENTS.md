@@ -101,3 +101,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Fork status observation and acceptance-receipt reads require current owner/client authority inside the same read transaction before retrieving job or child documents. Worker or missing principals cannot observe this client-only RPC; a stale paired principal cannot bypass current device authorization.
 
 - Validate incoming subagent telemetry before merging retained last-available facts: Claude task reports cannot supply output/observed model; Codex activity cannot supply output/observed/requested models; Codex collaboration cannot supply observed models or content blocks. Keep retained earlier telemetry independently readable and reject an invalid complete batch before writes. Follow `docs/cmds-delidev-subagents-contract.md`.
+
+- Manual fix selections must use the retained set's exact local repository resource before policy or profile lookup. Slow provider preflights occupy a separate four-session cancellable dispatch lane, joined at shutdown; ordinary execution retains its five-second claim bound and cannot wait behind remote reads.
+
+- BrowserService profile operations require the original paired client, current transaction-time authority and exact UUID/revision receipts. Owner/Worker credentials cannot substitute a browser device; owner/client cleanup counts remain independent of account configuration removal. Confirmation attests to separately completed native cleanup and cannot replay native work. Follow `docs/cmds-delidev-browser-contract.md`.

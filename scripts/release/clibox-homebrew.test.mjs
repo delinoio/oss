@@ -12,9 +12,20 @@ function args(version = '1.2.3') {
 }
 
 test('clibox Formula renders only canonical macOS prebuilt URLs with full notices', () => {
-  const formula = execFileSync('bash', [...args(), '--dry-run'], { cwd: root, encoding: 'utf8' });
-  for (const pattern of [/depends_on :macos/u, /on_intel do/u, /on_arm do/u, /license "Apache-2.0"/u, /prefix.install "LICENSE", "NOTICE", "LICENSE.fspy"/u, /base64 encode/u]) assert.match(formula, pattern);
-  assert.doesNotMatch(formula, /__VERSION__|on_linux|depends_on "(?:node|rust)"|service do|cargo build/u);
+  const renderArgs = args();
+  renderArgs[renderArgs.indexOf('--darwin-arm64-sha256') + 1] = 'b'.repeat(64);
+  const formula = execFileSync('bash', [...renderArgs, '--dry-run'], { cwd: root, encoding: 'utf8' });
+  for (const pattern of [/depends_on :macos/u, /if Hardware::CPU.arm\?/u, /license "Apache-2.0"/u, /prefix.install "LICENSE", "NOTICE", "LICENSE.fspy"/u, /base64 encode/u]) assert.match(formula, pattern);
+  const branches = formula.match(/if Hardware::CPU.arm\?\n([\s\S]*?)  else\n([\s\S]*?)  end/u);
+  assert.ok(branches, 'architecture-specific sources must use an audit-compatible conditional');
+  for (const [branch, arch, digest] of [[branches[1], 'arm64', 'b'], [branches[2], 'amd64', 'a']]) {
+    assert.ok(branch.includes(`url "https://github.com/delinoio/oss/releases/download/clibox@v1.2.3/clibox-darwin-${arch}.tar.gz"`));
+    assert.ok(branch.includes(`sha256 "${digest.repeat(64)}"`));
+    assert.equal((branch.match(/\burl /gu) ?? []).length, 1);
+    assert.equal((branch.match(/\bsha256 /gu) ?? []).length, 1);
+  }
+  for (const line of formula.split('\n')) assert.ok(line.length <= 118, `Formula line exceeds strict audit limit: ${line.length}`);
+  assert.doesNotMatch(formula, /__VERSION__|on_arm do|on_intel do|on_linux|depends_on "(?:node|rust)"|service do|cargo build/u);
   for (const [key, value] of [['--version', '1.2.3-beta'], ['--darwin-amd64-url', 'https://example.invalid/clibox-darwin-amd64.tar.gz'], ['--darwin-arm64-sha256', 'invalid']]) {
     const invalid = args(); invalid[invalid.indexOf(key) + 1] = value;
     assert.notEqual(spawnSync('bash', [...invalid, '--dry-run'], { cwd: root }).status, 0);

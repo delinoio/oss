@@ -35,7 +35,13 @@ func TestSteerInspectionConfirmsExactHistoryWithoutReplay(t *testing.T) {
 	for _, mode := range []string{"wrong-steer", "late-steer", "ready"} {
 		t.Run(mode, func(t *testing.T) {
 			c, capture, first, request, inputID, _ := steerHistoryFixture(t, mode)
-			ctx, cancel := context.WithTimeout(context.Background(), 70*time.Millisecond)
+			timeout := 70 * time.Millisecond
+			if mode == "ready" {
+				// A successful acknowledgment must not depend on the short deadline
+				// used to exercise lost replies on a busy native test runner.
+				timeout = 10 * time.Second
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			_, err := c.Steer(ctx, request, inputID, first.TurnID, input(domain.ExecuteMode))
 			cancel()
 			if mode == "ready" {

@@ -101,17 +101,38 @@ test("child failures retain status and exception logs omit private argv", async 
 test("SIGTERM reaches the active child during preparation and execution", { skip: process.platform === "win32", timeout: 20_000 }, async t => {
   const root = mkdtempSync(join(tmpdir(), "delidev-launch-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  for (const stage of ["prepare", "run"]) {
-    const receipt = join(root, stage);
+  const scenarios = ["prepare", "run"].flatMap(stage => [
+    { stage, vanishedProcess: false },
+    ...(process.platform === "linux" ? [{ stage, vanishedProcess: true }] : []),
+  ]);
+  for (const { stage, vanishedProcess } of scenarios) {
+    const receipt = join(root, `${stage}-${vanishedProcess}`);
     const childCode = `
       const fs = require('node:fs');
-      process.on('SIGTERM', () => { fs.writeFileSync(${JSON.stringify(receipt)}, 'terminated'); process.exit(0); });
+      process.on('SIGTERM', () => {
+        fs.writeFileSync(${JSON.stringify(receipt)}, 'terminated');
+        setTimeout(() => process.exit(0), ${vanishedProcess ? 50 : 0});
+      });
       setInterval(() => {}, 1000);
       process.stdout.write('child-ready\\n');
     `;
     const wrapper = spawn(process.execPath, ["--input-type=module", "-e", `
       import { runDesktop } from ${JSON.stringify(new URL("./run-desktop.mjs", import.meta.url).href)};
       import { spawnDevServer, exitLikeChild } from ${JSON.stringify(new URL("../../../scripts/spawn-dev-server.mjs", import.meta.url).href)};
+      import fs from 'node:fs';
+      import { syncBuiltinESMExports } from 'node:module';
+      if (${vanishedProcess}) {
+        // Reproduce a vanished /proc entry deterministically while retaining
+        // real child/process-group termination and the other real proc reads.
+        const enumerate = fs.readdirSync;
+        fs.readdirSync = (path, options) => {
+          if (path !== '/proc') return enumerate(path, options);
+          if (options?.withFileTypes) throw Object.assign(new Error('vanished process'), { code: 'ENOENT' });
+          process.stderr.write('vanished-process-observed\\n');
+          return [...enumerate(path, options), '2147483647'];
+        };
+        syncBuiltinESMExports();
+      }
       let calls = 0;
       exitLikeChild(await runDesktop([], {
         platform: 'linux', environment: { npm_execpath: '/fixture/pnpm.cjs' }, log() {},
@@ -125,6 +146,8 @@ test("SIGTERM reaches the active child during preparation and execution", { skip
       }));
     `], { stdio: ["ignore", "pipe", "pipe"] });
     t.after(() => { if (wrapper.exitCode === null && wrapper.signalCode === null) wrapper.kill("SIGTERM"); });
+    let diagnostics = "";
+    wrapper.stderr.on("data", chunk => { diagnostics += chunk; });
     const exited = once(wrapper, "exit");
     // Inherited child stdout can arrive while the wrapper is still returning
     // from spawn, before its signal handlers exist. Wait for both readiness
@@ -137,8 +160,9 @@ test("SIGTERM reaches the active child during preparation and execution", { skip
     assert.ok(output.includes("child-ready\n") && output.includes("wrapper-ready\n"));
     wrapper.kill("SIGTERM");
     const [code, signal] = await exited;
-    assert.equal(code, null);
+    assert.equal(code, null, diagnostics);
     assert.equal(signal, "SIGTERM");
     assert.equal(readFileSync(receipt, "utf8"), "terminated");
+    if (vanishedProcess) assert.match(diagnostics, /vanished-process-observed/u);
   }
 });

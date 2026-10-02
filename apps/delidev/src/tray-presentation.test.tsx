@@ -58,7 +58,7 @@ it("opens the native-selected view without sending work or losing the session dr
   expect((composer as HTMLTextAreaElement).value).toBe("Keep this unsent");
   native.pending = { id: newRequestId(), destination: "settings" };
   await act(async () => { for (const callback of native.callbacks) callback(); });
-  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Instructions" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Tray-abandoned draft" } });
@@ -67,9 +67,9 @@ it("opens the native-selected view without sending work or losing the session dr
   await act(async () => { for (const callback of native.callbacks) callback(); });
   native.pending = { id: newRequestId(), destination: "settings" };
   await act(async () => { for (const callback of native.callbacks) callback(); });
-  expect((screen.getByRole("combobox", { name: "Settings category" }) as HTMLSelectElement).value).toBe("subscription-accounts");
+  expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Keep this unsent");
   expect(send).not.toHaveBeenCalled();
   view.unmount();

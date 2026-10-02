@@ -63,12 +63,15 @@ export function terminateWindowsProcessTree(child, signal) {
 // /proc to wait only for live group members. Remove this when every supported
 // Linux host guarantees a reaping init or Node exposes a live-group query.
 function linuxProcessGroupHasLiveMembers(processGroupId) {
-  for (const entry of readdirSync("/proc", { withFileTypes: true })) {
-    if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) {
+  // /proc can report unknown entry types, causing Dirent enumeration to lstat
+  // a process that exits before enumeration completes. Read names only so all
+  // disappearing-process checks stay inside the per-entry ENOENT guard.
+  for (const entry of readdirSync("/proc")) {
+    if (!/^\d+$/u.test(entry)) {
       continue;
     }
     try {
-      const stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
+      const stat = readFileSync(`/proc/${entry}/stat`, "utf8");
       const [state, , groupId] = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/u);
       if (groupId === String(processGroupId) && state !== "Z" && state !== "X") {
         return true;

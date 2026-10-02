@@ -122,7 +122,11 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	routing := domain.RoundRobin
 	f.agent = base.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture", Harness: harness, ModelID: domain.ID(model.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(account.Id), Weight: 1}}, Options: domain.AgentOptions{Permission: permission}, Routing: &routing})
 	f.selection = domain.CreateSession{Name: "Fixture", AgentID: domain.ID(f.agent.Id), MachineID: domain.ID(f.machine.Id), Workspace: domain.GeneralChat, Prompt: "first retained input", Mode: mode, Source: domain.ExternalCLISession}
-	ctx, client, instance, stream := workspaceStream(t, base, identity, domain.ID(f.machine.Id))
+	// This primary stream spans discovery, native workspace preparation and the
+	// later test operations. Ten seconds can expire during Windows setup before
+	// a freshly bounded workspace read starts. Keep a separate aggregate fixture
+	// lifetime; the production read and execution admission deadlines still apply.
+	ctx, client, instance, stream := workspaceStreamWithLifetime(t, base, identity, domain.ID(f.machine.Id), time.Minute)
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	f.machine = currentCatalogResource(t, base, f.machine)
 	selections, _ := json.Marshal(domain.ExecutableSelections{Executables: []domain.ExecutableSelection{{Harness: harness, Path: executable}}})

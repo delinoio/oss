@@ -26,7 +26,7 @@ it("keeps subscription-only metadata CRUD reachable, sends no native lifecycle R
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   function Harness() {
     const [visible, setVisible] = useState(true);
-    return <TransportProvider transport={transport}><QueryClientProvider client={client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><Settings visible={visible} close={() => setVisible(false)} /></QueryClientProvider></TransportProvider>;
+    return <TransportProvider transport={transport}><QueryClientProvider client={client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Leave Settings fixture</button><Settings visible={visible} /></QueryClientProvider></TransportProvider>;
   }
   render(<Harness />);
   const subscription = await screen.findByRole("article", { name: "ChatGPT editable alias" });
@@ -64,13 +64,16 @@ it("keeps subscription-only metadata CRUD reachable, sends no native lifecycle R
   expect(document((await createClient(ResourceService, fixture.transport).getResource({ kind: EntityKind.ACCOUNT, id: account.id })).resource).alias).toBe("Edited subscription");
   fireEvent.click(screen.getByRole("button", { name: "More actions for Edited subscription" }));
   fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
-  // The existing ConfigurationDeletion workflow keeps its explicit confirmation.
+  // Deletion is accepted before device-owned browser cleanup is confirmed.
   fireEvent.click(await screen.findByRole("button", { name: "Confirm configuration deletion" }));
+  await screen.findByRole("heading", { name: "Account configuration deleted" });
+  expect(await screen.findByText("0 profile cleanup obligations pending · 0 confirmed removed")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Return to accounts" }));
   await screen.findByRole("heading", { name: "No subscriptions yet" });
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
-  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
   fireEvent.click(screen.getByRole("button", { name: "Open Settings fixture" }));
-  expect((screen.getByLabelText("Settings category") as HTMLSelectElement).value).toBe("subscription-accounts");
+  expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   expect((screen.getByText("Advanced settings").closest("details") as HTMLDetailsElement).open).toBe(false);
   expect(writes).not.toHaveBeenCalled();
 }, 30000);

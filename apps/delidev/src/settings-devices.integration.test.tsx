@@ -23,17 +23,19 @@ it("revokes a real paired client through settings and reads bounded server diagn
   const paired = createDeliDevTransport({ origin: credential.endpoint as string, getToken: () => credential.token as string });
   await createClient(SystemService, paired).getStatus({});
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
   fireEvent.click(await screen.findByRole("button", { name: "Revoke DeliDev desktop" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Confirm device revocation" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Confirm device revocation" }));
   await screen.findByText("Authorization revoked for DeliDev desktop.");
+  expect(screen.getByText("Retained sessions stay saved. Revocation does not confirm native cleanup or erase the device's private files.")).toBeTruthy();
   await expect(createClient(SystemService, paired).getStatus({})).rejects.toMatchObject({ code: 16 });
   const retained = await createClient(ResourceService, transport).getResource({ kind: EntityKind.DEVICE, id: credential.device_id as string });
   expect(document(retained.resource).revoked).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Return to devices" }));
-  fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
+  await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Details for DeliDev desktop" })));
+  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
   await screen.findByText("Server owner credential loaded");
   expect(screen.getByText("Read succeeded")).toBeTruthy();
   expect(screen.getByText("Not performed")).toBeTruthy();
@@ -43,4 +45,3 @@ it("revokes a real paired client through settings and reads bounded server diagn
   expect(screen.getByRole("region", { name: "Protected credential diagnostics" })).toBeTruthy();
   expect(screen.queryByText(/legacy report/)).toBeNull();
 }, 15000);
-
