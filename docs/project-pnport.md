@@ -36,6 +36,8 @@ The current source provides a tested development foundation, configured distribu
 
 The macOS adapter preserves command-specific `fcntl` arguments during loader-constructor reentry and early TLS rejection, without runtime bookkeeping on rejected admission. Focused constructor, guard and duplication-provenance controls have native arm64 evidence; native x64 execution remains an acceptance requirement. This correction does not complete broader native-library or Next.js/Turbopack compatibility.
 
+The Linux syscall adapter permits ordinary Node/libuv IPC that reserves optional receive control space. A task-private header prevents descriptor installation; actual ancillary transfers and batched control reception remain unsupported. Preserve this behavior across dynamic and static children under the [Rust IPC contract](crates-pnport-foundation.md#interfaces-and-contracts). Tool-specific execution evidence belongs in PRs and CI artifacts and does not complete the four-host release gate.
+
 ## Change Policy
 Update this index, the relevant domain contracts and AGENTS files together. Record implemented behavior and outstanding release gates separately; preserve deferred Windows requirements and keep #958 open until the complete scope is accepted.
 
