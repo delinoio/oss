@@ -223,6 +223,7 @@
 ### pnport Rules
 
 - pnport macOS hook recursion tokens require lazy construction after successful entry. Reentry must never drop a temporary token or clear the outer guard while native/runtime locks remain held. Preserve the repeated-reentry regression alongside actual x64 and arm64 filesystem execution.
+- pnport macOS runtime state uses a stable normal pthread mutex and early atfork callbacks: serialize the address-space copy against runtime operations, release the lock in parent and child, and clear inherited hook recursion state before user child callbacks. Preserve concurrent dependency reads and non-exec child callback coverage. Descendant `posix_spawnp` searches the parent's PATH through the virtual view while retaining the child's replacement environment and opaque spawn settings; relative candidates with opaque file actions remain unsupported.
 
 - pnport must cancel Linux `io_uring_setup` before kernel execution and return `ENOSYS` so feature probes can fall back to mediated filesystem calls. Never create an unmediated ring; `io_uring_enter` and `io_uring_register` still fail closed. Test with and without enclosing Docker seccomp denial.
 

@@ -51,6 +51,19 @@ impl Fixture {
             "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");",
         )
         .unwrap();
+        let binary = root.path().join("tree");
+        let mut compiler = Command::new("cc");
+        if static_binary {
+            compiler.arg("-static");
+        }
+        assert!(compiler
+            .arg("-pthread")
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/process-tree.c"))
+            .arg("-o")
+            .arg(&binary)
+            .status()
+            .unwrap()
+            .success());
         let mut archive =
             zip::ZipWriter::new(fs::File::create(root.path().join("cache.zip")).unwrap());
         archive
@@ -60,19 +73,14 @@ impl Fixture {
             )
             .unwrap();
         archive.write_all(b"package bytes").unwrap();
+        archive
+            .start_file(
+                "node_modules/dep/bin/tree",
+                zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+            )
+            .unwrap();
+        archive.write_all(&fs::read(&binary).unwrap()).unwrap();
         archive.finish().unwrap();
-        let binary = root.path().join("tree");
-        let mut compiler = Command::new("cc");
-        if static_binary {
-            compiler.arg("-static");
-        }
-        assert!(compiler
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/process-tree.c"))
-            .arg("-o")
-            .arg(&binary)
-            .status()
-            .unwrap()
-            .success());
         let child = Command::new(pnport_binary())
             .current_dir(root.path())
             .args(["--cache-dir"])
@@ -252,6 +260,30 @@ fn termination_reaches_the_owned_tree_and_releases_leases() {
 #[test]
 fn hangup_reaches_the_owned_tree_and_releases_leases() {
     cancellation(libc::SIGHUP);
+}
+
+#[test]
+fn spawnp_searches_parent_virtual_path_and_restores_replacement_environment() {
+    let mut fixture = Fixture::new("spawnp", false);
+    fixture.ready();
+    fixture.assert_active();
+    fixture.signal(libc::SIGTERM);
+    assert_eq!(fixture.stopped().status.code(), Some(143));
+    fixture.assert_signals(libc::SIGTERM);
+    fixture.assert_released();
+}
+
+#[test]
+fn concurrent_fork_and_child_callbacks_preserve_the_virtual_view() {
+    let mut fixture = Fixture::new("fork-stress", false);
+    let output = fixture.stopped();
+    assert!(
+        output.status.success(),
+        "{}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fixture.assert_released();
 }
 
 #[test]

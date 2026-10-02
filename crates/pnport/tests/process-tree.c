@@ -2,7 +2,10 @@
 // Synthetic process trees for signal, crash, lease and descendant conformance.
 #define _GNU_SOURCE
 #include <fcntl.h>
+#include <pthread.h>
 #include <signal.h>
+#include <spawn.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,15 +29,62 @@ static int dependency(void) {
     return count == 13 && memcmp(bytes, "package bytes", 13) == 0 ? 0 : 41;
 }
 
+static atomic_int readers_done;
+static atomic_int reader_failed;
+static void *reader(void *unused) {
+    (void)unused;
+    while (!atomic_load(&readers_done)) {
+        if (dependency()) atomic_store(&reader_failed, 1);
+    }
+    return NULL;
+}
+
+static void fork_callback(void) {
+    // The preload's child callback must unlock its state before user callbacks.
+    if (dependency()) _exit(52);
+}
+
+static int concurrent_fork(void) {
+    if (pthread_atfork(NULL, NULL, fork_callback)) return 53;
+    pthread_t readers[4];
+    for (int index = 0; index < 4; index++)
+        if (pthread_create(&readers[index], NULL, reader, NULL)) return 54;
+    for (int index = 0; index < 100; index++) {
+        pid_t child = fork();
+        if (child < 0) return 55;
+        if (!child) _exit(dependency());
+        int status;
+        if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status))
+            return 56;
+    }
+    atomic_store(&readers_done, 1);
+    for (int index = 0; index < 4; index++)
+        if (pthread_join(readers[index], NULL)) return 57;
+    return atomic_load(&reader_failed) ? 58 : 0;
+}
+
 int main(int argc, char **argv) {
     if (argc != 3) return 42;
     const char *role = argv[1], *mode = argv[2];
     if (strcmp(role, "root") != 0) {
         const char *value = getenv("PNPORT_TEST_ENV");
         if (!value || strcmp(value, "replacement") != 0) return 43;
+        if (strcmp(mode, "spawnp") == 0) {
+            sigset_t mask;
+            if (sigprocmask(SIG_SETMASK, NULL, &mask) || !sigismember(&mask, SIGUSR1)) return 64;
+            value = getenv("PATH");
+            if (!value || strcmp(value, "/absent-child-path") != 0) return 65;
+        }
     }
     int result = dependency();
     if (result) return result;
+    if (strcmp(mode, "fork-stress") == 0) {
+        FILE *group = fopen("root.group", "w");
+        if (!group) return 66;
+        fprintf(group, "%d", getpgrp());
+        fclose(group);
+        return concurrent_fork();
+    }
     if (strcmp(role, "middle") == 0 && strcmp(mode, "detached") == 0 && setsid() < 0)
         return 44;
     char name[64];
@@ -49,11 +99,34 @@ int main(int argc, char **argv) {
         if (sigaction(signals[index], &action, NULL) != 0) return 46;
     }
     if (strcmp(role, "leaf") != 0) {
-        pid_t child = fork();
-        if (child < 0) return 47;
+        char *args[] = {argv[0], strcmp(role, "root") == 0 ? "middle" : "leaf", argv[2], NULL};
+        char *environment[] = {"PNPORT_TEST_ENV=replacement", "PATH=/absent-child-path", NULL};
+        pid_t child;
+        if (strcmp(mode, "spawnp") == 0) {
+            char path[4096];
+            if (!getcwd(path, sizeof(path))) return 59;
+            size_t length = strlen(path);
+            if (length + strlen("/node_modules/dep/bin") >= sizeof(path)) return 60;
+            strcat(path, "/node_modules/dep/bin");
+            if (setenv("PATH", path, 1)) return 61;
+            // Absolute PATH candidates retain opaque actions and attributes.
+            posix_spawn_file_actions_t actions;
+            posix_spawnattr_t attributes;
+            sigset_t mask;
+            sigemptyset(&mask);
+            sigaddset(&mask, SIGUSR1);
+            if (posix_spawn_file_actions_init(&actions) || posix_spawnattr_init(&attributes) ||
+                posix_spawnattr_setsigmask(&attributes, &mask) ||
+                posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGMASK)) return 62;
+            result = posix_spawnp(&child, "tree", &actions, &attributes, args, environment);
+            posix_spawnattr_destroy(&attributes);
+            posix_spawn_file_actions_destroy(&actions);
+            if (result) return 63;
+        } else {
+            child = fork();
+            if (child < 0) return 47;
+        }
         if (child == 0) {
-            char *args[] = {argv[0], strcmp(role, "root") == 0 ? "middle" : "leaf", argv[2], NULL};
-            char *environment[] = {"PNPORT_TEST_ENV=replacement", NULL};
             execve(argv[0], args, environment);
             _exit(48);
         }
