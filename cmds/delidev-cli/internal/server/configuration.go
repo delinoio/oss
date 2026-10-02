@@ -415,7 +415,11 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			if previous.PresetID != nil && (v.PresetID == nil || *v.PresetID != *previous.PresetID) || previous.PresetID == nil && v.PresetID != nil {
 				return domain.Fail(domain.Conflict, "Provider preset identity is immutable.", "Keep the managed provider identity or create a new custom copy.")
 			}
-			if previous.Endpoint != v.Endpoint || previous.Protocol != v.Protocol || previous.Authentication != v.Authentication {
+			harnessChanged := (previous.SubscriptionHarness == nil) != (v.SubscriptionHarness == nil)
+			if previous.SubscriptionHarness != nil && v.SubscriptionHarness != nil {
+				harnessChanged = *previous.SubscriptionHarness != *v.SubscriptionHarness
+			}
+			if previous.Endpoint != v.Endpoint || previous.Protocol != v.Protocol || previous.Authentication != v.Authentication || harnessChanged {
 				accounts, err := all(tx, domain.AccountKind)
 				if err != nil {
 					return err
@@ -490,7 +494,7 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			return domain.Fail(domain.InvalidArgument, "Account type does not match the provider.", "Use the provider's authentication type.")
 		}
 		if expected == 0 {
-			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil || v.Catalog != nil {
+			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil || v.Catalog != nil || v.Subscription != nil {
 				return domain.Fail(domain.InvalidArgument, "New account health must be disconnected.", "Use account connect/login to validate credentials and quota.")
 			}
 		} else {
@@ -503,23 +507,25 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 				return err
 			}
 			oldObservations, _ := json.Marshal(struct {
-				Health     domain.AccountHealth
-				Quota      []domain.QuotaWindow
-				Exhausted  bool
-				Connection *domain.AccountConnection
-				Removal    *domain.AccountRemoval
-				Validation *domain.AccountValidation
-				Catalog    *domain.CatalogObservation
-			}{old.Health, old.Quota, old.ConfirmedExhausted, old.Connection, old.Removal, old.Validation, old.Catalog})
+				Health       domain.AccountHealth
+				Quota        []domain.QuotaWindow
+				Exhausted    bool
+				Connection   *domain.AccountConnection
+				Removal      *domain.AccountRemoval
+				Validation   *domain.AccountValidation
+				Catalog      *domain.CatalogObservation
+				Subscription *domain.SubscriptionState
+			}{old.Health, old.Quota, old.ConfirmedExhausted, old.Connection, old.Removal, old.Validation, old.Catalog, old.Subscription})
 			newObservations, _ := json.Marshal(struct {
-				Health     domain.AccountHealth
-				Quota      []domain.QuotaWindow
-				Exhausted  bool
-				Connection *domain.AccountConnection
-				Removal    *domain.AccountRemoval
-				Validation *domain.AccountValidation
-				Catalog    *domain.CatalogObservation
-			}{v.Health, v.Quota, v.ConfirmedExhausted, v.Connection, v.Removal, v.Validation, v.Catalog})
+				Health       domain.AccountHealth
+				Quota        []domain.QuotaWindow
+				Exhausted    bool
+				Connection   *domain.AccountConnection
+				Removal      *domain.AccountRemoval
+				Validation   *domain.AccountValidation
+				Catalog      *domain.CatalogObservation
+				Subscription *domain.SubscriptionState
+			}{v.Health, v.Quota, v.ConfirmedExhausted, v.Connection, v.Removal, v.Validation, v.Catalog, v.Subscription})
 			if old.ProviderID != v.ProviderID || old.Type != v.Type || string(oldObservations) != string(newObservations) {
 				return domain.Fail(domain.InvalidArgument, "Account identity and observed health are server-owned.", "Use login/connect/refresh to update authentication or quota.")
 			}

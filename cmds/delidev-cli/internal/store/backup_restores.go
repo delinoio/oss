@@ -606,7 +606,10 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		 (kind='session' AND (COALESCE(json_extract(body,'$.active_execution_id'),'')<>'' OR
 		 json_extract(body,'$.outcome')='running' OR json_extract(body,'$.recovery') IN ('required','reconciling') OR
 		 json_extract(body,'$.archive')='archiving' OR json_extract(body,'$.preparation.state') IN ('stopping','uncertain'))) OR
-		 (kind='account' AND json_extract(body,'$.removal') IS NOT NULL) OR
+		 (kind='account' AND (json_extract(body,'$.removal') IS NOT NULL OR
+		 json_extract(body,'$.subscription.pending') IS NOT NULL OR
+		 json_extract(body,'$.subscription.lease') IS NOT NULL OR
+		 COALESCE(json_extract(body,'$.subscription.recovery_required'),0)<>0)) OR
 		 (kind='integration' AND json_extract(body,'$.pending') IS NOT NULL) OR
 		 (kind='forward' AND (COALESCE(json_extract(body,'$.state'),'')<>'stopped' OR
 		 COALESCE(json_extract(body,'$.client_clean'),0)<>1 OR

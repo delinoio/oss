@@ -1723,3 +1723,7 @@ the native cross-drive Plan fixture. Neither deterministic tests nor
 cross-compilation establish installed Windows/account acceptance. Record actual
 Windows results and unresolved limits independently in issue #1205, its pull
 requests and CI runs.
+
+## Managed Codex subscription profile
+
+The separate managed profile pins installed Codex 0.151.0, fresh private file-backed authentication and the built-in OpenAI provider. It composes original browser/device login completion, cancellation, account/file identity comparison, refresh metadata and local logout with server-owned exclusive leases under [the subscription contract](cmds-delidev-subscription-contract.md). API/discovery profiles remain ephemeral. Controlled native fixtures establish protocol/process boundaries; real account and platform acceptance remain unperformed.

@@ -61,6 +61,16 @@ pub struct SnapshotFile {
     pub hard_link_to: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SnapshotLink {
+    /// Canonical project-relative target used for containment and identity
+    /// checks.
+    pub target: PathBuf,
+    /// Exact target spelling read from the source symlink for candidate
+    /// recreation.
+    pub raw_target: PathBuf,
+}
+
 pub struct Snapshot {
     cancelled: Arc<AtomicBool>,
     root: PathBuf,
@@ -69,8 +79,8 @@ pub struct Snapshot {
     eligible_directories: BTreeMap<PathBuf, FileIdentity>,
     selected_identities: BTreeMap<FileIdentity, PathBuf>,
     files: BTreeMap<PathBuf, SnapshotFile>,
-    links: BTreeMap<PathBuf, PathBuf>,
-    directories: BTreeSet<PathBuf>,
+    links: BTreeMap<PathBuf, SnapshotLink>,
+    directories: BTreeMap<PathBuf, FileIdentity>,
     total_bytes: u64,
     max_bytes: u64,
     max_files: usize,
@@ -98,6 +108,66 @@ fn valid_relative(relative: &Path) -> bool {
         && relative
             .components()
             .all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn append_link_suffix(target: &Path, suffix: &Path) -> PathBuf {
+    // Joining an empty suffix adds a trailing separator, which makes native
+    // file opens treat an unchanged regular-file target as a directory.
+    if suffix.as_os_str().is_empty() {
+        target.to_path_buf()
+    } else {
+        target.join(suffix)
+    }
+}
+
+fn staged_link_target(
+    raw_target: &Path,
+    canonical_target: &Path,
+    link: &Path,
+) -> Result<PathBuf, ReproFailure> {
+    if !raw_target.is_absolute() {
+        return Ok(raw_target.to_path_buf());
+    }
+    // An absolute source link cannot retain its source-root spelling after the
+    // candidate is atomically renamed to the published bundle. Re-express the
+    // verified internal target relative to the link so it remains valid after
+    // that rename; links that point outside the source root were rejected
+    // while taking the snapshot.
+    pathdiff::diff_paths(canonical_target, link.parent().unwrap_or(Path::new(".")))
+        .ok_or(ReproFailure::Unavailable)
+}
+
+fn normalize_relative(path: &Path) -> Result<PathBuf, ReproFailure> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(name) => normalized.push(name),
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return Err(ReproFailure::ExternalLink);
+                }
+            }
+            Component::Prefix(_) | Component::RootDir => {
+                return Err(ReproFailure::ExternalLink);
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+fn raw_target_relative(
+    root: &Path,
+    link: &Path,
+    raw_target: &Path,
+) -> Result<Option<PathBuf>, ReproFailure> {
+    if raw_target.is_absolute() {
+        return match raw_target.strip_prefix(root) {
+            Ok(relative) => normalize_relative(relative).map(Some),
+            Err(_) => Ok(None),
+        };
+    }
+    normalize_relative(&link.parent().unwrap_or(Path::new(".")).join(raw_target)).map(Some)
 }
 
 #[cfg(target_os = "linux")]
@@ -144,7 +214,12 @@ fn opened_path(file: &File) -> Result<PathBuf, ReproFailure> {
         return Err(ReproFailure::Unavailable);
     }
     path.truncate(length);
-    Ok(PathBuf::from(OsString::from_wide(&path)))
+    let path = PathBuf::from(OsString::from_wide(&path));
+    // Keep the extended-length namespace returned by the handle API. Windows
+    // `fs::canonicalize` uses the same namespace for the snapshot root, so
+    // containment checks must compare both paths without stripping it from
+    // only one side.
+    Ok(path)
 }
 
 #[cfg(unix)]
@@ -265,9 +340,9 @@ impl Snapshot {
         let mut prefix = PathBuf::new();
         for component in relative.components() {
             prefix.push(component.as_os_str());
-            if let Some(target) = self.links.get(&prefix) {
+            if let Some(link) = self.links.get(&prefix) {
                 let suffix = relative.strip_prefix(&prefix).ok()?;
-                return self.snapshot_file(&target.join(suffix));
+                return self.snapshot_file(&append_link_suffix(&link.target, suffix));
             }
         }
         self.files.get(relative)
@@ -277,7 +352,7 @@ impl Snapshot {
         denied(relative)
     }
 
-    pub fn links(&self) -> &BTreeMap<PathBuf, PathBuf> {
+    pub fn links(&self) -> &BTreeMap<PathBuf, SnapshotLink> {
         &self.links
     }
 
@@ -329,7 +404,7 @@ impl Snapshot {
             selected_identities: BTreeMap::new(),
             files: BTreeMap::new(),
             links: BTreeMap::new(),
-            directories: BTreeSet::new(),
+            directories: BTreeMap::new(),
             total_bytes: 0,
             max_bytes,
             max_files,
@@ -390,6 +465,11 @@ impl Snapshot {
                 }
                 continue;
             }
+            // Traverse unselected directories to find selected descendants and
+            // blocked identities, but retain and charge only selected entries.
+            if !selector.matches(&native_relative(relative)) {
+                continue;
+            }
             if entry.file_type().is_dir() && !relative.as_os_str().is_empty() {
                 snapshot.add_path(relative)?;
                 let metadata = fs::metadata(entry.path()).map_err(|_| ReproFailure::Unavailable)?;
@@ -401,12 +481,6 @@ impl Snapshot {
                 continue;
             }
             if !entry.file_type().is_file() {
-                continue;
-            }
-            if !selector.matches(&native_relative(relative)) {
-                continue;
-            }
-            if denied(relative) {
                 continue;
             }
             snapshot.eligible.insert(relative.to_path_buf());
@@ -459,6 +533,7 @@ impl Snapshot {
             let source = self.root.join(&prefix);
             let metadata = fs::symlink_metadata(&source).map_err(|_| ReproFailure::Unavailable)?;
             if metadata.file_type().is_symlink() {
+                let raw_target = fs::read_link(&source).map_err(|_| ReproFailure::Unavailable)?;
                 let resolved = fs::canonicalize(&source).map_err(|_| ReproFailure::Unavailable)?;
                 let target = resolved
                     .strip_prefix(&self.root)
@@ -469,18 +544,27 @@ impl Snapshot {
                 }
                 if !self.links.contains_key(&prefix) {
                     self.claim_entry()?;
-                    self.links.insert(prefix.clone(), target.clone());
+                    self.links.insert(
+                        prefix.clone(),
+                        SnapshotLink {
+                            target: target.clone(),
+                            raw_target: raw_target.clone(),
+                        },
+                    );
+                    self.record_raw_link_chain(&prefix, &raw_target)?;
                 }
                 let suffix = relative
                     .strip_prefix(&prefix)
                     .map_err(|_| ReproFailure::Unavailable)?;
-                let target_path = target.join(suffix);
+                let target_path = append_link_suffix(&target, suffix);
                 return self.add_path(&target_path);
             }
             if metadata.is_dir() {
-                if !self.directories.contains(&prefix) {
-                    self.directories.insert(prefix.clone());
-                }
+                // Structural parents and internal alias targets are required
+                // backing, not standalone eligible inputs or budget entries.
+                self.directories
+                    .entry(prefix.clone())
+                    .or_insert(source_identity(&source, &metadata)?);
                 continue;
             }
             if prefix != relative || !metadata.is_file() {
@@ -556,6 +640,46 @@ impl Snapshot {
         Ok(())
     }
 
+    fn record_raw_link_chain(
+        &mut self,
+        link: &Path,
+        raw_target: &Path,
+    ) -> Result<(), ReproFailure> {
+        let Some(relative_target) = raw_target_relative(&self.root, link, raw_target)? else {
+            return Ok(());
+        };
+        let mut prefix = PathBuf::new();
+        for component in relative_target.components() {
+            prefix.push(component.as_os_str());
+            let source = self.root.join(&prefix);
+            let metadata = fs::symlink_metadata(&source).map_err(|_| ReproFailure::Unavailable)?;
+            if !metadata.file_type().is_symlink() {
+                continue;
+            }
+            let raw_target = fs::read_link(&source).map_err(|_| ReproFailure::Unavailable)?;
+            let resolved = fs::canonicalize(&source).map_err(|_| ReproFailure::Unavailable)?;
+            let target = resolved
+                .strip_prefix(&self.root)
+                .map_err(|_| ReproFailure::ExternalLink)?
+                .to_path_buf();
+            if denied(&target) {
+                return Err(ReproFailure::BlockedInput);
+            }
+            if !self.links.contains_key(&prefix) {
+                self.claim_entry()?;
+                self.links.insert(
+                    prefix.clone(),
+                    SnapshotLink {
+                        target,
+                        raw_target: raw_target.clone(),
+                    },
+                );
+                self.record_raw_link_chain(&prefix, &raw_target)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Recheck only collected source objects after the original execution.
     pub fn verify_required(&self, required: &BTreeSet<PathBuf>) -> Result<(), ReproFailure> {
         for relative in required {
@@ -581,30 +705,31 @@ impl Snapshot {
         let mut prefix = PathBuf::new();
         for component in relative.components() {
             prefix.push(component.as_os_str());
-            if let Some(expected) = self.links.get(&prefix) {
-                let actual = fs::canonicalize(self.root.join(&prefix))
-                    .map_err(|_| ReproFailure::UnstableInput)?;
+            if let Some(link) = self.links.get(&prefix) {
+                self.verify_raw_link_chain(&prefix, &link.raw_target)?;
+                let source = self.root.join(&prefix);
+                let actual_raw = fs::read_link(&source).map_err(|_| ReproFailure::UnstableInput)?;
+                if actual_raw != link.raw_target {
+                    return Err(ReproFailure::UnstableInput);
+                }
+                let actual = fs::canonicalize(source).map_err(|_| ReproFailure::UnstableInput)?;
                 let relative_target = actual
                     .strip_prefix(&self.root)
                     .map_err(|_| ReproFailure::UnstableInput)?;
-                if relative_target != expected {
+                if relative_target != link.target {
                     return Err(ReproFailure::UnstableInput);
                 }
                 let suffix = relative
                     .strip_prefix(&prefix)
                     .map_err(|_| ReproFailure::UnstableInput)?;
-                return self.verify_path(&expected.join(suffix));
+                return self.verify_path(&append_link_suffix(&link.target, suffix));
+            }
+            if let Some(expected) = self.directories.get(&prefix) {
+                self.verify_directory(&prefix, expected)?;
             }
         }
-        if let Some(expected) = self.eligible_directories.get(relative) {
-            let path = self.root.join(relative);
-            let metadata = fs::metadata(&path).map_err(|_| ReproFailure::UnstableInput)?;
-            if !metadata.is_dir()
-                || source_identity(&path, &metadata).map_err(|_| ReproFailure::UnstableInput)?
-                    != *expected
-            {
-                return Err(ReproFailure::UnstableInput);
-            }
+        if let Some(expected) = self.directories.get(relative) {
+            self.verify_directory(relative, expected)?;
             return Ok(());
         }
         let expected = self
@@ -621,6 +746,69 @@ impl Snapshot {
             })?;
         if actual != (expected.sha256.clone(), expected.size, expected.identity) {
             return Err(ReproFailure::UnstableInput);
+        }
+        Ok(())
+    }
+
+    fn verify_directory(
+        &self,
+        relative: &Path,
+        expected: &FileIdentity,
+    ) -> Result<(), ReproFailure> {
+        let path = self.root.join(relative);
+        let metadata = fs::metadata(&path).map_err(|_| ReproFailure::UnstableInput)?;
+        if !metadata.is_dir()
+            || source_identity(&path, &metadata).map_err(|_| ReproFailure::UnstableInput)?
+                != *expected
+        {
+            return Err(ReproFailure::UnstableInput);
+        }
+        Ok(())
+    }
+
+    fn verify_raw_link_chain(&self, link: &Path, raw_target: &Path) -> Result<(), ReproFailure> {
+        let Some(relative_target) = raw_target_relative(&self.root, link, raw_target)? else {
+            return Ok(());
+        };
+        let mut prefix = PathBuf::new();
+        for component in relative_target.components() {
+            prefix.push(component.as_os_str());
+            let Some(expected) = self.links.get(&prefix) else {
+                continue;
+            };
+            let source = self.root.join(&prefix);
+            let actual_raw = fs::read_link(&source).map_err(|_| ReproFailure::UnstableInput)?;
+            if actual_raw != expected.raw_target {
+                return Err(ReproFailure::UnstableInput);
+            }
+            let actual = fs::canonicalize(source).map_err(|_| ReproFailure::UnstableInput)?;
+            let relative_target = actual
+                .strip_prefix(&self.root)
+                .map_err(|_| ReproFailure::UnstableInput)?;
+            if relative_target != expected.target {
+                return Err(ReproFailure::UnstableInput);
+            }
+        }
+        Ok(())
+    }
+
+    fn stage_raw_link_chain(
+        &self,
+        link: &Path,
+        raw_target: &Path,
+        candidate: &Path,
+        staged: &mut BTreeMap<PathBuf, SnapshotFile>,
+        staged_identities: &mut BTreeMap<FileIdentity, PathBuf>,
+    ) -> Result<(), ReproFailure> {
+        let Some(relative_target) = raw_target_relative(&self.root, link, raw_target)? else {
+            return Ok(());
+        };
+        let mut prefix = PathBuf::new();
+        for component in relative_target.components() {
+            prefix.push(component.as_os_str());
+            if self.links.contains_key(&prefix) {
+                self.stage_path(&prefix, candidate, staged, staged_identities)?;
+            }
         }
         Ok(())
     }
@@ -652,26 +840,45 @@ impl Snapshot {
         let mut prefix = PathBuf::new();
         for component in relative.components() {
             prefix.push(component.as_os_str());
-            if let Some(target) = self.links.get(&prefix) {
+            if let Some(link) = self.links.get(&prefix) {
                 let suffix = relative
                     .strip_prefix(&prefix)
                     .map_err(|_| ReproFailure::Unavailable)?;
-                self.stage_path(&target.join(suffix), candidate, staged, staged_identities)?;
-                let link = candidate.join(&prefix);
-                if let Some(parent) = link.parent() {
+                self.stage_path(
+                    &append_link_suffix(&link.target, suffix),
+                    candidate,
+                    staged,
+                    staged_identities,
+                )?;
+                self.stage_raw_link_chain(
+                    &prefix,
+                    &link.raw_target,
+                    candidate,
+                    staged,
+                    staged_identities,
+                )?;
+                let candidate_link = candidate.join(&prefix);
+                if let Some(parent) = candidate_link.parent() {
                     fs::create_dir_all(parent).map_err(|_| ReproFailure::Unavailable)?;
                 }
-                if !link.is_symlink() {
+                if !candidate_link.is_symlink() {
                     let relative_target =
-                        pathdiff::diff_paths(target, prefix.parent().unwrap_or(Path::new(".")))
-                            .ok_or(ReproFailure::Unavailable)?;
-                    stage_symlink(&self.root.join(&prefix), &relative_target, &link)
-                        .map_err(|_| ReproFailure::Unavailable)?;
+                        staged_link_target(&link.raw_target, &link.target, &prefix)?;
+                    // Windows chooses the reparse-point kind from the target
+                    // entry. The source alias may use the extended source
+                    // namespace and should not be reclassified while staging;
+                    // the canonical target was already verified and staged.
+                    stage_symlink(
+                        &self.root.join(&link.target),
+                        &relative_target,
+                        &candidate_link,
+                    )
+                    .map_err(|_| ReproFailure::Unavailable)?;
                 }
                 return Ok(());
             }
         }
-        if self.eligible_directories.contains_key(relative) {
+        if self.directories.contains_key(relative) {
             fs::create_dir_all(candidate.join(relative)).map_err(|_| ReproFailure::Unavailable)?;
             return Ok(());
         }
@@ -742,6 +949,201 @@ fn native_relative(path: &Path) -> crate::record::NativePath {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directory_selection_excludes_standalone_entries_but_keeps_descendants() {
+        let directory = tempfile::tempdir().unwrap();
+        for path in ["unused", "excluded/empty", "nested", "selected-empty"] {
+            fs::create_dir_all(directory.path().join(path)).unwrap();
+        }
+        fs::write(directory.path().join("nested/input"), b"x").unwrap();
+        let selector = Selector::new(
+            &["**".into()],
+            &[
+                "unused".into(),
+                "excluded".into(),
+                "excluded/**".into(),
+                "nested".into(),
+            ],
+        )
+        .unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 2).unwrap();
+        let required = snapshot
+            .selected_entries_within(Path::new(""))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            required,
+            BTreeSet::from([
+                PathBuf::from("nested/input"),
+                PathBuf::from("selected-empty")
+            ])
+        );
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert_eq!(
+            fs::read(candidate.path().join("nested/input")).unwrap(),
+            b"x"
+        );
+        assert!(candidate.path().join("selected-empty").is_dir());
+        assert!(!candidate.path().join("unused").exists());
+        assert!(!candidate.path().join("excluded").exists());
+        assert!(matches!(
+            snapshot.verify_required(&BTreeSet::from([PathBuf::from("unused")])),
+            Err(ReproFailure::UncollectedInput)
+        ));
+    }
+
+    #[test]
+    fn unselected_directories_do_not_consume_selected_file_budget() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input"), b"x").unwrap();
+        let selector = Selector::new(&["input".into()], &[]).unwrap();
+        for extra_directories in [false, true] {
+            if extra_directories {
+                fs::create_dir_all(directory.path().join("unrelated/deep/empty")).unwrap();
+            }
+            let snapshot = Snapshot::take(directory.path(), &selector, 1, 1).unwrap();
+            assert_eq!(snapshot.selected_entries_within(Path::new("")).count(), 1);
+            assert!(snapshot.eligible_directories.is_empty());
+            assert!(snapshot.directories.is_empty());
+        }
+        fs::create_dir_all(directory.path().join("nested/parent")).unwrap();
+        fs::rename(
+            directory.path().join("input"),
+            directory.path().join("nested/parent/input"),
+        )
+        .unwrap();
+        let selector = Selector::new(&["nested/parent/input".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1, 1).unwrap();
+        assert!(!snapshot.contains_selected_directory(Path::new("nested")));
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(
+                &BTreeSet::from([PathBuf::from("nested/parent/input")]),
+                candidate.path(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read(candidate.path().join("nested/parent/input")).unwrap(),
+            b"x"
+        );
+    }
+
+    #[test]
+    fn selected_files_and_directories_keep_snapshot_limits() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input"), b"xx").unwrap();
+        fs::create_dir(directory.path().join("empty")).unwrap();
+        let selector = Selector::new(&["**".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1024, 1),
+            Err(ReproFailure::FileLimit)
+        ));
+        let selector = Selector::new(&["input".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1, 1),
+            Err(ReproFailure::ByteLimit)
+        ));
+        fs::write(directory.path().join("other"), b"x").unwrap();
+        let selector = Selector::new(&["input".into(), "other".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1024, 1),
+            Err(ReproFailure::FileLimit)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_file_through_directory_alias_charges_required_link() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir(directory.path().join("real")).unwrap();
+        fs::write(directory.path().join("real/input"), b"x").unwrap();
+        symlink("real", directory.path().join("alias")).unwrap();
+        let selector = Selector::new(&["alias/input".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1, 1),
+            Err(ReproFailure::FileLimit)
+        ));
+        let snapshot = Snapshot::take(directory.path(), &selector, 1, 2).unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(
+                &BTreeSet::from([PathBuf::from("alias/input")]),
+                candidate.path(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read(candidate.path().join("alias/input")).unwrap(),
+            b"x"
+        );
+        assert!(snapshot.eligible_directories.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_empty_directory_alias_keeps_target_and_link_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir(directory.path().join("real")).unwrap();
+        symlink("real", directory.path().join("alias")).unwrap();
+        let selector = Selector::new(&["alias".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1024, 1),
+            Err(ReproFailure::FileLimit)
+        ));
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 2).unwrap();
+        let required = snapshot
+            .selected_entries_within(Path::new("alias"))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(required, BTreeSet::from([PathBuf::from("alias")]));
+        assert!(!snapshot.contains_selected_directory(Path::new("real")));
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert!(candidate.path().join("alias").is_symlink());
+        assert!(candidate.path().join("real").is_dir());
+        fs::create_dir(directory.path().join("replacement")).unwrap();
+        fs::remove_dir(directory.path().join("real")).unwrap();
+        fs::rename(
+            directory.path().join("replacement"),
+            directory.path().join("real"),
+        )
+        .unwrap();
+        assert!(matches!(
+            snapshot.verify_required(&required),
+            Err(ReproFailure::UnstableInput)
+        ));
+    }
+
+    #[test]
+    fn rejects_replaced_structural_parent_with_same_leaf() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir_all(directory.path().join("nested/empty")).unwrap();
+        let selector = Selector::new(&["nested/empty".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 1).unwrap();
+        let required = BTreeSet::from([PathBuf::from("nested/empty")]);
+
+        fs::rename(
+            directory.path().join("nested"),
+            directory.path().join("original-nested"),
+        )
+        .unwrap();
+        fs::create_dir(directory.path().join("nested")).unwrap();
+        fs::rename(
+            directory.path().join("original-nested/empty"),
+            directory.path().join("nested/empty"),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            snapshot.verify_required(&required),
+            Err(ReproFailure::UnstableInput)
+        ));
+    }
 
     #[test]
     fn enumeration_stages_empty_and_subdirectories() {
@@ -829,6 +1231,180 @@ mod tests {
         assert_eq!(fs::read(second).unwrap(), b"changed");
     }
 
+    #[test]
+    fn stages_selected_file_symlink_and_target() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir(directory.path().join("real")).unwrap();
+        fs::write(directory.path().join("real/input.txt"), b"input").unwrap();
+        let target = Path::new("real").join("input.txt");
+        stage_symlink(
+            &directory.path().join("real/input.txt"),
+            &target,
+            &directory.path().join("alias.txt"),
+        )
+        .unwrap();
+        let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
+        let target = PathBuf::from("real").join("input.txt");
+        let expected = snapshot.files.get(&target).unwrap();
+        assert!(snapshot.selected_path_has_identity(Path::new("alias.txt"), expected.identity));
+        let required = BTreeSet::from([PathBuf::from("alias.txt")]);
+        snapshot.verify_required(&required).unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        let staged = snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].relative, target);
+        assert_eq!(staged[0].sha256, expected.sha256);
+        assert_eq!(staged[0].size, 5);
+        assert_eq!(
+            fs::read_link(candidate.path().join("alias.txt")).unwrap(),
+            target
+        );
+        assert_eq!(
+            fs::read(candidate.path().join("alias.txt")).unwrap(),
+            b"input"
+        );
+    }
+
+    #[test]
+    fn preserves_raw_file_symlink_target_spelling() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input.txt"), b"input").unwrap();
+        let target = Path::new(".").join("input.txt");
+        stage_symlink(
+            &directory.path().join("input.txt"),
+            &target,
+            &directory.path().join("alias.txt"),
+        )
+        .unwrap();
+        let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(
+                &BTreeSet::from([PathBuf::from("alias.txt")]),
+                candidate.path(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read_link(candidate.path().join("alias.txt")).unwrap(),
+            target
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_absolute_internal_links_for_the_published_root() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir(directory.path().join("real")).unwrap();
+        fs::write(directory.path().join("real/input.txt"), b"input").unwrap();
+        symlink(
+            directory.path().join("real/input.txt"),
+            directory.path().join("alias.txt"),
+        )
+        .unwrap();
+        let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
+        let staging_parent = tempfile::tempdir().unwrap();
+        let staging = staging_parent.path().join("staging");
+        fs::create_dir(&staging).unwrap();
+        snapshot
+            .stage_required(&BTreeSet::from([PathBuf::from("alias.txt")]), &staging)
+            .unwrap();
+        let published = staging_parent.path().join("published");
+        fs::rename(&staging, &published).unwrap();
+        assert_eq!(
+            fs::read_link(published.join("alias.txt")).unwrap(),
+            Path::new("real/input.txt")
+        );
+        assert_eq!(fs::read(published.join("alias.txt")).unwrap(), b"input");
+    }
+
+    #[test]
+    fn rejects_changed_file_symlink_targets_before_staging() {
+        enum Change {
+            Content,
+            Identity,
+            LinkTarget,
+        }
+        for change in [Change::Content, Change::Identity, Change::LinkTarget] {
+            let directory = tempfile::tempdir().unwrap();
+            let input = directory.path().join("input.txt");
+            let alias = directory.path().join("alias.txt");
+            fs::write(&input, b"input").unwrap();
+            stage_symlink(&input, Path::new("input.txt"), &alias).unwrap();
+            let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+            let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
+            let required = BTreeSet::from([PathBuf::from("alias.txt")]);
+            snapshot.verify_required(&required).unwrap();
+            match change {
+                Change::Content => fs::write(&input, b"other").unwrap(),
+                Change::Identity => {
+                    let replacement = directory.path().join("replacement.txt");
+                    fs::write(&replacement, b"input").unwrap();
+                    fs::remove_file(&input).unwrap();
+                    fs::rename(replacement, &input).unwrap();
+                }
+                Change::LinkTarget => {
+                    let replacement = directory.path().join("replacement.txt");
+                    fs::write(&replacement, b"input").unwrap();
+                    fs::remove_file(&alias).unwrap();
+                    stage_symlink(&replacement, Path::new("replacement.txt"), &alias).unwrap();
+                }
+            }
+            let candidate = tempfile::tempdir().unwrap();
+            assert!(matches!(
+                snapshot.stage_required(&required, candidate.path()),
+                Err(ReproFailure::UnstableInput)
+            ));
+            assert_eq!(fs::read_dir(candidate.path()).unwrap().count(), 0);
+        }
+    }
+
+    #[test]
+    fn rejects_changed_file_symlink_target_spelling_before_staging() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        let alias = directory.path().join("alias.txt");
+        fs::write(&input, b"input").unwrap();
+        stage_symlink(&input, Path::new("input.txt"), &alias).unwrap();
+        let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
+        fs::remove_file(&alias).unwrap();
+        stage_symlink(&input, Path::new("./input.txt"), &alias).unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            snapshot.stage_required(
+                &BTreeSet::from([PathBuf::from("alias.txt")]),
+                candidate.path(),
+            ),
+            Err(ReproFailure::UnstableInput)
+        ));
+    }
+
+    #[test]
+    fn rejects_selected_file_symlinks_to_blocked_or_external_targets() {
+        for expected in [ReproFailure::BlockedInput, ReproFailure::ExternalLink] {
+            let directory = tempfile::tempdir().unwrap();
+            let root = directory.path().join("project");
+            fs::create_dir(&root).unwrap();
+            let target = match expected {
+                ReproFailure::BlockedInput => root.join(".env"),
+                ReproFailure::ExternalLink => directory.path().join("external.txt"),
+                _ => unreachable!(),
+            };
+            fs::write(&target, b"fixture").unwrap();
+            stage_symlink(&target, &target, &root.join("alias.txt")).unwrap();
+            let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+            assert!(matches!(
+                Snapshot::take(&root, &selector, 1024, 10),
+                Err(error) if error == expected
+            ));
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn stages_observed_internal_link_and_target_without_unobserved_files() {
@@ -851,6 +1427,44 @@ mod tests {
             b"alpha"
         );
         assert!(!candidate.path().join("real/b.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_intermediate_symlinks_used_by_a_raw_target() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir(directory.path().join("real")).unwrap();
+        fs::write(directory.path().join("real/input.txt"), b"input").unwrap();
+        symlink("real", directory.path().join("bridge")).unwrap();
+        symlink("bridge/input.txt", directory.path().join("alias.txt")).unwrap();
+        let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 100).unwrap();
+        let required = BTreeSet::from([PathBuf::from("alias.txt")]);
+        fs::remove_file(directory.path().join("bridge")).unwrap();
+        symlink("./real", directory.path().join("bridge")).unwrap();
+        let changed_candidate = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            snapshot.stage_required(&required, changed_candidate.path()),
+            Err(ReproFailure::UnstableInput)
+        ));
+        fs::remove_file(directory.path().join("bridge")).unwrap();
+        symlink("real", directory.path().join("bridge")).unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert_eq!(
+            fs::read_link(candidate.path().join("bridge")).unwrap(),
+            Path::new("real")
+        );
+        assert_eq!(
+            fs::read_link(candidate.path().join("alias.txt")).unwrap(),
+            Path::new("bridge/input.txt")
+        );
+        assert_eq!(
+            fs::read(candidate.path().join("alias.txt")).unwrap(),
+            b"input"
+        );
     }
 
     #[test]

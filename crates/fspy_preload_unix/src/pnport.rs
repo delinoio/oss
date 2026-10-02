@@ -11,6 +11,7 @@ use std::{
     collections::HashMap,
     ffi::{CStr, CString, OsStr, OsString},
     fs,
+    io::Write,
     os::unix::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     ptr,
@@ -35,7 +36,7 @@ use libc::{
 };
 use pnport_core::{
     cache::Cache,
-    diagnostic::Code,
+    diagnostic::{Code, Error, ExecFailureKind},
     executable::LaunchAdmission,
     graph::{Graph, Snapshot},
     view::{Translation, View},
@@ -214,13 +215,56 @@ unsafe fn errno(value: c_int) {
         *__errno_location() = value;
     }
 }
+fn record_failure(session: &Path, code: Code) {
+    // The supervisor may read concurrently with any injected process. Publish
+    // complete bytes once; truncation or collateral failures must not replace
+    // the first diagnostic with an empty or different failure code.
+    if let Ok(mut stage) = tempfile::NamedTempFile::new_in(session)
+        && stage.write_all(code.as_str().as_bytes()).is_ok()
+    {
+        let _ = stage.persist_noclobber(session.join("failure"));
+    }
+}
+
+#[cfg(test)]
+mod failure_tests {
+    use std::{fs, sync::Barrier};
+
+    use super::{Code, record_failure};
+
+    #[test]
+    fn concurrent_failures_preserve_the_complete_first_diagnostic() {
+        let session = tempfile::tempdir().unwrap();
+        record_failure(session.path(), Code::PnportCommandNotExecutable);
+        let barrier = Barrier::new(9);
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                scope.spawn(|| {
+                    barrier.wait();
+                    for _ in 0..64 {
+                        record_failure(session.path(), Code::PnportInjectionFailed);
+                    }
+                });
+            }
+            barrier.wait();
+            for _ in 0..512 {
+                assert_eq!(
+                    fs::read(session.path().join("failure")).unwrap(),
+                    Code::PnportCommandNotExecutable.as_str().as_bytes()
+                );
+            }
+        });
+        assert_eq!(fs::read_dir(session.path()).unwrap().count(), 1);
+    }
+}
+
 fn fail(code: Code) -> c_int {
     if !matches!(
         code,
         Code::PnportResolutionFailed | Code::PnportCommandNotFound
     ) && let Some(session) = SESSION.get()
     {
-        let _ = fs::write(session.join("failure"), code.as_str());
+        record_failure(session, code);
     }
     match code {
         Code::PnportResolutionFailed | Code::PnportCommandNotFound => ENOENT,
@@ -320,9 +364,9 @@ unsafe fn live_directory_path(dirfd: c_int) -> std::result::Result<PathBuf, c_in
         if fcntl(dirfd, F_GETPATH, buffer.as_mut_ptr()) < 0 {
             return Err(EBADF);
         }
-        return Ok(PathBuf::from(OsStr::from_bytes(
+        Ok(PathBuf::from(OsStr::from_bytes(
             CStr::from_ptr(buffer.as_ptr().cast()).to_bytes(),
-        )));
+        )))
     }
     #[cfg(target_os = "linux")]
     {
@@ -550,7 +594,7 @@ unsafe extern "C" fn initialize() {
         Some(())
     })();
     if result.is_none() {
-        let _ = fs::write(session.join("failure"), b"PNPORT_INJECTION_FAILED");
+        record_failure(&session, Code::PnportInjectionFailed);
         _exit(125);
     }
 }
@@ -1141,8 +1185,20 @@ hook!(dup2, pnport_dup2, (fd:c_int,newfd:c_int) -> c_int, {
 });
 
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
+fn child_exec_error(error: &Error) -> c_int {
+    // A failed native exec is recoverable by its caller (and libc's PATH
+    // search). It did not launch an unmediated image. Only admission/runtime
+    // failures without a native exec classification invalidate the session.
+    match error.exec_failure {
+        Some(ExecFailureKind::NotFound) => ENOENT,
+        Some(ExecFailureKind::PermissionDenied) => libc::EACCES,
+        Some(ExecFailureKind::InvalidFormat) => libc::ENOEXEC,
+        Some(ExecFailureKind::InterpreterLoop) => libc::ELOOP,
+        None => fail(error.code),
+    }
+}
 fn admitted_program(path: &Path) -> std::result::Result<(CString, LaunchAdmission), c_int> {
-    let admission = LaunchAdmission::new(path).map_err(|error| fail(error.code))?;
+    let admission = LaunchAdmission::new(path).map_err(|error| child_exec_error(&error))?;
     let canonical = CString::new(admission.path.as_os_str().as_bytes()).map_err(|_| EINVAL)?;
     Ok((canonical, admission))
 }
@@ -1222,7 +1278,7 @@ unsafe fn prepare_child_image(
                 .translate(path)
         },
     )
-    .map_err(|error| fail(error.code))?;
+    .map_err(|error| child_exec_error(&error))?;
     let (admitted, admission) = admitted_program(&prepared.program)?;
     // Native exec preserves the caller's argv[0]. The kernel replaces it for
     // a shebang script, so only the script case needs a rebuilt argv vector.

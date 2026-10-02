@@ -29,6 +29,7 @@ type client struct {
 	workers       delidevv1connect.WorkerServiceClient
 	browsers      delidevv1connect.BrowserServiceClient
 	accounts      delidevv1connect.AccountServiceClient
+	subscriptions delidevv1connect.SubscriptionServiceClient
 	prFixes       delidevv1connect.PullRequestFixServiceClient
 	integrations  delidevv1connect.IntegrationServiceClient
 	network       delidevv1connect.NetworkServiceClient
@@ -112,6 +113,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		forwards:      delidevv1connect.NewForwardServiceClient(httpClient, endpoint, opts...),
 		terminals:     delidevv1connect.NewTerminalServiceClient(httpClient, endpoint, opts...),
 		accounts:      delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...),
+		subscriptions: delidevv1connect.NewSubscriptionServiceClient(httpClient, endpoint, opts...),
 		prFixes:       delidevv1connect.NewPullRequestFixServiceClient(httpClient, endpoint, opts...),
 		integrations:  delidevv1connect.NewIntegrationServiceClient(httpClient, endpoint, opts...),
 		network:       delidevv1connect.NewNetworkServiceClient(httpClient, endpoint, opts...),

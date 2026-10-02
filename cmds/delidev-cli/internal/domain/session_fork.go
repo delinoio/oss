@@ -39,6 +39,12 @@ type ForkJobInput struct {
 }
 
 func (i ForkJobInput) Validate() error {
+	// Native Fork currently opens an API-authenticated child outside the
+	// managed execution lease. Reject subscriptions before job acceptance or
+	// Worker journaling until Fork has its own joined protected lease profile.
+	if i.SourceAssignment.Configuration.Subscription {
+		return Fail(Unsupported, "Managed subscription sessions do not support native Fork yet.", "Keep the original session; Fork requires a separately verified managed authentication lease.")
+	}
 	digest, digestErr := i.Snapshot.Configuration.Digest()
 	if i.Version != 1 || UniqueIDs([]ID{i.SourceSessionID, i.ChildSessionID, i.RuntimeID, i.NativeRequestID, i.SourceJobID}) != nil || i.SourceRevision == 0 || Text(i.Name, "fork name", 256, true) != nil || (i.CreatedBy != "" && i.CreatedBy.Validate() != nil) || i.CreatedBy != i.Actor.DeviceID || i.SourceAssignment.Validate() != nil || i.SourceAssignment.SessionID != i.SourceSessionID || i.SourceAssignment.Configuration.Harness != Codex || i.Completion.Version != 2 || i.Completion.Validate() != nil || i.Completion.Outcome != ExecutionSucceeded || i.Completion.ExecutionID != i.SourceAssignment.ExecutionID || i.Completion.InputID != i.SourceAssignment.InputID || !i.Progress.CleanupVerified || i.Progress.Waiting != (NativeWaiting{}) || i.Progress.UnconfirmedResponses != 0 || i.Progress.ExecutionID != i.Completion.ExecutionID || i.Progress.Outcome != ExecutionSucceeded || i.Progress.LastSequence != i.Completion.LastSequence || i.Progress.JobID != i.SourceJobID || i.Progress.NativeTurnID != string(i.Completion.NativeTurnID) || i.Progress.NativeThreadID != string(i.Completion.NativeThreadID) || digestErr != nil || digest != i.SourceAssignment.ConfigurationDigest || i.Snapshot.ConfigurationDigest != i.SourceAssignment.ConfigurationDigest || i.Snapshot.InitialAccountID != i.SourceAssignment.AccountID || i.Snapshot.ConnectionID != i.SourceAssignment.ConnectionID {
 		return Fail(RecoveryRequired, "The fork does not identify one verified completed source boundary.", "Preserve the original session, assignment, checkpoint and cleanup evidence.")
