@@ -90,6 +90,7 @@ type Manager struct {
 	storageRestoreCopyFault      func(string) error
 	storageBeforeRestorePublish  func(string)
 	storageBeforeSnapshotPublish func(string)
+	storageAfterRootValidation   func()
 	storageBeforeRemovalClaim    func()
 	storageBeforeRemovalUnlink   func(string)
 	storageAfterSnapshot         func()

@@ -273,8 +273,17 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		if err := validateStorageRoot(root, live); err != nil {
 			return result, err
 		}
+		if m.storageAfterRootValidation != nil {
+			m.storageAfterRootValidation()
+		}
 		observation, err := m.storageObservation(ctx, r)
 		if err != nil {
+			return result, err
+		}
+		// The root membership check above precedes an authoritative walk. Recheck
+		// the observed root before using that walk as snapshot or cleanup input so a
+		// concurrently created dependent entry cannot become owned content.
+		if err := validateStorageRoot(root, live); err != nil {
 			return result, err
 		}
 		for _, entry := range observation.Data.Entries {
@@ -303,6 +312,9 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			return result, err
 		}
 		result.Snapshot = &snapshot
+		if err := validateStorageRoot(root, live); err != nil {
+			return result, err
+		}
 		if m.storageAfterSnapshot != nil {
 			m.storageAfterSnapshot()
 		}
@@ -315,6 +327,9 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if err != nil || observation.Digest != result.PreviewDigest {
 				return result, ResultUncertain()
 			}
+			if err := validateStorageRoot(root, live); err != nil {
+				return result, err
+			}
 			if err := process.ReconcileOwnerContext(ctx, m.Git.ProcessRoot, r.Preparation.SessionID); err != nil {
 				return result, err
 			}
@@ -322,13 +337,18 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if err := ctx.Err(); err != nil {
 				return result, err
 			}
-			if err := m.retainRemovalIntent(ctx, r, root, result.Snapshot.SHA256); err != nil {
-				return result, err
-			}
 			if m.storageBeforeRemovalClaim != nil {
 				m.storageBeforeRemovalClaim()
 			}
 			if err := ctx.Err(); err != nil {
+				return result, err
+			}
+			// Revalidate immediately before the source namespace claim. A later
+			// race is still rejected by confirmRemoval's immutable inventory check.
+			if err := validateStorageRoot(root, live); err != nil {
+				return result, err
+			}
+			if err := m.retainRemovalIntent(ctx, r, root, result.Snapshot.SHA256); err != nil {
 				return result, err
 			}
 			if err := renameStorage(root, removal); err != nil {

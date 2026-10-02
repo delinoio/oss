@@ -290,6 +290,29 @@ func TestSnapshotCancellationStalePreviewAndDestinationConflict(t *testing.T) {
 		t.Fatal("conflicting destination overwritten")
 	}
 }
+
+func TestSnapshotRejectsTopLevelEntryCreatedAfterMembershipValidation(t *testing.T) {
+	m := manager(t)
+	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := m.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StorageCreate, SnapshotID: domain.NewID(), Preparation: prepare, Manifest: manifest}
+	m.storageAfterRootValidation = func() {
+		root := filepath.Join(m.Root, "workspaces", string(prepare.SessionID))
+		if err := os.WriteFile(filepath.Join(root, "late-dependent"), []byte("not declared"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		m.storageAfterRootValidation = nil
+	}
+	if _, err := m.Storage(context.Background(), input); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("late top-level dependency was accepted", err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Root, "snapshots", string(input.SnapshotID))); !os.IsNotExist(err) {
+		t.Fatal("rejected root entry published a snapshot")
+	}
+}
 func TestSnapshotBlocksActiveExecutionAndPreservesLocal(t *testing.T) {
 	m := manager(t)
 	input, _ := snapshotRequest(t, m, false)
