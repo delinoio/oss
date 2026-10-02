@@ -82,7 +82,14 @@ impl View {
         let components: Vec<_> = path.components().collect();
         let mut prefix = PathBuf::new();
         for (i, part) in components.iter().enumerate() {
-            if part.as_os_str() != "node_modules" || self.graph.package(&prefix).is_none() {
+            // Classify the installation component itself, not the requested
+            // suffix: unregistered siblings still belong to its native tree.
+            // Continue walking so a later package-owned node_modules remains
+            // a virtual dependency namespace with normal conflict checks.
+            if part.as_os_str() != "node_modules"
+                || self.graph.is_location_ancestor(&prefix.join(part))
+                || self.graph.package(&prefix).is_none()
+            {
                 prefix.push(part);
                 continue;
             }
@@ -126,7 +133,9 @@ impl View {
             }
             let mut translated = self.translate_with_wait(&target, wait)?;
             translated.readonly = true;
-            translated.virtual_link = remaining.len() == consumed;
+            // The recursive suffix may itself end at a dependency alias. Keep
+            // that terminal link when unwinding an outer dependency lookup.
+            translated.virtual_link |= remaining.len() == consumed;
             return Ok(translated);
         }
         self.backing(path, false, false, wait)
