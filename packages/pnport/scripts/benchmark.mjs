@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { cpus, release, totalmem } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -13,6 +13,10 @@ const repository = fileURLToPath(new URL("../../../", import.meta.url));
 const samplingIntervalMs = 100;
 const compiler = "7.1.0-dev.20260812.1";
 const yarn = "4.18.0";
+// The tsc launcher uses /usr/bin/env node. Keep it on the same explicit Node
+// runtime as the harness, matching conformance, regardless of ambient PATH.
+const environment = { ...process.env, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ""}` };
+delete environment.NODE_OPTIONS;
 
 export function summarize(values) {
   assert(values.length >= 5 && values.every((value) => Number.isFinite(value) && value >= 0));
@@ -50,7 +54,7 @@ export function diskUsage(directory) {
 
 function digest(path) { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
 function execute(program, args, cwd) {
-  const result = spawnSync(program, args, { cwd, encoding: "utf8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 });
+  const result = spawnSync(program, args, { cwd, env: environment, encoding: "utf8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 });
   assert.ifError(result.error);
   assert.equal(result.status, 0, `${program} failed with status ${result.status}; benchmark is incomplete.`);
   return result.stdout.trim();
@@ -59,10 +63,12 @@ function execute(program, args, cwd) {
 async function measure(program, args, cwd) {
   let peak = 0, observations = 0, measurementFailed = false, polling;
   const start = performance.now();
-  const child = spawn(program, args, { cwd, stdio: ["ignore", "pipe", "ignore"] });
-  let stdout = "";
+  const child = spawn(program, args, { cwd, env: environment, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "", stderr = "";
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (bytes) => { if (stdout.length < 65536) stdout += bytes; });
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (bytes) => { if (stderr.length < 65536) stderr += bytes; });
   let failure;
   child.on("error", (error) => { failure = error; });
   const completed = new Promise((accept) => child.once("close", (status, signal) => accept({ status, signal })));
@@ -108,7 +114,9 @@ async function measure(program, args, cwd) {
   process.removeListener("SIGTERM", cancel);
   await polling;
   assert.ifError(failure);
-  assert(!interrupted && !timedOut && outcome.status === 0 && !outcome.signal, `Benchmark child failed (${JSON.stringify(outcome)}); no complete result is recorded.`);
+  const diagnosticCodes = [...new Set(`${stdout}\n${stderr}`.match(/\b(?:TS\d{4}|PNPORT_[A-Z_]+)\b/gu) ?? [])];
+  assert(!interrupted && !timedOut && outcome.status === 0 && !outcome.signal,
+    `Benchmark child failed (${JSON.stringify({ ...outcome, diagnosticCodes })}); no complete result is recorded.`);
   assert(!measurementFailed && observations > 0, "Process-tree RSS could not be sampled; no complete result is recorded.");
   return { wallMs, sampledPeakProcessTreeRssBytes: peak, memoryObservations: observations, stdout };
 }
@@ -130,6 +138,9 @@ async function main(args) {
   assert(!execute("git", ["status", "--porcelain", "--untracked-files=normal"], repository), "Commit benchmark sources before collecting revision-bound evidence.");
   const image = readFileSync(binary).subarray(0, 4).toString("hex");
   assert(["7f454c46", "cffaedfe", "feedfacf"].includes(image), "Supply the native pnport executable rather than an installer/npm wrapper.");
+  const nativeDigest = digest(binary);
+  const companion = join(dirname(binary), process.platform === "darwin" ? "libpnport_preload.dylib" : "libpnport_preload.so");
+  const companionDigest = digest(companion);
   mkdirSync(output, { mode: 0o700, recursive: true });
   const filesystemBinary = join(output, "filesystem-benchmark");
   execute("cc", ["-O2", "-Wall", "-Wextra", "-Werror", fileURLToPath(new URL("../test/fixtures/benchmark.c", import.meta.url)), "-o", filesystemBinary], output);
@@ -158,6 +169,7 @@ async function main(args) {
           rmSync(buildInfo, { force: true });
           const cacheBefore = diskUsage(cache);
           if (condition === "cold") assert.deepEqual(cacheBefore, { logicalBytes: 0, allocatedBytes: 0, files: 0 });
+          else assert(cacheBefore.logicalBytes > 0, "Warm runs must reuse the completed cold cache.");
           const command = workload === "filesystem"
             ? [filesystemBinary, "node_modules/@types/node/package.json", String(iterations)]
             : ["tsc", "--noEmit", "-p", "packages/app", "--tsBuildInfoFile", buildInfo];
@@ -191,7 +203,19 @@ async function main(args) {
   const archiveDigests = readdirSync(join(fixture, "external-cache")).filter((name) => name.endsWith(".zip")).sort()
     .map((name) => ({ name, sha256: digest(join(fixture, "external-cache", name)) }));
   assert(archiveDigests.length > 0);
-  const evidence = { event: "pnport_benchmark", schemaVersion: 1, complete: true, sourceRevision, declaredNativeSourceRevision: nativeSourceRevision, pnportVersion, pnportNativeSha256: digest(binary),
+  assert.equal(digest(binary), nativeDigest, "The measured native executable changed.");
+  assert.equal(digest(companion), companionDigest, "The measured companion changed.");
+  for (const inputs of fixtureDigests) {
+    const root = join(fixture, inputs.format), platform = `${process.platform}-${process.arch}`;
+    const nativePackage = readdirSync(join(root, ".yarn/unplugged")).find((name) => name.startsWith(`@typescript-typescript-${platform}-`));
+    assert.equal(digest(join(root, "yarn.lock")), inputs.lockSha256);
+    assert.equal(digest(join(root, ".pnp.cjs")), inputs.manifestSha256);
+    if (inputs.format === "split") assert.equal(digest(join(root, ".pnp.data.json")), inputs.splitDataSha256);
+    assert.equal(digest(join(root, "packages/app/src/index.ts")), inputs.sourceSha256);
+    assert.equal(digest(join(root, "packages/core/lib/index.d.ts")), inputs.referenceDeclarationSha256);
+    assert.equal(digest(join(root, ".yarn/unplugged", nativePackage, "node_modules/@typescript", `typescript-${platform}`, "lib/tsc")), inputs.nativeCompilerSha256);
+  }
+  const evidence = { event: "pnport_benchmark", schemaVersion: 1, complete: true, sourceRevision, declaredNativeSourceRevision: nativeSourceRevision, pnportVersion, pnportNativeSha256: nativeDigest, preloadSha256: companionDigest,
     filesystemFixtureSourceSha256: digest(fileURLToPath(new URL("../test/fixtures/benchmark.c", import.meta.url))), filesystemFixtureBinarySha256: digest(filesystemBinary),
     host: { platform: process.platform, arch: process.arch, kernel: release(), cpu: cpus()[0]?.model, logicalCpuCount: cpus().length, totalMemoryBytes: totalmem(),
       osVersion: process.platform === "darwin" ? execute("/usr/bin/sw_vers", ["-productVersion"], output) : readFileSync("/etc/os-release", "utf8").match(/^PRETTY_NAME="?([^"\n]+)"?/mu)?.[1] },
