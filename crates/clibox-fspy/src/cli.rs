@@ -3465,7 +3465,7 @@ fn macos_break_status(
     // A quit acknowledgment can make the child exit while the supervisor is
     // polling its wait handle. Keep the wrapper's handled signal outcome even
     // when that poll returns a cleaned-up child record instead of cancellation.
-    if signal != 0 {
+    if signal != 0 && result.is_ok() {
         return macos_capture_status((CaptureFailure::Cancellation, signal), "fbreak");
     }
     match result {
@@ -4184,6 +4184,33 @@ pub fn execute(command: Command) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_break_status_preserves_supervisor_failure_when_signal_is_late() {
+        use crate::macos::supervise::CaptureFailure;
+
+        assert_eq!(
+            macos_break_status(
+                Err(CaptureFailure::Timeout),
+                false,
+                false,
+                false,
+                signal_hook::consts::SIGINT as usize,
+            ),
+            124
+        );
+        assert_eq!(
+            macos_break_status(
+                Err(CaptureFailure::TraceLoss),
+                false,
+                false,
+                false,
+                signal_hook::consts::SIGINT as usize,
+            ),
+            1
+        );
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_incomplete_record_preserves_receiver_failure_classes_and_encoding_bounds() {
