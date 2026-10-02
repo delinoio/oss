@@ -23,6 +23,7 @@ use ntapi::{
 use winapi::{
     shared::ntdef::NT_SUCCESS,
     um::{
+        errhandlingapi::{GetLastError, SetLastError},
         processthreadsapi::{
             GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, TerminateProcess,
         },
@@ -268,6 +269,38 @@ pub struct OperationGuard {
     state: Arc<Mutex<State>>,
 }
 
+struct LastErrorGuard(u32);
+
+impl LastErrorGuard {
+    fn new() -> Self {
+        // SAFETY: GetLastError reads the calling thread's native last-error value.
+        Self(unsafe { GetLastError() })
+    }
+}
+
+impl Drop for LastErrorGuard {
+    fn drop(&mut self) {
+        // The transport and diagnostics below may call Win32 APIs that change
+        // last-error. Restore the value observed after the real native call so
+        // wrappers such as FindNextFileW retain their caller-visible result.
+        // SAFETY: SetLastError writes the calling thread's native last-error value.
+        unsafe { SetLastError(self.0) };
+    }
+}
+
+/// Run native observation work without changing the last-error value seen by
+/// the original NT call. Path and handle classification use Win32 helpers that
+/// are allowed to update last-error even though the intercepted operation has
+/// not started yet; restoring it here keeps those helpers transparent to the
+/// caller. `OperationGuard::complete` separately preserves the value produced
+/// by the original call while it sends the completion frame.
+pub(crate) fn with_preserved_last_error<R>(work: impl FnOnce() -> R) -> R {
+    let guard = LastErrorGuard::new();
+    let result = work();
+    drop(guard);
+    result
+}
+
 /// Send the start frame and wait for the parent's decision before forwarding
 /// the native call. A recursive call made by this transport is excluded.
 pub fn begin(operation: u8, path: &[u16]) -> Option<OperationGuard> {
@@ -453,6 +486,7 @@ impl OperationGuard {
     /// The result is a successful byte count or zero for other successful
     /// calls. NTSTATUS failures are recorded as their stable native value.
     pub fn complete(self, result: i64, status: i32) {
+        let _last_error = LastErrorGuard::new();
         let Ok(mut state) = self.state.try_lock() else {
             mark_loss("transport_complete_lock");
             return;
