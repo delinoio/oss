@@ -417,7 +417,15 @@ fn missing_path_error(error: Option<i32>) -> bool {
     )
 }
 
-type WatchEvent = notify::Result<Event>;
+// notify may deliver callbacks after a watcher is replaced while its backend
+// drains. Tag each watcher lifecycle so an obsolete target watch cannot cause
+// a rerun after dependencies move; the discovery generation from the run that
+// just completed remains accepted so external changes during that run are not
+// lost.
+struct WatchEvent {
+    generation: u64,
+    result: notify::Result<Event>,
+}
 
 pub struct WatchSession {
     root: PathBuf,
@@ -425,6 +433,10 @@ pub struct WatchSession {
     rx: Receiver<WatchEvent>,
     targets: Option<RecommendedWatcher>,
     discovery: Option<RecommendedWatcher>,
+    next_generation: u64,
+    target_generation: Option<u64>,
+    accepted_discovery_generation: Option<u64>,
+    discovery_generation: Option<u64>,
 }
 
 impl WatchSession {
@@ -436,25 +448,40 @@ impl WatchSession {
             rx,
             targets: None,
             discovery: None,
+            next_generation: 0,
+            target_generation: None,
+            accepted_discovery_generation: None,
+            discovery_generation: None,
         }
     }
 
-    fn watcher(&self) -> Result<RecommendedWatcher, WatchFailure> {
+    fn watcher(&self, generation: u64) -> Result<RecommendedWatcher, WatchFailure> {
         let tx = self.tx.clone();
         notify::recommended_watcher(move |event| {
-            let _ = tx.send(event);
+            let _ = tx.send(WatchEvent {
+                generation,
+                result: event,
+            });
         })
         .map_err(|_| WatchFailure::WatchUnavailable)
+    }
+
+    fn next_generation(&mut self) -> u64 {
+        let generation = self.next_generation;
+        self.next_generation = self.next_generation.wrapping_add(1);
+        generation
     }
 
     /// Observe the entire root only during dependency discovery. The stable
     /// idle watch is installed on the recorded dependency anchors.
     pub fn start_discovery(&mut self) -> Result<(), WatchFailure> {
-        let mut watcher = self.watcher()?;
+        let generation = self.next_generation();
+        let mut watcher = self.watcher(generation)?;
         watcher
             .watch(&self.root, RecursiveMode::Recursive)
             .map_err(|_| WatchFailure::WatchUnavailable)?;
         self.discovery = Some(watcher);
+        self.discovery_generation = Some(generation);
         Ok(())
     }
 
@@ -462,7 +489,8 @@ impl WatchSession {
         if dependencies.is_empty() {
             return Err(WatchFailure::EmptyDependencies);
         }
-        let mut watcher = self.watcher()?;
+        let generation = self.next_generation();
+        let mut watcher = self.watcher(generation)?;
         for anchor in dependencies.anchors(&self.root) {
             watcher
                 .watch(&anchor, RecursiveMode::NonRecursive)
@@ -470,6 +498,8 @@ impl WatchSession {
         }
         // Install replacement before dropping the old watcher; the discovery
         // watcher is still active through this handoff.
+        self.target_generation = Some(generation);
+        self.accepted_discovery_generation = self.discovery_generation.take();
         self.targets = Some(watcher);
         self.discovery = None;
         Ok(())
@@ -479,7 +509,7 @@ impl WatchSession {
         &self,
         until: Instant,
         cancelled: &AtomicBool,
-    ) -> Result<Option<WatchEvent>, WatchFailure> {
+    ) -> Result<Option<notify::Result<Event>>, WatchFailure> {
         loop {
             if cancelled.load(Ordering::SeqCst) {
                 return Ok(None);
@@ -492,7 +522,13 @@ impl WatchSession {
                 .rx
                 .recv_timeout(remaining.min(Duration::from_millis(20)))
             {
-                Ok(event) => return Ok(Some(event)),
+                Ok(event)
+                    if Some(event.generation) == self.target_generation
+                        || Some(event.generation) == self.accepted_discovery_generation =>
+                {
+                    return Ok(Some(event.result));
+                }
+                Ok(_) => {}
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return Err(WatchFailure::WatchLoss),
             }
@@ -703,12 +739,14 @@ mod tests {
             Some(&root),
         );
         assert!(dependencies.self_written(Path::new("current")));
-        let session = WatchSession::new(root.clone());
+        let mut session = WatchSession::new(root.clone());
+        session.target_generation = Some(0);
         session
             .tx
-            .send(Ok(
-                Event::new(EventKind::Other).add_path(root.join("current"))
-            ))
+            .send(WatchEvent {
+                generation: 0,
+                result: Ok(Event::new(EventKind::Other).add_path(root.join("current"))),
+            })
             .unwrap();
         assert_eq!(
             session.collect(
@@ -865,10 +903,14 @@ mod tests {
     fn rescan_notification_fails_instead_of_losing_changes() {
         use notify::{event::Flag, EventKind};
 
-        let session = WatchSession::new(PathBuf::from("/project"));
+        let mut session = WatchSession::new(PathBuf::from("/project"));
+        session.target_generation = Some(0);
         session
             .tx
-            .send(Ok(Event::new(EventKind::Other).set_flag(Flag::Rescan)))
+            .send(WatchEvent {
+                generation: 0,
+                result: Ok(Event::new(EventKind::Other).set_flag(Flag::Rescan)),
+            })
             .unwrap();
         assert_eq!(
             session.collect(
@@ -882,15 +924,41 @@ mod tests {
     }
 
     #[test]
+    fn stale_target_events_are_ignored_after_replacement() {
+        use notify::EventKind;
+
+        let mut session = WatchSession::new(PathBuf::from("/project"));
+        session.target_generation = Some(2);
+        session
+            .tx
+            .send(WatchEvent {
+                generation: 1,
+                result: Ok(Event::new(EventKind::Other).add_path(PathBuf::from("/project/input"))),
+            })
+            .unwrap();
+        assert_eq!(
+            session.collect(
+                &Dependencies::default(),
+                Duration::from_millis(1),
+                Duration::from_millis(5),
+                &AtomicBool::new(false),
+            ),
+            Ok(false)
+        );
+    }
+
+    #[test]
     fn long_debounce_observes_cancellation() {
         use notify::EventKind;
 
-        let session = WatchSession::new(PathBuf::from("/project"));
+        let mut session = WatchSession::new(PathBuf::from("/project"));
+        session.target_generation = Some(0);
         session
             .tx
-            .send(Ok(
-                Event::new(EventKind::Other).add_path(PathBuf::from("/project/input"))
-            ))
+            .send(WatchEvent {
+                generation: 0,
+                result: Ok(Event::new(EventKind::Other).add_path(PathBuf::from("/project/input"))),
+            })
             .unwrap();
         let cancelled = AtomicBool::new(false);
         let began = Instant::now();
