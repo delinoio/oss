@@ -19,7 +19,7 @@ to the repository's independently verified native `0.151.0` profile.
 
 Owner and paired clients request/observe Fork through Connect, CLI or desktop.
 Only the original authorized Worker may inspect its private source and create a
-child. Provider/account authorities remain the original immutable selection.
+child. Provider/account authorities remain the original immutable selection. The current native Fork coordinator supports API-authenticated Codex sources only. Managed subscription assignments are rejected before acceptance and Worker journaling until Fork has a separately verified protected lease, joined cleanup and final credential write-back. Ordinary Fork capability does not grant managed authentication.
 
 ## Interfaces and Contracts
 

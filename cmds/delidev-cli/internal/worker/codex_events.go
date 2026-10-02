@@ -34,6 +34,15 @@ func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher 
 	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, approvalKinds: map[domain.ID]domain.CodexApprovalKind{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
 }
 
+// The accepted authentication profile fixes native provider authority. Neither
+// a native observation nor a retained checkpoint may select another provider.
+func codexExecutionProvider(subscription bool) string {
+	if subscription {
+		return "openai"
+	}
+	return codex.APIProvider
+}
+
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
 	if c.publisher == nil || c.blocked || c.finished && event.Kind != domain.ExecutionSubagentObserved {
 		return publicationUncertain()
@@ -71,7 +80,7 @@ func (c *CodexEventPublisher) BindThread(ctx context.Context, result codex.Threa
 	default:
 		return domain.Fail(domain.Unsupported, "The native permission observation has no supported publication.", "Use a verified native profile before accepting input.")
 	}
-	if result.Effective.Provider != codex.APIProvider || result.Effective.ApprovalsReviewer != "user" {
+	if result.Effective.Provider != codexExecutionProvider(c.publisher.input.Configuration.Subscription) || result.Effective.ApprovalsReviewer != "user" {
 		return publicationUncertain()
 	}
 	if err := observed.ValidateForInput(c.publisher.input.Configuration, c.publisher.input.Input.Mode); err != nil {

@@ -75,7 +75,7 @@ func (s *Service) authorizeRequest(r *http.Request) (*http.Request, func(), erro
 	}
 	if actor.Type == domain.WorkerDevice {
 		switch r.URL.Path {
-		case delidevv1connect.WorkerServiceWatchTerminalsProcedure, delidevv1connect.WorkerServiceClaimTerminalProcedure, delidevv1connect.WorkerServiceReportTerminalProcedure, delidevv1connect.WorkerServicePublishTerminalOutputProcedure, delidevv1connect.WorkerServiceListSessionDeletionWorkProcedure, delidevv1connect.WorkerServiceReportSessionDeletionProcedure, delidevv1connect.WorkerServiceWatchForwardRequestsProcedure, delidevv1connect.ForwardServiceClaimForwardProcedure, delidevv1connect.ForwardServiceWatchForwardProcedure, delidevv1connect.ForwardServiceSendForwardProcedure, delidevv1connect.ForwardServiceReportForwardCleanupProcedure, delidevv1connect.WorkerServiceWatchWorkspaceReadsProcedure, delidevv1connect.WorkerServiceReportWorkspaceReadProcedure, delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceWatchAuxiliaryWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.WorkerServiceClaimQuestionResponseProcedure, delidevv1connect.WorkerServiceClaimApprovalResponseProcedure, delidevv1connect.WorkerServiceClaimSteerInputProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
+		case delidevv1connect.SubscriptionServiceWatchSubscriptionProcedure, delidevv1connect.SubscriptionServiceTakeSubscriptionProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionProgressProcedure, delidevv1connect.SubscriptionServiceFinishSubscriptionProcedure, delidevv1connect.WorkerServiceWatchTerminalsProcedure, delidevv1connect.WorkerServiceClaimTerminalProcedure, delidevv1connect.WorkerServiceReportTerminalProcedure, delidevv1connect.WorkerServicePublishTerminalOutputProcedure, delidevv1connect.WorkerServiceListSessionDeletionWorkProcedure, delidevv1connect.WorkerServiceReportSessionDeletionProcedure, delidevv1connect.WorkerServiceWatchForwardRequestsProcedure, delidevv1connect.ForwardServiceClaimForwardProcedure, delidevv1connect.ForwardServiceWatchForwardProcedure, delidevv1connect.ForwardServiceSendForwardProcedure, delidevv1connect.ForwardServiceReportForwardCleanupProcedure, delidevv1connect.WorkerServiceWatchWorkspaceReadsProcedure, delidevv1connect.WorkerServiceReportWorkspaceReadProcedure, delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceWatchAuxiliaryWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.WorkerServiceClaimQuestionResponseProcedure, delidevv1connect.WorkerServiceClaimApprovalResponseProcedure, delidevv1connect.WorkerServiceClaimSteerInputProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
 		default:
 			return nil, nil, domain.Fail(domain.PermissionDenied, "Worker credentials cannot invoke owner product operations.", "Use an owner or paired client credential.")
 		}
@@ -311,6 +311,11 @@ func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[pb.Revo
 		}
 		if err := tx.RevokeCredential(record.ID); err != nil {
 			return nil, err
+		}
+		if device.Type == domain.ClientDevice {
+			if err := cancelQueuedSubscriptionInitiator(tx, record.ID); err != nil {
+				return nil, err
+			}
 		}
 		if device.MachineID != "" {
 			record, err := tx.Get(domain.MachineKind, device.MachineID)

@@ -54,6 +54,8 @@ activates the reserved boundary.
 ## Runtime and Language
 Protocol Buffers and Connect RPC, with Go server/CLI clients. Native harness protocols never escape the Worker adapter boundary.
 
+Managed execution's existing protected `FinishSubscription` fields encode confirmed pre-native failure with false success/refresh, true cleanup and the byte-identical unused original bundle. The server independently compares the immutable generation before releasing ownership; no schema numbers or generated declarations change. Missing/changed bytes or cleanup alone retain recovery rather than authorizing old-generation redistribution. Follow the [managed subscription contract](cmds-delidev-subscription-contract.md).
+
 ## Users and Operators
 Authenticated owner clients and separately authorized outbound Workers. No unauthenticated product API or browser client.
 
@@ -505,6 +507,9 @@ PR #1214 established these allocations on main before the dependent implementati
 
 Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).
 
+## Managed Codex subscriptions
+
+The additive `subscription.proto` defines owner/client RequestSubscription, CancelSubscription and GetSubscriptionProgress plus separately authorized Worker WatchSubscription, TakeSubscription, PublishSubscriptionProgress and FinishSubscription. Secret bytes exist only in bounded protected Take/Finish fields, never ordinary resources/jobs/events or receipt payloads. The closed action enum, managed-Codex Worker capability and original lease revision/generation fences follow [the subscription contract](cmds-delidev-subscription-contract.md). Subscription publication registrations return no API proxy path or API relay authority. Lifecycle Take preserves its original positive account observation across a definite busy retry, rejects future observations and revalidates the original queued operation and initiating authority; owner requests retain current account revisions and execution Take retains the exact job revision. No schema or generated declarations change. Historical account/snapshot JSON omits the optional subscription extension when absent.
 ## Browser API
 
 [Protected browser ownership and cleanup](cmds-delidev-browser-contract.md) use the service-owned `BrowserService`, typed profile/state/capability models and generated `BrowserQuery` descriptors. Existing shared enum/field numbers and future migration reservations remain unchanged. Browser messages carry ownership metadata only, never native paths or browsing content.

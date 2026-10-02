@@ -26,6 +26,8 @@ type Config struct {
 	Home             string
 	Mode             ProtocolMode
 	API              *APIConfig
+	// ManagedAuthentication is available only to an exclusive server lease.
+	ManagedAuthentication bool
 }
 type Client struct {
 	subagents        map[string]domain.SubagentObservation
@@ -44,13 +46,15 @@ type Client struct {
 	eventGate        chan struct{}
 	pendingEvent     *nativewire.Event
 	api              *apiBinding
+	managedHome      string
 }
 
 type ProtocolMode string
 
 const (
-	ProbeProtocol  ProtocolMode = "probe"
-	ThreadProtocol ProtocolMode = "thread"
+	ProbeProtocol        ProtocolMode = "probe"
+	ThreadProtocol       ProtocolMode = "thread"
+	SubscriptionProtocol ProtocolMode = "subscription"
 )
 
 type handshakePhase string
@@ -87,7 +91,10 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Mode == "" {
 		config.Mode = ProbeProtocol
 	}
-	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol {
+	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol && config.Mode != SubscriptionProtocol {
+		return nil, incompatible()
+	}
+	if (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
 		return nil, incompatible()
 	}
 	phase = runtimePhase
@@ -113,6 +120,10 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	// ephemeral store is also the future execution boundary for short-lived
 	// DeliDev proxy credentials, never server-owned upstream API keys.
 	config.Process.Args = []string{"-c", `cli_auth_credentials_store="ephemeral"`, "-c", "check_for_update_on_startup=false", "-c", "analytics.enabled=false", "-c", "feedback.enabled=false"}
+	if config.ManagedAuthentication {
+		config.Process.Args[1] = `cli_auth_credentials_store="file"`
+		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
+	}
 	api, err := configureAPI(&config)
 	if err != nil {
 		return nil, err
@@ -188,8 +199,13 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	client = &Client{home: home, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api}
-	client.modelObservation = observation
+	client = &Client{home: home, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation}
+	if config.ManagedAuthentication {
+		client.managedHome = home
+		if err := client.verifyManagedConfig(ctx, config.Process.Cwd); err != nil {
+			return nil, err
+		}
+	}
 	if err := client.verifyAPI(ctx, config.Process.Cwd); err != nil {
 		return nil, err
 	}

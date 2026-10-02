@@ -1,4 +1,6 @@
 export * from "./gen/delidev/v1/delidev_pb.js";
+export * from "./gen/delidev/v1/subscription_pb.js";
+export * as SubscriptionQuery from "./gen/delidev/v1/subscription-SubscriptionService_connectquery.js";
 export * as SystemQuery from "./gen/delidev/v1/delidev-SystemService_connectquery.js";
 export * as ResourceQuery from "./gen/delidev/v1/delidev-ResourceService_connectquery.js";
 export * as ConfigurationQuery from "./gen/delidev/v1/delidev-ConfigurationService_connectquery.js";

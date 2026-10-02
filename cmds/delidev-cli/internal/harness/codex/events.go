@@ -117,11 +117,19 @@ func (c *Client) NextEvent(ctx context.Context) (Event, error) {
 		return Event{}, err
 	}
 	if c.pendingEvent == nil {
-		event, err := c.wire.Next(ctx)
-		if err != nil {
-			return Event{}, err
+		for {
+			event, err := c.wire.Next(ctx)
+			if err != nil {
+				return Event{}, err
+			}
+			if c.managedHome != "" && event.Kind == nativewire.Notification && (event.Method == "account/updated" || event.Method == "account/rateLimits/updated") {
+				// Account telemetry remains private and grants no input or refresh
+				// authority. Bundle/file evidence is verified at the lease boundary.
+				continue
+			}
+			c.pendingEvent = &event
+			break
 		}
-		c.pendingEvent = &event
 	}
 	if err := c.acquireControl(ctx); err != nil {
 		return Event{}, err

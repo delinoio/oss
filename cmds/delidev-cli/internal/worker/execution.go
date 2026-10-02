@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,6 +22,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -91,7 +93,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, errors.Join(err, returned)
 		}
 	}()
 	var prGit *workspace.PRGitTool
@@ -133,7 +135,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if c.PreviousAccountID != "" {
 			account, connection = c.PreviousAccountID, c.PreviousConnectionID
 		}
-		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +167,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if prGit != nil {
 		env = prGit.Environment(env)
 	}
-	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codex.APIProvider, Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: input.Configuration.Instructions, Options: input.Configuration.Options}
+	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codexExecutionProvider(input.Configuration.Subscription), Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: input.Configuration.Instructions, Options: input.Configuration.Options}
 	settings.WorkspaceRoots = nativeWorkspaceRoots(manifest)
 	if input.Fork != nil {
 		settings.Effort = valueOrEmpty(checkpoint.Native.Effective.Effort)
@@ -178,6 +180,73 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			settings.Options.Permission = domain.PermissionWorkspaceWrite
 		case codex.FullAccess:
 			settings.Options.Permission = domain.PermissionFullAccess
+		}
+	}
+	if input.Configuration.Subscription {
+		if settings.Options.Permission != domain.PermissionReadOnly && settings.Options.Permission != domain.PermissionWorkspaceWrite {
+			return nil, domain.Fail(domain.Unsupported, "Managed subscription execution requires an explicit bounded native sandbox.", "Choose read-only or workspace-write permissions; default and full-access execution cannot protect the managed authentication file from native tools.")
+		}
+		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
+			return nil, err
+		}
+	}
+	var managed *managedSubscriptionLease
+	var managedLatest []byte
+	var closeManagedRPC func()
+	managedCleanup, managedSuccess := false, false
+	managedUnusedOriginal := false
+	managedPreNativeCleanup := false
+	defer func() {
+		if closeManagedRPC != nil {
+			defer closeManagedRPC()
+		}
+		if managed != nil {
+			// Finish may acknowledge a fenced account without establishing safe
+			// ownership. Only a captured bundle or the verified unused original,
+			// together with independent cleanup, permits ordinary job reporting.
+			conclusive := managedCleanup && (managedSuccess || managedUnusedOriginal)
+			if err := managed.finish(managedLatest, managedCleanup, false, managedSuccess); err != nil {
+				output, returned = nil, &managedExecutionUncertain{err}
+			} else if !conclusive {
+				if returned == nil {
+					returned = subscription.Invalid()
+				}
+				output, returned = nil, &managedExecutionUncertain{returned}
+			}
+			clear(managed.response.Bundle)
+		}
+	}()
+	// Native subscription authentication is selected explicitly by the server's
+	// immutable assignment, independently of the existing API token profile.
+	if input.Configuration.Subscription {
+		client, closeRPC := subscriptionRPC(connection.Credential)
+		closeManagedRPC = closeRPC
+		managed, err = takeManagedSubscription(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+		if err != nil {
+			return nil, err
+		}
+		if _, _, err := subscription.Parse(managed.response.Bundle); err != nil {
+			return nil, err
+		}
+		// Install cleanup before the atomic write: even a synchronization error
+		// may leave the owned plaintext file committed. Publisher/registration
+		// failures occur before any native process can own this authentication.
+		managedPreNativeCleanup = true
+		defer func() {
+			if managedPreNativeCleanup {
+				managedCleanup = cleanupUnusedExecutionAuthentication(nativeHome, managed.response.Bundle) == nil
+				if managedCleanup {
+					// This closed pre-native outcome returns unused original bytes;
+					// it does not claim native execution or authentication success.
+					managedLatest = bytes.Clone(managed.response.Bundle)
+					managedUnusedOriginal = true
+				} else {
+					output, returned = nil, subscription.Invalid()
+				}
+			}
+		}()
+		if err := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
+			return nil, subscription.Invalid()
 		}
 	}
 	if err := codex.ValidateThreadSettings(settings); err != nil {
@@ -219,7 +288,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}
-	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != "/api-proxy/v1" {
+	expectedProxyPath := "/api-proxy/v1"
+	if managed != nil {
+		expectedProxyPath = ""
+	}
+	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != expectedProxyPath {
 		return nil, publicationUncertain()
 	}
 	// Stream authority always owns the process lifetime. Before input has a
@@ -230,13 +303,42 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	client, err := codex.Open(nativeCtx, codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}})
+	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	if managed != nil {
+		nativeConfig.API = nil
+		nativeConfig.ManagedAuthentication = true
+	}
+	// Once startup may own a process, only independently joined native cleanup
+	// may authorize removal. A definite failed Open already proves that closure;
+	// recovery-required startup must retain its authentication and lease.
+	managedPreNativeCleanup = false
+	client, err := codex.Open(nativeCtx, nativeConfig)
 	if err != nil {
+		managedPreNativeCleanup = domain.SafeError(err).Code != domain.RecoveryRequired
 		return nil, err
 	}
+	managedBundleAttempted := false
+	captureManagedBundle := func() {
+		if managed == nil || managedBundleAttempted {
+			return
+		}
+		managedBundleAttempted = true
+		bounded, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		bundle, bundleErr := client.ManagedBundle(bounded, false)
+		managedLatest, managedSuccess = bundle, bundleErr == nil
+	}
 	defer func() {
+		captureManagedBundle()
 		if err := client.Close(); err != nil {
 			output, returned = nil, domain.SafeError(err)
+			return
+		}
+		if managed != nil {
+			managedCleanup = cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle) == nil
+			if !managedCleanup || !managedSuccess {
+				output, returned = nil, subscription.Invalid()
+			}
 		}
 	}()
 	mapper := NewCodexEventPublisher(publisher)
@@ -366,6 +468,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		event = *parentTerminal
 		// A terminal event is not cleanup. Close/join the native scope, prove
 		// the workspace lease's process index, then form a completion result.
+		// Read native identity and final credentials while its wire is still
+		// open; the defer only reads on earlier exits and never retries this read.
+		captureManagedBundle()
 		if err := client.Close(); err != nil {
 			return nil, err
 		}
@@ -423,4 +528,50 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		logger.InfoContext(ctx, "native_execution_checkpoint_retained")
 		return json.Marshal(completion)
 	}
+}
+
+// validateManagedAuthenticationHome keeps the managed auth bundle outside every
+// native workspace root. The native read-only/workspace-write sandbox then
+// keeps tool commands from reading CODEX_HOME; unrestricted same-user access
+// to the Worker process remains outside this guarantee.
+func validateManagedAuthenticationHome(home string, workspaceRoots []string) error {
+	canonicalHome, err := canonicalManagedPath(home, "The managed authentication home is not a private directory.", "Preserve the execution for reconciliation; do not materialize credentials through a path alias.")
+	if err != nil {
+		return err
+	}
+	for _, root := range workspaceRoots {
+		canonicalRoot, err := canonicalManagedPath(root, "A managed execution workspace root is not a real directory.", "Preserve the execution for reconciliation; do not start native work with ambiguous credential confinement.")
+		if err != nil {
+			return err
+		}
+		if managedPathsOverlap(canonicalHome, canonicalRoot) {
+			return domain.Fail(domain.RecoveryRequired, "The managed authentication home overlaps a native workspace root.", "Choose a private Worker runtime outside the workspace roots before materializing subscription credentials.")
+		}
+	}
+	return nil
+}
+
+func canonicalManagedPath(path, message, remediation string) (string, error) {
+	if !filepath.IsAbs(path) {
+		return "", domain.Fail(domain.RecoveryRequired, message, remediation)
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", domain.Fail(domain.RecoveryRequired, message, remediation)
+	}
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", domain.Fail(domain.RecoveryRequired, message, remediation)
+	}
+	return canonical, nil
+}
+
+func managedPathsOverlap(first, second string) bool {
+	for _, pair := range [][2]string{{first, second}, {second, first}} {
+		relative, err := filepath.Rel(pair[0], pair[1])
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }

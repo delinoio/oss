@@ -53,6 +53,23 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.
 
 - Native subagent observations follow `docs/cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
+- Managed Codex subscriptions follow `docs/cmds-delidev-subscription-contract.md`. Keep explicit provider selection, a separately authorized Worker lane, one durable per-account login/refresh/execution/logout lease, original actor/revision/generation fences and immutable latest-bundle write-back. Never redistribute a Take receipt or uncertain generation, expose bundles in records/logs, grant API relay authority from subscription registration, or delete unresolved ownership.
+
+- Lifecycle Take retains its original positive account observation across exclusive-lease cleanup and later metadata edits. Reject future revisions and revalidate the exact uncanceled queued operation, action, machine and initiating actor before granting; canceled, replaced or recovery-required state never acquires authority from a stale observation. Keep current-revision owner requests and exact claimed-job execution revisions unchanged.
+
+- Require the selected Worker's negotiated managed Codex capability before claiming subscription execution or consuming its queued input. Ordinary native installation discovery does not establish managed authentication support.
+
+- Initiator revocation must atomically settle its still-queued subscription lifecycle operations without granting a lease or changing credential generations. Preserve accepted logout revocation, independent active leases and all claimed/native ownership; only a fresh authorized request may replace the canceled queued operation. Successful native write-back must preserve logout-revoked health until a fresh authorized logout completes cleanup.
+
+- Lost subscription ownership must reject progress reads and publication and purge the in-memory URL/device-code presentation under the account gate. Retain the original pending operation, lease and recovery evidence; cache invalidation never proves native cleanup or grants a retry.
+
+- Recovery-required subscription ownership rejects every new Finish before vault staging/deletion and at the final transaction. An already accepted Finish receipt may replay read-only without changing a later retained lease, pending operation or recovery fence.
+
+- Finish's error guard owns recovery publication only through its committed ownership mutation and final required vault cleanup. Clear it before response-resource reads so presentation cancellation cannot fence settled state. Failed or unconfirmed final cleanup still retains recovery; accepted receipt replay never clears it.
+
+- Confirmed pre-native execution failure may release its lease only with cleanup confirmation, no refresh/success claim and a protected byte-identical return of the original immutable vault bundle. Preserve that generation, connection, health and independently queued lifecycle operation; cleanup alone cannot establish this outcome. Uncertain failed execution/refresh retains blocked original vault material and ownership for recovery.
+
+- Manual fix selections must use the retained set's exact local repository resource before policy or profile lookup. Slow provider preflights occupy a separate four-session cancellable dispatch lane, joined at shutdown; ordinary execution retains its five-second claim bound and cannot wait behind remote reads.
 
 - A new Claude child requires an original `claude-task` observation with task metadata and the verified Agent/Task parent tool. Content/history can update only already retained exact child ownership, including nested children; task metadata copied onto another source cannot create ownership. Reject the whole batch before publication.
 
@@ -105,6 +122,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Manual fix selections must use the retained set's exact local repository resource before policy or profile lookup. Slow provider preflights occupy a separate four-session cancellable dispatch lane, joined at shutdown; ordinary execution retains its five-second claim bound and cannot wait behind remote reads.
 
 - BrowserService profile operations require the original paired client, current transaction-time authority and exact UUID/revision receipts. Owner/Worker credentials cannot substitute a browser device; owner/client cleanup counts remain independent of account configuration removal. Confirmation attests to separately completed native cleanup and cannot replay native work. Follow `docs/cmds-delidev-browser-contract.md`.
+- The current native Fork coordinator has an API-only authentication profile. Reject managed subscription source assignments through their closed domain validation before accepting a job or starting native work; do not borrow execution credentials or introduce relay fallback. Follow the fork and subscription contracts.
+- An accepted uncertain terminal close atomically replaces only its finished close operation with a fresh close identity. Exact report and deletion receipt retries preserve that next intent; original result facts and cleanup barriers remain authoritative. Stream dispatch waits ten seconds after the latest uncertain terminal write, including reconnects, without granting shell creation, input, resize or cross-device authority. Follow `docs/cmds-delidev-terminals-contract.md`.
 
 - Repository metadata support is independently advertised and accepted under issue #1142. Reject all unknown/duplicate capabilities and validate optional GitHub maps against current negotiated Machine support, inspected remote keys, existing identity validators and the 128-remote/1 MiB bounds. Preserve strict input decoding, atomic repository saves and legacy omission.
 

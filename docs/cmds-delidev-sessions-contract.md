@@ -648,6 +648,9 @@ The [harness contract](cmds-delidev-harness-contract.md#windows-opencode-general
 owns exact root, isolation, Plan-policy, version-1 compatibility and native-evidence
 requirements.
 
+## Managed subscription execution
+
+Codex subscription snapshots retain an optional immutable `subscription` selector, omitted from historical API snapshots. Native execution acquires the exact selected account lease without failover, stages only its protected generation, uses the built-in OpenAI provider, preserves existing native history/publication/workspace checks and returns the latest bundle after owned process/file cleanup. A definite busy refusal waits on that account; uncertain delivery never repeats a launch. Publication registration grants no API proxy authority. See [managed subscriptions](cmds-delidev-subscription-contract.md) for fencing, refresh evidence and recovery limits.
 ### Automatic PR replacement and explicit controls
 
 Explicit Stop, Archive and Restore retain the server-owned
