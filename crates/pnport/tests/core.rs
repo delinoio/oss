@@ -2441,7 +2441,9 @@ fn linux_optional_receive_control_buffers_preserve_native_ipc() {
                 "fault",
                 "readonly",
             ] {
-                let native = Command::new(&executable)
+                let native = Command::new("timeout")
+                    .args(["--kill-after=7s", "15s"])
+                    .arg(&executable)
                     .args([socket, mode])
                     .output()
                     .unwrap();
@@ -2450,7 +2452,9 @@ fn linux_optional_receive_control_buffers_preserve_native_ipc() {
                     "native static={static_link} {socket}/{mode}: {}",
                     String::from_utf8_lossy(&native.stderr)
                 );
-                let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+                let result = Command::new("timeout")
+                    .args(["--kill-after=7s", "15s"])
+                    .arg(env!("CARGO_BIN_EXE_pnport"))
                     .current_dir(root.path())
                     .arg("--cache-dir")
                     .arg(cache.path().join("cache"))

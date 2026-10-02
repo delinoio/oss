@@ -46,14 +46,22 @@ int main(int argc, char **argv) {
     int delayed = !strcmp(argv[2], "blocked") || !strcmp(argv[2], "restart") || !strcmp(argv[2], "interrupt");
     if (delayed) {
         sender = sockets[0];
+        sigset_t blocked, previous;
+        CHECK(sigemptyset(&blocked) == 0 && sigaddset(&blocked, SIGALRM) == 0);
+        CHECK(pthread_sigmask(SIG_BLOCK, &blocked, &previous) == 0);
         if (strcmp(argv[2], "blocked")) {
             struct sigaction action = {.sa_handler = alarm_handler,
                 .sa_flags = !strcmp(argv[2], "restart") ? SA_RESTART : 0};
             CHECK(sigaction(SIGALRM, &action, NULL) == 0);
+        }
+        // The sender inherits the blocked signal so only the receiving
+        // thread can handle the interruption/restart probe.
+        CHECK(pthread_create(&thread, NULL, send_later, NULL) == 0);
+        CHECK(pthread_sigmask(SIG_SETMASK, &previous, NULL) == 0);
+        if (strcmp(argv[2], "blocked")) {
             struct itimerval timer = {.it_value = {.tv_usec = 50000}};
             CHECK(setitimer(ITIMER_REAL, &timer, NULL) == 0);
         }
-        CHECK(pthread_create(&thread, NULL, send_later, NULL) == 0);
     } else {
         CHECK(send(sockets[0], "p", 1, 0) == 1);
     }
