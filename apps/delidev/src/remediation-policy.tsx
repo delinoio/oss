@@ -47,7 +47,7 @@ export function RemediationPolicyFields({ value, change, children, presentation 
     </fieldset>
   </>;
   return <fieldset><legend>Pull request remediation policy</legend>
-    <p>Policies are saved on the server. Automatic execution is not available yet.</p>
+    <p>Enabled policies run bounded fixes for linked pull requests when the Agent, Runner Device, and current evidence are eligible.</p>
     {[["ci_failure", "Automatically fix required CI failures"], ["review_feedback", "Automatically handle matching published feedback"], ["merge_conflict", "Automatically resolve verified merge conflicts"]].map(([key, label]) => <label className="checkbox" key={key}><input type="checkbox" checked={value[key] === true} onChange={event => field(key, event.target.checked)} />{label}</label>)}
     {presentation === RemediationDetailPresentation.Collapsible ? <details className="server-remediation-details">
       <summary aria-label="Remediation details" aria-describedby={helperId}>Remediation details<span id={helperId} className="server-remediation-helper">Session strategy, execution targets, conflicts, attempt limit, and reviewers.</span></summary>
