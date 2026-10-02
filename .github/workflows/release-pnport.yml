@@ -102,6 +102,12 @@ jobs:
             cargo build --locked -p pnport-preload --target "$PNPORT_TARGET"
           fi
           cargo test --locked -p pnport -p pnport-core -p pnport-preload --target "$PNPORT_TARGET"
+          # Concurrent fork ownership has exposed host-kernel ordering races.
+          # Retain the full parallel suite above and repeat this internally
+          # concurrent control before accepting candidate execution evidence.
+          for attempt in {1..10}; do
+            cargo test --locked -p pnport --test process_lifecycle concurrent_fork_and_child_callbacks_preserve_the_virtual_view --target "$PNPORT_TARGET"
+          done
       - name: Verify installed consumers and native TypeScript
         shell: bash
         env:

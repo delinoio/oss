@@ -36,6 +36,8 @@ The private source workspace, built-in-only launcher, platform registry and mani
 
 Both native CI and exact-tag release jobs test all three private pnport crates and build the pnport-mode fspy preload in debug beside macOS test binaries and in release beside the packaged CLI. Linux similarly builds its pnport preload in both profiles before execution tests. They pin `MACOSX_DEPLOYMENT_TARGET=13.0`; this artifact deployment floor does not substitute for actual macOS 13 execution acceptance. Windows retains its preload build path for 0.2.0. Generated npm/Yarn smoke consumers permit initial lockfile creation even under CI's default immutable-install policy; this exception applies only to those temporary consumers, while the committed TypeScript fixture retains immutable installation.
 
+Candidate hosts additionally repeat the internally concurrent fork/child-callback control ten times after the complete native suite to expose host-kernel event-ordering failures. A failure stops the job immediately; there is no passing retry, cleanup-deadline relaxation or replacement of the default-parallel installed suite. Fatal Linux mediation logs identify a static source line and ambient errno without recording child paths, memory or environment; the stable diagnostic code and exit class are unchanged.
+
 ### Official native TypeScript conformance
 
 The committed `test/fixtures/typescript` fixture and Yarn-generated lockfile pin Yarn 4.18.0, `typescript@7.1.0-dev.20260812.1`, and `@types/node@22.15.30`. This official compiler includes Microsoft's macOS injection-entitlement fix. Its command is `tsc`; the older `@typescript/native-preview` package's `tsgo` command is not automatically replaced. Compiler binaries and signatures are never modified.

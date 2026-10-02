@@ -105,7 +105,17 @@ const SYS_FUTIMESAT: i64 = -1;
 fn unsupported(message: &'static str) -> Error {
     Error::new(Code::PnportUnsupportedOperation, message)
 }
+#[track_caller]
 fn injection_failed() -> Error {
+    // Keep fatal mediation diagnostics bounded and free of child paths,
+    // memory or environment. The source line identifies the failed boundary
+    // for a revision-pinned validation run without exposing tracee content.
+    tracing::error!(
+        action = "linux_interception_failure",
+        source_line = std::panic::Location::caller().line(),
+        ambient_errno = std::io::Error::last_os_error().raw_os_error(),
+        "Linux mediation failed before cleanup"
+    );
     Error::new(
         Code::PnportInjectionFailed,
         "Linux syscall interception failed; the owned process tree was stopped.",
