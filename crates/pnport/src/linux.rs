@@ -1277,6 +1277,10 @@ enum Pending {
         logical: PathBuf,
     },
     ForcedError(i32),
+    ReceiveMessage {
+        original: u64,
+        shadow: u64,
+    },
     Ordinary,
 }
 
@@ -2990,14 +2994,36 @@ impl Trace<'_> {
                 "Linux mount namespace or filesystem root changes cannot be mediated.",
             ));
         }
-        if call == libc::SYS_recvmsg || call == libc::SYS_recvmmsg {
+        if call == libc::SYS_recvmsg && receives_ancillary_data(pid, argument(&regs, 1))? {
+            let original = argument(&regs, 1);
+            let mut header = read_remote(pid, original, mem::size_of::<libc::msghdr>())?;
+            if header.len() != mem::size_of::<libc::msghdr>() {
+                return Err(injection_failed());
+            }
+            // libuv reserves control space even for ordinary IPC bytes.
+            // Give the kernel a private header with no control capacity so
+            // SCM_RIGHTS cannot install an untracked descriptor, including
+            // while this task blocks and peer threads continue running.
+            let control = mem::offset_of!(libc::msghdr, msg_control);
+            header[control..control + mem::size_of::<usize>()].fill(0);
+            let capacity = mem::offset_of!(libc::msghdr, msg_controllen);
+            header[capacity..capacity + mem::size_of::<usize>()].fill(0);
+            let shadow = self.scratch_base(pid)?;
+            write_remote(pid, shadow, &header)?;
+            set_argument(&mut regs, 1, shadow);
+            set_registers(pid, &regs)?;
+            self.pending
+                .insert(pid, Pending::ReceiveMessage { original, shadow });
+            return resume(pid, true, 0);
+        }
+        if call == libc::SYS_recvmsg {
+            return resume(pid, false, 0);
+        }
+        if call == libc::SYS_recvmmsg {
             let messages = argument(&regs, 1);
-            let count = if call == libc::SYS_recvmsg {
-                1
-            } else {
-                // Linux caps recvmmsg's vlen at UIO_MAXIOV.
-                (argument(&regs, 2) as usize).min(1024)
-            };
+            // Linux caps recvmmsg's vlen at UIO_MAXIOV. Batched control
+            // reception remains unsupported; preserve its pre-kernel denial.
+            let count = (argument(&regs, 2) as usize).min(1024);
             let stride = mem::size_of::<libc::mmsghdr>() as u64;
             for index in 0..count {
                 let address = messages
@@ -3238,6 +3264,64 @@ impl Trace<'_> {
         let returned = result(&regs);
         let group = Self::group(pid);
         match action {
+            Pending::ReceiveMessage { original, shadow } => {
+                // Restore the caller's argument for interrupted/restarted
+                // receives before delivering a signal or returning to libc.
+                set_argument(&mut regs, 1, original);
+                if returned >= 0 {
+                    let header = read_remote(pid, shadow, mem::size_of::<libc::msghdr>())?;
+                    if header.len() != mem::size_of::<libc::msghdr>() {
+                        return Err(injection_failed());
+                    }
+                    let flags = mem::offset_of!(libc::msghdr, msg_flags);
+                    let received_flags = i32::from_ne_bytes(
+                        header[flags..flags + mem::size_of::<i32>()]
+                            .try_into()
+                            .map_err(|_| injection_failed())?,
+                    );
+                    if received_flags & libc::MSG_CTRUNC != 0 {
+                        tracing::debug!(
+                            action = "linux_receive_control_rejected",
+                            "Ancillary data was discarded without descriptor installation"
+                        );
+                        return Err(unsupported(
+                            "Linux ancillary descriptor reception cannot be mediated.",
+                        ));
+                    }
+                    // Only these fields are outputs. Preserve caller-owned
+                    // pointers and control bytes, and retain native EFAULT
+                    // when the original header cannot receive the result.
+                    let name = mem::offset_of!(libc::msghdr, msg_name);
+                    let has_name = header[name..name + mem::size_of::<usize>()]
+                        .iter()
+                        .any(|byte| *byte != 0);
+                    let name_length = mem::offset_of!(libc::msghdr, msg_namelen);
+                    for (offset, size) in [
+                        (name_length, mem::size_of::<libc::socklen_t>()),
+                        (flags, mem::size_of::<i32>()),
+                        (
+                            mem::offset_of!(libc::msghdr, msg_controllen),
+                            mem::size_of::<usize>(),
+                        ),
+                    ] {
+                        // The kernel writes the name length only when the
+                        // caller supplied a name buffer. Writing it otherwise
+                        // can spuriously fault on a partially read-only header.
+                        if offset == name_length && !has_name {
+                            continue;
+                        }
+                        if !write_remote_or_fault(
+                            pid,
+                            original + offset as u64,
+                            &header[offset..offset + size],
+                        )? {
+                            set_result(&mut regs, -(libc::EFAULT as i64));
+                            break;
+                        }
+                    }
+                }
+                set_registers(pid, &regs)?;
+            }
             Pending::Open(translation) if returned >= 0 => {
                 let fd = returned as i32;
                 self.directories.entry(group).or_default().remove(&fd);
