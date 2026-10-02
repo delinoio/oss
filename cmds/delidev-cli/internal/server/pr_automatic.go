@@ -371,6 +371,21 @@ func (s *Service) runAutomaticPRRemediation(parent context.Context) {
 	s.runAutomaticPRRemediationTicks(parent, ticker.C)
 }
 
+func evictAutomaticPRCooldown(active map[string]bool, next map[string]time.Time, delay map[string]time.Duration) {
+	var oldest string
+	var oldestAt time.Time
+	for key, at := range next {
+		if active[key] || oldest != "" && !at.Before(oldestAt) {
+			continue
+		}
+		oldest, oldestAt = key, at
+	}
+	if oldest != "" {
+		delete(next, oldest)
+		delete(delay, oldest)
+	}
+}
+
 // Four cancellable PR lanes, a paginated scan and per-stable-PR cooldown keep a
 // blocked target from stalling other work. The active map is scheduling only;
 // durable attempts retain ownership across every process and session restart.
@@ -432,8 +447,11 @@ func (s *Service) runAutomaticPRRemediationTicks(parent context.Context, ticks <
 				continue
 			}
 			key := domain.PRProblemKey(link.Provider, link.RemoteRepositoryID, link.PullRequestID)
-			if key == "" || active[key] || now.Before(next[key]) || len(active) == cap(completed) || len(next) >= 4096 && next[key].IsZero() {
+			if key == "" || active[key] || now.Before(next[key]) || len(active) == cap(completed) {
 				continue
+			}
+			if len(next) >= 4096 && next[key].IsZero() {
+				evictAutomaticPRCooldown(active, next, delay)
 			}
 			active[key], next[key] = true, now.Add(prAutomaticInterval)
 			tasks.Add(1)
