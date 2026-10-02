@@ -150,10 +150,10 @@ impl View {
             // and normal conflict checks.
             if part.as_os_str() != "node_modules"
                 || self.graph.is_location_ancestor(&prefix.join(part))
-                || !self
+                || self
                     .graph
                     .package(&prefix)
-                    .is_some_and(|package| normalize(&package.package_location) == prefix)
+                    .is_none_or(|package| normalize(&package.package_location) != prefix)
             {
                 prefix.push(part);
                 continue;
