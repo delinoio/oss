@@ -180,6 +180,13 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		service.runExecutionDispatch(dispatchCtx)
 	}()
 	defer func() { stopDispatch(); <-dispatchDone }()
+	remediationCtx, stopRemediation := context.WithCancel(child)
+	remediationDone := make(chan struct{})
+	go func() {
+		defer close(remediationDone)
+		service.runAutomaticPRRemediation(remediationCtx)
+	}()
+	defer func() { stopRemediation(); <-remediationDone }()
 	scheduleCtx, stopSchedules := context.WithCancel(child)
 	schedulesDone := make(chan struct{})
 	go func() {
@@ -225,6 +232,8 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	stopCatalog()
 	<-catalogDone
+	stopRemediation()
+	<-remediationDone
 	stopDispatch()
 	<-dispatchDone
 	stopSchedules()

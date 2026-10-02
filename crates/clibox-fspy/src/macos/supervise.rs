@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     assemble_candidate_record, classify_path, Admission, Frame, FrameKind, OperationReceiver,
+    ReceiverFailure,
 };
 use crate::record::{self, CompleteRecord};
 
@@ -43,6 +44,8 @@ pub enum CaptureFailure {
     Initialization,
     Spawn,
     TraceLoss,
+    EventLimit,
+    ByteLimit,
     Timeout,
     Cancellation,
     Cleanup,
@@ -50,22 +53,75 @@ pub enum CaptureFailure {
     Record,
 }
 
-impl std::fmt::Display for CaptureFailure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
+impl CaptureFailure {
+    fn as_str(self) -> &'static str {
+        match self {
             Self::Initialization => "trace_initialization",
             Self::Spawn => "spawn_failure",
             Self::TraceLoss => "trace_loss",
+            Self::EventLimit => "event_limit",
+            Self::ByteLimit => "byte_limit",
             Self::Timeout => "timeout",
             Self::Cancellation => "cancellation",
             Self::Cleanup => "cleanup_failure",
             Self::DescendantSurvived => "owned_descendant_survived",
             Self::Record => "record_invalid",
-        })
+        }
+    }
+}
+
+impl std::fmt::Display for CaptureFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 
 impl std::error::Error for CaptureFailure {}
+
+impl From<ReceiverFailure> for CaptureFailure {
+    fn from(failure: ReceiverFailure) -> Self {
+        match failure {
+            ReceiverFailure::EventLimit => Self::EventLimit,
+            ReceiverFailure::ByteLimit => Self::ByteLimit,
+            ReceiverFailure::TraceLoss => Self::TraceLoss,
+        }
+    }
+}
+
+fn failure_after_cleanup(
+    failure: CaptureFailure,
+    cleanup: Result<(), CaptureFailure>,
+    receiver_result: io::Result<super::CollectedOperations>,
+) -> CaptureFailure {
+    let receiver_failure = receiver_result
+        .err()
+        .map(|error| CaptureFailure::from(ReceiverFailure::from_error(&error)));
+    // The legacy wait channel may fail before the operation receiver publishes
+    // its cause. Join it before classifying that transport failure.
+    let cause = if failure == CaptureFailure::TraceLoss {
+        receiver_failure.unwrap_or(failure)
+    } else {
+        failure
+    };
+    match cleanup {
+        Ok(()) => cause,
+        Err(cleanup_failure) => {
+            tracing::error!(
+                stage = "cleanup_failure",
+                classification = %cleanup_failure,
+                cause = %cause,
+                receiver_cause = receiver_failure.map(CaptureFailure::as_str),
+                "file trace cleanup failed"
+            );
+            eprintln!(
+                "clibox fspy supervisor: stage=cleanup_failure classification={cleanup_failure} \
+                 cause={cause} receiver_cause={}",
+                receiver_failure.map_or("none", CaptureFailure::as_str)
+            );
+            cleanup_failure
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Limits {
@@ -93,9 +149,18 @@ fn signal_group(pid: u32, signal: i32) -> Result<(), CaptureFailure> {
     let pid = i32::try_from(pid).map_err(|_| CaptureFailure::Cleanup)?;
     // SAFETY: this group was created for the launched child before exec.
     let result = unsafe { libc::kill(-pid, signal) };
-    if result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+    let os_code = (result != 0)
+        .then(|| io::Error::last_os_error().raw_os_error())
+        .flatten();
+    if result == 0 || os_code == Some(libc::ESRCH) {
         Ok(())
     } else {
+        tracing::debug!(
+            stage = "cleanup_signal",
+            signal,
+            ?os_code,
+            "owned group signal failed"
+        );
         Err(CaptureFailure::Cleanup)
     }
 }
@@ -142,7 +207,12 @@ fn cleanup_owned(
     kill_after: Duration,
     mut root_done: bool,
 ) -> Result<(), CaptureFailure> {
-    signal_group(pid, libc::SIGTERM)?;
+    // The first group signal can fail while its final callers are exiting.
+    // Do not mistake that request failure for an unconfirmed cleanup: the
+    // identity-checked process signals and both absence checks below still
+    // run within the same grace/force budgets. Persistent denial fails at the
+    // final confirmation boundary; no extra process-group signal is retried.
+    let _ = signal_group(pid, libc::SIGTERM);
     let mut signalled = HashSet::new();
     let graceful_until = Instant::now()
         .checked_add(kill_after)
@@ -249,7 +319,7 @@ where
         return Err(CaptureFailure::Cancellation);
     }
     if limits.max_events < 2 {
-        return Err(CaptureFailure::Record);
+        return Err(CaptureFailure::EventLimit);
     }
     let deadline = limits
         .timeout
@@ -267,9 +337,9 @@ where
         .len()
         .checked_add(1)
         .and_then(|pairs| pairs.checked_mul(2))
-        .ok_or(CaptureFailure::Record)?;
+        .ok_or(CaptureFailure::EventLimit)?;
     if reserved_events > limits.max_events {
-        return Err(CaptureFailure::Record);
+        return Err(CaptureFailure::EventLimit);
     }
     let program =
         std::path::absolute(Path::new(command.program())).map_err(|_| CaptureFailure::Spawn)?;
@@ -297,30 +367,30 @@ where
     let mut reserved_bytes =
         record::retained_frame_charge(root.as_os_str().as_bytes().len(), std::iter::empty())
             .and_then(|charge| charge.checked_add(512))
-            .ok_or(CaptureFailure::Record)?;
+            .ok_or(CaptureFailure::ByteLimit)?;
     for failure in &failed_lookups {
         let path = failure.path.as_os_str().as_bytes();
         let classified = classify_path(root, path).map_err(|_| CaptureFailure::Record)?;
         let charge = record::retained_frame_charge(path.len(), classified.iter())
             .and_then(|charge| charge.checked_add(512))
-            .ok_or(CaptureFailure::Record)?;
+            .ok_or(CaptureFailure::ByteLimit)?;
         reserved_bytes = reserved_bytes
             .checked_add(charge)
-            .ok_or(CaptureFailure::Record)?;
+            .ok_or(CaptureFailure::ByteLimit)?;
     }
     let root_charge =
         record::retained_frame_charge(root_start.path.len(), root_start.access_path.iter())
             .and_then(|charge| charge.checked_add(512))
-            .ok_or(CaptureFailure::Record)?;
+            .ok_or(CaptureFailure::ByteLimit)?;
     let native_bytes = limits
         .max_bytes
         .checked_sub(
             reserved_bytes
                 .checked_add(root_charge)
-                .ok_or(CaptureFailure::Record)?,
+                .ok_or(CaptureFailure::ByteLimit)?,
         )
         .filter(|remaining| *remaining > 0)
-        .ok_or(CaptureFailure::Record)?;
+        .ok_or(CaptureFailure::ByteLimit)?;
     let delay = match admission(&root_start, cancelled) {
         Admission::Proceed(delay) => delay,
         Admission::Quit => {
@@ -416,16 +486,15 @@ where
                 false,
             );
             token.cancel();
-            let _ = receiver.finish();
-            return Err(cleanup.err().unwrap_or(failure));
+            return Err(failure_after_cleanup(failure, cleanup, receiver.finish()));
         }
     };
     let result = loop {
         if cancelled.load(Ordering::Acquire) {
             break Err(CaptureFailure::Cancellation);
         }
-        if receiver.failed() {
-            break Err(CaptureFailure::TraceLoss);
+        if let Some(failure) = receiver.failure() {
+            break Err(failure.into());
         }
         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             break Err(CaptureFailure::Timeout);
@@ -446,33 +515,64 @@ where
                 false,
             );
             token.cancel();
-            let _ = receiver.finish();
-            return Err(cleanup.err().unwrap_or(failure));
+            return Err(failure_after_cleanup(failure, cleanup, receiver.finish()));
         }
     };
+    // An admission quit can finish the root while its wait is being polled.
+    // Cancellation still owns the remaining processes and queued callers;
+    // confirm cleanup before inspecting a normal-completion trace. The wait
+    // future has completed, so cleanup must not poll it a second time.
+    if cancelled.load(Ordering::Acquire) {
+        let cleanup = cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
+        token.cancel();
+        return Err(failure_after_cleanup(
+            CaptureFailure::Cancellation,
+            cleanup,
+            receiver.finish(),
+        ));
+    }
+    if let Some(failure) = receiver.failure() {
+        let cleanup = cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
+        return Err(failure_after_cleanup(
+            failure.into(),
+            cleanup,
+            receiver.finish(),
+        ));
+    }
     let group_live = group_exists(pid);
     let tracked_live = receiver.live_processes();
     match (group_live, tracked_live) {
         (Ok(true), _) => {
             let cleanup =
                 cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
-            let _ = receiver.finish();
-            return Err(cleanup.err().unwrap_or(CaptureFailure::DescendantSurvived));
+            return Err(failure_after_cleanup(
+                CaptureFailure::DescendantSurvived,
+                cleanup,
+                receiver.finish(),
+            ));
         }
         (Ok(false), Ok(ref processes)) if !processes.is_empty() => {
             let cleanup =
                 cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
-            let _ = receiver.finish();
-            return Err(cleanup.err().unwrap_or(CaptureFailure::DescendantSurvived));
+            return Err(failure_after_cleanup(
+                CaptureFailure::DescendantSurvived,
+                cleanup,
+                receiver.finish(),
+            ));
         }
         (Err(_), _) | (_, Err(_)) => {
             let _ = cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
-            let _ = receiver.finish();
-            return Err(CaptureFailure::Cleanup);
+            return Err(failure_after_cleanup(
+                CaptureFailure::Cleanup,
+                Err(CaptureFailure::Cleanup),
+                receiver.finish(),
+            ));
         }
         (Ok(false), Ok(_)) => {}
     }
-    let mut collected = receiver.finish().map_err(|_| CaptureFailure::TraceLoss)?;
+    let mut collected = receiver
+        .finish()
+        .map_err(|error| CaptureFailure::from(ReceiverFailure::from_error(&error)))?;
     if !collected.hello_pids.contains(&pid)
         || collected
             .pairs
@@ -542,19 +642,82 @@ where
         limits.max_bytes,
     )
     .map_err(|error| {
+        let failure = error
+            .get_ref()
+            .and_then(|cause| cause.downcast_ref::<ReceiverFailure>())
+            .copied()
+            .map_or(CaptureFailure::Record, CaptureFailure::from);
         tracing::error!(
             stage = "macos_record",
-            classification = "record_invalid",
+            classification = %failure,
             "candidate assembly failed"
         );
-        let _ = error;
-        CaptureFailure::Record
+        failure
     })
 }
 
 #[cfg(test)]
 mod tests {
     use std::{fs, process::Stdio, sync::atomic::AtomicBool};
+
+    #[test]
+    fn legacy_transport_failure_retains_joined_receiver_limit() {
+        for failure in [ReceiverFailure::EventLimit, ReceiverFailure::ByteLimit] {
+            assert_eq!(
+                failure_after_cleanup(CaptureFailure::TraceLoss, Ok(()), Err(failure.into_error())),
+                CaptureFailure::from(failure)
+            );
+        }
+        assert_eq!(
+            failure_after_cleanup(
+                CaptureFailure::TraceLoss,
+                Ok(()),
+                Err(super::super::invalid("frame_shape"))
+            ),
+            CaptureFailure::TraceLoss
+        );
+    }
+
+    #[test]
+    fn cleanup_failure_keeps_primary_classification_and_redacted_limit_cause() {
+        for cause in ["event_limit", "byte_limit"] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "macos::supervise::tests::cleanup_failure_fixture",
+                    "--nocapture",
+                ])
+                .env("CLIBOX_FSPY_TEST_CLEANUP_CAUSE", cause)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert_eq!(
+                stderr.trim(),
+                format!(
+                    "clibox fspy supervisor: stage=cleanup_failure classification=cleanup_failure \
+                     cause={cause} receiver_cause={cause}"
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn cleanup_failure_fixture() {
+        let failure = match std::env::var("CLIBOX_FSPY_TEST_CLEANUP_CAUSE").as_deref() {
+            Ok("event_limit") => ReceiverFailure::EventLimit,
+            Ok("byte_limit") => ReceiverFailure::ByteLimit,
+            _ => return,
+        };
+        assert_eq!(
+            failure_after_cleanup(
+                CaptureFailure::TraceLoss,
+                Err(CaptureFailure::Cleanup),
+                Err(failure.into_error())
+            ),
+            CaptureFailure::Cleanup
+        );
+    }
 
     #[test]
     fn failed_path_candidate_is_recorded_before_root_exec() {
@@ -662,7 +825,7 @@ mod tests {
             },
             &AtomicBool::new(false),
         );
-        assert!(matches!(result, Err(CaptureFailure::Record)));
+        assert!(matches!(result, Err(CaptureFailure::EventLimit)));
         assert!(!output.exists());
     }
 
@@ -683,7 +846,7 @@ mod tests {
             },
             &AtomicBool::new(false),
         );
-        assert!(matches!(result, Err(CaptureFailure::Record)));
+        assert!(matches!(result, Err(CaptureFailure::ByteLimit)));
         assert!(!output.exists());
     }
 
@@ -1029,5 +1192,48 @@ mod tests {
             &AtomicBool::new(true),
         );
         assert!(matches!(result, Err(CaptureFailure::Cancellation)));
+    }
+
+    #[test]
+    fn admission_cancellation_retains_cancellation_when_root_exits() {
+        use std::sync::Arc;
+
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        fs::write(&input, b"fixture").unwrap();
+        for _ in 0..4 {
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let stop = Arc::clone(&cancelled);
+            let mut command = fspy::Command::new(std::env::current_exe().unwrap());
+            command
+                .args(["--exact", "macos::tests::read_fixture_child"])
+                .envs(std::env::vars_os())
+                .env("CLIBOX_FSPY_TEST_INPUT", input.as_os_str())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            let result = capture_with_admission(
+                command,
+                directory.path(),
+                Limits {
+                    max_events: 100_000,
+                    max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
+                    timeout: Some(Duration::from_secs(10)),
+                    kill_after: Duration::from_millis(100),
+                },
+                &cancelled,
+                move |frame, _| {
+                    if frame.operation == 3 && frame.path.ends_with(b"input.txt") {
+                        stop.store(true, Ordering::SeqCst);
+                        // The native quit acknowledgment exits the root; its
+                        // wait completion can race the supervisor's next poll.
+                        Admission::Quit
+                    } else {
+                        Admission::Proceed(Duration::ZERO)
+                    }
+                },
+            );
+            assert!(cancelled.load(Ordering::SeqCst));
+            assert_eq!(result.err(), Some(CaptureFailure::Cancellation));
+        }
     }
 }
