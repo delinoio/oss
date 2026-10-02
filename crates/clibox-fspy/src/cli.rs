@@ -5806,7 +5806,14 @@ int main(int argc, char **argv) {
             ]);
         }
         if case == "timeout" || case == "root-timeout" {
-            arguments.extend([OsString::from("--timeout"), OsString::from("2s")]);
+            // Allow injected test-runner startup on loaded native hosts before
+            // timing out a held read. Root admission does not launch a child
+            // and retains its shorter deadline. A worker-ready gate would let
+            // the held-read fixture reduce this startup allowance again.
+            arguments.extend([
+                OsString::from("--timeout"),
+                OsString::from(if case == "timeout" { "5s" } else { "2s" }),
+            ]);
         }
         arguments.extend([
             OsString::from("--kill-after"),
