@@ -129,8 +129,9 @@ fn nofollow_calls_keep_link_identity_and_native_results() {
         .output()
         .unwrap();
     assert!(traced.status.success(), "{traced:?}");
+    // Record forwards child stdout to stderr to reserve stdout for reports.
     assert_eq!(
-        traced.stdout, baseline.stdout,
+        traced.stderr, baseline.stdout,
         "native result/errno changed"
     );
     let captured = record::parse(

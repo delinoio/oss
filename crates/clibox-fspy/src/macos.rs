@@ -961,7 +961,7 @@ mod tests {
         fs::create_dir(base.join("external")).unwrap();
         symlink("real", root.join("alias")).unwrap();
         symlink(base.join("external"), root.join("escape")).unwrap();
-        let name = std::ffi::OsString::from_vec(b"link-\xff".to_vec());
+        let name = std::ffi::OsString::from_vec(b"link-\xc3\xa9".to_vec());
         symlink("missing", root.join("real").join(&name)).unwrap();
         let logical = root.join("alias").join(&name);
         let metadata = fs::symlink_metadata(&logical).unwrap();
@@ -979,7 +979,7 @@ mod tests {
         );
         assert_eq!(
             access.project_relative,
-            Some(NativePath::UnixBytes(b"real/link-\xff".to_vec()))
+            Some(NativePath::UnixBytes(b"real/link-\xc3\xa9".to_vec()))
         );
         assert_eq!(
             access.identity,
@@ -987,6 +987,20 @@ mod tests {
                 device: metadata.dev(),
                 inode: metadata.ino()
             })
+        );
+        // macOS filesystems reject invalid UTF-8 names, but the attempted
+        // pathname must still survive classification without lossy decoding.
+        let mut invalid_name = root.as_os_str().as_bytes().to_vec();
+        invalid_name.extend_from_slice(b"/missing-\xff");
+        let access =
+            classify_path_with_identity(&root, &invalid_name, None, FinalSymlink::NoFollow)
+                .unwrap()
+                .unwrap();
+        assert_eq!(access.logical, NativePath::UnixBytes(invalid_name));
+        assert_eq!(access.identity, None);
+        assert_eq!(
+            access.project_relative,
+            Some(NativePath::UnixBytes(b"missing-\xff".to_vec()))
         );
         symlink("absent", base.join("external/link")).unwrap();
         let access = classify_path_with_identity(
