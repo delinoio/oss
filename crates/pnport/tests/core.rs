@@ -395,6 +395,87 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
     assert_eq!(result.stdout, b"protocol-output\nprotocol-output\n");
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_readlinkat_preserves_logical_targets_and_native_controls() {
+    use std::process::Command;
+
+    for split in [false, true] {
+        let root = fixture();
+        let cache = tempfile::tempdir().unwrap();
+        let mut d = data();
+        for index in [0, 1] {
+            d["packageRegistryData"][index][1][0][1]["packageDependencies"] = json!([
+                ["dep", "npm:1"],
+                ["one", ["dep", "virtual:one"]],
+                ["two", ["dep", "virtual:two"]],
+                ["unplugged", "npm:1"]
+            ]);
+        }
+        d["packageRegistryData"][2][1] = json!([
+            ["npm:1",{"packageLocation":"./cache.zip/node_modules/dep/","packageDependencies":[],"linkType":"HARD"}],
+            ["virtual:one",{"packageLocation":"./.yarn/__virtual__/dep-one/1/cache.zip/node_modules/dep/","packageDependencies":[["peer",["dep","npm:1"]]],"linkType":"HARD"}],
+            ["virtual:two",{"packageLocation":"./.yarn/__virtual__/dep-two/1/cache.zip/node_modules/dep/","packageDependencies":[["peer",["@scope/pkg","npm:1"]]],"linkType":"HARD"}]
+        ]);
+        d["packageRegistryData"].as_array_mut().unwrap().push(json!([
+            "unplugged", [["npm:1", {"packageLocation":"./.yarn/unplugged/pkg/node_modules/unplugged/","packageDependencies":[],"linkType":"HARD"}]]
+        ]));
+        let unplugged = root
+            .path()
+            .join(".yarn/unplugged/pkg/node_modules/unplugged");
+        fs::create_dir_all(&unplugged).unwrap();
+        fs::write(unplugged.join("package.json"), br#"{"name":"unplugged"}"#).unwrap();
+        if split {
+            fs::write(
+                root.path().join(".pnp.cjs"),
+                "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");",
+            )
+            .unwrap();
+            fs::write(
+                root.path().join(".pnp.data.json"),
+                serde_json::to_vec(&d).unwrap(),
+            )
+            .unwrap();
+        } else {
+            inline(root.path(), &d);
+        }
+        let executable = root.path().join("readlinkat-fixture");
+        assert!(Command::new("cc")
+            .args(["-Wall", "-Wextra", "-Werror"])
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/readlinkat.c"))
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .unwrap()
+            .success());
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(cache.path().join("cache"))
+            .args(["run", "--"])
+            .arg(&executable)
+            .args([
+                "node_modules/dep",
+                "node_modules/one",
+                "node_modules/two",
+                "node_modules/one/node_modules/peer",
+                "node_modules/two/node_modules/peer",
+                "node_modules/unplugged",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "split={split} stdout={} stderr={}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"readlinkat-conformance-ok\n");
+        assert!(!root.path().join("node_modules").exists());
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn linux_io_uring_probe_falls_back_to_mediated_filesystem_calls() {
@@ -4113,6 +4194,13 @@ fn peer_instances_keep_logical_identity_while_sharing_package_bytes() {
         .unwrap();
     assert_eq!(one.physical, two.physical);
     assert_ne!(one.logical, two.logical);
+    for alias in ["one", "two"] {
+        assert!(
+            view.translate(&root_path.join(format!("node_modules/{alias}/node_modules/peer")))
+                .unwrap()
+                .virtual_link
+        );
+    }
     let peer_one = view
         .translate(&root_path.join("node_modules/one/node_modules/peer/package.json"))
         .unwrap();
