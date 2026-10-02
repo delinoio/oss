@@ -705,6 +705,7 @@ impl Snapshot {
         for component in relative.components() {
             prefix.push(component.as_os_str());
             if let Some(link) = self.links.get(&prefix) {
+                self.verify_raw_link_chain(&prefix, &link.raw_target)?;
                 let source = self.root.join(&prefix);
                 let actual_raw = fs::read_link(&source).map_err(|_| ReproFailure::UnstableInput)?;
                 if actual_raw != link.raw_target {
@@ -748,6 +749,32 @@ impl Snapshot {
             })?;
         if actual != (expected.sha256.clone(), expected.size, expected.identity) {
             return Err(ReproFailure::UnstableInput);
+        }
+        Ok(())
+    }
+
+    fn verify_raw_link_chain(&self, link: &Path, raw_target: &Path) -> Result<(), ReproFailure> {
+        let Some(relative_target) = raw_target_relative(&self.root, link, raw_target)? else {
+            return Ok(());
+        };
+        let mut prefix = PathBuf::new();
+        for component in relative_target.components() {
+            prefix.push(component.as_os_str());
+            let Some(expected) = self.links.get(&prefix) else {
+                continue;
+            };
+            let source = self.root.join(&prefix);
+            let actual_raw = fs::read_link(&source).map_err(|_| ReproFailure::UnstableInput)?;
+            if actual_raw != expected.raw_target {
+                return Err(ReproFailure::UnstableInput);
+            }
+            let actual = fs::canonicalize(source).map_err(|_| ReproFailure::UnstableInput)?;
+            let relative_target = actual
+                .strip_prefix(&self.root)
+                .map_err(|_| ReproFailure::UnstableInput)?;
+            if relative_target != expected.target {
+                return Err(ReproFailure::UnstableInput);
+            }
         }
         Ok(())
     }
@@ -1194,12 +1221,19 @@ mod tests {
         symlink("bridge/input.txt", directory.path().join("alias.txt")).unwrap();
         let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
         let snapshot = Snapshot::take(directory.path(), &selector, 1024, 100).unwrap();
+        let required = BTreeSet::from([PathBuf::from("alias.txt")]);
+        fs::remove_file(directory.path().join("bridge")).unwrap();
+        symlink("./real", directory.path().join("bridge")).unwrap();
+        let changed_candidate = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            snapshot.stage_required(&required, changed_candidate.path()),
+            Err(ReproFailure::UnstableInput)
+        ));
+        fs::remove_file(directory.path().join("bridge")).unwrap();
+        symlink("real", directory.path().join("bridge")).unwrap();
         let candidate = tempfile::tempdir().unwrap();
         snapshot
-            .stage_required(
-                &BTreeSet::from([PathBuf::from("alias.txt")]),
-                candidate.path(),
-            )
+            .stage_required(&required, candidate.path())
             .unwrap();
         assert_eq!(
             fs::read_link(candidate.path().join("bridge")).unwrap(),
