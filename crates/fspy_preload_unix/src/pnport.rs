@@ -22,6 +22,8 @@ use std::{
 
 mod fork_mutex;
 use fork_mutex::ForkMutex;
+#[cfg(test)]
+mod fcntl_tests;
 #[cfg(target_os = "linux")]
 use libc::{__errno_location, RTLD_NEXT, dlsym};
 use libc::{
@@ -87,6 +89,7 @@ mod guard_tests {
         assert!(TLS_READY.load(Ordering::Acquire));
         let outer = Guard::enter().expect("enter the outer hook");
         assert!(Guard::enter().is_none());
+        super::fcntl_tests::check_native_forwarding(|| assert!(Guard::enter().is_none()));
         assert!(Guard::enter().is_none());
         drop(outer);
         assert!(Guard::enter().is_some());
@@ -330,9 +333,7 @@ unsafe fn live_directory_path(dirfd: c_int) -> std::result::Result<PathBuf, c_in
 #[cfg(target_os = "macos")]
 unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c_int {
     let original = libc::fcntl as unsafe extern "C" fn(c_int, c_int, ...) -> c_int;
-    let Some(_guard) = Guard::enter() else {
-        return original(fd, command);
-    };
+    let guard = Guard::enter();
 
     // Only duplication carries logical directory provenance. An inode lookup
     // cannot distinguish an fcntl duplicate from an independent open of shared
@@ -373,6 +374,12 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         // Keep the native ABI for future integer-valued Darwin commands until
         // libc exposes a typed constant for them.
         _ => original(fd, command, args.arg::<c_int>()),
+    };
+    // Reentry and early dyld calls still need the command's native variadic
+    // ABI. Only bypass bookkeeping after forwarding; keep an admitted token
+    // alive through the runtime lock and never construct one on rejection.
+    let Some(_guard) = guard else {
+        return result;
     };
     if result >= 0
         && matches!(command, libc::F_DUPFD | libc::F_DUPFD_CLOEXEC)

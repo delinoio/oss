@@ -645,6 +645,119 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn macos_fcntl_preserves_native_arguments_during_constructor_reentry() {
+    use std::process::Command;
+
+    // Match the Rust test/CLI slice even when x64 tests run under translation.
+    let architecture = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "x86_64"
+    };
+    let binaries = tempfile::tempdir().unwrap();
+    let loader = binaries.path().join("fcntl-loader");
+    assert!(Command::new("cc")
+        .args(["-arch", architecture, "-Wall", "-Wextra", "-Werror"])
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fcntl-loader.c"))
+        .arg("-o")
+        .arg(&loader)
+        .status()
+        .unwrap()
+        .success());
+    for setfd in [false, true] {
+        for constructor in [false, true] {
+            let mut compiler = Command::new("cc");
+            compiler.args(["-arch", architecture, "-Wall", "-Wextra", "-Werror"]);
+            if setfd {
+                compiler.arg("-DSETFD");
+            }
+            if constructor {
+                compiler.args(["-dynamiclib", "-DCONSTRUCTOR"]);
+            }
+            let binary = binaries.path().join(format!("fcntl-{setfd}-{constructor}"));
+            assert!(compiler
+                .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fcntl.c"))
+                .arg("-o")
+                .arg(&binary)
+                .status()
+                .unwrap()
+                .success());
+        }
+    }
+
+    let mut failures = Vec::new();
+    for split in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let d = json!({
+            "enableTopLevelFallback": true, "ignorePatternData": null,
+            "dependencyTreeRoots": [{"name":"root","reference":"workspace:."}],
+            "fallbackPool": [], "fallbackExclusionList": [],
+            "packageRegistryData": [
+                [null, [[null, {"packageLocation":"./","packageDependencies":[],"linkType":"SOFT","discardFromLookup":true}]]],
+                ["root", [["workspace:.", {"packageLocation":"./","packageDependencies":[],"linkType":"SOFT"}]]]
+            ]
+        });
+        if split {
+            fs::write(
+                root.path().join(".pnp.cjs"),
+                "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");\nthrow \
+                 Error('must never execute');\n",
+            )
+            .unwrap();
+            fs::write(
+                root.path().join(".pnp.data.json"),
+                serde_json::to_vec(&d).unwrap(),
+            )
+            .unwrap();
+        } else {
+            inline(root.path(), &d);
+        }
+        for setfd in [false, true] {
+            for constructor in [false, true] {
+                let binary = binaries.path().join(format!("fcntl-{setfd}-{constructor}"));
+                for mediated in [false, true] {
+                    let mut command = if mediated {
+                        let mut command = Command::new(env!("CARGO_BIN_EXE_pnport"));
+                        command
+                            .arg("--cache-dir")
+                            .arg(cache.path().join("cache"))
+                            .args(["--color", "never", "run", "--"]);
+                        command
+                    } else {
+                        Command::new(if constructor { &loader } else { &binary })
+                    };
+                    if mediated {
+                        command.arg(if constructor { &loader } else { &binary });
+                    }
+                    if constructor {
+                        command.arg(&binary);
+                    }
+                    let result = command.current_dir(root.path()).output().unwrap();
+                    let expected = if setfd {
+                        b"fcntl-setfd-ok\n".as_slice()
+                    } else {
+                        b"fcntl-abi-ok\n".as_slice()
+                    };
+                    if !result.status.success() || result.stdout != expected {
+                        failures.push(format!(
+                            "split={split} setfd={setfd} constructor={constructor} \
+                             mediated={mediated} status={} stdout={} stderr={}",
+                            result.status,
+                            String::from_utf8_lossy(&result.stdout),
+                            String::from_utf8_lossy(&result.stderr)
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(!root.path().join("node_modules").exists());
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn macos_readlinkat_preserves_logical_targets_and_native_controls() {
     use std::process::Command;
 
@@ -689,7 +802,17 @@ fn macos_readlinkat_preserves_logical_targets_and_native_controls() {
         }
         let executable = root.path().join("readlinkat-fixture");
         assert!(Command::new("cc")
-            .args(["-Wall", "-Wextra", "-Werror"])
+            .args([
+                "-arch",
+                if cfg!(target_arch = "aarch64") {
+                    "arm64"
+                } else {
+                    "x86_64"
+                },
+                "-Wall",
+                "-Wextra",
+                "-Werror"
+            ])
             .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/readlinkat.c"))
             .arg("-o")
             .arg(&executable)
