@@ -184,7 +184,14 @@ fn opened_path(file: &File) -> Result<PathBuf, ReproFailure> {
         return Err(ReproFailure::Unavailable);
     }
     path.truncate(length);
-    Ok(PathBuf::from(OsString::from_wide(&path)))
+    let path = PathBuf::from(OsString::from_wide(&path));
+    // GetFinalPathNameByHandleW uses the extended-length prefix even when
+    // the source root uses the ordinary drive-letter spelling. Remove only
+    // that transport prefix so containment checks compare equivalent paths.
+    Ok(path
+        .strip_prefix(Path::new("\\\\?\\"))
+        .map(Path::to_path_buf)
+        .unwrap_or(path))
 }
 
 #[cfg(unix)]
