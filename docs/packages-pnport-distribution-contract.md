@@ -53,8 +53,6 @@ The suite verifies the official compiler payload on each host, its unchanged sig
 
 This passed on macOS 26.6.2 arm64 and in an offline Ubuntu 22.04 arm64 Docker container. These ARM64 observations do not establish macOS 13, complete native x64 acceptance, peer-variant TypeScript, all process propagation, or installed pnport npm/archive conformance. Those release gates remain open.
 
-## Dependencies and Integrations
-
 ### Offline benchmark protocol
 
 The private package's `benchmark` command accepts an already prepared TypeScript conformance directory, a new output directory, the native pnport executable (not an installation wrapper), its declared source commit, and optional sample/iteration counts. Preparation and conformance must run first so reference declarations exist. Execution performs no dependency installation or downloads. The harness requires a clean committed checkout, a native macOS/glibc Linux host, and at least five samples per condition.
@@ -63,9 +61,13 @@ For both inline and split manifests, each filesystem and TypeScript repetition u
 
 The external `benchmark.json` includes the harness commit, separately declared native build commit and executable digest, compiler/lock/manifest/source/archive identities, host/tool details, raw numeric samples and median/minimum/maximum summaries. A declared revision is provenance supplied by the caller, not a verified release signature. Never store raw process inventories, child streams, environment values or unrelated user content in results. Record reviewed results in PRs/issues/CI artifacts; do not commit benchmark result documents. Development measurements cannot satisfy the final release-build, minimum-OS or complete four-target acceptance by themselves.
 
+Native main CI and exact-source candidate jobs run this protocol after consumer, TypeScript and installation conformance, using the packaged native executable and the job's checked-out source revision. Each host must finish every sample before its job succeeds. Upload only `benchmark.json` as a separate target/revision/run-attempt artifact; benchmark outputs never enter native archive/npm assembly. Publication still requires reviewed full conformance and minimum-OS acceptance plus the private readiness gate.
+
 ```sh
 node packages/pnport/scripts/benchmark.mjs /temporary/prepared-typescript /temporary/new-results /path/to/native/pnport <native-source-commit>
 ```
+
+## Dependencies and Integrations
 
 [Native foundation](crates-pnport-foundation.md), [repository workflow](repository-workflow-contract.md), and consolidated public guides. Source workspace remains private and does not depend on unpublished platform packages.
 

@@ -141,6 +141,10 @@ async function main(args) {
   const nativeDigest = digest(binary);
   const companion = join(dirname(binary), process.platform === "darwin" ? "libpnport_preload.dylib" : "libpnport_preload.so");
   const companionDigest = digest(companion);
+  const archives = () => readdirSync(join(fixture, "external-cache")).filter((name) => name.endsWith(".zip")).sort()
+    .map((name) => ({ name, sha256: digest(join(fixture, "external-cache", name)) }));
+  const archiveDigests = archives();
+  assert(archiveDigests.length > 0);
   mkdirSync(output, { mode: 0o700, recursive: true });
   const filesystemBinary = join(output, "filesystem-benchmark");
   execute("cc", ["-O2", "-Wall", "-Wextra", "-Werror", fileURLToPath(new URL("../test/fixtures/benchmark.c", import.meta.url)), "-o", filesystemBinary], output);
@@ -200,9 +204,7 @@ async function main(args) {
       sampledPeakProcessTreeRssBytes: summarize(selected.map((sample) => sample.sampledPeakProcessTreeRssBytes)),
       cacheLogicalBytes: summarize(selected.map((sample) => sample.cacheAfter.logicalBytes)), cacheAllocatedBytes: summarize(selected.map((sample) => sample.cacheAfter.allocatedBytes)) });
   }
-  const archiveDigests = readdirSync(join(fixture, "external-cache")).filter((name) => name.endsWith(".zip")).sort()
-    .map((name) => ({ name, sha256: digest(join(fixture, "external-cache", name)) }));
-  assert(archiveDigests.length > 0);
+  assert.deepEqual(archives(), archiveDigests, "Dependency archive bytes changed during measurements.");
   assert.equal(digest(binary), nativeDigest, "The measured native executable changed.");
   assert.equal(digest(companion), companionDigest, "The measured companion changed.");
   for (const inputs of fixtureDigests) {
