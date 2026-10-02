@@ -1,8 +1,8 @@
 //! Dependency extraction and loss-aware native file watching.
 
 use std::{
-    collections::BTreeSet,
-    path::{Path, PathBuf},
+    collections::{BTreeSet, VecDeque},
+    path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, RecvTimeoutError, Sender},
@@ -39,6 +39,7 @@ impl std::fmt::Display for WatchFailure {
 #[derive(Debug, Clone, Default)]
 pub struct Dependencies {
     files: BTreeSet<PathBuf>,
+    links: BTreeSet<PathBuf>,
     directories: BTreeSet<PathBuf>,
     absent: BTreeSet<PathBuf>,
     writes: BTreeSet<PathBuf>,
@@ -134,6 +135,69 @@ fn logical_relative(path: &AccessPath, root: &Path) -> Option<PathBuf> {
 }
 
 impl Dependencies {
+    fn include_links(&mut self, root: &Path, relative: &Path) {
+        if self.files.contains(relative)
+            || self.directories.contains(relative)
+            || self.absent.contains(relative)
+        {
+            return;
+        }
+        // Walk only this input's components, including link targets. Retain
+        // each link's own directory entry rather than its resolved directory:
+        // a nonrecursive watch there must see replacement of the link itself.
+        let mut pending = relative
+            .components()
+            .map(|component| component.as_os_str().to_os_string())
+            .collect::<VecDeque<_>>();
+        let mut cursor = PathBuf::new();
+        let mut hops = 0;
+        while let Some(component) = pending.pop_front() {
+            match Path::new(&component).components().next() {
+                Some(Component::CurDir) => continue,
+                Some(Component::ParentDir) => {
+                    if !cursor.pop() {
+                        return;
+                    }
+                    continue;
+                }
+                Some(Component::Normal(_)) => cursor.push(component),
+                _ => return,
+            }
+            let Ok(metadata) = std::fs::symlink_metadata(root.join(&cursor)) else {
+                // Missing leaves retain the links already encountered; the
+                // absent-path dependency supplies their nearest live anchor.
+                return;
+            };
+            if !metadata.file_type().is_symlink() {
+                continue;
+            }
+            self.links.insert(cursor.clone());
+            hops += 1;
+            if hops > 40 {
+                return;
+            }
+            let Ok(target) = std::fs::read_link(root.join(&cursor)) else {
+                return;
+            };
+            cursor.pop();
+            let target = if target.is_absolute() {
+                if !path_prefix(root, &target) {
+                    return;
+                }
+                cursor.clear();
+                target
+                    .components()
+                    .skip(root.components().count())
+                    .collect::<PathBuf>()
+            } else {
+                target
+            };
+            for component in target.components().rev() {
+                pending.push_front(component.as_os_str().to_os_string());
+            }
+        }
+    }
+
     fn include_path(
         &mut self,
         path: &AccessPath,
@@ -153,9 +217,7 @@ impl Dependencies {
         let Some(relative) = path.project_relative.as_ref() else {
             return;
         };
-        if !selector.matches(relative) {
-            return;
-        }
+        let selected = selector.matches(relative);
         let Some(relative) = native_relative(relative) else {
             return;
         };
@@ -166,15 +228,23 @@ impl Dependencies {
         ) && native_result >= 0
         {
             self.writes.insert(relative.clone());
+            if let Some(alias) = &alias {
+                self.writes.insert(alias.clone());
+            }
         }
         if native_result < 0 {
             // A missing queried path is a dependency because its later
             // creation can change the command's behavior.
-            if matches!(
-                operation,
-                Operation::Open | Operation::Metadata | Operation::Directory | Operation::Exec
-            ) && missing_path_error(native_error)
+            if selected
+                && matches!(
+                    operation,
+                    Operation::Open | Operation::Metadata | Operation::Directory | Operation::Exec
+                )
+                && missing_path_error(native_error)
             {
+                if let (Some(root), Some(alias)) = (root, &alias) {
+                    self.include_links(root, alias);
+                }
                 self.absent.insert(relative);
                 if let Some(alias) = alias {
                     self.absent.insert(alias);
@@ -189,18 +259,29 @@ impl Dependencies {
             }
             return;
         }
+        // Writes to an input's ancestor can overlap notifications even when
+        // the ancestor itself is excluded by the input selector.
+        if !selected {
+            return;
+        }
         match operation {
             Operation::Read
             | Operation::PositionalRead
             | Operation::Open
             | Operation::Metadata
             | Operation::Exec => {
+                if let (Some(root), Some(alias)) = (root, &alias) {
+                    self.include_links(root, alias);
+                }
                 self.files.insert(relative);
                 if let Some(alias) = alias {
                     self.files.insert(alias);
                 }
             }
             Operation::Directory => {
+                if let (Some(root), Some(alias)) = (root, &alias) {
+                    self.include_links(root, alias);
+                }
                 self.directories.insert(relative);
             }
             Operation::Close
@@ -228,11 +309,19 @@ impl Dependencies {
                 );
             }
         }
+        tracing::debug!(
+            files = dependencies.files.len(),
+            links = dependencies.links.len(),
+            directories = dependencies.directories.len(),
+            absent = dependencies.absent.len(),
+            "watch dependencies extracted"
+        );
         dependencies
     }
 
     pub fn merge(&mut self, other: Self) {
         self.files.extend(other.files);
+        self.links.extend(other.links);
         self.directories.extend(other.directories);
         self.absent.extend(other.absent);
     }
@@ -243,6 +332,7 @@ impl Dependencies {
 
     fn relevant(&self, path: &Path) -> bool {
         self.files.iter().any(|file| same_path(file, path))
+            || self.links.iter().any(|link| same_path(link, path))
             || self
                 .directories
                 .iter()
@@ -264,6 +354,7 @@ impl Dependencies {
         for relative in self
             .files
             .iter()
+            .chain(&self.links)
             .chain(&self.directories)
             .chain(&self.absent)
         {
@@ -429,6 +520,158 @@ impl WatchSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn observed_input(root: &Path, logical: &str, resolved: &str, missing: bool) -> Dependencies {
+        let access = AccessPath {
+            class: PathClass::Project,
+            logical: native(&root.join(logical)),
+            resolved: Some(native(&root.join(resolved))),
+            project_relative: Some(native(Path::new(resolved))),
+            identity: None,
+        };
+        // Ancestor links need not match the file selector themselves.
+        let selector = Selector::new(&["**/input".to_owned()], &[]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(
+            &access,
+            &selector,
+            Observed {
+                operation: Operation::Open,
+                open_mutates: false,
+                native_result: if missing { -1 } else { 0 },
+                native_error: missing.then_some(libc::ENOENT),
+            },
+            Some(root),
+        );
+        dependencies
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nested_link_ancestors_keep_their_own_parent_anchors() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::create_dir(root.join("one")).unwrap();
+        fs::create_dir(root.join("two")).unwrap();
+        fs::write(root.join("two/input"), b"fixture").unwrap();
+        symlink("one", root.join("current")).unwrap();
+        symlink("../two", root.join("one/nested")).unwrap();
+        let dependencies = observed_input(&root, "current/nested/input", "two/input", false);
+        assert_eq!(
+            dependencies.links,
+            BTreeSet::from([PathBuf::from("current"), PathBuf::from("one/nested")])
+        );
+        let anchors = dependencies.anchors(&root);
+        assert!(anchors.contains(&root));
+        assert!(anchors.contains(&root.join("one")));
+        assert!(anchors.contains(&root.join("two")));
+        assert!(dependencies.relevant(Path::new("current")));
+        assert!(dependencies.relevant(Path::new("one/nested")));
+        assert!(!dependencies.relevant(Path::new("one/sibling")));
+        assert!(!dependencies.relevant(Path::new("two/sibling")));
+        assert!(!dependencies.relevant(Path::new("unrelated")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_leaf_keeps_ancestor_links_and_failed_run_union() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::create_dir(root.join("one")).unwrap();
+        symlink("one", root.join("current")).unwrap();
+        let previous = observed_input(&root, "current/input", "one/input", true);
+        assert!(previous.links.contains(Path::new("current")));
+        assert!(previous.anchors(&root).contains(&root));
+        assert!(previous.relevant(Path::new("one/input")));
+        fs::remove_file(root.join("current")).unwrap();
+        let mut next = observed_input(&root, "current/input", "current/input", true);
+        next.merge(previous);
+        assert!(next.links.contains(Path::new("current")));
+        assert!(next.relevant(Path::new("one/input")));
+        symlink("one", root.join("current")).unwrap();
+        fs::write(root.join("one/input"), b"fixture").unwrap();
+        let recovered = observed_input(&root, "current/input", "one/input", false);
+        assert!(recovered.absent.is_empty());
+        assert!(recovered.links.contains(Path::new("current")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_target_chains_stop_at_root_and_cycles_are_bounded() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::create_dir(root.join("one")).unwrap();
+        symlink("one", root.join("second")).unwrap();
+        symlink(root.join("second"), root.join("current")).unwrap();
+        let dependencies = observed_input(&root, "current/input", "one/input", true);
+        assert!(dependencies.links.contains(Path::new("current")));
+        assert!(dependencies.links.contains(Path::new("second")));
+        symlink("../outside", root.join("escape")).unwrap();
+        let mut bounded = Dependencies::default();
+        bounded.include_links(&root, Path::new("escape/input"));
+        assert_eq!(bounded.links, BTreeSet::from([PathBuf::from("escape")]));
+        assert_eq!(bounded.anchors(&root), BTreeSet::from([root.clone()]));
+        symlink("loop", root.join("loop")).unwrap();
+        bounded.include_links(&root, Path::new("loop/input"));
+        assert!(bounded.links.contains(Path::new("loop")));
+        assert!(bounded.links.iter().all(|path| !path.is_absolute()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_written_link_with_native_notification_is_ambiguous() {
+        use std::{fs, os::unix::fs::symlink};
+
+        use notify::EventKind;
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::create_dir(root.join("one")).unwrap();
+        symlink("one", root.join("current")).unwrap();
+        let mut dependencies = observed_input(&root, "current/input", "one/input", true);
+        let access = AccessPath {
+            class: PathClass::Project,
+            logical: native(&root.join("current")),
+            resolved: Some(native(&root.join("one"))),
+            project_relative: Some(native(Path::new("one"))),
+            identity: None,
+        };
+        dependencies.include_path(
+            &access,
+            &Selector::new(&["**/input".to_owned()], &[]).unwrap(),
+            Observed {
+                operation: Operation::Mutation,
+                open_mutates: false,
+                native_result: 0,
+                native_error: None,
+            },
+            Some(&root),
+        );
+        assert!(dependencies.self_written(Path::new("current")));
+        let session = WatchSession::new(root.clone());
+        session
+            .tx
+            .send(Ok(
+                Event::new(EventKind::Other).add_path(root.join("current"))
+            ))
+            .unwrap();
+        assert_eq!(
+            session.collect(
+                &dependencies,
+                Duration::from_millis(1),
+                Duration::from_millis(10),
+                &AtomicBool::new(false),
+            ),
+            Err(WatchFailure::UnsafeAmbiguity)
+        );
+    }
 
     #[cfg(unix)]
     fn native(path: &Path) -> NativePath {
