@@ -91,6 +91,9 @@ func init() {
 			}
 			write(request.ID, map[string]any{"data": threads, "nextCursor": nil})
 		default:
+			if strings.HasPrefix(mode, "models-") && modelFixture(request.ID, request.Method, request.Params, mode, write) {
+				continue
+			}
 			if request.Method == "" && mode == "thread-turn-approvals" {
 				if !threads.approvalReply(request.ID, request.Result) {
 					os.Exit(34)

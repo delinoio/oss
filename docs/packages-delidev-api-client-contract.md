@@ -16,6 +16,13 @@ The DeliDev desktop client connects to one explicitly selected authenticated loc
 
 ## Interfaces and Contracts
 
+`NativeModelQuery` exports generated discovery/status/list/cancel descriptors
+under the [native model contract](cmds-delidev-native-models-contract.md). Keep
+exact bigint revisions, UUID-v7 mutation identities and immutable job/page
+selection. Private executable selection and full observations never enter generic
+public Resource documents; observation pages remain advisory. Client parsing and
+registration preparation grant no authorization or implicit model save.
+
 Generated `ListResourcesRequest` exposes optional account-only provider and account-type selectors. Keep these fields in the list request and its query key/cursor input; do not move them into the shared `Filter` used by snapshots or event streams. The Go server performs filtering before pagination and binds both fields into continuation cursors. Provider inventory reports `ACCOUNT_TYPE_FILTER` separately from its activation/model/provider-filter capabilities; split account views require all of them.
 - `buf.gen.yaml` generates messages and Connect Query descriptors exclusively from `delidev.v1`. Root generation/freshness and Turbo input/output tracking include the package. Existing Go/DevHud/ach output remains reproducible.
 - `ActivityQuery` exposes typed PR handling metadata and the `PR_HANDLING_V1` capability. Preserve original numeric identity strings, bigint revisions, content-version references and separate dismissal/attempt/verified outcomes. Explicit ResourceQuery source inspection reads original retained resources without mutation or handling inference; see the [activity contract](cmds-delidev-activity-contract.md).

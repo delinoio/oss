@@ -140,13 +140,13 @@ export function AppearanceSettings() {
   return <section className="appearance-settings" aria-label="Device appearance">
     <fieldset disabled={Boolean(operation || snapshot.problem)} aria-describedby="appearance-scope">
       <legend>Theme</legend>
-      {[Theme.System, Theme.Light, Theme.Dark].map((theme) => <label className="appearance-choice" key={theme}>
+      <div className="appearance-choices">{[Theme.System, Theme.Light, Theme.Dark].map((theme) => <label className="appearance-choice" key={theme}>
         <input type="radio" name="device-theme" value={theme} checked={snapshot.theme === theme} onChange={() => select(theme)} />
-        <span>{theme === Theme.System ? "System" : theme === Theme.Light ? "Light" : "Dark"}</span>
-      </label>)}
+        <span className="appearance-miniature" data-preview={theme} aria-hidden="true" /><span>{theme === Theme.System ? "System" : theme === Theme.Light ? "Light" : "Dark"}</span>
+      </label>)}</div>
     </fieldset>
     <p id="appearance-scope">System follows this computer’s appearance. Theme changes save automatically and apply to every DeliDev window.</p>
-    <p role="status" aria-live="polite">{operation === AppearanceOperation.Reading ? "Reading appearance…" : operation === AppearanceOperation.Saving ? "Saving theme…" : snapshot.problem ? "Appearance is not saved. Inspect the saved selection before trying again." : "Saved on this computer."}</p>
+    <p role="status" aria-live="polite">{operation === AppearanceOperation.Reading ? "Reading appearance…" : operation === AppearanceOperation.Saving ? "Saving theme…" : snapshot.problem ? "Appearance is not saved. Inspect the saved selection before trying again." : "Theme saved."}</p>
     {snapshot.problem ? <><p role="alert">{problemMessages[snapshot.problem]}</p><button type="button" disabled={Boolean(operation)} onClick={reload}>Reload appearance</button></> : null}
   </section>;
 }

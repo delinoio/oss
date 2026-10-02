@@ -2,9 +2,9 @@
 /* Transfer owns its body only; the Settings host retains navigation and lifetime. */
 .settings-transfer-column, .configuration-transfer {
   width: 100%;
-  max-width: 880px;
+  max-width: 1040px;
   min-width: 0;
-  margin-inline: auto;
+  margin-inline: 0;
   color: var(--text);
   font-size: 15px;
 }

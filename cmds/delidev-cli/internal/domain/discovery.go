@@ -100,6 +100,9 @@ func (o *HarnessDiscoveryOutput) ValidateDiscovery(input HarnessDiscoveryInput) 
 	expected := input.Selections.Installations()
 	for index := range o.Installations {
 		i := &o.Installations[index]
+		if i.ExecutableSHA256 != "" && (i.Harness != Codex || i.State != InstallationDetected || !nativeExecutableDigest.MatchString(i.ExecutableSHA256)) {
+			return Fail(InvalidArgument, "The executable identity is invalid for this discovery outcome.", "Report a SHA-256 identity only for a detected Codex installation.")
+		}
 		if i.Harness != expected[index].Harness || i.ExplicitPath != expected[index].ExplicitPath || len(i.Capabilities) != 0 || i.ObservedAt != nil {
 			return Fail(InvalidArgument, "Discovery reported unrequested selection or unverified capabilities.", "Report only the discovery observations requested by the accepted job.")
 		}
