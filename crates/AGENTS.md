@@ -178,6 +178,8 @@
 
 ### clibox Rules
 
+- macOS fbreak must own terminal SIGHUP before setup/launch and route it to control-loss cancellation through bounded owned-process cleanup. Keep hangup registration command-specific, reject queued admissions during cancellation, preserve cleanup-failure precedence, and retain real controlling-PTY loss regressions for held reads, root admission and concurrent owned callers.
+
 - YAML structural sharing uses `imbl` with `RcK`, preserving ordered-map diffing, bounded expansion accounting, and single-threaded reference sharing. Keep the panic-safe chunk dependency and the long shadowed-merge/resource-limit fixtures when updating collections.
 - Concurrent publication fixtures must preserve fail-closed destination validation: a Unix handle unlinked by another successful replacement may return `UnsafeDestination`. Require at least one successful writer, one complete successful payload, and clean staging; retain deterministic zero-link rejection coverage.
 

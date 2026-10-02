@@ -2697,6 +2697,28 @@ struct MacSignals {
 
 #[cfg(target_os = "macos")]
 impl MacSignals {
+    fn for_break(
+        control_loss: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<Self, crate::macos::supervise::CaptureFailure> {
+        use std::sync::atomic::Ordering;
+
+        let mut signals = Self::new()?;
+        let cancelled = std::sync::Arc::clone(&signals.cancelled);
+        // Only fbreak owns terminal hangup. Publish the reason before waking
+        // cleanup, including when no thread is currently waiting for a key.
+        // SAFETY: the handler only stores to owned, lock-free atomic flags.
+        signals.registrations.push(
+            unsafe {
+                signal_hook::low_level::register(signal_hook::consts::SIGHUP, move || {
+                    control_loss.store(true, Ordering::SeqCst);
+                    cancelled.store(true, Ordering::SeqCst);
+                })
+            }
+            .map_err(|_| crate::macos::supervise::CaptureFailure::Initialization)?,
+        );
+        Ok(signals)
+    }
+
     fn new() -> Result<Self, crate::macos::supervise::CaptureFailure> {
         use std::sync::{
             atomic::{AtomicBool, AtomicUsize},
@@ -3282,13 +3304,23 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
         Ok(selector) => selector,
         Err(error) => return diagnostic(&error.to_string(), "fbreak"),
     };
-    let terminal = match MacBreakTerminal::new() {
-        Ok(terminal) => Arc::new(Mutex::new(terminal)),
-        Err(error) => return diagnostic(error, "fbreak"),
-    };
-    let signals = match MacSignals::new() {
+    let control_loss = Arc::new(AtomicBool::new(false));
+    let signals = match MacSignals::for_break(Arc::clone(&control_loss)) {
         Ok(signals) => signals,
         Err(error) => return macos_capture_status((error, 0), "fbreak"),
+    };
+    let terminal = match MacBreakTerminal::new() {
+        Ok(terminal) => Arc::new(Mutex::new(terminal)),
+        Err(error) => {
+            return diagnostic(
+                if control_loss.load(Ordering::SeqCst) {
+                    "control_channel_loss"
+                } else {
+                    error
+                },
+                "fbreak",
+            )
+        }
     };
     let deadline = match args.execution.timeout {
         Some(timeout) => match std::time::Instant::now().checked_add(timeout) {
@@ -3311,7 +3343,6 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
         .stderr(Stdio::inherit());
     let continue_all = Arc::new(AtomicBool::new(false));
     let user_quit = Arc::new(AtomicBool::new(false));
-    let control_loss = Arc::new(AtomicBool::new(false));
     let timed_out = Arc::new(AtomicBool::new(false));
     let admission = {
         let terminal = Arc::clone(&terminal);
@@ -3322,6 +3353,9 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
         let timed_out = Arc::clone(&timed_out);
         move |frame: &crate::macos::Frame, stopping: &AtomicBool| {
             use crate::macos::Admission;
+            if cancelled.load(Ordering::SeqCst) || stopping.load(Ordering::Acquire) {
+                return Admission::Quit;
+            }
             let Some(operation) = crate::macos::operation(frame.operation) else {
                 return Admission::Proceed(Duration::ZERO);
             };
@@ -3341,13 +3375,13 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
                 .lock()
                 .map_err(|_| "control_channel_loss")
                 .and_then(|mut terminal| {
-                    if continue_all.load(Ordering::SeqCst) {
-                        Ok(b'c')
-                    } else if cancelled.load(Ordering::SeqCst)
+                    if cancelled.load(Ordering::SeqCst)
                         || stopping.load(Ordering::Acquire)
                         || deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline)
                     {
                         Ok(0)
+                    } else if continue_all.load(Ordering::SeqCst) {
+                        Ok(b'c')
                     } else {
                         terminal.decision(frame, &cancelled, stopping, deadline)
                     }
@@ -3390,13 +3424,37 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
         admission,
     );
     drop(terminal);
-    if control_loss.load(Ordering::SeqCst) {
+    macos_break_status(
+        result,
+        control_loss.load(Ordering::SeqCst),
+        user_quit.load(Ordering::SeqCst),
+        timed_out.load(Ordering::SeqCst),
+        signals.signal.load(Ordering::SeqCst),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn macos_break_status(
+    result: Result<CompleteRecord, crate::macos::supervise::CaptureFailure>,
+    control_loss: bool,
+    user_quit: bool,
+    timed_out: bool,
+    signal: usize,
+) -> i32 {
+    use crate::macos::supervise::CaptureFailure;
+
+    // A requested stop is not confirmed cleanup. Preserve the supervisor's
+    // failure before interpreting the terminal or keyboard outcome.
+    if matches!(result, Err(CaptureFailure::Cleanup)) {
+        return macos_capture_status((CaptureFailure::Cleanup, signal), "fbreak");
+    }
+    if control_loss {
         return diagnostic("control_channel_loss", "fbreak");
     }
-    if user_quit.load(Ordering::SeqCst) {
+    if user_quit {
         return 130;
     }
-    if timed_out.load(Ordering::SeqCst) {
+    if timed_out {
         return macos_capture_status(
             (crate::macos::supervise::CaptureFailure::Timeout, 0),
             "fbreak",
@@ -3404,9 +3462,7 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
     }
     match result {
         Ok(record) => final_child_status(&record),
-        Err(error) => {
-            macos_capture_status((error, signals.signal.load(Ordering::SeqCst)), "fbreak")
-        }
+        Err(error) => macos_capture_status((error, signal), "fbreak"),
     }
 }
 
@@ -5432,14 +5488,43 @@ mod tests {
             time::{Duration, Instant},
         };
 
+        struct FixtureCleanup(PathBuf);
+        impl Drop for FixtureCleanup {
+            fn drop(&mut self) {
+                // Even a failing regression must not leave its synthetic
+                // workers running after the wrapper's bounded wait expires.
+                for entry in fs::read_dir(&self.0).unwrap().flatten() {
+                    if entry.file_name().to_string_lossy().starts_with("pid-") {
+                        if let Ok(pid) = fs::read_to_string(entry.path())
+                            .unwrap_or_default()
+                            .parse::<i32>()
+                        {
+                            // SAFETY: the fixture records only its own worker PIDs.
+                            unsafe {
+                                libc::kill(pid, libc::SIGKILL);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let directory = tempfile::tempdir().unwrap();
+        let _cleanup = FixtureCleanup(directory.path().to_path_buf());
         let input = directory.path().join("input.txt");
         fs::write(&input, b"fixture").unwrap();
         for (case, key) in [
             ("continue", Some(b'c')),
+            ("step", Some(b'n')),
             ("quit", Some(b'q')),
             ("timeout", None),
             ("root-timeout", None),
+            ("hangup", None),
+            ("root-hangup", None),
+            ("parallel-hangup", None),
+            ("continue-hangup", Some(b'c')),
+            ("ctrl-c", Some(3)),
+            ("interrupt", None),
+            ("terminate", None),
         ] {
             let mut master = 0_i32;
             let mut slave = 0_i32;
@@ -5457,16 +5542,31 @@ mod tests {
                 0
             );
             // SAFETY: ownership transfers from openpty to File.
-            let mut master = unsafe { fs::File::from_raw_fd(master) };
+            let master = unsafe { fs::File::from_raw_fd(master) };
             let slave = unsafe { fs::File::from_raw_fd(slave) };
+            // Do not let the wrapper retain the master across exec: that
+            // prevents the parent's close from generating a real hangup.
+            // SAFETY: fcntl updates only these test-owned descriptors.
+            for fd in [
+                std::os::fd::AsRawFd::as_raw_fd(&master),
+                std::os::fd::AsRawFd::as_raw_fd(&slave),
+            ] {
+                assert_eq!(
+                    unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) },
+                    0
+                );
+            }
             let stdout = slave.try_clone().unwrap();
-            let stderr = slave.try_clone().unwrap();
+            // Keep diagnostics observable after the control terminal is lost.
+            let error_path = directory.path().join("break-stderr");
+            let stderr = fs::File::create(&error_path).unwrap();
             let mut child = std::process::Command::new(std::env::current_exe().unwrap());
             child
                 .arg("--exact")
                 .arg("cli::tests::macos_breakpoint_child")
                 .env("CLIBOX_FSPY_MAC_BREAK_CHILD", case)
                 .env("CLIBOX_FSPY_CLI_MAC_INPUT", &input)
+                .env("CLIBOX_FSPY_MAC_BREAK_ROOT", directory.path())
                 .current_dir(directory.path())
                 .stdin(std::process::Stdio::from(slave))
                 .stdout(std::process::Stdio::from(stdout))
@@ -5490,10 +5590,11 @@ mod tests {
             assert!(unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0);
             let mut output = Vec::new();
             let mut sent = false;
-            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut master = Some(master);
+            let deadline = Instant::now() + Duration::from_secs(15);
             let status = loop {
                 let mut buffer = [0_u8; 4096];
-                if let Ok(count) = master.read(&mut buffer) {
+                if let Some(Ok(count)) = master.as_mut().map(|master| master.read(&mut buffer)) {
                     output.extend_from_slice(&buffer[..count]);
                 }
                 if !sent
@@ -5502,9 +5603,51 @@ mod tests {
                         .any(|text| text == b"break:")
                 {
                     if let Some(key) = key {
-                        master.write_all(&[key]).unwrap();
+                        master.as_mut().unwrap().write_all(&[key]).unwrap();
                     }
-                    sent = true;
+                    if key == Some(b'n') {
+                        output.clear();
+                    }
+                    if case == "parallel-hangup" {
+                        // Both owned processes queue three thread-scoped reads
+                        // before the first terminal decision is released.
+                        while fs::read_dir(directory.path())
+                            .unwrap()
+                            .filter(|entry| {
+                                entry
+                                    .as_ref()
+                                    .unwrap()
+                                    .file_name()
+                                    .to_string_lossy()
+                                    .starts_with("ready-")
+                            })
+                            .count()
+                            < 6
+                        {
+                            assert!(Instant::now() < deadline, "threads did not queue reads");
+                            thread::sleep(Duration::from_millis(10));
+                        }
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                    if case == "continue-hangup" {
+                        while !directory.path().join("continued").exists() {
+                            assert!(Instant::now() < deadline, "continue did not release read");
+                            thread::sleep(Duration::from_millis(10));
+                        }
+                    }
+                    if case.ends_with("hangup") {
+                        drop(master.take());
+                    } else if matches!(case, "interrupt" | "terminate") {
+                        let signal = if case == "interrupt" {
+                            libc::SIGINT
+                        } else {
+                            libc::SIGTERM
+                        };
+                        // SAFETY: this PID belongs to the owned wrapper child.
+                        assert_eq!(unsafe { libc::kill(child.id() as i32, signal) }, 0);
+                    }
+                    // Step intentionally sends n at each following match.
+                    sent = case != "step";
                 }
                 if let Some(status) = child.try_wait().unwrap() {
                     break status;
@@ -5512,18 +5655,54 @@ mod tests {
                 if Instant::now() >= deadline {
                     child.kill().unwrap();
                     panic!(
-                        "macOS breakpoint child did not finish in {case}: {}",
-                        String::from_utf8_lossy(&output)
+                        "macOS breakpoint child did not finish in {case}: {} {}",
+                        String::from_utf8_lossy(&output),
+                        fs::read_to_string(&error_path).unwrap_or_default()
                     );
                 }
                 thread::sleep(Duration::from_millis(10));
             };
-            assert!(
-                status.success(),
-                "{case}: {}",
-                String::from_utf8_lossy(&output)
-            );
-            assert!(sent, "{case} did not reach a breakpoint");
+            let expected = match case {
+                "quit" | "ctrl-c" | "interrupt" => 130,
+                "terminate" => 143,
+                "timeout" | "root-timeout" => 124,
+                case if case.ends_with("hangup") => 1,
+                _ => 0,
+            };
+            let errors = fs::read_to_string(&error_path).unwrap();
+            assert_eq!(status.code(), Some(expected), "{case}: {errors}");
+            if case != "step" {
+                assert!(sent, "{case} did not reach a breakpoint");
+            }
+            if case.ends_with("hangup") {
+                assert!(errors.contains("control_channel_loss"), "{case}: {errors}");
+                assert_eq!(
+                    directory.path().join("continued").exists(),
+                    case == "continue-hangup"
+                );
+                let mut observed_children = 0;
+                for entry in fs::read_dir(directory.path()).unwrap().flatten() {
+                    if entry.file_name().to_string_lossy().starts_with("pid-") {
+                        observed_children += 1;
+                        let pid: i32 = fs::read_to_string(entry.path()).unwrap().parse().unwrap();
+                        // SAFETY: zero only probes the recorded synthetic child.
+                        assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "{case}: child survived");
+                        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
+                        fs::remove_file(entry.path()).unwrap();
+                    } else if entry.file_name().to_string_lossy().starts_with("ready-") {
+                        fs::remove_file(entry.path()).unwrap();
+                    }
+                }
+                let expected_children = match case {
+                    "root-hangup" => 0,
+                    "parallel-hangup" => 2,
+                    _ => 1,
+                };
+                assert_eq!(observed_children, expected_children, "{case}");
+                if case == "continue-hangup" {
+                    fs::remove_file(directory.path().join("continued")).unwrap();
+                }
+            }
         }
     }
 
@@ -5535,7 +5714,7 @@ mod tests {
         };
         let executable = std::env::current_exe().unwrap();
         let mut arguments = vec![OsString::from("fspy"), OsString::from("fbreak")];
-        if case == "root-timeout" {
+        if case == "root-timeout" || case == "root-hangup" {
             arguments.extend([
                 OsString::from("--root"),
                 executable.parent().unwrap().as_os_str().to_os_string(),
@@ -5545,25 +5724,134 @@ mod tests {
                 OsString::from("exec"),
             ]);
         } else {
-            arguments.extend([OsString::from("--include"), OsString::from("input.txt")]);
+            arguments.extend([
+                OsString::from("--include"),
+                OsString::from("input.txt"),
+                OsString::from("--op"),
+                OsString::from("read"),
+            ]);
         }
         if case == "timeout" || case == "root-timeout" {
             arguments.extend([OsString::from("--timeout"), OsString::from("2s")]);
         }
         arguments.extend([
+            OsString::from("--kill-after"),
+            OsString::from("100ms"),
             OsString::from("--"),
             executable.into_os_string(),
             OsString::from("--exact"),
-            OsString::from("cli::tests::macos_cli_read_fixture"),
+            OsString::from(if case.to_string_lossy().ends_with("hangup") {
+                "cli::tests::macos_breakpoint_hangup_worker"
+            } else {
+                "cli::tests::macos_cli_read_fixture"
+            }),
             OsString::from("--nocapture"),
         ]);
         let cli = TestCli::try_parse_from(arguments).unwrap();
-        let expected = match case.to_str().unwrap() {
-            "quit" => 130,
-            "timeout" | "root-timeout" => 124,
-            _ => 0,
+        std::process::exit(execute(cli.command));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_breakpoint_hangup_worker() {
+        use std::io::Read;
+
+        let Some(root) = std::env::var_os("CLIBOX_FSPY_MAC_BREAK_ROOT") else {
+            return;
         };
-        assert_eq!(execute(cli.command), expected);
+        let root = PathBuf::from(root);
+        let pid = std::process::id();
+        fs::write(root.join(format!("pid-{pid}")), pid.to_string()).unwrap();
+        let parallel =
+            std::env::var_os("CLIBOX_FSPY_MAC_BREAK_CHILD").unwrap() == "parallel-hangup";
+        let _descendant =
+            if parallel && std::env::var_os("CLIBOX_FSPY_MAC_BREAK_DESCENDANT").is_none() {
+                Some(
+                    std::process::Command::new(std::env::current_exe().unwrap())
+                        .args(["--exact", "cli::tests::macos_breakpoint_hangup_worker"])
+                        .env("CLIBOX_FSPY_MAC_BREAK_DESCENDANT", "1")
+                        .spawn()
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+        let threads = (0..if parallel { 3 } else { 1 })
+            .map(|index| {
+                let root = root.clone();
+                std::thread::spawn(move || {
+                    let mut file = fs::File::open(root.join("input.txt")).unwrap();
+                    fs::write(root.join(format!("ready-{pid}-{index}")), b"ready").unwrap();
+                    let mut byte = [0_u8; 1];
+                    file.read_exact(&mut byte).unwrap();
+                    fs::write(root.join("continued"), b"continued").unwrap();
+                    std::thread::sleep(Duration::from_secs(60));
+                })
+            })
+            .collect::<Vec<_>>();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_breakpoint_cleanup_failure_precedes_stop_reason() {
+        use crate::macos::supervise::CaptureFailure;
+        if let Some(reason) = std::env::var_os("CLIBOX_FSPY_MAC_BREAK_CLEANUP_FAILURE") {
+            std::process::exit(macos_break_status(
+                Err(CaptureFailure::Cleanup),
+                reason == "loss",
+                reason == "quit",
+                reason == "timeout",
+                0,
+            ));
+        }
+        for reason in ["loss", "quit", "timeout"] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "cli::tests::macos_breakpoint_cleanup_failure_precedes_stop_reason",
+                ])
+                .env("CLIBOX_FSPY_MAC_BREAK_CLEANUP_FAILURE", reason)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1));
+            let error = String::from_utf8(output.stderr).unwrap();
+            assert!(error.contains("cleanup_failure"), "{error}");
+            assert!(!error.contains("control_channel_loss"), "{error}");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_breakpoint_rejects_missing_control_terminal() {
+        use std::os::unix::process::CommandExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", "cli::tests::macos_breakpoint_child"])
+            .env("CLIBOX_FSPY_MAC_BREAK_CHILD", "root-hangup")
+            .env("CLIBOX_FSPY_MAC_BREAK_ROOT", directory.path())
+            .stdin(std::process::Stdio::null());
+        // SAFETY: setsid is async-signal-safe and removes this test child's
+        // controlling terminal without affecting the invoking test runner.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() < 0 {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
+            });
+        }
+        let output = command.output().unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("control_terminal_unavailable"));
+        assert!(fs::read_dir(directory.path()).unwrap().next().is_none());
     }
 
     #[cfg(target_os = "macos")]
