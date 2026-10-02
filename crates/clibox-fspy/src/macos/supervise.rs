@@ -149,9 +149,18 @@ fn signal_group(pid: u32, signal: i32) -> Result<(), CaptureFailure> {
     let pid = i32::try_from(pid).map_err(|_| CaptureFailure::Cleanup)?;
     // SAFETY: this group was created for the launched child before exec.
     let result = unsafe { libc::kill(-pid, signal) };
-    if result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+    let os_code = (result != 0)
+        .then(|| io::Error::last_os_error().raw_os_error())
+        .flatten();
+    if result == 0 || os_code == Some(libc::ESRCH) {
         Ok(())
     } else {
+        tracing::debug!(
+            stage = "cleanup_signal",
+            signal,
+            ?os_code,
+            "owned group signal failed"
+        );
         Err(CaptureFailure::Cleanup)
     }
 }
@@ -198,7 +207,12 @@ fn cleanup_owned(
     kill_after: Duration,
     mut root_done: bool,
 ) -> Result<(), CaptureFailure> {
-    signal_group(pid, libc::SIGTERM)?;
+    // The first group signal can fail while its final callers are exiting.
+    // Do not mistake that request failure for an unconfirmed cleanup: the
+    // identity-checked process signals and both absence checks below still
+    // run within the same grace/force budgets. Persistent denial fails at the
+    // final confirmation boundary; no extra process-group signal is retried.
+    let _ = signal_group(pid, libc::SIGTERM);
     let mut signalled = HashSet::new();
     let graceful_until = Instant::now()
         .checked_add(kill_after)
@@ -504,6 +518,19 @@ where
             return Err(failure_after_cleanup(failure, cleanup, receiver.finish()));
         }
     };
+    // An admission quit can finish the root while its wait is being polled.
+    // Cancellation still owns the remaining processes and queued callers;
+    // confirm cleanup before inspecting a normal-completion trace. The wait
+    // future has completed, so cleanup must not poll it a second time.
+    if cancelled.load(Ordering::Acquire) {
+        let cleanup = cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
+        token.cancel();
+        return Err(failure_after_cleanup(
+            CaptureFailure::Cancellation,
+            cleanup,
+            receiver.finish(),
+        ));
+    }
     if let Some(failure) = receiver.failure() {
         let cleanup = cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
         return Err(failure_after_cleanup(
@@ -1165,5 +1192,48 @@ mod tests {
             &AtomicBool::new(true),
         );
         assert!(matches!(result, Err(CaptureFailure::Cancellation)));
+    }
+
+    #[test]
+    fn admission_cancellation_retains_cancellation_when_root_exits() {
+        use std::sync::Arc;
+
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        fs::write(&input, b"fixture").unwrap();
+        for _ in 0..4 {
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let stop = Arc::clone(&cancelled);
+            let mut command = fspy::Command::new(std::env::current_exe().unwrap());
+            command
+                .args(["--exact", "macos::tests::read_fixture_child"])
+                .envs(std::env::vars_os())
+                .env("CLIBOX_FSPY_TEST_INPUT", input.as_os_str())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            let result = capture_with_admission(
+                command,
+                directory.path(),
+                Limits {
+                    max_events: 100_000,
+                    max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
+                    timeout: Some(Duration::from_secs(10)),
+                    kill_after: Duration::from_millis(100),
+                },
+                &cancelled,
+                move |frame, _| {
+                    if frame.operation == 3 && frame.path.ends_with(b"input.txt") {
+                        stop.store(true, Ordering::SeqCst);
+                        // The native quit acknowledgment exits the root; its
+                        // wait completion can race the supervisor's next poll.
+                        Admission::Quit
+                    } else {
+                        Admission::Proceed(Duration::ZERO)
+                    }
+                },
+            );
+            assert!(cancelled.load(Ordering::SeqCst));
+            assert_eq!(result.err(), Some(CaptureFailure::Cancellation));
+        }
     }
 }

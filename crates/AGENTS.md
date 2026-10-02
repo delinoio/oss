@@ -180,6 +180,7 @@
 
 ### clibox Rules
 
+- macOS fbreak must own terminal SIGHUP before setup/launch and route it to control-loss cancellation through bounded owned-process cleanup. Keep hangup registration command-specific, reject queued admissions during cancellation, preserve cleanup-failure precedence, and retain real controlling-PTY loss regressions for held reads, root admission and concurrent owned callers.
 - macOS fspy native hooks must preserve paired synchronous operations during application TLS teardown. Guard destructor-managed transport access, retain each admitted socket through completion, keep reentrancy/correlation state destructor-free and mutation tokens on the native call's stack, and invalidate completeness on late transport loss without changing native errno or crossing the ABI with a TLS panic. Preserve pnport-mode exclusion and receiver limits; follow `docs/crates-clibox-fspy-contract.md` and `docs/crates-fspy-vendor-contract.md`.
 
 - YAML structural sharing uses `imbl` with `RcK`, preserving ordered-map diffing, bounded expansion accounting, and single-threaded reference sharing. Keep the panic-safe chunk dependency and the long shadowed-merge/resource-limit fixtures when updating collections.
