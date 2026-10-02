@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -396,13 +397,25 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 				if err := write(); err != nil {
 					return failed(domain.SafeError(err))
 				}
+				// Git for Windows performs the initial checkout through an internal
+				// reset whose repository environment does not reliably retain the
+				// command-level long-path override. Keep that child checkout out of
+				// worktree add and run it through the Worker-owned Git boundary below.
+				// Remove this split when the minimum supported Git for Windows
+				// guarantees propagation for worktree add's internal reset.
+				checkoutSeparately := runtime.GOOS == "windows" && request.ForkSourceID == ""
 				args := []string{"worktree", "add", "--detach"}
-				if request.ForkSourceID != "" {
+				if request.ForkSourceID != "" || checkoutSeparately {
 					args = append(args, "--no-checkout")
 				}
 				args = append(args, "--", prepared.Path, prepared.StartingCommit)
 				if _, err = git.run(ctx, inspection.Root, args...); err != nil {
 					return failed(err)
+				}
+				if checkoutSeparately {
+					if _, err = git.run(ctx, prepared.Path, "reset", "--hard", "--no-recurse-submodules"); err != nil {
+						return failed(err)
+					}
 				}
 				if request.ForkSourceID != "" {
 					copy, err := copyForkRepository(ctx, git, inspection.Root, prepared.Path, prepared.StartingCommit)
