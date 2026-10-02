@@ -309,10 +309,9 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if err != nil || domain.Decode(raw, &binding) != nil || binding.Version != 2 || !binding.Published || !digestValid(binding.DirectoryIdentity) || binding.OperationID != original.OperationID || binding.SessionID != r.Preparation.SessionID || binding.SnapshotID != original.SnapshotID || binding.SnapshotDigest != metadata.SHA256 || binding.ManifestDigest != manifestDigest(snapshot.Workspace) || binding.OriginalIdentity != snapshot.OriginalIdentity {
 				return result, ResultUncertain()
 			}
-			current, err := walkSnapshot(ctx, root, "", nil)
-			if err != nil || inventoryDigest(current) != inventoryDigest(snapshot.Inventory) {
-				return result, ResultUncertain()
-			}
+			// The published binding and workspace identity prove ownership after
+			// publication. Ordinary user edits and commits are valid recovery state;
+			// the exact snapshot inventory was required only before publication.
 			if _, err := m.verifyWorkspaceIdentity(ctx, r.Preparation, r.Manifest, continuationIdentity); err != nil {
 				return result, err
 			}

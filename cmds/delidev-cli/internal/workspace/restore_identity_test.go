@@ -33,6 +33,10 @@ func TestRestoredIdentityRejectsReplacedRepositoryAndGitStore(t *testing.T) {
 			if _, err := m.verifyWorkspaceIdentity(context.Background(), input.Preparation, input.Manifest, continuationIdentity); err != nil {
 				t.Fatal("ordinary commit lost restored identity", err)
 			}
+			recovered := storageDo(t, m, recoveryRequest(input))
+			if recovered.RecoveredJobState != domain.JobSucceeded || recovered.WorkspaceState != domain.WorkspacePresent {
+				t.Fatal("published restore could not recover after an ordinary edit", recovered)
+			}
 			path := repo.Path
 			if replacement == "git-store" {
 				path = filepath.Join(path, ".git")
