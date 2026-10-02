@@ -86,7 +86,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     if (result.job) setSaveJob(result.job);
     else setSaveJob("unknown");
   });
-  const serverMachine = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: source?.machine ?? "" }, { enabled: active && Boolean(source) });
+  const serverMachine = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: source?.machine ?? "" }, { enabled: active && Boolean(source), refetchInterval: active && source ? 5000 : false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const workerData = document(serverMachine.data?.resource);
   const lastSeen = Date.parse(text(workerData.last_seen));
   const offline = Boolean(serverMachine.data?.resource && Number.isFinite(lastSeen) && Date.now() - lastSeen > 45_000);

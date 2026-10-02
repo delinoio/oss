@@ -28,10 +28,11 @@ function fixture(output: Document = metadata) {
   const choose = vi.fn(async (): Promise<string | null> => "/alias/repo");
   const proof = vi.fn(async () => ({ machineId: machine.id, token: "A".repeat(43) }));
   const control = vi.fn(async () => ({ machine_id: machine.id, state: LocalWorkerState.Running, controller_active: true }));
+  const getResource = vi.fn((request: { id: string }) => ({ resource: resources.get(request.id) }));
   const transport = createRouterTransport(router => {
     router.service(WorkerService, { inspectRepository: inspected });
     router.service(ConfigurationService, { saveConfiguration: save });
-    router.service(ResourceService, { listResources: request => ({ resources: [...resources.values()].filter(resource => resource.kind === request.filter?.kind) }), getResource: request => ({ resource: resources.get(request.id) }) });
+    router.service(ResourceService, { listResources: request => ({ resources: [...resources.values()].filter(resource => resource.kind === request.filter?.kind) }), getResource });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   function Workspace() {
@@ -41,7 +42,7 @@ function fixture(output: Document = metadata) {
   const mount = () => render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><Workspace /></QueryClientProvider></TransportProvider></StrictMode>);
   const add = async () => { fireEvent.click(await screen.findByRole("button", { name: "Add repository" })); };
   const chooseAndReview = async () => { await add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByRole("region", { name: "Repository detected" }); };
-  return { machine, resources, jobs, inspected, save, choose, proof, control, client, mount, add, chooseAndReview };
+  return { machine, resources, jobs, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource };
 }
 
 it("registers the canonical checkout using folder selection and Add repository only", async () => {
@@ -207,6 +208,12 @@ it("rejects an exit-uncertain Worker before submitting inspection", async () => 
   expect((screen.getByRole("textbox", { name: "Absolute checkout path" }) as HTMLInputElement).value).toBe("/alias/repo");
   expect(f.inspected).not.toHaveBeenCalled(); expect(f.control.mock.calls).toEqual([["status", undefined]]);
 });
+
+it("refreshes the selected Worker heartbeat while registration is active", async () => {
+  const f = fixture(); f.mount(); await f.chooseAndReview();
+  const readsBeforeRefresh = f.getResource.mock.calls.filter(([request]) => request.id === f.machine.id).length;
+  await waitFor(() => expect(f.getResource.mock.calls.filter(([request]) => request.id === f.machine.id).length).toBeGreaterThan(readsBeforeRefresh), { timeout: 10000, interval: 100 });
+}, 12000);
 
 it.each([
   ["busy", /Another window is choosing a folder/],
