@@ -222,6 +222,8 @@
 
 ### pnport Rules
 
+- pnport parent listings must use the core's non-materializing eligibility query and match direct virtual-directory lookup, including nested and peer-specific issuers. Keep native ordering, one virtual entry, native EOF/errors, rewind/seek and per-stream or shared-open-file offset lifetimes; release overlay state on close and descriptor reuse. Interception guards must remain active around backing operations performed under native/runtime locks.
+
 - pnport macOS hook recursion tokens require lazy construction after successful entry. Reentry must never drop a temporary token or clear the outer guard while native/runtime locks remain held. Preserve the repeated-reentry regression alongside actual x64 and arm64 filesystem execution.
 
 - pnport must cancel Linux `io_uring_setup` before kernel execution and return `ENOSYS` so feature probes can fall back to mediated filesystem calls. Never create an unmediated ring; `io_uring_enter` and `io_uring_register` still fail closed. Test with and without enclosing Docker seccomp denial.
