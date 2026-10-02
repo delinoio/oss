@@ -250,7 +250,7 @@ func TestAutomaticPRFailedDiscoverySessionRetainsOnlyProvedReplacementAuthority(
 				case "recovery":
 					v.Recovery = domain.NeedsRecovery
 				}
-				return tx.RequireAutomaticPRSourceSession(sr, v, target.Target)
+				return tx.RequireAutomaticPRSourceSession(sr, v, target.Target, source.ID, source.Revision)
 			})
 			if (err == nil) != (change == "unchanged") {
 				t.Fatal("incorrect source proof gate", err)

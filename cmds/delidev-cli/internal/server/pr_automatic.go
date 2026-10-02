@@ -68,7 +68,7 @@ func automaticPRScope(tx *store.Tx, original store.Record) (domain.SessionPullRe
 	if sr.ProjectID != row.ProjectID || session.ProjectID != row.ProjectID {
 		return link, domain.RemediationPolicy{}, firstDispatchConflict()
 	}
-	if err := tx.RequireAutomaticPRSourceSession(sr, session, link); err != nil {
+	if err := tx.RequireAutomaticPRSourceSession(sr, session, link, row.ID, row.Revision); err != nil {
 		return link, domain.RemediationPolicy{}, err
 	}
 	if _, err := sessionPRScope(tx, sr.ID, link.RepositoryID); err != nil {
