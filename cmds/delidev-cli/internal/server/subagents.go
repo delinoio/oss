@@ -2,10 +2,96 @@
 package server
 
 import (
+	"reflect"
+	"strings"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
-	"strings"
 )
+
+func cloneSubagentTask(value *domain.SubagentTask) *domain.SubagentTask {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func cloneSubagentString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func cloneSubagentUint32(value *uint32) *uint32 {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func cloneSubagentBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+// mergeSubagentTask keeps task metadata tied to the source that authenticated
+// it. Content/history reports may omit or repeat the original task, but cannot
+// patch it; only an acknowledged task report may add or change mutable fields.
+// Agent type and depth are immutable once observed, and skip-transcript=true
+// remains sticky so a regressed Worker cannot reopen history eligibility.
+func mergeSubagentTask(prior, incoming *domain.SubagentTask, source domain.SubagentSource) (*domain.SubagentTask, error) {
+	if source != domain.ClaudeTaskSource {
+		if incoming == nil {
+			return cloneSubagentTask(prior), nil
+		}
+		if !reflect.DeepEqual(prior, incoming) {
+			return nil, executionEventConflict()
+		}
+		return cloneSubagentTask(prior), nil
+	}
+	if prior == nil {
+		return cloneSubagentTask(incoming), nil
+	}
+	merged := cloneSubagentTask(prior)
+	if incoming == nil {
+		return merged, nil
+	}
+	if incoming.AgentType != nil {
+		if prior.AgentType != nil && *prior.AgentType != *incoming.AgentType {
+			return nil, executionEventConflict()
+		}
+		merged.AgentType = cloneSubagentString(incoming.AgentType)
+	}
+	if incoming.Depth != nil {
+		if prior.Depth != nil && *prior.Depth != *incoming.Depth {
+			return nil, executionEventConflict()
+		}
+		merged.Depth = cloneSubagentUint32(incoming.Depth)
+	}
+	if incoming.Description != nil {
+		merged.Description = cloneSubagentString(incoming.Description)
+	}
+	if incoming.Backgrounded != nil {
+		merged.Backgrounded = cloneSubagentBool(incoming.Backgrounded)
+	}
+	if incoming.SkipTranscript != nil {
+		if prior.SkipTranscript != nil && *prior.SkipTranscript && !*incoming.SkipTranscript {
+			return nil, executionEventConflict()
+		}
+		merged.SkipTranscript = cloneSubagentBool(incoming.SkipTranscript)
+	}
+	if incoming.Ambient != nil {
+		merged.Ambient = cloneSubagentBool(incoming.Ambient)
+	}
+	return merged, nil
+}
 
 func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, p *domain.ExecutionProgress, event domain.ExecutionEvent) error {
 	if input.Configuration.Harness != domain.Codex && input.Configuration.Harness != domain.ClaudeCode {
@@ -72,6 +158,10 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 			evidence = prior.Sources
 			if child.RequestedModel != nil && prior.Observation.RequestedModel != nil && *child.RequestedModel != *prior.Observation.RequestedModel {
 				return executionEventConflict()
+			}
+			child.Task, err = mergeSubagentTask(prior.Observation.Task, child.Task, child.Source)
+			if err != nil {
+				return err
 			}
 			// Omission means no new observation, not erasure of already retained
 			// output/model/counter evidence. Original receipts retain each report.

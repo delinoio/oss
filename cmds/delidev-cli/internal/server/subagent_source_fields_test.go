@@ -95,3 +95,55 @@ func TestSubagentTaskOmissionRetainsContentWithoutAttributingItToTask(t *testing
 		t.Fatal("source validation erased or reattributed retained content", err)
 	}
 }
+
+func TestSubagentTaskMetadataRequiresAcknowledgedTaskSource(t *testing.T) {
+	f, children, sequence := claudeSubagentPublicationFixture(t)
+	child := children[0]
+	agentType, description := "general-purpose", "Original child task"
+	depth := uint32(1)
+	backgrounded, skipTranscript, ambient := false, true, false
+	child.Task = &domain.SubagentTask{AgentType: &agentType, Description: &description, Depth: &depth, Backgrounded: &backgrounded, SkipTranscript: &skipTranscript, Ambient: &ambient}
+	event := f.event(domain.ExecutionSubagentObserved, sequence+1)
+	event.Subagents = []domain.SubagentObservation{child}
+	f.publish(t, event)
+
+	// A content report may omit the task, but must retain the acknowledged task
+	// rather than allowing a missing report to erase its history safeguards.
+	child.Source, child.SourceID, child.Task = domain.ClaudeContentSource, string(domain.NewID()), nil
+	child.Output = &domain.SubagentOutput{NativeMessageID: "original-child-content", Text: "Original child content", Partial: true}
+	observedModel := "observed-child-model"
+	child.ObservedModel = &observedModel
+	event.Sequence++
+	event.Subagents = []domain.SubagentObservation{child}
+	f.publish(t, event)
+
+	// Content cannot smuggle a changed task into the retained resource.
+	forgedDescription := "forged"
+	forged := child
+	forged.SourceID = string(domain.NewID())
+	forged.Task = &domain.SubagentTask{AgentType: &agentType, Description: &forgedDescription, Depth: &depth, Backgrounded: &backgrounded, SkipTranscript: &skipTranscript, Ambient: &ambient}
+	event.Sequence++
+	event.Subagents = []domain.SubagentObservation{forged}
+	if _, err := f.call(f.requestEvent(t, event)); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("content source patched retained task metadata", err)
+	}
+
+	// Acknowledged task telemetry may patch mutable fields while preserving the
+	// immutable agent/depth values and sticky skip-transcript flag.
+	patchedDescription, patchedBackgrounded := "Patched task description", true
+	child.Source, child.SourceID, child.Task = domain.ClaudeTaskSource, string(domain.NewID()), &domain.SubagentTask{
+		AgentType: &agentType, Description: &patchedDescription, Depth: &depth, Backgrounded: &patchedBackgrounded, SkipTranscript: &skipTranscript, Ambient: &ambient,
+	}
+	child.Output, child.ObservedModel = nil, nil
+	event.Subagents = []domain.SubagentObservation{child}
+	f.publish(t, event)
+
+	record, err := f.service.Store.Get(context.Background(), domain.SubagentKind, child.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained, err := store.Decode[domain.SubagentRecord](record)
+	if err != nil || retained.Observation.Task == nil || retained.Observation.Task.Description == nil || *retained.Observation.Task.Description != patchedDescription || retained.Observation.Task.Backgrounded == nil || !*retained.Observation.Task.Backgrounded || retained.Observation.Task.SkipTranscript == nil || !*retained.Observation.Task.SkipTranscript {
+		t.Fatal("acknowledged task patch was not retained", err)
+	}
+}
