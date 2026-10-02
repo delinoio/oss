@@ -11,6 +11,7 @@ use std::{
     collections::HashMap,
     ffi::{CStr, CString, OsStr, OsString},
     fs,
+    io::Write,
     os::unix::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     ptr,
@@ -214,13 +215,56 @@ unsafe fn errno(value: c_int) {
         *__errno_location() = value;
     }
 }
+fn record_failure(session: &Path, code: Code) {
+    // The supervisor may read concurrently with any injected process. Publish
+    // complete bytes once; truncation or collateral failures must not replace
+    // the first diagnostic with an empty or different failure code.
+    if let Ok(mut stage) = tempfile::NamedTempFile::new_in(session)
+        && stage.write_all(code.as_str().as_bytes()).is_ok()
+    {
+        let _ = stage.persist_noclobber(session.join("failure"));
+    }
+}
+
+#[cfg(test)]
+mod failure_tests {
+    use std::{fs, sync::Barrier};
+
+    use super::{Code, record_failure};
+
+    #[test]
+    fn concurrent_failures_preserve_the_complete_first_diagnostic() {
+        let session = tempfile::tempdir().unwrap();
+        record_failure(session.path(), Code::PnportCommandNotExecutable);
+        let barrier = Barrier::new(9);
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                scope.spawn(|| {
+                    barrier.wait();
+                    for _ in 0..64 {
+                        record_failure(session.path(), Code::PnportInjectionFailed);
+                    }
+                });
+            }
+            barrier.wait();
+            for _ in 0..512 {
+                assert_eq!(
+                    fs::read(session.path().join("failure")).unwrap(),
+                    Code::PnportCommandNotExecutable.as_str().as_bytes()
+                );
+            }
+        });
+        assert_eq!(fs::read_dir(session.path()).unwrap().count(), 1);
+    }
+}
+
 fn fail(code: Code) -> c_int {
     if !matches!(
         code,
         Code::PnportResolutionFailed | Code::PnportCommandNotFound
     ) && let Some(session) = SESSION.get()
     {
-        let _ = fs::write(session.join("failure"), code.as_str());
+        record_failure(session, code);
     }
     match code {
         Code::PnportResolutionFailed | Code::PnportCommandNotFound => ENOENT,
@@ -550,7 +594,7 @@ unsafe extern "C" fn initialize() {
         Some(())
     })();
     if result.is_none() {
-        let _ = fs::write(session.join("failure"), b"PNPORT_INJECTION_FAILED");
+        record_failure(&session, Code::PnportInjectionFailed);
         _exit(125);
     }
 }

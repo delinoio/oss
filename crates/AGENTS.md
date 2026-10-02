@@ -272,6 +272,7 @@
 - pnport cache cancellation after read-only staging must restore directory write permission and explicitly remove the incomplete stage before returning an error.
 - pnport macOS supervisor unit scenarios must run in separate test processes because signal state belongs to one CLI process. Preserve the default parallel test runner, initialization/readiness assertions, cache-lock wait and cleanup deadlines, and bounded outcome diagnostics.
 - pnport preload constructor entry and completed readiness are distinct acknowledgements. Supported cache lock waits after entry must not trigger the missing-injection deadline; a child result without readiness remains a failure.
+- pnport macOS preload runtime and constructor failures must atomically publish complete diagnostic bytes without replacing an already published first failure. Preserve concurrent-reader/writer coverage and installed parallel admission regressions; an empty in-progress file must not change the owned exit class.
 
 ### React Forge Engine Rules
 
