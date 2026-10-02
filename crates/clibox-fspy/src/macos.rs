@@ -1147,6 +1147,201 @@ mod tests {
         assert!(receiver.finish().is_err());
     }
 
+    fn compile_tls_fixture(directory: &std::path::Path) -> PathBuf {
+        let source = directory.join("tls.rs");
+        let binary = directory.join("tls");
+        fs::write(
+            &source,
+            r#"
+use std::{cell::RefCell, fs::File, io::Read, os::fd::IntoRawFd};
+thread_local! { static FILE: RefCell<Option<File>> = const { RefCell::new(None) }; }
+thread_local! { static NATIVE: RefCell<Option<NativeFile>> = const { RefCell::new(None) }; }
+unsafe extern "C" { fn close(fd: i32) -> i32; fn __error() -> *mut i32; }
+struct NativeFile(i32);
+impl Drop for NativeFile {
+    fn drop(&mut self) {
+        // SAFETY: this fixture owns the descriptor and the current errno slot.
+        unsafe {
+            *__error() = 123;
+            assert_eq!(close(self.0), 0);
+            assert_eq!(*__error(), 123);
+        }
+        std::fs::rename("data", "moved").unwrap();
+    }
+}
+fn main() {
+    let mode = std::env::args().nth(1).unwrap();
+    std::thread::spawn(move || {
+        if mode == "native" {
+            NATIVE.with(|slot| {
+                let mut f = File::open("data").unwrap();
+                f.read(&mut [0; 8]).unwrap();
+                *slot.borrow_mut() = Some(NativeFile(f.into_raw_fd()));
+            });
+        } else if mode == "drop" {
+            let mut f = File::open("data").unwrap();
+            f.read(&mut [0; 8]).unwrap();
+        } else if mode == "after" {
+            let mut f = File::open("data").unwrap();
+            f.read(&mut [0; 8]).unwrap();
+            FILE.with(|slot| *slot.borrow_mut() = Some(f));
+        } else {
+            FILE.with(|slot| {
+                let mut f = File::open("data").unwrap();
+                f.read(&mut [0; 8]).unwrap();
+                *slot.borrow_mut() = Some(f);
+            });
+            if mode == "lost" {
+                std::fs::remove_file(std::env::var_os("CLIBOX_FSPY_SOCKET").unwrap()).unwrap();
+            }
+        }
+    }).join().unwrap();
+}
+"#,
+        )
+        .unwrap();
+        assert!(std::process::Command::new("rustc")
+            .arg("-O")
+            .arg("-o")
+            .arg(&binary)
+            .arg(&source)
+            .status()
+            .unwrap()
+            .success());
+        binary
+    }
+
+    #[test]
+    fn injected_thread_local_file_teardown_keeps_paired_close() {
+        // Keep the executable outside the selected root, matching the issue's
+        // standalone Rust fixture rather than relying on this test harness TLS.
+        let directory = tempfile::tempdir().unwrap();
+        let binary = compile_tls_fixture(directory.path());
+        let root = directory.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("data"), b"fixture\n").unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        for mode in ["drop", "before", "after", "native"] {
+            assert!(std::process::Command::new(&binary)
+                .arg(mode)
+                .current_dir(&root)
+                .status()
+                .unwrap()
+                .success());
+            if mode == "native" {
+                fs::rename(root.join("moved"), root.join("data")).unwrap();
+            }
+            let receiver =
+                OperationReceiver::bind_for_root(&root, 1_000_000, 256 * 1024 * 1024).unwrap();
+            let mut command = fspy::Command::new(&binary);
+            command
+                .arg(mode)
+                .current_dir(&root)
+                .envs(std::env::vars_os())
+                .env("CLIBOX_FSPY_SOCKET", receiver.socket_path().as_os_str())
+                .stdout(Stdio::null())
+                .stderr(Stdio::inherit());
+            let child = runtime
+                .block_on(command.spawn(CancellationToken::new()))
+                .unwrap();
+            let root_pid = child.root_pid;
+            let status = runtime.block_on(child.wait_handle).unwrap();
+            assert!(status.status.success(), "{mode}: {:?}", status.status);
+            assert!(
+                status.path_accesses.is_ok(),
+                "{mode}: incomplete path channel"
+            );
+            let collected = receiver.finish().unwrap();
+            assert!(collected.hello_pids.contains(&root_pid));
+            let read = collected
+                .pairs
+                .iter()
+                .find(|(start, end)| {
+                    start.operation == 3 && start.path.ends_with(b"/data") && end.result == 8
+                })
+                .unwrap();
+            assert!(
+                collected.pairs.iter().any(|(start, end)| {
+                    start.operation == 2
+                        && start.path == read.0.path
+                        && start.tid == read.0.tid
+                        && start.id > read.0.id
+                        && start.image_id == read.0.image_id
+                        && end.result == 0
+                        && end.error == 0
+                }),
+                "{mode}: missing paired successful close"
+            );
+            if mode == "native" {
+                assert_eq!(fs::read(root.join("moved")).unwrap(), b"fixture\n");
+                for suffix in [b"/data".as_slice(), b"/moved".as_slice()] {
+                    assert!(
+                        collected.pairs.iter().any(|(start, end)| {
+                            start.operation == 9
+                                && start.path.ends_with(suffix)
+                                && start.tid == read.0.tid
+                                && start.id > read.0.id
+                                && start.image_id == read.0.image_id
+                                && end.result == 0
+                                && end.error == 0
+                        }),
+                        "late rename lost a paired path"
+                    );
+                }
+            }
+            assemble_candidate_record(
+                &root,
+                collected.pairs,
+                status.status,
+                1_000_000,
+                256 * 1024 * 1024,
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn injected_late_thread_channel_loss_preserves_child_and_rejects_trace() {
+        let directory = tempfile::tempdir().unwrap();
+        let binary = compile_tls_fixture(directory.path());
+        let root = directory.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("data"), b"fixture\n").unwrap();
+        let receiver =
+            OperationReceiver::bind_for_root(&root, 1_000_000, 256 * 1024 * 1024).unwrap();
+        let mut command = fspy::Command::new(&binary);
+        command
+            .arg("lost")
+            .current_dir(&root)
+            .envs(std::env::vars_os())
+            .env("CLIBOX_FSPY_SOCKET", receiver.socket_path().as_os_str())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let child = runtime
+            .block_on(command.spawn(CancellationToken::new()))
+            .unwrap();
+        let status = runtime.block_on(child.wait_handle).unwrap();
+        assert!(status.status.success(), "{:?}", status.status);
+        assert!(
+            status.path_accesses.is_err(),
+            "late close loss must invalidate the execution"
+        );
+        // An intact operation receiver alone cannot authorize a complete record:
+        // the preload's shared completeness flag must reject the missing close.
+        let collected = receiver.finish().unwrap();
+        assert!(!collected
+            .pairs
+            .iter()
+            .any(|(start, _)| { start.operation == 2 && start.path.ends_with(b"/data") }));
+    }
+
     #[test]
     fn injected_child_reports_actual_read_results() {
         let directory = tempfile::Builder::new()

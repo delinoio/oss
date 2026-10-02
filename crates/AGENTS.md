@@ -178,6 +178,8 @@
 
 ### clibox Rules
 
+- macOS fspy native hooks must preserve paired synchronous operations during application TLS teardown. Guard destructor-managed transport access, retain each admitted socket through completion, keep reentrancy/correlation state destructor-free and mutation tokens on the native call's stack, and invalidate completeness on late transport loss without changing native errno or crossing the ABI with a TLS panic. Preserve pnport-mode exclusion and receiver limits; follow `docs/crates-clibox-fspy-contract.md` and `docs/crates-fspy-vendor-contract.md`.
+
 - YAML structural sharing uses `imbl` with `RcK`, preserving ordered-map diffing, bounded expansion accounting, and single-threaded reference sharing. Keep the panic-safe chunk dependency and the long shadowed-merge/resource-limit fixtures when updating collections.
 - Concurrent publication fixtures must preserve fail-closed destination validation: a Unix handle unlinked by another successful replacement may return `UnsafeDestination`. Require at least one successful writer, one complete successful payload, and clean staging; retain deterministic zero-link rejection coverage.
 
