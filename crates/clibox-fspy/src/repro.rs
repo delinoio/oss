@@ -70,7 +70,7 @@ pub struct Snapshot {
     selected_identities: BTreeMap<FileIdentity, PathBuf>,
     files: BTreeMap<PathBuf, SnapshotFile>,
     links: BTreeMap<PathBuf, PathBuf>,
-    directories: BTreeSet<PathBuf>,
+    directories: BTreeMap<PathBuf, FileIdentity>,
     total_bytes: u64,
     max_bytes: u64,
     max_files: usize,
@@ -329,7 +329,7 @@ impl Snapshot {
             selected_identities: BTreeMap::new(),
             files: BTreeMap::new(),
             links: BTreeMap::new(),
-            directories: BTreeSet::new(),
+            directories: BTreeMap::new(),
             total_bytes: 0,
             max_bytes,
             max_files,
@@ -390,6 +390,11 @@ impl Snapshot {
                 }
                 continue;
             }
+            // Traverse unselected directories to find selected descendants and
+            // blocked identities, but retain and charge only selected entries.
+            if !selector.matches(&native_relative(relative)) {
+                continue;
+            }
             if entry.file_type().is_dir() && !relative.as_os_str().is_empty() {
                 snapshot.add_path(relative)?;
                 let metadata = fs::metadata(entry.path()).map_err(|_| ReproFailure::Unavailable)?;
@@ -401,12 +406,6 @@ impl Snapshot {
                 continue;
             }
             if !entry.file_type().is_file() {
-                continue;
-            }
-            if !selector.matches(&native_relative(relative)) {
-                continue;
-            }
-            if denied(relative) {
                 continue;
             }
             snapshot.eligible.insert(relative.to_path_buf());
@@ -478,9 +477,11 @@ impl Snapshot {
                 return self.add_path(&target_path);
             }
             if metadata.is_dir() {
-                if !self.directories.contains(&prefix) {
-                    self.directories.insert(prefix.clone());
-                }
+                // Structural parents and internal alias targets are required
+                // backing, not standalone eligible inputs or budget entries.
+                self.directories
+                    .entry(prefix.clone())
+                    .or_insert(source_identity(&source, &metadata)?);
                 continue;
             }
             if prefix != relative || !metadata.is_file() {
@@ -596,7 +597,7 @@ impl Snapshot {
                 return self.verify_path(&expected.join(suffix));
             }
         }
-        if let Some(expected) = self.eligible_directories.get(relative) {
+        if let Some(expected) = self.directories.get(relative) {
             let path = self.root.join(relative);
             let metadata = fs::metadata(&path).map_err(|_| ReproFailure::UnstableInput)?;
             if !metadata.is_dir()
@@ -671,7 +672,7 @@ impl Snapshot {
                 return Ok(());
             }
         }
-        if self.eligible_directories.contains_key(relative) {
+        if self.directories.contains_key(relative) {
             fs::create_dir_all(candidate.join(relative)).map_err(|_| ReproFailure::Unavailable)?;
             return Ok(());
         }
@@ -742,6 +743,175 @@ fn native_relative(path: &Path) -> crate::record::NativePath {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directory_selection_excludes_standalone_entries_but_keeps_descendants() {
+        let directory = tempfile::tempdir().unwrap();
+        for path in ["unused", "excluded/empty", "nested", "selected-empty"] {
+            fs::create_dir_all(directory.path().join(path)).unwrap();
+        }
+        fs::write(directory.path().join("nested/input"), b"x").unwrap();
+        let selector = Selector::new(
+            &["**".into()],
+            &[
+                "unused".into(),
+                "excluded".into(),
+                "excluded/**".into(),
+                "nested".into(),
+            ],
+        )
+        .unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 2).unwrap();
+        let required = snapshot
+            .selected_entries_within(Path::new(""))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            required,
+            BTreeSet::from([
+                PathBuf::from("nested/input"),
+                PathBuf::from("selected-empty")
+            ])
+        );
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert_eq!(
+            fs::read(candidate.path().join("nested/input")).unwrap(),
+            b"x"
+        );
+        assert!(candidate.path().join("selected-empty").is_dir());
+        assert!(!candidate.path().join("unused").exists());
+        assert!(!candidate.path().join("excluded").exists());
+        assert!(matches!(
+            snapshot.verify_required(&BTreeSet::from([PathBuf::from("unused")])),
+            Err(ReproFailure::UncollectedInput)
+        ));
+    }
+
+    #[test]
+    fn unselected_directories_do_not_consume_selected_file_budget() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input"), b"x").unwrap();
+        let selector = Selector::new(&["input".into()], &[]).unwrap();
+        for extra_directories in [false, true] {
+            if extra_directories {
+                fs::create_dir_all(directory.path().join("unrelated/deep/empty")).unwrap();
+            }
+            let snapshot = Snapshot::take(directory.path(), &selector, 1, 1).unwrap();
+            assert_eq!(snapshot.selected_entries_within(Path::new("")).count(), 1);
+            assert!(snapshot.eligible_directories.is_empty());
+            assert!(snapshot.directories.is_empty());
+        }
+        fs::create_dir_all(directory.path().join("nested/parent")).unwrap();
+        fs::rename(
+            directory.path().join("input"),
+            directory.path().join("nested/parent/input"),
+        )
+        .unwrap();
+        let selector = Selector::new(&["nested/parent/input".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1, 1).unwrap();
+        assert!(!snapshot.contains_selected_directory(Path::new("nested")));
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(
+                &BTreeSet::from([PathBuf::from("nested/parent/input")]),
+                candidate.path(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read(candidate.path().join("nested/parent/input")).unwrap(),
+            b"x"
+        );
+    }
+
+    #[test]
+    fn selected_files_and_directories_keep_snapshot_limits() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input"), b"xx").unwrap();
+        fs::create_dir(directory.path().join("empty")).unwrap();
+        let selector = Selector::new(&["**".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1024, 1),
+            Err(ReproFailure::FileLimit)
+        ));
+        let selector = Selector::new(&["input".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1, 1),
+            Err(ReproFailure::ByteLimit)
+        ));
+        fs::write(directory.path().join("other"), b"x").unwrap();
+        let selector = Selector::new(&["input".into(), "other".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1024, 1),
+            Err(ReproFailure::FileLimit)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_file_through_directory_alias_charges_required_link() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir(directory.path().join("real")).unwrap();
+        fs::write(directory.path().join("real/input"), b"x").unwrap();
+        symlink("real", directory.path().join("alias")).unwrap();
+        let selector = Selector::new(&["alias/input".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1, 1),
+            Err(ReproFailure::FileLimit)
+        ));
+        let snapshot = Snapshot::take(directory.path(), &selector, 1, 2).unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(
+                &BTreeSet::from([PathBuf::from("alias/input")]),
+                candidate.path(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read(candidate.path().join("alias/input")).unwrap(),
+            b"x"
+        );
+        assert!(snapshot.eligible_directories.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_empty_directory_alias_keeps_target_and_link_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir(directory.path().join("real")).unwrap();
+        symlink("real", directory.path().join("alias")).unwrap();
+        let selector = Selector::new(&["alias".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1024, 1),
+            Err(ReproFailure::FileLimit)
+        ));
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 2).unwrap();
+        let required = snapshot
+            .selected_entries_within(Path::new("alias"))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(required, BTreeSet::from([PathBuf::from("alias")]));
+        assert!(!snapshot.contains_selected_directory(Path::new("real")));
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert!(candidate.path().join("alias").is_symlink());
+        assert!(candidate.path().join("real").is_dir());
+        fs::create_dir(directory.path().join("replacement")).unwrap();
+        fs::remove_dir(directory.path().join("real")).unwrap();
+        fs::rename(
+            directory.path().join("replacement"),
+            directory.path().join("real"),
+        )
+        .unwrap();
+        assert!(matches!(
+            snapshot.verify_required(&required),
+            Err(ReproFailure::UnstableInput)
+        ));
+    }
 
     #[test]
     fn enumeration_stages_empty_and_subdirectories() {
