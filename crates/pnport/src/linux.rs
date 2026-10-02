@@ -3291,17 +3291,25 @@ impl Trace<'_> {
                     // Only these fields are outputs. Preserve caller-owned
                     // pointers and control bytes, and retain native EFAULT
                     // when the original header cannot receive the result.
+                    let name = mem::offset_of!(libc::msghdr, msg_name);
+                    let has_name = header[name..name + mem::size_of::<usize>()]
+                        .iter()
+                        .any(|byte| *byte != 0);
+                    let name_length = mem::offset_of!(libc::msghdr, msg_namelen);
                     for (offset, size) in [
-                        (
-                            mem::offset_of!(libc::msghdr, msg_namelen),
-                            mem::size_of::<libc::socklen_t>(),
-                        ),
+                        (name_length, mem::size_of::<libc::socklen_t>()),
                         (flags, mem::size_of::<i32>()),
                         (
                             mem::offset_of!(libc::msghdr, msg_controllen),
                             mem::size_of::<usize>(),
                         ),
                     ] {
+                        // The kernel writes the name length only when the
+                        // caller supplied a name buffer. Writing it otherwise
+                        // can spuriously fault on a partially read-only header.
+                        if offset == name_length && !has_name {
+                            continue;
+                        }
                         if !write_remote_or_fault(
                             pid,
                             original + offset as u64,

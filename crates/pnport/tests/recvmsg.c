@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,6 +70,21 @@ int main(int argc, char **argv) {
         data.iov_base = (void *)1;
         CHECK(recvmsg(sockets[1], &message, 0) == -1 && errno == EFAULT);
         CHECK(message.msg_controllen == sizeof(control) && message.msg_flags == 0x1234);
+    } else if (!strcmp(argv[2], "partial-header")) {
+        size_t size = sysconf(_SC_PAGESIZE);
+        char *mapping = mmap(NULL, 2 * size, PROT_READ | PROT_WRITE,
+            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        CHECK(mapping != MAP_FAILED);
+        struct msghdr *partial = (struct msghdr *)(mapping + size - offsetof(struct msghdr, msg_control));
+        *partial = message;
+        partial->msg_name = NULL;
+        partial->msg_namelen = 0x1234;
+        CHECK(mprotect(mapping, size, PROT_READ) == 0);
+        CHECK(recvmsg(sockets[1], partial, 0) == 1 && byte == 'p');
+        CHECK(partial->msg_name == NULL && partial->msg_namelen == 0x1234);
+        CHECK(partial->msg_control == control && partial->msg_controllen == 0);
+        CHECK(!(partial->msg_flags & MSG_CTRUNC));
+        CHECK(munmap(mapping, 2 * size) == 0);
     } else if (!strcmp(argv[2], "readonly")) {
         size_t size = sysconf(_SC_PAGESIZE);
         struct msghdr *readonly = mmap(NULL, size, PROT_READ | PROT_WRITE,

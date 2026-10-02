@@ -2440,6 +2440,7 @@ fn linux_optional_receive_control_buffers_preserve_native_ipc() {
                 "interrupt",
                 "fault",
                 "readonly",
+                "partial-header",
             ] {
                 let native = Command::new("timeout")
                     .args(["--kill-after=7s", "15s"])
