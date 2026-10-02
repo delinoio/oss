@@ -851,8 +851,16 @@ impl Snapshot {
                 if !candidate_link.is_symlink() {
                     let relative_target =
                         staged_link_target(&link.raw_target, &link.target, &prefix)?;
-                    stage_symlink(&self.root.join(&prefix), &relative_target, &candidate_link)
-                        .map_err(|_| ReproFailure::Unavailable)?;
+                    // Windows chooses the reparse-point kind from the target
+                    // entry. The source alias may use the extended source
+                    // namespace and should not be reclassified while staging;
+                    // the canonical target was already verified and staged.
+                    stage_symlink(
+                        &self.root.join(&link.target),
+                        &relative_target,
+                        &candidate_link,
+                    )
+                    .map_err(|_| ReproFailure::Unavailable)?;
                 }
                 return Ok(());
             }
