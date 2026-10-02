@@ -3,13 +3,13 @@ use libc::{c_char, c_int, size_t, ssize_t};
 
 use crate::macros::intercept;
 #[cfg(target_os = "macos")]
-use crate::operation::{self, Kind};
+use crate::operation::{self, FinalSymlink};
 
 intercept!(readlink: unsafe extern "C" fn(path: *const c_char, output: *mut c_char, size: size_t) -> ssize_t);
 unsafe extern "C" fn readlink(path: *const c_char, output: *mut c_char, size: size_t) -> ssize_t {
     #[cfg(target_os = "macos")]
     // SAFETY: the caller's pathname is forwarded unchanged to libc.
-    let operation = unsafe { operation::enter_path(Kind::Metadata, path) };
+    let operation = unsafe { operation::enter_metadata_path(path, FinalSymlink::NoFollow) };
     super::observe_path(path, AccessMode::READ);
     // SAFETY: forward the original pointers and buffer length unchanged.
     let result = unsafe { readlink::original()(path, output, size) };
@@ -27,7 +27,7 @@ unsafe extern "C" fn readlinkat(
 ) -> ssize_t {
     #[cfg(target_os = "macos")]
     // SAFETY: the caller's descriptor and pathname are forwarded unchanged.
-    let operation = unsafe { operation::enter_at(Kind::Metadata, dirfd, path) };
+    let operation = unsafe { operation::enter_metadata_at(dirfd, path, FinalSymlink::NoFollow) };
     super::observe_at(dirfd, path, AccessMode::READ);
     // SAFETY: forward the original descriptor, pointers, and length unchanged.
     let result = unsafe { readlinkat::original()(dirfd, path, output, size) };

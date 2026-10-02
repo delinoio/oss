@@ -147,7 +147,7 @@ func readPRFixSelection(tx *store.Tx, input domain.PRFixRequest) (domain.PRProbl
 	}
 	return set, problems, policy, nil
 }
-func (s *Service) prFixObservations(ctx context.Context, repository domain.ID, number string, problems []domain.PRProblem, policy domain.RemediationPolicy, correlation string) (domain.PRGitTarget, map[domain.PRProblemKind]domain.RepositoryQueryResult, error) {
+func (s *Service) prFixObservations(ctx context.Context, repository domain.ID, number string, problems []domain.PRProblem, policy domain.RemediationPolicy, mode domain.PRRemediationMode, correlation string) (domain.PRGitTarget, map[domain.PRProblemKind]domain.RepositoryQueryResult, error) {
 	detail, err := s.readProblemObservation(ctx, repository, number, domain.RepositoryDetail, correlation)
 	if err != nil {
 		return domain.PRGitTarget{}, nil, err
@@ -161,15 +161,19 @@ func (s *Service) prFixObservations(ctx context.Context, repository domain.ID, n
 		observed, ok := observations[p.Kind]
 		if !ok {
 			observed = detail
-			if p.Kind == domain.PRCIProblem {
-				observed, err = s.readProblemObservation(ctx, repository, number, domain.RepositoryCI, correlation)
+			if p.Kind == domain.PRCIProblem || p.Kind == domain.PRFeedbackProblem && mode == domain.PRRemediationAutomatic {
+				operation := domain.RepositoryCI
+				if p.Kind == domain.PRFeedbackProblem {
+					operation = domain.RepositoryReviewers
+				}
+				observed, err = s.readProblemObservation(ctx, repository, number, operation, correlation)
 				if err != nil {
 					return target, nil, err
 				}
 			}
 			binding := observed
-			if binding.Query.Operation == domain.RepositoryCI {
-				binding.Query.Operation, binding.CI = domain.RepositoryDetail, nil
+			if binding.Query.Operation != domain.RepositoryDetail {
+				binding.Query.Operation, binding.CI, binding.Reviewers = domain.RepositoryDetail, nil, nil
 			}
 			fresh, err := domain.NewPRGitTarget(binding)
 			fresh.Target.ObservedAt = target.Target.ObservedAt
@@ -179,7 +183,7 @@ func (s *Service) prFixObservations(ctx context.Context, repository domain.ID, n
 			}
 			observations[p.Kind] = observed
 		}
-		reason, err := domain.EvaluatePRRemediation(p, observed, policy, domain.PRRemediationManual, time.Now().UTC())
+		reason, err := domain.EvaluatePRRemediation(p, observed, policy, mode, time.Now().UTC())
 		if err != nil {
 			return target, nil, err
 		}
@@ -340,7 +344,7 @@ func (s *Service) RequestPullRequestFix(ctx context.Context, req *connect.Reques
 		if err != nil {
 			return fail(err)
 		}
-		target, observations, err := s.prFixObservations(ctx, input.RepositoryID, set.Target.Number, problems, policy, correlation)
+		target, observations, err := s.prFixObservations(ctx, input.RepositoryID, set.Target.Number, problems, policy, domain.PRRemediationManual, correlation)
 		if err != nil {
 			return fail(err)
 		}
@@ -348,94 +352,134 @@ func (s *Service) RequestPullRequestFix(ctx context.Context, req *connect.Reques
 		if err != nil {
 			return fail(err)
 		}
-		result, err = s.Store.Mutate(ctx, request, "pr.fix.request", identity, func(tx *store.Tx) (any, error) {
-			current, currentProblems, currentPolicy, err := readPRFixSelection(tx, input)
-			if err != nil {
-				return nil, err
-			}
-			if currentPolicy.Digest() != policy.Digest() || !current.Target.SamePR(target.Target) || current.Target.RepositoryNodeID != target.Target.RepositoryNodeID || current.Target.PullRequestNodeID != target.Target.PullRequestNodeID {
-				return nil, prObservationConflict()
-			}
-			selection, err := repositoryIntegrationFromTx(tx, input.RepositoryID)
-			if err != nil {
-				return nil, err
-			}
-			for _, observed := range observations {
-				if !samePRFixRepositoryRevision(selection.record, observed) || selection.repository.IntegrationID != observed.ProfileID || selection.profile.Connection == nil || selection.profile.Connection.GenerationID != observed.GenerationID {
-					return nil, prObservationConflict()
-				}
-			}
-			refs := make([]domain.PRRemediationProblemRef, 0, len(input.Problems))
-			for _, p := range input.Problems {
-				refs = append(refs, domain.PRRemediationProblemRef{ID: p.ID, ContentVersion: p.ContentVersion})
-			}
-			attempt, err := tx.ReservePRRemediation(input.SetID, input.SetRevision, domain.PRRemediationManual, policy, refs)
-			if err != nil {
-				return nil, err
-			}
-			attempt, err = tx.BindPRFixTarget(attempt.ID, attempt.Revision, input.ProjectID, target)
-			if err != nil {
-				return nil, err
-			}
-			fix, err := tx.PRFixSelection(attempt.ID)
-			if err != nil {
-				return nil, err
-			}
-			prompt, err := domain.PRFixPrompt(fix, currentProblems)
-			if err != nil {
-				return nil, err
-			}
-			var sr store.Record
-			var session domain.Session
-			if selected.ID != "" {
-				sr, session, err = sessionRecord(tx, selected.ID)
-				if err != nil {
-					return nil, err
-				}
-				if sr.Revision != selected.Revision {
-					return nil, firstDispatchConflict()
-				}
-				if err := eligiblePRFixSession(tx, sr, input.ProjectID); err != nil {
-					return nil, err
-				}
-				if err := requirePRFixLink(tx, sr, target); err != nil {
-					return nil, err
-				}
-			} else {
-				id := domain.NewID()
-				plan, err := planPRRemediationWorkspace(tx, id, input.ProjectID, policy, target)
-				if err != nil {
-					return nil, err
-				}
-				if plan.Execution.Configuration.Harness != domain.Codex || (plan.Execution.Configuration.Options.Permission != domain.PermissionWorkspaceWrite && plan.Execution.Configuration.Options.Permission != domain.PermissionFullAccess) {
-					return nil, domain.Fail(domain.Unsupported, "The selected Agent lacks the manual PR Git profile.", "Configure a verified Codex Agent; no harness fallback is performed.")
-				}
-				session = acceptedSession(domain.CreateSession{Name: "PR #" + target.Target.Number + " fix", NameMode: domain.ManualSessionName, AgentID: policy.AgentID, MachineID: policy.MachineID, ProjectID: input.ProjectID, Workspace: domain.Worktree, Source: domain.ManualSession}, nil, actor.DeviceID)
-				if err := queueSessionWorkspace(tx, id, &session, plan.Preparation); err != nil {
-					return nil, err
-				}
-				sr = store.Record{ID: id, Kind: domain.SessionKind, SessionID: id, ProjectID: input.ProjectID}
-				if _, err := tx.Put(domain.PullRequestKind, domain.NewID(), 0, id, input.ProjectID, target.Target); err != nil {
-					return nil, err
-				}
-			}
-			item, err := appendSessionInput(tx, sr.ID, &session, domain.SessionInput{Prompt: prompt, Mode: domain.ExecuteMode})
-			if err != nil {
-				return nil, err
-			}
-			if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
-				return nil, err
-			}
-			if _, err := tx.BindPRRemediation(attempt.ID, attempt.Revision, sr.ID, item); err != nil {
-				return nil, err
-			}
-			return prFixReceipt{AttemptID: attempt.ID, SessionID: sr.ID}, nil
-		})
+		result, err = s.acceptPRFix(ctx, request, "pr.fix.request", identity, input, target, observations, selected, policy, domain.PRRemediationManual, nil)
 		if err != nil {
 			return fail(err)
 		}
 	}
 	return s.prFixResponse(ctx, req, input, result)
+}
+
+// acceptPRFix composes manual and automatic admission with the same queue,
+// workspace, routing, stable-PR owner and immutable Git assignment boundaries.
+func (s *Service) acceptPRFix(ctx context.Context, request domain.ID, operation string, identity any, input domain.PRFixRequest, target domain.PRGitTarget, observations map[domain.PRProblemKind]domain.RepositoryQueryResult, selected store.Record, policy domain.RemediationPolicy, mode domain.PRRemediationMode, source *store.Record) (store.Result, error) {
+	actor, err := integrationActor(ctx)
+	if err != nil {
+		return store.Result{}, err
+	}
+	return s.Store.Mutate(ctx, request, operation, identity, func(tx *store.Tx) (any, error) {
+		if source != nil {
+			_, currentPolicy, err := automaticPRScope(tx, *source)
+			if err != nil {
+				return nil, err
+			}
+			if currentPolicy.Digest() != policy.Digest() {
+				return nil, prObservationConflict()
+			}
+		}
+		current, currentProblems, currentPolicy, err := readPRFixSelection(tx, input)
+		if err != nil {
+			return nil, err
+		}
+		if currentPolicy.Digest() != policy.Digest() || !current.Target.SamePR(target.Target) || current.Target.RepositoryNodeID != target.Target.RepositoryNodeID || current.Target.PullRequestNodeID != target.Target.PullRequestNodeID {
+			return nil, prObservationConflict()
+		}
+		selection, err := repositoryIntegrationFromTx(tx, input.RepositoryID)
+		if err != nil {
+			return nil, err
+		}
+		for _, observed := range observations {
+			if !samePRFixRepositoryRevision(selection.record, observed) || selection.repository.IntegrationID != observed.ProfileID || selection.profile.Connection == nil || selection.profile.Connection.GenerationID != observed.GenerationID {
+				return nil, prObservationConflict()
+			}
+		}
+		// Provider reads are comparison evidence only. Recheck their freshness
+		// inside acceptance and again at the eventual ordinary execution claim.
+		for _, problem := range currentProblems {
+			reason, err := domain.EvaluatePRRemediation(problem, observations[problem.Kind], policy, mode, time.Now().UTC())
+			if err != nil {
+				return nil, err
+			}
+			if reason != domain.PRRemediationEligible {
+				return nil, prObservationConflict()
+			}
+		}
+		refs := make([]domain.PRRemediationProblemRef, 0, len(input.Problems))
+		for _, p := range input.Problems {
+			refs = append(refs, domain.PRRemediationProblemRef{ID: p.ID, ContentVersion: p.ContentVersion})
+		}
+		attempt, err := tx.ReservePRRemediation(input.SetID, input.SetRevision, mode, policy, refs)
+		if err != nil {
+			return nil, err
+		}
+		if attempt.ID == "" {
+			// Preserve the exhausted limit without accepting another input.
+			return prFixReceipt{}, nil
+		}
+		attempt, err = tx.BindPRFixTarget(attempt.ID, attempt.Revision, input.ProjectID, target)
+		if err != nil {
+			return nil, err
+		}
+		if source != nil {
+			attempt, err = tx.BindAutomaticPRSource(attempt.ID, attempt.Revision, *source)
+			if err != nil {
+				return nil, err
+			}
+		}
+		fix, err := tx.PRFixSelection(attempt.ID)
+		if err != nil {
+			return nil, err
+		}
+		prompt, err := domain.PRFixPrompt(fix, currentProblems)
+		if err != nil {
+			return nil, err
+		}
+		var sr store.Record
+		var session domain.Session
+		if selected.ID != "" {
+			sr, session, err = sessionRecord(tx, selected.ID)
+			if err != nil {
+				return nil, err
+			}
+			if sr.Revision != selected.Revision {
+				return nil, firstDispatchConflict()
+			}
+			if err := eligiblePRFixSession(tx, sr, input.ProjectID); err != nil {
+				return nil, err
+			}
+			if err := requirePRFixLink(tx, sr, target); err != nil {
+				return nil, err
+			}
+		} else {
+			id := domain.NewID()
+			plan, err := planPRRemediationWorkspace(tx, id, input.ProjectID, policy, target)
+			if err != nil {
+				return nil, err
+			}
+			if plan.Execution.Configuration.Harness != domain.Codex || (plan.Execution.Configuration.Options.Permission != domain.PermissionWorkspaceWrite && plan.Execution.Configuration.Options.Permission != domain.PermissionFullAccess) {
+				return nil, domain.Fail(domain.Unsupported, "The selected Agent lacks the manual PR Git profile.", "Configure a verified Codex Agent; no harness fallback is performed.")
+			}
+			session = acceptedSession(domain.CreateSession{Name: "PR #" + target.Target.Number + " fix", NameMode: domain.ManualSessionName, AgentID: policy.AgentID, MachineID: policy.MachineID, ProjectID: input.ProjectID, Workspace: domain.Worktree, Source: domain.ManualSession}, nil, actor.DeviceID)
+			if err := queueSessionWorkspace(tx, id, &session, plan.Preparation); err != nil {
+				return nil, err
+			}
+			sr = store.Record{ID: id, Kind: domain.SessionKind, SessionID: id, ProjectID: input.ProjectID}
+			if _, err := tx.Put(domain.PullRequestKind, domain.NewID(), 0, id, input.ProjectID, target.Target); err != nil {
+				return nil, err
+			}
+		}
+		item, err := appendSessionInput(tx, sr.ID, &session, domain.SessionInput{Prompt: prompt, Mode: domain.ExecuteMode})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
+			return nil, err
+		}
+		if _, err := tx.BindPRRemediation(attempt.ID, attempt.Revision, sr.ID, item); err != nil {
+			return nil, err
+		}
+		return prFixReceipt{AttemptID: attempt.ID, SessionID: sr.ID}, nil
+	})
 }
 
 func (s *Service) prFixResponse(ctx context.Context, req *connect.Request[pb.RequestPullRequestFixRequest], input domain.PRFixRequest, result store.Result) (*connect.Response[pb.RequestPullRequestFixResponse], error) {
@@ -491,6 +535,18 @@ func (s *Service) preparePRFixDispatch(ctx context.Context, record store.Record)
 		if err != nil || !found {
 			return err
 		}
+		if value.Mode == domain.PRRemediationAutomatic {
+			if err := tx.RequireAutomaticPRSource(value); err != nil {
+				return err
+			}
+			_, policy, err := prFixPolicy(tx, value.GitTarget.Target.RepositoryID)
+			if err != nil {
+				return err
+			}
+			if policy.Digest() != value.Policy.Digest() {
+				return prObservationConflict()
+			}
+		}
 		if value.GitTarget == nil {
 			return firstDispatchConflict()
 		}
@@ -509,7 +565,7 @@ func (s *Service) preparePRFixDispatch(ctx context.Context, record store.Record)
 	if attempt.ID == "" {
 		return attempt, nil, nil
 	}
-	target, observations, err := s.prFixObservations(ctx, value.GitTarget.Target.RepositoryID, value.GitTarget.Target.Number, problems, value.Policy, "")
+	target, observations, err := s.prFixObservations(ctx, value.GitTarget.Target.RepositoryID, value.GitTarget.Target.Number, problems, value.Policy, value.Mode, "")
 	if err != nil {
 		return attempt, nil, err
 	}

@@ -42,3 +42,44 @@ test("Windows installer rejects requests before network, file, or process side e
   assert.ok(gate > 0);
   for (const effect of ["Invoke-RestMethod", "Invoke-WebRequest", "New-Item", "Copy-Item", "tar.exe", "& $executable"]) assert.ok(gate < source.indexOf(effect), effect);
 });
+
+test("native CI and candidates require repeated benchmarks and publish only numeric results", () => {
+  for (const workflow of [ci, release]) {
+    const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
+    assert.equal(job.env.PNPORT_SUFFIX, "${{ matrix.suffix }}");
+    const benchmarkIndex = job.steps.findIndex(({ run }) => run?.includes("scripts/benchmark.mjs"));
+    const installIndex = job.steps.findIndex(({ run }) => run?.includes("scripts/install-smoke.mjs"));
+    assert(benchmarkIndex > installIndex && installIndex >= 0);
+    const benchmark = job.steps[benchmarkIndex];
+    assert(benchmark.run.includes('"$RUNNER_TEMP/pnport-typescript" "$RUNNER_TEMP/pnport-benchmark"'));
+    assert(benchmark.run.includes('"packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport"'));
+    assert(!benchmark.continueOnError && !benchmark["continue-on-error"] && !benchmark.if);
+    const upload = job.steps[benchmarkIndex + 1];
+    assert.equal(upload.with.path, "${{ runner.temp }}/pnport-benchmark/benchmark.json");
+    assert.equal(upload.with["if-no-files-found"], "error");
+    assert(upload.with.name.startsWith("pnport-benchmark-") && upload.with.name.includes("github.run_attempt"));
+    assert(!upload.with.name.startsWith("pnport-native-"));
+  }
+});
+
+test("native CI and candidates verify process ownership against the packaged binary before acceptance", () => {
+  const invocation = 'PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test process_lifecycle --target "$PNPORT_TARGET"';
+  for (const workflow of [ci, release]) {
+    const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
+    const steps = job.steps.map(({ run }) => run ?? "");
+    const lifecycle = steps.findIndex((run) => run.includes(invocation));
+    assert(lifecycle >= 0);
+    for (const prerequisite of ["scripts/install-smoke.mjs", "scripts/package.mjs binary"]) {
+      const position = steps[lifecycle].indexOf(prerequisite);
+      assert(position >= 0 && position < steps[lifecycle].indexOf(invocation));
+    }
+    assert(!job.steps[lifecycle]["continue-on-error"] && !job.steps[lifecycle].if);
+    assert(lifecycle < steps.findIndex((run) => run.includes("scripts/benchmark.mjs")));
+    const evidence = steps.findIndex((run) => run.includes("scripts/evidence.mjs record"));
+    if (evidence >= 0) {
+      assert.equal(evidence, lifecycle);
+      assert(steps[evidence].indexOf(invocation) < steps[evidence].indexOf("scripts/evidence.mjs record"));
+    }
+    assert(!steps[lifecycle].includes("--test-threads=1"));
+  }
+});

@@ -647,3 +647,15 @@ input; recovery never starts native work and stays paused until explicit Resume.
 The [harness contract](cmds-delidev-harness-contract.md#windows-opencode-general-chat-root-profile-issue-1205)
 owns exact root, isolation, Plan-policy, version-1 compatibility and native-evidence
 requirements.
+
+### Automatic PR replacement and explicit controls
+
+Explicit Stop, Archive and Restore retain the server-owned
+`automatic_remediation_stopped` flag atomically with their ordinary control.
+Only successful explicit Resume clears it. Automatic execution failure may pause
+its own queue without setting this flag. The PR coordinator may select a fresh
+session after that separately settled automatic failure only when original native
+cleanup is confirmed and active/recovery/Archive ownership is absent; it never
+resumes the old failed queue. Its current source link and latest attempt session
+still enforce user controls. Historical and manual pauses remain ineligible.
+See the [integration contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).

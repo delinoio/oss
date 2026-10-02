@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "repository-folder"
+description = "Choose one native repository directory without content or Git access."
+commands.allow = ["choose_repository_folder"]

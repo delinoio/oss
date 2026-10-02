@@ -1760,6 +1760,7 @@ jobs:
       matrix: ${{ fromJSON(needs.changes.outputs.pnport_matrix) }}
     env:
       PNPORT_TARGET: ${{ matrix.target }}
+      PNPORT_SUFFIX: ${{ matrix.suffix }}
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - uses: actions/checkout@v6
@@ -1794,6 +1795,18 @@ jobs:
           pnpm --filter @delino/pnport test:typescript "$fixture" "$binary"
           node packages/pnport/scripts/package.mjs binary --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
           node packages/pnport/scripts/install-smoke.mjs --target "$PNPORT_TARGET"
+          PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test process_lifecycle --target "$PNPORT_TARGET"
+      - name: Measure identical cold and warm workloads on this native host
+        shell: bash
+        run: |
+          node packages/pnport/scripts/benchmark.mjs "$RUNNER_TEMP/pnport-typescript" "$RUNNER_TEMP/pnport-benchmark" "packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" "$GITHUB_SHA"
+      - name: Save revision-bound numeric benchmark results
+        uses: actions/upload-artifact@v7
+        with:
+          name: pnport-benchmark-${{ matrix.suffix }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pnport-benchmark/benchmark.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
