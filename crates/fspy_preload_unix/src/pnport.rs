@@ -149,9 +149,7 @@ unsafe fn path_from(
     if path.is_absolute() {
         return Ok(path.to_owned());
     }
-    let directory_metadata = if dirfd == AT_FDCWD {
-        None
-    } else {
+    if dirfd != AT_FDCWD {
         // Check the live kernel descriptor before normalizing '..'. Checking
         // only a remembered path would treat a regular file as a directory;
         // live metadata also covers duplicated and untracked descriptors.
@@ -165,8 +163,7 @@ unsafe fn path_from(
         if metadata.st_mode & S_IFMT != S_IFDIR {
             return Err(ENOTDIR);
         }
-        Some(metadata)
-    };
+    }
     let base = if dirfd == AT_FDCWD {
         runtime
             .cwd
@@ -182,27 +179,9 @@ unsafe fn path_from(
             if fcntl(dirfd, F_GETPATH, buffer.as_mut_ptr()) < 0 {
                 return Err(EBADF);
             }
-            let physical = PathBuf::from(OsStr::from_bytes(
+            PathBuf::from(OsStr::from_bytes(
                 CStr::from_ptr(buffer.as_ptr().cast()).to_bytes(),
-            ));
-            // fcntl duplication and native opens can bypass descriptor tracking.
-            // Recover an unambiguous logical directory from live inode identity,
-            // including native path aliases such as /var and /private/var.
-            // Shared package backing alone cannot identify a peer issuer.
-            let expected = directory_metadata.as_ref().ok_or(EBADF)?;
-            let mut logical = runtime.descriptors.iter().filter_map(|(fd, translation)| {
-                let mut metadata = std::mem::MaybeUninit::<stat>::uninit();
-                if fstat(*fd, metadata.as_mut_ptr()) != 0 {
-                    return None;
-                }
-                let metadata = metadata.assume_init();
-                (metadata.st_dev == expected.st_dev && metadata.st_ino == expected.st_ino)
-                    .then_some(&translation.logical)
-            });
-            match logical.next() {
-                Some(first) if logical.all(|other| other == first) => first.clone(),
-                _ => physical,
-            }
+            ))
         }
         #[cfg(target_os = "linux")]
         {
@@ -211,6 +190,74 @@ unsafe fn path_from(
     };
     Ok(base.join(path))
 }
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c_int {
+    let original = libc::fcntl as unsafe extern "C" fn(c_int, c_int, ...) -> c_int;
+    let Some(_guard) = Guard::enter() else {
+        return original(fd, command);
+    };
+
+    // Only duplication carries logical directory provenance. An inode lookup
+    // cannot distinguish an fcntl duplicate from an independent open of shared
+    // peer backing, so record the duplicate at the actual duplication call.
+    let result = match command {
+        libc::F_DUPFD
+        | libc::F_DUPFD_CLOEXEC
+        | libc::F_SETFD
+        | libc::F_SETFL
+        | libc::F_RDAHEAD
+        | libc::F_NOCACHE
+        | libc::F_FREEZE_FS
+        | libc::F_THAW_FS
+        | libc::F_GLOBAL_NOCACHE
+        | libc::F_NODIRECT => {
+            let argument = args.arg::<c_int>();
+            original(fd, command, argument)
+        }
+        libc::F_GETLK
+        | libc::F_SETLK
+        | libc::F_SETLKW
+        | libc::F_PREALLOCATE
+        | libc::F_RDADVISE
+        | libc::F_LOG2PHYS
+        | libc::F_LOG2PHYS_EXT
+        | libc::F_GETPATH
+        | libc::F_GETPATH_NOFIRMLINK
+        | libc::F_PUNCHHOLE
+        | libc::F_TRIM_ACTIVE_FILE
+        | libc::F_SPECULATIVE_READ
+        | libc::F_TRANSFEREXTENTS => {
+            let argument = args.arg::<*mut c_void>();
+            original(fd, command, argument)
+        }
+        libc::F_GETFD | libc::F_GETFL | libc::F_FULLFSYNC | libc::F_BARRIERFSYNC => {
+            original(fd, command)
+        }
+        // Keep the native ABI for future integer-valued Darwin commands until
+        // libc exposes a typed constant for them.
+        _ => original(fd, command, args.arg::<c_int>()),
+    };
+    if result >= 0
+        && matches!(command, libc::F_DUPFD | libc::F_DUPFD_CLOEXEC)
+        && let Some(runtime) = RUNTIME.get()
+        && let Ok(mut runtime) = runtime.lock()
+        && let Some(translation) = runtime.descriptors.get(&fd).cloned()
+    {
+        runtime.descriptors.insert(result, translation);
+    }
+    result
+}
+
+#[cfg(target_os = "macos")]
+const _: () = {
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut ENTRY: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_fcntl as _,
+        _old: libc::fcntl as _,
+    };
+};
 
 unsafe fn translate(
     path: *const c_char,

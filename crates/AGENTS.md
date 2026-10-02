@@ -225,7 +225,7 @@
 
 ### pnport Rules
 
-- pnport macOS `readlink` and `readlinkat` must expose the same logical virtual-link target and native Darwin buffer/error behavior. Validate live directory descriptors before relative translation; recover an untracked handle's logical context only from unambiguous live directory identity, never infer a peer issuer from shared package backing. Keep native symlink and inline/split ZIP, unplugged, peer, descriptor and invalid-buffer conformance controls.
+- pnport macOS `readlink` and `readlinkat` must expose the same logical virtual-link target and native Darwin buffer/error behavior. Validate live directory descriptors before relative translation; preserve logical context only for intercepted opens and descriptor duplications, and use the live native path for untracked handles rather than inferring a peer issuer from shared package backing. Keep native symlink and inline/split ZIP, unplugged, peer, descriptor and invalid-buffer conformance controls.
 - Classify unplugged installation `node_modules` components through the graph-location ancestor index independently of the requested suffix. Preserve native sibling lookup while continuing traversal into later package-owned virtual dependency namespaces; keep registered HARD content read-only and genuine startup/runtime conflicts fail-closed.
 - Classify unplugged installation `node_modules` components through the graph-location ancestor index independently of the requested suffix. Preserve native sibling lookup while continuing traversal into later package-owned virtual dependency namespaces; keep registered HARD content read-only and genuine startup/runtime conflicts fail-closed.
 
