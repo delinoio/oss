@@ -29,6 +29,7 @@
 - `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
 - clibox Unix nested-wrapper ownership must prove bounded ancestry within the same process group through matching native executables and supported Node launchers to the matching outer owner; unknown or unavailable evidence fails closed. Preserve Linux/macOS deep-chain cleanup regressions and follow `docs/crates-clibox-foundation.md`.
 - `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`: non-publishable clibox command-family implementations.
+- Preserve macOS fspy final-entry nofollow policy and link identity through the private metadata channel; resolve parents for containment, retain following-call behavior, and keep selected escaping links excluded from reproduction bundles.
 - `crates/clibox-fspy`: private, non-publishable issue #971 file-access workflow crate. Treat legacy fspy path-access hints as attempts only; never infer a successful content read or complete operation trace from them. Follow `docs/crates-clibox-fspy-contract.md`.
 - clibox macOS fspy must retain the first typed receiver event/byte limit failure through supervision and incomplete summaries. Keep cleanup failure primary with the original stable redacted cause in diagnostics; preserve hello/root reservations, conservative charging and exact final serialization bounds.
 - `crates/nodeup`: Rust-based Node.js version manager.

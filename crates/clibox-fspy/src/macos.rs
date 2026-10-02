@@ -13,6 +13,7 @@ use std::{
     io::{self, Read},
     os::unix::{
         ffi::{OsStrExt, OsStringExt},
+        fs::MetadataExt,
         net::{UnixListener, UnixStream},
         process::ExitStatusExt,
     },
@@ -52,6 +53,8 @@ pub struct Frame {
     pub tid: u64,
     pub id: u64,
     pub monotonic_ns: u64,
+    /// Native completion result; metadata starts carry the closed final-symlink
+    /// policy.
     pub result: i64,
     pub error: i32,
     pub path: Vec<u8>,
@@ -145,7 +148,7 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         || (kind == FrameKind::Start
             && (error != 0
                 || (result != 0
-                    && !(operation == 1 && result == 1)
+                    && !((operation == 1 || operation == 7) && result == 1)
                     && !((operation == 3 || operation == 5) && result >= -1))))
         || (kind == FrameKind::Hello && length != 0)
         || (kind != FrameKind::Start && identity.is_some())
@@ -416,7 +419,13 @@ fn receive_connection(
         let start = frame.kind == FrameKind::Start;
         if start && !frame.path.is_empty() {
             if let Some(root) = root {
-                frame.access_path = classify_path_with_identity(root, &frame.path, frame.identity)?;
+                let policy = if frame.operation == 7 && frame.result == 1 {
+                    FinalSymlink::NoFollow
+                } else {
+                    FinalSymlink::Follow
+                };
+                frame.access_path =
+                    classify_path_with_identity(root, &frame.path, frame.identity, policy)?;
             }
         }
         if start {
@@ -716,25 +725,58 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<Option<PathBuf>> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum FinalSymlink {
+    Follow,
+    NoFollow,
+}
+
 pub(super) fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<Option<AccessPath>> {
-    classify_path_with_identity(root, bytes, None)
+    classify_path_with_identity(root, bytes, None, FinalSymlink::Follow)
 }
 
 fn classify_path_with_identity(
     root: &Path,
     bytes: &[u8],
     descriptor_identity: Option<FileIdentity>,
+    policy: FinalSymlink,
 ) -> io::Result<Option<AccessPath>> {
     let logical = PathBuf::from(OsString::from_vec(bytes.to_vec()));
     if !logical.is_absolute() {
         return Err(invalid("non_absolute_path"));
     }
-    let Some(resolved) = resolve_even_if_absent(&logical)? else {
+    // Use the raw terminal component: Path::components removes a trailing slash
+    // or dot, whose native lookup still follows the preceding symlink.
+    let separator = bytes
+        .iter()
+        .rposition(|byte| *byte == b'/')
+        .expect("absolute path");
+    let final_name = &bytes[separator + 1..];
+    let nofollow =
+        matches!(policy, FinalSymlink::NoFollow) && !matches!(final_name, b"" | b"." | b"..");
+    let resolved = if nofollow {
+        let parent = Path::new(std::ffi::OsStr::from_bytes(&bytes[..=separator]));
+        resolve_even_if_absent(parent)?
+            .map(|parent| parent.join(std::ffi::OsStr::from_bytes(final_name)))
+    } else {
+        resolve_even_if_absent(&logical)?
+    };
+    let Some(resolved) = resolved else {
         return Ok(None);
     };
     let relative = resolved.strip_prefix(root).ok();
-    let identity =
-        descriptor_identity.or_else(|| file_id::get_file_id(&logical).ok().map(FileIdentity::from));
+    let identity = descriptor_identity.or_else(|| {
+        if nofollow {
+            fs::symlink_metadata(&logical)
+                .ok()
+                .map(|metadata| FileIdentity::Inode {
+                    device: metadata.dev(),
+                    inode: metadata.ino(),
+                })
+        } else {
+            file_id::get_file_id(&logical).ok().map(FileIdentity::from)
+        }
+    });
     Ok(Some(AccessPath {
         class: if relative.is_some() {
             PathClass::Project
@@ -903,7 +945,7 @@ mod tests {
 
     use super::{
         assemble_candidate_record, classify_path, classify_path_with_identity, read_frame,
-        FrameKind, FrameLedger, OperationReceiver, ReceiverFailure,
+        FinalSymlink, FrameKind, FrameLedger, OperationReceiver, ReceiverFailure,
     };
 
     #[test]
@@ -937,10 +979,86 @@ mod tests {
             &root,
             logical.as_os_str().as_bytes(),
             Some(FileIdentity::from(original)),
+            FinalSymlink::Follow,
         )
         .unwrap()
         .unwrap();
         assert_eq!(observed.identity, Some(FileIdentity::from(original)));
+    }
+
+    #[test]
+    fn nofollow_resolves_parents_and_retains_lossless_final_entry() {
+        use std::os::unix::{ffi::OsStringExt, fs::MetadataExt};
+
+        use crate::record::{FileIdentity, NativePath, PathClass};
+
+        let directory = tempfile::tempdir().unwrap();
+        let base = directory.path().canonicalize().unwrap();
+        let root = base.join("project");
+        fs::create_dir_all(root.join("real")).unwrap();
+        fs::create_dir(base.join("external")).unwrap();
+        symlink("real", root.join("alias")).unwrap();
+        symlink(base.join("external"), root.join("escape")).unwrap();
+        let name = std::ffi::OsString::from_vec(b"link-\xc3\xa9".to_vec());
+        symlink("missing", root.join("real").join(&name)).unwrap();
+        let logical = root.join("alias").join(&name);
+        let metadata = fs::symlink_metadata(&logical).unwrap();
+        let access = classify_path_with_identity(
+            &root,
+            logical.as_os_str().as_bytes(),
+            None,
+            FinalSymlink::NoFollow,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            access.logical,
+            NativePath::UnixBytes(logical.as_os_str().as_bytes().to_vec())
+        );
+        assert_eq!(
+            access.project_relative,
+            Some(NativePath::UnixBytes(b"real/link-\xc3\xa9".to_vec()))
+        );
+        assert_eq!(
+            access.identity,
+            Some(FileIdentity::Inode {
+                device: metadata.dev(),
+                inode: metadata.ino()
+            })
+        );
+        // macOS filesystems reject invalid UTF-8 names, but the attempted
+        // pathname must still survive classification without lossy decoding.
+        let mut invalid_name = root.as_os_str().as_bytes().to_vec();
+        invalid_name.extend_from_slice(b"/missing-\xff");
+        let access =
+            classify_path_with_identity(&root, &invalid_name, None, FinalSymlink::NoFollow)
+                .unwrap()
+                .unwrap();
+        assert_eq!(access.logical, NativePath::UnixBytes(invalid_name));
+        assert_eq!(access.identity, None);
+        assert_eq!(
+            access.project_relative,
+            Some(NativePath::UnixBytes(b"missing-\xff".to_vec()))
+        );
+        symlink("absent", base.join("external/link")).unwrap();
+        let access = classify_path_with_identity(
+            &root,
+            root.join("escape/link").as_os_str().as_bytes(),
+            None,
+            FinalSymlink::NoFollow,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(access.class, PathClass::External);
+        assert_eq!(access.project_relative, None);
+        for suffix in ["alias/", "alias/.", "alias/.."] {
+            let bytes = root.join(suffix).as_os_str().as_bytes().to_vec();
+            let following = classify_path(&root, &bytes).unwrap().unwrap();
+            let nofollow = classify_path_with_identity(&root, &bytes, None, FinalSymlink::NoFollow)
+                .unwrap()
+                .unwrap();
+            assert_eq!(nofollow, following, "native directory lookup: {suffix}");
+        }
     }
 
     #[test]
@@ -1040,6 +1158,25 @@ mod tests {
         })
         .unwrap()
         .is_some());
+    }
+
+    #[test]
+    fn wire_accepts_only_closed_metadata_resolution_values() {
+        for policy in [0_i64, 1] {
+            let mut bytes = frame_bytes(b's', b"/tmp/link");
+            bytes[1] = 7;
+            bytes[34..42].copy_from_slice(&policy.to_le_bytes());
+            assert_eq!(
+                read_frame(&mut bytes.as_slice()).unwrap().unwrap().result,
+                policy
+            );
+        }
+        for policy in [-1_i64, 2] {
+            let mut bytes = frame_bytes(b's', b"/tmp/link");
+            bytes[1] = 7;
+            bytes[34..42].copy_from_slice(&policy.to_le_bytes());
+            assert!(read_frame(&mut bytes.as_slice()).is_err());
+        }
     }
 
     #[test]
