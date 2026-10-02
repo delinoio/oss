@@ -106,6 +106,13 @@ export function validateSubagentPage(resources: readonly Resource[], sessionId: 
   for (const row of rows) {
     const visited = new Set([row.child.native_id]);
     let parent = children.get(row.child.parent_id as string);
+    if (parent && row.child.parent_tool_id) {
+      const parentTools = parent.child.tools;
+      if (!Array.isArray(parentTools) || !parentTools.some(tool => {
+        const value = object(tool);
+        return value.native_id === row.child.parent_tool_id && ["Agent", "Task"].includes(String(value.name));
+      })) return undefined;
+    }
     while (parent) {
       if (visited.has(parent.child.native_id) || parent.record.execution_id !== row.record.execution_id || parent.record.root_id !== row.record.root_id || parent.record.harness !== row.record.harness) return undefined;
       visited.add(parent.child.native_id); parent = children.get(parent.child.parent_id as string);

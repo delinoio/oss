@@ -7,6 +7,7 @@ import { EntityKind, ResourceService, SystemCapability, SystemService, newReques
 import { expect, test } from "vitest";
 import { document, encode, items, object, type Document } from "./documents";
 import { Subagents } from "./subagents";
+import { validateSubagentPage } from "./subagent-record";
 import { subagentFixture } from "./subagent-test-fixture";
 
 function edit(row: Resource, change: (value: Document) => void) { const value = document(row); change(value); row.documentJson = encode(value); }
@@ -111,4 +112,25 @@ test("preserves exact nested Claude response usage when the latest task has no u
   });
   const dispose = mountPage(session, [row]);
   try { expect(await screen.findByText("Input: 9223372036854775807")).toBeTruthy(); expect(screen.getByText("Original child output")).toBeTruthy(); expect(screen.getByText("Total: Unavailable")).toBeTruthy(); } finally { dispose(); }
+});
+
+test("requires a nested Claude child to name a retained Agent or Task parent tool", () => {
+  const session = newRequestId(), parent = subagentFixture(session), child = subagentFixture(session);
+  edit(parent, value => {
+    value.harness = "claude-code"; value.native_version = "2.1.236";
+    const observation = object(value.observation);
+    observation.native_id = "parent-child"; observation.parent_id = value.root_id; observation.parent_tool_id = "root-agent";
+    observation.tool = { id: newRequestId(), native_id: "root-agent", name: "Agent" }; observation.tools = [{ native_id: "retained-agent", name: "Agent" }];
+    observation.source = "claude-task"; observation.source_id = "parent-task"; observation.requested_model = null; observation.observed_model = null; observation.output = null; observation.usage = null;
+    value.sources = [{ source: "claude-task", source_id: "parent-task", sequence: "3" }];
+  });
+  edit(child, value => {
+    const parentValue = document(parent), observation = object(value.observation);
+    value.harness = "claude-code"; value.native_version = "2.1.236"; value.execution_id = parentValue.execution_id; value.root_id = parentValue.root_id; value.first_sequence = "4"; value.last_sequence = "4";
+    observation.native_id = "nested-child"; observation.parent_id = "parent-child"; observation.parent_tool_id = "missing-agent"; observation.source = "claude-task"; observation.source_id = "nested-task"; observation.observed_model = null; observation.output = null; observation.usage = null;
+    value.sources = [{ source: "claude-task", source_id: "nested-task", sequence: "4" }];
+  });
+  expect(validateSubagentPage([parent, child], session)).toBeUndefined();
+  edit(child, value => { object(value.observation).parent_tool_id = "retained-agent"; });
+  expect(validateSubagentPage([parent, child], session)).toHaveLength(2);
 });
