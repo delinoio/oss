@@ -112,6 +112,7 @@ fn same_path(left: &Path, right: &Path) -> bool {
     path_prefix(left, right) && path_prefix(right, left)
 }
 
+#[cfg(test)]
 fn logical_relative(path: &AccessPath, root: &Path) -> Option<PathBuf> {
     let mut equivalent_prefixes = HashMap::new();
     logical_relative_with_cache(path, root, &mut equivalent_prefixes)
@@ -284,7 +285,9 @@ impl Dependencies {
     }
 
     fn relevant(&self, path: &Path) -> bool {
-        self.files.iter().any(|file| same_path(file, path))
+        self.files
+            .iter()
+            .any(|file| same_path(file, path) || path_prefix(path, file))
             || self
                 .directories
                 .iter()
@@ -320,6 +323,25 @@ impl Dependencies {
             }
             if anchor.starts_with(root) {
                 anchors.insert(anchor);
+            }
+            // A nonrecursive watch on a symlinked directory follows its
+            // target. Also watch each lexical parent so replacing the link
+            // itself invalidates dependencies beneath that suffix.
+            let mut component_path = root.to_path_buf();
+            for component in relative.components() {
+                let std::path::Component::Normal(component) = component else {
+                    break;
+                };
+                component_path.push(component);
+                if std::fs::symlink_metadata(&component_path)
+                    .is_ok_and(|metadata| metadata.file_type().is_symlink())
+                {
+                    if let Some(parent) = component_path.parent() {
+                        if parent.starts_with(root) {
+                            anchors.insert(parent.to_path_buf());
+                        }
+                    }
+                }
             }
             // Directory deletion must also be noticed through its parent.
             if self.directories.contains(relative) {
@@ -702,6 +724,26 @@ mod tests {
             identity: None,
         };
         assert_eq!(logical_relative(&escaping, &root), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_suffix_watches_lexical_parent() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(root.join("target")).unwrap();
+        symlink("target", root.join("link")).unwrap();
+
+        let mut dependencies = Dependencies::default();
+        dependencies.files.insert(PathBuf::from("link/input"));
+        let anchors = dependencies.anchors(&root);
+
+        assert!(anchors.contains(&root.join("link")));
+        assert!(anchors.contains(&root));
+        assert!(dependencies.relevant(Path::new("link")));
     }
 
     #[test]
