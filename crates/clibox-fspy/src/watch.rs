@@ -1,7 +1,7 @@
 //! Dependency extraction and loss-aware native file watching.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -42,6 +42,7 @@ pub struct Dependencies {
     directories: BTreeSet<PathBuf>,
     absent: BTreeSet<PathBuf>,
     writes: BTreeSet<PathBuf>,
+    equivalent_prefixes: HashMap<PathBuf, bool>,
 }
 
 #[derive(Clone, Copy)]
@@ -112,6 +113,15 @@ fn same_path(left: &Path, right: &Path) -> bool {
 }
 
 fn logical_relative(path: &AccessPath, root: &Path) -> Option<PathBuf> {
+    let mut equivalent_prefixes = HashMap::new();
+    logical_relative_with_cache(path, root, &mut equivalent_prefixes)
+}
+
+fn logical_relative_with_cache(
+    path: &AccessPath,
+    root: &Path,
+    equivalent_prefixes: &mut HashMap<PathBuf, bool>,
+) -> Option<PathBuf> {
     #[cfg(not(windows))]
     let logical = native_relative(&path.logical)?;
     #[cfg(windows)]
@@ -133,7 +143,12 @@ fn logical_relative(path: &AccessPath, root: &Path) -> Option<PathBuf> {
             .into_iter()
             .rev()
             .find(|prefix| {
-                std::fs::canonicalize(prefix).is_ok_and(|resolved| same_path(&resolved, root))
+                *equivalent_prefixes
+                    .entry(prefix.to_path_buf())
+                    .or_insert_with(|| {
+                        std::fs::canonicalize(prefix)
+                            .is_ok_and(|resolved| same_path(&resolved, root))
+                    })
             })?;
         tracing::debug!(
             stage = "watch_alias_prefix",
@@ -181,7 +196,9 @@ impl Dependencies {
         let Some(relative) = native_relative(relative) else {
             return;
         };
-        let alias = root.and_then(|root| logical_relative(path, root));
+        let alias = root.and_then(|root| {
+            logical_relative_with_cache(path, root, &mut self.equivalent_prefixes)
+        });
         if matches!(
             operation,
             Operation::Write | Operation::PositionalWrite | Operation::Mutation
