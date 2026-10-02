@@ -11,12 +11,13 @@ default-run = "delidev-desktop"
 [features]
 default = []
 cli = ["dep:tauri-cli"]
-desktop-host = ["dep:cef", "dep:tauri", "tauri/cef", "dep:tauri-build", "dep:tracing-subscriber", "native-notifications", "dep:raw-window-handle", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
+desktop-host = ["dep:cef", "dep:tauri", "tauri/cef", "dep:tauri-build", "dep:tracing-subscriber", "native-notifications", "dep:rfd", "dep:raw-window-handle", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 native-notifications = ["dep:tokio", "dep:mac-usernotifications", "dep:windows", "dep:zbus", "dep:futures-lite"]
 custom-protocol = ["tauri?/custom-protocol"]
 
 [dependencies]
 cef = { version = "=150.0.0", optional = true }
+rfd = { version = "=0.16.0", default-features = false, features = ["gtk3"], optional = true }
 base64 = "0.22.1"
 dirs = "6"
 raw-window-handle = { version = "=0.6.2", optional = true }
