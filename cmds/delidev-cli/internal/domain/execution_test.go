@@ -44,3 +44,37 @@ func TestExecutionInstructionsNeverTruncateToFit(t *testing.T) {
 		t.Fatal("instruction separator overflow was silently truncated")
 	}
 }
+
+func TestManagedSubscriptionRequiresBoundedPermission(t *testing.T) {
+	for _, permission := range []PermissionMode{PermissionReadOnly, PermissionWorkspaceWrite} {
+		t.Run(string(permission), func(t *testing.T) {
+			configuration := managedSubscriptionExecutionConfiguration(t, permission)
+			if err := configuration.Validate(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	for _, permission := range []PermissionMode{PermissionDefault, PermissionFullAccess} {
+		t.Run(string(permission), func(t *testing.T) {
+			configuration := managedSubscriptionExecutionConfiguration(t, permission)
+			err := configuration.Validate()
+			if err == nil || SafeError(err).Code != Unsupported {
+				t.Fatalf("permission %q was accepted for managed subscription execution: %v", permission, err)
+			}
+		})
+	}
+}
+
+func managedSubscriptionExecutionConfiguration(t *testing.T, permission PermissionMode) ExecutionConfiguration {
+	t.Helper()
+	account := NewID()
+	modelID := NewID()
+	agent := Agent{Name: "Managed fixture", Harness: Codex, ModelID: modelID, Accounts: []WeightedAccount{{ID: account, Weight: 1}}, Options: AgentOptions{Permission: permission}}
+	model := Model{Name: "Managed fixture", NativeID: "managed-fixture", ProviderID: NewID(), Harnesses: []Harness{Codex}, MetadataSource: UserDeclared}
+	configuration, err := ResolveExecutionConfiguration(NewID(), 1, agent, 1, model, Priority, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration.Subscription = true
+	return configuration
+}

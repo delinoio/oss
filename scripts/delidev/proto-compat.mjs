@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -14,9 +14,22 @@ export function generateCompatibility() {
   const target = resolve(directory, 'delidev_pb.ts');
   const marker = '// @generated DeliDev compatibility re-exports';
   const original = readFileSync(target, 'utf8').split(marker)[0].trimEnd().replace('const legacyBase:', 'export const file_delidev_v1_delidev:');
-  // Buf cleans this tool-owned directory. Include new service files while the
-  // relocation inventory keeps only the historical declarations and order.
-  const files = readdirSync(directory).filter(file => file.endsWith('_pb.ts') && file !== 'delidev_pb.ts').map(file => file.slice(0, -6)).sort();
+  // The relocation map describes historical declarations only. New service files
+  // must join both aggregate views through the compatibility schema's imports.
+  const descriptors = JSON.parse(execFileSync(process.execPath, [
+    resolve(root, 'node_modules/@bufbuild/buf/bin/buf'), 'build',
+    '--as-file-descriptor-set', '--exclude-source-info', '--output', '-#format=json',
+  ], { cwd: root, encoding: 'utf8' }));
+  const legacy = descriptors.file.find(file => file.name === layout.legacyFile);
+  if (!legacy) throw new Error('Missing DeliDev compatibility schema');
+  const files = [...new Set((legacy.publicDependency ?? []).map(index => {
+    const path = legacy.dependency[index];
+    const imported = descriptors.file.find(file => file.name === path);
+    if (!imported || imported.package !== legacy.package || !path.startsWith('delidev/v1/')) {
+      throw new Error('Invalid DeliDev compatibility public import');
+    }
+    return basename(path, '.proto');
+  }))].sort();
   const order = Object.keys(layout.declarations);
   const modules = files.map(file => `file_delidev_v1_${file}`);
   // Aggregate at runtime so adding to one service does not rewrite a central
