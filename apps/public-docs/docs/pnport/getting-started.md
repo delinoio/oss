@@ -10,7 +10,7 @@ Without `--project`, pnport searches upward from the current directory for the n
 
 ## Run a command
 
-After a complete release is available, the invocation shape is:
+After installing the experimental preview or a future stable release, the invocation shape is:
 
 ```text
 pnport run -- <command> [args...]

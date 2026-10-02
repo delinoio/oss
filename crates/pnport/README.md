@@ -1,7 +1,10 @@
 # pnport
 
-pnport is an unreleased Rust CLI for a virtual Yarn 4 Plug'n'Play filesystem.
-**Issue #958 is not complete, and version 0.1.0 is not ready to distribute.**
+pnport is a Rust CLI for a virtual Yarn 4 Plug'n'Play filesystem.
+**Issue #958 is not complete, and stable version 0.1.0 is not ready to distribute.**
+The experimental `0.1.0-next.1` preview is available through npm next and signed
+GitHub prerelease archives. See the [installation guide](https://oss.delino.io/pnport/installation)
+for the registry check, installation commands and known limits.
 
 The current development implementation loads inline and split PnP data without
 executing JavaScript, resolves dependencies and aliases using pnp 0.12.12, keeps
@@ -51,10 +54,12 @@ Windows x64/arm64 is deferred to 0.2.0 with its complete requirements retained.
 
 Before 0.1.0, all four macOS/glibc Linux native targets must pass the complete
 filesystem, process, installation, privacy and recovery suite. Windows must
-pass the same complete suite on both architectures before 0.2.0. Native/npm
-packages, installers, Homebrew, publication recovery and benchmark results
-remain open.
+pass the same complete suite on both architectures before 0.2.0. Stable native/npm
+packages, installers, Homebrew, publication recovery and benchmark
+acceptance remain open.
 The [public guides](https://oss.delino.io/pnport/) now describe editor setup
-without claiming editor-specific certification. No partial preview is
-permitted. Use [GitHub issues](https://github.com/delinoio/oss/issues) for
+without claiming editor-specific certification. The owner-authorized experimental
+preview passed all four native candidate gates and preserves the stable release
+gates. Full feature, minimum-OS and benchmark acceptance, including intermittent
+initialization failures, remains unfinished. Use [GitHub issues](https://github.com/delinoio/oss/issues) for
 support.

@@ -3,7 +3,7 @@
 ## Scope
 `apps/public-docs/docs/pnport` owns English guides at https://oss.delino.io/pnport, using the existing consolidated documentation app and publisher.
 
-The content and navigation are implemented at `/pnport` before the first release. The guides retain the stable 0.1.0 unreleased notice. An owner-authorized experimental `0.1.0-next.N` npm channel may be documented separately, with a published registry check, known feature/minimum-OS/initialization limits, and no Homebrew availability. Prepared sources do not establish published availability.
+The content and navigation are implemented at `/pnport` before the first release. The guides retain the stable 0.1.0 unreleased notice. An owner-authorized experimental `0.1.0-next.N` npm channel may be documented separately, with a published registry check, known feature/minimum-OS/initialization limits, and no Homebrew availability. Prepared sources do not establish published availability. The verified published `0.1.0-next.1` npm next preview and matching signed GitHub prerelease archives are available separately from stable 0.1.0. Guide npm users through a global installation to avoid a conflicting physical project node_modules directory, and Yarn users through a project-local PnP installation and `yarn pnport` invocation.
 
 ## Runtime and Language
 Rspress, shared accessible navigation and Cloudflare Pages. Use pnpm dev:public-docs on fixed loopback port 46302. No standalone app, publisher or port.
@@ -19,6 +19,8 @@ The stable clean routes are `/pnport/`, `/pnport/installation`, `/pnport/getting
 Benchmark guidance distinguishes released performance from development observations. Cold/warm comparisons retain identical child work and incremental/application cache state, use at least five samples with median/range, identify instrumentation overhead and filesystem count level, and disclose sampled-memory resolution/shared-page limits. Keep internal harness paths and validation records out of the public guide; publication of release numbers remains gated by full four-target acceptance.
 
 ## Storage
+Preview installation guidance must explain Yarn's package-age quarantine without disabling a user's configured gate. A global npm launcher can run against an already installed PnP project. Temporary release validation may preapprove only the exact five candidate package/version descriptors after checking their public immutable bytes; disclose that exception separately from default-age-gate acceptance.
+
 Static Markdown and shared site assets only. No application storage or remote uploads. Generated output stays ignored.
 
 ## Security

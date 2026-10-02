@@ -1,6 +1,6 @@
 # Editors and language servers
 
-**pnport 0.1.0 is unreleased, and no editor or language-server version is certified.** This guide describes the integration shape to use after a complete release; it is not a claim that a particular editor currently works.
+**pnport 0.1.0 is unreleased, and no editor or language-server version is certified.** This guide describes the integration shape for experiments with the preview or a future stable release; it is not a claim that a particular editor currently works. Check [installation and availability](/pnport/installation) before testing.
 
 ## Configure the executable
 
