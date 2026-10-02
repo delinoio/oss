@@ -2101,6 +2101,56 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_inherited_duplicate_directory_descriptors_share_virtual_offset() {
+    use std::{
+        os::{fd::AsRawFd, unix::process::CommandExt},
+        process::Command,
+    };
+
+    let root = directory_fixture(false);
+    let cache = tempfile::tempdir().unwrap();
+    let source = fs::File::open(root.path()).unwrap();
+    let source_fd = source.as_raw_fd();
+    let executable = root.path().join("inherited-directory-listing");
+    assert!(Command::new("cc")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/inherited-directory-listing.c"
+        ))
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .status()
+        .unwrap()
+        .success());
+    let mut command = Command::new(env!("CARGO_BIN_EXE_pnport"));
+    command
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&executable);
+    unsafe {
+        command.pre_exec(move || {
+            for fd in [9, 10] {
+                if libc::dup2(source_fd, fd) < 0 || libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+            Ok(())
+        });
+    }
+    let result = command.output().unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_proc_root_aliases_retain_managed_ownership() {
     use std::{os::unix::fs::PermissionsExt, process::Command};
     let root = fixture();

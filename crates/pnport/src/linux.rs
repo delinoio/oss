@@ -51,6 +51,10 @@ const OPEN_HOW_SIZE: usize = 24;
 const RESOLVE_BENEATH: u64 = 0x08;
 const RESOLVE_IN_ROOT: u64 = 0x10;
 const CLOSE_RANGE_UNSHARE: u32 = 2;
+// Linux KCMP_FILE compares two descriptors' open-file descriptions rather
+// than their current descriptor numbers. Use it when seeding inherited
+// directory descriptors so dup-created handles share the overlay offset.
+const KCMP_FILE: libc::c_int = 0;
 // ext4/overlayfs use i64::MAX for native EOF. A negative lseek result would
 // encode errno, so reserve the adjacent positive cookie and reject a native
 // collision before publishing it rather than confusing the two positions.
@@ -1605,6 +1609,74 @@ impl Trace<'_> {
             );
         }
         self.fds.insert(pid, inherited);
+        Ok(())
+    }
+
+    fn seed_inherited_directory_offsets(&mut self) -> Result<()> {
+        let pid = self.root;
+        let mut eligible = Vec::new();
+        for entry in fs::read_dir(format!("/proc/{pid}/fd")).map_err(|_| injection_failed())? {
+            let entry = entry.map_err(|_| injection_failed())?;
+            let Some(fd) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<i32>().ok())
+            else {
+                continue;
+            };
+            if !fs::metadata(entry.path())
+                .map_err(|_| injection_failed())?
+                .is_dir()
+            {
+                continue;
+            }
+            let Some(parent) = self.directory_parent(pid, fd) else {
+                continue;
+            };
+            if self.view.virtual_directory_entry(&parent)?.is_none() {
+                continue;
+            }
+            match fs::symlink_metadata(format!("/proc/{pid}/fd/{fd}/node_modules")) {
+                Ok(metadata) if metadata.is_dir() => continue,
+                Ok(_) => {
+                    return Err(Error::new(
+                        Code::PnportFilesystemConflict,
+                        "A backing entry conflicts with the virtual dependency directory.",
+                    ))
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(_) => return Err(injection_failed()),
+            }
+            eligible.push(fd);
+        }
+
+        let directories = self.directories.entry(pid).or_default();
+        let mut representatives: Vec<(i32, Rc<DirectoryOffset>)> = Vec::new();
+        for fd in eligible {
+            let mut shared = None;
+            for (representative, state) in &representatives {
+                // SAFETY: Both descriptors belong to the stopped root task
+                // and were validated as live directories above. A result
+                // other than equal or unequal cannot establish provenance.
+                let comparison = unsafe {
+                    libc::syscall(libc::SYS_kcmp, pid, pid, KCMP_FILE, *representative, fd)
+                };
+                match comparison {
+                    0 => {
+                        shared = Some(state.clone());
+                        break;
+                    }
+                    1 => {}
+                    _ => return Err(injection_failed()),
+                }
+            }
+            let state = shared.unwrap_or_else(|| {
+                let state = Rc::new(DirectoryOffset::default());
+                representatives.push((fd, state.clone()));
+                state
+            });
+            directories.insert(fd, state);
+        }
         Ok(())
     }
 
@@ -3806,6 +3878,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
     };
     let outcome = (|| {
         trace.seed_inherited_descriptors()?;
+        trace.seed_inherited_directory_offsets()?;
         if unsafe { libc::kill(pid, libc::SIGCONT) } != 0 {
             return Err(injection_failed());
         }
