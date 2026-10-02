@@ -123,19 +123,16 @@ fn append_link_suffix(target: &Path, suffix: &Path) -> PathBuf {
 fn staged_link_target(
     raw_target: &Path,
     canonical_target: &Path,
-    root: &Path,
-    candidate: &Path,
     link: &Path,
 ) -> Result<PathBuf, ReproFailure> {
     if !raw_target.is_absolute() {
         return Ok(raw_target.to_path_buf());
     }
-    // Absolute links inside the project must point into the candidate rather
-    // than back into the source tree. Preserve their spelling after the
-    // project-root prefix when it can be identified lexically.
-    if let Ok(suffix) = raw_target.strip_prefix(root) {
-        return Ok(candidate.join(suffix));
-    }
+    // An absolute source link cannot retain its source-root spelling after the
+    // candidate is atomically renamed to the published bundle. Re-express the
+    // verified internal target relative to the link so it remains valid after
+    // that rename; links that point outside the source root were rejected
+    // while taking the snapshot.
     pathdiff::diff_paths(canonical_target, link.parent().unwrap_or(Path::new(".")))
         .ok_or(ReproFailure::Unavailable)
 }
@@ -719,13 +716,8 @@ impl Snapshot {
                     fs::create_dir_all(parent).map_err(|_| ReproFailure::Unavailable)?;
                 }
                 if !candidate_link.is_symlink() {
-                    let relative_target = staged_link_target(
-                        &link.raw_target,
-                        &link.target,
-                        &self.root,
-                        candidate,
-                        &prefix,
-                    )?;
+                    let relative_target =
+                        staged_link_target(&link.raw_target, &link.target, &prefix)?;
                     stage_symlink(&self.root.join(&prefix), &relative_target, &candidate_link)
                         .map_err(|_| ReproFailure::Unavailable)?;
                 }
@@ -949,6 +941,34 @@ mod tests {
             fs::read_link(candidate.path().join("alias.txt")).unwrap(),
             Path::new("./input.txt")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_absolute_internal_links_for_the_published_root() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir(directory.path().join("real")).unwrap();
+        fs::write(directory.path().join("real/input.txt"), b"input").unwrap();
+        symlink(
+            directory.path().join("real/input.txt"),
+            directory.path().join("alias.txt"),
+        )
+        .unwrap();
+        let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
+        let staging_parent = tempfile::tempdir().unwrap();
+        let staging = staging_parent.path().join("staging");
+        fs::create_dir(&staging).unwrap();
+        snapshot
+            .stage_required(&BTreeSet::from([PathBuf::from("alias.txt")]), &staging)
+            .unwrap();
+        let published = staging_parent.path().join("published");
+        fs::rename(&staging, &published).unwrap();
+        assert_eq!(
+            fs::read_link(published.join("alias.txt")).unwrap(),
+            Path::new("real/input.txt")
+        );
+        assert_eq!(fs::read(published.join("alias.txt")).unwrap(), b"input");
     }
 
     #[test]
