@@ -35,19 +35,35 @@ static int check_link(const char *path) {
     int directory = open(parent, O_RDONLY | O_DIRECTORY);
     CHECK(root >= 0 && directory >= 0);
     int duplicated = dup(directory);
-    // fcntl bypasses pnport's dup hook; ordinary untracked directory handles
-    // must still resolve through F_GETPATH, including non-interposed opens.
-    int untracked = fcntl(root, F_DUPFD_CLOEXEC, 0);
+    // Both fcntl duplication families must preserve the intercepted issuer,
+    // including directories whose distinct peer views share physical backing.
+    int root_cloexec = fcntl(root, F_DUPFD_CLOEXEC, 96);
+    int root_duplicate = fcntl(root, F_DUPFD, 64);
     // This test intentionally bypasses interposition to exercise F_GETPATH.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     int raw_root = syscall(SYS_open, ".", O_RDONLY | O_DIRECTORY, 0);
 #pragma clang diagnostic pop
-    int untracked_view = fcntl(directory, F_DUPFD_CLOEXEC, 0);
-    CHECK(duplicated >= 0 && untracked >= 0 && raw_root >= 0 && untracked_view >= 0);
-    int descriptors[] = {AT_FDCWD, root, untracked, raw_root, directory, duplicated, untracked_view, -1};
-    const char *paths[] = {path, path, path, path, name, name, name, absolute};
-    for (int i = 0; i < 8; i++) {
+    int directory_cloexec = fcntl(directory, F_DUPFD_CLOEXEC, 96);
+    int directory_duplicate = fcntl(directory, F_DUPFD, 64);
+    CHECK(duplicated >= 0 && raw_root >= 0);
+    CHECK(root_cloexec >= 96 && directory_cloexec >= 96);
+    CHECK(root_duplicate >= 64 && directory_duplicate >= 64);
+    CHECK(fcntl(root_cloexec, F_GETFD) == FD_CLOEXEC);
+    CHECK(fcntl(directory_cloexec, F_GETFD) == FD_CLOEXEC);
+    int closed = dup(root);
+    CHECK(closed >= 0 && close(closed) == 0);
+    int invalid[] = {-1, closed};
+    for (int i = 0; i < 2; i++) {
+        errno = 0;
+        CHECK(fcntl(invalid[i], F_DUPFD, 64) == -1 && errno == EBADF);
+        errno = 0;
+        CHECK(fcntl(invalid[i], F_DUPFD_CLOEXEC, 96) == -1 && errno == EBADF);
+    }
+    int descriptors[] = {AT_FDCWD, root, root_cloexec, root_duplicate, raw_root,
+                         directory, duplicated, directory_cloexec, directory_duplicate, -1};
+    const char *paths[] = {path, path, path, path, path, name, name, name, name, absolute};
+    for (int i = 0; i < 10; i++) {
         memset(actual, 0x5a, sizeof(actual));
         ssize_t at_length = readlinkat(descriptors[i], paths[i], actual, sizeof(actual) - 1);
         if (at_length != length) {
@@ -75,7 +91,8 @@ static int check_link(const char *path) {
     errno = 0;
     CHECK(readlinkat(AT_FDCWD, path, readonly, 16) == -1 && errno == EFAULT);
     CHECK(munmap(readonly, 4096) == 0);
-    close(root); close(directory); close(duplicated); close(untracked); close(raw_root); close(untracked_view);
+    close(root); close(directory); close(duplicated); close(raw_root);
+    close(root_cloexec); close(root_duplicate); close(directory_cloexec); close(directory_duplicate);
     return 0;
 }
 
