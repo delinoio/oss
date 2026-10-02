@@ -59,8 +59,10 @@ unsafe fn begin_path_operation_with_intent(
 ) -> Option<operation::OperationGuard> {
     // SAFETY: the native caller owns this path or handle through the intercepted
     // call.
-    operation::with_resolution(|| unsafe { begin_path_operation_inner(kind, path, mutates) })
-        .flatten()
+    operation::with_preserved_last_error(|| {
+        operation::with_resolution(|| unsafe { begin_path_operation_inner(kind, path, mutates) })
+            .flatten()
+    })
 }
 
 unsafe fn begin_path_operation_inner(
@@ -104,15 +106,17 @@ unsafe fn begin_handle_operation(
     handle: HANDLE,
     requested: Option<u64>,
 ) -> Option<operation::OperationGuard> {
-    operation::with_resolution(|| {
-        // SAFETY: GetFileType accepts a native handle and does not take ownership.
-        match unsafe { GetFileType(handle) } {
-            FILE_TYPE_DISK => operation::begin_handle_with_requested(kind, handle, requested),
-            FILE_TYPE_PIPE | FILE_TYPE_CHAR => None,
-            _ => operation::begin(kind, &[]),
-        }
+    operation::with_preserved_last_error(|| {
+        operation::with_resolution(|| {
+            // SAFETY: GetFileType accepts a native handle and does not take ownership.
+            match unsafe { GetFileType(handle) } {
+                FILE_TYPE_DISK => operation::begin_handle_with_requested(kind, handle, requested),
+                FILE_TYPE_PIPE | FILE_TYPE_CHAR => None,
+                _ => operation::begin(kind, &[]),
+            }
+        })
+        .flatten()
     })
-    .flatten()
 }
 
 unsafe fn io_result(status: NTSTATUS, block: PIO_STATUS_BLOCK) -> i64 {
@@ -520,50 +524,52 @@ static DETOUR_NT_QUERY_ATTRIBUTES_FILE: Detour<
     };
 
 unsafe fn handle_open(access_mode: impl ToAccessMode, path: impl ToAbsolutePath) {
-    // SAFETY: accessing the global client which was initialized during
-    // DLL_PROCESS_ATTACH
-    let client = unsafe { global_client() };
-    // SAFETY: resolving path from Windows object attributes or handle for access
-    // tracking
-    if unsafe {
-        path.to_absolute_path(|path| {
-            let Some(path) = path else {
-                return Ok(());
-            };
-            let path = path.as_slice();
-            let path_access = path
-                .iter()
-                .rposition(|c| *c == u16::from(b'*'))
-                .map_or_else(
-                    || {
-                        // SAFETY: converting access mask to AccessMode via FFI-aware trait
-                        PathAccess {
-                            mode: access_mode.to_access_mode(),
-                            path: IpcPath::from_wide(path),
-                        }
-                    },
-                    |wildcard_pos| {
-                        let path_before_wildcard = &path[..wildcard_pos];
-                        let slash_pos = path_before_wildcard
-                            .iter()
-                            .rposition(|c| *c == u16::from(b'\\') || *c == u16::from(b'/'))
-                            .unwrap_or(0);
-                        PathAccess {
-                            mode: AccessMode::READ_DIR,
-                            path: IpcPath::from_wide(&path[..slash_pos]),
-                        }
-                    },
-                );
-            client.send(path_access);
-            Ok(())
-        })
-    }
-    .is_err()
-    {
-        // The native call still receives its original arguments. Its access
-        // cannot be represented in the trace after path resolution fails.
-        operation::mark_loss("legacy_path_resolution");
-    }
+    operation::with_preserved_last_error(|| {
+        // SAFETY: accessing the global client which was initialized during
+        // DLL_PROCESS_ATTACH
+        let client = unsafe { global_client() };
+        // SAFETY: resolving path from Windows object attributes or handle for access
+        // tracking
+        if unsafe {
+            path.to_absolute_path(|path| {
+                let Some(path) = path else {
+                    return Ok(());
+                };
+                let path = path.as_slice();
+                let path_access = path
+                    .iter()
+                    .rposition(|c| *c == u16::from(b'*'))
+                    .map_or_else(
+                        || {
+                            // SAFETY: converting access mask to AccessMode via FFI-aware trait
+                            PathAccess {
+                                mode: access_mode.to_access_mode(),
+                                path: IpcPath::from_wide(path),
+                            }
+                        },
+                        |wildcard_pos| {
+                            let path_before_wildcard = &path[..wildcard_pos];
+                            let slash_pos = path_before_wildcard
+                                .iter()
+                                .rposition(|c| *c == u16::from(b'\\') || *c == u16::from(b'/'))
+                                .unwrap_or(0);
+                            PathAccess {
+                                mode: AccessMode::READ_DIR,
+                                path: IpcPath::from_wide(&path[..slash_pos]),
+                            }
+                        },
+                    );
+                client.send(path_access);
+                Ok(())
+            })
+        }
+        .is_err()
+        {
+            // The native call still receives its original arguments. Its access
+            // cannot be represented in the trace after path resolution fails.
+            operation::mark_loss("legacy_path_resolution");
+        }
+    });
 }
 
 static DETOUR_NT_FULL_QUERY_ATTRIBUTES_FILE: Detour<

@@ -288,6 +288,19 @@ impl Drop for LastErrorGuard {
     }
 }
 
+/// Run native observation work without changing the last-error value seen by
+/// the original NT call. Path and handle classification use Win32 helpers that
+/// are allowed to update last-error even though the intercepted operation has
+/// not started yet; restoring it here keeps those helpers transparent to the
+/// caller. `OperationGuard::complete` separately preserves the value produced
+/// by the original call while it sends the completion frame.
+pub(crate) fn with_preserved_last_error<R>(work: impl FnOnce() -> R) -> R {
+    let guard = LastErrorGuard::new();
+    let result = work();
+    drop(guard);
+    result
+}
+
 /// Send the start frame and wait for the parent's decision before forwarding
 /// the native call. A recursive call made by this transport is excluded.
 pub fn begin(operation: u8, path: &[u16]) -> Option<OperationGuard> {
