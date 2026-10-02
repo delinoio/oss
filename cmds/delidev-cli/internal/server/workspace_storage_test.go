@@ -346,3 +346,40 @@ func TestWorkspaceStorageFailedCleanupRecoveryCannotInventStoredCopy(t *testing.
 		t.Fatal("malformed recovery invented stored copy", err)
 	}
 }
+
+func TestWorkspaceStorageCanceledRecoveryRestoresPredecessor(t *testing.T) {
+	f := newStorageFixture(t)
+	preview, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.execute(preview.Msg.Job)
+	cleanup, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CLEANUP, "", preview.Msg.Job.Id, "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed := f.claim(cleanup.Msg.Job)
+	_, err = f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: claimed.Id, ExpectedRevision: claimed.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(domain.RecoveryRequired)}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel, err := f.client.CancelWorkspaceStorageOperation(context.Background(), ownerRequest(f.service.Identity, &pb.CancelWorkspaceStorageOperationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: recovery.Msg.Job.Id, ExpectedRevision: recovery.Msg.Job.Revision}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var canceled domain.Job
+	if domain.Decode(cancel.Msg.Job.DocumentJson, &canceled) != nil || canceled.State != domain.JobCanceled {
+		t.Fatal("queued recovery was not canceled")
+	}
+	state, err := store.Decode[domain.Session](f.sessionRecord())
+	if err != nil || state.Storage.State != domain.WorkspaceStorageUncertain || state.Storage.JobID != domain.ID(claimed.Id) {
+		t.Fatal("canceled recovery did not restore uncertain predecessor", err)
+	}
+	if _, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id))); err != nil {
+		t.Fatal("predecessor could not be recovered after canceling queued recovery", err)
+	}
+}
