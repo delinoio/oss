@@ -596,16 +596,12 @@ impl Snapshot {
                     .map_err(|_| ReproFailure::UnstableInput)?;
                 return self.verify_path(&expected.join(suffix));
             }
+            if let Some(expected) = self.directories.get(&prefix) {
+                self.verify_directory(&prefix, expected)?;
+            }
         }
         if let Some(expected) = self.directories.get(relative) {
-            let path = self.root.join(relative);
-            let metadata = fs::metadata(&path).map_err(|_| ReproFailure::UnstableInput)?;
-            if !metadata.is_dir()
-                || source_identity(&path, &metadata).map_err(|_| ReproFailure::UnstableInput)?
-                    != *expected
-            {
-                return Err(ReproFailure::UnstableInput);
-            }
+            self.verify_directory(relative, expected)?;
             return Ok(());
         }
         let expected = self
@@ -621,6 +617,22 @@ impl Snapshot {
                 }
             })?;
         if actual != (expected.sha256.clone(), expected.size, expected.identity) {
+            return Err(ReproFailure::UnstableInput);
+        }
+        Ok(())
+    }
+
+    fn verify_directory(
+        &self,
+        relative: &Path,
+        expected: &FileIdentity,
+    ) -> Result<(), ReproFailure> {
+        let path = self.root.join(relative);
+        let metadata = fs::metadata(&path).map_err(|_| ReproFailure::UnstableInput)?;
+        if !metadata.is_dir()
+            || source_identity(&path, &metadata).map_err(|_| ReproFailure::UnstableInput)?
+                != *expected
+        {
             return Err(ReproFailure::UnstableInput);
         }
         Ok(())
@@ -907,6 +919,32 @@ mod tests {
             directory.path().join("real"),
         )
         .unwrap();
+        assert!(matches!(
+            snapshot.verify_required(&required),
+            Err(ReproFailure::UnstableInput)
+        ));
+    }
+
+    #[test]
+    fn rejects_replaced_structural_parent_with_same_leaf() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir_all(directory.path().join("nested/empty")).unwrap();
+        let selector = Selector::new(&["nested/empty".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 1).unwrap();
+        let required = BTreeSet::from([PathBuf::from("nested/empty")]);
+
+        fs::rename(
+            directory.path().join("nested"),
+            directory.path().join("original-nested"),
+        )
+        .unwrap();
+        fs::create_dir(directory.path().join("nested")).unwrap();
+        fs::rename(
+            directory.path().join("original-nested/empty"),
+            directory.path().join("nested/empty"),
+        )
+        .unwrap();
+
         assert!(matches!(
             snapshot.verify_required(&required),
             Err(ReproFailure::UnstableInput)
