@@ -228,8 +228,8 @@
 
 ### pnport Rules
 
+- pnport parent listings must use the core's non-materializing eligibility query and match direct virtual-directory lookup, including nested and peer-specific issuers. Keep native ordering, one virtual entry, native EOF/errors, rewind/seek and per-stream or shared-open-file offset lifetimes; release overlay state on close and descriptor reuse. Interception guards must remain active around backing operations performed under native/runtime locks.
 - pnport macOS `readlink` and `readlinkat` must expose the same logical virtual-link target and native Darwin buffer/error behavior. Validate live directory descriptors before relative translation; preserve logical context only for intercepted opens and descriptor duplications, and use the live native path for untracked handles rather than inferring a peer issuer from shared package backing. Keep native symlink and inline/split ZIP, unplugged, peer, descriptor and invalid-buffer conformance controls.
-- Classify unplugged installation `node_modules` components through the graph-location ancestor index independently of the requested suffix. Preserve native sibling lookup while continuing traversal into later package-owned virtual dependency namespaces; keep registered HARD content read-only and genuine startup/runtime conflicts fail-closed.
 - Classify unplugged installation `node_modules` components through the graph-location ancestor index independently of the requested suffix. Preserve native sibling lookup while continuing traversal into later package-owned virtual dependency namespaces; keep registered HARD content read-only and genuine startup/runtime conflicts fail-closed.
 
 - pnport macOS hook recursion tokens require lazy construction after successful entry. Reentry must never drop a temporary token or clear the outer guard while native/runtime locks remain held. Preserve the repeated-reentry regression alongside actual x64 and arm64 filesystem execution.
