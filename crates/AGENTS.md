@@ -222,6 +222,8 @@
 
 ### pnport Rules
 
+- Classify unplugged installation `node_modules` components through the graph-location ancestor index independently of the requested suffix. Preserve native sibling lookup while continuing traversal into later package-owned virtual dependency namespaces; keep registered HARD content read-only and genuine startup/runtime conflicts fail-closed.
+
 - pnport macOS hook recursion tokens require lazy construction after successful entry. Reentry must never drop a temporary token or clear the outer guard while native/runtime locks remain held. Preserve the repeated-reentry regression alongside actual x64 and arm64 filesystem execution.
 
 - pnport must cancel Linux `io_uring_setup` before kernel execution and return `ENOSYS` so feature probes can fall back to mediated filesystem calls. Never create an unmediated ring; `io_uring_enter` and `io_uring_register` still fail closed. Test with and without enclosing Docker seccomp denial.

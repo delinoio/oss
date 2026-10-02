@@ -22,6 +22,8 @@ Read inline and split Yarn 4 data without evaluating loader JavaScript. Validate
 
 Hydration builds immutable indexes of hard-linked locators and package-location ancestors. Filesystem translation queries those indexes instead of scanning the complete raw registry for each source or unplugged-package access; reconstruct them when loading a serialized snapshot.
 
+Classify each traversed `node_modules` component against the package-location ancestor index before treating it as an issuer dependency namespace. Unplugged installation containers retain native lookup for unregistered scoped and unscoped siblings, including ordinary missing-path errors. Continue traversing the suffix so a later package-owned `node_modules` remains virtual, read-only, and subject to physical-conflict checks; registered HARD package bytes remain read-only.
+
 Dependency content and virtual directories are read-only. Project source/output writes are native. Read, stat, enumeration, links, realpath, directory-relative handles, watches, mmap, native loading and execution are conformance requirements. Detect physical node_modules conflicts before access, including conflicts created during execution. Do not delete conflicting user content. Ordinary misses return normal filesystem errors.
 
 Mutations creating an absent entry beneath an existing virtual dependency directory return `EROFS`; missing reads retain `ENOENT`.
