@@ -16,6 +16,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use winapi::shared::winerror::ERROR_INVALID_FUNCTION;
+
 use crate::record::{
     self, AccessPath, Backend, CompleteRecord, Completion, CoverageBoundary, FileIdentity, Header,
     NativePath, Operation, OperationPair, PathClass, Platform, Start, Summary, SCHEMA_VERSION,
@@ -325,6 +327,16 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<Option<PathBuf>> {
                     .ok_or_else(|| invalid("missing_path_parent"))?;
             }
             Err(error) if error.kind() == io::ErrorKind::PermissionDenied => return Ok(None),
+            #[cfg(windows)]
+            Err(error) if error.raw_os_error() == Some(ERROR_INVALID_FUNCTION as i32) => {
+                // Windows can report ERROR_INVALID_FUNCTION for a path-based
+                // metadata probe on a handle or filesystem provider that does
+                // not implement that query. Keep the paired operation with an
+                // unavailable path so a directory query or file access that
+                // can be classified still remains eligible; do not turn this
+                // unsupported auxiliary probe into trace loss.
+                return Ok(None);
+            }
             Err(error) => return Err(error),
         }
     }
