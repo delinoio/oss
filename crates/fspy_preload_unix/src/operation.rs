@@ -129,6 +129,14 @@ pub enum Kind {
     ExecReplace = 11,
 }
 
+/// Resolution of the final pathname component for metadata operations.
+#[derive(Clone, Copy)]
+#[repr(i64)]
+pub enum FinalSymlink {
+    Follow = 0,
+    NoFollow = 1,
+}
+
 pub struct Token {
     id: u64,
     kind: Kind,
@@ -351,21 +359,26 @@ fn send_frame(socket: &UnixStream, frame: u8, kind: Kind, payload: FramePayload<
 
 pub unsafe fn enter_path(kind: Kind, path: *const c_char) -> Option<Token> {
     // SAFETY: the pointer is forwarded unchanged and copied fault-tolerantly.
-    unsafe { enter_path_with_intent(kind, path, false) }
+    unsafe { enter_path_with_result(kind, path, 0) }
 }
 
 pub unsafe fn enter_open_path(path: *const c_char, mutates: bool) -> Option<Token> {
     // SAFETY: the pointer is forwarded unchanged and copied fault-tolerantly.
-    unsafe { enter_path_with_intent(Kind::Open, path, mutates) }
+    unsafe { enter_path_with_result(Kind::Open, path, i64::from(mutates)) }
 }
 
-unsafe fn enter_path_with_intent(kind: Kind, path: *const c_char, mutates: bool) -> Option<Token> {
+pub unsafe fn enter_metadata_path(path: *const c_char, policy: FinalSymlink) -> Option<Token> {
+    // SAFETY: the pointer is forwarded unchanged and copied fault-tolerantly.
+    unsafe { enter_path_with_result(Kind::Metadata, path, policy as i64) }
+}
+
+unsafe fn enter_path_with_result(kind: Kind, path: *const c_char, result: i64) -> Option<Token> {
     socket_path()?;
     with_resolution(|| {
         preserve_errno(|| {
             let copied = safe_path(path);
             let bytes = copied.as_ref().map_or(&[][..], |path| path.as_bytes());
-            enter_with_intent(kind, &absolute_path(libc::AT_FDCWD, bytes), mutates)
+            enter_with_result(kind, &absolute_path(libc::AT_FDCWD, bytes), result)
         })
     })
 }
@@ -373,27 +386,37 @@ unsafe fn enter_path_with_intent(kind: Kind, path: *const c_char, mutates: bool)
 pub unsafe fn enter_at(kind: Kind, dirfd: c_int, path: *const c_char) -> Option<Token> {
     // SAFETY: the descriptor is unchanged and the pointer is copied
     // fault-tolerantly.
-    unsafe { enter_at_with_intent(kind, dirfd, path, false) }
+    unsafe { enter_at_with_result(kind, dirfd, path, 0) }
 }
 
 pub unsafe fn enter_open_at(dirfd: c_int, path: *const c_char, mutates: bool) -> Option<Token> {
     // SAFETY: the descriptor is unchanged and the pointer is copied
     // fault-tolerantly.
-    unsafe { enter_at_with_intent(Kind::Open, dirfd, path, mutates) }
+    unsafe { enter_at_with_result(Kind::Open, dirfd, path, i64::from(mutates)) }
 }
 
-unsafe fn enter_at_with_intent(
+pub unsafe fn enter_metadata_at(
+    dirfd: c_int,
+    path: *const c_char,
+    policy: FinalSymlink,
+) -> Option<Token> {
+    // SAFETY: the descriptor is unchanged and the pointer is copied
+    // fault-tolerantly.
+    unsafe { enter_at_with_result(Kind::Metadata, dirfd, path, policy as i64) }
+}
+
+unsafe fn enter_at_with_result(
     kind: Kind,
     dirfd: c_int,
     path: *const c_char,
-    mutates: bool,
+    result: i64,
 ) -> Option<Token> {
     socket_path()?;
     with_resolution(|| {
         preserve_errno(|| {
             let copied = safe_path(path);
             let bytes = copied.as_ref().map_or(&[][..], |path| path.as_bytes());
-            enter_with_intent(kind, &absolute_path(dirfd, bytes), mutates)
+            enter_with_result(kind, &absolute_path(dirfd, bytes), result)
         })
     })
 }
@@ -515,10 +538,6 @@ fn enter_fd_with_result(kind: Kind, fd: c_int, start_result: i64) -> Option<Toke
             })
         })
     })
-}
-
-fn enter_with_intent(kind: Kind, path: &[u8], mutates: bool) -> Option<Token> {
-    enter_with_result(kind, path, i64::from(mutates))
 }
 
 fn enter_with_result(kind: Kind, path: &[u8], start_result: i64) -> Option<Token> {
