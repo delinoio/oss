@@ -94,6 +94,7 @@ const (
 	SessionTerminalsV1             WorkerCapability = "session-terminals-v1"
 	AutomaticTitlesCodexV1         WorkerCapability = "automatic-titles-codex-v1"
 	SessionForwardingV1            WorkerCapability = "session-forwarding-v1"
+	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
 )
 
 type JobState string

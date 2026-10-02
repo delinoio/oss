@@ -182,7 +182,19 @@ fn executable_permissions(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if meta.mode() & 0o6000 != 0 || meta.mode() & 0o111 == 0 {
+        if meta.mode() & 0o6000 != 0 {
+            #[cfg(target_os = "macos")]
+            // A privileged image cannot safely retain DYLD injection. This is
+            // an admission failure, not EACCES that libc may skip during PATH
+            // search. Keep the existing root command diagnostic/exit class.
+            return Err(Error::new(
+                Code::PnportCommandNotExecutable,
+                "A privileged executable cannot safely retain filesystem interception.",
+            ));
+            #[cfg(not(target_os = "macos"))]
+            return Err(permission_denied());
+        }
+        if meta.mode() & 0o111 == 0 {
             return Err(permission_denied());
         }
     }
@@ -251,9 +263,13 @@ pub fn validate(path: &Path) -> Result<PathBuf> {
                 .map_err(|_| invalid())?;
             file.read_exact(&mut header).map_err(|_| invalid())?;
         }
-        if &header[..4] != b"\xcf\xfa\xed\xfe"
-            || u32::from_le_bytes(header[4..8].try_into().unwrap()) != expected
-        {
+        if &header[..4] != b"\xcf\xfa\xed\xfe" {
+            // An ordinary non-image has native ENOEXEC semantics. libc's
+            // execvp may then try its shell, whose separate injection
+            // admission must still reject a protected system executable.
+            return Err(invalid());
+        }
+        if u32::from_le_bytes(header[4..8].try_into().unwrap()) != expected {
             return Err(protected());
         }
         let count = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;

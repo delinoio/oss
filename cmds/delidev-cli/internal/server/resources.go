@@ -491,7 +491,7 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 		if err != nil {
 			return err
 		}
-		if account.Health != domain.AccountDisconnected || account.Connection != nil || account.Removal != nil {
+		if account.Health != domain.AccountDisconnected || account.Connection != nil || account.Removal != nil || account.Subscription != nil && (account.Subscription.Pending != nil || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Generation != "") {
 			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
 		}
 	}

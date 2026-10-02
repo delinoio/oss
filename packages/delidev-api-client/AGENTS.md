@@ -47,6 +47,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Export generated PullRequestFixQuery and its typed profile from the additive PR-fix service. Preserve original request bytes/revisions and facade declaration identity; native Git authority remains Worker-local.
 
+- DeliDev API clients export the generated SubscriptionService and closed managed Codex capability/action types. Keep authentication bundles out of Query keys, persistence, synchronization, errors and ordinary resource models. Public clients cannot invoke the protected Worker lane. Follow `docs/cmds-delidev-subscription-contract.md` and retain generation freshness checks.
+
 - Generated NetworkQuery follows `docs/cmds-delidev-network-contract.md`, retaining exact revisions and write-only credential input outside query caches. Preserve both service-specific exports and legacy generated paths/reflection; signed Worker metadata never proves native installation or encrypted credential transfer.
 
 - Codex Fork uses owner/client-only `SessionService.ForkSession` and `GetSessionFork`, typed `ForkWorkspace`, and allocation-ledger capability `CODEX_SESSION_FORK_V1 = 13`. Local proof is write-only; exact job/child observation cannot replay native creation. Preserve split service ownership and generated compatibility exports under `docs/cmds-delidev-forks-contract.md`.

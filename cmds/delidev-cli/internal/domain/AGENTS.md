@@ -46,6 +46,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Claude continuation candidates require a correlated non-aborted successful or failed root outcome, unchanged permission and settled original input/callback/task/compaction facts. A `background_requested` terminal is ineligible even without a tracked background-task event. Failed predecessors require explicit Resume intent; a candidate never substitutes for independently verified native history and cleanup.
 
 - Permanent deletion accepts original workspace-storage jobs with optional reserved snapshot UUIDs. Preserve omitted legacy fields and bind each nonempty snapshot ID only to its storage copy.
+- Optional Account.subscription state contains only server-owned generation references, identity commitments and actor/lease fences. Configuration cannot manufacture or replace it; historical accounts omit it unchanged. Keep closed action/phase/capability values under `docs/cmds-delidev-subscription-contract.md`.
 
 - Grok public tool, interaction and terminal documents follow the pinned issue #1091 harness/protocol contracts. Keep original request namespaces and lexical numeric IDs through the Grok-only decimal identity, nullable question data, exact decimal uint64 counters and exclusive response/terminal families. Original native Plan decisions cannot be converted to common Plan approval. Null/mixed/foreign response fields must fail before a native encoder or side effect.
 
@@ -62,6 +63,9 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Keep negotiated native accounting unit kinds distinct under the usage contract. GrokClosedInput preserves its supplied uint64 total, original input/history/closure/source references and immutable attribution; it has no pricing or budget contribution.
 
+- A restored managed subscription may retain a valid historical generation without a connection only while recovery-required. This is quarantined evidence; ordinary usable generations still require subscription-authenticated connections. Follow the storage and subscription contracts.
+
+- Native Fork currently accepts API-authenticated Codex source assignments only. Reject managed subscription configuration before acceptance and Worker journaling until Fork owns a separately verified protected lease and joined credential write-back; native source inspection grants no authentication authority.
 - Protected browser records contain only canonical server/device/account/profile IDs, monotonic revisions and closed cleanup state. Keep browsing data and paths outside Device metadata and product documents; follow `docs/cmds-delidev-browser-contract.md`.
 
 - Repository-inspection metadata uses the independent `repository-inspection-metadata-v1` Worker capability. Validate/deduplicate it alongside titles/forwarding/terminals without changing existing values or the closed inspection input. Follow the workspace/protocol contracts.

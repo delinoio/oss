@@ -77,6 +77,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			capabilities = append(capabilities, domain.SessionForwardingV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1:
 			capabilities = append(capabilities, domain.AutomaticTitlesCodexV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1:
+			capabilities = append(capabilities, domain.ManagedCodexSubscriptionsV1)
 		default:
 			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported an unknown native capability.", "Upgrade the Worker and report only verified capability identifiers."), correlation)
 		}
@@ -173,6 +175,11 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 		return rpc.Error(err, correlation)
 	}
 	machine, instance := domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId)
+	defer func() {
+		if err := s.retainLostSubscriptionLeases(machine, instance, true); err != nil {
+			s.logger.Warn("subscription_execution_owner_loss_unconfirmed", "code", domain.SafeError(err).Code)
+		}
+	}()
 	if err := s.Store.Heartbeat(ctx, machine, instance); err != nil {
 		return rpc.Error(err, correlation)
 	}
