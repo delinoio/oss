@@ -40,6 +40,10 @@ Candidate hosts additionally repeat the internally concurrent fork/child-callbac
 
 ### Official native TypeScript conformance
 
+The synthetic fixture includes blue and red workspaces consuming two different peer-provider versions through one shared ZIP-backed consumer package. Networked preparation inspects generated split graph data before producing the requested inline/split representation, without evaluating loader JavaScript. Both virtual consumer locators must differ, resolve their own peer provider, and identify identical archive bytes. Prepared identity records bind these observations to the final manifest/data digests.
+
+Offline execution builds both peer workspaces in the same native compiler build, verifies JavaScript/declaration emission, and separately runs the unchanged official native compiler in each context. Wrong-peer literal assignments must produce TS2322, and unvirtualized execution must fail to resolve the ZIP-backed consumer. Restore synthetic sources after negative controls. Numeric conformance evidence records the distinct locator/provider digests, shared archive digest and positive/negative outcomes alongside the unchanged official compiler digest; these controls do not replace remaining native/minimum-OS acceptance.
+
 The committed `test/fixtures/typescript` fixture and Yarn-generated lockfile pin Yarn 4.18.0, `typescript@7.1.0-dev.20260812.1`, and `@types/node@22.15.30`. This official compiler includes Microsoft's macOS injection-entitlement fix. Its command is `tsc`; the older `@typescript/native-preview` package's `tsgo` command is not automatically replaced. Compiler binaries and signatures are never modified.
 
 Run from the repository root on each supported native host. The same fixture and exact official compiler version run on all four 0.1.0 OS/architecture targets; macOS additionally verifies the unchanged compiler signature and injection entitlements, while Linux verifies the static ELF architecture:

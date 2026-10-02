@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/peer-blue",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@fixture/peer-consumer": "1.0.0",
+    "@fixture/peer-provider": "file:../../fixture-packages/peer-blue"
+  }
+}
