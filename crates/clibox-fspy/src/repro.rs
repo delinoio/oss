@@ -61,6 +61,16 @@ pub struct SnapshotFile {
     pub hard_link_to: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SnapshotLink {
+    /// Canonical project-relative target used for containment and identity
+    /// checks.
+    pub target: PathBuf,
+    /// Exact target spelling read from the source symlink for candidate
+    /// recreation.
+    pub raw_target: PathBuf,
+}
+
 pub struct Snapshot {
     cancelled: Arc<AtomicBool>,
     root: PathBuf,
@@ -69,7 +79,7 @@ pub struct Snapshot {
     eligible_directories: BTreeMap<PathBuf, FileIdentity>,
     selected_identities: BTreeMap<FileIdentity, PathBuf>,
     files: BTreeMap<PathBuf, SnapshotFile>,
-    links: BTreeMap<PathBuf, PathBuf>,
+    links: BTreeMap<PathBuf, SnapshotLink>,
     directories: BTreeSet<PathBuf>,
     total_bytes: u64,
     max_bytes: u64,
@@ -108,6 +118,26 @@ fn append_link_suffix(target: &Path, suffix: &Path) -> PathBuf {
     } else {
         target.join(suffix)
     }
+}
+
+fn staged_link_target(
+    raw_target: &Path,
+    canonical_target: &Path,
+    root: &Path,
+    candidate: &Path,
+    link: &Path,
+) -> Result<PathBuf, ReproFailure> {
+    if !raw_target.is_absolute() {
+        return Ok(raw_target.to_path_buf());
+    }
+    // Absolute links inside the project must point into the candidate rather
+    // than back into the source tree. Preserve their spelling after the
+    // project-root prefix when it can be identified lexically.
+    if let Ok(suffix) = raw_target.strip_prefix(root) {
+        return Ok(candidate.join(suffix));
+    }
+    pathdiff::diff_paths(canonical_target, link.parent().unwrap_or(Path::new(".")))
+        .ok_or(ReproFailure::Unavailable)
 }
 
 #[cfg(target_os = "linux")]
@@ -275,9 +305,9 @@ impl Snapshot {
         let mut prefix = PathBuf::new();
         for component in relative.components() {
             prefix.push(component.as_os_str());
-            if let Some(target) = self.links.get(&prefix) {
+            if let Some(link) = self.links.get(&prefix) {
                 let suffix = relative.strip_prefix(&prefix).ok()?;
-                return self.snapshot_file(&append_link_suffix(target, suffix));
+                return self.snapshot_file(&append_link_suffix(&link.target, suffix));
             }
         }
         self.files.get(relative)
@@ -287,7 +317,7 @@ impl Snapshot {
         denied(relative)
     }
 
-    pub fn links(&self) -> &BTreeMap<PathBuf, PathBuf> {
+    pub fn links(&self) -> &BTreeMap<PathBuf, SnapshotLink> {
         &self.links
     }
 
@@ -469,6 +499,7 @@ impl Snapshot {
             let source = self.root.join(&prefix);
             let metadata = fs::symlink_metadata(&source).map_err(|_| ReproFailure::Unavailable)?;
             if metadata.file_type().is_symlink() {
+                let raw_target = fs::read_link(&source).map_err(|_| ReproFailure::Unavailable)?;
                 let resolved = fs::canonicalize(&source).map_err(|_| ReproFailure::Unavailable)?;
                 let target = resolved
                     .strip_prefix(&self.root)
@@ -479,7 +510,13 @@ impl Snapshot {
                 }
                 if !self.links.contains_key(&prefix) {
                     self.claim_entry()?;
-                    self.links.insert(prefix.clone(), target.clone());
+                    self.links.insert(
+                        prefix.clone(),
+                        SnapshotLink {
+                            target: target.clone(),
+                            raw_target,
+                        },
+                    );
                 }
                 let suffix = relative
                     .strip_prefix(&prefix)
@@ -591,19 +628,19 @@ impl Snapshot {
         let mut prefix = PathBuf::new();
         for component in relative.components() {
             prefix.push(component.as_os_str());
-            if let Some(expected) = self.links.get(&prefix) {
+            if let Some(link) = self.links.get(&prefix) {
                 let actual = fs::canonicalize(self.root.join(&prefix))
                     .map_err(|_| ReproFailure::UnstableInput)?;
                 let relative_target = actual
                     .strip_prefix(&self.root)
                     .map_err(|_| ReproFailure::UnstableInput)?;
-                if relative_target != expected {
+                if relative_target != link.target {
                     return Err(ReproFailure::UnstableInput);
                 }
                 let suffix = relative
                     .strip_prefix(&prefix)
                     .map_err(|_| ReproFailure::UnstableInput)?;
-                return self.verify_path(&append_link_suffix(expected, suffix));
+                return self.verify_path(&append_link_suffix(&link.target, suffix));
             }
         }
         if let Some(expected) = self.eligible_directories.get(relative) {
@@ -662,25 +699,29 @@ impl Snapshot {
         let mut prefix = PathBuf::new();
         for component in relative.components() {
             prefix.push(component.as_os_str());
-            if let Some(target) = self.links.get(&prefix) {
+            if let Some(link) = self.links.get(&prefix) {
                 let suffix = relative
                     .strip_prefix(&prefix)
                     .map_err(|_| ReproFailure::Unavailable)?;
                 self.stage_path(
-                    &append_link_suffix(target, suffix),
+                    &append_link_suffix(&link.target, suffix),
                     candidate,
                     staged,
                     staged_identities,
                 )?;
-                let link = candidate.join(&prefix);
-                if let Some(parent) = link.parent() {
+                let candidate_link = candidate.join(&prefix);
+                if let Some(parent) = candidate_link.parent() {
                     fs::create_dir_all(parent).map_err(|_| ReproFailure::Unavailable)?;
                 }
-                if !link.is_symlink() {
-                    let relative_target =
-                        pathdiff::diff_paths(target, prefix.parent().unwrap_or(Path::new(".")))
-                            .ok_or(ReproFailure::Unavailable)?;
-                    stage_symlink(&self.root.join(&prefix), &relative_target, &link)
+                if !candidate_link.is_symlink() {
+                    let relative_target = staged_link_target(
+                        &link.raw_target,
+                        &link.target,
+                        &self.root,
+                        candidate,
+                        &prefix,
+                    )?;
+                    stage_symlink(&self.root.join(&prefix), &relative_target, &candidate_link)
                         .map_err(|_| ReproFailure::Unavailable)?;
                 }
                 return Ok(());
@@ -877,6 +918,31 @@ mod tests {
         assert_eq!(
             fs::read(candidate.path().join("alias.txt")).unwrap(),
             b"input"
+        );
+    }
+
+    #[test]
+    fn preserves_raw_file_symlink_target_spelling() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input.txt"), b"input").unwrap();
+        stage_symlink(
+            &directory.path().join("input.txt"),
+            Path::new("./input.txt"),
+            &directory.path().join("alias.txt"),
+        )
+        .unwrap();
+        let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(
+                &BTreeSet::from([PathBuf::from("alias.txt")]),
+                candidate.path(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read_link(candidate.path().join("alias.txt")).unwrap(),
+            Path::new("./input.txt")
         );
     }
 

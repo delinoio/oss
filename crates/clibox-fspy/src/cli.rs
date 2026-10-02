@@ -2451,9 +2451,9 @@ fn min_repro(args: MinReproArgs) -> i32 {
             "path": selection_native(&file.relative),
             "target": selection_native(target),
         }))).collect::<Vec<_>>(),
-        "internal_links": staged_links.iter().map(|(path, target)| serde_json::json!({
+        "internal_links": staged_links.iter().map(|(path, link)| serde_json::json!({
             "path": selection_native(path),
-            "target": selection_native(target),
+            "target": selection_native(&link.raw_target),
         })).collect::<Vec<_>>(),
         "external_dependencies": external,
     });
