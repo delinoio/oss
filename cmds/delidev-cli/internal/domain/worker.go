@@ -122,6 +122,11 @@ type Job struct {
 	FinishedAt       *time.Time      `json:"finished_at,omitempty"`
 }
 
+const (
+	maxJobDocumentBytes        = 1 << 20
+	maxCompactionJobInputBytes = 3 << 20
+)
+
 func (j Job) Validate() error {
 	if !slices.Contains([]JobType{NativeModelsJob, CreateBackupJob, DeleteBackupJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
@@ -144,7 +149,16 @@ func (j Job) Validate() error {
 	if j.AssignedDeviceID != "" && (j.State == JobQueued || j.InstanceID == "") {
 		return Fail(InvalidArgument, "A Worker device requires an original claimed process.", "Bind the paired device only when claiming a queued operation.")
 	}
-	if len(j.Input) > 1<<20 || len(j.Output) > 1<<20 || !json.Valid(j.Input) || (len(j.Output) > 0 && !json.Valid(j.Output)) {
+	maxInput := maxJobDocumentBytes
+	// Compaction carries the immutable source assignment and a fresh restore
+	// assignment. Both are individually bounded execution inputs, so the
+	// compaction envelope needs room for two copies plus its bounded metadata.
+	// Keep this exception until compaction stores the source assignment by
+	// reference; the larger cap is still finite and applies only to this job.
+	if j.Type == CompactSessionJob {
+		maxInput = maxCompactionJobInputBytes
+	}
+	if len(j.Input) > maxInput || len(j.Output) > maxJobDocumentBytes || !json.Valid(j.Input) || (len(j.Output) > 0 && !json.Valid(j.Output)) {
 		return Fail(InvalidArgument, "Invalid Worker job document.", "Use a bounded versioned job payload.")
 	}
 	return nil
