@@ -126,7 +126,9 @@ impl View {
             }
             let mut translated = self.translate_with_wait(&target, wait)?;
             translated.readonly = true;
-            translated.virtual_link = remaining.len() == consumed;
+            // The recursive suffix may itself end at a dependency alias. Keep
+            // that terminal link when unwinding an outer dependency lookup.
+            translated.virtual_link |= remaining.len() == consumed;
             return Ok(translated);
         }
         self.backing(path, false, false, wait)
