@@ -18,6 +18,8 @@ mod input_watch;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
+mod macos_job;
+#[cfg(target_os = "macos")]
 mod macos_owner;
 mod supervisor;
 

@@ -489,7 +489,7 @@ func TestInitialResumeFailurePreservesPauseAndRemovalOrder(t *testing.T) {
 	wantAccountCode(t, err, domain.Unsupported)
 	unchanged := f.refresh(t)
 	state, _ := store.Decode[domain.Session](unchanged)
-	if unchanged.Revision != stopped.Msg.Change.Session.Revision || state.Dispatch != domain.DispatchPaused || state.InitialExecution != nil {
+	if unchanged.Revision != stopped.Msg.Change.Session.Revision || state.Dispatch != domain.DispatchPaused || state.InitialExecution != nil || !state.AutomaticRemediationStopped {
 		t.Fatal("failed explicit Resume changed paused state")
 	}
 	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 0 })
@@ -510,11 +510,11 @@ func TestInitialResumeFailurePreservesPauseAndRemovalOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	state = sessionBody(t, accepted.Msg.Change.Session)
-	if state.InitialExecution == nil || state.InitialExecution.InputID != domain.ID(second.Msg.Change.Input.Id) || state.PendingInputs != 1 {
+	if state.InitialExecution == nil || state.InitialExecution.InputID != domain.ID(second.Msg.Change.Input.Id) || state.PendingInputs != 1 || state.AutomaticRemediationStopped {
 		t.Fatal("first Resume reused removed head or consumed queued capacity")
 	}
 	old, err := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, stop))
-	if err != nil || !old.Msg.Change.Replayed || sessionBody(t, old.Msg.Change.Session).Dispatch != domain.DispatchClaimed || old.Msg.Change.ExecutionJob.Id != accepted.Msg.Change.ExecutionJob.Id {
+	if err != nil || !old.Msg.Change.Replayed || sessionBody(t, old.Msg.Change.Session).Dispatch != domain.DispatchClaimed || sessionBody(t, old.Msg.Change.Session).AutomaticRemediationStopped || old.Msg.Change.ExecutionJob.Id != accepted.Msg.Change.ExecutionJob.Id {
 		t.Fatal("old Stop replay canceled new ownership", err)
 	}
 }
