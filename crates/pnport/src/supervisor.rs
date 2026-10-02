@@ -206,6 +206,8 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         tracing::debug!(action = "spawn", "Starting the owned process tree");
         #[cfg(target_os = "macos")]
         admission.verify_at_launch()?;
+        #[cfg(target_os = "macos")]
+        let job = crate::macos_job::Job::start(owner.group(), &mut command)?;
         let mut child = command.spawn().map_err(|e| {
             Error::new(
                 if e.kind() == std::io::ErrorKind::NotFound {
@@ -230,6 +232,10 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             owner.check()?;
             if SIGNAL.load(Ordering::SeqCst) != 0 {
                 return Ok(128 + SIGNAL.load(Ordering::SeqCst));
+            }
+            #[cfg(target_os = "macos")]
+            if status.is_none() {
+                job.poll_stop(pid)?;
             }
             for input in &view.graph.snapshot.inputs {
                 watch.register(input)?;
@@ -308,10 +314,18 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             );
         }
         #[cfg(target_os = "macos")]
-        let cleanup = owner.stop(match SIGNAL.load(Ordering::SeqCst) {
-            signal @ (libc::SIGINT | libc::SIGTERM | libc::SIGHUP) => signal,
-            _ => libc::SIGTERM,
-        });
+        let cleanup = {
+            use std::os::unix::process::ExitStatusExt;
+            let terminal = job.restore();
+            let signal = match SIGNAL.load(Ordering::SeqCst) {
+                signal @ (libc::SIGINT | libc::SIGTERM | libc::SIGHUP) => signal,
+                _ => match status.and_then(|exit| exit.signal()) {
+                    Some(signal @ (libc::SIGINT | libc::SIGTERM | libc::SIGHUP)) => signal,
+                    _ => libc::SIGTERM,
+                },
+            };
+            owner.stop(signal).and(terminal)
+        };
         #[cfg(all(unix, not(target_os = "macos")))]
         unsafe {
             libc::kill(-pid, libc::SIGTERM);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Synthetic process trees for signal, crash, lease and descendant conformance.
 #define _GNU_SOURCE
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
@@ -27,6 +28,16 @@ static int dependency(void) {
     size_t count = fread(bytes, 1, sizeof(bytes), file);
     fclose(file);
     return count == 13 && memcmp(bytes, "package bytes", 13) == 0 ? 0 : 41;
+}
+
+static char *terminal_line(char *line, size_t size) {
+    char *result;
+    do {
+        clearerr(stdin);
+        errno = 0;
+        result = fgets(line, (int)size, stdin);
+    } while (!result && errno == EINTR);
+    return result;
 }
 
 static atomic_int readers_done;
@@ -78,6 +89,27 @@ int main(int argc, char **argv) {
     }
     int result = dependency();
     if (result) return result;
+    if (strcmp(mode, "terminal") == 0 || strcmp(mode, "terminal-stop") == 0) {
+        FILE *marker = fopen("root.group", "w");
+        if (!marker) return 67;
+        fprintf(marker, "%d", getpgrp());
+        fclose(marker);
+        marker = fopen("root.pid", "w");
+        if (!marker) return 68;
+        fprintf(marker, "%d", getpid());
+        fclose(marker);
+        char line[32];
+        // A background read must produce SIGTTIN before the shell foregrounds us.
+        if (!terminal_line(line, sizeof(line)) || strcmp(line, "first\n")) return 69;
+        if (tcgetpgrp(0) != getpgrp()) return 70;
+        marker = fopen("terminal.first", "w");
+        if (!marker) return 71;
+        fputs("1", marker);
+        fclose(marker);
+        if (strcmp(mode, "terminal-stop") == 0) raise(SIGSTOP);
+        if (!terminal_line(line, sizeof(line)) || strcmp(line, "second\n")) return 72;
+        return dependency() ? 73 : 23;
+    }
     if (strcmp(mode, "fork-stress") == 0) {
         FILE *group = fopen("root.group", "w");
         if (!group) return 66;
