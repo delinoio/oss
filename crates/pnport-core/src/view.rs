@@ -126,7 +126,9 @@ impl View {
             }
             let mut translated = self.translate_with_wait(&target, wait)?;
             translated.readonly = true;
-            translated.virtual_link = remaining.len() == consumed;
+            // Preserve a final dependency link found below an outer package
+            // alias; traversing that alias does not turn the leaf into a file.
+            translated.virtual_link |= remaining.len() == consumed;
             return Ok(translated);
         }
         self.backing(path, false, false, wait)

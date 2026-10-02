@@ -124,7 +124,9 @@ unsafe fn path_from(
     if path.is_absolute() {
         return Ok(path.to_owned());
     }
-    if dirfd != AT_FDCWD {
+    let directory_metadata = if dirfd == AT_FDCWD {
+        None
+    } else {
         // Check the live kernel descriptor before normalizing '..'. Checking
         // only a remembered path would treat a regular file as a directory;
         // live metadata also covers duplicated and untracked descriptors.
@@ -134,10 +136,12 @@ unsafe fn path_from(
                 .raw_os_error()
                 .unwrap_or(EBADF));
         }
-        if metadata.assume_init().st_mode & S_IFMT != S_IFDIR {
+        let metadata = metadata.assume_init();
+        if metadata.st_mode & S_IFMT != S_IFDIR {
             return Err(ENOTDIR);
         }
-    }
+        Some(metadata)
+    };
     let base = if dirfd == AT_FDCWD {
         runtime
             .cwd
@@ -153,9 +157,27 @@ unsafe fn path_from(
             if fcntl(dirfd, F_GETPATH, buffer.as_mut_ptr()) < 0 {
                 return Err(EBADF);
             }
-            PathBuf::from(OsStr::from_bytes(
+            let physical = PathBuf::from(OsStr::from_bytes(
                 CStr::from_ptr(buffer.as_ptr().cast()).to_bytes(),
-            ))
+            ));
+            // fcntl duplication and native opens can bypass descriptor tracking.
+            // Recover an unambiguous logical directory from live inode identity,
+            // including native path aliases such as /var and /private/var.
+            // Shared package backing alone cannot identify a peer issuer.
+            let expected = directory_metadata.as_ref().ok_or(EBADF)?;
+            let mut logical = runtime.descriptors.iter().filter_map(|(fd, translation)| {
+                let mut metadata = std::mem::MaybeUninit::<stat>::uninit();
+                if fstat(*fd, metadata.as_mut_ptr()) != 0 {
+                    return None;
+                }
+                let metadata = metadata.assume_init();
+                (metadata.st_dev == expected.st_dev && metadata.st_ino == expected.st_ino)
+                    .then_some(&translation.logical)
+            });
+            match logical.next() {
+                Some(first) if logical.all(|other| other == first) => first.clone(),
+                _ => physical,
+            }
         }
         #[cfg(target_os = "linux")]
         {
@@ -488,16 +510,65 @@ hook!(realpath, pnport_realpath, (path:*const c_char, output:*mut c_char) -> *mu
     if output.is_null() { errno(ENOMEM); return output; }
     ptr::copy_nonoverlapping(bytes.as_ptr(),output.cast(),bytes.len()); *output.add(bytes.len())=0; output
 });
+unsafe extern "C" {
+    fn mach_vm_read_overwrite(
+        target_task: libc::mach_port_t,
+        address: libc::mach_vm_address_t,
+        size: libc::mach_vm_size_t,
+        data: libc::mach_vm_address_t,
+        outsize: *mut libc::mach_vm_size_t,
+    ) -> libc::kern_return_t;
+}
+
+unsafe fn read_logical_link(
+    translation: &Translation,
+    output: *mut c_char,
+    size: size_t,
+) -> ssize_t {
+    let bytes = translation.logical.as_os_str().as_bytes();
+    let count = size.min(bytes.len());
+    // Darwin permits an empty buffer, even an invalid pointer, for a link.
+    if count == 0 {
+        return 0;
+    }
+    // Kernel copyout validates the caller's destination, including read-only
+    // mappings. A Rust pointer copy would crash instead of returning EFAULT.
+    // Keep the same narrow Mach ABI as the generic fspy pointer reader until
+    // the preload adopts a shared Mach binding dependency.
+    let mut copied = 0;
+    #[expect(deprecated, reason = "the injected client avoids a mach2 dependency")]
+    let status = mach_vm_read_overwrite(
+        libc::mach_task_self_,
+        bytes.as_ptr() as u64,
+        count as u64,
+        output as u64,
+        &raw mut copied,
+    );
+    if status != libc::KERN_SUCCESS || copied != count as u64 {
+        errno(EFAULT);
+        return -1;
+    }
+    count.cast_signed()
+}
+
 hook!(readlink, pnport_readlink, (path:*const c_char, output:*mut c_char, size:size_t) -> ssize_t, {
     let original = original!(readlink,unsafe extern "C" fn(*const c_char,*mut c_char,size_t)->ssize_t);
     let Some(_guard) = Guard::enter() else { return original(path,output,size); };
     if RUNTIME.get().is_none() { return original(path,output,size); }
+    // Darwin rejects oversized buffers before looking up the pathname.
+    if size > c_int::MAX as usize { errno(EINVAL); return -1; }
     let (physical,translation) = translated!(path,AT_FDCWD,false,-1);
     if !translation.virtual_link { return original(physical.as_ptr(),output,size); }
-    if size == 0 { errno(EINVAL); return -1; }
-    if output.is_null() { errno(EFAULT); return -1; }
-    let bytes = translation.logical.as_os_str().as_bytes(); let count = size.min(bytes.len());
-    ptr::copy_nonoverlapping(bytes.as_ptr(),output.cast(),count); count.cast_signed()
+    read_logical_link(&translation, output, size)
+});
+hook!(readlinkat, pnport_readlinkat, (dirfd:c_int, path:*const c_char, output:*mut c_char, size:size_t) -> ssize_t, {
+    let original = original!(readlinkat,unsafe extern "C" fn(c_int,*const c_char,*mut c_char,size_t)->ssize_t);
+    let Some(_guard) = Guard::enter() else { return original(dirfd,path,output,size); };
+    if RUNTIME.get().is_none() { return original(dirfd,path,output,size); }
+    if size > c_int::MAX as usize { errno(EINVAL); return -1; }
+    let (physical,translation) = translated!(path,dirfd,false,-1);
+    if !translation.virtual_link { return original(AT_FDCWD,physical.as_ptr(),output,size); }
+    read_logical_link(&translation, output, size)
 });
 hook!(chdir, pnport_chdir, (path:*const c_char) -> c_int, {
     let original = original!(chdir, unsafe extern "C" fn(*const c_char)->c_int);

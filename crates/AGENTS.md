@@ -222,6 +222,8 @@
 
 ### pnport Rules
 
+- pnport macOS `readlink` and `readlinkat` must expose the same logical virtual-link target and native Darwin buffer/error behavior. Validate live directory descriptors before relative translation; recover an untracked handle's logical context only from unambiguous live directory identity, never infer a peer issuer from shared package backing. Keep native symlink and inline/split ZIP, unplugged, peer, descriptor and invalid-buffer conformance controls.
+
 - pnport macOS hook recursion tokens require lazy construction after successful entry. Reentry must never drop a temporary token or clear the outer guard while native/runtime locks remain held. Preserve the repeated-reentry regression alongside actual x64 and arm64 filesystem execution.
 
 - pnport must cancel Linux `io_uring_setup` before kernel execution and return `ENOSYS` so feature probes can fall back to mediated filesystem calls. Never create an unmediated ring; `io_uring_enter` and `io_uring_register` still fail closed. Test with and without enclosing Docker seccomp denial.
