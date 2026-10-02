@@ -65,18 +65,15 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	// has no input yet. The Worker rechecks native history before the later send.
 	account, connection := session.ContinuationAccount()
 	candidate := continuationAssignment(session, assignment, completion, assignmentDigest, intent, account, connection)
+	if session.Compaction != nil && session.Compaction.ExecutionID == assignment.ExecutionID {
+		candidate.Continuation.Compaction = session.Compaction
+	}
 	input, err := checkedExecutionAssignment(tx, sr, session, machine, candidate)
 	if err != nil {
 		return store.Record{}, err
 	}
 	if !bytes.Equal(input.Preparation, assignment.Preparation) || !bytes.Equal(input.Manifest, assignment.Manifest) {
 		return store.Record{}, nativeCompletionUncertain()
-	}
-	input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
-	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
-	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.InitialExecution.ID, HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: assignmentDigest, InputMode: assignment.Input.Mode, PromptDigest: continuationDigest([]byte(assignment.Input.Prompt)), Intent: intent}
-	if session.Compaction != nil && session.Compaction.ExecutionID == assignment.ExecutionID {
-		input.Continuation.Compaction = session.Compaction
 	}
 	if err := input.Validate(); err != nil {
 		return store.Record{}, err
