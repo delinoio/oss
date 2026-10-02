@@ -2411,6 +2411,68 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_optional_receive_control_buffers_preserve_native_ipc() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    for static_link in [false, true] {
+        let executable = root.path().join(if static_link {
+            "receive-static"
+        } else {
+            "receive-dynamic"
+        });
+        let mut compiler = Command::new("cc");
+        compiler
+            .args(["-pthread", "-o"])
+            .arg(&executable)
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/recvmsg.c"));
+        if static_link {
+            compiler.arg("-static");
+        }
+        assert!(compiler.status().unwrap().success());
+        for socket in ["stream", "datagram", "packet"] {
+            for mode in [
+                "data",
+                "eagain",
+                "peek",
+                "blocked",
+                "restart",
+                "interrupt",
+                "fault",
+                "readonly",
+            ] {
+                let native = Command::new(&executable)
+                    .args([socket, mode])
+                    .output()
+                    .unwrap();
+                assert!(
+                    native.status.success(),
+                    "native static={static_link} {socket}/{mode}: {}",
+                    String::from_utf8_lossy(&native.stderr)
+                );
+                let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+                    .current_dir(root.path())
+                    .arg("--cache-dir")
+                    .arg(cache.path().join("cache"))
+                    .args(["run", "--"])
+                    .arg(&executable)
+                    .args([socket, mode])
+                    .output()
+                    .unwrap();
+                assert_eq!(
+                    result.status.code(),
+                    Some(0),
+                    "static={static_link} {socket}/{mode}: {}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                assert_eq!(result.stdout, native.stdout);
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_rejects_ancillary_descriptor_receives_before_fd_mutation() {
     use std::process::Command;
     let root = fixture();
@@ -2420,10 +2482,27 @@ fn linux_rejects_ancillary_descriptor_receives_before_fd_mutation() {
         r#"
 #define _GNU_SOURCE
 #include <fcntl.h>
+#include <signal.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
+static const char *marker_path;
+static int expected_fds;
+static int count_fds(void) {
+    int count = 0;
+    for (int fd = 0; fd < 64; fd++) if (fcntl(fd, F_GETFD) >= 0) count++;
+    return count;
+}
+static void cleanup_handler(int signal) {
+    (void)signal;
+    // Cleanup must never expose a descriptor installed by the denied receive.
+    if (count_fds() != expected_fds) {
+        int marker = open(marker_path, O_CREAT | O_WRONLY, 0600);
+        if (marker >= 0) close(marker);
+    }
+    _exit(0);
+}
 int main(int argc, char **argv) {
     if (argc != 3) return 39;
     if (argv[2][0] == 'p') {
@@ -2460,6 +2539,9 @@ int main(int argc, char **argv) {
     union { struct cmsghdr align; char bytes[CMSG_SPACE(sizeof(int))]; } received_control = {0};
     struct msghdr received = {.msg_iov = &received_data, .msg_iovlen = 1,
         .msg_control = received_control.bytes, .msg_controllen = sizeof(received_control.bytes)};
+    marker_path = argv[1];
+    expected_fds = count_fds();
+    signal(SIGTERM, cleanup_handler);
     if (argv[2][0] == 'm') {
         struct mmsghdr batch = {.msg_hdr = received};
         if (recvmmsg(sockets[1], &batch, 1, 0, 0) != 1) return 43;
