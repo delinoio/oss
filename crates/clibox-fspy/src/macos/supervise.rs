@@ -93,9 +93,18 @@ fn signal_group(pid: u32, signal: i32) -> Result<(), CaptureFailure> {
     let pid = i32::try_from(pid).map_err(|_| CaptureFailure::Cleanup)?;
     // SAFETY: this group was created for the launched child before exec.
     let result = unsafe { libc::kill(-pid, signal) };
-    if result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+    let os_code = (result != 0)
+        .then(|| io::Error::last_os_error().raw_os_error())
+        .flatten();
+    if result == 0 || os_code == Some(libc::ESRCH) {
         Ok(())
     } else {
+        tracing::debug!(
+            stage = "cleanup_signal",
+            signal,
+            ?os_code,
+            "owned group signal failed"
+        );
         Err(CaptureFailure::Cleanup)
     }
 }
@@ -142,7 +151,12 @@ fn cleanup_owned(
     kill_after: Duration,
     mut root_done: bool,
 ) -> Result<(), CaptureFailure> {
-    signal_group(pid, libc::SIGTERM)?;
+    // The first group signal can fail while its final callers are exiting.
+    // Do not mistake that request failure for an unconfirmed cleanup: the
+    // identity-checked process signals and both absence checks below still
+    // run within the same grace/force budgets. Persistent denial fails at the
+    // final confirmation boundary; no extra process-group signal is retried.
+    let _ = signal_group(pid, libc::SIGTERM);
     let mut signalled = HashSet::new();
     let graceful_until = Instant::now()
         .checked_add(kill_after)
