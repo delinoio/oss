@@ -1,18 +1,20 @@
 # Installation and availability
 
-**pnport 0.1.0 has not been released.** The current source does not provide a published npm package, native archive, POSIX or PowerShell installer, or Homebrew formula. Do not use an unpublished package version, guessed download URL, or source-only launcher as an installation method.
+**pnport 0.1.0 has not been released.** The experimental npm next preview is available as described below. Stable installation, Homebrew and Windows installation remain unavailable. Do not use an unpublished package version, guessed download URL, or source-only launcher as an installation method.
 
 ## Experimental npm next channel
 
-The first experimental version, `0.1.0-next.1`, is being prepared for external testing on macOS and glibc Linux, each on x64 and arm64. It has not been published yet. Check the registry before installing; if the check fails, the preview is unavailable:
+The first experimental version, `0.1.0-next.1`, is published for external testing on macOS and glibc Linux, each on x64 and arm64. Matching [signed GitHub prerelease archives](https://github.com/delinoio/oss/releases/tag/pnport%40v0.1.0-next.1) are also available. Check the registry before installing; if the check fails, the preview is unavailable:
 
 ```sh
-npm view @delino/pnport@next version && npm install --save-dev --ignore-scripts @delino/pnport@next
+npm view @delino/pnport@next version && npm install --global --ignore-scripts @delino/pnport@next
 # Or, after the same successful registry check, in a Yarn 4 project:
 npm view @delino/pnport@next version && yarn add --dev @delino/pnport@next
 ```
 
-Keep optional dependencies enabled and use Node.js 22 or newer. Confirm the selected version with `pnport --version` through your package manager. To reproduce a report, pin the exact returned version instead of `next`, which can advance.
+Keep optional dependencies enabled and use Node.js 22 or newer. Global npm installation keeps a physical `node_modules` directory out of the selected PnP project; do not run an npm local install inside that project. Confirm the global CLI with `pnport --version`, or use `yarn pnport --version` after the Yarn project installation. Invoke project-local commands through `yarn pnport` in the examples below. To reproduce a report, pin the exact returned version instead of `next`, which can advance.
+
+Yarn's [minimum package age setting](https://yarnpkg.com/configuration/yarnrc/#npmMinimalAgeGate) can temporarily quarantine a newly published preview. If Yarn reports that the version is quarantined, wait for your configured age requirement. The global npm CLI above can run against your already installed PnP project while that Yarn installation is unavailable.
 
 The preview is experimental: full filesystem/process/tool compatibility, minimum supported OS validation and complete benchmark acceptance remain unfinished. Intermittent native initialization failures, reported with exit status 125, remain under investigation. A passing installation or TypeScript build does not establish compatibility with every tool. Windows, musl hosts and mixed architectures are unsupported; no preview Homebrew formula is provided. Report reproducible failures in [issue #958](https://github.com/delinoio/oss/issues/958), including the exact version, OS and architecture, command shape and sanitized diagnostics. Remove credentials, private paths and project content before sharing.
 
@@ -39,7 +41,7 @@ When a verified release is published, choose an explicit version and confirm the
 For npm or Yarn 4, keep optional dependencies enabled so the launcher can select the matching native package:
 
 ```sh
-npm install --save-dev --ignore-scripts '@delino/pnport@<published-version>'
+npm install --global --ignore-scripts '@delino/pnport@<published-version>'
 # or, in a Yarn 4 project:
 yarn add --dev '@delino/pnport@<published-version>'
 ```

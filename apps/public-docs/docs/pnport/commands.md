@@ -1,6 +1,6 @@
 # Commands
 
-**The pnport 0.1.0 CLI is not published.** These are the current command names and release-contract behaviors, not instructions to install or run an unavailable package.
+**pnport 0.1.0 is not published.** These are the current command names and release-contract behaviors. The experimental preview is available separately; check [installation and availability](/pnport/installation) before trying it, and retain its compatibility limits.
 
 | Command | Purpose |
 | --- | --- |
