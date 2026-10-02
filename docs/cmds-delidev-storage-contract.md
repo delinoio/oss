@@ -552,3 +552,15 @@ already-committed report after response loss and retire independently joined
 local ownership evidence. It grants no new report, native operation or resource
 resurrection. Legacy unbound receipts require the original resource to remain
 available. See the [terminal contract](cmds-delidev-terminals-contract.md).
+
+### Automatic PR source ownership
+
+Automatic PR attempts add optional original discovery-link identity/revision
+metadata to the existing attempt document; revisions use canonical decimal
+strings. This requires no new migration, protocol number or fabricated historical
+source proof. The final start transaction verifies that original link's current
+session/project and pause/Archive/recovery state before charging the durable
+stable-PR chain. Explicit session controls retain their separate server-owned
+automation suppression bit, without changing historical outcomes or unpausing a
+failed queue. Missing or replaced source ownership cannot authorize a native claim.
+Follow the [automatic coordinator contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).
