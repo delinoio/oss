@@ -134,15 +134,51 @@ fn fail(code: Code) -> c_int {
         _ => EIO,
     }
 }
+
+unsafe fn path_bytes(path: *const c_char) -> std::result::Result<Vec<u8>, c_int> {
+    if path.is_null() {
+        return Err(EFAULT);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut bytes = Vec::new();
+        for index in 0..=PATH_MAX as usize {
+            let mut byte = 0u8;
+            let mut copied = 0;
+            #[expect(deprecated, reason = "the injected client avoids a mach2 dependency")]
+            let status = mach_vm_read_overwrite(
+                libc::mach_task_self_,
+                path.cast::<u8>().add(index) as u64,
+                1,
+                (&raw mut byte) as u64,
+                &raw mut copied,
+            );
+            if status != libc::KERN_SUCCESS || copied != 1 {
+                return Err(EFAULT);
+            }
+            if byte == 0 {
+                return Ok(bytes);
+            }
+            if index == PATH_MAX as usize {
+                return Err(ENAMETOOLONG);
+            }
+            bytes.push(byte);
+        }
+        unreachable!("the bounded pathname reader always returns");
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(CStr::from_ptr(path).to_bytes().to_vec())
+    }
+}
+
 unsafe fn path_from(
     path: *const c_char,
     dirfd: c_int,
     runtime: &Runtime,
 ) -> std::result::Result<PathBuf, c_int> {
-    if path.is_null() {
-        return Err(EFAULT);
-    }
-    let path = Path::new(OsStr::from_bytes(CStr::from_ptr(path).to_bytes()));
+    let path_bytes = path_bytes(path)?;
+    let path = Path::new(OsStr::from_bytes(&path_bytes));
     if path.as_os_str().is_empty() {
         return Err(ENOENT);
     }

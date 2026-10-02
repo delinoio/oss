@@ -117,6 +117,8 @@ int main(int argc, char **argv) {
     errno = 0;
     CHECK(readlinkat(-1, "node_modules/dep", output, sizeof(output)) == -1 && errno == EBADF);
     errno = 0;
+    CHECK(readlinkat(AT_FDCWD, (char *)1, output, sizeof(output)) == -1 && errno == EFAULT);
+    errno = 0;
     CHECK(readlinkat(file, "../node_modules/dep", output, sizeof(output)) == -1 && errno == ENOTDIR);
     close(file);
     for (int i = 1; i < argc; i++) {
