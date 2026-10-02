@@ -185,13 +185,11 @@ fn opened_path(file: &File) -> Result<PathBuf, ReproFailure> {
     }
     path.truncate(length);
     let path = PathBuf::from(OsString::from_wide(&path));
-    // GetFinalPathNameByHandleW uses the extended-length prefix even when
-    // the source root uses the ordinary drive-letter spelling. Remove only
-    // that transport prefix so containment checks compare equivalent paths.
-    Ok(path
-        .strip_prefix(Path::new("\\\\?\\"))
-        .map(Path::to_path_buf)
-        .unwrap_or(path))
+    // Keep the extended-length namespace returned by the handle API. Windows
+    // `fs::canonicalize` uses the same namespace for the snapshot root, so
+    // containment checks must compare both paths without stripping it from
+    // only one side.
+    Ok(path)
 }
 
 #[cfg(unix)]
