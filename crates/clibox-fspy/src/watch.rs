@@ -112,6 +112,28 @@ fn same_path(left: &Path, right: &Path) -> bool {
     path_prefix(left, right) && path_prefix(right, left)
 }
 
+fn normalize_absolute_target(root: &Path, target: &Path) -> Option<PathBuf> {
+    if path_prefix(root, target) {
+        return Some(target.to_path_buf());
+    }
+    if !target.is_absolute() {
+        return Some(target.to_path_buf());
+    }
+
+    // Resolve only the outer prefix that names the canonical root. Resolving
+    // the full target would hide nested links that must remain watchable.
+    let prefix = target
+        .ancestors()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .find(|prefix| {
+            std::fs::canonicalize(prefix).is_ok_and(|resolved| same_path(&resolved, root))
+        })?;
+    let suffix = target.strip_prefix(prefix).ok()?;
+    Some(root.join(suffix))
+}
+
 fn logical_relative(path: &AccessPath, root: &Path) -> Option<PathBuf> {
     #[cfg(not(windows))]
     let logical = native_relative(&path.logical)?;
@@ -181,14 +203,15 @@ impl Dependencies {
             };
             cursor.pop();
             let target = if target.is_absolute() {
-                if !path_prefix(root, &target) {
+                let Some(target) = normalize_absolute_target(root, &target) else {
                     return;
-                }
+                };
                 cursor.clear();
                 target
-                    .components()
-                    .skip(root.components().count())
-                    .collect::<PathBuf>()
+                    .strip_prefix(root)
+                    .ok()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default()
             } else {
                 target
             };
@@ -622,6 +645,31 @@ mod tests {
         bounded.include_links(&root, Path::new("loop/input"));
         assert!(bounded.links.contains(Path::new("loop")));
         assert!(bounded.links.iter().all(|path| !path.is_absolute()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absolute_link_targets_use_canonical_root_aliases() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("root");
+        fs::create_dir(&root).unwrap();
+        let alias = directory.path().join("alias");
+        symlink(&root, &alias).unwrap();
+        let root = root.canonicalize().unwrap();
+        fs::create_dir(root.join("one")).unwrap();
+        symlink("one", root.join("nested")).unwrap();
+
+        symlink(alias.join("nested"), root.join("current")).unwrap();
+
+        let mut dependencies = Dependencies::default();
+        dependencies.include_links(&root, Path::new("current/input"));
+
+        assert_eq!(
+            dependencies.links,
+            BTreeSet::from([PathBuf::from("current"), PathBuf::from("nested")])
+        );
     }
 
     #[cfg(unix)]
