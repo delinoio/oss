@@ -631,8 +631,12 @@ impl Snapshot {
         for component in relative.components() {
             prefix.push(component.as_os_str());
             if let Some(link) = self.links.get(&prefix) {
-                let actual = fs::canonicalize(self.root.join(&prefix))
-                    .map_err(|_| ReproFailure::UnstableInput)?;
+                let source = self.root.join(&prefix);
+                let actual_raw = fs::read_link(&source).map_err(|_| ReproFailure::UnstableInput)?;
+                if actual_raw != link.raw_target {
+                    return Err(ReproFailure::UnstableInput);
+                }
+                let actual = fs::canonicalize(source).map_err(|_| ReproFailure::UnstableInput)?;
                 let relative_target = actual
                     .strip_prefix(&self.root)
                     .map_err(|_| ReproFailure::UnstableInput)?;
@@ -1010,6 +1014,27 @@ mod tests {
             ));
             assert_eq!(fs::read_dir(candidate.path()).unwrap().count(), 0);
         }
+    }
+
+    #[test]
+    fn rejects_changed_file_symlink_target_spelling_before_staging() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        let alias = directory.path().join("alias.txt");
+        fs::write(&input, b"input").unwrap();
+        stage_symlink(&input, Path::new("input.txt"), &alias).unwrap();
+        let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
+        fs::remove_file(&alias).unwrap();
+        stage_symlink(&input, Path::new("./input.txt"), &alias).unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            snapshot.stage_required(
+                &BTreeSet::from([PathBuf::from("alias.txt")]),
+                candidate.path(),
+            ),
+            Err(ReproFailure::UnstableInput)
+        ));
     }
 
     #[test]
