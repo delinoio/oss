@@ -9,7 +9,8 @@ use std::{
     cell::{Cell, RefCell},
     ffi::CString,
     os::{fd::AsRawFd, unix::net::UnixStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
+    rc::Rc,
     sync::{
         OnceLock,
         atomic::{AtomicBool, Ordering},
@@ -106,11 +107,12 @@ pub fn init_ready() {
 }
 
 thread_local! {
-    static STREAM: RefCell<Option<(u32, UnixStream)>> = const { RefCell::new(None) };
+    static STREAM: RefCell<Option<(u32, Rc<UnixStream>)>> = const { RefCell::new(None) };
     static ACTIVE: Cell<bool> = const { Cell::new(false) };
     static RESOLVING: Cell<bool> = const { Cell::new(false) };
-    static NEXT_ID: Cell<u64> = const { Cell::new(1) };
-    static MUTATIONS: RefCell<Vec<Vec<Token>>> = const { RefCell::new(Vec::new()) };
+    // Const-initialized cells without Drop never register Rust TLS destructors.
+    // Guards and correlation IDs must remain available after STREAM is destroyed.
+    static NEXT_ID: Cell<(u32, u64)> = const { Cell::new((0, 1)) };
 }
 
 #[derive(Clone, Copy)]
@@ -140,6 +142,7 @@ pub enum FinalSymlink {
 pub struct Token {
     id: u64,
     kind: Kind,
+    socket: Rc<UnixStream>,
 }
 
 struct Reset<'a>(&'a Cell<bool>);
@@ -250,68 +253,85 @@ fn socket_path() -> Option<&'static PathBuf> {
     SOCKET.get().and_then(Option::as_ref)
 }
 
-fn with_stream<R>(callback: impl FnOnce(&UnixStream) -> R) -> Option<R> {
-    let path = socket_path()?;
+fn connect_stream(path: &Path) -> Option<Rc<UnixStream>> {
+    let image_id = IMAGE_ID.get()?;
+    let socket = UnixStream::connect(path).ok()?;
+    let enabled: c_int = 1;
+    let option_length = libc::socklen_t::try_from(std::mem::size_of_val(&enabled)).ok()?;
+    // SAFETY: socket is owned by this thread and the option value points to a
+    // live native integer of the declared length. Late connections must also
+    // suppress SIGPIPE so transport loss never changes the child's behavior.
+    if unsafe {
+        libc::setsockopt(
+            socket.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_NOSIGPIPE,
+            (&raw const enabled).cast(),
+            option_length,
+        )
+    } != 0
+    {
+        return None;
+    }
+    if !send_frame(
+        &socket,
+        b'h',
+        Kind::Hello,
+        FramePayload {
+            id: image_id.0,
+            result: image_id.1.cast_signed(),
+            error: 0,
+            path: &[],
+            identity: None,
+        },
+    ) {
+        return None;
+    }
+    // Capture the process start identity before allowing any operation. Every
+    // connection, including late-thread and fork connections, binds the same
+    // process-image nonce and waits for the receiver's acknowledgment.
+    if !matches!(receive_ack(&socket), Ack::Proceed) {
+        return None;
+    }
+    Some(Rc::new(socket))
+}
+
+fn with_active<R>(action: impl FnOnce() -> Option<R>) -> Option<R> {
     ACTIVE.with(|active| {
         if active.replace(true) {
             return None;
         }
         let _reset = Reset(active);
-        STREAM.with(|slot| {
-            let mut stream = slot.borrow_mut();
+        action()
+    })
+}
+
+fn with_stream<R>(callback: impl FnOnce(&Rc<UnixStream>) -> R) -> Option<R> {
+    let path = socket_path()?;
+    with_active(|| {
+        let mut callback = Some(callback);
+        if let Ok(result) = STREAM.try_with(|slot| {
+            let mut stream = slot.try_borrow_mut().ok()?;
             let pid = std::process::id();
             if stream.as_ref().is_some_and(|(owner, _)| *owner != pid) {
-                // A fork inherits thread-local descriptors, but both processes
-                // must have separate framing streams and correlation counters.
+                // A fork inherits descriptors but must use separate framing.
                 *stream = None;
-                NEXT_ID.with(|next| next.set(1));
-                MUTATIONS.with(|stack| stack.borrow_mut().clear());
             }
             if stream.is_none() {
-                let image_id = IMAGE_ID.get()?;
-                let socket = UnixStream::connect(path).ok()?;
-                let enabled: c_int = 1;
-                // SAFETY: the option value has the expected native size.
-                let option_length =
-                    libc::socklen_t::try_from(std::mem::size_of_val(&enabled)).ok()?;
-                // SAFETY: socket is owned by this thread and the option value
-                // points to a live native integer of the declared length.
-                if unsafe {
-                    libc::setsockopt(
-                        socket.as_raw_fd(),
-                        libc::SOL_SOCKET,
-                        libc::SO_NOSIGPIPE,
-                        (&raw const enabled).cast(),
-                        option_length,
-                    )
-                } != 0
-                {
-                    return None;
-                }
-                if !send_frame(
-                    &socket,
-                    b'h',
-                    Kind::Hello,
-                    FramePayload {
-                        id: image_id.0,
-                        result: image_id.1.cast_signed(),
-                        error: 0,
-                        path: &[],
-                        identity: None,
-                    },
-                ) {
-                    return None;
-                }
-                // The receiver records this process's start identity before
-                // acknowledging the hello. Keep even a no-I/O process alive
-                // until that identity is captured.
-                if !matches!(receive_ack(&socket), Ack::Proceed) {
-                    return None;
-                }
-                *stream = Some((pid, socket));
+                *stream = Some((pid, connect_stream(path)?));
             }
-            Some(callback(&stream.as_ref()?.1))
-        })
+            Some(callback.take()?(&stream.as_ref()?.1))
+        }) {
+            result
+        } else {
+            // A native hook may run after Rust has destroyed STREAM. Open
+            // one bounded, hello-admitted connection for that operation;
+            // its Token retains the same socket through completion. Remove
+            // this fallback only if the transport outlives all native TLS
+            // destructors. Never skip a late operation in a complete trace.
+            let socket = connect_stream(path)?;
+            Some(callback.take()?(&socket))
+        }
     })
 }
 
@@ -554,12 +574,14 @@ fn enter_with_result_and_identity(
         return None;
     }
     let id = NEXT_ID.with(|next| {
-        let id = next.get();
-        next.set(id.wrapping_add(1));
+        let pid = std::process::id();
+        let (owner, id) = next.get();
+        let id = if owner == pid { id } else { 1 };
+        next.set((pid, id.wrapping_add(1)));
         id
     });
     let outcome = with_stream(|socket| {
-        if send_frame(
+        let ack = if send_frame(
             socket,
             b's',
             kind,
@@ -574,16 +596,17 @@ fn enter_with_result_and_identity(
             receive_ack(socket)
         } else {
             Ack::Lost
-        }
+        };
+        (ack, Rc::clone(socket))
     });
-    if matches!(outcome, Some(Ack::Quit)) {
+    if matches!(outcome, Some((Ack::Quit, _))) {
         // The supervisor explicitly rejected this start before its native
         // call. Terminate the calling process so the operation cannot run.
         // SAFETY: _exit is async-signal-safe and does not return.
         unsafe { libc::_exit(130) };
     }
-    if matches!(outcome, Some(Ack::Proceed)) {
-        Some(Token { id, kind })
+    if let Some((Ack::Proceed, socket)) = outcome {
+        Some(Token { id, kind, socket })
     } else {
         if socket_path().is_some() {
             mark_incomplete();
@@ -597,9 +620,9 @@ pub fn leave(token: Option<Token>, result: i64, error: i32) {
         return;
     };
     if !matches!(
-        with_stream(|socket| {
-            send_frame(
-                socket,
+        with_active(|| {
+            Some(send_frame(
+                &token.socket,
                 b'e',
                 token.kind,
                 FramePayload {
@@ -609,7 +632,7 @@ pub fn leave(token: Option<Token>, result: i64, error: i32) {
                     path: &[],
                     identity: None,
                 },
-            )
+            ))
         }),
         Some(true)
     ) {
@@ -635,40 +658,4 @@ pub fn finish_spawn(token: Option<Token>, status: c_int) {
             status,
         );
     });
-}
-
-pub fn begin_mutation() {
-    if socket_path().is_some() {
-        MUTATIONS.with(|stack| stack.borrow_mut().push(Vec::new()));
-    }
-}
-
-pub unsafe fn mutation_path(dirfd: c_int, path: *const c_char) {
-    if socket_path().is_none() {
-        return;
-    }
-    // SAFETY: this is the caller's pathname passed unchanged to libc.
-    if let Some(token) = unsafe { enter_at(Kind::Mutation, dirfd, path) } {
-        MUTATIONS.with(|stack| {
-            if let Some(tokens) = stack.borrow_mut().last_mut() {
-                tokens.push(token);
-            } else {
-                mark_incomplete();
-            }
-        });
-    }
-}
-
-pub fn end_mutation(result: i64) {
-    if socket_path().is_none() {
-        return;
-    }
-    let tokens = MUTATIONS.with(|stack| stack.borrow_mut().pop());
-    if let Some(tokens) = tokens {
-        for token in tokens {
-            finish(Some(token), result);
-        }
-    } else {
-        mark_incomplete();
-    }
 }

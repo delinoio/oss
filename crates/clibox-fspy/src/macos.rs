@@ -21,7 +21,7 @@ use std::{
     process::ExitStatus,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     thread,
     time::{Duration, Instant},
@@ -69,6 +69,39 @@ pub struct Frame {
 fn invalid(reason: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, reason)
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiverFailure {
+    EventLimit,
+    ByteLimit,
+    TraceLoss,
+}
+
+impl ReceiverFailure {
+    pub fn from_error(error: &io::Error) -> Self {
+        error
+            .get_ref()
+            .and_then(|cause| cause.downcast_ref::<Self>())
+            .copied()
+            .unwrap_or(Self::TraceLoss)
+    }
+
+    fn into_error(self) -> io::Error {
+        io::Error::new(io::ErrorKind::InvalidData, self)
+    }
+}
+
+impl std::fmt::Display for ReceiverFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::EventLimit => "event_limit",
+            Self::ByteLimit => "byte_limit",
+            Self::TraceLoss => "trace_loss",
+        })
+    }
+}
+
+impl std::error::Error for ReceiverFailure {}
 
 pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
     let mut header = [0_u8; HEADER_BYTES];
@@ -189,19 +222,19 @@ impl FrameLedger {
             self.event_count = self
                 .event_count
                 .checked_add(1)
-                .ok_or_else(|| invalid("event_limit"))?;
+                .ok_or_else(|| ReceiverFailure::EventLimit.into_error())?;
         }
         let charge = record::retained_frame_charge(frame.path.len(), frame.access_path.iter())
-            .ok_or_else(|| invalid("byte_limit"))?;
+            .ok_or_else(|| ReceiverFailure::ByteLimit.into_error())?;
         self.retained_bytes = self
             .retained_bytes
             .checked_add(charge)
-            .ok_or_else(|| invalid("byte_limit"))?;
+            .ok_or_else(|| ReceiverFailure::ByteLimit.into_error())?;
         if self.event_count > self.max_events {
-            return Err(invalid("event_limit"));
+            return Err(ReceiverFailure::EventLimit.into_error());
         }
         if self.retained_bytes > self.max_bytes {
-            return Err(invalid("byte_limit"));
+            return Err(ReceiverFailure::ByteLimit.into_error());
         }
         frame.sequence = self.frame_count;
         let key = (frame.pid, frame.tid, frame.id);
@@ -444,7 +477,7 @@ pub struct OperationReceiver {
     _directory: tempfile::TempDir,
     socket_path: PathBuf,
     stopping: Arc<AtomicBool>,
-    failed: Arc<AtomicBool>,
+    failure: Arc<OnceLock<ReceiverFailure>>,
     processes: Arc<Mutex<HashMap<u32, ProcessIdentity>>>,
     receiver: Option<thread::JoinHandle<io::Result<CollectedOperations>>>,
 }
@@ -517,21 +550,19 @@ impl OperationReceiver {
         listener.set_nonblocking(true)?;
         let stopping = Arc::new(AtomicBool::new(false));
         let stop = Arc::clone(&stopping);
-        let failed = Arc::new(AtomicBool::new(false));
-        let failure = Arc::clone(&failed);
+        let failure = Arc::new(OnceLock::new());
+        let first_failure = Arc::clone(&failure);
         let processes = Arc::new(Mutex::new(HashMap::new()));
         let tracked_processes = Arc::clone(&processes);
         let receiver = thread::spawn(move || {
             let ledger = Arc::new(Mutex::new(FrameLedger::new(max_events, max_bytes)));
             let mut connections = Vec::new();
             let mut idle_after_stop = 0;
-            let mut accept_failure = None;
             loop {
                 match listener.accept() {
                     Ok((stream, _)) => {
                         if connections.len() >= MAX_CONNECTIONS {
-                            failure.store(true, Ordering::Release);
-                            accept_failure = Some(invalid("connection_limit"));
+                            first_failure.get_or_init(|| ReceiverFailure::TraceLoss);
                             stop.store(true, Ordering::Release);
                             drop(stream);
                             break;
@@ -540,7 +571,7 @@ impl OperationReceiver {
                         let ledger = Arc::clone(&ledger);
                         let processes = Arc::clone(&tracked_processes);
                         let stop = Arc::clone(&stop);
-                        let failure = Arc::clone(&failure);
+                        let failure = Arc::clone(&first_failure);
                         let root = root.clone();
                         let admission = Arc::clone(&admission);
                         connections.push(thread::spawn(move || {
@@ -552,8 +583,8 @@ impl OperationReceiver {
                                 root.as_deref(),
                                 admission.as_ref(),
                             );
-                            if result.is_err() {
-                                failure.store(true, Ordering::Release);
+                            if let Err(error) = &result {
+                                failure.get_or_init(|| ReceiverFailure::from_error(error));
                             }
                             result
                         }));
@@ -567,24 +598,23 @@ impl OperationReceiver {
                         }
                         thread::sleep(Duration::from_millis(10));
                     }
-                    Err(error) => {
-                        failure.store(true, Ordering::Release);
-                        accept_failure = Some(error);
+                    Err(_) => {
+                        first_failure.get_or_init(|| ReceiverFailure::TraceLoss);
                         stop.store(true, Ordering::Release);
                         break;
                     }
                 }
             }
-            let mut connection_failure = None;
             for connection in connections {
                 let result = connection.join().map_err(|_| invalid("receiver_panic"));
                 if let Err(error) = result.and_then(|result| result) {
-                    failure.store(true, Ordering::Release);
-                    connection_failure.get_or_insert(error);
+                    first_failure.get_or_init(|| ReceiverFailure::from_error(&error));
                 }
             }
-            if let Some(error) = accept_failure.or(connection_failure) {
-                return Err(error);
+            if let Some(cause) = first_failure.get().copied() {
+                // Connection joins occur in acceptance order. Preserve the
+                // first observed failure instead of a later shutdown error.
+                return Err(cause.into_error());
             }
             Arc::try_unwrap(ledger)
                 .map_err(|_| invalid("receiver_references"))?
@@ -596,7 +626,7 @@ impl OperationReceiver {
             _directory: directory,
             socket_path,
             stopping,
-            failed,
+            failure,
             processes,
             receiver: Some(receiver),
         })
@@ -607,7 +637,11 @@ impl OperationReceiver {
     }
 
     pub fn failed(&self) -> bool {
-        self.failed.load(Ordering::Acquire)
+        self.failure().is_some()
+    }
+
+    pub fn failure(&self) -> Option<ReceiverFailure> {
+        self.failure.get().copied()
     }
 
     pub fn live_processes(&self) -> io::Result<Vec<u32>> {
@@ -876,7 +910,11 @@ pub fn assemble_candidate_record(
     let mut encoded = Vec::new();
     record::serialize(&record, &mut encoded, max_events, max_bytes).map_err(|error| {
         tracing::error!(stage = "macos_candidate_serialize", classification = %error, "candidate record limit reached");
-        invalid("record_limit")
+        match error {
+            record::ParseFailure::EventLimit => ReceiverFailure::EventLimit.into_error(),
+            record::ParseFailure::ByteLimit => ReceiverFailure::ByteLimit.into_error(),
+            _ => invalid("record_limit"),
+        }
     })?;
     record::parse(
         io::BufReader::new(encoded.as_slice()),
@@ -907,7 +945,7 @@ mod tests {
 
     use super::{
         assemble_candidate_record, classify_path, classify_path_with_identity, read_frame,
-        FinalSymlink, FrameKind, FrameLedger, OperationReceiver,
+        FinalSymlink, FrameKind, FrameLedger, OperationReceiver, ReceiverFailure,
     };
 
     #[test]
@@ -1185,7 +1223,12 @@ mod tests {
             identity: None,
         });
         let mut ledger = FrameLedger::new(2, 6000);
-        assert_eq!(ledger.push(frame).unwrap_err().to_string(), "byte_limit");
+        let error = ledger.push(frame).unwrap_err();
+        assert_eq!(error.to_string(), "byte_limit");
+        assert_eq!(
+            ReceiverFailure::from_error(&error),
+            ReceiverFailure::ByteLimit
+        );
         assert!(ledger.pending.is_empty());
     }
 
@@ -1267,7 +1310,101 @@ mod tests {
         let start = read_frame(&mut frame_bytes(b's', b"/tmp/input").as_slice())
             .unwrap()
             .unwrap();
-        assert!(ledger.push(start).is_err());
+        assert_eq!(
+            ReceiverFailure::from_error(&ledger.push(start).unwrap_err()),
+            ReceiverFailure::EventLimit
+        );
+    }
+
+    fn wait_for_failure(receiver: &OperationReceiver, expected: ReceiverFailure) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while receiver.failure().is_none() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(receiver.failure(), Some(expected));
+    }
+
+    fn send_hello(stream: &mut UnixStream) {
+        let mut hello = frame_bytes(b'h', b"");
+        hello[1] = 0;
+        stream.write_all(&hello).unwrap();
+        let mut ack = [0];
+        stream.read_exact(&mut ack).unwrap();
+        assert_eq!(&ack, b"g");
+    }
+
+    #[test]
+    fn receiver_preserves_event_limit_across_a_later_transport_failure() {
+        let receiver = OperationReceiver::bind(0, 4096).unwrap();
+        // This earlier connection fails only after the budget failure. Joining
+        // connections in acceptance order must not replace the original cause.
+        let mut interrupted = UnixStream::connect(receiver.socket_path()).unwrap();
+        interrupted.write_all(b"h").unwrap();
+        let mut stream = UnixStream::connect(receiver.socket_path()).unwrap();
+        send_hello(&mut stream);
+        stream.write_all(&frame_bytes(b's', b"/tmp/input")).unwrap();
+        wait_for_failure(&receiver, ReceiverFailure::EventLimit);
+        drop(interrupted);
+        drop(stream);
+        assert_eq!(
+            ReceiverFailure::from_error(&receiver.finish().err().unwrap()),
+            ReceiverFailure::EventLimit
+        );
+    }
+
+    #[test]
+    fn receiver_charges_hello_bytes_before_retention() {
+        let hello_charge = crate::record::retained_frame_charge(0, std::iter::empty()).unwrap();
+        for budget in [hello_charge - 1, hello_charge] {
+            let receiver = OperationReceiver::bind(2, budget).unwrap();
+            let mut stream = UnixStream::connect(receiver.socket_path()).unwrap();
+            if budget == hello_charge {
+                send_hello(&mut stream);
+                assert_eq!(receiver.failure(), None);
+                stream.write_all(&frame_bytes(b's', b"/tmp/input")).unwrap();
+            } else {
+                let mut hello = frame_bytes(b'h', b"");
+                hello[1] = 0;
+                stream.write_all(&hello).unwrap();
+            }
+            wait_for_failure(&receiver, ReceiverFailure::ByteLimit);
+            drop(stream);
+            assert_eq!(
+                ReceiverFailure::from_error(&receiver.finish().err().unwrap()),
+                ReceiverFailure::ByteLimit
+            );
+        }
+    }
+
+    #[test]
+    fn receiver_accepts_exact_pair_and_hello_budgets() {
+        let path = b"/tmp/input";
+        let hello_charge = crate::record::retained_frame_charge(0, std::iter::empty()).unwrap();
+        let start_charge =
+            crate::record::retained_frame_charge(path.len(), std::iter::empty()).unwrap();
+        let receiver = OperationReceiver::bind(2, hello_charge * 2 + start_charge).unwrap();
+        let mut stream = UnixStream::connect(receiver.socket_path()).unwrap();
+        send_hello(&mut stream);
+        stream.write_all(&frame_bytes(b's', path)).unwrap();
+        let mut ack = [0];
+        stream.read_exact(&mut ack).unwrap();
+        assert_eq!(&ack, b"g");
+        stream.write_all(&frame_bytes(b'e', b"")).unwrap();
+        drop(stream);
+        assert_eq!(receiver.finish().unwrap().pairs.len(), 1);
+    }
+
+    #[test]
+    fn receiver_reports_interrupted_transport_as_trace_loss() {
+        let receiver = OperationReceiver::bind(2, 4096).unwrap();
+        let mut stream = UnixStream::connect(receiver.socket_path()).unwrap();
+        stream.write_all(b"h").unwrap();
+        drop(stream);
+        wait_for_failure(&receiver, ReceiverFailure::TraceLoss);
+        assert_eq!(
+            ReceiverFailure::from_error(&receiver.finish().err().unwrap()),
+            ReceiverFailure::TraceLoss
+        );
     }
 
     #[test]
@@ -1276,12 +1413,236 @@ mod tests {
         let mut stream = UnixStream::connect(receiver.socket_path()).unwrap();
         stream.write_all(&frame_bytes(b'x', b"/tmp/input")).unwrap();
         drop(stream);
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while !receiver.failed() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        wait_for_failure(&receiver, ReceiverFailure::TraceLoss);
         assert!(receiver.failed());
-        assert!(receiver.finish().is_err());
+        assert_eq!(
+            ReceiverFailure::from_error(&receiver.finish().err().unwrap()),
+            ReceiverFailure::TraceLoss
+        );
+    }
+
+    #[test]
+    fn candidate_encoding_preserves_typed_limits() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let mut start = read_frame(&mut frame_bytes(b's', b"/tmp/input").as_slice())
+            .unwrap()
+            .unwrap();
+        start.sequence = 1;
+        let mut completion = read_frame(&mut frame_bytes(b'e', b"").as_slice())
+            .unwrap()
+            .unwrap();
+        completion.sequence = 2;
+        for (events, bytes, expected) in [
+            (1, 4096, ReceiverFailure::EventLimit),
+            (2, 1, ReceiverFailure::ByteLimit),
+        ] {
+            let error = assemble_candidate_record(
+                directory.path(),
+                vec![(start.clone(), completion.clone())],
+                std::process::ExitStatus::from_raw(0),
+                events,
+                bytes,
+            )
+            .unwrap_err();
+            assert_eq!(ReceiverFailure::from_error(&error), expected);
+        }
+    }
+
+    fn compile_tls_fixture(directory: &std::path::Path) -> PathBuf {
+        let source = directory.join("tls.rs");
+        let binary = directory.join("tls");
+        fs::write(
+            &source,
+            r#"
+use std::{cell::RefCell, fs::File, io::Read, os::fd::IntoRawFd};
+thread_local! { static FILE: RefCell<Option<File>> = const { RefCell::new(None) }; }
+thread_local! { static NATIVE: RefCell<Option<NativeFile>> = const { RefCell::new(None) }; }
+unsafe extern "C" { fn close(fd: i32) -> i32; fn __error() -> *mut i32; }
+struct NativeFile(i32);
+impl Drop for NativeFile {
+    fn drop(&mut self) {
+        // SAFETY: this fixture owns the descriptor and the current errno slot.
+        unsafe {
+            *__error() = 123;
+            assert_eq!(close(self.0), 0);
+            assert_eq!(*__error(), 123);
+        }
+        std::fs::rename("data", "moved").unwrap();
+    }
+}
+fn main() {
+    let mode = std::env::args().nth(1).unwrap();
+    std::thread::spawn(move || {
+        if mode == "native" {
+            NATIVE.with(|slot| {
+                let mut f = File::open("data").unwrap();
+                f.read(&mut [0; 8]).unwrap();
+                *slot.borrow_mut() = Some(NativeFile(f.into_raw_fd()));
+            });
+        } else if mode == "drop" {
+            let mut f = File::open("data").unwrap();
+            f.read(&mut [0; 8]).unwrap();
+        } else if mode == "after" {
+            let mut f = File::open("data").unwrap();
+            f.read(&mut [0; 8]).unwrap();
+            FILE.with(|slot| *slot.borrow_mut() = Some(f));
+        } else {
+            FILE.with(|slot| {
+                let mut f = File::open("data").unwrap();
+                f.read(&mut [0; 8]).unwrap();
+                *slot.borrow_mut() = Some(f);
+            });
+            if mode == "lost" {
+                std::fs::remove_file(std::env::var_os("CLIBOX_FSPY_SOCKET").unwrap()).unwrap();
+            }
+        }
+    }).join().unwrap();
+}
+"#,
+        )
+        .unwrap();
+        assert!(std::process::Command::new("rustc")
+            .arg("-O")
+            .arg("-o")
+            .arg(&binary)
+            .arg(&source)
+            .status()
+            .unwrap()
+            .success());
+        binary
+    }
+
+    #[test]
+    fn injected_thread_local_file_teardown_keeps_paired_close() {
+        // Keep the executable outside the selected root, matching the issue's
+        // standalone Rust fixture rather than relying on this test harness TLS.
+        let directory = tempfile::tempdir().unwrap();
+        let binary = compile_tls_fixture(directory.path());
+        let root = directory.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("data"), b"fixture\n").unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        for mode in ["drop", "before", "after", "native"] {
+            assert!(std::process::Command::new(&binary)
+                .arg(mode)
+                .current_dir(&root)
+                .status()
+                .unwrap()
+                .success());
+            if mode == "native" {
+                fs::rename(root.join("moved"), root.join("data")).unwrap();
+            }
+            let receiver =
+                OperationReceiver::bind_for_root(&root, 1_000_000, 256 * 1024 * 1024).unwrap();
+            let mut command = fspy::Command::new(&binary);
+            command
+                .arg(mode)
+                .current_dir(&root)
+                .envs(std::env::vars_os())
+                .env("CLIBOX_FSPY_SOCKET", receiver.socket_path().as_os_str())
+                .stdout(Stdio::null())
+                .stderr(Stdio::inherit());
+            let child = runtime
+                .block_on(command.spawn(CancellationToken::new()))
+                .unwrap();
+            let root_pid = child.root_pid;
+            let status = runtime.block_on(child.wait_handle).unwrap();
+            assert!(status.status.success(), "{mode}: {:?}", status.status);
+            assert!(
+                status.path_accesses.is_ok(),
+                "{mode}: incomplete path channel"
+            );
+            let collected = receiver.finish().unwrap();
+            assert!(collected.hello_pids.contains(&root_pid));
+            let read = collected
+                .pairs
+                .iter()
+                .find(|(start, end)| {
+                    start.operation == 3 && start.path.ends_with(b"/data") && end.result == 8
+                })
+                .unwrap();
+            assert!(
+                collected.pairs.iter().any(|(start, end)| {
+                    start.operation == 2
+                        && start.path == read.0.path
+                        && start.tid == read.0.tid
+                        && start.id > read.0.id
+                        && start.image_id == read.0.image_id
+                        && end.result == 0
+                        && end.error == 0
+                }),
+                "{mode}: missing paired successful close"
+            );
+            if mode == "native" {
+                assert_eq!(fs::read(root.join("moved")).unwrap(), b"fixture\n");
+                for suffix in [b"/data".as_slice(), b"/moved".as_slice()] {
+                    assert!(
+                        collected.pairs.iter().any(|(start, end)| {
+                            start.operation == 9
+                                && start.path.ends_with(suffix)
+                                && start.tid == read.0.tid
+                                && start.id > read.0.id
+                                && start.image_id == read.0.image_id
+                                && end.result == 0
+                                && end.error == 0
+                        }),
+                        "late rename lost a paired path"
+                    );
+                }
+            }
+            assemble_candidate_record(
+                &root,
+                collected.pairs,
+                status.status,
+                1_000_000,
+                256 * 1024 * 1024,
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn injected_late_thread_channel_loss_preserves_child_and_rejects_trace() {
+        let directory = tempfile::tempdir().unwrap();
+        let binary = compile_tls_fixture(directory.path());
+        let root = directory.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("data"), b"fixture\n").unwrap();
+        let receiver =
+            OperationReceiver::bind_for_root(&root, 1_000_000, 256 * 1024 * 1024).unwrap();
+        let mut command = fspy::Command::new(&binary);
+        command
+            .arg("lost")
+            .current_dir(&root)
+            .envs(std::env::vars_os())
+            .env("CLIBOX_FSPY_SOCKET", receiver.socket_path().as_os_str())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let child = runtime
+            .block_on(command.spawn(CancellationToken::new()))
+            .unwrap();
+        let status = runtime.block_on(child.wait_handle).unwrap();
+        assert!(status.status.success(), "{:?}", status.status);
+        assert!(
+            status.path_accesses.is_err(),
+            "late close loss must invalidate the execution"
+        );
+        // An intact operation receiver alone cannot authorize a complete record:
+        // the preload's shared completeness flag must reject the missing close.
+        let collected = receiver.finish().unwrap();
+        assert!(!collected
+            .pairs
+            .iter()
+            .any(|(start, _)| { start.operation == 2 && start.path.ends_with(b"/data") }));
     }
 
     #[test]
