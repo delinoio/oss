@@ -49,6 +49,37 @@ func publicCompactionOutcomeFixture(t *testing.T, outcome domain.ExecutionOutcom
 	return f, pf
 }
 
+func TestCompactionRejectsChangedClaudeInstallation(t *testing.T) {
+	ctx := context.Background()
+	f, _ := publicCompactionFixture(t)
+	machineRecord, err := f.service.Store.Get(ctx, domain.MachineKind, domain.ID(f.machine.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	machine, err := store.Decode[domain.Machine](machineRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range machine.Installations {
+		if machine.Installations[index].Harness == domain.ClaudeCode {
+			machine.Installations[index].ResolvedPath = "/replacement/claude"
+		}
+	}
+	if _, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.replace-claude-installation", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.MachineKind, machineRecord.ID, machineRecord.Revision, "", "", machine)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before := f.refresh(t)
+	_, err = sessionClient(f.accountFixture).CompactSession(ctx, ownerRequest(f.identity, &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(before), domain.NewID())}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("changed installation was accepted: %v", err)
+	}
+	if after := f.refresh(t); after.Revision != before.Revision {
+		t.Fatal("rejected compaction changed the session")
+	}
+}
+
 func publicCompactionResult(i domain.SessionCompactionInput, job domain.ID, failed bool) domain.SessionCompactionResult {
 	r := domain.SessionCompactionResult{Version: 1, ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, OuterKind: domain.ClaudeResultSuccess, Outcome: domain.CompactionSucceeded, CommandEchoID: string(i.ActionID), ResultID: string(domain.NewID()), CommandCompletedID: string(domain.NewID()), IdleID: string(domain.NewID()), CleanupVerified: true, Checkpoint: domain.SessionCompactionRef{JobID: job, ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, CheckpointDigest: strings.Repeat("ab", 32), NativeDigest: strings.Repeat("cd", 32), RequiresResume: failed}}
 	if failed {

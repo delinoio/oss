@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"time"
 
 	"connectrpc.com/connect"
@@ -20,6 +21,15 @@ func compactionActor(ctx context.Context) error {
 		return domain.Fail(domain.PermissionDenied, "Only an owner or paired client can request session compaction.", "Use an authenticated product client.")
 	}
 	return nil
+}
+
+func sameCompactionInstallation(current, assigned domain.Installation) bool {
+	// Discovery timestamps describe when the current observation was made, not
+	// the executable identity assigned to the original native action. Every
+	// other installation field remains immutable so a changed path, version,
+	// digest, protocol or capability set cannot receive the old action.
+	current.ObservedAt, assigned.ObservedAt = nil, nil
+	return reflect.DeepEqual(current, assigned)
 }
 
 // Source verification shares current account/installation eligibility, but never
@@ -61,7 +71,7 @@ func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, act
 	if err != nil {
 		return empty, err
 	}
-	if !bytes.Equal(checked.Preparation, original.Preparation) || !bytes.Equal(checked.Manifest, original.Manifest) {
+	if !sameCompactionInstallation(checked.Installation, original.Installation) || !bytes.Equal(checked.Preparation, original.Preparation) || !bytes.Equal(checked.Manifest, original.Manifest) {
 		return empty, domain.CompactionUncertain()
 	}
 	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
