@@ -1,5 +1,7 @@
 # Workflow contracts
 
+- pnport 0.1.0 native CI and exact-tag release matrices derive from `packages/pnport/scripts/native-matrix.mjs` and its package-owned four macOS/glibc Linux targets. Windows x64/arm64 is deferred to 0.2.0. Preserve full native and installed-package gates, credential-free dry runs, exact-source identity and immutable publication. Publication also requires the reviewed private `pnportReleaseReady` source gate; version preparation never enables it.
+
 - Go validation keeps complete Linux/macOS suites and four Windows shards under the existing `go-test` job and `CI Result` aggregate. Discover native packages before partitioning; every package belongs to exactly one Windows shard, including newly added packages. Windows first compiles its selected test binaries at default Go compiler parallelism with `-c -o NUL`, without running fixtures; preserve `-p=1` for the subsequent complete test execution and the 20-minute per-package watchdog. Windows Go caches are shard-scoped; other callers retain their existing keys and all saves remain successful-main-only.
 
 - DeliDev native packaging follows `docs/apps-delidev-packaging-contract.md` and the repository workflow contract. Keep its dry run manually dispatched, limited to `contents: read`, LFS-hydrated and free of production signing, notarization, publication credentials and stored checkout tokens.

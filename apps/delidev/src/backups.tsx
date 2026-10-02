@@ -1,3 +1,4 @@
+import { SettingsHeading } from "./settings-presentation";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { SystemQuery, BackupCreationState, BackupDeletionState, newRequestId, type BackupCreationJob, type BackupDeletionJob, type InspectBackupResponse } from "@delinoio/delidev-api-client";
@@ -89,13 +90,10 @@ export function Backups({ active }: { active: boolean }) {
     if (!active || inspection.isFetching || (confirmation !== undefined && confirmation !== inspection.data)) setConfirmation(undefined);
   }, [active, inspection.data, inspection.isFetching, confirmation]);
   return <section className="backups-settings" aria-label="Managed database backups">
-    <header className="backups-header">
-      <div><h1 aria-live="polite" aria-atomic="true">Backups</h1><p>Inspect managed database images and follow durable creation and deletion jobs on the selected server.</p></div>
-      <div className="backups-actions">
+    <SettingsHeading title="Backups" description="Manage database backups and follow backup operations." actions={<>
         <button disabled={!active || inventory.isFetching} onClick={refresh}>Refresh backups</button>
         <button className="backups-primary" disabled={!active || create.busy || create.uncertain || trackedCreations.length >= maxTrackedJobs} onClick={() => { setCreated(""); void create.send({ requestId: newRequestId() }); }}>Create database backup</button>
-      </div>
-    </header>
+      </>} />
     <p className="backups-scope">Backups contain private server data and committed database changes. Credentials, browser profiles, and Worker files are separate.</p>
     <Problem error={create.error} />
     {create.uncertain ? <button disabled={!active || create.busy} onClick={create.retry}>Retry the same backup creation</button> : null}

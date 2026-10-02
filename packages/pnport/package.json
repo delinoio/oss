@@ -2,6 +2,7 @@
   "name": "@delino/pnport",
   "version": "0.0.0",
   "private": true,
+  "pnportReleaseReady": false,
   "description": "Native Yarn Plug'n'Play subprocess filesystem",
   "license": "Apache-2.0",
   "engines": { "node": ">=22" },

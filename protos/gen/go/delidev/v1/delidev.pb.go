@@ -25,8 +25,8 @@ var File_delidev_v1_delidev_proto protoreflect.FileDescriptor
 const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\n" +
 	"\x18delidev/v1/delidev.proto\x12\n" +
-	"delidev.v1\x1a\x18delidev/v1/account.proto\x1a\x19delidev/v1/activity.proto\x1a\x18delidev/v1/browser.proto\x1a\x17delidev/v1/common.proto\x1a\x1edelidev/v1/configuration.proto\x1a\x17delidev/v1/device.proto\x1a\x18delidev/v1/forward.proto\x1a\x16delidev/v1/inbox.proto\x1a\x1cdelidev/v1/integration.proto\x1a\x1cdelidev/v1/interaction.proto\x1a\x18delidev/v1/network.proto\x1a\x17delidev/v1/pr_fix.proto\x1a\x19delidev/v1/provider.proto\x1a\x19delidev/v1/resource.proto\x1a\x19delidev/v1/schedule.proto\x1a\x17delidev/v1/search.proto\x1a\x18delidev/v1/session.proto\x1a\x17delidev/v1/system.proto\x1a\x19delidev/v1/terminal.proto\x1a\x16delidev/v1/usage.proto\x1a\x17delidev/v1/worker.proto\x1a\"delidev/v1/workspace_storage.protoB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1P\x00P\x01P\x02P\x03P\x04P\x05P\x06P\aP\bP\tP\n" +
-	"P\vP\fP\rP\x0eP\x0fP\x10P\x11P\x12P\x13P\x14P\x15b\x06proto3"
+	"delidev.v1\x1a\x18delidev/v1/account.proto\x1a\x19delidev/v1/activity.proto\x1a\x18delidev/v1/browser.proto\x1a\x17delidev/v1/common.proto\x1a\x1edelidev/v1/configuration.proto\x1a\x17delidev/v1/device.proto\x1a\x18delidev/v1/forward.proto\x1a\x16delidev/v1/inbox.proto\x1a\x1cdelidev/v1/integration.proto\x1a\x1cdelidev/v1/interaction.proto\x1a\x1edelidev/v1/native_models.proto\x1a\x18delidev/v1/network.proto\x1a\x17delidev/v1/pr_fix.proto\x1a\x19delidev/v1/provider.proto\x1a\x19delidev/v1/resource.proto\x1a\x19delidev/v1/schedule.proto\x1a\x17delidev/v1/search.proto\x1a\x18delidev/v1/session.proto\x1a\x17delidev/v1/system.proto\x1a\x19delidev/v1/terminal.proto\x1a\x16delidev/v1/usage.proto\x1a\x17delidev/v1/worker.proto\x1a\"delidev/v1/workspace_storage.protoB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1P\x00P\x01P\x02P\x03P\x04P\x05P\x06P\aP\bP\tP\n" +
+	"P\vP\fP\rP\x0eP\x0fP\x10P\x11P\x12P\x13P\x14P\x15P\x16b\x06proto3"
 
 var file_delidev_v1_delidev_proto_goTypes = []any{}
 var file_delidev_v1_delidev_proto_depIdxs = []int32{
@@ -52,6 +52,7 @@ func file_delidev_v1_delidev_proto_init() {
 	file_delidev_v1_inbox_proto_init()
 	file_delidev_v1_integration_proto_init()
 	file_delidev_v1_interaction_proto_init()
+	file_delidev_v1_native_models_proto_init()
 	file_delidev_v1_network_proto_init()
 	file_delidev_v1_pr_fix_proto_init()
 	file_delidev_v1_provider_proto_init()

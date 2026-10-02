@@ -74,8 +74,10 @@ it("renders the approved server order and local Details without an RPC or inferr
   expect(value.list).toHaveBeenCalledTimes(before); expect(value.read).not.toHaveBeenCalled(); expect(value.revoke).not.toHaveBeenCalled(); expect(value.issue).not.toHaveBeenCalled();
 });
 
-it("retains matching disclosure through refresh, categories, reflow, reconnect and revocation; only paging and disposal reset it", async () => {
-  const value = fixture(); value.state.next = "opaque-next";
+// Keep retained-state transitions and the two reset boundaries independent so
+// each scenario fits the normal test deadline when CI runs files concurrently.
+it("retains matching disclosure through refresh, categories, reflow, reconnect and canceled revocation", async () => {
+  const value = fixture();
   const view = render(value.view()); await open(); fireEvent.click(workerDetails());
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE)).toHaveLength(2));
@@ -88,18 +90,29 @@ it("retains matching disclosure through refresh, categories, reflow, reconnect a
   fireEvent.click(screen.getByRole("button", { name: "Keep device authorized" }));
   expect(workerDetails().getAttribute("aria-expanded")).toBe("true");
   expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Revoke DeliDev local Worker" }));
+});
+
+it("resets disclosure only on explicit paired-device paging within a visit", async () => {
+  const value = fixture(); value.state.next = "opaque-next";
+  render(value.view()); await open(); fireEvent.click(workerDetails());
+  expect(workerDetails().getAttribute("aria-expanded")).toBe("true");
   await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
   expect(workerDetails().getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(workerDetails()); fireEvent.click(screen.getByRole("button", { name: "First page" }));
   expect(workerDetails().getAttribute("aria-expanded")).toBe("false");
+  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE).every(([request]) => request.filter?.pageSize === 50)).toBe(true);
+});
+
+it("disposes disclosure when the Settings visit ends and reopens at AI Subscription", async () => {
+  const value = fixture(); const view = render(value.view()); await open();
   fireEvent.click(workerDetails());
+  expect(workerDetails().getAttribute("aria-expanded")).toBe("true");
   view.rerender(value.view({ visible: false })); view.rerender(value.view());
   expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   expect(screen.queryByRole("combobox", { name: "Settings category" })).toBeNull();
   await open(); expect(workerDetails().getAttribute("aria-expanded")).toBe("false");
-  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE).every(([request]) => request.filter?.pageSize === 50)).toBe(true);
 });
 
 it("prunes removed disclosures only after successful replacement and retains them on failed refresh", async () => {

@@ -1,8 +1,12 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import path from "node:path";
-import { ensure, event, isMain, npm, packageRoot, registry, revision } from "./common.mjs";
+import { ensure, event, isMain, npm, packageRoot, registry, requireReleaseReady, revision } from "./common.mjs";
 import { verifySet } from "./package.mjs";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { targets } = require("../src/platforms.cjs");
 
 export async function registryIntegrity(artifact, request = fetch) {
   const response = await request(`${registry}/${encodeURIComponent(artifact.name)}/${artifact.version}`, { redirect: "error", signal: AbortSignal.timeout(30000) });
@@ -14,7 +18,7 @@ export async function registryIntegrity(artifact, request = fetch) {
 }
 
 export async function publishArtifacts(artifacts, { dryRun = true, lookup = registryIntegrity, publish, delay = sleep, report = event } = {}) {
-  ensure(artifacts.length === 7 && artifacts.slice(0, 6).every(({ name }) => name !== "@delino/pnport") && artifacts[6].name === "@delino/pnport", "Native packages must precede the launcher");
+  ensure(JSON.stringify(artifacts.map(({ name }) => name)) === JSON.stringify([...targets.map(({ name }) => name), "@delino/pnport"]), "The complete native package set must precede the launcher");
   if (dryRun) { report("publish_dry_run", { packages: artifacts }); return; }
   ensure(typeof publish === "function", "Publisher required");
   // Validate the complete remote set before the first irreversible npm write.
@@ -47,6 +51,7 @@ export async function main() {
   const sourceRevision = revision();
   const artifacts = verifySet(values.directory, sourceRevision).packages;
   if (values.publish) {
+    requireReleaseReady();
     ensure(process.env.GITHUB_REPOSITORY === "delinoio/oss" && process.env.GITHUB_REF === `refs/tags/pnport@v${artifacts[0].version}` && process.env.GITHUB_SHA === sourceRevision, "Publication requires the exact first-party tag and commit");
     ensure(process.env.ACTIONS_ID_TOKEN_REQUEST_URL && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN, "npm OIDC authority required");
   }

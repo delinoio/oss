@@ -6,13 +6,12 @@ class Clibox < Formula
 
   depends_on :macos
 
-  on_intel do
-    url "__DARWIN_AMD64_URL__"
-    sha256 "__DARWIN_AMD64_SHA256__"
-  end
-  on_arm do
+  if Hardware::CPU.arm?
     url "__DARWIN_ARM64_URL__"
     sha256 "__DARWIN_ARM64_SHA256__"
+  else
+    url "__DARWIN_AMD64_URL__"
+    sha256 "__DARWIN_AMD64_SHA256__"
   end
 
   def install
@@ -26,6 +25,7 @@ class Clibox < Formula
     assert_match "Apache License", (prefix/"LICENSE").read
     assert_match "VoidZero", (prefix/"LICENSE.fspy").read
     (testpath/"input.txt").write("homebrew fixture")
-    assert_equal "aG9tZWJyZXcgZml4dHVyZQ==", shell_output("#{bin}/clibox base64 encode --input=#{testpath}/input.txt").strip
+    encoded = shell_output("#{bin}/clibox base64 encode --input=#{testpath}/input.txt").strip
+    assert_equal "aG9tZWJyZXcgZml4dHVyZQ==", encoded
   end
 end

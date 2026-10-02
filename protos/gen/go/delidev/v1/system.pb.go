@@ -38,7 +38,8 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_SESSION_TERMINALS_V1            SystemCapability = 14
 	SystemCapability_SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1        SystemCapability = 6
 	// Reserved for issue #1092 in the repository allocation ledger.
-	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1 SystemCapability = 13
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1           SystemCapability = 13
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 SystemCapability = 16
 )
 
 // Enum value maps for SystemCapability.
@@ -56,6 +57,7 @@ var (
 		14: "SYSTEM_CAPABILITY_SESSION_TERMINALS_V1",
 		6:  "SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1",
 		13: "SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1",
+		16: "SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                     0,
@@ -70,6 +72,7 @@ var (
 		"SYSTEM_CAPABILITY_SESSION_TERMINALS_V1":            14,
 		"SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1":        6,
 		"SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1":           13,
+		"SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1": 16,
 	}
 )
 
@@ -2834,7 +2837,7 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xb3\x04\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xea\x04\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1\x10\x01\x12+\n" +
@@ -2847,7 +2850,8 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"1SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1\x10\x05\x12*\n" +
 	"&SYSTEM_CAPABILITY_SESSION_TERMINALS_V1\x10\x0e\x12.\n" +
 	"*SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1\x10\x06\x12+\n" +
-	"'SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1\x10\r*\x84\x01\n" +
+	"'SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1\x10\r\x125\n" +
+	"1SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1\x10\x10*\x84\x01\n" +
 	"\x13BackupDeletionState\x12%\n" +
 	"!BACKUP_DELETION_STATE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dBACKUP_DELETION_STATE_PENDING\x10\x01\x12#\n" +

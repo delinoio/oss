@@ -135,7 +135,7 @@
   }
 }
 
-.appearance-settings { max-width: 640px; }
+.appearance-settings { max-width: 720px; }
 .appearance-settings legend { font-weight: 600; margin-bottom: 12px; }
 .appearance-choice { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .appearance-choice:has(:checked) { border-color: var(--selected-border); background: var(--selected-background); color: var(--selected-text); }
