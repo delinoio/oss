@@ -391,12 +391,13 @@ func TestSnapshotRecoveryInspectsLostCompletionWithoutRecreating(t *testing.T) {
 		t.Fatal("restore completion not reconciled")
 	}
 	os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("later"), 0600)
-	if _, err := m.Storage(context.Background(), recoveryRequest(input)); err == nil {
-		t.Fatal("changed restored files accepted")
+	recovered = storageDo(t, m, recoveryRequest(input))
+	if recovered.WorkspaceState != domain.WorkspacePresent || recovered.RecoveredJobState != domain.JobSucceeded {
+		t.Fatal("ordinary restored edits blocked recovery", recovered)
 	}
 	raw, _ := os.ReadFile(filepath.Join(manifest.PrimaryPath, "keep"))
 	if string(raw) != "later" {
-		t.Fatal("recovery repeated restoration")
+		t.Fatal("recovery overwrote ordinary edit")
 	}
 	input.PreviousState = domain.WorkspacePresent
 	input.Action = StorageDelete
