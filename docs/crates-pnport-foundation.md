@@ -50,7 +50,7 @@ Nested dependency translation retains the final virtual-link identity when trave
 
 Linux `inotify_add_watch` with `IN_DONT_FOLLOW` uses the materialized virtual-link inode; ordinary following watches use the resolved package target.
 
-Relative `*at` operations validate the live descriptor as a directory before joining or normalizing paths, including `..`. Regular-file descriptors return `ENOTDIR` and invalid descriptors return `EBADF`, whether tracked or duplicated outside interception. Absolute paths continue to ignore the supplied directory descriptor. Native cwd state follows the live process handle after symlink retargeting or directory rename; only translated virtual cwd paths need saved logical identity.
+Relative `*at` operations validate the live descriptor as a directory before joining or normalizing paths, including `..`. Regular-file descriptors return `ENOTDIR` and invalid descriptors return `EBADF`, whether tracked or duplicated outside interception. Absolute paths continue to ignore the supplied directory descriptor. Tracked native directories use their current live path after a rename, while translated virtual directories retain saved logical identity; native cwd state follows the same split after `fchdir`.
 
 The Linux tracer preserves the original pathname spelling for native paths that do not require virtual translation, including relative symlink traversal, `..` after a symlink, and trailing separators. This applies to both operands of link and rename operations so ordinary kernel lookup and `ENOTDIR` behavior remain intact.
 

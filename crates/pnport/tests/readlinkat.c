@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define CHECK(expression) do { if (!(expression)) { \
@@ -78,12 +79,29 @@ static int check_link(const char *path) {
     return 0;
 }
 
+static int check_renamed_native_directory(void) {
+    char actual[64];
+    CHECK(mkdir("renamed-old", 0700) == 0);
+    CHECK(symlink("renamed-target", "renamed-old/link") == 0);
+    int directory = open("renamed-old", O_RDONLY | O_DIRECTORY);
+    CHECK(directory >= 0);
+    CHECK(rename("renamed-old", "renamed-new") == 0);
+    ssize_t length = readlinkat(directory, "link", actual, sizeof(actual));
+    CHECK(length == (ssize_t)strlen("renamed-target"));
+    CHECK(!memcmp(actual, "renamed-target", length));
+    CHECK(close(directory) == 0);
+    CHECK(unlink("renamed-new/link") == 0);
+    CHECK(rmdir("renamed-new") == 0);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     CHECK(argc > 1);
     // These real symlinks and files provide kernel controls for the same
     // buffer and descriptor cases used for virtual dependencies below.
     CHECK(symlink("ordinary-target", "source-link") == 0);
     CHECK(check_link("./source-link") == 0);
+    CHECK(check_renamed_native_directory() == 0);
     int file = open("ordinary-file", O_CREAT | O_RDONLY, 0600);
     CHECK(file >= 0);
     char output[4096];

@@ -171,24 +171,32 @@ unsafe fn path_from(
             .or_else(|| std::env::current_dir().ok())
             .ok_or(EIO)?
     } else if let Some(translation) = runtime.descriptors.get(&dirfd) {
-        translation.logical.clone()
+        if translation.readonly {
+            translation.logical.clone()
+        } else {
+            live_directory_path(dirfd)?
+        }
     } else {
-        #[cfg(target_os = "macos")]
-        {
-            let mut buffer = [0u8; PATH_MAX as usize];
-            if fcntl(dirfd, F_GETPATH, buffer.as_mut_ptr()) < 0 {
-                return Err(EBADF);
-            }
-            PathBuf::from(OsStr::from_bytes(
-                CStr::from_ptr(buffer.as_ptr().cast()).to_bytes(),
-            ))
-        }
-        #[cfg(target_os = "linux")]
-        {
-            fs::read_link(format!("/proc/self/fd/{dirfd}")).map_err(|_| EBADF)?
-        }
+        live_directory_path(dirfd)?
     };
     Ok(base.join(path))
+}
+
+unsafe fn live_directory_path(dirfd: c_int) -> std::result::Result<PathBuf, c_int> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut buffer = [0u8; PATH_MAX as usize];
+        if fcntl(dirfd, F_GETPATH, buffer.as_mut_ptr()) < 0 {
+            return Err(EBADF);
+        }
+        return Ok(PathBuf::from(OsStr::from_bytes(
+            CStr::from_ptr(buffer.as_ptr().cast()).to_bytes(),
+        )));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        fs::read_link(format!("/proc/self/fd/{dirfd}")).map_err(|_| EBADF)
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -705,7 +713,15 @@ hook!(fchdir, pnport_fchdir, (fd:c_int) -> c_int, {
     let original=original!(fchdir,unsafe extern "C" fn(c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd);};
     let result=original(fd);
-    if result==0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {runtime.cwd=runtime.descriptors.get(&fd).map(|t|t.logical.clone());}result
+    if result==0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {
+        runtime.cwd=runtime.descriptors.get(&fd).and_then(|translation| {
+            if translation.readonly {
+                Some(translation.logical.clone())
+            } else {
+                live_directory_path(fd).ok()
+            }
+        });
+    }result
 });
 hook!(dup, pnport_dup, (fd:c_int) -> c_int, {
     let original=original!(dup,unsafe extern "C" fn(c_int)->c_int);
