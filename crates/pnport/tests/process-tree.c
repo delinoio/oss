@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
     }
     int result = dependency();
     if (result) return result;
-    if (strcmp(mode, "terminal") == 0 || strcmp(mode, "terminal-stop") == 0) {
+    if (strcmp(mode, "terminal") == 0 || strcmp(mode, "terminal-stop") == 0 || strcmp(mode, "terminal-pipe") == 0) {
         FILE *marker = fopen("root.group", "w");
         if (!marker) return 67;
         fprintf(marker, "%d", getpgrp());
@@ -102,7 +102,11 @@ int main(int argc, char **argv) {
         char line[32];
         // A background read must produce SIGTTIN before the shell foregrounds us.
         if (!terminal_line(line, sizeof(line)) || strcmp(line, "first\n")) return 69;
-        if (tcgetpgrp(0) != getpgrp()) return 70;
+        if (strcmp(mode, "terminal-pipe") == 0) {
+            int terminal = open("/dev/tty", O_RDWR | O_CLOEXEC);
+            if (terminal < 0 || tcgetpgrp(terminal) != getppid()) return 76;
+            close(terminal);
+        } else if (tcgetpgrp(0) != getpgrp()) return 70;
         marker = fopen("terminal.first", "w");
         if (!marker) return 71;
         fputs("1", marker);

@@ -30,6 +30,15 @@ pub struct Job {
 
 impl Job {
     pub fn start(group: i32, command: &mut Command) -> Result<Self> {
+        // A pipeline's input producer can still be reading the caller's tty.
+        // Transferring it to a command with redirected stdin would stop that
+        // producer. Broader pipeline job control remains a release gate.
+        if unsafe { libc::isatty(libc::STDIN_FILENO) } == 0 {
+            return Ok(Self {
+                terminal: None,
+                group,
+            });
+        }
         let file = match OpenOptions::new().read(true).write(true).open("/dev/tty") {
             Ok(file) => file,
             Err(error)

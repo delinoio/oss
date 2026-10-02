@@ -459,6 +459,14 @@ fn controlling_terminal_interrupt_preserves_the_native_exit_status() {
 }
 
 #[test]
+fn redirected_input_keeps_the_callers_terminal_group() {
+    let (mut fixture, _terminal) = Fixture::terminal("redirected");
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}
+
+#[test]
 fn unresponsive_tree_is_killed_after_the_five_second_grace() {
     let mut fixture = Fixture::new("ignore", false);
     fixture.ready();

@@ -18,6 +18,9 @@ int main(int argc, char **argv) {
     if (argc != 4) return 71;
     marker("terminal.driver");
     signal(SIGTTOU, SIG_IGN);
+    int input[2] = {-1, -1};
+    int redirected = strcmp(argv[3], "redirected") == 0;
+    if (redirected && pipe(input)) return 85;
     int launch[2];
     if (pipe(launch)) return 83;
     pid_t child = fork();
@@ -28,16 +31,26 @@ int main(int argc, char **argv) {
         signal(SIGTSTP, SIG_DFL);
         signal(SIGCONT, SIG_DFL);
         close(launch[1]);
+        if (redirected) {
+            close(input[1]);
+            if (dup2(input[0], 0) < 0) _exit(86);
+            close(input[0]);
+        }
         if (setpgid(0, 0)) _exit(73);
         // Wait for shell placement without leaving a pre-exec stop event.
         char ready;
         if (read(launch[0], &ready, 1) != 1) _exit(84);
         close(launch[0]);
         execl(argv[1], argv[1], "--cache-dir", "store", "run", "--", argv[2],
-              "root", strcmp(argv[3], "self-stop") == 0 ? "terminal-stop" : "terminal", (char *)NULL);
+              "root", redirected ? "terminal-pipe" : strcmp(argv[3], "self-stop") == 0 ? "terminal-stop" : "terminal", (char *)NULL);
         _exit(74);
     }
     int status;
+    if (redirected) {
+        close(input[0]);
+        if (write(input[1], "first\nsecond\n", 13) != 13) return 87;
+        close(input[1]);
+    }
     close(launch[0]);
     if (setpgid(child, child)) return 75;
     marker("terminal.launching");
@@ -45,7 +58,7 @@ int main(int argc, char **argv) {
     if (write(launch[1], "1", 1) != 1) return 77;
     close(launch[1]);
     marker("terminal.running");
-    if (strcmp(argv[3], "interrupt") != 0) {
+    if (strcmp(argv[3], "interrupt") != 0 && !redirected) {
         if (waitpid(child, &status, WUNTRACED) != child || !WIFSTOPPED(status)) return 78;
         pid_t expected = strcmp(argv[3], "background") == 0 ? getpgrp() : child;
         if (tcgetpgrp(0) != expected) return 79;
