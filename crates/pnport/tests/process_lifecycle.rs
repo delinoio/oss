@@ -32,6 +32,10 @@ struct Fixture {
 
 impl Fixture {
     fn project(static_binary: bool) -> tempfile::TempDir {
+        Self::project_source(static_binary, "process-tree.c")
+    }
+
+    fn project_source(static_binary: bool, source: &str) -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
         let data = json!({
             "enableTopLevelFallback": false,
@@ -61,7 +65,11 @@ impl Fixture {
         }
         assert!(compiler
             .arg("-pthread")
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/process-tree.c"))
+            .arg(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests")
+                    .join(source)
+            )
             .arg("-o")
             .arg(&binary)
             .status()
@@ -407,6 +415,109 @@ fn concurrent_fork_and_child_callbacks_preserve_the_virtual_view() {
         output.status,
         String::from_utf8_lossy(&output.stderr)
     );
+    fixture.assert_released();
+}
+
+fn exec_fixture(mode: &str) -> Fixture {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = Fixture::project_source(false, "exec-replace.c");
+    std::os::unix::fs::symlink("loop", root.path().join("loop")).unwrap();
+    fs::write(
+        root.path().join("bad-format"),
+        b"printf 'unexpected' > shell.accepted\n",
+    )
+    .unwrap();
+    fs::set_permissions(
+        root.path().join("bad-format"),
+        fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    if mode == "privileged" {
+        fs::create_dir(root.path().join("privileged")).unwrap();
+        let privileged = root.path().join("privileged/tree");
+        fs::copy(root.path().join("tree"), &privileged).unwrap();
+        fs::set_permissions(privileged, fs::Permissions::from_mode(0o4755)).unwrap();
+    }
+    // Complete the negative control before launching an owned command. It
+    // writes its own process group marker, which must never become authority
+    // for cleanup of the subsequent virtualized fixture.
+    let negative = Command::new(root.path().join("tree"))
+        .current_dir(root.path())
+        .args(["root", mode])
+        .output()
+        .unwrap();
+    assert_eq!(negative.status.code(), Some(40), "unvirtualized {mode}");
+    fs::remove_file(root.path().join("root.group")).unwrap();
+    let child = Command::new(pnport_binary())
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(root.path().join("store"))
+        .args(["run", "--"])
+        .arg(root.path().join("tree"))
+        .args(["root", mode])
+        .process_group(0)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    Fixture {
+        root,
+        child: Some(child),
+        pids: Vec::new(),
+    }
+}
+
+#[test]
+fn vector_and_variadic_exec_preserve_nested_virtual_images_and_literal_arguments() {
+    let modes = ["execve", "execv", "execl", "execle", "execvp", "execlp"];
+    #[cfg(target_os = "macos")]
+    let modes = modes.into_iter().chain(["execvP"]);
+    for mode in modes {
+        let mut fixture = exec_fixture(mode);
+        let output = fixture.stopped();
+        assert_eq!(
+            output.status.code(),
+            Some(23),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        fixture.assert_released();
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn protected_exec_and_shell_fallback_fail_without_starting_unmediated_images() {
+    for mode in ["protected", "shell-fallback"] {
+        let mut fixture = exec_fixture(mode);
+        let output = fixture.stopped();
+        assert_eq!(
+            output.status.code(),
+            Some(125),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+        assert!(!fixture.root.path().join("exec.accepted").exists());
+        assert!(!fixture.root.path().join("shell.accepted").exists());
+        fixture.assert_released();
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn privileged_path_candidate_fails_before_a_later_executable_can_start() {
+    let mut fixture = exec_fixture("privileged");
+    let output = fixture.stopped();
+    assert_eq!(
+        output.status.code(),
+        Some(126),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("PNPORT_COMMAND_NOT_EXECUTABLE"));
+    assert!(!fixture.root.path().join("exec.accepted").exists());
     fixture.assert_released();
 }
 

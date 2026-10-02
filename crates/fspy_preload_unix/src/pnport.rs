@@ -35,7 +35,7 @@ use libc::{
 };
 use pnport_core::{
     cache::Cache,
-    diagnostic::Code,
+    diagnostic::{Code, Error, ExecFailureKind},
     executable::LaunchAdmission,
     graph::{Graph, Snapshot},
     view::{Translation, View},
@@ -1141,8 +1141,20 @@ hook!(dup2, pnport_dup2, (fd:c_int,newfd:c_int) -> c_int, {
 });
 
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
+fn child_exec_error(error: Error) -> c_int {
+    // A failed native exec is recoverable by its caller (and libc's PATH
+    // search). It did not launch an unmediated image. Only admission/runtime
+    // failures without a native exec classification invalidate the session.
+    match error.exec_failure {
+        Some(ExecFailureKind::NotFound) => ENOENT,
+        Some(ExecFailureKind::PermissionDenied) => libc::EACCES,
+        Some(ExecFailureKind::InvalidFormat) => libc::ENOEXEC,
+        Some(ExecFailureKind::InterpreterLoop) => libc::ELOOP,
+        None => fail(error.code),
+    }
+}
 fn admitted_program(path: &Path) -> std::result::Result<(CString, LaunchAdmission), c_int> {
-    let admission = LaunchAdmission::new(path).map_err(|error| fail(error.code))?;
+    let admission = LaunchAdmission::new(path).map_err(child_exec_error)?;
     let canonical = CString::new(admission.path.as_os_str().as_bytes()).map_err(|_| EINVAL)?;
     Ok((canonical, admission))
 }
@@ -1222,7 +1234,7 @@ unsafe fn prepare_child_image(
                 .translate(path)
         },
     )
-    .map_err(|error| fail(error.code))?;
+    .map_err(child_exec_error)?;
     let (admitted, admission) = admitted_program(&prepared.program)?;
     // Native exec preserves the caller's argv[0]. The kernel replaces it for
     // a shebang script, so only the script case needs a rebuilt argv vector.
