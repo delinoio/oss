@@ -557,6 +557,13 @@ impl WatchSession {
         let mut relevant = false;
         for event in events {
             let event = event.map_err(|_| WatchFailure::WatchLoss)?;
+            // Linux inotify reports open and close notifications for files in
+            // every watch mask. Reads by the supervised command must not
+            // restart autowatch; only changes that can invalidate the
+            // captured dependency set are relevant here.
+            if event.kind.is_access() {
+                continue;
+            }
             if event.need_rescan() || event.paths.is_empty() {
                 return Err(WatchFailure::WatchLoss);
             }
@@ -757,6 +764,38 @@ mod tests {
             ),
             Err(WatchFailure::UnsafeAmbiguity)
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn access_only_notifications_do_not_trigger_a_rerun() {
+        use notify::{event::AccessKind, EventKind};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.files.insert(PathBuf::from("input"));
+
+        let mut session = WatchSession::new(root.clone());
+        session.target_generation = Some(0);
+        session
+            .tx
+            .send(WatchEvent {
+                generation: 0,
+                result: Ok(
+                    Event::new(EventKind::Access(AccessKind::Read)).add_path(root.join("input"))
+                ),
+            })
+            .unwrap();
+
+        assert!(!session
+            .collect(
+                &dependencies,
+                Duration::from_millis(1),
+                Duration::from_millis(10),
+                &AtomicBool::new(false),
+            )
+            .unwrap());
     }
 
     #[cfg(unix)]
