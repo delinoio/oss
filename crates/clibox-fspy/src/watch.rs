@@ -241,6 +241,9 @@ impl Dependencies {
             }
             Operation::Directory => {
                 self.directories.insert(relative);
+                if let Some(alias) = alias {
+                    self.directories.insert(alias);
+                }
             }
             Operation::Close
             | Operation::Write
@@ -512,6 +515,38 @@ mod tests {
         assert!(dependencies.files.contains(alias));
         assert!(dependencies.files.contains(target));
         assert!(dependencies.relevant(alias));
+    }
+
+    #[test]
+    fn internal_directory_alias_and_target_are_both_dependencies() {
+        #[cfg(unix)]
+        let root = Path::new("/project");
+        #[cfg(windows)]
+        let root = Path::new(r"C:\project");
+        let alias = Path::new("current");
+        let target = Path::new("targets/input");
+        let access = AccessPath {
+            class: PathClass::Project,
+            logical: native(&root.join(alias)),
+            resolved: Some(native(&root.join(target))),
+            project_relative: Some(native(target)),
+            identity: None,
+        };
+        let selector = Selector::new(&["**".to_owned()], &[]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(
+            &access,
+            &selector,
+            Observed {
+                operation: Operation::Directory,
+                open_mutates: false,
+                native_result: 0,
+                native_error: None,
+            },
+            Some(root),
+        );
+        assert!(dependencies.directories.contains(alias));
+        assert!(dependencies.directories.contains(target));
     }
 
     #[cfg(unix)]
