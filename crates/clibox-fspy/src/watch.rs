@@ -471,6 +471,13 @@ impl WatchSession {
         let mut relevant = false;
         for event in events {
             let event = event.map_err(|_| WatchFailure::WatchLoss)?;
+            // notify's inotify backend includes open and close notifications in
+            // every watch mask. Reads by the supervised command must not restart
+            // autowatch; only create, remove, rename, and content/metadata changes
+            // can invalidate the captured dependency set.
+            if event.kind.is_access() {
+                continue;
+            }
             if event.need_rescan() || event.paths.is_empty() {
                 return Err(WatchFailure::WatchLoss);
             }
