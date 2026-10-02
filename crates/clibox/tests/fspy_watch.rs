@@ -6,7 +6,10 @@ use std::{
     os::unix::fs::symlink,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::mpsc::{self, Receiver},
+    sync::{
+        mpsc::{self, Receiver},
+        Mutex, OnceLock,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -14,6 +17,15 @@ use std::{
 // Fresh native test images also pass through platform injection admission;
 // allow startup under loaded hosts without changing production watch timing.
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);
+
+static WATCH_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn watch_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    WATCH_TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap()
+}
 
 struct Watcher {
     child: Child,
@@ -165,6 +177,7 @@ fn watch_worker() {
 
 #[test]
 fn autowatch_replaces_nested_ancestor_dependencies() {
+    let _guard = watch_test_guard();
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
     for name in ["group-one", "group-two", "one", "two", "three"] {
@@ -224,6 +237,7 @@ fn autowatch_replaces_nested_ancestor_dependencies() {
 
 #[test]
 fn autowatch_missing_leaf_observes_ancestor_replacement() {
+    let _guard = watch_test_guard();
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
     fs::create_dir(root.join("one")).unwrap();
@@ -245,6 +259,7 @@ fn autowatch_missing_leaf_observes_ancestor_replacement() {
 
 #[test]
 fn autowatch_direct_file_alias_control() {
+    let _guard = watch_test_guard();
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
     for name in ["one", "two"] {
@@ -267,6 +282,7 @@ fn autowatch_direct_file_alias_control() {
 
 #[test]
 fn autowatch_child_written_alias_with_external_change_fails_ambiguous() {
+    let _guard = watch_test_guard();
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
     for name in ["one", "two", "three"] {
