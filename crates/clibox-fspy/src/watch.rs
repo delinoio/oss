@@ -1,8 +1,8 @@
 //! Dependency extraction and loss-aware native file watching.
 
 use std::{
-    collections::{BTreeSet, HashMap},
-    path::{Path, PathBuf},
+    collections::{BTreeSet, HashMap, VecDeque},
+    path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, RecvTimeoutError, Sender},
@@ -39,6 +39,7 @@ impl std::fmt::Display for WatchFailure {
 #[derive(Debug, Clone, Default)]
 pub struct Dependencies {
     files: BTreeSet<PathBuf>,
+    links: BTreeSet<PathBuf>,
     directories: BTreeSet<PathBuf>,
     absent: BTreeSet<PathBuf>,
     writes: BTreeSet<PathBuf>,
@@ -112,6 +113,28 @@ fn same_path(left: &Path, right: &Path) -> bool {
     path_prefix(left, right) && path_prefix(right, left)
 }
 
+fn normalize_absolute_target(root: &Path, target: &Path) -> Option<PathBuf> {
+    if path_prefix(root, target) {
+        return Some(target.to_path_buf());
+    }
+    if !target.is_absolute() {
+        return Some(target.to_path_buf());
+    }
+
+    // Resolve only the outer prefix that names the canonical root. Resolving
+    // the full target would hide nested links that must remain watchable.
+    let prefix = target
+        .ancestors()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .find(|prefix| {
+            std::fs::canonicalize(prefix).is_ok_and(|resolved| same_path(&resolved, root))
+        })?;
+    let suffix = target.strip_prefix(prefix).ok()?;
+    Some(root.join(suffix))
+}
+
 #[cfg(test)]
 fn logical_relative(path: &AccessPath, root: &Path) -> Option<PathBuf> {
     let mut equivalent_prefixes = HashMap::new();
@@ -172,6 +195,70 @@ fn logical_relative_with_cache(
 }
 
 impl Dependencies {
+    fn include_links(&mut self, root: &Path, relative: &Path) {
+        if self.files.contains(relative)
+            || self.directories.contains(relative)
+            || self.absent.contains(relative)
+        {
+            return;
+        }
+        // Walk only this input's components, including link targets. Retain
+        // each link's own directory entry rather than its resolved directory:
+        // a nonrecursive watch there must see replacement of the link itself.
+        let mut pending = relative
+            .components()
+            .map(|component| component.as_os_str().to_os_string())
+            .collect::<VecDeque<_>>();
+        let mut cursor = PathBuf::new();
+        let mut hops = 0;
+        while let Some(component) = pending.pop_front() {
+            match Path::new(&component).components().next() {
+                Some(Component::CurDir) => continue,
+                Some(Component::ParentDir) => {
+                    if !cursor.pop() {
+                        return;
+                    }
+                    continue;
+                }
+                Some(Component::Normal(_)) => cursor.push(component),
+                _ => return,
+            }
+            let Ok(metadata) = std::fs::symlink_metadata(root.join(&cursor)) else {
+                // Missing leaves retain the links already encountered; the
+                // absent-path dependency supplies their nearest live anchor.
+                return;
+            };
+            if !metadata.file_type().is_symlink() {
+                continue;
+            }
+            self.links.insert(cursor.clone());
+            hops += 1;
+            if hops > 40 {
+                return;
+            }
+            let Ok(target) = std::fs::read_link(root.join(&cursor)) else {
+                return;
+            };
+            cursor.pop();
+            let target = if target.is_absolute() {
+                let Some(target) = normalize_absolute_target(root, &target) else {
+                    return;
+                };
+                cursor.clear();
+                target
+                    .strip_prefix(root)
+                    .ok()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default()
+            } else {
+                target
+            };
+            for component in target.components().rev() {
+                pending.push_front(component.as_os_str().to_os_string());
+            }
+        }
+    }
+
     fn include_path(
         &mut self,
         path: &AccessPath,
@@ -191,9 +278,7 @@ impl Dependencies {
         let Some(relative) = path.project_relative.as_ref() else {
             return;
         };
-        if !selector.matches(relative) {
-            return;
-        }
+        let selected = selector.matches(relative);
         let Some(relative) = native_relative(relative) else {
             return;
         };
@@ -206,15 +291,23 @@ impl Dependencies {
         ) && native_result >= 0
         {
             self.writes.insert(relative.clone());
+            if let Some(alias) = &alias {
+                self.writes.insert(alias.clone());
+            }
         }
         if native_result < 0 {
             // A missing queried path is a dependency because its later
             // creation can change the command's behavior.
-            if matches!(
-                operation,
-                Operation::Open | Operation::Metadata | Operation::Directory | Operation::Exec
-            ) && missing_path_error(native_error)
+            if selected
+                && matches!(
+                    operation,
+                    Operation::Open | Operation::Metadata | Operation::Directory | Operation::Exec
+                )
+                && missing_path_error(native_error)
             {
+                if let (Some(root), Some(alias)) = (root, &alias) {
+                    self.include_links(root, alias);
+                }
                 self.absent.insert(relative);
                 if let Some(alias) = alias {
                     self.absent.insert(alias);
@@ -229,18 +322,29 @@ impl Dependencies {
             }
             return;
         }
+        // Writes to an input's ancestor can overlap notifications even when
+        // the ancestor itself is excluded by the input selector.
+        if !selected {
+            return;
+        }
         match operation {
             Operation::Read
             | Operation::PositionalRead
             | Operation::Open
             | Operation::Metadata
             | Operation::Exec => {
+                if let (Some(root), Some(alias)) = (root, &alias) {
+                    self.include_links(root, alias);
+                }
                 self.files.insert(relative);
                 if let Some(alias) = alias {
                     self.files.insert(alias);
                 }
             }
             Operation::Directory => {
+                if let (Some(root), Some(alias)) = (root, &alias) {
+                    self.include_links(root, alias);
+                }
                 self.directories.insert(relative);
                 if let Some(alias) = alias {
                     self.directories.insert(alias);
@@ -271,11 +375,19 @@ impl Dependencies {
                 );
             }
         }
+        tracing::debug!(
+            files = dependencies.files.len(),
+            links = dependencies.links.len(),
+            directories = dependencies.directories.len(),
+            absent = dependencies.absent.len(),
+            "watch dependencies extracted"
+        );
         dependencies
     }
 
     pub fn merge(&mut self, other: Self) {
         self.files.extend(other.files);
+        self.links.extend(other.links);
         self.directories.extend(other.directories);
         self.absent.extend(other.absent);
     }
@@ -288,6 +400,7 @@ impl Dependencies {
         self.files
             .iter()
             .any(|file| same_path(file, path) || path_prefix(path, file))
+            || self.links.iter().any(|link| same_path(link, path))
             || self
                 .directories
                 .iter()
@@ -309,6 +422,7 @@ impl Dependencies {
         for relative in self
             .files
             .iter()
+            .chain(&self.links)
             .chain(&self.directories)
             .chain(&self.absent)
         {
@@ -367,7 +481,15 @@ fn missing_path_error(error: Option<i32>) -> bool {
     )
 }
 
-type WatchEvent = notify::Result<Event>;
+// notify may deliver callbacks after a watcher is replaced while its backend
+// drains. Tag each watcher lifecycle so an obsolete target watch cannot cause
+// a rerun after dependencies move; the discovery generation from the run that
+// just completed remains accepted so external changes during that run are not
+// lost.
+struct WatchEvent {
+    generation: u64,
+    result: notify::Result<Event>,
+}
 
 pub struct WatchSession {
     root: PathBuf,
@@ -375,6 +497,10 @@ pub struct WatchSession {
     rx: Receiver<WatchEvent>,
     targets: Option<RecommendedWatcher>,
     discovery: Option<RecommendedWatcher>,
+    next_generation: u64,
+    target_generation: Option<u64>,
+    accepted_discovery_generation: Option<u64>,
+    discovery_generation: Option<u64>,
 }
 
 impl WatchSession {
@@ -386,25 +512,40 @@ impl WatchSession {
             rx,
             targets: None,
             discovery: None,
+            next_generation: 0,
+            target_generation: None,
+            accepted_discovery_generation: None,
+            discovery_generation: None,
         }
     }
 
-    fn watcher(&self) -> Result<RecommendedWatcher, WatchFailure> {
+    fn watcher(&self, generation: u64) -> Result<RecommendedWatcher, WatchFailure> {
         let tx = self.tx.clone();
         notify::recommended_watcher(move |event| {
-            let _ = tx.send(event);
+            let _ = tx.send(WatchEvent {
+                generation,
+                result: event,
+            });
         })
         .map_err(|_| WatchFailure::WatchUnavailable)
+    }
+
+    fn next_generation(&mut self) -> u64 {
+        let generation = self.next_generation;
+        self.next_generation = self.next_generation.wrapping_add(1);
+        generation
     }
 
     /// Observe the entire root only during dependency discovery. The stable
     /// idle watch is installed on the recorded dependency anchors.
     pub fn start_discovery(&mut self) -> Result<(), WatchFailure> {
-        let mut watcher = self.watcher()?;
+        let generation = self.next_generation();
+        let mut watcher = self.watcher(generation)?;
         watcher
             .watch(&self.root, RecursiveMode::Recursive)
             .map_err(|_| WatchFailure::WatchUnavailable)?;
         self.discovery = Some(watcher);
+        self.discovery_generation = Some(generation);
         Ok(())
     }
 
@@ -412,7 +553,8 @@ impl WatchSession {
         if dependencies.is_empty() {
             return Err(WatchFailure::EmptyDependencies);
         }
-        let mut watcher = self.watcher()?;
+        let generation = self.next_generation();
+        let mut watcher = self.watcher(generation)?;
         for anchor in dependencies.anchors(&self.root) {
             watcher
                 .watch(&anchor, RecursiveMode::NonRecursive)
@@ -420,6 +562,8 @@ impl WatchSession {
         }
         // Install replacement before dropping the old watcher; the discovery
         // watcher is still active through this handoff.
+        self.target_generation = Some(generation);
+        self.accepted_discovery_generation = self.discovery_generation.take();
         self.targets = Some(watcher);
         self.discovery = None;
         Ok(())
@@ -429,7 +573,7 @@ impl WatchSession {
         &self,
         until: Instant,
         cancelled: &AtomicBool,
-    ) -> Result<Option<WatchEvent>, WatchFailure> {
+    ) -> Result<Option<notify::Result<Event>>, WatchFailure> {
         loop {
             if cancelled.load(Ordering::SeqCst) {
                 return Ok(None);
@@ -442,7 +586,13 @@ impl WatchSession {
                 .rx
                 .recv_timeout(remaining.min(Duration::from_millis(20)))
             {
-                Ok(event) => return Ok(Some(event)),
+                Ok(event)
+                    if Some(event.generation) == self.target_generation
+                        || Some(event.generation) == self.accepted_discovery_generation =>
+                {
+                    return Ok(Some(event.result));
+                }
+                Ok(_) => {}
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return Err(WatchFailure::WatchLoss),
             }
@@ -500,6 +650,217 @@ impl WatchSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn observed_input(root: &Path, logical: &str, resolved: &str, missing: bool) -> Dependencies {
+        let access = AccessPath {
+            class: PathClass::Project,
+            logical: native(&root.join(logical)),
+            resolved: Some(native(&root.join(resolved))),
+            project_relative: Some(native(Path::new(resolved))),
+            identity: None,
+        };
+        // Ancestor links need not match the file selector themselves.
+        let selector = Selector::new(&["**/input".to_owned()], &[]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(
+            &access,
+            &selector,
+            Observed {
+                operation: Operation::Open,
+                open_mutates: false,
+                native_result: if missing { -1 } else { 0 },
+                native_error: missing.then_some(libc::ENOENT),
+            },
+            Some(root),
+        );
+        dependencies
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nested_link_ancestors_keep_their_own_parent_anchors() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::create_dir(root.join("one")).unwrap();
+        fs::create_dir(root.join("two")).unwrap();
+        fs::write(root.join("two/input"), b"fixture").unwrap();
+        symlink("one", root.join("current")).unwrap();
+        symlink("../two", root.join("one/nested")).unwrap();
+        let dependencies = observed_input(&root, "current/nested/input", "two/input", false);
+        assert_eq!(
+            dependencies.links,
+            BTreeSet::from([PathBuf::from("current"), PathBuf::from("one/nested")])
+        );
+        let anchors = dependencies.anchors(&root);
+        assert!(anchors.contains(&root));
+        assert!(anchors.contains(&root.join("one")));
+        assert!(anchors.contains(&root.join("two")));
+        assert!(dependencies.relevant(Path::new("current")));
+        assert!(dependencies.relevant(Path::new("one/nested")));
+        assert!(!dependencies.relevant(Path::new("one/sibling")));
+        assert!(!dependencies.relevant(Path::new("two/sibling")));
+        assert!(!dependencies.relevant(Path::new("unrelated")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_leaf_keeps_ancestor_links_and_failed_run_union() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::create_dir(root.join("one")).unwrap();
+        symlink("one", root.join("current")).unwrap();
+        let previous = observed_input(&root, "current/input", "one/input", true);
+        assert!(previous.links.contains(Path::new("current")));
+        assert!(previous.anchors(&root).contains(&root));
+        assert!(previous.relevant(Path::new("one/input")));
+        fs::remove_file(root.join("current")).unwrap();
+        let mut next = observed_input(&root, "current/input", "current/input", true);
+        next.merge(previous);
+        assert!(next.links.contains(Path::new("current")));
+        assert!(next.relevant(Path::new("one/input")));
+        symlink("one", root.join("current")).unwrap();
+        fs::write(root.join("one/input"), b"fixture").unwrap();
+        let recovered = observed_input(&root, "current/input", "one/input", false);
+        assert!(recovered.absent.is_empty());
+        assert!(recovered.links.contains(Path::new("current")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_target_chains_stop_at_root_and_cycles_are_bounded() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::create_dir(root.join("one")).unwrap();
+        symlink("one", root.join("second")).unwrap();
+        symlink(root.join("second"), root.join("current")).unwrap();
+        let dependencies = observed_input(&root, "current/input", "one/input", true);
+        assert!(dependencies.links.contains(Path::new("current")));
+        assert!(dependencies.links.contains(Path::new("second")));
+        symlink("../outside", root.join("escape")).unwrap();
+        let mut bounded = Dependencies::default();
+        bounded.include_links(&root, Path::new("escape/input"));
+        assert_eq!(bounded.links, BTreeSet::from([PathBuf::from("escape")]));
+        assert_eq!(bounded.anchors(&root), BTreeSet::from([root.clone()]));
+        symlink("loop", root.join("loop")).unwrap();
+        bounded.include_links(&root, Path::new("loop/input"));
+        assert!(bounded.links.contains(Path::new("loop")));
+        assert!(bounded.links.iter().all(|path| !path.is_absolute()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absolute_link_targets_use_canonical_root_aliases() {
+        use std::{fs, os::unix::fs::symlink};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("root");
+        fs::create_dir(&root).unwrap();
+        let alias = directory.path().join("alias");
+        symlink(&root, &alias).unwrap();
+        let root = root.canonicalize().unwrap();
+        fs::create_dir(root.join("one")).unwrap();
+        symlink("one", root.join("nested")).unwrap();
+
+        symlink(alias.join("nested"), root.join("current")).unwrap();
+
+        let mut dependencies = Dependencies::default();
+        dependencies.include_links(&root, Path::new("current/input"));
+
+        assert_eq!(
+            dependencies.links,
+            BTreeSet::from([PathBuf::from("current"), PathBuf::from("nested")])
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_written_link_with_native_notification_is_ambiguous() {
+        use std::{fs, os::unix::fs::symlink};
+
+        use notify::EventKind;
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::create_dir(root.join("one")).unwrap();
+        symlink("one", root.join("current")).unwrap();
+        let mut dependencies = observed_input(&root, "current/input", "one/input", true);
+        let access = AccessPath {
+            class: PathClass::Project,
+            logical: native(&root.join("current")),
+            resolved: Some(native(&root.join("one"))),
+            project_relative: Some(native(Path::new("one"))),
+            identity: None,
+        };
+        dependencies.include_path(
+            &access,
+            &Selector::new(&["**/input".to_owned()], &[]).unwrap(),
+            Observed {
+                operation: Operation::Mutation,
+                open_mutates: false,
+                native_result: 0,
+                native_error: None,
+            },
+            Some(&root),
+        );
+        assert!(dependencies.self_written(Path::new("current")));
+        let mut session = WatchSession::new(root.clone());
+        session.target_generation = Some(0);
+        session
+            .tx
+            .send(WatchEvent {
+                generation: 0,
+                result: Ok(Event::new(EventKind::Other).add_path(root.join("current"))),
+            })
+            .unwrap();
+        assert_eq!(
+            session.collect(
+                &dependencies,
+                Duration::from_millis(1),
+                Duration::from_millis(10),
+                &AtomicBool::new(false),
+            ),
+            Err(WatchFailure::UnsafeAmbiguity)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn access_only_notifications_do_not_trigger_a_rerun() {
+        use notify::{event::AccessKind, EventKind};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.files.insert(PathBuf::from("input"));
+
+        let mut session = WatchSession::new(root.clone());
+        session.target_generation = Some(0);
+        session
+            .tx
+            .send(WatchEvent {
+                generation: 0,
+                result: Ok(
+                    Event::new(EventKind::Access(AccessKind::Read)).add_path(root.join("input"))
+                ),
+            })
+            .unwrap();
+
+        assert!(!session
+            .collect(
+                &dependencies,
+                Duration::from_millis(1),
+                Duration::from_millis(10),
+                &AtomicBool::new(false),
+            )
+            .unwrap());
+    }
 
     #[cfg(unix)]
     fn native(path: &Path) -> NativePath {
@@ -852,10 +1213,14 @@ mod tests {
     fn rescan_notification_fails_instead_of_losing_changes() {
         use notify::{event::Flag, EventKind};
 
-        let session = WatchSession::new(PathBuf::from("/project"));
+        let mut session = WatchSession::new(PathBuf::from("/project"));
+        session.target_generation = Some(0);
         session
             .tx
-            .send(Ok(Event::new(EventKind::Other).set_flag(Flag::Rescan)))
+            .send(WatchEvent {
+                generation: 0,
+                result: Ok(Event::new(EventKind::Other).set_flag(Flag::Rescan)),
+            })
             .unwrap();
         assert_eq!(
             session.collect(
@@ -869,15 +1234,41 @@ mod tests {
     }
 
     #[test]
+    fn stale_target_events_are_ignored_after_replacement() {
+        use notify::EventKind;
+
+        let mut session = WatchSession::new(PathBuf::from("/project"));
+        session.target_generation = Some(2);
+        session
+            .tx
+            .send(WatchEvent {
+                generation: 1,
+                result: Ok(Event::new(EventKind::Other).add_path(PathBuf::from("/project/input"))),
+            })
+            .unwrap();
+        assert_eq!(
+            session.collect(
+                &Dependencies::default(),
+                Duration::from_millis(1),
+                Duration::from_millis(5),
+                &AtomicBool::new(false),
+            ),
+            Ok(false)
+        );
+    }
+
+    #[test]
     fn long_debounce_observes_cancellation() {
         use notify::EventKind;
 
-        let session = WatchSession::new(PathBuf::from("/project"));
+        let mut session = WatchSession::new(PathBuf::from("/project"));
+        session.target_generation = Some(0);
         session
             .tx
-            .send(Ok(
-                Event::new(EventKind::Other).add_path(PathBuf::from("/project/input"))
-            ))
+            .send(WatchEvent {
+                generation: 0,
+                result: Ok(Event::new(EventKind::Other).add_path(PathBuf::from("/project/input"))),
+            })
             .unwrap();
         let cancelled = AtomicBool::new(false);
         let began = Instant::now();
