@@ -4865,23 +4865,28 @@ int main(int argc, char **argv) {
         );
         assert_eq!(result.stdout, b"descendant-script-ok\n", "{method}");
     }
-    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
-        .current_dir(root.path())
-        .arg("--cache-dir")
-        .arg(root.path().join("private-cache"))
-        .args(["run", "--"])
-        .arg(&launcher)
-        .arg("posix_spawn_chdir")
-        .arg(&script)
-        .output()
-        .unwrap();
-    assert_eq!(
-        result.status.code(),
-        Some(125),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+    // The launcher exits successfully immediately after the rejected call.
+    // Every owned result must still retain the published admission failure,
+    // including when exit becomes observable within a supervisor poll.
+    for _ in 0..8 {
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(root.path().join("private-cache"))
+            .args(["run", "--"])
+            .arg(&launcher)
+            .arg("posix_spawn_chdir")
+            .arg(&script)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(125),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+    }
 }
 
 #[cfg(target_os = "macos")]
