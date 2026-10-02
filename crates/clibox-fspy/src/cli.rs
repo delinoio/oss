@@ -2731,10 +2731,8 @@ impl MacSignals {
             registrations: Vec::new(),
         };
         for number in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
-            signals.registrations.push(
-                signal_hook::flag::register(number, Arc::clone(&signals.cancelled))
-                    .map_err(|_| crate::macos::supervise::CaptureFailure::Initialization)?,
-            );
+            // Publish the signal identity before cancellation can wake a
+            // receiver or supervisor on another thread.
             signals.registrations.push(
                 signal_hook::flag::register_usize(
                     number,
@@ -2742,6 +2740,10 @@ impl MacSignals {
                     number as usize,
                 )
                 .map_err(|_| crate::macos::supervise::CaptureFailure::Initialization)?,
+            );
+            signals.registrations.push(
+                signal_hook::flag::register(number, Arc::clone(&signals.cancelled))
+                    .map_err(|_| crate::macos::supervise::CaptureFailure::Initialization)?,
             );
         }
         Ok(signals)
@@ -3459,6 +3461,12 @@ fn macos_break_status(
             (crate::macos::supervise::CaptureFailure::Timeout, 0),
             "fbreak",
         );
+    }
+    // A quit acknowledgment can make the child exit while the supervisor is
+    // polling its wait handle. Keep the wrapper's handled signal outcome even
+    // when that poll returns a cleaned-up child record instead of cancellation.
+    if signal != 0 {
+        return macos_capture_status((CaptureFailure::Cancellation, signal), "fbreak");
     }
     match result {
         Ok(record) => final_child_status(&record),
@@ -5488,6 +5496,65 @@ mod tests {
             time::{Duration, Instant},
         };
 
+        // Compile outside the selected root so fixture startup reads cannot
+        // become selected project inputs. Native threads and posix_spawn keep
+        // the held-read fixture independent of the Rust test runner's locks.
+        let fixtures = tempfile::tempdir().unwrap();
+        let source = fixtures.path().join("break.c");
+        let executable = fixtures.path().join("break-worker");
+        fs::write(&source, r#"
+#include <fcntl.h>
+#include <pthread.h>
+#include <spawn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+extern char **environ;
+static const char *root;
+static void path(char *output, const char *name, int index) {
+    if (snprintf(output, 4096, "%s/%s-%d-%d", root, name, getpid(), index) >= 4096) _exit(2);
+}
+static void *worker(void *argument) {
+    char input[4096], ready[4096], continued[4096];
+    snprintf(input, sizeof(input), "%s/input.txt", root);
+    int fd = open(input, O_RDONLY); if (fd < 0) _exit(3);
+    path(ready, "ready", (int)(long)argument);
+    FILE *f = fopen(ready, "w"); if (!f) _exit(4); fputs("ready", f); fclose(f);
+    char byte; if (read(fd, &byte, 1) != 1) _exit(5);
+    snprintf(continued, sizeof(continued), "%s/continued", root);
+    f = fopen(continued, "w"); if (!f) _exit(6); fputs("continued", f); fclose(f);
+    sleep(60); return NULL;
+}
+int main(int argc, char **argv) {
+    root = getenv("CLIBOX_FSPY_MAC_BREAK_ROOT"); if (!root) return 2;
+    char pidfile[4096]; path(pidfile, "pid", 0);
+    FILE *f = fopen(pidfile, "w"); if (!f) return 3; fprintf(f, "%d", getpid()); fclose(f);
+    const char *mode = getenv("CLIBOX_FSPY_MAC_BREAK_CHILD");
+    int parallel = mode && strcmp(mode, "parallel-hangup") == 0;
+    if (parallel && argc == 1) {
+        pid_t child; char *args[] = {argv[0], "descendant", NULL};
+        if (posix_spawn(&child, argv[0], NULL, NULL, args, environ) != 0) return 4;
+    }
+    pthread_t threads[3]; int count = parallel ? 3 : 1;
+    for (long i = 0; i < count; i++) if (pthread_create(&threads[i], NULL, worker, (void *)i)) return 5;
+    for (int i = 0; i < count; i++) pthread_join(threads[i], NULL);
+    return 0;
+}
+"#).unwrap();
+        let compiled = std::process::Command::new("cc")
+            .arg("-pthread")
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .unwrap();
+        assert!(
+            compiled.status.success(),
+            "{}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+
         struct FixtureCleanup(PathBuf);
         impl Drop for FixtureCleanup {
             fn drop(&mut self) {
@@ -5565,6 +5632,7 @@ mod tests {
                 .arg("--exact")
                 .arg("cli::tests::macos_breakpoint_child")
                 .env("CLIBOX_FSPY_MAC_BREAK_CHILD", case)
+                .env("CLIBOX_FSPY_MAC_BREAK_EXECUTABLE", &executable)
                 .env("CLIBOX_FSPY_CLI_MAC_INPUT", &input)
                 .env("CLIBOX_FSPY_MAC_BREAK_ROOT", directory.path())
                 .current_dir(directory.path())
@@ -5712,7 +5780,13 @@ mod tests {
         let Some(case) = std::env::var_os("CLIBOX_FSPY_MAC_BREAK_CHILD") else {
             return;
         };
-        let executable = std::env::current_exe().unwrap();
+        let native = case.to_string_lossy().ends_with("hangup")
+            && std::env::var_os("CLIBOX_FSPY_MAC_BREAK_EXECUTABLE").is_some();
+        let executable = if native {
+            PathBuf::from(std::env::var_os("CLIBOX_FSPY_MAC_BREAK_EXECUTABLE").unwrap())
+        } else {
+            std::env::current_exe().unwrap()
+        };
         let mut arguments = vec![OsString::from("fspy"), OsString::from("fbreak")];
         if case == "root-timeout" || case == "root-hangup" {
             arguments.extend([
@@ -5739,59 +5813,16 @@ mod tests {
             OsString::from("100ms"),
             OsString::from("--"),
             executable.into_os_string(),
-            OsString::from("--exact"),
-            OsString::from(if case.to_string_lossy().ends_with("hangup") {
-                "cli::tests::macos_breakpoint_hangup_worker"
-            } else {
-                "cli::tests::macos_cli_read_fixture"
-            }),
-            OsString::from("--nocapture"),
         ]);
+        if !native {
+            arguments.extend([
+                OsString::from("--exact"),
+                OsString::from("cli::tests::macos_cli_read_fixture"),
+                OsString::from("--nocapture"),
+            ]);
+        }
         let cli = TestCli::try_parse_from(arguments).unwrap();
         std::process::exit(execute(cli.command));
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn macos_breakpoint_hangup_worker() {
-        use std::io::Read;
-
-        let Some(root) = std::env::var_os("CLIBOX_FSPY_MAC_BREAK_ROOT") else {
-            return;
-        };
-        let root = PathBuf::from(root);
-        let pid = std::process::id();
-        fs::write(root.join(format!("pid-{pid}")), pid.to_string()).unwrap();
-        let parallel =
-            std::env::var_os("CLIBOX_FSPY_MAC_BREAK_CHILD").unwrap() == "parallel-hangup";
-        let _descendant =
-            if parallel && std::env::var_os("CLIBOX_FSPY_MAC_BREAK_DESCENDANT").is_none() {
-                Some(
-                    std::process::Command::new(std::env::current_exe().unwrap())
-                        .args(["--exact", "cli::tests::macos_breakpoint_hangup_worker"])
-                        .env("CLIBOX_FSPY_MAC_BREAK_DESCENDANT", "1")
-                        .spawn()
-                        .unwrap(),
-                )
-            } else {
-                None
-            };
-        let threads = (0..if parallel { 3 } else { 1 })
-            .map(|index| {
-                let root = root.clone();
-                std::thread::spawn(move || {
-                    let mut file = fs::File::open(root.join("input.txt")).unwrap();
-                    fs::write(root.join(format!("ready-{pid}-{index}")), b"ready").unwrap();
-                    let mut byte = [0_u8; 1];
-                    file.read_exact(&mut byte).unwrap();
-                    fs::write(root.join("continued"), b"continued").unwrap();
-                    std::thread::sleep(Duration::from_secs(60));
-                })
-            })
-            .collect::<Vec<_>>();
-        for thread in threads {
-            thread.join().unwrap();
-        }
     }
 
     #[cfg(target_os = "macos")]
