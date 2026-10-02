@@ -46,6 +46,7 @@ The original cwd must resolve within the selected root. Candidate verification r
 Candidate-generated files count as available to later reads only when a successful write completion precedes the read start in the record's global receipt sequence; process-local monotonic clocks cannot establish cross-process order.
 
 For a selected observed path, reproduction stages that logical alias when its current file identity matches the captured identity. The captured identity must match the pre-execution snapshot entry, including through an internal alias, and the live identity must still match that entry during verification; a replacement with identical bytes fails as unstable input. Identity-only alias selection is a fallback for an otherwise unselected or unavailable logical path, so an unrelated selected hard link cannot replace the path actually used by the command.
+Internal file symlinks retain the exact target pathname when the link consumes the complete selected path; snapshot lookup, copying, verification and staging append only nonempty suffixes. Internal directory links continue to resolve their remaining path components, and selected aliases retain target identity/hash validation, blocked-target rejection and external containment.
 
 ## Workflow semantics
 
