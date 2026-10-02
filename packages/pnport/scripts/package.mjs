@@ -134,8 +134,8 @@ export function verifySet(directory, sourceRevision = revision()) {
   return { version, revision: sourceRevision, packages, native };
 }
 
-export function buildPackage({ target, binary, preload, output, sourceRevision = revision() }) {
-  const { version } = metadata();
+export function buildPackage({ target, binary, preload, output, sourceRevision = revision(), read = sourceText }) {
+  const { version } = metadata(read);
   ensure(/^[a-f0-9]{40}$/u.test(sourceRevision), "Exact source revision required");
   if (target) {
     ensure(targets.includes(target) && target.os === process.platform && target.cpu === process.arch, "Native package must be built on its target host");

@@ -7,10 +7,10 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { buildPackage, nativeArchive, packageNames, tarEntries } from "../../packages/pnport/scripts/package.mjs";
+import { buildPackage, inspectTarball, nativeArchive, packageNames, tarEntries } from "../../packages/pnport/scripts/package.mjs";
 import { publishArtifacts, registryTags, validatePreviewTags } from "../../packages/pnport/scripts/publish.mjs";
 import { findRelease, publish as publishGithub } from "../../packages/pnport/scripts/github-release.mjs";
-import { metadata, requireReleaseReady, requirePublicationReady } from "../../packages/pnport/scripts/common.mjs";
+import { metadata, requireReleaseReady, requirePublicationReady, sourceText } from "../../packages/pnport/scripts/common.mjs";
 import { isPreviewVersion, publicationChannel } from "../../packages/pnport/scripts/version.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -32,6 +32,33 @@ test("launcher tarball has exact source text, version and executable mode", (t) 
   assert.equal(files.get("package.json")?.mode & 0o111, 0);
   assert.equal(files.get("bin/pnport.cjs")?.mode & 0o111, 0o111);
   assert.deepEqual(JSON.parse(files.get("package.json").bytes).optionalDependencies, Object.fromEntries(targets.map(({ name }) => [name, metadata().version])));
+});
+
+test("preview launcher and native tarballs retain exact version and immutable identity", (t) => {
+  const output = fixture(t);
+  const version = "0.1.0-next.1";
+  const read = (file) => {
+    const source = sourceText(file);
+    if (file === "packages/pnport/package.json") return JSON.stringify({ ...JSON.parse(source), version });
+    return source.replace(/^version = "[^"]+"$/mu, `version = "${version}"`);
+  };
+  const launcher = buildPackage({ output, sourceRevision: revision, read });
+  assert.equal(launcher.version, version);
+  const packed = JSON.parse(tarEntries(readFileSync(path.join(output, "tarballs", launcher.filename))).get("package.json").bytes);
+  assert.deepEqual(packed.optionalDependencies, Object.fromEntries(targets.map(({ name }) => [name, version])));
+  assert.equal(packed.gitHead, revision);
+  const target = selectTarget();
+  if (target?.os !== "win32" && target) {
+    const binary = path.join(output, "native-fixture");
+    const preload = path.join(output, "preload-fixture");
+    writeFileSync(binary, `#!/bin/sh\nprintf 'pnport ${version}\\n'\n`);
+    chmodSync(binary, 0o755);
+    writeFileSync(preload, "PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
+    const native = buildPackage({ target, binary, preload, output, sourceRevision: revision, read });
+    assert.equal(native.version, version);
+    assert.equal(inspectTarball(path.join(output, "tarballs", native.filename), version, revision).integrity, native.integrity);
+  }
+  assert.throws(() => buildPackage({ output, sourceRevision: revision, read: (file) => read(file).replaceAll(version, "0.1.0-next.01") }), /Unsupported/u);
 });
 
 test("native release archives contain one matched pair and exact license notices", () => {
