@@ -14,6 +14,22 @@ const achFiles = [
 ];
 const files = ["Cargo.lock", "packages/clibox/package.json", "packages/pnport/package.json", "packages/react-forge/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox", "pnport", "pnport-core", "pnport-preload"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
 const sources = Object.fromEntries(files.map((file) => [file, readFileSync(path.join(root, file), "utf8")]));
+// These lifecycle fixtures start before pnport's first publication. Keep that
+// state explicit so a real version commit cannot change their starting point,
+// next-version authorization, or the stable publication gate they exercise.
+const pnportCrates = ["pnport", "pnport-core", "pnport-preload"];
+for (const name of pnportCrates) {
+  const file = `crates/${name}/Cargo.toml`;
+  sources[file] = sources[file].replace(/^version = "[^"]+"$/mu, 'version = "0.0.0"');
+}
+sources["Cargo.lock"] = sources["Cargo.lock"].split("[[package]]").map((section) =>
+  /^\s*name = "pnport(?:-core|-preload)?"$/mu.test(section)
+    ? section.replace(/^version = "[^"]+"$/mu, 'version = "0.0.0"')
+    : section).join("[[package]]");
+sources["packages/pnport/package.json"] = JSON.stringify({
+  ...JSON.parse(sources["packages/pnport/package.json"]),
+  version: "0.0.0", pnportReleaseReady: false, pnportPreviewVersion: "0.1.0-next.1",
+}, null, 2) + "\n";
 const read = (file) => sources[file];
 const readReactForgeRecovery = (file) => file === "packages/react-forge/package.json"
   ? read(file).replace(/("version": ")[^"]+/u, (_, prefix) => `${prefix}0.1.0`)
