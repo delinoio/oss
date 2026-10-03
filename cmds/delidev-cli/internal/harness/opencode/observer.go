@@ -29,6 +29,8 @@ const (
 // notifications and step/message accounting keep their original event owners.
 // Recognized registry notifications do not establish effective configuration.
 type inputObservation struct {
+	Children           []domain.SubagentObservation `json:"-"`
+	ChildPending       bool
 	frozen             *FrozenObservation
 	EventID            string
 	Kind               EventKind

@@ -8,17 +8,31 @@ import (
 	"strings"
 )
 
-func (o *inputObserver) part(raw []byte) (*NativePart, bool, error) {
+func (o *inputObserver) part(raw []byte) (result *NativePart, repeated bool, problem error) {
+	phase := "decode"
+	defer func() {
+		if problem != nil && o.logger != nil {
+			o.logger.WarnContext(o.ctx, "opencode_owned_part_rejected", "owner_id", o.owner, "phase", phase, "code", "unsupported")
+		}
+	}()
 	value, err := decodeNativePart(raw)
 	if err != nil || value.SessionID != o.input.receipt.SessionID {
+		fields, _ := object(raw)
+		state, _ := object(fields["state"])
+		timing, _ := object(state["time"])
+		if o.logger != nil {
+			o.logger.WarnContext(o.ctx, "opencode_part_decode_shape", "owner_id", o.owner, "task_error", scalar(fields["tool"], "task") && scalar(state["status"], "error"), "state_fields", len(state), "title_present", len(state["title"]) != 0, "output_present", len(state["output"]) != 0, "end_present", len(timing["end"]) != 0, "code", "unsupported")
+		}
 		return nil, false, observerProblem()
 	}
 	message := o.messages[value.MessageID]
+	phase = "owner"
 	if message == nil || o.attachments[value.ID] != "" {
 		return nil, false, observerProblem()
 	}
 	raw = canonicalNative(raw)
 	old := o.parts[value.ID]
+	phase = "prior"
 	if old != nil && (old.value.MessageID != value.MessageID || old.value.Kind != value.Kind) {
 		return nil, false, observerProblem()
 	}
@@ -37,7 +51,11 @@ func (o *inputObserver) part(raw []byte) (*NativePart, bool, error) {
 			return nil, false, observerProblem()
 		}
 	} else {
+		phase = "lifetime"
 		if message.finalized || value.MessageID != o.progress.AssistantID {
+			if o.logger != nil {
+				o.logger.WarnContext(o.ctx, "opencode_part_lifetime_rejected", "owner_id", o.owner, "finalized", message.finalized, "current_message", value.MessageID == o.progress.AssistantID, "original_part", old != nil, "original_stop", o.stop != nil && o.stop.sent, "code", "unsupported")
+			}
 			return nil, false, observerProblem()
 		}
 		if old == nil && (value.Text != nil || value.Tool != nil) && message.openStep == "" {
@@ -45,6 +63,7 @@ func (o *inputObserver) part(raw []byte) (*NativePart, bool, error) {
 		}
 		switch value.Kind {
 		case TextPartKind, ReasoningPartKind:
+			phase = "text"
 			if value.Text.Timing == nil || value.Text.Synthetic != nil || value.Text.Ignored != nil {
 				return nil, false, observerProblem()
 			}
@@ -54,18 +73,22 @@ func (o *inputObserver) part(raw []byte) (*NativePart, bool, error) {
 				return nil, false, observerProblem()
 			}
 		case ToolPartKind:
+			phase = "tool"
 			if err := o.tool(value, old); err != nil {
 				return nil, false, err
 			}
 		case StepStartPartKind:
+			phase = "step-start"
 			if old != nil || message.openStep != "" {
 				return nil, false, observerProblem()
 			}
 		case StepFinishPartKind:
+			phase = "step-finish"
 			if old != nil || message.openStep == "" {
 				return nil, false, observerProblem()
 			}
 		case SnapshotPartKind, PatchPartKind:
+			phase = "revision"
 			if old != nil {
 				return nil, false, observerProblem()
 			}
@@ -104,6 +127,20 @@ func (o *inputObserver) part(raw []byte) (*NativePart, bool, error) {
 
 func (o *inputObserver) tool(value NativePart, old *observedPart) error {
 	tool := value.Tool
+	if tool.State == ToolError && tool.Title != nil {
+		if tool.Name != "task" || old == nil || old.value.Tool.State != ToolRunning || o.stop == nil || !o.stop.sent || !interruptedTool(tool) || !reflect.DeepEqual(old.value.Tool.Title, tool.Title) {
+			return observerProblem()
+		}
+		prior, err := object(old.value.Tool.Metadata)
+		next, nextErr := object(tool.Metadata)
+		if err != nil || nextErr != nil || len(next) != len(prior)+1 {
+			return observerProblem()
+		}
+		delete(next, "interrupted")
+		if !reflect.DeepEqual(prior, next) {
+			return observerProblem()
+		}
+	}
 	if tool.State == ToolCompleted || tool.State == ToolError {
 		for _, interaction := range o.interactions {
 			if interaction.value.Tool.CallID == tool.CallID && !interaction.closed {
@@ -137,6 +174,9 @@ func (o *inputObserver) tool(value NativePart, old *observedPart) error {
 	} else {
 		prior := old.value.Tool
 		if prior.CallID != tool.CallID || prior.Name != tool.Name || prior.State == ToolCompleted || prior.State == ToolError {
+			if o.logger != nil {
+				o.logger.WarnContext(o.ctx, "opencode_tool_transition_rejected", "owner_id", o.owner, "prior_state", prior.State, "next_state", tool.State, "original_call", prior.CallID == tool.CallID, "original_name", prior.Name == tool.Name, "original_stop", o.stop != nil && o.stop.sent, "code", "unsupported")
+			}
 			return observerProblem()
 		}
 		if prior.State == ToolPending {

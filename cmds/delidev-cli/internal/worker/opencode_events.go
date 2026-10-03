@@ -18,6 +18,7 @@ type OpenCodeEventPublisher struct {
 	text                *OpenCodeTextPublisher
 	usage               *OpenCodeUsagePublisher
 	seen                map[string]bool
+	children            domain.SubagentState
 	final               string
 	finish              *opencode.FinishReason
 	problem             *opencode.NativeError
@@ -83,7 +84,7 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 
 // The composer lock is held across both immediate and deferred publication.
 func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o opencode.Observation) error {
-	if o.EventID == "" {
+	if o.EventID == "" || o.ChildPending || len(o.Children) > 0 {
 		// Use the private, already verified read proof itself. Caller mutations
 		// of a typed snapshot cannot change the fact being published.
 		frozen, err := o.Freeze()
@@ -101,6 +102,13 @@ func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o openc
 	}
 	if keyErr != nil || c.seen[publicationKey] || len(c.seen) >= 65536 {
 		return c.fail(publicationUncertain())
+	}
+	if o.ChildPending || len(o.Children) > 0 && o.Message == nil && o.Part == nil {
+		if err := c.publishForegroundChildren(ctx, o.Children); err != nil {
+			return c.fail(err)
+		}
+		c.seen[publicationKey] = true
+		return nil
 	}
 	text, err := c.text.PublishObservation(ctx, o)
 	if err != nil {
@@ -175,6 +183,9 @@ func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o openc
 			}
 			c.problem = &value
 		}
+	}
+	if err := c.publishForegroundChildren(ctx, o.Children); err != nil {
+		return c.fail(err)
 	}
 	c.seen[publicationKey] = true
 	return nil
@@ -255,6 +266,16 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 	}
 	if err != nil {
 		return fail(err)
+	}
+	children, err := c.api.InspectForegroundChildren(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	if err := c.publishForegroundChildren(ctx, children); err != nil {
+		return fail(err)
+	}
+	if !c.children.Closed() {
+		return fail(publicationUncertain())
 	}
 	if len(c.interactions) != 0 || progress.AssistantID != c.final {
 		return fail(publicationUncertain())

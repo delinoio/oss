@@ -129,7 +129,7 @@ func claudeToolRequestedModel(tx *store.Tx, ref domain.ClaudeToolReference) (*st
 }
 
 func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, p *domain.ExecutionProgress, event domain.ExecutionEvent) error {
-	if input.Configuration.Harness != domain.Codex && input.Configuration.Harness != domain.ClaudeCode {
+	if input.Configuration.Harness != domain.Codex && input.Configuration.Harness != domain.ClaudeCode && input.Configuration.Harness != domain.OpenCode {
 		return executionEventConflict()
 	}
 	if err := input.Configuration.ValidateCodexChildModels(event.Subagents); err != nil {
@@ -149,13 +149,23 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 	for _, child := range event.Subagents {
 		usage := child.Usage
 		codex := input.Configuration.Harness == domain.Codex
+		openCode := input.Configuration.Harness == domain.OpenCode
 		if codex != strings.HasPrefix(string(child.Source), "codex-") || codex && (domain.ID(child.NativeID).Validate() != nil || domain.ID(child.ParentID).Validate() != nil || child.ParentToolID != "" || child.Tool != nil || child.Task != nil || len(child.Tools) != 0) {
 			return executionEventConflict()
 		}
 		if !codex && child.ParentToolID == "" {
 			return executionEventConflict()
 		}
-		if !codex {
+		if openCode {
+			if !strings.HasPrefix(string(child.Source), "opencode-") || validateOpenCodeParentTool(tx, input, session, p, event, child) != nil {
+				return executionEventConflict()
+			}
+			if child.OpenCodeCleanup != nil {
+				if bindOpenCodeStop(tx, input, p, child.OpenCodeCleanup) != nil {
+					return executionEventConflict()
+				}
+			}
+		} else if !codex {
 			_, retained := p.Subagents[child.NativeID]
 			if !retained && (child.Source != domain.ClaudeTaskSource || child.Task == nil) {
 				// Content/history can refine only an original local_agent task.
@@ -237,5 +247,45 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 		}
 	}
 	p.Subagents = next
+	return nil
+}
+
+// Both original product tool ownership and independent native parent proof are
+// required. The original root task is one new foreground child, never reuse,
+// nesting, root response authority or a model override.
+func validateOpenCodeParentTool(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, p *domain.ExecutionProgress, event domain.ExecutionEvent, child domain.SubagentObservation) error {
+	r := child.OpenCodeTool
+	_, retained := p.Subagents[child.NativeID]
+	if r == nil || r.Validate() != nil || child.ParentID != p.NativeThreadID || child.ParentToolID != r.PartID || child.Tool != nil || child.Task != nil || len(child.Tools) != 0 || !retained && child.Source != domain.OpenCodeTaskSource {
+		return executionEventConflict()
+	}
+	record, err := tx.Get(domain.MessageKind, r.ID)
+	if err != nil {
+		return err
+	}
+	message, err := store.Decode[domain.ExecutionMessage](record)
+	if err != nil || record.SessionID != session.ID || message.ExecutionID != input.ExecutionID || message.NativeThreadID != p.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.NativeID != r.PartID || message.NativeParentID != r.MessageID || message.Role != domain.ToolMessage || message.Tool == nil {
+		return executionEventConflict()
+	}
+	snapshot := message.Tool.Started
+	if len(message.Tool.States) > 0 {
+		snapshot = message.Tool.States[len(message.Tool.States)-1].Snapshot
+	}
+	if message.Tool.Completed != nil {
+		snapshot = *message.Tool.Completed
+	}
+	if snapshot.Builtin == nil || snapshot.Builtin.Name != domain.OpenCodeTask || snapshot.Builtin.CallID != r.CallID || snapshot.Builtin.MetadataJSON == nil {
+		return executionEventConflict()
+	}
+	if _, err := domain.DecodeOpenCodeForegroundTask([]byte(snapshot.Builtin.InputJSON)); err != nil {
+		return err
+	}
+	metadata, err := domain.DecodeOpenCodeTaskMetadata([]byte(*snapshot.Builtin.MetadataJSON))
+	if err != nil || metadata.Parent != p.NativeThreadID || metadata.Child != child.NativeID || metadata.Model.Provider != "delidev" || metadata.Model.Model != input.Configuration.NativeModel || child.RequestedModel == nil || *child.RequestedModel != metadata.Model.Model || child.ObservedModel != nil && *child.ObservedModel != metadata.Model.Model {
+		return executionEventConflict()
+	}
+	if child.OpenCodeCleanup != nil && (snapshot.Status != domain.ToolFailed || metadata.Interrupted == nil || !*metadata.Interrupted) {
+		return executionEventConflict()
+	}
 	return nil
 }

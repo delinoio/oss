@@ -9,6 +9,7 @@ import (
 type OpenCodeBuiltinName string
 
 const (
+	OpenCodeTask         OpenCodeBuiltinName = "task"
 	OpenCodeWrite        OpenCodeBuiltinName = "write"
 	OpenCodeEdit         OpenCodeBuiltinName = "edit"
 	OpenCodeApplyPatch   OpenCodeBuiltinName = "apply_patch"
@@ -18,7 +19,7 @@ const (
 )
 
 func (n OpenCodeBuiltinName) Valid() bool {
-	return slices.Contains([]OpenCodeBuiltinName{OpenCodeWrite, OpenCodeEdit, OpenCodeApplyPatch, OpenCodeGlob, OpenCodeGrep, OpenCodeQuestionTool}, n)
+	return slices.Contains([]OpenCodeBuiltinName{OpenCodeWrite, OpenCodeEdit, OpenCodeApplyPatch, OpenCodeGlob, OpenCodeGrep, OpenCodeQuestionTool, OpenCodeTask}, n)
 }
 
 // This closed builtin family retains complete original input/metadata JSON as
@@ -60,6 +61,16 @@ func (b OpenCodeBuiltinObservation) Validate(status ToolStatus) error {
 	if t := b.Timing; t != nil && (t.Start > maxNativeExactInteger || t.End != nil && (*t.End < t.Start || *t.End > maxNativeExactInteger)) {
 		return invalidTool()
 	}
+	if b.Name == OpenCodeTask && status != ToolPending {
+		if _, err := DecodeOpenCodeForegroundTask([]byte(b.InputJSON)); err != nil {
+			return err
+		}
+		if b.MetadataJSON != nil && *b.MetadataJSON != "{}" {
+			if _, err := DecodeOpenCodeTaskMetadata([]byte(*b.MetadataJSON)); err != nil {
+				return err
+			}
+		}
+	}
 	switch status {
 	case ToolPending:
 		if b.Raw == nil || b.Timing != nil || b.MetadataJSON != nil || b.Title != nil || b.Output != nil || b.Error != nil {
@@ -74,8 +85,17 @@ func (b OpenCodeBuiltinObservation) Validate(status ToolStatus) error {
 			return invalidTool()
 		}
 	case ToolFailed:
-		if b.Raw != nil || b.Timing == nil || b.Timing.End == nil || b.Error == nil || b.Title != nil || b.Output != nil {
+		if b.Raw != nil || b.Timing == nil || b.Timing.End == nil || b.Error == nil || b.Output != nil {
 			return invalidTool()
+		}
+		if b.Title != nil {
+			if b.Name != OpenCodeTask || b.MetadataJSON == nil {
+				return invalidTool()
+			}
+			metadata, err := DecodeOpenCodeTaskMetadata([]byte(*b.MetadataJSON))
+			if err != nil || metadata.Interrupted == nil || !*metadata.Interrupted {
+				return invalidTool()
+			}
 		}
 	default:
 		return invalidTool()
@@ -85,6 +105,9 @@ func (b OpenCodeBuiltinObservation) Validate(status ToolStatus) error {
 
 func ValidateOpenCodeBuiltinTransition(prior, next ToolSnapshot) error {
 	if prior.Kind != OpenCodeBuiltinTool || next.Kind != prior.Kind || prior.Validate() != nil || next.Validate() != nil || prior.Builtin.Name != next.Builtin.Name || prior.Builtin.CallID != next.Builtin.CallID || !reflect.DeepEqual(prior.Builtin.ProviderExecuted, next.Builtin.ProviderExecuted) {
+		return invalidTool()
+	}
+	if next.Status == ToolFailed && next.Builtin.Title != nil && !reflect.DeepEqual(prior.Builtin.Title, next.Builtin.Title) {
 		return invalidTool()
 	}
 	if prior.Status == ToolPending {

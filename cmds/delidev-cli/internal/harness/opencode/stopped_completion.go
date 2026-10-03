@@ -67,6 +67,9 @@ func (a *OwnedAPI) CloseAfterStop(ctx context.Context) (StoppedHistoryObservatio
 	if err != nil {
 		return StoppedHistoryObservation{}, err
 	}
+	if err := s.readForegroundChildInventory(ctx, true); err != nil {
+		return StoppedHistoryObservation{}, err
+	}
 	// Ordinary Close or separate stop cleanup cannot retroactively supply this
 	// original attempt's comparison proof. Failure is latched before cleanup.
 	s.observer.mu.Lock()
@@ -98,6 +101,9 @@ func (a *OwnedAPI) CloseAfterStop(ctx context.Context) (StoppedHistoryObservatio
 	receipt, err := s.recordStopCleanup(s.observer)
 	if err != nil || !receipt.CleanupVerified || !receipt.PendingCleared || receipt.RepliesUncertain || !receipt.NativeAttempted || !receipt.TerminalObserved || !receipt.IdleObserved || receipt.InputRequestID != history.RequestID || receipt.SessionID != history.SessionID || receipt.MessageID != history.InputID {
 		return StoppedHistoryObservation{}, sessionUncertain()
+	}
+	if err := s.closeStoppedForegroundChildren(receipt, history); err != nil {
+		return StoppedHistoryObservation{}, err
 	}
 	// Stable output order is not native event ordering or a replay cursor.
 	slices.SortFunc(canceled, func(a, b StoppedInteractionObservation) int { return strings.Compare(a.RequestID, b.RequestID) })
