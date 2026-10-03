@@ -114,6 +114,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session pr link --id SESSION --repository-id ID --number N
   session pr list|get|unlink --id SESSION [--association-id ID] [--revision N]
   session terminal create|list|inspect|input|resize|output|reattach|close --id ID
+  session fork --id ID --revision N --turn-id TURN --name NAME [--workspace worktree|general-chat|local] [--wait]
+  session sidechat --id ID --revision N --turn-id TURN --name NAME [--wait]
+  session sidechat send --id ID --revision N --parent-id ID --parent-revision N --messages ID:REV,ID:REV
   session create --input FILE|- [--wait]
   session delete --id ID --revision REV --confirm [--wait]
   session deletion --id ID

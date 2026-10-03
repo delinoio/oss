@@ -98,6 +98,9 @@ func (s *Service) CreateTerminal(ctx context.Context, req *connect.Request[pb.Cr
 		if err != nil {
 			return nil, err
 		}
+		if session.IsSidechat() {
+			return nil, domain.SidechatUnavailable()
+		}
 		if sr.Revision != meta.ExpectedRevision || session.Archive != domain.NotArchived {
 			return nil, domain.Fail(domain.Conflict, "The session changed or is archiving.", "Reload the active session before creating a terminal.")
 		}

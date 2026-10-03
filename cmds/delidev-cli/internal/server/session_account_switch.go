@@ -39,6 +39,9 @@ func (s *Service) SwitchSessionAccount(ctx context.Context, req *connect.Request
 		if err != nil {
 			return nil, err
 		}
+		if session.IsSidechat() {
+			return nil, domain.SidechatUnavailable()
+		}
 		if sr.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload the session before explicitly selecting another account.")
 		}

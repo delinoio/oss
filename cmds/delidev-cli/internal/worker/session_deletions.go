@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -147,7 +148,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			if domain.DecodeWithLimit(raw, &native, maxOpenCodeExecutionCheckpointBytes) == nil && native.Version == 2 {
 				valid = native.JobID == w.Fork.JobID && native.JobInputDigest == w.Fork.JobInputDigest && native.RuntimeID == w.Fork.RuntimeID && native.SessionID == w.SessionID && native.MachineID == w.MachineID && string(mustForkJSON(native)) == string(raw)
 			} else {
-				valid = len(raw) <= maxExecutionCheckpointBytes && domain.DecodeWithLimit(raw, &checkpoint, maxExecutionCheckpointBytes) == nil && checkpoint.Version == 1 && checkpoint.JobID == w.Fork.JobID && checkpoint.JobInputDigest == w.Fork.JobInputDigest && checkpoint.RuntimeID == w.Fork.RuntimeID && checkpoint.SessionID == w.SessionID && checkpoint.MachineID == w.MachineID && string(mustForkJSON(checkpoint)) == string(raw)
+				valid = len(raw) <= maxExecutionCheckpointBytes && domain.DecodeWithLimit(raw, &checkpoint, maxExecutionCheckpointBytes) == nil && ((checkpoint.Version == 1 && checkpoint.SidechatPolicy == "") || (checkpoint.Version == 3 && checkpoint.SidechatPolicy == domain.CodexReadOnlySidechatV1 && checkpoint.Native.Effective.Sandbox.Type == codex.ReadOnly && checkpoint.Native.Effective.ApprovalPolicy == codex.ApprovalNever)) && checkpoint.JobID == w.Fork.JobID && checkpoint.JobInputDigest == w.Fork.JobInputDigest && checkpoint.RuntimeID == w.Fork.RuntimeID && checkpoint.SessionID == w.SessionID && checkpoint.MachineID == w.MachineID && string(mustForkJSON(checkpoint)) == string(raw)
 			}
 		}
 		if !valid {
@@ -311,4 +312,28 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 		}
 	}
 	return paths, nil
+}
+
+// Match only the original server-issued ownership envelope. Generic unavailable,
+// canceled or recovery errors never imply deletion authority or permit replay.
+func retiringAssignment(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, resource *pb.Resource) bool {
+	if resource == nil || domain.ID(resource.SessionId).Validate() != nil || domain.ID(resource.Id).Validate() != nil {
+		return false
+	}
+	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	r, err := client.ListSessionDeletionWork(bounded, authenticated(credential, &pb.ListSessionDeletionWorkRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), OriginalSessionId: resource.SessionId, OriginalJobId: resource.Id}))
+	if err != nil || len(r.Msg.WorkJson) != 1 || r.Msg.NextSessionId != "" {
+		return false
+	}
+	var w domain.SessionDeletionWork
+	if domain.Decode(r.Msg.WorkJson[0], &w) != nil || w.Validate() != nil || w.ServerID != credential.ServerID || w.DeviceID != credential.DeviceID || w.MachineID != credential.MachineID || string(w.SessionID) != resource.SessionId {
+		return false
+	}
+	for _, copy := range w.Copies {
+		if string(copy.JobID) == resource.Id && copy.InstanceID == instance && copy.Revision == resource.Revision && copy.Digest == executionInputDigest(resource.DocumentJson) {
+			return true
+		}
+	}
+	return false
 }

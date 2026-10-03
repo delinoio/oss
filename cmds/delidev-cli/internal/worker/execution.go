@@ -328,6 +328,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
 	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	if input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
+		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
+	}
 	var ownedProxy *nativeproxy.Proxy
 	if managed == nil {
 		proxy, err := openCodexNativeProxy(nativeCtx, config, input.ExecutionID)

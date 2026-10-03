@@ -1,5 +1,6 @@
 # DeliDev store ownership
 
+- Sidechat publication atomically records its bounded parent dependency. Keep it until original native, database and backup retirement finishes. Synchronized complete parent/storage intents reconstruct only their original child plans across SQL rollback and response loss; compare immutable ownership inventories, never substitute current work. Follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - PR activity follows `docs/cmds-delidev-activity-contract.md`: publish immutable metadata with its source transaction, preserve receipt/alias/unchanged-state deduplication and original actor/time/version references, and remove all session-owned attempt transitions on deletion, including pre-binding reservations. Do not backfill inferred history. Dedicated verification retention is independently bounded and proof-replay-safe; no production verifier or public write is enabled by its private storage boundary.

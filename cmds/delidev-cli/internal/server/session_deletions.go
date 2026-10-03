@@ -75,6 +75,34 @@ func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Requ
 	if e := s.Store.Read(ctx, check); e != nil {
 		return nil, rpc.Error(e, c)
 	}
+	if req.Msg.OriginalSessionId != "" || req.Msg.OriginalJobId != "" {
+		if req.Msg.AfterSessionId != "" || domain.ID(req.Msg.OriginalSessionId).Validate() != nil || domain.ID(req.Msg.OriginalJobId).Validate() != nil {
+			return nil, rpc.Error(domain.SessionDeletionPending(), c)
+		}
+		v, err := s.Store.GetSessionDeletion(ctx, domain.ID(req.Msg.OriginalSessionId))
+		if err != nil {
+			return nil, rpc.Error(err, c)
+		}
+		out := &pb.ListSessionDeletionWorkResponse{}
+		for _, w := range v.Workers {
+			if w.Work.DeviceID != actor.DeviceID || w.Work.MachineID != actor.MachineID {
+				continue
+			}
+			for _, copy := range w.Work.Copies {
+				if string(copy.JobID) == req.Msg.OriginalJobId {
+					raw, _ := json.Marshal(w.Work)
+					out.WorkJson = append(out.WorkJson, raw)
+					break
+				}
+			}
+		}
+		if err := s.Store.Read(ctx, check); err != nil {
+			return nil, rpc.Error(err, c)
+		}
+		r := connect.NewResponse(out)
+		rpc.CopyCorrelation(r, req.Header())
+		return r, nil
+	}
 	if req.Msg.AfterSessionId != "" && domain.ID(req.Msg.AfterSessionId).Validate() != nil {
 		return nil, rpc.Error(domain.SessionDeletionPending(), c)
 	}
@@ -86,6 +114,13 @@ func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Requ
 	size := 0
 	for _, v := range items {
 		if string(v.SessionID) <= req.Msg.AfterSessionId {
+			continue
+		}
+		ready, e := s.Store.SessionDeletionDependentsReady(ctx, v)
+		if e != nil {
+			return nil, rpc.Error(e, c)
+		}
+		if !ready {
 			continue
 		}
 		// Workspace removal may run on a separate Worker lane. Do not dispatch
@@ -162,6 +197,9 @@ func (s *Service) runSessionDeletions(parent context.Context) {
 			if e := s.Store.RestoreSessionDeletionIntents(ctx, s.Identity.ServerID); e != nil {
 				s.logger.WarnContext(ctx, "session_deletion_intent_recovery_failed", "code", domain.SafeError(e).Code)
 			}
+		}
+		if e := s.Store.AdvanceSidechatStorageRetirements(ctx, s.Identity.ServerID); e != nil && ctx.Err() == nil {
+			s.logger.WarnContext(ctx, "sidechat_storage_retirement_pending", "code", domain.SafeError(e).Code)
 		}
 		items, e := s.Store.SessionDeletions(ctx)
 		if e != nil && ctx.Err() == nil {

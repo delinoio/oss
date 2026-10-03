@@ -250,6 +250,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			executable := codexTitleExecutable(attached.Msg.Machine)
+			// Adapter support is independent of the current installation inventory.
+			// Admission still requires the parent's exact verified pinned native
+			// installation; discovery must not require a process reconnect merely
+			// to advertise code that this Worker already implements.
+			sidechatExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
 			verifiedTitleProfile := false
 			if executable != "" {
 				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
@@ -307,6 +312,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				current := config.network.current()
 				profile += "\x00network-generation-" + strconv.FormatUint(current.metadata.Generation, 10) + "-" + string(current.metadata.RouteID)
 			}
+			if sidechatExpected {
+				profile += "\x00codex-read-only-sidechat-v1"
+			}
 			if openCodeForkExpected {
 				profile += "\x00opencode-general-chat-fork-v1"
 			}
@@ -317,6 +325,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			if sidechatExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
+			}
 			if openCodeForkExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
 			}
@@ -747,6 +758,14 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		err := runAndReportJob(ctx, config, client, credential, instance, work, resource, job)
 		active.Delete(resource.Id)
 		if err != nil {
+			// Deletion can fence native publication before cancellation arrives.
+			// Release the original assignment only after authenticated inspection
+			// proves its exact immutable retirement work. This is not completion
+			// or cleanup proof; the independent deletion lane still joins owners.
+			if ctx.Err() == nil && retiringAssignment(ctx, config, client, credential, instance, resource) {
+				config.Logger.InfoContext(ctx, "worker_assignment_retiring", "job_id", resource.Id, "session_id", resource.SessionId)
+				continue
+			}
 			return err
 		}
 	}

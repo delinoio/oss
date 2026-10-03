@@ -5,6 +5,7 @@ import "slices"
 type SessionSource string
 
 const (
+	SidechatSession    SessionSource = "SIDECHAT"
 	ManualSession      SessionSource = "MANUAL"
 	ExternalCLISession SessionSource = "EXTERNAL_CLI"
 	ScheduledSession   SessionSource = "SCHEDULED"

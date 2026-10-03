@@ -1,5 +1,6 @@
 # DeliDev worker ownership
 
+- Sidechat pins the Codex native read-only profile for source inspection, Fork and every Execute/Plan/Steer/compaction continuation. Reference original workspace roots without owning their removal. A publication/deletion race may release an assignment only after authenticated exact retiring-envelope comparison; retain native uncertainty and let the joined deletion lane prove cleanup. Follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - Optional current-user server/Worker services follow `docs/cmds-delidev-user-services-contract.md`. Keep stopped installation, existing foreground exclusivity, current-user/executable/definition/process-birth ownership, durable Stop before native disable, bounded native attempts, actor/revision-bound no-replay receipts, and independently confirmed controller cleanup before removal. Preserve all data/authentication/native session evidence; no system services, passwords, linger or foreign registration replacement.

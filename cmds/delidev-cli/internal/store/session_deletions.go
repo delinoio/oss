@@ -28,6 +28,8 @@ type SessionDeletionWorker struct {
 	RequestID    domain.ID                  `json:"request_id,omitempty"`
 }
 type SessionDeletion struct {
+	SidechatParentID domain.ID               `json:"sidechat_parent_id,omitempty"`
+	Dependents       []SessionDeletion       `json:"dependents,omitempty"`
 	Version          uint32                  `json:"version"`
 	ID               domain.ID               `json:"id"`
 	SessionID        domain.ID               `json:"session_id"`
@@ -45,6 +47,19 @@ type SessionDeletion struct {
 
 func (v SessionDeletion) validate() error {
 	if v.Version != 1 || v.Revision == 0 || v.ExpectedRevision == 0 || v.ExpectedRevision >= 1<<63 || v.AcceptedAt.IsZero() || len(v.Workers) > 100 {
+		return domain.SessionDeletionPending()
+	}
+	if len(v.Dependents) > maxSidechatDependents || v.SidechatParentID != "" && (v.SidechatParentID.Validate() != nil || v.SidechatParentID == v.SessionID || len(v.Dependents) != 0) {
+		return domain.SessionDeletionPending()
+	}
+	dependentIDs := []domain.ID{v.SessionID}
+	for _, child := range v.Dependents {
+		if len(child.Dependents) != 0 || child.SidechatParentID != v.SessionID || child.ServerID != v.ServerID || child.validate() != nil {
+			return domain.SessionDeletionPending()
+		}
+		dependentIDs = append(dependentIDs, child.SessionID)
+	}
+	if domain.UniqueIDs(dependentIDs) != nil {
 		return domain.SessionDeletionPending()
 	}
 	for _, id := range []domain.ID{v.ID, v.SessionID, v.ServerID, v.RequestID} {
@@ -197,6 +212,9 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 		}
 		// Repair an intent whose original SQL acknowledgement was lost. The
 		// external plan remains authoritative; no fresh revision or work is selected.
+		if e := s.applyDependentDeletions(ctx, t, old); e != nil {
+			return old, false, e
+		}
 		if e := t.applySessionDeletion(old); e != nil {
 			return old, true, e
 		}
@@ -232,138 +250,42 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 	if used {
 		return v, false, deletionConflict()
 	}
-	row, e := t.Get(domain.SessionKind, session)
+	v, e = t.planSessionDeletion(v)
 	if e != nil {
 		return v, false, e
 	}
-	if row.Revision != revision {
-		return v, false, deletionConflict()
-	}
-	// An unresolved native fork can own an unpublished workspace. Preserve its
-	// reservation until the original operation proves cleanup or publication.
-	if e := t.RequireNoSessionFork(session); e != nil {
-		return v, false, e
-	}
-	value, e := Decode[domain.Session](row)
+	ids, e := t.SidechatDependents(v.SessionID)
 	if e != nil {
 		return v, false, e
 	}
-	if value.Fork != nil {
-		f := value.Fork
-		if f.Validate() != nil || value.Preparation == nil {
-			return v, false, domain.SessionDeletionPending()
-		}
-		prepared, e := t.Get(domain.JobKind, value.Preparation.JobID)
-		if e != nil {
-			return v, false, e
-		}
-		j, e := Decode[domain.Job](prepared)
-		if e != nil || prepared.SessionID != session || j.Type != domain.PrepareWorkspaceJob || j.State != domain.JobSucceeded {
-			return v, false, domain.SessionDeletionPending()
-		}
-		digest := sha256.Sum256(j.Input)
-		v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: server, SessionID: session, MachineID: value.MachineID, DeviceID: f.WorkerDeviceID, Copies: []domain.SessionDeletionCopy{}, PreparationDigests: []string{hex.EncodeToString(digest[:])}, Fork: &domain.SessionDeletionFork{JobID: f.JobID, RuntimeID: f.RuntimeID, CheckpointDigest: f.CheckpointDigest, JobInputDigest: f.JobInputDigest}}})
-	}
-	// Every current session-owned Worker operation contributes its original
-	// claimed metadata. Never reconstruct ownership from a mutable terminal job.
-	rows, e := sqltx.QueryContext(ctx, "SELECT id,kind,revision,session_id,project_id,X'',created_at,updated_at FROM entities WHERE kind='job' AND session_id=? ORDER BY id LIMIT 4097", session)
-	if e != nil {
-		return v, false, storageError(e)
-	}
-	jobs := []Record{}
-	for rows.Next() {
-		r, e := scan(rows)
-		if e != nil {
-			rows.Close()
-			return v, false, storageError(e)
-		}
-		jobs = append(jobs, r)
-	}
-	e = rows.Err()
-	rows.Close()
-	if e != nil {
-		return v, false, storageError(e)
-	}
-	if len(jobs) > 4096 {
+	if len(all)+len(ids)+1 > maxSessionDeletions {
 		return v, false, domain.SessionDeletionPending()
 	}
-	for _, r := range jobs {
-		r, e = t.Get(domain.JobKind, r.ID)
-		if e != nil {
-			return v, false, e
+	for _, id := range ids {
+		child, err := s.readSessionDeletion(id)
+		if errors.Is(err, os.ErrNotExist) {
+			row, err := t.Get(domain.SessionKind, id)
+			if err != nil {
+				return v, false, err
+			}
+			child = SessionDeletion{Version: 1, ID: domain.NewID(), SessionID: id, ServerID: v.ServerID, RequestID: domain.NewID(), Actor: v.Actor, ExpectedRevision: row.Revision, Revision: 1, AcceptedAt: v.AcceptedAt, Workers: []SessionDeletionWorker{}}
+			child, err = t.planSessionDeletion(child)
+			if err != nil {
+				return v, false, err
+			}
+		} else if err != nil {
+			return v, false, err
 		}
-		j, e := Decode[domain.Job](r)
-		if e != nil {
-			return v, false, e
-		}
-		if j.InstanceID == "" {
-			continue
-		}
-		a, e := t.JobAssignment(r.ID)
-		if e != nil {
-			return v, false, e
-		}
-		original, e := Decode[domain.Job](a)
-		if e != nil {
-			return v, false, e
-		}
-		if original.AssignedDeviceID.Validate() != nil || original.InstanceID.Validate() != nil || a.SessionID != session {
+		if child.SidechatParentID != v.SessionID || child.ServerID != v.ServerID || len(child.Dependents) != 0 {
 			return v, false, domain.SessionDeletionPending()
 		}
-		index := -1
-		for i, w := range v.Workers {
-			if w.Work.DeviceID == original.AssignedDeviceID {
-				index = i
-			}
-		}
-		if index < 0 {
-			v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: server, SessionID: session, MachineID: j.MachineID, DeviceID: original.AssignedDeviceID, Copies: []domain.SessionDeletionCopy{}, PreparationDigests: []string{}}})
-			index = len(v.Workers) - 1
-		}
-		w := &v.Workers[index].Work
-		if w.MachineID != original.MachineID {
-			return v, false, domain.SessionDeletionPending()
-		}
-		h := sha256.Sum256(a.Data)
-		copy := domain.SessionDeletionCopy{JobID: r.ID, Type: j.Type, Revision: a.Revision, Digest: hex.EncodeToString(h[:]), InstanceID: original.InstanceID}
-		if j.Type == domain.ExecuteSessionJob {
-			var input domain.ExecutionJobInput
-			if domain.Decode(original.Input, &input) != nil || input.SessionID != session {
-				return v, false, domain.SessionDeletionPending()
-			}
-			copy.ExecutionID = input.ExecutionID
-		}
-		if j.Type == domain.WorkspaceStorageJob {
-			var input workspace.StorageRequest
-			if workspace.DecodeStorageRequest(original.Input, &input) != nil || input.OperationID != r.ID || input.Preparation.SessionID != session || input.Preparation.MachineID != original.MachineID || (input.SnapshotID != "" && input.SnapshotID.Validate() != nil) {
-				return v, false, domain.SessionDeletionPending()
-			}
-			copy.SnapshotID = input.SnapshotID
-		}
-		if j.Type == domain.CompactSessionJob {
-			var input domain.SessionCompactionInput
-			if domain.DecodeCompactionInput(original.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != session {
-				return v, false, domain.SessionDeletionPending()
-			}
-			copy.ActionID = input.ActionID
-		}
-		if j.Type == domain.ForkSessionJob && j.State != domain.JobSucceeded {
-			var input domain.ForkJobInput
-			if domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.SourceSessionID != session {
-				return v, false, domain.SessionDeletionPending()
-			}
-			// Definite failed/canceled forks never published a child. Their empty or
-			// partially prepared private runtime remains owned by the source job.
-			copy.ExecutionID = input.RuntimeID
-		}
-		if j.Type == domain.PrepareWorkspaceJob {
-			h := sha256.Sum256(original.Input)
-			w.PreparationDigests = append(w.PreparationDigests, hex.EncodeToString(h[:]))
-		}
-		w.Copies = append(w.Copies, copy)
+		v.Dependents = append(v.Dependents, child)
 	}
 	s.deletionFault = true
 	if e := s.writeSessionDeletion(v); e != nil {
+		return v, false, e
+	}
+	if e := s.applyDependentDeletions(ctx, t, v); e != nil {
 		return v, false, e
 	}
 	if e := t.applySessionDeletion(v); e != nil {
@@ -388,6 +310,19 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 }
 
 func (t *Tx) applySessionDeletion(v SessionDeletion) error {
+	if v.SidechatParentID != "" {
+		key := sidechatDependencyKey(v.SidechatParentID, v.SessionID)
+		if v.FinishedAt == nil {
+			if _, err := t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO metadata(key,value) VALUES(?,?)", key, v.SessionID); err != nil {
+				return storageError(err)
+			}
+		} else {
+			if _, err := t.tx.ExecContext(t.ctx, "DELETE FROM metadata WHERE key=? AND value=?", key, v.SessionID); err != nil {
+				return storageError(err)
+			}
+		}
+	}
+
 	if e := t.StopTerminals(v.SessionID); e != nil {
 		return e
 	}
@@ -613,7 +548,10 @@ func (s *Store) RestoreSessionDeletionIntents(ctx context.Context, server domain
 			return storageError(e)
 		}
 		t := &Tx{tx: tx, ctx: ctx, now: time.Now().UTC().Truncate(time.Millisecond), touched: map[domain.ID]bool{}}
-		e = t.applySessionDeletion(v)
+		e = s.applyDependentDeletions(ctx, t, v)
+		if e == nil {
+			e = t.applySessionDeletion(v)
+		}
 		if e == nil && v.DatabaseRemoved {
 			e = t.purgeSession(v)
 		}
@@ -652,6 +590,9 @@ func (s *Store) PurgeDeletedSession(ctx context.Context, session domain.ID) (Ses
 	v, e := s.readSessionDeletion(session)
 	if e != nil {
 		return v, storageError(e)
+	}
+	if ready, e := s.dependentsReadyLocked(v); e != nil || !ready {
+		return v, domain.SessionDeletionPending()
 	}
 	for _, w := range v.Workers {
 		if !w.Acknowledged {
@@ -703,6 +644,9 @@ func (s *Store) CompleteSessionDeletion(ctx context.Context, session domain.ID) 
 		v.BackupsRemoved = true
 		v.Revision++
 		e = s.writeSessionDeletion(v)
+	}
+	if e == nil && v.SidechatParentID != "" {
+		_, e = s.db.ExecContext(ctx, "DELETE FROM metadata WHERE key=? AND value=?", sidechatDependencyKey(v.SidechatParentID, v.SessionID), v.SessionID)
 	}
 	return v, e
 }
@@ -797,4 +741,141 @@ func (s *Store) sessionDeletionReceipt(ctx context.Context, tx *sql.Tx, v Sessio
 	}{v.ID})
 	_, e = tx.ExecContext(ctx, "INSERT INTO receipts(id,digest,result,created_at) VALUES(?,?,?,?)", v.RequestID, digest, ref, v.AcceptedAt.UnixMilli())
 	return storageError(e)
+}
+
+func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
+	row, e := t.Get(domain.SessionKind, v.SessionID)
+	if e != nil {
+		return v, e
+	}
+	if row.Revision != v.ExpectedRevision {
+		return v, deletionConflict()
+	}
+	// An unresolved native fork can own an unpublished workspace. Preserve its
+	// reservation until the original operation proves cleanup or publication.
+	if e := t.RequireNoSessionFork(v.SessionID); e != nil {
+		return v, e
+	}
+	value, e := Decode[domain.Session](row)
+	if e != nil {
+		return v, e
+	}
+	if value.IsSidechat() {
+		v.SidechatParentID = value.Fork.SourceSessionID
+	}
+	if value.Fork != nil {
+		f := value.Fork
+		if f.Validate() != nil || value.Preparation == nil {
+			return v, domain.SessionDeletionPending()
+		}
+		prepared, e := t.Get(domain.JobKind, value.Preparation.JobID)
+		if e != nil {
+			return v, e
+		}
+		j, e := Decode[domain.Job](prepared)
+		if e != nil || prepared.SessionID != v.SessionID || j.Type != domain.PrepareWorkspaceJob || j.State != domain.JobSucceeded {
+			return v, domain.SessionDeletionPending()
+		}
+		digest := sha256.Sum256(j.Input)
+		v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: v.ServerID, SessionID: v.SessionID, MachineID: value.MachineID, DeviceID: f.WorkerDeviceID, Copies: []domain.SessionDeletionCopy{}, PreparationDigests: []string{hex.EncodeToString(digest[:])}, Fork: &domain.SessionDeletionFork{JobID: f.JobID, RuntimeID: f.RuntimeID, CheckpointDigest: f.CheckpointDigest, JobInputDigest: f.JobInputDigest}}})
+	}
+	// Every current session-owned Worker operation contributes its original
+	// claimed metadata. Never reconstruct ownership from a mutable terminal job.
+	rows, e := t.tx.QueryContext(t.ctx, "SELECT id,kind,revision,session_id,project_id,X'',created_at,updated_at FROM entities WHERE kind='job' AND session_id=? ORDER BY id LIMIT 4097", v.SessionID)
+	if e != nil {
+		return v, storageError(e)
+	}
+	jobs := []Record{}
+	for rows.Next() {
+		r, e := scan(rows)
+		if e != nil {
+			rows.Close()
+			return v, storageError(e)
+		}
+		jobs = append(jobs, r)
+	}
+	e = rows.Err()
+	rows.Close()
+	if e != nil {
+		return v, storageError(e)
+	}
+	if len(jobs) > 4096 {
+		return v, domain.SessionDeletionPending()
+	}
+	for _, r := range jobs {
+		r, e = t.Get(domain.JobKind, r.ID)
+		if e != nil {
+			return v, e
+		}
+		j, e := Decode[domain.Job](r)
+		if e != nil {
+			return v, e
+		}
+		if j.InstanceID == "" {
+			continue
+		}
+		a, e := t.JobAssignment(r.ID)
+		if e != nil {
+			return v, e
+		}
+		original, e := Decode[domain.Job](a)
+		if e != nil {
+			return v, e
+		}
+		if original.AssignedDeviceID.Validate() != nil || original.InstanceID.Validate() != nil || a.SessionID != v.SessionID {
+			return v, domain.SessionDeletionPending()
+		}
+		index := -1
+		for i, w := range v.Workers {
+			if w.Work.DeviceID == original.AssignedDeviceID {
+				index = i
+			}
+		}
+		if index < 0 {
+			v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: v.ServerID, SessionID: v.SessionID, MachineID: j.MachineID, DeviceID: original.AssignedDeviceID, Copies: []domain.SessionDeletionCopy{}, PreparationDigests: []string{}}})
+			index = len(v.Workers) - 1
+		}
+		w := &v.Workers[index].Work
+		if w.MachineID != original.MachineID {
+			return v, domain.SessionDeletionPending()
+		}
+		h := sha256.Sum256(a.Data)
+		copy := domain.SessionDeletionCopy{JobID: r.ID, Type: j.Type, Revision: a.Revision, Digest: hex.EncodeToString(h[:]), InstanceID: original.InstanceID}
+		if j.Type == domain.ExecuteSessionJob {
+			var input domain.ExecutionJobInput
+			if domain.Decode(original.Input, &input) != nil || input.SessionID != v.SessionID {
+				return v, domain.SessionDeletionPending()
+			}
+			copy.ExecutionID = input.ExecutionID
+		}
+		if j.Type == domain.WorkspaceStorageJob {
+			var input workspace.StorageRequest
+			if workspace.DecodeStorageRequest(original.Input, &input) != nil || input.OperationID != r.ID || input.Preparation.SessionID != v.SessionID || input.Preparation.MachineID != original.MachineID || (input.SnapshotID != "" && input.SnapshotID.Validate() != nil) {
+				return v, domain.SessionDeletionPending()
+			}
+			copy.SnapshotID = input.SnapshotID
+		}
+		if j.Type == domain.CompactSessionJob {
+			var input domain.SessionCompactionInput
+			if domain.DecodeCompactionInput(original.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != v.SessionID {
+				return v, domain.SessionDeletionPending()
+			}
+			copy.ActionID = input.ActionID
+		}
+		if j.Type == domain.ForkSessionJob && j.State != domain.JobSucceeded {
+			var input domain.ForkJobInput
+			if domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.SourceSessionID != v.SessionID {
+				return v, domain.SessionDeletionPending()
+			}
+			// Definite failed/canceled forks never published a child. Their empty or
+			// partially prepared private runtime remains owned by the source job.
+			copy.ExecutionID = input.RuntimeID
+		}
+		if j.Type == domain.PrepareWorkspaceJob {
+			h := sha256.Sum256(original.Input)
+			w.PreparationDigests = append(w.PreparationDigests, hex.EncodeToString(h[:]))
+		}
+		w.Copies = append(w.Copies, copy)
+	}
+	return v, v.validate()
 }

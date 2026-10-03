@@ -9,6 +9,7 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
   rpc ListRequestDiagnostics(ListRequestDiagnosticsRequest) returns (ListRequestDiagnosticsResponse);
+  rpc SendSidechatFindings(SendSidechatFindingsRequest) returns (SendSidechatFindingsResponse);
   rpc ForkSession(ForkSessionRequest) returns (ForkSessionResponse);
   rpc GetSessionFork(GetSessionForkRequest) returns (GetSessionForkResponse);
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
@@ -393,6 +394,7 @@ message ForkSessionRequest {
   ForkWorkspace workspace = 4;
   // Write-only secondary same-machine authority for explicit Local sharing.
   string local_worker_token = 5;
+  ForkPurpose purpose = 6;
 }
 enum ForkWorkspace {
   FORK_WORKSPACE_UNSPECIFIED = 0;
@@ -490,4 +492,24 @@ message ListRequestDiagnosticsRequest {
 message ListRequestDiagnosticsResponse {
   repeated RequestDiagnostic records = 1;
   string next_page_token = 2;
+}
+
+// Sidechat inherits the exact completed parent account and references its files.
+enum ForkPurpose {
+  FORK_PURPOSE_UNSPECIFIED = 0;
+  FORK_PURPOSE_INDEPENDENT = 1;
+  FORK_PURPOSE_SIDECHAT = 2;
+}
+message SidechatFindingSelection {
+  string message_id = 1;
+  uint64 expected_revision = 2;
+}
+message SendSidechatFindingsRequest {
+  Mutation mutation = 1;
+  string parent_id = 2;
+  uint64 expected_parent_revision = 3;
+  repeated SidechatFindingSelection messages = 4;
+}
+message SendSidechatFindingsResponse {
+  SessionChange change = 1;
 }

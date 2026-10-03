@@ -40,6 +40,8 @@ func (a StorageAction) Valid() bool {
 }
 
 type StorageRequest struct {
+	SidechatDependents []domain.ID                  `json:"sidechat_dependents,omitempty"`
+	SidechatActor      *domain.Principal            `json:"sidechat_actor,omitempty"`
 	PreviousSnapshotID domain.ID                    `json:"previous_snapshot_id,omitempty"`
 	PreviousState      domain.WorkspaceStorageState `json:"previous_state"`
 	SnapshotMetadata   *SnapshotMetadata            `json:"snapshot_metadata,omitempty"`
@@ -55,6 +57,12 @@ type StorageRequest struct {
 }
 
 func (r StorageRequest) Validate() error {
+	if len(r.SidechatDependents) != 0 || r.SidechatActor != nil {
+		if r.Action != StorageCleanup || len(r.SidechatDependents) == 0 || len(r.SidechatDependents) > 256 || r.SidechatActor == nil || (r.SidechatActor.Type != domain.OwnerDevice && r.SidechatActor.Type != domain.ClientDevice) || r.SidechatActor.MachineID != "" || r.SidechatActor.Type == domain.ClientDevice && r.SidechatActor.DeviceID.Validate() != nil || domain.UniqueIDs(append([]domain.ID{r.Preparation.SessionID, r.OperationID}, r.SidechatDependents...)) != nil {
+			return ResultUncertain()
+		}
+	}
+
 	if r.Version != 1 || r.OperationID.Validate() != nil || !r.Action.Valid() || r.Preparation.validateStructure() != nil {
 		return ResultUncertain()
 	}

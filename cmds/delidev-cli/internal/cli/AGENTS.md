@@ -1,5 +1,6 @@
 # DeliDev cli ownership
 
+- `session sidechat` requires independent server support before purpose submission, preserves original parent workspace and accepts no Local override. `session sidechat send` freezes exact selected reply and parent revisions under one request; receipt retry never infers or automatically Steers. Follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - `activity list` exposes typed PR metadata and capability names from the authenticated ActivityService response. Preserve exact original revisions, numeric identity strings and outcome enums without additional mutations or handling inference; follow the activity contract.

@@ -15,6 +15,10 @@ func forkJSON(value *pb.ForkSessionResponse) any {
 }
 
 func sessionForkCommand(ctx context.Context, c client, o options, args []string) (any, error) {
+	return sessionForkPurposeCommand(ctx, c, o, args, pb.ForkPurpose_FORK_PURPOSE_UNSPECIFIED)
+}
+
+func sessionForkPurposeCommand(ctx context.Context, c client, o options, args []string, purpose pb.ForkPurpose) (any, error) {
 	f := flags("session fork")
 	id := f.String("id", "", "completed source session")
 	revision := f.Uint64("revision", 0, "exact source revision")
@@ -26,6 +30,14 @@ func sessionForkCommand(ctx context.Context, c client, o options, args []string)
 	wait := f.Bool("wait", false, "wait for the original fork job within the command deadline")
 	if err := parse(f, args); err != nil {
 		return nil, err
+	}
+	if purpose == pb.ForkPurpose_FORK_PURPOSE_SIDECHAT {
+		if *workspace != "" || *localRoot != "" {
+			return nil, domain.SidechatUnavailable()
+		}
+		if err := requireSidechatSupport(ctx, c); err != nil {
+			return nil, err
+		}
 	}
 	var result *pb.ForkSessionResponse
 	if *jobID != "" {
@@ -67,7 +79,7 @@ func sessionForkCommand(ctx context.Context, c client, o options, args []string)
 		} else if *localRoot != "" {
 			return nil, domain.Fail(domain.InvalidArgument, "Local authority requires explicit Local sharing.", "Omit --local-worker-dir for independent workspace forks.")
 		}
-		response, err := c.sessions.ForkSession(ctx, request(c, &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, ExpectedTurnId: *turn, Name: *name, Workspace: kind, LocalWorkerToken: token}))
+		response, err := c.sessions.ForkSession(ctx, request(c, &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, ExpectedTurnId: *turn, Name: *name, Workspace: kind, LocalWorkerToken: token, Purpose: purpose}))
 		if err != nil {
 			return nil, rpc.ClientError(err)
 		}
