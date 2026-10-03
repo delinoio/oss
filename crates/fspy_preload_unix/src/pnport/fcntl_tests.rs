@@ -279,3 +279,62 @@ fn admitted_duplication_preserves_state_on_failure() {
         },
     );
 }
+
+#[test]
+fn transfer_extents_rejects_managed_secondary_descriptor() {
+    isolated(
+        "pnport::fcntl_tests::transfer_extents_rejects_managed_secondary_descriptor",
+        || {
+            let root = install_runtime();
+            let primary_path = root.path().join("primary");
+            let secondary_path = root.path().join("secondary");
+            fs::write(&primary_path, b"primary").unwrap();
+            fs::write(&secondary_path, b"secondary").unwrap();
+            let primary_physical = fs::canonicalize(&primary_path).unwrap();
+            let secondary_physical = fs::canonicalize(&secondary_path).unwrap();
+            let primary = CString::new(primary_path.as_os_str().as_encoded_bytes()).unwrap();
+            let secondary = CString::new(secondary_path.as_os_str().as_encoded_bytes()).unwrap();
+            // SAFETY: Both descriptors remain owned until the native call and
+            // their paths are NUL-terminated temporary fixture paths.
+            unsafe {
+                let primary = libc::open(primary.as_ptr(), libc::O_RDWR);
+                assert!(primary >= 0);
+                let primary = OwnedFd::from_raw_fd(primary);
+                let secondary = libc::open(secondary.as_ptr(), libc::O_RDWR);
+                assert!(secondary >= 0);
+                let secondary = OwnedFd::from_raw_fd(secondary);
+                {
+                    let _owner = Guard::enter().unwrap();
+                    let mut runtime = RUNTIME.get().unwrap().lock().unwrap();
+                    runtime.descriptors.insert(
+                        primary.as_raw_fd(),
+                        Translation {
+                            logical: primary_path.clone(),
+                            physical: primary_physical,
+                            readonly: false,
+                            virtual_link: false,
+                        },
+                    );
+                    runtime.descriptors.insert(
+                        secondary.as_raw_fd(),
+                        Translation {
+                            logical: secondary_path.clone(),
+                            physical: secondary_physical,
+                            readonly: true,
+                            virtual_link: false,
+                        },
+                    );
+                }
+                assert_eq!(
+                    pnport_fcntl(
+                        primary.as_raw_fd(),
+                        libc::F_TRANSFEREXTENTS,
+                        secondary.as_raw_fd()
+                    ),
+                    -1
+                );
+                assert_eq!(*libc::__error(), libc::EROFS);
+            }
+        },
+    );
+}

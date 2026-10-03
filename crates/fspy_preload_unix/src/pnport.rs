@@ -402,6 +402,10 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
     let original = libc::fcntl as unsafe extern "C" fn(c_int, c_int, ...) -> c_int;
     let guard = Guard::enter();
     let duplicate = matches!(command, libc::F_DUPFD | libc::F_DUPFD_CLOEXEC);
+    // F_TRANSFEREXTENTS takes the destination descriptor as an integer
+    // variadic argument, unlike the pointer-valued fcntl commands below.
+    // Decode it once so the secondary backing is admitted before native fcntl.
+    let transfer_descriptor = (command == libc::F_TRANSFEREXTENTS).then(|| args.arg::<c_int>());
     let mutation = matches!(
         command,
         libc::F_PREALLOCATE
@@ -422,16 +426,26 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         None
     };
     if mutation && let Some(runtime) = runtime.as_mut() {
-        match descriptor_readonly(fd, runtime) {
-            Ok(true) => {
-                errno(EROFS);
-                return -1;
-            }
-            Ok(false) => {}
+        let primary_readonly = match descriptor_readonly(fd, runtime) {
+            Ok(readonly) => readonly,
             Err(code) => {
                 errno(code);
                 return -1;
             }
+        };
+        let transfer_readonly = match transfer_descriptor {
+            Some(transfer_fd) => match descriptor_readonly(transfer_fd, runtime) {
+                Ok(readonly) => readonly,
+                Err(code) => {
+                    errno(code);
+                    return -1;
+                }
+            },
+            None => false,
+        };
+        if primary_readonly || transfer_readonly {
+            errno(EROFS);
+            return -1;
         }
     }
 
@@ -452,6 +466,7 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
             let argument = args.arg::<c_int>();
             original(fd, command, argument)
         }
+        libc::F_TRANSFEREXTENTS => original(fd, command, transfer_descriptor.unwrap_or_default()),
         libc::F_GETLK
         | libc::F_SETLK
         | libc::F_SETLKW
@@ -463,8 +478,7 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         | libc::F_GETPATH_NOFIRMLINK
         | libc::F_PUNCHHOLE
         | libc::F_TRIM_ACTIVE_FILE
-        | libc::F_SPECULATIVE_READ
-        | libc::F_TRANSFEREXTENTS => {
+        | libc::F_SPECULATIVE_READ => {
             let argument = args.arg::<*mut c_void>();
             original(fd, command, argument)
         }
