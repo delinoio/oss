@@ -849,6 +849,14 @@ mod initialization_tests {
 #[cfg_attr(target_os = "linux", unsafe(link_section = ".init_array"))]
 static INITIALIZER: unsafe extern "C" fn() = initialize;
 
+fn open_follows_final_component(flags: c_int) -> bool {
+    #[cfg(target_os = "macos")]
+    let nofollow = libc::O_NOFOLLOW | libc::O_SYMLINK;
+    #[cfg(target_os = "linux")]
+    let nofollow = libc::O_NOFOLLOW;
+    flags & nofollow == 0 && flags & (O_CREAT | libc::O_EXCL) != (O_CREAT | libc::O_EXCL)
+}
+
 unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
         args.arg::<c_int>()
@@ -869,8 +877,7 @@ unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ..
         path,
         AT_FDCWD,
         flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND) != 0,
-        flags & libc::O_NOFOLLOW == 0
-            && flags & (O_CREAT | libc::O_EXCL) != (O_CREAT | libc::O_EXCL),
+        open_follows_final_component(flags),
         -1
     );
     let fd = original(path.as_ptr(), flags, mode);
@@ -921,8 +928,7 @@ unsafe extern "C" fn pnport_openat(
         path,
         dirfd,
         flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND) != 0,
-        flags & libc::O_NOFOLLOW == 0
-            && flags & (O_CREAT | libc::O_EXCL) != (O_CREAT | libc::O_EXCL),
+        open_follows_final_component(flags),
         -1
     );
     let fd = original(AT_FDCWD, path.as_ptr(), flags, mode);

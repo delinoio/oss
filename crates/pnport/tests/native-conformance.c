@@ -149,6 +149,14 @@ static int native_aliases(void) {
     errno = 0;
     if (open("logical-alias", O_RDONLY | O_NOFOLLOW) != -1 || errno != ELOOP) return 97;
 #ifdef __APPLE__
+    // Darwin O_SYMLINK opens the link inode, even when its target is virtual.
+    int link_fd = open("logical-alias", O_RDONLY | O_SYMLINK);
+    if (link_fd < 0 || fstat(link_fd, &info) || !S_ISLNK(info.st_mode) || close(link_fd)) return 113;
+    int root_fd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (root_fd < 0) return 114;
+    link_fd = openat(root_fd, "logical-alias", O_RDONLY | O_SYMLINK);
+    if (link_fd < 0 || fstat(link_fd, &info) || !S_ISLNK(info.st_mode) ||
+        close(link_fd) || close(root_fd)) return 115;
     char backing[4096];
     if (fcntl(fd, F_GETPATH, backing) || symlink(backing, "backing-alias")) return 98;
     errno = 0;
