@@ -12,7 +12,6 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -159,25 +158,6 @@ func init() {
 		os.Exit(18) // No authenticate, session/new, prompt or callback reply.
 	}
 	os.Exit(0)
-}
-
-// Fixture reads may overlap final diagnostics from the owned process. Protect
-// both operations; the slog handler's writer lock does not cover String reads.
-type fixtureLogBuffer struct {
-	mu     sync.Mutex
-	buffer bytes.Buffer
-}
-
-func (b *fixtureLogBuffer) Write(raw []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buffer.Write(raw)
-}
-
-func (b *fixtureLogBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buffer.String()
 }
 
 func fixtureConfig(t *testing.T, mode string) (ProbeConfig, *fixtureLogBuffer) {
