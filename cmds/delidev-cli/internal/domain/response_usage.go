@@ -41,27 +41,35 @@ func (u NativeResponseUsage) Validate() error {
 // records first publication; subsequent identical observations do not charge it
 // again. Nullable counts/cost evidence cannot become measured zero or spend.
 type ResponseUsageRecord struct {
-	Purpose      UsagePurpose        `json:"purpose,omitempty"`
-	SessionID    ID                  `json:"session_id"`
-	ProjectID    ID                  `json:"project_id,omitempty"`
-	ExecutionID  ID                  `json:"execution_id"`
-	AccountID    ID                  `json:"account_id"`
-	ConnectionID ID                  `json:"connection_id"`
-	ProviderID   ID                  `json:"provider_id"`
-	ModelID      ID                  `json:"model_id"`
-	Harness      Harness             `json:"harness"`
-	Version      string              `json:"native_version"`
-	ThreadID     string              `json:"native_thread_id"`
-	TurnID       string              `json:"native_turn_id"`
-	Sequence     uint64              `json:"sequence"`
-	Usage        NativeResponseUsage `json:"response"`
+	Purpose             UsagePurpose        `json:"purpose,omitempty"`
+	SessionID           ID                  `json:"session_id"`
+	ProjectID           ID                  `json:"project_id,omitempty"`
+	ExecutionID         ID                  `json:"execution_id"`
+	AccountID           ID                  `json:"account_id"`
+	ConnectionID        ID                  `json:"connection_id"`
+	ProviderID          ID                  `json:"provider_id,omitempty"`
+	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
+	ModelID             ID                  `json:"model_id"`
+	Harness             Harness             `json:"harness"`
+	Version             string              `json:"native_version"`
+	ThreadID            string              `json:"native_thread_id"`
+	TurnID              string              `json:"native_turn_id"`
+	Sequence            uint64              `json:"sequence"`
+	Usage               NativeResponseUsage `json:"response"`
 }
 
 func (u ResponseUsageRecord) Validate() error {
-	for _, id := range []ID{u.SessionID, u.ExecutionID, u.AccountID, u.ConnectionID, u.ProviderID, u.ModelID} {
+	for _, id := range []ID{u.SessionID, u.ExecutionID, u.AccountID, u.ConnectionID, u.ModelID} {
 		if id.Validate() != nil {
 			return invalidObservation()
 		}
+	}
+	if u.SubscriptionService == "" {
+		if u.ProviderID.Validate() != nil {
+			return invalidObservation()
+		}
+	} else if u.SubscriptionService != SubscriptionChatGPT || u.ProviderID != "" || u.Purpose == SessionTitleUsage {
+		return invalidObservation()
 	}
 	if (u.Purpose != "" && u.Purpose != ConversationUsage && u.Purpose != SessionTitleUsage) || (u.ProjectID != "" && u.ProjectID.Validate() != nil) || u.Harness != Codex || u.Version != CodexProtocolVersion || ID(u.ThreadID).Validate() != nil || ID(u.TurnID).Validate() != nil || u.Sequence == 0 || u.Sequence > MaxExecutionEvents {
 		return invalidObservation()

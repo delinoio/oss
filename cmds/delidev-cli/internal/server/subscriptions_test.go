@@ -43,22 +43,7 @@ func newSubscriptionFixture(t *testing.T) *subscriptionFixture {
 	f.service.accountSecrets = f.secrets
 	f.client = delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.http.URL)
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.subscription", nil, func(tx *store.Tx) (any, error) {
-		pr, err := tx.Get(domain.ProviderKind, f.input.Configuration.ProviderID)
-		if err != nil {
-			return nil, err
-		}
-		p, err := store.Decode[domain.Provider](pr)
-		if err != nil {
-			return nil, err
-		}
-		p.Endpoint = ""
-		p.Protocol = domain.NativeSubscription
-		p.Authentication = domain.SubscriptionAuth
-		h := domain.Codex
-		p.SubscriptionHarness = &h
-		if _, err := tx.Put(domain.ProviderKind, pr.ID, pr.Revision, "", "", p); err != nil {
-			return nil, err
-		}
+
 		ar, err := tx.Get(domain.AccountKind, f.input.AccountID)
 		if err != nil {
 			return nil, err
@@ -68,6 +53,7 @@ func newSubscriptionFixture(t *testing.T) *subscriptionFixture {
 			return nil, err
 		}
 		a.Type = domain.SubscriptionAccount
+		a.ProviderID, a.SubscriptionService = "", domain.SubscriptionChatGPT
 		a.Connection = nil
 		a.Validation = nil
 		a.Catalog = nil
@@ -76,6 +62,24 @@ func newSubscriptionFixture(t *testing.T) *subscriptionFixture {
 		if _, err := tx.Put(domain.AccountKind, ar.ID, ar.Revision, "", "", a); err != nil {
 			return nil, err
 		}
+		modelRecord, err := tx.Get(domain.ModelKind, f.input.Configuration.ModelID)
+		if err != nil {
+			return nil, err
+		}
+		model, err := store.Decode[domain.Model](modelRecord)
+		if err != nil {
+			return nil, err
+		}
+		model.ProviderID, model.SourceKind, model.SubscriptionService = "", domain.SubscriptionModel, domain.SubscriptionChatGPT
+		if _, err := tx.Put(domain.ModelKind, modelRecord.ID, modelRecord.Revision, "", "", model); err != nil {
+			return nil, err
+		}
+		f.input.Configuration.ProviderID, f.input.Configuration.SubscriptionService, f.input.Configuration.Subscription = "", domain.SubscriptionChatGPT, true
+		f.input.ConfigurationDigest, err = f.input.Configuration.Digest()
+		if err != nil {
+			return nil, err
+		}
+
 		mr, err := tx.Get(domain.MachineKind, f.input.MachineID)
 		if err != nil {
 			return nil, err
@@ -467,7 +471,7 @@ func TestSubscriptionOtherAccountsRemainIndependentAndIdentityCannotBeDuplicated
 	var other store.Record
 	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.independent-subscription", nil, func(tx *store.Tx) (any, error) {
 		var err error
-		other, err = tx.Put(domain.AccountKind, domain.NewID(), 0, "", "", domain.Account{Alias: "Independent", ProviderID: f.input.Configuration.ProviderID, Type: domain.SubscriptionAccount, Enabled: true, Health: domain.AccountDisconnected})
+		other, err = tx.Put(domain.AccountKind, domain.NewID(), 0, "", "", domain.Account{Alias: "Independent", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Enabled: true, Health: domain.AccountDisconnected})
 		return nil, err
 	})
 	if err != nil {

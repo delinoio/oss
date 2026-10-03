@@ -146,15 +146,21 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
-	_, provider, err := decodeEntity[domain.Provider](t, domain.ProviderKind, model.ProviderID)
-	if err != nil {
-		return empty, err
+	if agent.ReconfigurationRequired {
+		return empty, domain.SubscriptionReconfigurationRequired()
 	}
-	if err := provider.Validate(); err != nil {
-		return empty, err
-	}
-	if !provider.EnabledValue() {
-		return empty, domain.Fail(domain.ProviderDisabled, "The selected API provider is off.", "Enable this provider or select an active API provider before starting another turn.")
+	var provider domain.Provider
+	if model.SourceKind != domain.SubscriptionModel {
+		_, provider, err = decodeEntity[domain.Provider](t, domain.ProviderKind, model.ProviderID)
+		if err != nil {
+			return empty, err
+		}
+		if err := provider.Validate(); err != nil {
+			return empty, err
+		}
+		if !provider.EnabledValue() {
+			return empty, domain.Fail(domain.ProviderDisabled, "The selected API provider is off.", "Enable this provider before starting another turn.")
+		}
 	}
 	_, machine, err := decodeEntity[domain.Machine](t, domain.MachineKind, session.MachineID)
 	if err != nil {
@@ -207,7 +213,6 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
-	configuration.Subscription = provider.Protocol == domain.NativeSubscription
 	digest, err := configuration.Digest()
 	if err != nil {
 		return empty, err
@@ -232,7 +237,7 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 		return empty, err
 	}
 	selected := accounts[route.Selected]
-	if selected.Connection == nil || selected.Connection.ID.Validate() != nil || selected.Connection.Authentication != provider.Authentication || (selected.Type == domain.SubscriptionAccount) != (provider.Protocol == domain.NativeSubscription) {
+	if selected.Connection == nil || selected.Connection.ID.Validate() != nil || (configuration.Subscription && selected.Connection.Authentication != domain.SubscriptionAuth) || (!configuration.Subscription && selected.Connection.Authentication != provider.Authentication) || !model.MatchesAccount(selected, agent.Harness) {
 		return empty, domain.Fail(domain.Conflict, "The selected account connection is incompatible with the provider.", "Revalidate the current account connection before dispatch.")
 	}
 	return InitialExecutionPreview{Configuration: configuration, ConfigurationDigest: digest, AccountID: route.Selected, ConnectionID: selected.Connection.ID, Route: route, routingRecord: routingRecord, nextRouting: next}, nil

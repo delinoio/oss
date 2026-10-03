@@ -115,13 +115,8 @@ func subscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store.Rec
 	if a.Type != domain.SubscriptionAccount {
 		return r, a, domain.Fail(domain.Unsupported, "This operation requires a Codex subscription account.", "Preserve API accounts through their existing connection operations.")
 	}
-	p, err := tx.Get(domain.ProviderKind, a.ProviderID)
-	if err != nil {
-		return r, a, err
-	}
-	provider, err := store.Decode[domain.Provider](p)
-	if err != nil || (provider.SubscriptionHarness == nil || *provider.SubscriptionHarness != domain.Codex) || provider.Protocol != domain.NativeSubscription || provider.Authentication != domain.SubscriptionAuth {
-		return r, a, domain.Fail(domain.Unsupported, "This subscription provider is unsupported.", "Select the Codex native subscription provider; no alternative login is used.")
+	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionChatGPT || a.ProviderID != "" {
+		return r, a, domain.Fail(domain.Unsupported, "This service has no managed subscription profile.", "Select a ChatGPT service account for the verified Codex lifecycle.")
 	}
 	return r, a, nil
 }

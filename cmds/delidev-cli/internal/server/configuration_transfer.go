@@ -68,7 +68,16 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 		return nil, err
 	}
 	switch v := value.(type) {
+	case *domain.Agent:
+		if v.ReconfigurationRequired {
+			return nil, domain.SubscriptionReconfigurationRequired()
+		}
+	case *domain.Provider:
+		if v.Protocol == domain.NativeSubscription {
+			return nil, domain.SubscriptionReconfigurationRequired()
+		}
 	case *domain.Account:
+		v.Subscription = nil
 		v.Health = domain.AccountDisconnected
 		v.Quota = []domain.QuotaWindow{}
 		v.ConfirmedExhausted = false
@@ -256,7 +265,7 @@ func (v *configurationOverlay) ValidateModelIdentity(id domain.ID, model domain.
 		if err != nil {
 			return err
 		}
-		if (other.ProviderID == model.ProviderID && other.NativeID == model.NativeID) || (other.Alias != "" && other.Alias == model.NativeID) || (model.Alias != "" && (model.Alias == other.Alias || model.Alias == other.NativeID || model.Alias == string(row.ID))) {
+		if other.SameIdentity(model) || (other.Alias != "" && other.Alias == model.NativeID) || (model.Alias != "" && (model.Alias == other.Alias || model.Alias == other.NativeID || model.Alias == string(row.ID))) {
 			return transferConflict()
 		}
 	}
@@ -290,7 +299,7 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if bundle.Version != domain.ConfigurationBundleVersion || len(bundle.Entries) == 0 {
+	if (bundle.Version != 1 && bundle.Version != domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
 		return plan, transferInvalid()
 	}
 	if len(bundle.Entries) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationBundleBytes || len(bundle.Machines) > domain.MaxConfigurationCheckouts || len(selection.Bindings) > len(bundle.Entries) || len(selection.Machines) > len(bundle.Machines) || len(selection.Checkouts) > domain.MaxConfigurationCheckouts {
@@ -302,6 +311,17 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	for _, entry := range bundle.Entries {
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
+		}
+		if bundle.Version == 1 {
+			var legacy struct {
+				Type       domain.AccountType         `json:"type"`
+				SourceKind domain.ModelSourceKind     `json:"source_kind"`
+				Protocol   domain.APIProtocol         `json:"protocol"`
+				Service    domain.SubscriptionService `json:"subscription_service"`
+			}
+			if json.Unmarshal(entry.Document, &legacy) != nil || legacy.Type == domain.SubscriptionAccount || legacy.SourceKind != "" || legacy.Protocol == domain.NativeSubscription || legacy.Service != "" {
+				return plan, domain.Fail(domain.Unsupported, "Version-1 imports support API configuration only.", "Reconfigure native subscriptions explicitly and use a version-2 export; the entire import was rejected.")
+			}
 		}
 		if _, err := portableValue(entry.Kind, entry.Document, true); err != nil {
 			return plan, err
@@ -406,9 +426,13 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 		}
 		switch v := value.(type) {
 		case *domain.Model:
-			err = rewrite(&v.ProviderID, domain.ProviderKind)
+			if v.SourceKind != domain.SubscriptionModel {
+				err = rewrite(&v.ProviderID, domain.ProviderKind)
+			}
 		case *domain.Account:
-			err = rewrite(&v.ProviderID, domain.ProviderKind)
+			if v.Type != domain.SubscriptionAccount {
+				err = rewrite(&v.ProviderID, domain.ProviderKind)
+			}
 		case *domain.Agent:
 			if err = rewrite(&v.ModelID, domain.ModelKind); err == nil {
 				err = rewriteIDs(v.Templates, domain.TemplateKind)

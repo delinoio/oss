@@ -535,3 +535,7 @@ Native input accounting activates original capability 8, coverage 2, summary fie
 Claude main-loop input and OpenCode step, respectively. Negotiated native-units-v1
 returns their independent repeated summaries, retaining all existing response and
 Grok meanings. See the usage contract for source-specific counts and pricing.
+
+## Independent subscription service identity
+
+Activate the main-reserved `SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` only with real storage migration 28 after 26/27 and complete service-native configuration authority. The closed `SubscriptionServiceIdentity` enum preserves independent ChatGPT/Claude/Grok values; it is separate from the existing `SubscriptionService` RPC declaration. Reserved additive usage selection/group/model/pricing and request diagnostic fields retain the service without a fabricated provider. API-only documents remain schema 1; subscription Account/native Model and retired metadata projections use schema 2. Older clients receive explicit schema/support guidance. Bindings regenerate from the reconciled service-specific schemas.

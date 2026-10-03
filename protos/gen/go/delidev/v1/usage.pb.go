@@ -271,19 +271,20 @@ func (InputPricingMode) EnumDescriptor() ([]byte, []int) {
 type GetUsageSummaryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Half-open server retention-time range. Zero defaults to the last 30 days.
-	FromUnixMs        int64                  `protobuf:"varint,1,opt,name=from_unix_ms,json=fromUnixMs,proto3" json:"from_unix_ms,omitempty"`
-	UntilUnixMs       int64                  `protobuf:"varint,2,opt,name=until_unix_ms,json=untilUnixMs,proto3" json:"until_unix_ms,omitempty"`
-	SessionId         string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	ProjectId         string                 `protobuf:"bytes,4,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	AccountId         string                 `protobuf:"bytes,5,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	ProviderId        string                 `protobuf:"bytes,6,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
-	ModelId           string                 `protobuf:"bytes,7,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
-	GeneralChat       bool                   `protobuf:"varint,8,opt,name=general_chat,json=generalChat,proto3" json:"general_chat,omitempty"`
-	Granularity       UsageTimeGranularity   `protobuf:"varint,9,opt,name=granularity,proto3,enum=delidev.v1.UsageTimeGranularity" json:"granularity,omitempty"`
-	TimeZone          string                 `protobuf:"bytes,10,opt,name=time_zone,json=timeZone,proto3" json:"time_zone,omitempty"`
-	AccountingProfile UsageAccountingProfile `protobuf:"varint,11,opt,name=accounting_profile,json=accountingProfile,proto3,enum=delidev.v1.UsageAccountingProfile" json:"accounting_profile,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	FromUnixMs          int64                       `protobuf:"varint,1,opt,name=from_unix_ms,json=fromUnixMs,proto3" json:"from_unix_ms,omitempty"`
+	UntilUnixMs         int64                       `protobuf:"varint,2,opt,name=until_unix_ms,json=untilUnixMs,proto3" json:"until_unix_ms,omitempty"`
+	SessionId           string                      `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ProjectId           string                      `protobuf:"bytes,4,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	AccountId           string                      `protobuf:"bytes,5,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	ProviderId          string                      `protobuf:"bytes,6,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ModelId             string                      `protobuf:"bytes,7,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
+	GeneralChat         bool                        `protobuf:"varint,8,opt,name=general_chat,json=generalChat,proto3" json:"general_chat,omitempty"`
+	Granularity         UsageTimeGranularity        `protobuf:"varint,9,opt,name=granularity,proto3,enum=delidev.v1.UsageTimeGranularity" json:"granularity,omitempty"`
+	TimeZone            string                      `protobuf:"bytes,10,opt,name=time_zone,json=timeZone,proto3" json:"time_zone,omitempty"`
+	AccountingProfile   UsageAccountingProfile      `protobuf:"varint,11,opt,name=accounting_profile,json=accountingProfile,proto3,enum=delidev.v1.UsageAccountingProfile" json:"accounting_profile,omitempty"`
+	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,12,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *GetUsageSummaryRequest) Reset() {
@@ -391,6 +392,13 @@ func (x *GetUsageSummaryRequest) GetAccountingProfile() UsageAccountingProfile {
 		return x.AccountingProfile
 	}
 	return UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_UNSPECIFIED
+}
+
+func (x *GetUsageSummaryRequest) GetSubscriptionService() SubscriptionServiceIdentity {
+	if x != nil {
+		return x.SubscriptionService
+	}
+	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
 }
 
 type AccountingTotals struct {
@@ -711,14 +719,15 @@ func (x *UsageAnalyticsDay) GetTotals() *UsageTotals {
 }
 
 type UsageAnalyticsModel struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
-	ModelId       string                 `protobuf:"bytes,2,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
-	ProviderName  string                 `protobuf:"bytes,3,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
-	ModelName     string                 `protobuf:"bytes,4,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
-	Totals        *UsageTotals           `protobuf:"bytes,5,opt,name=totals,proto3" json:"totals,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState      `protogen:"open.v1"`
+	ProviderId          string                      `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ModelId             string                      `protobuf:"bytes,2,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
+	ProviderName        string                      `protobuf:"bytes,3,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
+	ModelName           string                      `protobuf:"bytes,4,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
+	Totals              *UsageTotals                `protobuf:"bytes,5,opt,name=totals,proto3" json:"totals,omitempty"`
+	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,6,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *UsageAnalyticsModel) Reset() {
@@ -784,6 +793,13 @@ func (x *UsageAnalyticsModel) GetTotals() *UsageTotals {
 		return x.Totals
 	}
 	return nil
+}
+
+func (x *UsageAnalyticsModel) GetSubscriptionService() SubscriptionServiceIdentity {
+	if x != nil {
+		return x.SubscriptionService
+	}
+	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
 }
 
 type UsageOtherModels struct {
@@ -925,14 +941,15 @@ type UsageGroup struct {
 	Totals     *UsageTotals `protobuf:"bytes,6,opt,name=totals,proto3" json:"totals,omitempty"`
 	// Current display labels only; immutable IDs above remain authoritative.
 	// Missing/deleted configuration leaves its label empty.
-	SessionName   string          `protobuf:"bytes,7,opt,name=session_name,json=sessionName,proto3" json:"session_name,omitempty"`
-	ProjectName   string          `protobuf:"bytes,8,opt,name=project_name,json=projectName,proto3" json:"project_name,omitempty"`
-	AccountName   string          `protobuf:"bytes,9,opt,name=account_name,json=accountName,proto3" json:"account_name,omitempty"`
-	ProviderName  string          `protobuf:"bytes,10,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
-	ModelName     string          `protobuf:"bytes,11,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
-	Estimates     *EstimateTotals `protobuf:"bytes,12,opt,name=estimates,proto3" json:"estimates,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SessionName         string                      `protobuf:"bytes,7,opt,name=session_name,json=sessionName,proto3" json:"session_name,omitempty"`
+	ProjectName         string                      `protobuf:"bytes,8,opt,name=project_name,json=projectName,proto3" json:"project_name,omitempty"`
+	AccountName         string                      `protobuf:"bytes,9,opt,name=account_name,json=accountName,proto3" json:"account_name,omitempty"`
+	ProviderName        string                      `protobuf:"bytes,10,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
+	ModelName           string                      `protobuf:"bytes,11,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
+	Estimates           *EstimateTotals             `protobuf:"bytes,12,opt,name=estimates,proto3" json:"estimates,omitempty"`
+	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,13,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *UsageGroup) Reset() {
@@ -1047,6 +1064,13 @@ func (x *UsageGroup) GetEstimates() *EstimateTotals {
 		return x.Estimates
 	}
 	return nil
+}
+
+func (x *UsageGroup) GetSubscriptionService() SubscriptionServiceIdentity {
+	if x != nil {
+		return x.SubscriptionService
+	}
+	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
 }
 
 type GetUsageSummaryResponse struct {
@@ -1295,15 +1319,16 @@ func (x *TokenPricing) GetExclusions() []string {
 }
 
 type PricingVersion struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ModelId         string                 `protobuf:"bytes,2,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
-	ProviderId      string                 `protobuf:"bytes,3,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
-	Revision        uint64                 `protobuf:"varint,4,opt,name=revision,proto3" json:"revision,omitempty"`
-	CreatedAtUnixMs int64                  `protobuf:"varint,5,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
-	Basis           *TokenPricing          `protobuf:"bytes,6,opt,name=basis,proto3" json:"basis,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state               protoimpl.MessageState      `protogen:"open.v1"`
+	Id                  string                      `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ModelId             string                      `protobuf:"bytes,2,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
+	ProviderId          string                      `protobuf:"bytes,3,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	Revision            uint64                      `protobuf:"varint,4,opt,name=revision,proto3" json:"revision,omitempty"`
+	CreatedAtUnixMs     int64                       `protobuf:"varint,5,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
+	Basis               *TokenPricing               `protobuf:"bytes,6,opt,name=basis,proto3" json:"basis,omitempty"`
+	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,7,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *PricingVersion) Reset() {
@@ -1376,6 +1401,13 @@ func (x *PricingVersion) GetBasis() *TokenPricing {
 		return x.Basis
 	}
 	return nil
+}
+
+func (x *PricingVersion) GetSubscriptionService() SubscriptionServiceIdentity {
+	if x != nil {
+		return x.SubscriptionService
+	}
+	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
 }
 
 type GetModelPricingRequest struct {
@@ -2238,15 +2270,16 @@ func (x *NativeAccountingTotals) GetUnpricedUnits() uint32 {
 }
 
 type NativeAccountingGroup struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	SessionId     string                  `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	ProjectId     string                  `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	AccountId     string                  `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	ProviderId    string                  `protobuf:"bytes,4,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
-	ModelId       string                  `protobuf:"bytes,5,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
-	Totals        *NativeAccountingTotals `protobuf:"bytes,6,opt,name=totals,proto3" json:"totals,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState      `protogen:"open.v1"`
+	SessionId           string                      `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ProjectId           string                      `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	AccountId           string                      `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	ProviderId          string                      `protobuf:"bytes,4,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ModelId             string                      `protobuf:"bytes,5,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
+	Totals              *NativeAccountingTotals     `protobuf:"bytes,6,opt,name=totals,proto3" json:"totals,omitempty"`
+	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,7,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *NativeAccountingGroup) Reset() {
@@ -2319,6 +2352,13 @@ func (x *NativeAccountingGroup) GetTotals() *NativeAccountingTotals {
 		return x.Totals
 	}
 	return nil
+}
+
+func (x *NativeAccountingGroup) GetSubscriptionService() SubscriptionServiceIdentity {
+	if x != nil {
+		return x.SubscriptionService
+	}
+	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
 }
 
 type NativeAccountingDay struct {
@@ -2656,7 +2696,7 @@ var File_delidev_v1_usage_proto protoreflect.FileDescriptor
 const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"\x16delidev/v1/usage.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\"\xce\x03\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\"\xaa\x04\n" +
 	"\x16GetUsageSummaryRequest\x12 \n" +
 	"\ffrom_unix_ms\x18\x01 \x01(\x03R\n" +
 	"fromUnixMs\x12\"\n" +
@@ -2674,7 +2714,8 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\vgranularity\x18\t \x01(\x0e2 .delidev.v1.UsageTimeGranularityR\vgranularity\x12\x1b\n" +
 	"\ttime_zone\x18\n" +
 	" \x01(\tR\btimeZone\x12Q\n" +
-	"\x12accounting_profile\x18\v \x01(\x0e2\".delidev.v1.UsageAccountingProfileR\x11accountingProfile\"\xd1\x02\n" +
+	"\x12accounting_profile\x18\v \x01(\x0e2\".delidev.v1.UsageAccountingProfileR\x11accountingProfile\x12Z\n" +
+	"\x14subscription_service\x18\f \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"\xd1\x02\n" +
 	"\x10AccountingTotals\x122\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1e.delidev.v1.AccountingUnitKindR\x04kind\x12\x14\n" +
 	"\x05units\x18\x02 \x01(\rR\x05units\x12\x1f\n" +
@@ -2705,7 +2746,7 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\ffrom_unix_ms\x18\x01 \x01(\x03R\n" +
 	"fromUnixMs\x12\"\n" +
 	"\runtil_unix_ms\x18\x02 \x01(\x03R\vuntilUnixMs\x12/\n" +
-	"\x06totals\x18\x03 \x01(\v2\x17.delidev.v1.UsageTotalsR\x06totals\"\xc6\x01\n" +
+	"\x06totals\x18\x03 \x01(\v2\x17.delidev.v1.UsageTotalsR\x06totals\"\xa2\x02\n" +
 	"\x13UsageAnalyticsModel\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12\x19\n" +
@@ -2713,7 +2754,8 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\rprovider_name\x18\x03 \x01(\tR\fproviderName\x12\x1d\n" +
 	"\n" +
 	"model_name\x18\x04 \x01(\tR\tmodelName\x12/\n" +
-	"\x06totals\x18\x05 \x01(\v2\x17.delidev.v1.UsageTotalsR\x06totals\"d\n" +
+	"\x06totals\x18\x05 \x01(\v2\x17.delidev.v1.UsageTotalsR\x06totals\x12Z\n" +
+	"\x14subscription_service\x18\x06 \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"d\n" +
 	"\x10UsageOtherModels\x12\x1f\n" +
 	"\vmodel_count\x18\x01 \x01(\rR\n" +
 	"modelCount\x12/\n" +
@@ -2723,7 +2765,7 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\ttime_zone\x18\x02 \x01(\tR\btimeZone\x121\n" +
 	"\x04days\x18\x03 \x03(\v2\x1d.delidev.v1.UsageAnalyticsDayR\x04days\x127\n" +
 	"\x06models\x18\x04 \x03(\v2\x1f.delidev.v1.UsageAnalyticsModelR\x06models\x12?\n" +
-	"\fother_models\x18\x05 \x01(\v2\x1c.delidev.v1.UsageOtherModelsR\votherModels\"\xbd\x03\n" +
+	"\fother_models\x18\x05 \x01(\v2\x1c.delidev.v1.UsageOtherModelsR\votherModels\"\x99\x04\n" +
 	"\n" +
 	"UsageGroup\x12\x1d\n" +
 	"\n" +
@@ -2743,7 +2785,8 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	" \x01(\tR\fproviderName\x12\x1d\n" +
 	"\n" +
 	"model_name\x18\v \x01(\tR\tmodelName\x128\n" +
-	"\testimates\x18\f \x01(\v2\x1a.delidev.v1.EstimateTotalsR\testimates\"\x95\x06\n" +
+	"\testimates\x18\f \x01(\v2\x1a.delidev.v1.EstimateTotalsR\testimates\x12Z\n" +
+	"\x14subscription_service\x18\r \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"\x95\x06\n" +
 	"\x17GetUsageSummaryResponse\x12 \n" +
 	"\ffrom_unix_ms\x18\x01 \x01(\x03R\n" +
 	"fromUnixMs\x12\"\n" +
@@ -2775,7 +2818,7 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"exclusionsB\x14\n" +
 	"\x12_input_per_millionB\x1b\n" +
 	"\x19_cached_input_per_millionB\x15\n" +
-	"\x13_output_per_million\"\xd5\x01\n" +
+	"\x13_output_per_million\"\xb1\x02\n" +
 	"\x0ePricingVersion\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bmodel_id\x18\x02 \x01(\tR\amodelId\x12\x1f\n" +
@@ -2783,7 +2826,8 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"providerId\x12\x1a\n" +
 	"\brevision\x18\x04 \x01(\x04R\brevision\x12+\n" +
 	"\x12created_at_unix_ms\x18\x05 \x01(\x03R\x0fcreatedAtUnixMs\x12.\n" +
-	"\x05basis\x18\x06 \x01(\v2\x18.delidev.v1.TokenPricingR\x05basis\"3\n" +
+	"\x05basis\x18\x06 \x01(\v2\x18.delidev.v1.TokenPricingR\x05basis\x12Z\n" +
+	"\x14subscription_service\x18\a \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"3\n" +
 	"\x16GetModelPricingRequest\x12\x19\n" +
 	"\bmodel_id\x18\x01 \x01(\tR\amodelId\"v\n" +
 	"\x17GetModelPricingResponse\x12%\n" +
@@ -2853,7 +2897,7 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"currencies\x18\t \x03(\v2\".delidev.v1.NativeCurrencyEstimateR\n" +
 	"currencies\x12%\n" +
 	"\x0eunpriced_units\x18\n" +
-	" \x01(\rR\runpricedUnits\"\xec\x01\n" +
+	" \x01(\rR\runpricedUnits\"\xc8\x02\n" +
 	"\x15NativeAccountingGroup\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -2864,7 +2908,8 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\vprovider_id\x18\x04 \x01(\tR\n" +
 	"providerId\x12\x19\n" +
 	"\bmodel_id\x18\x05 \x01(\tR\amodelId\x12:\n" +
-	"\x06totals\x18\x06 \x01(\v2\".delidev.v1.NativeAccountingTotalsR\x06totals\"\x97\x01\n" +
+	"\x06totals\x18\x06 \x01(\v2\".delidev.v1.NativeAccountingTotalsR\x06totals\x12Z\n" +
+	"\x14subscription_service\x18\a \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"\x97\x01\n" +
 	"\x13NativeAccountingDay\x12 \n" +
 	"\ffrom_unix_ms\x18\x01 \x01(\x03R\n" +
 	"fromUnixMs\x12\"\n" +
@@ -2972,91 +3017,97 @@ var file_delidev_v1_usage_proto_goTypes = []any{
 	(*NativeEstimateMeasure)(nil),     // 32: delidev.v1.NativeEstimateMeasure
 	(*NativeAccountingPricing)(nil),   // 33: delidev.v1.NativeAccountingPricing
 	(*NativeAccountingSummary)(nil),   // 34: delidev.v1.NativeAccountingSummary
-	(UsageCoverage)(0),                // 35: delidev.v1.UsageCoverage
-	(*Mutation)(nil),                  // 36: delidev.v1.Mutation
+	(SubscriptionServiceIdentity)(0),  // 35: delidev.v1.SubscriptionServiceIdentity
+	(UsageCoverage)(0),                // 36: delidev.v1.UsageCoverage
+	(*Mutation)(nil),                  // 37: delidev.v1.Mutation
 }
 var file_delidev_v1_usage_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.GetUsageSummaryRequest.granularity:type_name -> delidev.v1.UsageTimeGranularity
 	1,  // 1: delidev.v1.GetUsageSummaryRequest.accounting_profile:type_name -> delidev.v1.UsageAccountingProfile
-	2,  // 2: delidev.v1.AccountingTotals.kind:type_name -> delidev.v1.AccountingUnitKind
-	3,  // 3: delidev.v1.AccountingTotals.actual_cost:type_name -> delidev.v1.UsageCostState
-	3,  // 4: delidev.v1.AccountingTotals.estimated_cost:type_name -> delidev.v1.UsageCostState
-	7,  // 5: delidev.v1.UsageTotals.input:type_name -> delidev.v1.UsageMeasure
-	7,  // 6: delidev.v1.UsageTotals.cached_input:type_name -> delidev.v1.UsageMeasure
-	7,  // 7: delidev.v1.UsageTotals.cache_write_input:type_name -> delidev.v1.UsageMeasure
-	7,  // 8: delidev.v1.UsageTotals.output:type_name -> delidev.v1.UsageMeasure
-	7,  // 9: delidev.v1.UsageTotals.reasoning_output:type_name -> delidev.v1.UsageMeasure
-	7,  // 10: delidev.v1.UsageTotals.total:type_name -> delidev.v1.UsageMeasure
-	6,  // 11: delidev.v1.UsageTotals.accounting:type_name -> delidev.v1.AccountingTotals
-	8,  // 12: delidev.v1.UsageAnalyticsDay.totals:type_name -> delidev.v1.UsageTotals
-	8,  // 13: delidev.v1.UsageAnalyticsModel.totals:type_name -> delidev.v1.UsageTotals
-	8,  // 14: delidev.v1.UsageOtherModels.totals:type_name -> delidev.v1.UsageTotals
-	0,  // 15: delidev.v1.UsageAnalytics.granularity:type_name -> delidev.v1.UsageTimeGranularity
-	9,  // 16: delidev.v1.UsageAnalytics.days:type_name -> delidev.v1.UsageAnalyticsDay
-	10, // 17: delidev.v1.UsageAnalytics.models:type_name -> delidev.v1.UsageAnalyticsModel
-	11, // 18: delidev.v1.UsageAnalytics.other_models:type_name -> delidev.v1.UsageOtherModels
-	8,  // 19: delidev.v1.UsageGroup.totals:type_name -> delidev.v1.UsageTotals
-	24, // 20: delidev.v1.UsageGroup.estimates:type_name -> delidev.v1.EstimateTotals
-	8,  // 21: delidev.v1.GetUsageSummaryResponse.totals:type_name -> delidev.v1.UsageTotals
-	13, // 22: delidev.v1.GetUsageSummaryResponse.groups:type_name -> delidev.v1.UsageGroup
-	35, // 23: delidev.v1.GetUsageSummaryResponse.coverage:type_name -> delidev.v1.UsageCoverage
-	3,  // 24: delidev.v1.GetUsageSummaryResponse.actual_cost:type_name -> delidev.v1.UsageCostState
-	3,  // 25: delidev.v1.GetUsageSummaryResponse.estimated_cost:type_name -> delidev.v1.UsageCostState
-	24, // 26: delidev.v1.GetUsageSummaryResponse.estimates:type_name -> delidev.v1.EstimateTotals
-	26, // 27: delidev.v1.GetUsageSummaryResponse.pricing:type_name -> delidev.v1.PricingUsage
-	12, // 28: delidev.v1.GetUsageSummaryResponse.analytics:type_name -> delidev.v1.UsageAnalytics
-	1,  // 29: delidev.v1.GetUsageSummaryResponse.accounting_profile:type_name -> delidev.v1.UsageAccountingProfile
-	34, // 30: delidev.v1.GetUsageSummaryResponse.native_accounting:type_name -> delidev.v1.NativeAccountingSummary
-	4,  // 31: delidev.v1.TokenPricing.input_mode:type_name -> delidev.v1.InputPricingMode
-	15, // 32: delidev.v1.PricingVersion.basis:type_name -> delidev.v1.TokenPricing
-	16, // 33: delidev.v1.GetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
-	16, // 34: delidev.v1.GetPricingVersionResponse.pricing:type_name -> delidev.v1.PricingVersion
-	36, // 35: delidev.v1.SetModelPricingRequest.mutation:type_name -> delidev.v1.Mutation
-	15, // 36: delidev.v1.SetModelPricingRequest.basis:type_name -> delidev.v1.TokenPricing
-	16, // 37: delidev.v1.SetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
-	23, // 38: delidev.v1.EstimateTotals.currencies:type_name -> delidev.v1.CurrencyEstimate
-	16, // 39: delidev.v1.PricingUsage.pricing:type_name -> delidev.v1.PricingVersion
-	23, // 40: delidev.v1.PricingUsage.totals:type_name -> delidev.v1.CurrencyEstimate
-	25, // 41: delidev.v1.PricingUsage.input:type_name -> delidev.v1.EstimateMeasure
-	25, // 42: delidev.v1.PricingUsage.cached_input:type_name -> delidev.v1.EstimateMeasure
-	25, // 43: delidev.v1.PricingUsage.output:type_name -> delidev.v1.EstimateMeasure
-	2,  // 44: delidev.v1.NativeAccountingTotals.kind:type_name -> delidev.v1.AccountingUnitKind
-	27, // 45: delidev.v1.NativeAccountingTotals.input:type_name -> delidev.v1.NativeAccountingMeasure
-	27, // 46: delidev.v1.NativeAccountingTotals.cache_read:type_name -> delidev.v1.NativeAccountingMeasure
-	27, // 47: delidev.v1.NativeAccountingTotals.cache_write:type_name -> delidev.v1.NativeAccountingMeasure
-	27, // 48: delidev.v1.NativeAccountingTotals.output:type_name -> delidev.v1.NativeAccountingMeasure
-	27, // 49: delidev.v1.NativeAccountingTotals.thinking:type_name -> delidev.v1.NativeAccountingMeasure
-	27, // 50: delidev.v1.NativeAccountingTotals.total:type_name -> delidev.v1.NativeAccountingMeasure
-	28, // 51: delidev.v1.NativeAccountingTotals.currencies:type_name -> delidev.v1.NativeCurrencyEstimate
-	29, // 52: delidev.v1.NativeAccountingGroup.totals:type_name -> delidev.v1.NativeAccountingTotals
-	29, // 53: delidev.v1.NativeAccountingDay.totals:type_name -> delidev.v1.NativeAccountingTotals
-	16, // 54: delidev.v1.NativeAccountingPricing.pricing:type_name -> delidev.v1.PricingVersion
-	29, // 55: delidev.v1.NativeAccountingPricing.totals:type_name -> delidev.v1.NativeAccountingTotals
-	32, // 56: delidev.v1.NativeAccountingPricing.input:type_name -> delidev.v1.NativeEstimateMeasure
-	32, // 57: delidev.v1.NativeAccountingPricing.cache_read:type_name -> delidev.v1.NativeEstimateMeasure
-	32, // 58: delidev.v1.NativeAccountingPricing.cache_write:type_name -> delidev.v1.NativeEstimateMeasure
-	32, // 59: delidev.v1.NativeAccountingPricing.output:type_name -> delidev.v1.NativeEstimateMeasure
-	32, // 60: delidev.v1.NativeAccountingPricing.reasoning:type_name -> delidev.v1.NativeEstimateMeasure
-	29, // 61: delidev.v1.NativeAccountingSummary.totals:type_name -> delidev.v1.NativeAccountingTotals
-	30, // 62: delidev.v1.NativeAccountingSummary.groups:type_name -> delidev.v1.NativeAccountingGroup
-	31, // 63: delidev.v1.NativeAccountingSummary.days:type_name -> delidev.v1.NativeAccountingDay
-	30, // 64: delidev.v1.NativeAccountingSummary.models:type_name -> delidev.v1.NativeAccountingGroup
-	33, // 65: delidev.v1.NativeAccountingSummary.pricing:type_name -> delidev.v1.NativeAccountingPricing
-	35, // 66: delidev.v1.NativeAccountingSummary.coverage:type_name -> delidev.v1.UsageCoverage
-	3,  // 67: delidev.v1.NativeAccountingSummary.actual_cost:type_name -> delidev.v1.UsageCostState
-	5,  // 68: delidev.v1.UsageService.GetUsageSummary:input_type -> delidev.v1.GetUsageSummaryRequest
-	17, // 69: delidev.v1.UsageService.GetModelPricing:input_type -> delidev.v1.GetModelPricingRequest
-	19, // 70: delidev.v1.UsageService.GetPricingVersion:input_type -> delidev.v1.GetPricingVersionRequest
-	21, // 71: delidev.v1.UsageService.SetModelPricing:input_type -> delidev.v1.SetModelPricingRequest
-	14, // 72: delidev.v1.UsageService.GetUsageSummary:output_type -> delidev.v1.GetUsageSummaryResponse
-	18, // 73: delidev.v1.UsageService.GetModelPricing:output_type -> delidev.v1.GetModelPricingResponse
-	20, // 74: delidev.v1.UsageService.GetPricingVersion:output_type -> delidev.v1.GetPricingVersionResponse
-	22, // 75: delidev.v1.UsageService.SetModelPricing:output_type -> delidev.v1.SetModelPricingResponse
-	72, // [72:76] is the sub-list for method output_type
-	68, // [68:72] is the sub-list for method input_type
-	68, // [68:68] is the sub-list for extension type_name
-	68, // [68:68] is the sub-list for extension extendee
-	0,  // [0:68] is the sub-list for field type_name
+	35, // 2: delidev.v1.GetUsageSummaryRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	2,  // 3: delidev.v1.AccountingTotals.kind:type_name -> delidev.v1.AccountingUnitKind
+	3,  // 4: delidev.v1.AccountingTotals.actual_cost:type_name -> delidev.v1.UsageCostState
+	3,  // 5: delidev.v1.AccountingTotals.estimated_cost:type_name -> delidev.v1.UsageCostState
+	7,  // 6: delidev.v1.UsageTotals.input:type_name -> delidev.v1.UsageMeasure
+	7,  // 7: delidev.v1.UsageTotals.cached_input:type_name -> delidev.v1.UsageMeasure
+	7,  // 8: delidev.v1.UsageTotals.cache_write_input:type_name -> delidev.v1.UsageMeasure
+	7,  // 9: delidev.v1.UsageTotals.output:type_name -> delidev.v1.UsageMeasure
+	7,  // 10: delidev.v1.UsageTotals.reasoning_output:type_name -> delidev.v1.UsageMeasure
+	7,  // 11: delidev.v1.UsageTotals.total:type_name -> delidev.v1.UsageMeasure
+	6,  // 12: delidev.v1.UsageTotals.accounting:type_name -> delidev.v1.AccountingTotals
+	8,  // 13: delidev.v1.UsageAnalyticsDay.totals:type_name -> delidev.v1.UsageTotals
+	8,  // 14: delidev.v1.UsageAnalyticsModel.totals:type_name -> delidev.v1.UsageTotals
+	35, // 15: delidev.v1.UsageAnalyticsModel.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	8,  // 16: delidev.v1.UsageOtherModels.totals:type_name -> delidev.v1.UsageTotals
+	0,  // 17: delidev.v1.UsageAnalytics.granularity:type_name -> delidev.v1.UsageTimeGranularity
+	9,  // 18: delidev.v1.UsageAnalytics.days:type_name -> delidev.v1.UsageAnalyticsDay
+	10, // 19: delidev.v1.UsageAnalytics.models:type_name -> delidev.v1.UsageAnalyticsModel
+	11, // 20: delidev.v1.UsageAnalytics.other_models:type_name -> delidev.v1.UsageOtherModels
+	8,  // 21: delidev.v1.UsageGroup.totals:type_name -> delidev.v1.UsageTotals
+	24, // 22: delidev.v1.UsageGroup.estimates:type_name -> delidev.v1.EstimateTotals
+	35, // 23: delidev.v1.UsageGroup.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	8,  // 24: delidev.v1.GetUsageSummaryResponse.totals:type_name -> delidev.v1.UsageTotals
+	13, // 25: delidev.v1.GetUsageSummaryResponse.groups:type_name -> delidev.v1.UsageGroup
+	36, // 26: delidev.v1.GetUsageSummaryResponse.coverage:type_name -> delidev.v1.UsageCoverage
+	3,  // 27: delidev.v1.GetUsageSummaryResponse.actual_cost:type_name -> delidev.v1.UsageCostState
+	3,  // 28: delidev.v1.GetUsageSummaryResponse.estimated_cost:type_name -> delidev.v1.UsageCostState
+	24, // 29: delidev.v1.GetUsageSummaryResponse.estimates:type_name -> delidev.v1.EstimateTotals
+	26, // 30: delidev.v1.GetUsageSummaryResponse.pricing:type_name -> delidev.v1.PricingUsage
+	12, // 31: delidev.v1.GetUsageSummaryResponse.analytics:type_name -> delidev.v1.UsageAnalytics
+	1,  // 32: delidev.v1.GetUsageSummaryResponse.accounting_profile:type_name -> delidev.v1.UsageAccountingProfile
+	34, // 33: delidev.v1.GetUsageSummaryResponse.native_accounting:type_name -> delidev.v1.NativeAccountingSummary
+	4,  // 34: delidev.v1.TokenPricing.input_mode:type_name -> delidev.v1.InputPricingMode
+	15, // 35: delidev.v1.PricingVersion.basis:type_name -> delidev.v1.TokenPricing
+	35, // 36: delidev.v1.PricingVersion.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	16, // 37: delidev.v1.GetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
+	16, // 38: delidev.v1.GetPricingVersionResponse.pricing:type_name -> delidev.v1.PricingVersion
+	37, // 39: delidev.v1.SetModelPricingRequest.mutation:type_name -> delidev.v1.Mutation
+	15, // 40: delidev.v1.SetModelPricingRequest.basis:type_name -> delidev.v1.TokenPricing
+	16, // 41: delidev.v1.SetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
+	23, // 42: delidev.v1.EstimateTotals.currencies:type_name -> delidev.v1.CurrencyEstimate
+	16, // 43: delidev.v1.PricingUsage.pricing:type_name -> delidev.v1.PricingVersion
+	23, // 44: delidev.v1.PricingUsage.totals:type_name -> delidev.v1.CurrencyEstimate
+	25, // 45: delidev.v1.PricingUsage.input:type_name -> delidev.v1.EstimateMeasure
+	25, // 46: delidev.v1.PricingUsage.cached_input:type_name -> delidev.v1.EstimateMeasure
+	25, // 47: delidev.v1.PricingUsage.output:type_name -> delidev.v1.EstimateMeasure
+	2,  // 48: delidev.v1.NativeAccountingTotals.kind:type_name -> delidev.v1.AccountingUnitKind
+	27, // 49: delidev.v1.NativeAccountingTotals.input:type_name -> delidev.v1.NativeAccountingMeasure
+	27, // 50: delidev.v1.NativeAccountingTotals.cache_read:type_name -> delidev.v1.NativeAccountingMeasure
+	27, // 51: delidev.v1.NativeAccountingTotals.cache_write:type_name -> delidev.v1.NativeAccountingMeasure
+	27, // 52: delidev.v1.NativeAccountingTotals.output:type_name -> delidev.v1.NativeAccountingMeasure
+	27, // 53: delidev.v1.NativeAccountingTotals.thinking:type_name -> delidev.v1.NativeAccountingMeasure
+	27, // 54: delidev.v1.NativeAccountingTotals.total:type_name -> delidev.v1.NativeAccountingMeasure
+	28, // 55: delidev.v1.NativeAccountingTotals.currencies:type_name -> delidev.v1.NativeCurrencyEstimate
+	29, // 56: delidev.v1.NativeAccountingGroup.totals:type_name -> delidev.v1.NativeAccountingTotals
+	35, // 57: delidev.v1.NativeAccountingGroup.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	29, // 58: delidev.v1.NativeAccountingDay.totals:type_name -> delidev.v1.NativeAccountingTotals
+	16, // 59: delidev.v1.NativeAccountingPricing.pricing:type_name -> delidev.v1.PricingVersion
+	29, // 60: delidev.v1.NativeAccountingPricing.totals:type_name -> delidev.v1.NativeAccountingTotals
+	32, // 61: delidev.v1.NativeAccountingPricing.input:type_name -> delidev.v1.NativeEstimateMeasure
+	32, // 62: delidev.v1.NativeAccountingPricing.cache_read:type_name -> delidev.v1.NativeEstimateMeasure
+	32, // 63: delidev.v1.NativeAccountingPricing.cache_write:type_name -> delidev.v1.NativeEstimateMeasure
+	32, // 64: delidev.v1.NativeAccountingPricing.output:type_name -> delidev.v1.NativeEstimateMeasure
+	32, // 65: delidev.v1.NativeAccountingPricing.reasoning:type_name -> delidev.v1.NativeEstimateMeasure
+	29, // 66: delidev.v1.NativeAccountingSummary.totals:type_name -> delidev.v1.NativeAccountingTotals
+	30, // 67: delidev.v1.NativeAccountingSummary.groups:type_name -> delidev.v1.NativeAccountingGroup
+	31, // 68: delidev.v1.NativeAccountingSummary.days:type_name -> delidev.v1.NativeAccountingDay
+	30, // 69: delidev.v1.NativeAccountingSummary.models:type_name -> delidev.v1.NativeAccountingGroup
+	33, // 70: delidev.v1.NativeAccountingSummary.pricing:type_name -> delidev.v1.NativeAccountingPricing
+	36, // 71: delidev.v1.NativeAccountingSummary.coverage:type_name -> delidev.v1.UsageCoverage
+	3,  // 72: delidev.v1.NativeAccountingSummary.actual_cost:type_name -> delidev.v1.UsageCostState
+	5,  // 73: delidev.v1.UsageService.GetUsageSummary:input_type -> delidev.v1.GetUsageSummaryRequest
+	17, // 74: delidev.v1.UsageService.GetModelPricing:input_type -> delidev.v1.GetModelPricingRequest
+	19, // 75: delidev.v1.UsageService.GetPricingVersion:input_type -> delidev.v1.GetPricingVersionRequest
+	21, // 76: delidev.v1.UsageService.SetModelPricing:input_type -> delidev.v1.SetModelPricingRequest
+	14, // 77: delidev.v1.UsageService.GetUsageSummary:output_type -> delidev.v1.GetUsageSummaryResponse
+	18, // 78: delidev.v1.UsageService.GetModelPricing:output_type -> delidev.v1.GetModelPricingResponse
+	20, // 79: delidev.v1.UsageService.GetPricingVersion:output_type -> delidev.v1.GetPricingVersionResponse
+	22, // 80: delidev.v1.UsageService.SetModelPricing:output_type -> delidev.v1.SetModelPricingResponse
+	77, // [77:81] is the sub-list for method output_type
+	73, // [73:77] is the sub-list for method input_type
+	73, // [73:73] is the sub-list for extension type_name
+	73, // [73:73] is the sub-list for extension extendee
+	0,  // [0:73] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_usage_proto_init() }
