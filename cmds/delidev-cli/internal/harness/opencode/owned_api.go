@@ -311,7 +311,11 @@ func (a *OwnedAPI) Close(ctx context.Context) error {
 		return err
 	}
 	defer s.leave()
+	joined := s.joinCompactionHTTP(ctx, true)
 	err := s.closeOwned(ctx)
+	if joined != nil {
+		err = joined
+	}
 	if s.events != nil {
 		s.events.Close()
 	}

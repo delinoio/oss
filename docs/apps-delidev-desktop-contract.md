@@ -1465,3 +1465,10 @@ navigation/response loss, and poll context resources without replaying a native
 command. Show unavailable counters explicitly, preserve uncertain action guidance
 and require independent server/Worker capabilities. The control remains outside
 Settings and does not alter ordinary conversation outcomes or queued input.
+
+Original OpenCode automatic compaction progress uses the same bounded inert
+context disclosure as Codex, retaining its own harness and native part reference.
+Show started/completed independently of current context tokens, which remain
+unavailable when unreported. Native summaries and continuation users do not
+replace the canonical conversation. The private OpenCode manual controller does
+not enable the desktop action before independently negotiated product support.

@@ -116,10 +116,7 @@ func (s *sessionAPI) readCheckpointMessages(ctx context.Context, checkpoint nati
 	if seen == nil {
 		seen = map[string]bool{}
 	}
-	var messages []HistoryMessage
-	for _, history := range checkpointHistories(checkpoint) {
-		messages = append(messages, history.Messages...)
-	}
+	messages := checkpointInventory(checkpoint)
 	for index := len(messages) - 1; index >= 0; index-- {
 		s.historyRead = &historyPageRead{path: path}
 		raw, _, err := s.request(ctx, http.MethodGet, path, nil, http.StatusOK)

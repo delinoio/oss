@@ -243,3 +243,56 @@ response publications, preventing double charging. Missing counter splits remain
 unavailable, and actual cost remains unavailable. Accepted compaction actions with
 no exact response have a separate coverage count. No unavailable observation is
 a fabricated zero, and a transport response cannot prove native compaction success.
+
+## OpenCode original context and private manual controller
+
+Pinned OpenCode `1.18.32` automatic compaction now joins the original accepted
+input with separately owned native compaction-user/part, summary assistant,
+`session.compacted` event and marked native continuation. Summary and native
+continuation content never create a DeliDev input receipt or replace canonical
+conversation messages. The ordered execution outbox publishes only bounded
+context lifecycle metadata; original new step-finish sources retain their separate
+once-only accounting, while finalized assistants remain overlapping observations.
+A missing or conflicting lifecycle cannot grant terminal/continuation authority.
+
+When present, the selected model's known or user-declared context limit is copied
+into immutable `opencode_context` execution configuration before its first digest.
+The native initializer independently checks that exact configured limit. This is
+metadata provenance, not measured provider capacity; omitted legacy limits stay
+unknown and no output-limit default is invented. Later model changes cannot
+rewrite that snapshot.
+
+Private checkpoints retain the complete current native message/part inventory,
+all original automatic/manual context records and independently validated pruning
+markers alongside immutable ordinary input histories. Pruning may add only the
+pinned native completed timestamp to an originally completed owned tool part;
+changed output, input, metadata or identity is refused. Earlier conversation
+history and canonical tool output remain retained. Replacement copies the
+original SQLite/WAL/SHM into an independently owned home and compares every native
+message/part through the original local API before another input. No database rows
+are reconstructed or rewritten by DeliDev.
+
+The pinned native auxiliary summary task can update a marked native continuation
+user's ancillary summary after idle. A separate original API read may retain that
+closed metadata when the complete original identity/base still matches. That read
+cannot fill a missing compaction event, acknowledge another input, establish
+assistant settlement or publish canonical conversation content. A transport gap
+within compaction remains uncertain; it cannot synthesize the missing lifecycle.
+
+The private manual controller accepts only a fresh independently restored
+successful original checkpoint under the unchanged native model/agent/settings.
+It synchronizes one original action-bound send claim before one summarize request
+with explicit original provider/model and `auto=false`. Its asynchronous HTTP
+request is bounded, cancellation-owned and joined at cleanup while the original
+event reader drains native arrivals. HTTP acknowledgment, native lifecycle, full
+history and cleanup remain separate. A lost HTTP response cannot be resent or
+retained as a successful checkpoint even if native lifecycle arrived. Repeated
+manual actions preserve the original input/outcome and complete inherited context
+through each fresh process and subsequent ordinary input.
+
+This private manual primitive does not activate System capability 25, Worker
+capability 14 or the reserved manual product context capability. Durable product
+admission, original Worker action/checkpoint journals, authenticated RPC/CLI and
+desktop eligibility remain independently required before their activation. Actual
+scripted-provider native checks and unperformed real account/platform acceptance
+must remain separate in PR/issue/CI validation records.

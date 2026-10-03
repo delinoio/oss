@@ -134,6 +134,9 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		References: openCodeWorkspaceReferences(manifest),
 		Settings:   requested.Session, Instructions: requested.Instructions, Rejection: requested.Rejection,
 	}
+	if input.Configuration.OpenCodeContext != nil {
+		nativeConfig.ContextLimit = int64(input.Configuration.OpenCodeContext.Tokens)
+	}
 	var resumeClaim *opencode.SessionClaim
 	if checkpoint != nil {
 		claim, err := opencode.CheckpointResumeClaim(nativeConfig, checkpoint.NativeReference, input.ThreadRequestID)

@@ -1744,3 +1744,17 @@ The separate managed profile pins installed Codex 0.151.0, fresh private file-ba
 Codex child model, reasoning effort and numeric concurrency configuration follows the [subagent configuration contract](cmds-delidev-subagents-contract.md#codex-child-configuration). The pinned native thread start/resume/Fork receives only those exact supported keys; independent root observation and same-account model authority remain mandatory.
 
 OpenCode foreground children now follow issue #1208 and `cmds-delidev-subagents-contract.md`: original root task plus independently read child parent proof, one-level same-model foreground execution, separate response telemetry, no child control, complete inventory/owned cleanup and paused child-bearing completion. Root configuration fixes the pinned native depth at one; experimental background support remains disabled.
+
+### OpenCode native context lineage (#1203)
+
+Automatic compaction uses the independently owned input observer and complete
+native history/checkpoint profile in `cmds-delidev-compaction-contract.md`.
+Compaction users, native summaries and marked native continuation users are
+context records; ordinary successor text remains canonical assistant content.
+Original step-finish accounting is retained independently without adding
+assistant snapshots. Immutable optional `opencode_context` retains the selected
+model limit and known/user-declared provenance; omitted older configurations
+remain unknown. Context transport gaps cannot manufacture completion. The
+private once-only summarize controller preserves original provider/model,
+independent HTTP/lifecycle/history/cleanup and repeated fresh-process lineage;
+manual product capability remains gated on its complete business integration.

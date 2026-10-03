@@ -247,3 +247,12 @@ separate `accepted_compactions_without_response` coverage count exposes missing
 telemetry independently of ordinary accepted executions and never asserts zero
 usage. Existing conversation SQL purpose and historical rows remain unchanged;
 this adds no migration or fabricated native input.
+
+OpenCode automatic context summaries retain genuine new native step-finish
+identities under the original accepted execution. Their finalized-assistant
+snapshots overlap those steps and never add a charge. Native continuation users,
+retained summaries, inherited context and pruning timestamps cannot create
+another accounting source. Context metadata carries no current token count or
+exact cost claim; missing native categories retain the existing unavailable
+normalization. The private manual summarize adapter alone grants no public
+accounting or product-action capability.

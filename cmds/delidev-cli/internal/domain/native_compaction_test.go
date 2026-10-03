@@ -20,7 +20,7 @@ func TestNativeCompactionRequiresOriginalOrderedContextItem(t *testing.T) {
 	if _, err = ApplyNativeCompaction(done, v); err == nil {
 		t.Fatal("completed native item was reused")
 	}
-	for _, change := range []func(*NativeCompactionObservation){func(v *NativeCompactionObservation) { v.Harness = OpenCode }, func(v *NativeCompactionObservation) { v.Trigger = NativeManualCompaction }, func(v *NativeCompactionObservation) { v.Stage = "idle" }, func(v *NativeCompactionObservation) { v.NativeItemID = "" }} {
+	for _, change := range []func(*NativeCompactionObservation){func(v *NativeCompactionObservation) { v.Harness = ClaudeCode }, func(v *NativeCompactionObservation) { v.Trigger = NativeManualCompaction }, func(v *NativeCompactionObservation) { v.Stage = "idle" }, func(v *NativeCompactionObservation) { v.NativeItemID = "" }} {
 		invalid := v
 		change(&invalid)
 		if invalid.Validate() == nil {
