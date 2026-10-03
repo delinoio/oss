@@ -334,6 +334,16 @@ fn transfer_extents_rejects_managed_secondary_descriptor() {
                     -1
                 );
                 assert_eq!(*libc::__error(), libc::EROFS);
+                assert_eq!(
+                    pnport_fcntl(-1, libc::F_TRANSFEREXTENTS, secondary.as_raw_fd()),
+                    -1
+                );
+                assert_eq!(*libc::__error(), libc::EBADF);
+                assert_eq!(
+                    pnport_fcntl(primary.as_raw_fd(), libc::F_TRANSFEREXTENTS, -1),
+                    -1
+                );
+                assert_eq!(*libc::__error(), libc::EBADF);
             }
         },
     );

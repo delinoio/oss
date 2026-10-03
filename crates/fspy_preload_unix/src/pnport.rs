@@ -426,6 +426,21 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         None
     };
     if mutation && let Some(runtime) = runtime.as_mut() {
+        // F_GETPATH is a backing-path probe, not a descriptor-validity check:
+        // it fails for pipes and invalid descriptors alike. Validate every
+        // operand with the native descriptor query first so an invalid
+        // descriptor keeps the kernel's EBADF result instead of being masked
+        // by a managed-backing EROFS rejection.
+        if let Err(code) = descriptor_valid(fd, original) {
+            errno(code);
+            return -1;
+        }
+        if let Some(transfer_fd) = transfer_descriptor
+            && let Err(code) = descriptor_valid(transfer_fd, original)
+        {
+            errno(code);
+            return -1;
+        }
         let primary_readonly = match descriptor_readonly(fd, runtime) {
             Ok(readonly) => readonly,
             Err(code) => {
@@ -506,6 +521,20 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         }
     }
     result
+}
+
+unsafe fn descriptor_valid(
+    fd: c_int,
+    original: unsafe extern "C" fn(c_int, c_int, ...) -> c_int,
+) -> std::result::Result<(), c_int> {
+    let saved_errno = *__error();
+    if original(fd, libc::F_GETFD) == -1 {
+        let error = *__error();
+        errno(saved_errno);
+        return Err(error);
+    }
+    errno(saved_errno);
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
