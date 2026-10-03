@@ -132,6 +132,17 @@ impl Fixture {
 
     fn terminal(mode: &str) -> (Self, fs::File) {
         let root = Self::project(false);
+        // Controlled pre-launch failures exercise diagnostics before the
+        // command group or preload exists. No native output is published.
+        match mode {
+            "missing-image" => fs::remove_file(root.path().join("tree")).unwrap(),
+            "invalid-image" => {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(root.path().join("tree"), fs::Permissions::from_mode(0o600))
+                    .unwrap();
+            }
+            _ => {}
+        }
         let driver = root.path().join("terminal-driver");
         assert!(Command::new("cc")
             .arg(concat!(
@@ -178,6 +189,9 @@ impl Fixture {
             0
         );
         let mut command = Command::new(driver);
+        if matches!(mode, "missing-image" | "invalid-image") {
+            command.env("PNPORT_TEST_TERMINAL_DIAGNOSTICS", "1");
+        }
         command
             .current_dir(root.path())
             .arg(pnport_binary())
@@ -238,6 +252,8 @@ impl Fixture {
             let _ = file.take(64 * 1024).read_to_string(&mut log);
         }
         let actions = [
+            "command_prepared",
+            "native_image_admitted",
             "macos_owner_started",
             "spawn",
             "initialization_started",
@@ -245,6 +261,7 @@ impl Fixture {
             "macos_job_resumed",
             "descendant_injection_deadline",
             "supervisor_failed",
+            "native_failure_record",
             "macos_owner_cleanup_requested",
             "macos_owner_cleanup_acknowledged",
             "child_exit",
@@ -259,15 +276,42 @@ impl Fixture {
             .take(128)
             .collect();
         let codes: Vec<_> = [
+            "PNPORT_MANIFEST_MISSING",
+            "PNPORT_MANIFEST_INVALID",
+            "PNPORT_RESOLUTION_FAILED",
+            "PNPORT_FILESYSTEM_CONFLICT",
             "PNPORT_INJECTION_FAILED",
             "PNPORT_CLEANUP_FAILED",
             "PNPORT_UNSUPPORTED_OPERATION",
             "PNPORT_GRAPH_CHANGED",
             "PNPORT_CACHE_FAILED",
+            "PNPORT_ARCHIVE_CORRUPT",
+            "PNPORT_COMMAND_NOT_FOUND",
+            "PNPORT_COMMAND_NOT_EXECUTABLE",
         ]
         .into_iter()
         .filter(|code| log.contains(code))
         .collect();
+        let stages = [
+            "Starting",
+            "ProjectLoaded",
+            "ProjectValidated",
+            "PlatformValidated",
+            "CompanionValidated",
+            "CacheOpened",
+            "SessionPrepared",
+            "CommandResolved",
+        ];
+        let observed_stages: Vec<_> = log
+            .lines()
+            .filter(|line| line.contains("action=\"execution_stage\""))
+            .flat_map(|line| {
+                stages
+                    .iter()
+                    .filter(move |stage| line.contains(&format!("stage={stage}")))
+            })
+            .take(128)
+            .collect();
         #[cfg(target_os = "macos")]
         let stopped = fs::read_to_string(self.root.path().join("terminal.supervisor"))
             .ok()
@@ -296,7 +340,7 @@ impl Fixture {
             .filter_map(|value| value.parse().ok())
             .take(3)
             .collect();
-        json!({"actions": observed, "codes": codes, "supervisorStopped": stopped,
+        json!({"actions": observed, "stages": observed_stages, "codes": codes, "supervisorStopped": stopped,
             "waitOutcome": wait})
     }
 
@@ -741,6 +785,37 @@ fn redirected_input_keeps_the_callers_terminal_group() {
     assert_eq!(fixture.stopped().status.code(), Some(23));
     assert!(fixture.root.path().join("terminal.restored").is_file());
     fixture.assert_released();
+}
+
+#[test]
+fn terminal_startup_failures_retain_their_stage_and_exit_class() {
+    for (mode, status, code) in [
+        ("missing-image", 127, "PNPORT_COMMAND_NOT_FOUND"),
+        ("invalid-image", 126, "PNPORT_COMMAND_NOT_EXECUTABLE"),
+    ] {
+        let (mut fixture, _terminal) = Fixture::terminal(mode);
+        fixture.wait_marker("terminal.restored");
+        let output = fixture.child.take().unwrap().wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(status));
+        let diagnostics = fixture.terminal_diagnostics();
+        assert_eq!(diagnostics["codes"], json!([code]));
+        assert_eq!(
+            diagnostics["stages"],
+            json!([
+                "Starting",
+                "ProjectLoaded",
+                "ProjectValidated",
+                "PlatformValidated",
+                "CompanionValidated",
+                "CacheOpened",
+                "SessionPrepared",
+                "CommandResolved",
+            ])
+        );
+        assert_eq!(diagnostics["actions"], json!([]));
+        assert!(!fixture.root.path().join("root.pid").exists());
+        assert!(fixture.root.path().join("terminal.restored").is_file());
+    }
 }
 
 #[test]
