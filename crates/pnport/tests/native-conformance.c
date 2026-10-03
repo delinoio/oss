@@ -188,6 +188,23 @@ static int native_aliases(void) {
     errno = 0;
     if (chmod(backing, 0700) != -1 || errno != EROFS) return 111;
     if (close(fd)) return 112;
+    // Darwin permits 32 followed links. Compare the same chain against a
+    // native file and a virtual dependency so translation cannot extend it.
+    char chain[32], target[32];
+    for (int i = 32; i >= 0; --i) {
+        snprintf(chain, sizeof(chain), "chain-%02d", i);
+        snprintf(target, sizeof(target), "chain-%02d", i + 1);
+        if (symlink(i == 32 ? "source.txt" : target, chain)) return 116;
+    }
+    errno = 0;
+    if (open("chain-00", O_RDONLY) != -1 || errno != ELOOP) return 117;
+    fd = open("chain-01", O_RDONLY);
+    if (fd < 0 || read(fd, bytes, 6) != 6 || memcmp(bytes, "source", 6) || close(fd)) return 118;
+    if (unlink("chain-32") || symlink("node_modules/dep/file.txt", "chain-32")) return 119;
+    errno = 0;
+    if (open("chain-00", O_RDONLY) != -1 || errno != ELOOP) return 120;
+    fd = open("chain-01", O_RDONLY);
+    if (fd < 0 || read(fd, bytes, 13) != 13 || memcmp(bytes, "package bytes", 13) || close(fd)) return 121;
 #endif
     return dependency();
 }

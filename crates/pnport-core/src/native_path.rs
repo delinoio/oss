@@ -11,6 +11,11 @@ use std::{
 
 use crate::graph::Graph;
 
+#[cfg(target_os = "macos")]
+const MAX_SYMLINKS: usize = 32;
+#[cfg(not(target_os = "macos"))]
+const MAX_SYMLINKS: usize = 40;
+
 pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<PathBuf> {
     let mut remaining: VecDeque<OsString> = path
         .components()
@@ -43,7 +48,7 @@ pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<
                             && (follow_last || !remaining.is_empty()) =>
                     {
                         followed += 1;
-                        if followed > 40 {
+                        if followed > MAX_SYMLINKS {
                             return None;
                         }
                         let target = fs::read_link(&candidate).ok()?;
