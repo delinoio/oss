@@ -210,6 +210,9 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 				if err := removePending(entry.Path, privateRelative); err != nil {
 					return err
 				}
+				if err := m.compactRemovalClaim(ctx, r, pending); err != nil {
+					return err
+				}
 				return nil
 			}
 			if before.IsDir() {
@@ -250,6 +253,9 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 				return err
 			}
 			if err := removePending(entry.Path, privateRelative); err != nil {
+				return err
+			}
+			if err := m.compactRemovalClaim(ctx, r, pending); err != nil {
 				return err
 			}
 		}

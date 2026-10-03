@@ -11,6 +11,7 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -98,7 +99,7 @@ func (m *Manager) appendRemovalClaimRecord(ctx context.Context, r StorageRequest
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !validRemovalRelativePath(record.Original) || !validRemovalRelativePath(record.Private) || record.Original == record.Private || (record.State != storageRemovalRenamePrepared && record.State != storageRemovalRenameRenamed && record.State != storageRemovalRenameCleared) {
+	if !validRemovalClaimRecord(record) {
 		return ResultUncertain()
 	}
 	raw, err := json.Marshal(record)
@@ -118,6 +119,73 @@ func (m *Manager) appendRemovalClaimRecord(ctx context.Context, r StorageRequest
 		return ResultUncertain()
 	}
 	return security.AppendPrivate(path, raw)
+}
+
+func validRemovalClaimRecord(record storageRemovalRenameRecord) bool {
+	return validRemovalRelativePath(record.Original) && validRemovalRelativePath(record.Private) && record.Original != record.Private && (record.State == storageRemovalRenamePrepared || record.State == storageRemovalRenameRenamed || record.State == storageRemovalRenameCleared)
+}
+
+// Rewrite the journal from the still-active mappings after a successful clear.
+// This bounds durable progress by the current recovery frontier instead of the
+// total number of entries already removed. WriteAtomic leaves the previous
+// journal intact if publication fails, so the just-appended clear remains
+// recoverable through the old complete history.
+func (m *Manager) compactRemovalClaim(ctx context.Context, r StorageRequest, pending []storageRemovalRename) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	journalPath := m.removalClaimJournalPath(r.OperationID)
+	oldJournal, err := security.ReadPrivate(journalPath, maxStorageRemovalClaim)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return ResultUncertain()
+	}
+	if len(oldJournal) < maxStorageRemovalClaim/2 {
+		return nil
+	}
+	active := make([]storageRemovalRename, 0, len(pending))
+	seenOriginal := map[string]bool{}
+	seenPrivate := map[string]bool{}
+	for _, rename := range pending {
+		if rename.Original == "" && rename.Private == "" && !rename.Renamed {
+			continue
+		}
+		if !validRemovalRelativePath(rename.Original) || !validRemovalRelativePath(rename.Private) || rename.Original == rename.Private || seenOriginal[rename.Original] || seenPrivate[rename.Private] {
+			return ResultUncertain()
+		}
+		seenOriginal[rename.Original] = true
+		seenPrivate[rename.Private] = true
+		active = append(active, rename)
+	}
+	slices.SortFunc(active, func(a, b storageRemovalRename) int {
+		if a.Original < b.Original {
+			return -1
+		}
+		if a.Original > b.Original {
+			return 1
+		}
+		return strings.Compare(a.Private, b.Private)
+	})
+	journal := make([]byte, 0, len(active)*128)
+	for _, rename := range active {
+		for _, state := range []string{storageRemovalRenamePrepared, storageRemovalRenameRenamed} {
+			if state == storageRemovalRenameRenamed && !rename.Renamed {
+				break
+			}
+			raw, err := json.Marshal(storageRemovalRenameRecord{Original: rename.Original, Private: rename.Private, State: state})
+			if err != nil {
+				return ResultUncertain()
+			}
+			journal = append(journal, raw...)
+			journal = append(journal, '\n')
+			if len(journal) > maxStorageRemovalClaim {
+				return ResultUncertain()
+			}
+		}
+	}
+	return security.WriteAtomic(journalPath, journal)
 }
 
 func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (storageRemovalClaim, []storageRemovalRename, error) {
@@ -143,7 +211,7 @@ func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (stor
 	}
 	for _, line := range strings.Split(text, "\n") {
 		var record storageRemovalRenameRecord
-		if domain.Decode([]byte(line), &record) != nil || !validRemovalRelativePath(record.Original) || !validRemovalRelativePath(record.Private) || record.Original == record.Private {
+		if domain.Decode([]byte(line), &record) != nil || !validRemovalClaimRecord(record) {
 			return storageRemovalClaim{}, nil, ResultUncertain()
 		}
 		current, exists := active[record.Original]
@@ -366,6 +434,9 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 				// Neither name proves whether the pre-rename claim completed.
 				return ResultUncertain()
 			}
+		}
+		if err := m.compactRemovalClaim(ctx, r, mappings); err != nil {
+			return err
 		}
 	}
 	return m.retainRemovalClaim(ctx, r, raw)
