@@ -27,6 +27,7 @@ import { SettingsEntryDestination } from "./settings";
 import { SidebarOutletProvider } from "./sidebar-context";
 import { PullRequests } from "./pull-requests";
 import { SessionForkProvider } from "./session-fork";
+import { SessionStorageProvider } from "./session-storage";
 import { PRWorkflowProvider } from "./pr-workflow";
 
 function Shell({ localServer, serverPresentation, connectionReady, connectionSettings, connectionTarget, readLocalWorker, controlLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; chooseRepositoryFolder?: ChooseRepositoryFolder; localServer?: ReactNode; serverPresentation?: ServerPresentation; connectionReady: boolean; connectionSettings?: ReactNode; connectionTarget?: HTMLElement; readLocalWorker?: ReadLocalWorkerProof }) {
@@ -95,7 +96,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     const target = compact ? contextOpener.current : main.current;
     if (target && !target.closest("[hidden], [inert]")) target.focus({ preventScroll: true });
   }, [surface, drawerOpen, settingsEntry]);
-  return <SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen}><div className="app"><a className="skip" href="#main">Skip to content</a><Sidebar connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>Open {surfaceName}</button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
+  return <SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen}><div className="app"><a className="skip" href="#main">Skip to content</a><Sidebar connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>Open {surfaceName}</button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>Your sessions, in one place</h2><p>Select a retained session or start a new conversation.</p><Prerequisites active={surface === Surface.Sessions} openSettings={openSettings} /><Problem error={status.error} /></section>}</div>
     <NewSession active={surface === Surface.NewSession} ownsActivation={surface === Surface.NewSession} activation={newSessionActivation} readLocalWorker={readLocalWorker} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
     <Search active={surface === Surface.Search} open={open} />
@@ -105,7 +106,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} />
     <PullRequests active={surface === Surface.PullRequests} openSettings={openSettings} />
     <Settings readLocalWorker={readLocalWorker} connectionSettings={connectionSettings} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} visible={surface === Surface.Settings} entryDestination={settingsEntry} destinationConsumed={consumeSettingsEntry} />
-  </main>{connectionTarget && localServer ? createPortal(localServer, connectionTarget) : null}</div></SidebarOutletProvider></SessionForkProvider>;
+  </main>{connectionTarget && localServer ? createPortal(localServer, connectionTarget) : null}</div></SidebarOutletProvider></SessionStorageProvider></SessionForkProvider>;
 }
 
 // Reconnects for one server/device retain this memory and its mutation receipts

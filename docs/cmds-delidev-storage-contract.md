@@ -819,3 +819,32 @@ Follow the [automatic coordinator contract](cmds-delidev-integrations-contract.m
 Before creating retirement tables or changing configuration, live upgrades reject original connections, protected generations/identity commitments, pending operations, leases, recovery fences, unremoved device browser profiles and affected claimed/uncertain native work. Failure rolls back the entire composed transaction and preserves the synchronized pre-migration backup. A private restore candidate has explicitly historical ownership without current local authority; it migrates before replacement preparation/publication, preserves original retired documents and merges current retirement/tombstone evidence. This exemption never applies to ordinary startup.
 
 Affected Agents retain names, options, templates and original model IDs with server-owned `reconfiguration_required`; ordered surviving account weights remain unchanged. Project account restrictions preserve their configured flag even when all IDs retire. Only affected Schedules disable their timer and retain accepted occurrence history with explicit reset guidance. Session/snapshot/transcript/usage bodies and their revisions remain unchanged. Pricing retains original API attribution and independently stores the service identity of newly configured native models.
+
+
+## Desktop workspace storage and permanent deletion
+
+The connection-owned `SessionStorageProvider` in `apps/delidev/src/session-storage.tsx`
+presents current workspace state, usage preview, snapshot creation, original
+operation inspection/cancellation/recovery and paginated snapshot inspection,
+restoration and permanent deletion. Session details open the workflow; closing the
+modal or navigating retains original request/job/session identity. original Local checkouts do not expose
+managed storage actions. Independent storage/deletion capabilities produce explicit
+older-server update guidance before product actions.
+
+Storage acceptance is displayed separately from Worker success and independently
+verified native cleanup. Exact decimal byte counts retain integer precision;
+logical source, retained snapshot and removed bytes remain separate from nullable
+filesystem free measurements. Cleanup confirmation pins the exact successful
+preview job and current session revision. Snapshot removal has separate irreversible confirmation. Restoration
+and recovery disclose paused outcomes and preserve original uncertainty. 
+
+Permanent deletion requires its own explicit confirmation of managed native,
+workspace, backup removal. In-flight native work is stopped
+through its original owner; original Local checkouts and independent Forks remain
+outside removal authority. `GetSessionDeletion` observes the accepted original
+session independently of resource removal, exposing Worker, database and backup
+progress. Closing/navigating cannot resubmit either deletion or storage. Unknown
+acknowledgments retain original wire requests in the connection mutation registry;
+explicit retries use identical UUID/revision/selection bytes. A replacement
+connection follows the existing connection-memory lifetime and never adopts
+another server's operation.
