@@ -10,6 +10,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 - Rust: `crates/pnport`, `crates/pnport-core`, and `crates/pnport-preload`, plus the private fspy source fork. The macOS injection library is built from `fspy_preload_unix`; Linux and Windows retain `pnport-preload`.
 - Packages: `packages/pnport`, the private source of the npm launcher and four native optional packages for 0.1.0. Windows adds its two native packages in 0.2.0.
 - Apps: `apps/public-docs/docs/pnport`, the consolidated public guides at `https://oss.delino.io/pnport`, retaining the stable 0.1.0 unreleased notice and distinguishing prepared experimental previews from verified published npm availability.
+- The public `/pnport/preview-testing` guide owns reproducible Turbopack and native TypeScript commands for external preview testers, with exact published pnport/compiler versions, the current `tsc` versus legacy `tsgo` distinction, and known platform and acceptance limits.
 
 ## Domain Contract Documents
 - [Rust foundation](crates-pnport-foundation.md)
