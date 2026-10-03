@@ -308,6 +308,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 			if event.Kind == domain.ExecutionTurnFinished {
+				if !progress.NativeCompactions.Closed() {
+					return domain.CompactionUncertain()
+				}
 				if input.Configuration.Harness == domain.GrokBuild {
 					publish := publishGrokTerminal
 					if event.GrokToolsTerminal != nil {

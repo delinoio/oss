@@ -2,11 +2,13 @@
 
 ## Status and ownership
 
-This is the planned common boundary for issues #1093 (Claude), #1202 (Codex)
-and #1203 (OpenCode). The reservation change does not implement compaction,
-enable dispatch, advertise a native profile or satisfy any issue's native
-acceptance criteria. The existing harness and session contracts continue to
-describe implemented behavior.
+This is the common boundary for issues #1093 (Claude), #1202 (Codex) and
+#1203 (OpenCode). Claude owns its implemented settled-boundary product profile.
+Codex and OpenCode have independent reserved profiles; a reservation never
+advertises support or enables dispatch. The integrated implementation must join
+native adapters, durable action/checkpoint ownership, authenticated product
+interfaces and replacement-process verification before activating either profile.
+The existing harness and session contracts retain their separate acceptance limits.
 
 Go owns acceptance, durable action/job state, native execution and recovery.
 The owner and paired clients use one authenticated `SessionService.CompactSession`
@@ -128,3 +130,50 @@ Use structured metadata-only action/job/request ownership and closed processing
 stage/error codes. Keep credentials, prompt/summary bodies, native raw payloads,
 private runtime paths and checkpoint bytes out of diagnostics. Retained action
 state must distinguish failed and uncertain outcomes without an implicit retry.
+
+## Codex original context items and private action adapter
+
+The pinned Codex `0.151.0` adapter treats `contextCompaction` item start and
+completion as a closed ordered context observation under the original owned
+thread and active turn. Its `automatic` observations pass through the existing
+acknowledged execution outbox, authenticated resource reads and desktop context
+presentation. They grant no input receipt, canonical assistant message, additive
+usage, current token count or successor checkpoint. The server independently
+joins start before completion and refuses terminal settlement or continuation
+while a context item remains open. Unknown/foreign turns, changed repeats,
+reversed timestamps and reused items fail closed.
+
+The private manual controller accepts an original successful continuation proof,
+unchanged effective settings and a complete settled native history. It checks
+native goals/queue absence and refuses child-bearing histories. It claims one
+`thread/compact/start` request in memory before writing to the native wire; the
+Worker's durable claim remains independently required before using this primitive.
+A lost/rejected response never clears the native attempt. Acknowledgment does not
+authorize new input or retention. Success requires the original new native turn,
+one completed context item, native terminal state, independently read complete
+history and an unchanged original history prefix. This private primitive alone
+cannot activate the product's reserved manual capability.
+
+Retain distinct live and durable context item identities. The pinned
+[history projection](https://github.com/openai/codex/blob/78c290807ce710180111df227df3b7a4fe845452/codex-rs/app-server-protocol/src/protocol/thread_history.rs)
+replays `ContextCompacted` into an `item-<index>` identity while excluding live
+`ContextCompaction` item lifecycle upserts. Do not replace the live ID or pretend
+they are equal. Their join requires the same original turn, exactly one new
+compaction-only history turn and the complete unchanged prior history. Each
+repeated action retains both IDs, original action/turn identities and the whole
+history digest. Reject incomplete, reordered, foreign, reused or child-bearing
+history rather than reconstructing it.
+
+Private retention pins the original rollout within the original protected native
+home. Verify its file digest before launching a replacement. Native Resume may
+append settings metadata; independently compare complete native history and
+unchanged original effective settings after Resume before another command or
+input. Retain the original ordinary input digests and source turn across repeated
+manual actions without manufacturing a new user input. Successful process and
+workspace cleanup still require independent Worker ownership proofs.
+
+Pinned `thread/resume` has no `experimentalRawEvents` field. Original resumed
+compaction response usage therefore remains unavailable when the native profile
+provides no live response observation. Never copy overlapping token snapshots or
+historical response usage into a new charge, substitute a requested setting for
+an observed setting, or add an unsupported raw-events resume parameter.

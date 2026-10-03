@@ -66,6 +66,8 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	compaction          *manualCompaction
+	compactionItems     map[string]compactionItem
 	thread              Thread
 	settings            EffectiveSettings
 	active              domain.ID
@@ -127,6 +129,9 @@ func (c *Client) eligibleTurnLocked(allowRecovery bool) error {
 	}
 	if !allowRecovery && c.problem != nil {
 		return c.problem
+	}
+	if !allowRecovery && c.execution.compaction != nil {
+		return compactionUncertain()
 	}
 	if !allowRecovery && c.execution.continuationPending {
 		return continuationUncertain()

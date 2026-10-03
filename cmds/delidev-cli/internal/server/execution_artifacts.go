@@ -96,6 +96,17 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 	if update == nil {
 		return executionEventConflict()
 	}
+	if update.Progress.Kind == domain.NativeCompactionProgress {
+		v := update.Progress.Compaction
+		if v == nil || v.Harness != input.Configuration.Harness {
+			return executionEventConflict()
+		}
+		next, err := domain.ApplyNativeCompaction(progress.NativeCompactions, *v)
+		if err != nil {
+			return executionEventConflict()
+		}
+		progress.NativeCompactions = next
+	}
 	// Turn-level observations have their own immutable product identity and no
 	// native item. They must not occupy a fabricated native-message index entry.
 	value := domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, Role: domain.ProgressMessage, State: domain.MessageComplete, FirstSequence: event.Sequence, LastSequence: event.Sequence, Progress: &update.Progress}
@@ -118,6 +129,8 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 		return err
 	}
 	switch update.Progress.Kind {
+	case domain.NativeCompactionProgress:
+		progress.LatestNativeCompactionID = update.ID
 	case domain.OpenCodeWorkspaceProgressKind:
 		progress.LatestWorkspaceEventID = update.ID
 	case domain.OpenCodeTodoProgressKind:
