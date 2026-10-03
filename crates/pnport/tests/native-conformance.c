@@ -169,6 +169,18 @@ static int native_aliases(void) {
     if (open("source.txt/", O_RDONLY) != -1 || errno != ENOTDIR) return 106;
     errno = 0;
     if (open("missing-native/../source.txt", O_RDONLY) != -1 || errno != ENOENT) return 107;
+#ifdef __APPLE__
+    // Synthetic directory backing lives in the private session, separately
+    // from extracted cache content, and has the same read-only boundary.
+    fd = open("node_modules", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0) return 108;
+    errno = 0;
+    if (fchmod(fd, 0700) != -1 || errno != EROFS) return 109;
+    if (fcntl(fd, F_GETPATH, backing)) return 110;
+    errno = 0;
+    if (chmod(backing, 0700) != -1 || errno != EROFS) return 111;
+    if (close(fd)) return 112;
+#endif
     return dependency();
 }
 

@@ -47,6 +47,10 @@ enum Lookup {
 
 impl View {
     pub fn new(graph: Graph, cache: Cache, session: PathBuf) -> Self {
+        // Runtime sessions already exist and must match native descriptor
+        // spelling, including Darwin's /var alias. Data-only fixtures may
+        // reserve a session path before creating it.
+        let session = fs::canonicalize(&session).unwrap_or(session);
         Self {
             graph,
             cache,
