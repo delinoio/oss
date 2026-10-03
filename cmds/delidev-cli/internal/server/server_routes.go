@@ -12,6 +12,7 @@ func (s *Service) rpcMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	options := []connect.HandlerOption{connect.WithReadMaxBytes(2 << 20), connect.WithSendMaxBytes(5 << 20)}
 	mux.Handle(delidevv1connect.NewWorkspaceStorageServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewInstallationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewSystemServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewResourceServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewSearchServiceHandler(s, options...))

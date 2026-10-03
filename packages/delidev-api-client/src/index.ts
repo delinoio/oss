@@ -32,3 +32,5 @@ export * as PullRequestFixQuery from "./gen/delidev/v1/pr_fix-PullRequestFixServ
 export * from "./configuration-identity.js";
 
 export * from "./provider-presets.js";
+
+export * as InstallationQuery from "./gen/delidev/v1/installation-InstallationService_connectquery.js";

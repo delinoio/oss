@@ -120,6 +120,9 @@ func deviceRemote(ctx context.Context, c client, o options, args []string) (any,
 	}
 }
 func deviceLocal(ctx context.Context, o options, command string, args []string, streams IO) (any, error) {
+	if command == "worker" && len(args) > 0 && args[0] == "ssh-setup" {
+		return localSSHSetup(ctx, o, args[1:], streams.In)
+	}
 	if command == "worker" && len(args) > 0 && args[0] == "network" {
 		return workerNetworkCommand(ctx, o, args[1:], streams)
 	}

@@ -225,3 +225,5 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 - Joined successful native-owner cleanup settles unpublished quota reads as failed while preserving last observed values and future read/execution admission. Retain original-key uncertainty only for possible reset-credit consumption.
 
 - Worker-only permanent-deletion reads preserve all 4,096 original copies within a 4 MiB ownership envelope/page and at most 20 envelopes. Exact retiring-assignment inspection uses the same bound and authorization; no truncation or native cleanup inference is permitted.
+
+- SSH setup uses InstallationService and joined ssh_setup_runtime maintenance. Exact host confirmation precedes protected credential consumption; external once-only claims survive database rollback. Cancel preserves uncertain remote authority, and reconciliation inspects only the original native operation. Never infer readiness from SSH exit or upload alone. Follow the SSH and signed-updates contracts.

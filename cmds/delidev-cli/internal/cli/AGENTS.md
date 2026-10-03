@@ -75,3 +75,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - `snapshot list --session-id ID [--limit N] [--page-token TOKEN]` negotiates workspace-storage support and uses authenticated Resource pagination. Preserve original opaque tokens, exact metadata revisions and explicit older-server guidance.
 
 - Sidechat creation and observation retain the native fork 145-second command deadline; selected findings submission retains the immediate ordinary deadline. A bounded wait failure returns the original accepted job identity.
+
+- machine ssh uses authenticated InstallationService and write-only bounded stdin. The native-only worker ssh-setup helper verifies the signed artifact identity, journals original pairing/start admission and never repeats missing progress or replaces registration/workspaces.

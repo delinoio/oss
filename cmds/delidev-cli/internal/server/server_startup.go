@@ -141,7 +141,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	child, stop := context.WithCancel(ctx)
 	defer stop()
-	service := &Service{userServiceBackend: config.userServiceBackend, userServiceOptions: userservice.ServerOptions{Listen: config.Listen, TLSCertificate: config.TLSCertificate, TLSKey: config.TLSKey, AllowedOrigins: config.AllowedOrigins}, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	service := &Service{releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: userservice.ServerOptions{Listen: config.Listen, TLSCertificate: config.TLSCertificate, TLSKey: config.TLSKey, AllowedOrigins: config.AllowedOrigins}, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
 	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
 		return err
 	}
@@ -170,6 +170,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	lifecycleLock = nil
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(listener) }()
+	sshCtx, stopSSH := context.WithCancel(child)
+	sshDone := make(chan struct{})
+	go func() { defer close(sshDone); service.runSSHSetups(sshCtx) }()
+	defer func() { stopSSH(); <-sshDone }()
 	quotaCtx, stopQuota := context.WithCancel(child)
 	quotaDone := make(chan struct{})
 	go func() { defer close(quotaDone); service.runSubscriptionQuotaMaintenance(quotaCtx) }()

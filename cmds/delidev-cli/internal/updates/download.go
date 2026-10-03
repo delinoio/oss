@@ -208,31 +208,49 @@ func (c *Client) Download(ctx context.Context, v Verified, component Component, 
 	return path, nil
 }
 func VerifyFile(path string, a Artifact) error {
+	f, err := OpenArtifact(path, a)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// OpenArtifact retains the exact verified file descriptor for the owned consumer.
+func OpenArtifact(path string, a Artifact) (*os.File, error) {
 	if a.Size <= 0 || a.Size > ArtifactLimit || !digestValid(a.SHA256) {
-		return failure(domain.InvalidArgument)
+		return nil, failure(domain.InvalidArgument)
 	}
 	if security.RegularPrivate(path) != nil {
-		return failure(domain.PermissionDenied)
+		return nil, failure(domain.PermissionDenied)
 	}
 	before, err := os.Lstat(path)
 	if err != nil || before.Size() != a.Size {
-		return failure(domain.PermissionDenied)
+		return nil, failure(domain.PermissionDenied)
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return failure(domain.Unavailable)
+		return nil, failure(domain.Unavailable)
 	}
-	defer f.Close()
+	accepted := false
+	defer func() {
+		if !accepted {
+			f.Close()
+		}
+	}()
 	opened, err := f.Stat()
 	if err != nil || !os.SameFile(before, opened) {
-		return failure(domain.PermissionDenied)
+		return nil, failure(domain.PermissionDenied)
 	}
 	h := sha256.New()
 	n, err := io.Copy(h, io.LimitReader(f, a.Size+1))
 	after, e := f.Stat()
 	named, ne := os.Lstat(path)
 	if err != nil || e != nil || ne != nil || n != a.Size || !os.SameFile(before, after) || !os.SameFile(before, named) || after.Size() != a.Size || named.Size() != a.Size || !before.ModTime().Equal(after.ModTime()) || hex.EncodeToString(h.Sum(nil)) != a.SHA256 {
-		return failure(domain.PermissionDenied)
+		return nil, failure(domain.PermissionDenied)
 	}
-	return nil
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, failure(domain.Unavailable)
+	}
+	accepted = true
+	return f, nil
 }

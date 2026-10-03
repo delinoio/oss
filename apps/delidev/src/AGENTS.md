@@ -619,3 +619,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Record native OAuth browser binding only after its acknowledgement. Pre/post-bind uncertainty retries only the original Start and exact BindOpen; exact binding replay cannot open twice, and later Reopen remains deliberate.
 
 - Fork and Sidechat admission use current workspace availability, including submission rechecks after query refresh. Stored, pending or uncertain workspaces cannot display an actionable native-fork control.
+
+- SSH setup in ssh-setup.tsx belongs to Runner Devices. Verify capability and exact host identity before explicit installation. Keep write-only credentials out of React Query and mutation receipts, clear them after a send, and inspect the original setup after ambiguity without resending native effects. Settings disposal rejects late results without canceling the detached Worker.

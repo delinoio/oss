@@ -22,6 +22,9 @@ func (id ID) Validate() error {
 
 type Kind string
 
+const UpdateKind Kind = "update"
+const SSHSetupKind Kind = "ssh_setup"
+
 const PairingKind Kind = "pairing"
 
 const (
@@ -60,7 +63,7 @@ const (
 
 func (k Kind) Valid() bool {
 	switch k {
-	case TerminalKind, NetworkProfileKind, NetworkRouteKind, SubagentKind, ForwardKind, PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind:
+	case UpdateKind, SSHSetupKind, TerminalKind, NetworkProfileKind, NetworkRouteKind, SubagentKind, ForwardKind, PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind:
 		return true
 	default:
 		return false

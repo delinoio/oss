@@ -17,6 +17,7 @@ import (
 )
 
 type client struct {
+	installation  delidevv1connect.InstallationServiceClient
 	storage       delidevv1connect.WorkspaceStorageServiceClient
 	nativeModels  delidevv1connect.NativeModelServiceClient
 	transport     *http.Transport
@@ -122,6 +123,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		providers:     delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...),
 		devices:       delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...),
 		workers:       delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...),
+		installation:  delidevv1connect.NewInstallationServiceClient(httpClient, endpoint, opts...),
 		system:        delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...),
 		resources:     delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...),
 		search:        delidevv1connect.NewSearchServiceClient(httpClient, endpoint, opts...),
