@@ -156,3 +156,11 @@ Both aggregate views therefore include `NetworkService` and `SubscriptionService
 without adding their declarations to the relocation map.
 Issue #1084 activates its already reserved wire allocations without changing
 that historical map. Generated service/query facades retain both services.
+
+Quota/reset-credit composition reserves System capabilities 18/19, Worker
+capability 8, native lease actions 5/6, and their independently owned observation
+messages before activation. New declaration reservations identify the original
+declaration owner once; later explicitly numbered members retain their own
+issue/PR provenance. The ledger baseline contains only declarations verified
+from the fixed main source, including its original accounting and subscription
+enums. New message fields are checked as strictly as new enum values.
