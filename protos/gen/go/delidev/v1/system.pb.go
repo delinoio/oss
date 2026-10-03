@@ -26,6 +26,8 @@ type SystemCapability int32
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                      SystemCapability = 0
 	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 SystemCapability = 17
+	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1            SystemCapability = 18
+	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1    SystemCapability = 19
 	// Session creation can opt into server-owned, Worker-executed automatic titles.
 	SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1   SystemCapability = 1
 	SystemCapability_SYSTEM_CAPABILITY_SESSION_FORWARDING_V1 SystemCapability = 2
@@ -52,6 +54,8 @@ var (
 	SystemCapability_name = map[int32]string{
 		0:  "SYSTEM_CAPABILITY_UNSPECIFIED",
 		17: "SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1",
+		18: "SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1",
+		19: "SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1",
 		1:  "SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1",
 		2:  "SYSTEM_CAPABILITY_SESSION_FORWARDING_V1",
 		3:  "SYSTEM_CAPABILITY_USER_SERVICES_V1",
@@ -71,6 +75,8 @@ var (
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                      0,
 		"SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1": 17,
+		"SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1":            18,
+		"SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1":    19,
 		"SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1":              1,
 		"SYSTEM_CAPABILITY_SESSION_FORWARDING_V1":            2,
 		"SYSTEM_CAPABILITY_USER_SERVICES_V1":                 3,
@@ -2850,10 +2856,12 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xb1\x06\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\x93\a\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x126\n" +
-	"2SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1\x10\x11\x12)\n" +
+	"2SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1\x10\x11\x12+\n" +
+	"'SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1\x10\x12\x123\n" +
+	"/SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1\x10\x13\x12)\n" +
 	"%SYSTEM_CAPABILITY_AUTOMATIC_TITLES_V1\x10\x01\x12+\n" +
 	"'SYSTEM_CAPABILITY_SESSION_FORWARDING_V1\x10\x02\x12&\n" +
 	"\"SYSTEM_CAPABILITY_USER_SERVICES_V1\x10\x03\x12*\n" +

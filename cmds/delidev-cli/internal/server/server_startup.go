@@ -167,6 +167,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	lifecycleLock = nil
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(listener) }()
+	quotaCtx, stopQuota := context.WithCancel(child)
+	quotaDone := make(chan struct{})
+	go func() { defer close(quotaDone); service.runSubscriptionQuotaMaintenance(quotaCtx) }()
+	defer func() { stopQuota(); <-quotaDone }()
 	catalogCtx, stopCatalog := context.WithCancel(child)
 	catalogDone := make(chan struct{})
 	go func() {

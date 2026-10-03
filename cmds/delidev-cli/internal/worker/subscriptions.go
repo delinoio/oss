@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,7 @@ import (
 )
 
 type managedSubscriptionLease struct {
+	logger      *slog.Logger
 	client      delidevv1connect.SubscriptionServiceClient
 	credential  Credential
 	instance    domain.ID
@@ -110,7 +112,7 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 		clear(response.Msg.Bundle)
 		return nil, &managedExecutionUncertain{subscription.Invalid()}
 	}
-	return &managedSubscriptionLease{client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, nil
+	return &managedSubscriptionLease{logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, nil
 }
 
 func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, success bool) error {
@@ -178,10 +180,19 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			continue
 		}
 		var account domain.Account
-		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil {
+		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil {
 			return subscription.Invalid()
 		}
-		op := *account.Subscription.Pending
+		var op domain.SubscriptionOperation
+		var observation *domain.SubscriptionObservationOperation
+		if account.Subscription.Observation != nil && account.Subscription.Observation.Phase == domain.SubscriptionObservationQueued {
+			observation = account.Subscription.Observation
+			op = domain.SubscriptionOperation{ID: observation.ID, Action: observation.Action, MachineID: observation.MachineID, Actor: observation.Actor}
+		} else if account.Subscription.Pending != nil {
+			op = *account.Subscription.Pending
+		} else {
+			continue
+		}
 		mu.Lock()
 		if active[op.ID] || len(active) >= 4 {
 			mu.Unlock()
@@ -193,7 +204,17 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 		go func() {
 			defer wg.Done()
 			defer func() { mu.Lock(); delete(active, op.ID); mu.Unlock() }()
-			if err := runManagedAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op); err != nil {
+			run := func() error {
+				if observation != nil && account.Subscription.Lease != nil {
+					handled, err := config.observations.run(ctx, domain.ID(r.Id), *observation)
+					if !handled {
+						return nil
+					}
+					return err
+				}
+				return runManagedAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op)
+			}
+			if err := run(); err != nil {
 				if config.Logger != nil {
 					config.Logger.WarnContext(ctx, "managed_subscription_requires_reconciliation", "account_id", r.Id, "operation_id", op.ID, "action", op.Action, "code", domain.SafeError(err).Code)
 				}
@@ -216,10 +237,20 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 	if op.Action == domain.SubscriptionRefresh {
 		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH
 	}
+	if op.Action == domain.SubscriptionQuota {
+		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_QUOTA
+	}
+	if op.Action == domain.SubscriptionResetCredit {
+		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_RESET_CREDIT
+	}
 	if op.Action == domain.SubscriptionLogout {
 		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT
 	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	deadline := 15 * time.Minute
+	if op.Action == domain.SubscriptionQuota || op.Action == domain.SubscriptionResetCredit {
+		deadline = time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 	lease, err := takeManagedSubscription(ctx, config, client, credential, instance, account, op.ID, revision, action)
 	if err != nil {
@@ -295,6 +326,11 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 			returned = subscription.Invalid()
 		}
 	}()
+	if op.Action == domain.SubscriptionQuota || op.Action == domain.SubscriptionResetCredit {
+		if err := lease.observe(ctx, native, domain.SubscriptionObservationOperation{ID: op.ID, Action: op.Action}); err != nil {
+			return err
+		}
+	}
 	if op.Action == domain.SubscriptionLogin {
 		progress, err := native.StartManagedLogin(ctx, op.DeviceCode)
 		if err != nil {

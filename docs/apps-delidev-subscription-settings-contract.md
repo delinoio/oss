@@ -58,3 +58,5 @@ Update this contract, the desktop contract, project index and owning frontend AG
 - [Credentials](cmds-delidev-credentials-contract.md)
 - [Protocol](protos-delidev-v1-contract.md)
 - [API client](packages-delidev-api-client-contract.md)
+
+Native quota and reset-credit controls follow the [managed subscription contract](cmds-delidev-subscription-contract.md#native-quota-and-reset-credits--issues-1096-and-1104). Refresh-all invokes one server-owned complete operation; current account settings expose separate quota refresh, default-off observed-recovery notifications and revision/generation-bound credit confirmation. Retained uncertain requests and original-key reconciliation belong to the current Settings visit and never implicitly run after disposal.

@@ -501,6 +501,7 @@ const (
 )
 
 type QuotaWindow struct {
+	DurationMinutes *int64           `json:"duration_minutes,omitempty"`
 	ID              string           `json:"id"`
 	ComparisonGroup string           `json:"comparison_group"`
 	Blocking        bool             `json:"blocking"`
@@ -669,7 +670,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1) || seenCapabilities[capability] {
+		if (capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

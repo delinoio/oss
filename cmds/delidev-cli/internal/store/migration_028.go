@@ -257,5 +257,17 @@ CREATE TABLE retired_configurations (
  body BLOB NOT NULL CHECK(length(body)<=1048576), created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX subscription_model_canonical ON entities(json_extract(body,'$.subscription_service'),json_extract(body,'$.native_id')) WHERE kind='model' AND json_extract(body,'$.source_kind')='subscription';
+ALTER TABLE notification_deliveries RENAME TO pre_subscription_notification_deliveries;
+CREATE TABLE notification_deliveries (
+ client_id TEXT NOT NULL,
+ inbox_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+ claim_id TEXT NOT NULL UNIQUE,
+ kind TEXT NOT NULL CHECK(kind IN ('request','succeeded','failed','stopped','subscription-recovery')),
+ state TEXT NOT NULL CHECK(state IN ('claimed','submitted','denied','failed','uncertain')),
+ PRIMARY KEY(client_id,inbox_id)
+);
+INSERT INTO notification_deliveries SELECT client_id,inbox_id,claim_id,kind,state FROM pre_subscription_notification_deliveries;
+DROP TABLE pre_subscription_notification_deliveries;
+INSERT INTO metadata(key,value) VALUES('subscription_notification_layout','account-recovery-v1');
 INSERT INTO metadata(key,value) VALUES('subscription_identity_layout','service-accounts-v2');
 `

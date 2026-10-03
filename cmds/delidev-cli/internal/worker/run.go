@@ -27,6 +27,7 @@ import (
 )
 
 type Config struct {
+	observations       *managedObservationRegistry
 	inspectionMetadata bool
 	terminals          *terminalManager
 	Root               string
@@ -121,6 +122,7 @@ func fatalTitleProfileProbeError(err error) error {
 }
 
 func Run(ctx context.Context, config Config) (resultErr error) {
+	config.observations = &managedObservationRegistry{}
 	credential, err := LoadCredential(config.Root)
 	if err != nil {
 		return err
@@ -257,7 +259,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if managedCapabilityExpected {
-				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1)
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1)
 			}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)

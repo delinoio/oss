@@ -73,9 +73,10 @@ func (InboxReadState) EnumDescriptor() ([]byte, []int) {
 type InboxSource int32
 
 const (
-	InboxSource_INBOX_SOURCE_UNSPECIFIED        InboxSource = 0
-	InboxSource_INBOX_SOURCE_INTERACTION        InboxSource = 1
-	InboxSource_INBOX_SOURCE_EXECUTION_TERMINAL InboxSource = 2
+	InboxSource_INBOX_SOURCE_UNSPECIFIED           InboxSource = 0
+	InboxSource_INBOX_SOURCE_INTERACTION           InboxSource = 1
+	InboxSource_INBOX_SOURCE_EXECUTION_TERMINAL    InboxSource = 2
+	InboxSource_INBOX_SOURCE_SUBSCRIPTION_RECOVERY InboxSource = 3
 )
 
 // Enum value maps for InboxSource.
@@ -84,11 +85,13 @@ var (
 		0: "INBOX_SOURCE_UNSPECIFIED",
 		1: "INBOX_SOURCE_INTERACTION",
 		2: "INBOX_SOURCE_EXECUTION_TERMINAL",
+		3: "INBOX_SOURCE_SUBSCRIPTION_RECOVERY",
 	}
 	InboxSource_value = map[string]int32{
-		"INBOX_SOURCE_UNSPECIFIED":        0,
-		"INBOX_SOURCE_INTERACTION":        1,
-		"INBOX_SOURCE_EXECUTION_TERMINAL": 2,
+		"INBOX_SOURCE_UNSPECIFIED":           0,
+		"INBOX_SOURCE_INTERACTION":           1,
+		"INBOX_SOURCE_EXECUTION_TERMINAL":    2,
+		"INBOX_SOURCE_SUBSCRIPTION_RECOVERY": 3,
 	}
 )
 
@@ -124,11 +127,12 @@ func (InboxSource) EnumDescriptor() ([]byte, []int) {
 type NotificationKind int32
 
 const (
-	NotificationKind_NOTIFICATION_KIND_UNSPECIFIED NotificationKind = 0
-	NotificationKind_NOTIFICATION_KIND_REQUEST     NotificationKind = 1
-	NotificationKind_NOTIFICATION_KIND_SUCCEEDED   NotificationKind = 2
-	NotificationKind_NOTIFICATION_KIND_FAILED      NotificationKind = 3
-	NotificationKind_NOTIFICATION_KIND_STOPPED     NotificationKind = 4
+	NotificationKind_NOTIFICATION_KIND_UNSPECIFIED           NotificationKind = 0
+	NotificationKind_NOTIFICATION_KIND_REQUEST               NotificationKind = 1
+	NotificationKind_NOTIFICATION_KIND_SUCCEEDED             NotificationKind = 2
+	NotificationKind_NOTIFICATION_KIND_FAILED                NotificationKind = 3
+	NotificationKind_NOTIFICATION_KIND_STOPPED               NotificationKind = 4
+	NotificationKind_NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY NotificationKind = 5
 )
 
 // Enum value maps for NotificationKind.
@@ -139,13 +143,15 @@ var (
 		2: "NOTIFICATION_KIND_SUCCEEDED",
 		3: "NOTIFICATION_KIND_FAILED",
 		4: "NOTIFICATION_KIND_STOPPED",
+		5: "NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY",
 	}
 	NotificationKind_value = map[string]int32{
-		"NOTIFICATION_KIND_UNSPECIFIED": 0,
-		"NOTIFICATION_KIND_REQUEST":     1,
-		"NOTIFICATION_KIND_SUCCEEDED":   2,
-		"NOTIFICATION_KIND_FAILED":      3,
-		"NOTIFICATION_KIND_STOPPED":     4,
+		"NOTIFICATION_KIND_UNSPECIFIED":           0,
+		"NOTIFICATION_KIND_REQUEST":               1,
+		"NOTIFICATION_KIND_SUCCEEDED":             2,
+		"NOTIFICATION_KIND_FAILED":                3,
+		"NOTIFICATION_KIND_STOPPED":               4,
+		"NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY": 5,
 	}
 )
 
@@ -241,6 +247,7 @@ type InboxView struct {
 	Session *Resource              `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
 	// Present only for an interaction source; always its current original record.
 	Interaction   *Resource `protobuf:"bytes,3,opt,name=interaction,proto3" json:"interaction,omitempty"`
+	Account       *Resource `protobuf:"bytes,4,opt,name=account,proto3" json:"account,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -292,6 +299,13 @@ func (x *InboxView) GetSession() *Resource {
 func (x *InboxView) GetInteraction() *Resource {
 	if x != nil {
 		return x.Interaction
+	}
+	return nil
+}
+
+func (x *InboxView) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
 	}
 	return nil
 }
@@ -699,6 +713,7 @@ type NotificationCandidate struct {
 	InboxId       string                 `protobuf:"bytes,1,opt,name=inbox_id,json=inboxId,proto3" json:"inbox_id,omitempty"`
 	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Kind          NotificationKind       `protobuf:"varint,3,opt,name=kind,proto3,enum=delidev.v1.NotificationKind" json:"kind,omitempty"`
+	AccountId     string                 `protobuf:"bytes,4,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -752,6 +767,13 @@ func (x *NotificationCandidate) GetKind() NotificationKind {
 		return x.Kind
 	}
 	return NotificationKind_NOTIFICATION_KIND_UNSPECIFIED
+}
+
+func (x *NotificationCandidate) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
 }
 
 type NotificationDelivery struct {
@@ -1447,11 +1469,12 @@ var File_delidev_v1_inbox_proto protoreflect.FileDescriptor
 const file_delidev_v1_inbox_proto_rawDesc = "" +
 	"\n" +
 	"\x16delidev/v1/inbox.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\"\x9f\x01\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\"\xcf\x01\n" +
 	"\tInboxView\x12*\n" +
 	"\x05entry\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x05entry\x12.\n" +
 	"\asession\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\asession\x126\n" +
-	"\vinteraction\x18\x03 \x01(\v2\x14.delidev.v1.ResourceR\vinteraction\"&\n" +
+	"\vinteraction\x18\x03 \x01(\v2\x14.delidev.v1.ResourceR\vinteraction\x12.\n" +
+	"\aaccount\x18\x04 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\"&\n" +
 	"\x14GetInboxEntryRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"B\n" +
 	"\x15GetInboxEntryResponse\x12)\n" +
@@ -1482,12 +1505,14 @@ const file_delidev_v1_inbox_proto_rawDesc = "" +
 	"\x17NotificationPreferences\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x04R\brevision\x12\"\n" +
 	"\finteractions\x18\x02 \x01(\bR\finteractions\x12\x1c\n" +
-	"\tterminals\x18\x03 \x01(\bR\tterminals\"\x83\x01\n" +
+	"\tterminals\x18\x03 \x01(\bR\tterminals\"\xa2\x01\n" +
 	"\x15NotificationCandidate\x12\x19\n" +
 	"\binbox_id\x18\x01 \x01(\tR\ainboxId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x120\n" +
-	"\x04kind\x18\x03 \x01(\x0e2\x1c.delidev.v1.NotificationKindR\x04kind\"\xa7\x01\n" +
+	"\x04kind\x18\x03 \x01(\x0e2\x1c.delidev.v1.NotificationKindR\x04kind\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x04 \x01(\tR\taccountId\"\xa7\x01\n" +
 	"\x14NotificationDelivery\x12?\n" +
 	"\tcandidate\x18\x01 \x01(\v2!.delidev.v1.NotificationCandidateR\tcandidate\x12\x19\n" +
 	"\bclaim_id\x18\x02 \x01(\tR\aclaimId\x123\n" +
@@ -1540,17 +1565,19 @@ const file_delidev_v1_inbox_proto_rawDesc = "" +
 	"\x0eInboxReadState\x12 \n" +
 	"\x1cINBOX_READ_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17INBOX_READ_STATE_UNREAD\x10\x01\x12\x19\n" +
-	"\x15INBOX_READ_STATE_READ\x10\x02*n\n" +
+	"\x15INBOX_READ_STATE_READ\x10\x02*\x96\x01\n" +
 	"\vInboxSource\x12\x1c\n" +
 	"\x18INBOX_SOURCE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18INBOX_SOURCE_INTERACTION\x10\x01\x12#\n" +
-	"\x1fINBOX_SOURCE_EXECUTION_TERMINAL\x10\x02*\xb2\x01\n" +
+	"\x1fINBOX_SOURCE_EXECUTION_TERMINAL\x10\x02\x12&\n" +
+	"\"INBOX_SOURCE_SUBSCRIPTION_RECOVERY\x10\x03*\xdf\x01\n" +
 	"\x10NotificationKind\x12!\n" +
 	"\x1dNOTIFICATION_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19NOTIFICATION_KIND_REQUEST\x10\x01\x12\x1f\n" +
 	"\x1bNOTIFICATION_KIND_SUCCEEDED\x10\x02\x12\x1c\n" +
 	"\x18NOTIFICATION_KIND_FAILED\x10\x03\x12\x1d\n" +
-	"\x19NOTIFICATION_KIND_STOPPED\x10\x04*\xd9\x01\n" +
+	"\x19NOTIFICATION_KIND_STOPPED\x10\x04\x12+\n" +
+	"'NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY\x10\x05*\xd9\x01\n" +
 	"\x11NotificationState\x12\"\n" +
 	"\x1eNOTIFICATION_STATE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aNOTIFICATION_STATE_CLAIMED\x10\x01\x12 \n" +
@@ -1617,47 +1644,48 @@ var file_delidev_v1_inbox_proto_depIdxs = []int32{
 	26, // 0: delidev.v1.InboxView.entry:type_name -> delidev.v1.Resource
 	26, // 1: delidev.v1.InboxView.session:type_name -> delidev.v1.Resource
 	26, // 2: delidev.v1.InboxView.interaction:type_name -> delidev.v1.Resource
-	4,  // 3: delidev.v1.GetInboxEntryResponse.view:type_name -> delidev.v1.InboxView
-	0,  // 4: delidev.v1.ListInboxRequest.read_state:type_name -> delidev.v1.InboxReadState
-	1,  // 5: delidev.v1.ListInboxRequest.source:type_name -> delidev.v1.InboxSource
-	4,  // 6: delidev.v1.ListInboxResponse.entries:type_name -> delidev.v1.InboxView
-	27, // 7: delidev.v1.SetInboxReadStateRequest.mutation:type_name -> delidev.v1.Mutation
-	0,  // 8: delidev.v1.SetInboxReadStateRequest.read_state:type_name -> delidev.v1.InboxReadState
-	4,  // 9: delidev.v1.SetInboxReadStateResponse.view:type_name -> delidev.v1.InboxView
-	2,  // 10: delidev.v1.NotificationCandidate.kind:type_name -> delidev.v1.NotificationKind
-	12, // 11: delidev.v1.NotificationDelivery.candidate:type_name -> delidev.v1.NotificationCandidate
-	3,  // 12: delidev.v1.NotificationDelivery.state:type_name -> delidev.v1.NotificationState
-	11, // 13: delidev.v1.GetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
-	11, // 14: delidev.v1.SetNotificationPreferencesRequest.preferences:type_name -> delidev.v1.NotificationPreferences
-	11, // 15: delidev.v1.SetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
-	12, // 16: delidev.v1.ListNotificationCandidatesResponse.candidates:type_name -> delidev.v1.NotificationCandidate
-	13, // 17: delidev.v1.ClaimNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
-	13, // 18: delidev.v1.GetNotificationDeliveryResponse.delivery:type_name -> delidev.v1.NotificationDelivery
-	3,  // 19: delidev.v1.ReportNotificationRequest.state:type_name -> delidev.v1.NotificationState
-	13, // 20: delidev.v1.ReportNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
-	5,  // 21: delidev.v1.InboxService.GetInboxEntry:input_type -> delidev.v1.GetInboxEntryRequest
-	7,  // 22: delidev.v1.InboxService.ListInbox:input_type -> delidev.v1.ListInboxRequest
-	9,  // 23: delidev.v1.InboxService.SetInboxReadState:input_type -> delidev.v1.SetInboxReadStateRequest
-	14, // 24: delidev.v1.InboxService.GetNotificationPreferences:input_type -> delidev.v1.GetNotificationPreferencesRequest
-	16, // 25: delidev.v1.InboxService.SetNotificationPreferences:input_type -> delidev.v1.SetNotificationPreferencesRequest
-	18, // 26: delidev.v1.InboxService.ListNotificationCandidates:input_type -> delidev.v1.ListNotificationCandidatesRequest
-	20, // 27: delidev.v1.InboxService.ClaimNotification:input_type -> delidev.v1.ClaimNotificationRequest
-	22, // 28: delidev.v1.InboxService.GetNotificationDelivery:input_type -> delidev.v1.GetNotificationDeliveryRequest
-	24, // 29: delidev.v1.InboxService.ReportNotification:input_type -> delidev.v1.ReportNotificationRequest
-	6,  // 30: delidev.v1.InboxService.GetInboxEntry:output_type -> delidev.v1.GetInboxEntryResponse
-	8,  // 31: delidev.v1.InboxService.ListInbox:output_type -> delidev.v1.ListInboxResponse
-	10, // 32: delidev.v1.InboxService.SetInboxReadState:output_type -> delidev.v1.SetInboxReadStateResponse
-	15, // 33: delidev.v1.InboxService.GetNotificationPreferences:output_type -> delidev.v1.GetNotificationPreferencesResponse
-	17, // 34: delidev.v1.InboxService.SetNotificationPreferences:output_type -> delidev.v1.SetNotificationPreferencesResponse
-	19, // 35: delidev.v1.InboxService.ListNotificationCandidates:output_type -> delidev.v1.ListNotificationCandidatesResponse
-	21, // 36: delidev.v1.InboxService.ClaimNotification:output_type -> delidev.v1.ClaimNotificationResponse
-	23, // 37: delidev.v1.InboxService.GetNotificationDelivery:output_type -> delidev.v1.GetNotificationDeliveryResponse
-	25, // 38: delidev.v1.InboxService.ReportNotification:output_type -> delidev.v1.ReportNotificationResponse
-	30, // [30:39] is the sub-list for method output_type
-	21, // [21:30] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	26, // 3: delidev.v1.InboxView.account:type_name -> delidev.v1.Resource
+	4,  // 4: delidev.v1.GetInboxEntryResponse.view:type_name -> delidev.v1.InboxView
+	0,  // 5: delidev.v1.ListInboxRequest.read_state:type_name -> delidev.v1.InboxReadState
+	1,  // 6: delidev.v1.ListInboxRequest.source:type_name -> delidev.v1.InboxSource
+	4,  // 7: delidev.v1.ListInboxResponse.entries:type_name -> delidev.v1.InboxView
+	27, // 8: delidev.v1.SetInboxReadStateRequest.mutation:type_name -> delidev.v1.Mutation
+	0,  // 9: delidev.v1.SetInboxReadStateRequest.read_state:type_name -> delidev.v1.InboxReadState
+	4,  // 10: delidev.v1.SetInboxReadStateResponse.view:type_name -> delidev.v1.InboxView
+	2,  // 11: delidev.v1.NotificationCandidate.kind:type_name -> delidev.v1.NotificationKind
+	12, // 12: delidev.v1.NotificationDelivery.candidate:type_name -> delidev.v1.NotificationCandidate
+	3,  // 13: delidev.v1.NotificationDelivery.state:type_name -> delidev.v1.NotificationState
+	11, // 14: delidev.v1.GetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
+	11, // 15: delidev.v1.SetNotificationPreferencesRequest.preferences:type_name -> delidev.v1.NotificationPreferences
+	11, // 16: delidev.v1.SetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
+	12, // 17: delidev.v1.ListNotificationCandidatesResponse.candidates:type_name -> delidev.v1.NotificationCandidate
+	13, // 18: delidev.v1.ClaimNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
+	13, // 19: delidev.v1.GetNotificationDeliveryResponse.delivery:type_name -> delidev.v1.NotificationDelivery
+	3,  // 20: delidev.v1.ReportNotificationRequest.state:type_name -> delidev.v1.NotificationState
+	13, // 21: delidev.v1.ReportNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
+	5,  // 22: delidev.v1.InboxService.GetInboxEntry:input_type -> delidev.v1.GetInboxEntryRequest
+	7,  // 23: delidev.v1.InboxService.ListInbox:input_type -> delidev.v1.ListInboxRequest
+	9,  // 24: delidev.v1.InboxService.SetInboxReadState:input_type -> delidev.v1.SetInboxReadStateRequest
+	14, // 25: delidev.v1.InboxService.GetNotificationPreferences:input_type -> delidev.v1.GetNotificationPreferencesRequest
+	16, // 26: delidev.v1.InboxService.SetNotificationPreferences:input_type -> delidev.v1.SetNotificationPreferencesRequest
+	18, // 27: delidev.v1.InboxService.ListNotificationCandidates:input_type -> delidev.v1.ListNotificationCandidatesRequest
+	20, // 28: delidev.v1.InboxService.ClaimNotification:input_type -> delidev.v1.ClaimNotificationRequest
+	22, // 29: delidev.v1.InboxService.GetNotificationDelivery:input_type -> delidev.v1.GetNotificationDeliveryRequest
+	24, // 30: delidev.v1.InboxService.ReportNotification:input_type -> delidev.v1.ReportNotificationRequest
+	6,  // 31: delidev.v1.InboxService.GetInboxEntry:output_type -> delidev.v1.GetInboxEntryResponse
+	8,  // 32: delidev.v1.InboxService.ListInbox:output_type -> delidev.v1.ListInboxResponse
+	10, // 33: delidev.v1.InboxService.SetInboxReadState:output_type -> delidev.v1.SetInboxReadStateResponse
+	15, // 34: delidev.v1.InboxService.GetNotificationPreferences:output_type -> delidev.v1.GetNotificationPreferencesResponse
+	17, // 35: delidev.v1.InboxService.SetNotificationPreferences:output_type -> delidev.v1.SetNotificationPreferencesResponse
+	19, // 36: delidev.v1.InboxService.ListNotificationCandidates:output_type -> delidev.v1.ListNotificationCandidatesResponse
+	21, // 37: delidev.v1.InboxService.ClaimNotification:output_type -> delidev.v1.ClaimNotificationResponse
+	23, // 38: delidev.v1.InboxService.GetNotificationDelivery:output_type -> delidev.v1.GetNotificationDeliveryResponse
+	25, // 39: delidev.v1.InboxService.ReportNotification:output_type -> delidev.v1.ReportNotificationResponse
+	31, // [31:40] is the sub-list for method output_type
+	22, // [22:31] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_inbox_proto_init() }

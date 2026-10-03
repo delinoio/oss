@@ -15,8 +15,8 @@ func notificationPreferencesWire(v domain.NotificationPreferences) *pb.Notificat
 	return &pb.NotificationPreferences{Revision: v.Revision, Interactions: v.Interactions, Terminals: v.Terminals}
 }
 func notificationCandidateWire(v domain.NotificationCandidate) *pb.NotificationCandidate {
-	kind := map[domain.NotificationKind]pb.NotificationKind{domain.RequestNotification: pb.NotificationKind_NOTIFICATION_KIND_REQUEST, domain.SucceededNotification: pb.NotificationKind_NOTIFICATION_KIND_SUCCEEDED, domain.FailedNotification: pb.NotificationKind_NOTIFICATION_KIND_FAILED, domain.StoppedNotification: pb.NotificationKind_NOTIFICATION_KIND_STOPPED}[v.Kind]
-	return &pb.NotificationCandidate{InboxId: string(v.InboxID), SessionId: string(v.SessionID), Kind: kind}
+	kind := map[domain.NotificationKind]pb.NotificationKind{domain.SubscriptionRecoveryNotification: pb.NotificationKind_NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY, domain.RequestNotification: pb.NotificationKind_NOTIFICATION_KIND_REQUEST, domain.SucceededNotification: pb.NotificationKind_NOTIFICATION_KIND_SUCCEEDED, domain.FailedNotification: pb.NotificationKind_NOTIFICATION_KIND_FAILED, domain.StoppedNotification: pb.NotificationKind_NOTIFICATION_KIND_STOPPED}[v.Kind]
+	return &pb.NotificationCandidate{InboxId: string(v.InboxID), SessionId: string(v.SessionID), Kind: kind, AccountId: string(v.AccountID)}
 }
 func notificationDeliveryWire(v domain.NotificationDelivery) *pb.NotificationDelivery {
 	state := map[domain.NotificationState]pb.NotificationState{domain.NotificationClaimed: pb.NotificationState_NOTIFICATION_STATE_CLAIMED, domain.NotificationSubmitted: pb.NotificationState_NOTIFICATION_STATE_SUBMITTED, domain.NotificationDenied: pb.NotificationState_NOTIFICATION_STATE_DENIED, domain.NotificationFailed: pb.NotificationState_NOTIFICATION_STATE_FAILED, domain.NotificationUncertain: pb.NotificationState_NOTIFICATION_STATE_UNCERTAIN}[v.State]

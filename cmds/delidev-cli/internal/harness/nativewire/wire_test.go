@@ -427,3 +427,13 @@ func TestNativeWireCanceledBeforeWriteDoesNotConsumeIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestExplicitOmittedNativeParametersPreservesCommonBounds(t *testing.T) {
+	raw, err := marshal(envelope{Method: "account/rateLimits/read", ID: json.RawMessage(`"original"`)}, OmittedParams{})
+	if err != nil || bytes.Contains(raw, []byte(`"params"`)) {
+		t.Fatal("pinned no-parameter method acquired a unit object", err)
+	}
+	if _, err := marshal(envelope{Method: "account/rateLimits/read"}, nil); err == nil {
+		t.Fatal("ordinary nil silently became omission authority")
+	}
+}

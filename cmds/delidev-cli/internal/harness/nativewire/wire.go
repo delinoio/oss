@@ -335,14 +335,18 @@ func marshal(message envelope, params any) ([]byte, error) {
 	if err := domain.Text(message.Method, "native method", 256, true); err != nil {
 		return nil, err
 	}
-	raw, err := json.Marshal(params)
-	if err != nil {
-		return nil, domain.Fail(domain.InvalidArgument, "Invalid native request parameters.", "Use the adapter's typed request schema.")
+	var raw []byte
+	var err error
+	if _, omitted := params.(OmittedParams); !omitted {
+		raw, err = json.Marshal(params)
+		if err != nil {
+			return nil, domain.Fail(domain.InvalidArgument, "Invalid native request parameters.", "Use the adapter's typed request schema.")
+		}
+		if len(raw) == 0 || (raw[0] != '{' && raw[0] != '[') {
+			return nil, domain.Fail(domain.InvalidArgument, "Native parameters must be a structured object or array.", "Use the adapter's typed parameter schema.")
+		}
+		message.Params = raw
 	}
-	if len(raw) == 0 || (raw[0] != '{' && raw[0] != '[') {
-		return nil, domain.Fail(domain.InvalidArgument, "Native parameters must be a structured object or array.", "Use the adapter's typed parameter schema.")
-	}
-	message.Params = raw
 	raw, err = json.Marshal(message)
 	if err != nil || len(raw) > MaxFrame {
 		return nil, domain.Fail(domain.ResourceExhausted, "Native request exceeds its bound.", "Reduce the request size.")
@@ -552,3 +556,7 @@ func (w *frameWriter) Write(data []byte) (int, error) {
 	// Continue draining until native ownership cleanup confirms termination.
 	return length, nil
 }
+
+// OmittedParams is an explicit adapter-owned no-parameter protocol profile.
+// Ordinary nil/scalar parameters remain invalid; this never changes inbound validation.
+type OmittedParams struct{}

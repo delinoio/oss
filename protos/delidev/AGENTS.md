@@ -161,3 +161,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - NativeModelService owns additive `native_models.proto` under `docs/cmds-delidev-native-models-contract.md`, activating only main-established System 16 and Worker 7. Owner/client operations preserve exact revisions/receipts and immutable bounded pages; private executable assignments stay Worker-only. Regenerate Go/TypeScript, compatibility facades and reflection together.
 
 - Service-native subscription attribution uses the reserved closed SubscriptionServiceIdentity enum and additive usage/pricing/diagnostic fields. Keep it distinct from the SubscriptionService RPC name; activate independent capability 17 with real migration 28, preserving API schema 1 and subscription/retired projection schema 2.
+
+- Subscription observation declarations retain the quota/reset-credit allocations for issues #1096/#1104. Owner/client request/reconcile and Worker-only claim/publication lanes remain independent. Generate both bindings from the reconciled schema; reservations alone cannot advertise capability.

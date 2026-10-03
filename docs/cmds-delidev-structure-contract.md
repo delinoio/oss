@@ -91,7 +91,7 @@ replacement of #1108, 26 for #1115, and 27 for #1117. Each originally used 25.
 The Grok replacement for issue #1100 implements reserved version 25 with the
 independent `grok-closed-input-v1` layout marker. The integrated implementation activates real version 26 for original Claude/OpenCode
 accounting and version 27 for metadata-only request diagnostics, followed by real
-version 28 for service-native subscription identity. The executable registry ends
+version 28 for service-native subscription identity and its account-scoped recovery notification constraint, preserving all original delivery claims with an independent layout marker. The executable registry ends
 at 28; reserved version 29 remains inactive until the OAuth implementation. Unmarked historical
 version-25 files still require recovery without modification.
 Claude accounting must compose with the Grok accounting schema and shared usage
