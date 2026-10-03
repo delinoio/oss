@@ -1630,6 +1630,11 @@ unsafe fn spawn_admitted(
     argv: *const *mut c_char,
     envp: *const *mut c_char,
 ) -> c_int {
+    // libc exposes the common POSIX spawn flags on macOS but not this
+    // Darwin-specific session flag. Keep the SDK-defined value local so a
+    // request for a new session is rejected before native spawn can detach
+    // the child from the supervisor's process group.
+    const MACOS_POSIX_SPAWN_SETSID: c_int = 0x0400;
     let original = original!(
         posix_spawn,
         unsafe extern "C" fn(
@@ -1647,7 +1652,11 @@ unsafe fn spawn_admitted(
         if result != 0 {
             return result;
         }
-        if i32::from(flags) & libc::POSIX_SPAWN_SETPGROUP != 0 {
+        let flags = i32::from(flags);
+        if flags & MACOS_POSIX_SPAWN_SETSID != 0 {
+            return reject_group_change(ProcessGroupOperation::Session);
+        }
+        if flags & libc::POSIX_SPAWN_SETPGROUP != 0 {
             let mut group = 0;
             let result = libc::posix_spawnattr_getpgroup(attributes, &raw mut group);
             if result != 0 {
