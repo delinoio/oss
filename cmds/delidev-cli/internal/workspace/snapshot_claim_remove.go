@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -27,12 +28,10 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	if err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != r.OperationID || intent.SessionID != r.Preparation.SessionID || intent.SnapshotID != r.SnapshotID || intent.Action != r.Action || len(intent.Inventory.Entries) > maxSnapshotRemovalEntries {
 		return ResultUncertain()
 	}
-	claimRaw, err := security.ReadPrivate(m.removalClaimPath(r.OperationID), maxStorageRemovalClaim)
-	var claim storageRemovalClaim
-	if err != nil || !removalClaimMatches(claimRaw, removalReference(r), raw) || domain.Decode(claimRaw, &claim) != nil {
+	claim, pending, err := m.readRemovalClaimPending(r, raw)
+	if err != nil {
 		return ResultUncertain()
 	}
-	pending := append([]storageRemovalRename(nil), claim.Pending...)
 	identity, err := directoryPathIdentity(removal)
 	if err != nil || identity != claim.RootIdentity {
 		return ResultUncertain()
@@ -71,6 +70,44 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 		return ResultUncertain()
 	}
 	buffer := make([]byte, 128<<10)
+	physicalFor := func(logical string) string {
+		best := ""
+		physical := logical
+		for _, rename := range pending {
+			if logical != rename.Original && !strings.HasPrefix(logical, rename.Original+"/") {
+				continue
+			}
+			if len(rename.Original) > len(best) {
+				best = rename.Original
+				physical = rename.Private + strings.TrimPrefix(logical, rename.Original)
+			}
+		}
+		return physical
+	}
+	logicalFor := func(physical string) (string, bool) {
+		best := ""
+		logical := ""
+		for _, rename := range pending {
+			if physical != rename.Private && !strings.HasPrefix(physical, rename.Private+"/") {
+				continue
+			}
+			if len(rename.Private) > len(best) {
+				best = rename.Private
+				logical = rename.Original + strings.TrimPrefix(physical, rename.Private)
+			}
+		}
+		return logical, best != ""
+	}
+	removePending := func(original, private string) error {
+		for i, rename := range pending {
+			if rename.Original != original || rename.Private != private {
+				continue
+			}
+			pending = append(pending[:i], pending[i+1:]...)
+			return nil
+		}
+		return ResultUncertain()
+	}
 	var remove func(*os.Root, string) error
 	remove = func(parent *os.Root, relative string) error {
 		if err := ctx.Err(); err != nil {
@@ -85,8 +122,14 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 		if readErr != nil && readErr != io.EOF || len(names) > maxSnapshotRemovalEntries {
 			return ResultUncertain()
 		}
+		physicalParent := physicalFor(relative)
 		for _, name := range names {
-			if _, ok := known[path.Join(relative, name)]; !ok {
+			physicalEntry := path.Join(physicalParent, name)
+			logicalEntry, mapped := logicalFor(physicalEntry)
+			if !mapped {
+				logicalEntry = physicalEntry
+			}
+			if _, ok := known[logicalEntry]; !ok {
 				return ResultUncertain()
 			}
 		}
@@ -94,7 +137,8 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			name := path.Base(entry.Path)
+			physicalEntry := physicalFor(entry.Path)
+			name := path.Base(physicalEntry)
 			before, err := parent.Lstat(name)
 			if os.IsNotExist(err) && partial {
 				continue
@@ -119,15 +163,18 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			if parentRelative == "." {
 				privateRelative = privateName
 			}
+			if len(pending) >= maxSnapshotRemovalEntries {
+				return ResultUncertain()
+			}
 			pending = append(pending, storageRemovalRename{Original: entry.Path, Private: privateRelative})
-			if err := m.updateRemovalClaimPending(ctx, r, raw, pending); err != nil {
+			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenamePrepared}); err != nil {
 				return err
 			}
 			if err := renameStorage(originalPath, privatePath); err != nil {
 				return ResultUncertain()
 			}
 			pending[len(pending)-1].Renamed = true
-			if err := m.updateRemovalClaimPending(ctx, r, raw, pending); err != nil {
+			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenameRenamed}); err != nil {
 				return err
 			}
 			if m.storageAfterRemovalClaim != nil {
@@ -137,8 +184,10 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 				if err := renameStorage(privatePath, originalPath); err != nil {
 					return ResultUncertain()
 				}
-				pending = pending[:len(pending)-1]
-				if err := m.updateRemovalClaimPending(ctx, r, raw, pending); err != nil {
+				if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenameCleared}); err != nil {
+					return err
+				}
+				if err := removePending(entry.Path, privateRelative); err != nil {
 					return err
 				}
 				return nil
@@ -177,8 +226,10 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 				}
 				return ResultUncertain()
 			}
-			pending = pending[:len(pending)-1]
-			if err := m.updateRemovalClaimPending(ctx, r, raw, pending); err != nil {
+			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenameCleared}); err != nil {
+				return err
+			}
+			if err := removePending(entry.Path, privateRelative); err != nil {
 				return err
 			}
 		}

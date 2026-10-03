@@ -4,6 +4,7 @@ package security
 
 import (
 	"errors"
+	"io"
 	"os"
 	"unsafe"
 
@@ -85,6 +86,38 @@ func openNoFollow(path string) (*os.File, error) {
 		return nil, err
 	}
 	return os.NewFile(uintptr(h), path), nil
+}
+
+func openPrivateAppend(path string) (*os.File, bool, error) {
+	_, statErr := os.Lstat(path)
+	created := errors.Is(statErr, os.ErrNotExist)
+	if statErr != nil && !created {
+		return nil, false, statErr
+	}
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, false, err
+	}
+	h, err := windows.CreateFile(p, windows.GENERIC_READ|windows.GENERIC_WRITE, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_ALWAYS, windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return nil, false, err
+	}
+	f := os.NewFile(uintptr(h), path)
+	info, err := f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = domain.Fail(domain.PermissionDenied, "Invalid private journal.", "Inspect the data scope.")
+	}
+	if err == nil {
+		err = checkPrivate(path, info)
+	}
+	if err == nil {
+		_, err = f.Seek(0, io.SeekEnd)
+	}
+	if err != nil {
+		f.Close()
+		return nil, false, err
+	}
+	return f, created, nil
 }
 
 type Lock struct {
