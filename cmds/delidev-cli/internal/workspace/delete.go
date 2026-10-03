@@ -53,6 +53,9 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		return domain.SessionDeletionPending()
 	}
 	defer observationLock.Close()
+	if err := m.requireNoSidechatReferences(ctx, w.SessionID); err != nil {
+		return err
+	}
 	stage = "storage-staging-ownership"
 	if err := m.cleanupDeletionStaging(ctx, w); err != nil {
 		return err
@@ -130,6 +133,12 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		stage = "repository-ownership"
 		for i := len(manifest.Repositories) - 1; i >= 0; i-- {
 			repo := manifest.Repositories[i]
+			if manifest.Reference != nil {
+				if repo.Owned || manifest.Reference.SessionID.Validate() != nil || manifest.Reference.SessionID == w.SessionID {
+					return domain.SessionDeletionPending()
+				}
+				continue
+			}
 			if manifest.Type == domain.Local {
 				if repo.Owned || repo.Path != repo.Source || sameNativePath(repo.Source, root) || strings.HasPrefix(repo.Source, root+string(filepath.Separator)) {
 					return domain.SessionDeletionPending()
@@ -192,7 +201,13 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	if !proof.Removed {
 		// The manifest was persisted outside the directory before removal. Missing
 		// paths on recovery therefore preserve the exact original deletion intent.
-		if e := security.RemoveOwnedTree(ctx, m.Root, root); e != nil {
+		var removeErr error
+		if proof.Manifest != nil && proof.Manifest.Reference != nil {
+			removeErr = m.removeSidechatMetadata(ctx, root, *proof.Manifest)
+		} else {
+			removeErr = security.RemoveOwnedTree(ctx, m.Root, root)
+		}
+		if e := removeErr; e != nil {
 			return domain.SafeError(e)
 		}
 		if e := security.SyncParent(root); e != nil {

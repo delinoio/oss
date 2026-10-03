@@ -281,6 +281,9 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 	if err := ValidateResult(input, manifest, runtime.GOOS); err != nil {
 		return "", err
 	}
+	if manifest.Reference != nil {
+		return m.verifySidechatReference(ctx, input, manifest, owner)
+	}
 	root := filepath.Join(m.Root, "workspaces", string(input.SessionID))
 	paths := []string{manifest.PrimaryPath}
 	for _, repo := range manifest.Repositories {

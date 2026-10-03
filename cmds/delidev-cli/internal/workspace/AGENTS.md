@@ -1,5 +1,7 @@
 # DeliDev Worker workspace ownership
 
+- Sidechat uses `codex-sidechat-reference-v1` under `docs/cmds-delidev-sidechat-contract.md`. Retain original preparation/manifest and native directory identities; child metadata owns no parent files, repositories or General Chat directory. Reads/execution revalidate the exact parent and reference metadata while permitting ordinary file edits. Preparation/storage/terminal paths cannot expand that reference. Parent deletion, preparation cleanup and source-removing storage require all reference metadata to be independently removed after joined child cleanup. Child removal checks the original metadata inode and sole manifest entry and never traverses source roots; unknown/replaced ownership remains pending.
+
 Follow the root and parent instructions and docs/cmds-delidev-workspace-contract.md.
 
 - Worker-local snapshots and cleanup follow docs/cmds-delidev-storage-contract.md. Preserve ordered all-repository manifests, commits/unpushed history, index/worktree state, ignored/untracked regular files, modes and symlinks without dereferencing links. Reject unsupported special files, external Git object dependencies and undeclared nested Git administration, including directories and filesystem case aliases.
