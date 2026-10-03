@@ -51,8 +51,10 @@ const (
 type compactionClaimName string
 
 const (
-	compactionRegistrationClaim compactionClaimName = "compaction-registration.json"
-	compactionCommandClaim      compactionClaimName = "compaction-command.json"
+	compactionRegistrationClaim   compactionClaimName = "compaction-registration.json"
+	compactionCommandClaim        compactionClaimName = "compaction-command.json"
+	openCodeCompactionResumeClaim compactionClaimName = "opencode-resume-claim.json"
+	openCodeCompactionNativeClaim compactionClaimName = "opencode-compact-claim.json"
 )
 
 type sessionCompactionRegistration struct {
@@ -120,7 +122,7 @@ func readCompactionClaimRecords(root string, job domain.ID, input domain.Session
 }
 
 func writeCompactionClaim(root string, job domain.ID, name compactionClaimName, value any) error {
-	if job.Validate() != nil || name != compactionRegistrationClaim && name != compactionCommandClaim {
+	if job.Validate() != nil || name != compactionRegistrationClaim && name != compactionCommandClaim && name != openCodeCompactionResumeClaim && name != openCodeCompactionNativeClaim {
 		return domain.CompactionUncertain()
 	}
 	// Compaction has no execution publisher to create its per-job directory.
@@ -188,6 +190,9 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	var i domain.SessionCompactionInput
 	if c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || config.executionContext == nil || domain.Decode(job.Input, &i) != nil || i.Validate() != nil || c.Credential.MachineID != i.Assignment.MachineID || job.ParentID != i.SourceJobID || job.AssignedDeviceID != c.Credential.DeviceID || job.InstanceID != c.Instance || job.MachineID != c.Credential.MachineID || c.Assignment.Revision == 0 {
 		return nil, domain.CompactionUncertain()
+	}
+	if i.Assignment.Configuration.Harness == domain.OpenCode {
+		return executeOpenCodeSessionCompaction(ctx, config, owner, job, i)
 	}
 	if i.Assignment.Configuration.Harness == domain.Codex {
 		return executeCodexSessionCompaction(ctx, config, owner, job, i)

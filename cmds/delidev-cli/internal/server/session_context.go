@@ -60,13 +60,15 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return err
 		}
-		if session.InitialExecution == nil || (session.InitialExecution.Configuration.Harness != domain.ClaudeCode && session.InitialExecution.Configuration.Harness != domain.Codex) {
+		if session.InitialExecution == nil || (session.InitialExecution.Configuration.Harness != domain.ClaudeCode && session.InitialExecution.Configuration.Harness != domain.Codex && session.InitialExecution.Configuration.Harness != domain.OpenCode) {
 			return nil
 		}
 		view.SessionRevision = strconv.FormatUint(sr.Revision, 10)
 		view.ExecutionID = session.ExecutionSelection().ID
 		h := session.InitialExecution.Configuration.Harness
-		if h == domain.Codex {
+		if h == domain.OpenCode {
+			caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_OPENCODE_NATIVE_OBSERVATIONS_V1)
+		} else if h == domain.Codex {
 			caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CODEX_NATIVE_OBSERVATIONS_V1)
 		} else {
 			caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CLAUDE_NATIVE_OBSERVATIONS_V1)
@@ -93,13 +95,13 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 				*ref.target = contextResource(r, r.Data)
 			}
 		}
-		if h == domain.Codex && p != nil && p.LatestNativeCompactionID != "" {
+		if (h == domain.Codex || h == domain.OpenCode) && p != nil && p.LatestNativeCompactionID != "" {
 			r, err := tx.Get(domain.MessageKind, p.LatestNativeCompactionID)
 			if err != nil {
 				return err
 			}
 			v, err := store.Decode[domain.ExecutionMessage](r)
-			if err != nil || r.SessionID != id || v.ExecutionID != p.ExecutionID || v.Progress == nil || v.Progress.Compaction == nil || v.Progress.Compaction.Harness != domain.Codex {
+			if err != nil || r.SessionID != id || v.ExecutionID != p.ExecutionID || v.Progress == nil || v.Progress.Compaction == nil || v.Progress.Compaction.Harness != h {
 				return domain.CompactionUncertain()
 			}
 			view.AutomaticBoundary = contextResource(r, r.Data)
@@ -139,7 +141,9 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 			view.ManualAction = contextResource(r, document)
 		}
 		if _, err := compactionSource(tx, sr, session, domain.NewID()); err == nil {
-			if h == domain.Codex {
+			if h == domain.OpenCode {
+				caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_OPENCODE_MANUAL_COMPACTION_V1)
+			} else if h == domain.Codex {
 				caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CODEX_MANUAL_COMPACTION_V1)
 			} else {
 				caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CLAUDE_MANUAL_COMPACTION_V1)

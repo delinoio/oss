@@ -2,6 +2,8 @@
 package opencode
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"slices"
 
@@ -16,6 +18,40 @@ type nativeCheckpointContext struct {
 	Records   []NativeContextRecord `json:"records"`
 	Pruned    []NativePrunedPart    `json:"pruned"`
 	Inventory []HistoryMessage      `json:"inventory"`
+}
+
+// InspectCompactionCheckpoint compares retained ordinary lineage against its
+// independent source, then pins the last manual action. It never launches or
+// reconstructs a missing native observation or once-only command claim.
+func InspectCompactionCheckpoint(ctx context.Context, home string, raw []byte, ref CheckpointReference, sourceHome string, sourceRaw []byte, sourceRef CheckpointReference, action domain.ID) (NativeContextRecord, uint32, error) {
+	empty := NativeContextRecord{}
+	p, err := decodeCheckpoint(raw, ref, home)
+	source, sourceErr := decodeCheckpoint(sourceRaw, sourceRef, sourceHome)
+	if err != nil || sourceErr != nil || action.Validate() != nil || ref.RequiresResume || sourceRef.RequiresResume || p.Context == nil || len(p.Context.Records) == 0 || InspectReplacementCheckpoint(ctx, home, raw, ref) != nil || InspectReplacementCheckpoint(ctx, sourceHome, sourceRaw, sourceRef) != nil {
+		return empty, 0, sessionUncertain()
+	}
+	left, _ := json.Marshal(checkpointHistories(p))
+	right, _ := json.Marshal(checkpointHistories(source))
+	if !bytes.Equal(left, right) || ref.CreationRequestID != sourceRef.CreationRequestID || ref.InputRequestID != sourceRef.InputRequestID || ref.SessionID != sourceRef.SessionID || ref.InputID != sourceRef.InputID || ref.PartID != sourceRef.PartID || ref.InputSHA256 != sourceRef.InputSHA256 || ref.HistorySHA256 != sourceRef.HistorySHA256 {
+		return empty, 0, sessionUncertain()
+	}
+	var prior []NativeContextRecord
+	if source.Context != nil {
+		prior = source.Context.Records
+	}
+	if len(p.Context.Records) != len(prior)+1 {
+		return empty, 0, sessionUncertain()
+	}
+	oldRecords, _ := json.Marshal(prior)
+	newRecords, _ := json.Marshal(p.Context.Records[:len(prior)])
+	if len(prior) > 0 && !bytes.Equal(oldRecords, newRecords) {
+		return empty, 0, sessionUncertain()
+	}
+	record := p.Context.Records[len(p.Context.Records)-1]
+	if record.ActionID != action || record.Auto || record.Overflow || record.ContinueID != "" || record.InputRequestID != sourceRef.InputRequestID || record.SourceInputID != sourceRef.InputID || !checkpointDigest(record.HistoryDigest) {
+		return empty, 0, sessionUncertain()
+	}
+	return record, uint32(len(p.Context.Records)), nil
 }
 
 func checkpointInventory(c nativeCheckpoint) []HistoryMessage {
@@ -76,6 +112,9 @@ func (s *sessionAPI) retainContext(history HistoryObservation) *nativeCheckpoint
 		return nil
 	}
 	records = append(records, o.contextRecords...)
+	if o.contextManual != "" && len(records) > 0 {
+		records[len(records)-1].HistoryDigest = history.Digest
+	}
 	pruned = append(pruned, o.contextPruned...)
 	// Original current tool parts already carry the validated final digest. Only
 	// earlier input inventories need the independently observed pruning overlay.
@@ -156,7 +195,7 @@ func validCheckpointContext(c nativeCheckpoint) bool {
 		if r.Overflow && (!nativeID(r.OverflowAssistantID, "msg") || !nativeID(r.OverflowEventID, "evt") || positions[r.OverflowAssistantID] == 0 || positions[r.OverflowAssistantID] >= positions[r.UserID]) || !r.Overflow && (r.OverflowAssistantID != "" || r.OverflowEventID != "") {
 			return false
 		}
-		if r.InputRequestID.Validate() != nil || inputs[r.SourceInputID] != r.InputRequestID || !nativeID(r.UserID, "msg") || !nativeID(r.SummaryID, "msg") || !nativeID(r.PartID, "prt") || !nativeID(r.CompletedEventID, "evt") || seen[r.UserID] || seen[r.SummaryID] || seen[r.PartID] || seen[r.CompletedEventID] || positions[r.UserID] == 0 || positions[r.SummaryID] <= positions[r.UserID] || proof.Inventory[positions[r.UserID]-1].Role != UserMessageRole || proof.Inventory[positions[r.SummaryID]-1].Role != AssistantMessageRole || len(proof.Inventory[positions[r.UserID]-1].Parts) != 1 || parts[r.PartID].Kind != CompactionPartKind || partOwners[r.PartID] != r.UserID || r.Auto && r.ActionID != "" || !r.Auto && r.ActionID.Validate() != nil || r.TailStartID != "" && positions[r.TailStartID] == 0 || r.ContinueID != "" && (!r.Auto || positions[r.ContinueID] <= positions[r.SummaryID] || proof.Inventory[positions[r.ContinueID]-1].Role != UserMessageRole) {
+		if r.InputRequestID.Validate() != nil || inputs[r.SourceInputID] != r.InputRequestID || !nativeID(r.UserID, "msg") || !nativeID(r.SummaryID, "msg") || !nativeID(r.PartID, "prt") || !nativeID(r.CompletedEventID, "evt") || seen[r.UserID] || seen[r.SummaryID] || seen[r.PartID] || seen[r.CompletedEventID] || positions[r.UserID] == 0 || positions[r.SummaryID] <= positions[r.UserID] || proof.Inventory[positions[r.UserID]-1].Role != UserMessageRole || proof.Inventory[positions[r.SummaryID]-1].Role != AssistantMessageRole || len(proof.Inventory[positions[r.UserID]-1].Parts) != 1 || parts[r.PartID].Kind != CompactionPartKind || partOwners[r.PartID] != r.UserID || r.Auto && (r.ActionID != "" || r.HistoryDigest != "") || !r.Auto && (r.ActionID.Validate() != nil || !checkpointDigest(r.HistoryDigest)) || r.TailStartID != "" && positions[r.TailStartID] == 0 || r.ContinueID != "" && (!r.Auto || positions[r.ContinueID] <= positions[r.SummaryID] || proof.Inventory[positions[r.ContinueID]-1].Role != UserMessageRole) {
 			return false
 		}
 		seen[r.UserID], seen[r.SummaryID], seen[r.PartID], seen[r.CompletedEventID] = true, true, true, true
