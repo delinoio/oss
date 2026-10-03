@@ -84,3 +84,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Native observation JSON preserves decimal uint64 revisions, distinct picker/executable IDs and bounded closed advisory metadata under `docs/cmds-delidev-native-models-contract.md`. Reject the entire observation on duplicate identity, malformed metadata, secret reflection or missing confirmed cleanup; detected Codex executable digests never grant readiness.
 
 - ClaudeMainLoopInput and OpenCodeStep accounting follow the usage contract. Keep original source identities and immutable prices, nullable Claude primitives, unavailable OpenCode normalized zeros, independent native totals and disjoint OpenCode reasoning pricing. Never add assistant/cumulative/inherited observations or reinterpret units as responses.
+
+- Keep independent service-native subscription identity closed to ChatGPT/Claude/Grok and its exact harness. API Provider identity remains separate. Match complete account/model identity in routing and immutable snapshots; retired Agents require explicit reconfiguration before resolution.

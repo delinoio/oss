@@ -20,6 +20,9 @@ func (t *Tx) grokAccountingSummary(f domain.UsageSelection, result *domain.Usage
 			args = append(args, part.value)
 		}
 	}
+	if f.SubscriptionService != "" {
+		where += " AND 0"
+	}
 	if f.GeneralChat {
 		where += " AND r.project_id=''"
 	}

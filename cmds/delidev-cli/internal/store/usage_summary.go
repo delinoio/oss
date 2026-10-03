@@ -44,10 +44,14 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 			args = append(args, part.value)
 		}
 	}
+	if f.SubscriptionService != "" {
+		where += " AND json_extract(r.body,'$.subscription_service')=?"
+		args = append(args, f.SubscriptionService)
+	}
 	if f.GeneralChat {
 		where += " AND r.project_id=''"
 	}
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT r.body,r.created_at,e.body,COALESCE(e.pricing_id,''),COALESCE(p.model_id,''),COALESCE(p.provider_id,''),COALESCE(p.revision,0),COALESCE(p.body,''),COALESCE(p.created_at,0) FROM response_usage r LEFT JOIN response_estimates e ON e.usage_id=r.id LEFT JOIN pricing_versions p ON p.id=e.pricing_id WHERE `+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT r.body,r.created_at,e.body,COALESCE(e.pricing_id,''),COALESCE(p.model_id,''),COALESCE(p.provider_id,''),COALESCE(p.subscription_service,''),COALESCE(p.revision,0),COALESCE(p.body,''),COALESCE(p.created_at,0) FROM response_usage r LEFT JOIN response_estimates e ON e.usage_id=r.id LEFT JOIN pricing_versions p ON p.id=e.pricing_id WHERE `+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
 	if err != nil {
 		return result, storageError(err)
 	}
@@ -65,7 +69,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 			var body, estimateBody, priceBody []byte
 			var price PricingVersion
 			var responseCreated, pricingCreated int64
-			if err := rows.Scan(&body, &responseCreated, &estimateBody, &price.ID, &price.ModelID, &price.ProviderID, &price.Revision, &priceBody, &pricingCreated); err != nil {
+			if err := rows.Scan(&body, &responseCreated, &estimateBody, &price.ID, &price.ModelID, &price.ProviderID, &price.SubscriptionService, &price.Revision, &priceBody, &pricingCreated); err != nil {
 				return storageError(err)
 			}
 			var record domain.ResponseUsageRecord
@@ -83,7 +87,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					if len(prices) >= maxUsageGroups {
 						return usageReadLimit()
 					}
-					if price.ID.Validate() != nil || price.ModelID.Validate() != nil || price.ProviderID.Validate() != nil || price.Revision == 0 || len(priceBody) > 16<<10 || domain.Decode(priceBody, &price.Basis) != nil || price.Basis.Validate() != nil {
+					if price.ID.Validate() != nil || price.ModelID.Validate() != nil || !price.ValidIdentity() || price.Revision == 0 || len(priceBody) > 16<<10 || domain.Decode(priceBody, &price.Basis) != nil || price.Basis.Validate() != nil {
 						return corrupt()
 					}
 					price.CreatedAt = time.UnixMilli(pricingCreated).UTC()
@@ -106,7 +110,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 				if len(groups) >= maxUsageGroups {
 					return usageReadLimit()
 				}
-				group = &domain.UsageGroup{SessionID: record.SessionID, ProjectID: record.ProjectID, AccountID: record.AccountID, ProviderID: record.ProviderID, ModelID: record.ModelID}
+				group = &domain.UsageGroup{SessionID: record.SessionID, ProjectID: record.ProjectID, AccountID: record.AccountID, ProviderID: record.ProviderID, SubscriptionService: record.SubscriptionService, ModelID: record.ModelID}
 				groups[key] = group
 			}
 			if group.ProjectID != record.ProjectID {
@@ -137,7 +141,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					if len(modelGroups) >= maxUsageGroups || len(modelGroups) >= domain.UsageModelGroupLimit {
 						return usageReadLimit()
 					}
-					model = &domain.UsageAnalyticsModel{ProviderID: record.ProviderID, ModelID: record.ModelID}
+					model = &domain.UsageAnalyticsModel{ProviderID: record.ProviderID, SubscriptionService: record.SubscriptionService, ModelID: record.ModelID}
 					modelGroups[key] = model
 				}
 				model.Totals.Add(record.Usage.Counts)
@@ -241,6 +245,10 @@ func (t *Tx) usageMissingExecutions(f domain.UsageSelection, observed map[domain
 			query += " AND " + part.column + "=?"
 			args = append(args, part.value)
 		}
+	}
+	if f.SubscriptionService != "" {
+		query += " AND json_extract(e.body,'$.input.configuration.subscription_service')=?"
+		args = append(args, f.SubscriptionService)
 	}
 	if f.GeneralChat {
 		query += " AND e.project_id=''"

@@ -176,6 +176,9 @@ func TestNativeModelsSubscriptionRemainsExplicitlyUnsupported(t *testing.T) {
 		}
 		a, _ := store.Decode[domain.Account](r)
 		a.Type = domain.SubscriptionAccount
+		a.ProviderID, a.SubscriptionService = "", domain.SubscriptionChatGPT
+		a.Connection, a.Validation, a.Catalog = nil, nil, nil
+		a.Health = domain.AccountDisconnected
 		return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 	})
 	if err != nil {

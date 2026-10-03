@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 27
+const SchemaVersion = 28
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -266,6 +266,12 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 		}
 		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='native_accounting_layout'").Scan(&layout); err != nil || layout != expectedLayout {
 			return domain.Fail(domain.RecoveryRequired, "The native accounting layout is unrecognized.", "Preserve the original database and use explicit recovery; never adopt an unmerged schema by version number.")
+		}
+	}
+	if version >= 28 {
+		var layout string
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='subscription_identity_layout'").Scan(&layout); err != nil || layout != "service-accounts-v2" {
+			return domain.Fail(domain.RecoveryRequired, "The subscription identity layout is unrecognized.", "Preserve the original database and use a matching server version.")
 		}
 	}
 	var check string
@@ -704,8 +710,10 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 		if err != nil {
 			return err
 		}
-		if _, err = t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO model_suppressions(provider_id,native_id) VALUES(?,?)", model.ProviderID, model.NativeID); err != nil {
-			return storageError(err)
+		if model.ProviderID != "" {
+			if _, err = t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO model_suppressions(provider_id,native_id) VALUES(?,?)", model.ProviderID, model.NativeID); err != nil {
+				return storageError(err)
+			}
 		}
 	}
 	if _, err = t.tx.ExecContext(t.ctx, "INSERT INTO tombstones(id,kind,created_at) VALUES(?,?,?)", id, kind, t.now.UnixMilli()); err != nil {

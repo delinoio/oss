@@ -120,16 +120,20 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID {
 		return empty, executionDenied()
 	}
-	r, err := tx.Get(domain.ProviderKind, input.Configuration.ProviderID)
-	if err != nil {
-		return empty, executionDenied()
+	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService == domain.SubscriptionChatGPT && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && input.Configuration.Harness == domain.Codex
+	var provider domain.Provider
+	var operations []apiproxy.Operation
+	if !managed {
+		r, err := tx.Get(domain.ProviderKind, input.Configuration.ProviderID)
+		if err != nil {
+			return empty, executionDenied()
+		}
+		provider, err = store.Decode[domain.Provider](r)
+		if err != nil || provider.Authentication != account.Connection.Authentication {
+			return empty, executionDenied()
+		}
+		operations = executionAPIOperations(input, provider.Protocol)
 	}
-	provider, err := store.Decode[domain.Provider](r)
-	if err != nil || provider.Authentication != account.Connection.Authentication {
-		return empty, executionDenied()
-	}
-	operations := executionAPIOperations(input, provider.Protocol)
-	managed := input.Configuration.Subscription && account.Type == domain.SubscriptionAccount && provider.Protocol == domain.NativeSubscription && provider.SubscriptionHarness != nil && *provider.SubscriptionHarness == domain.Codex && input.Configuration.Harness == domain.Codex
 	if managed {
 		state := account.Subscription
 		if state == nil || state.RecoveryRequired || state.Lease == nil {
@@ -143,15 +147,15 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if (!managed && account.Type != domain.APIAccount) || (len(operations) == 0 && !managed) {
 		return empty, executionDenied()
 	}
-	r, err = tx.Get(domain.ModelKind, input.Configuration.ModelID)
+	r, err := tx.Get(domain.ModelKind, input.Configuration.ModelID)
 	if err != nil {
 		return empty, executionDenied()
 	}
 	model, err := store.Decode[domain.Model](r)
-	if err != nil || model.ProviderID != input.Configuration.ProviderID || !slices.Contains(model.Harnesses, input.Configuration.Harness) {
+	if err != nil || model.ProviderID != input.Configuration.ProviderID || model.SubscriptionService != input.Configuration.SubscriptionService || !model.MatchesAccount(account, input.Configuration.Harness) || !slices.Contains(model.Harnesses, input.Configuration.Harness) {
 		return empty, executionDenied()
 	}
-	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
+	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
 	if !managed {
 		if err := scope.Validate(); err != nil {
 			return empty, executionDenied()
@@ -225,7 +229,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	}
 	// Managed subscription registrations bind publication only. They never
 	// authorize the API relay or expose a subscription bundle through it.
-	if scope.Provider.Protocol == domain.NativeSubscription {
+	if scope.SubscriptionService != "" {
 		return nil, executionDenied()
 	}
 	leaseContext, cancel := context.WithCancel(ctx)
@@ -575,9 +579,9 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		}
 		return nil, rpc.Error(err, correlation)
 	}
-	s.logger.Info("execution_credential_registered", "job_id", identity.Job, "machine_id", identity.Machine, "instance_id", identity.Instance, "request_id", meta.RequestId, "api_protocol", registeredScope.Provider.Protocol, "replayed", result.Replayed)
+	s.logger.Info("execution_credential_registered", "job_id", identity.Job, "machine_id", identity.Machine, "instance_id", identity.Instance, "request_id", meta.RequestId, "api_protocol", registeredScope.Provider.Protocol, "subscription_service", registeredScope.SubscriptionService, "replayed", result.Replayed)
 	proxyPath := apiproxy.Prefix
-	if registeredScope.Provider.Protocol == domain.NativeSubscription {
+	if registeredScope.SubscriptionService != "" {
 		proxyPath = ""
 	}
 	response := connect.NewResponse(&pb.RegisterExecutionResponse{ProxyPath: proxyPath, Replayed: result.Replayed})

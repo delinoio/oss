@@ -128,9 +128,9 @@ enum ProjectId {
 
 - React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, `crates/forge-sfx`, `crates/forge-sprite`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 
-### DeliDev subscription identity prerequisite
+### DeliDev subscription identity
 
-- Issue #1235 requires a main-first reservation prerequisite for independent `SUBSCRIPTION_SERVICE_ACCOUNTS_V1` capability 17 and migration 28. Preserve the real 26/27 order before activating retirement; reservations do not advertise support. Follow the DeliDev structure, protocol and storage contracts, retaining historical attribution, configured-empty deny-all restrictions and native ownership/cleanup gates when composing the later identity split.
+- Issue #1235 uses independent service-native subscription Accounts and Models with capability 17 and real migration 28 after 26/27. Preserve the main-first rule for independent branches and the narrow approved single-PR exception. Follow the subscription, protocol and storage contracts: never infer services, expose retired configuration as live authority, loosen configured-empty deny-all or retire unsettled protected/native ownership. Preserve immutable historical attribution and require explicit affected Agent/Schedule reconfiguration.
 
 ### DeliDev desktop launch amendment
 

@@ -149,14 +149,23 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 		if err != nil {
 			return err
 		}
+		if account.Type == domain.SubscriptionAccount {
+			return nil
+		}
 		return checkProvider(account.ProviderID)
 	}
 	switch selected := value.(type) {
 	case *domain.Model:
+		if selected.SourceKind == domain.SubscriptionModel {
+			return nil
+		}
 		if input.ExpectedRevision == 0 {
 			return checkProvider(selected.ProviderID)
 		}
 	case *domain.Account:
+		if selected.Type == domain.SubscriptionAccount {
+			return nil
+		}
 		if input.ExpectedRevision == 0 {
 			return checkProvider(selected.ProviderID)
 		}
@@ -189,8 +198,10 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 			if err != nil {
 				return err
 			}
-			if err := checkProvider(model.ProviderID); err != nil {
-				return err
+			if model.SourceKind != domain.SubscriptionModel {
+				if err := checkProvider(model.ProviderID); err != nil {
+					return err
+				}
 			}
 		}
 		old, err := previousIDs(domain.AccountKind)
@@ -229,8 +240,10 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 			if err != nil {
 				return err
 			}
-			if err := checkProvider(model.ProviderID); err != nil {
-				return err
+			if model.SourceKind != domain.SubscriptionModel {
+				if err := checkProvider(model.ProviderID); err != nil {
+					return err
+				}
 			}
 		}
 		oldAccounts, err := previousIDs(domain.AccountKind)
@@ -371,6 +384,9 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 		return nil
 	case *domain.Agent:
+		if v.ReconfigurationRequired {
+			return domain.SubscriptionReconfigurationRequired()
+		}
 		record, err := tx.Get(domain.ModelKind, v.ModelID)
 		if err != nil {
 			return err
@@ -391,12 +407,15 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			if err != nil {
 				return err
 			}
-			if account.ProviderID != model.ProviderID {
+			if !model.MatchesAccount(account, v.Harness) {
 				return domain.Fail(domain.InvalidArgument, "An account is incompatible with the Agent Worker model.", "Choose accounts from the configured model provider.")
 			}
 		}
 		return mustExist(tx, domain.TemplateKind, v.Templates...)
 	case *domain.Provider:
+		if v.Protocol == domain.NativeSubscription {
+			return domain.Fail(domain.InvalidArgument, "Subscription providers are retired.", "Create a subscription service account and native model instead.")
+		}
 		if v.PresetID != nil {
 			canonical, ok := providerPresetDefaults(*v.PresetID)
 			if !ok || !sameProviderPresetDefaults(*v, canonical) {
@@ -454,8 +473,10 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			}
 			v.Manual = true
 		}
-		if err := mustExist(tx, domain.ProviderKind, v.ProviderID); err != nil {
-			return err
+		if v.SourceKind != domain.SubscriptionModel {
+			if err := mustExist(tx, domain.ProviderKind, v.ProviderID); err != nil {
+				return err
+			}
 		}
 		if err := tx.ValidateModelIdentity(id, *v); err != nil {
 			return err
@@ -474,7 +495,7 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			if string(oldDiscovery) != string(newDiscovery) || old.Manual != v.Manual || (!old.New && v.New) {
 				return domain.Fail(domain.InvalidArgument, "Model registration and discovery provenance are server-owned.", "Preserve provenance; NEW may only be acknowledged by clearing it.")
 			}
-			if old.ProviderID != v.ProviderID || old.NativeID != v.NativeID {
+			if !old.SameIdentity(*v) {
 				return domain.Fail(domain.Conflict, "Canonical model identity is immutable.", "Register a new model instead of relabeling historical usage.")
 			}
 			if v.MetadataSource == domain.Known && (old.MetadataSource != domain.Known || modelAdvisoryBytes(old) != modelAdvisoryBytes(*v)) {
@@ -482,16 +503,18 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			}
 		}
 	case *domain.Account:
-		record, err := tx.Get(domain.ProviderKind, v.ProviderID)
-		if err != nil {
-			return err
-		}
-		provider, err := store.Decode[domain.Provider](record)
-		if err != nil {
-			return err
-		}
-		if (v.Type == domain.SubscriptionAccount) != (provider.Protocol == domain.NativeSubscription) {
-			return domain.Fail(domain.InvalidArgument, "Account type does not match the provider.", "Use the provider's authentication type.")
+		if v.Type == domain.APIAccount {
+			record, err := tx.Get(domain.ProviderKind, v.ProviderID)
+			if err != nil {
+				return err
+			}
+			provider, err := store.Decode[domain.Provider](record)
+			if err != nil {
+				return err
+			}
+			if provider.Protocol == domain.NativeSubscription {
+				return domain.Fail(domain.InvalidArgument, "API accounts require an API provider.", "Select an API endpoint or create an independent subscription account.")
+			}
 		}
 		if expected == 0 {
 			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil || v.Catalog != nil || v.Subscription != nil {
@@ -526,7 +549,7 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 				Catalog      *domain.CatalogObservation
 				Subscription *domain.SubscriptionState
 			}{v.Health, v.Quota, v.ConfirmedExhausted, v.Connection, v.Removal, v.Validation, v.Catalog, v.Subscription})
-			if old.ProviderID != v.ProviderID || old.Type != v.Type || string(oldObservations) != string(newObservations) {
+			if old.ProviderID != v.ProviderID || old.Type != v.Type || old.SubscriptionService != v.SubscriptionService || string(oldObservations) != string(newObservations) {
 				return domain.Fail(domain.InvalidArgument, "Account identity and observed health are server-owned.", "Use login/connect/refresh to update authentication or quota.")
 			}
 		}

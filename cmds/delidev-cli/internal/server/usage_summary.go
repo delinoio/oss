@@ -44,7 +44,7 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 	if from == 0 {
 		from = until - (30 * 24 * time.Hour).Milliseconds()
 	}
-	f := domain.UsageSelection{From: time.UnixMilli(from), Until: time.UnixMilli(until), SessionID: domain.ID(req.Msg.SessionId), ProjectID: domain.ID(req.Msg.ProjectId), AccountID: domain.ID(req.Msg.AccountId), ProviderID: domain.ID(req.Msg.ProviderId), ModelID: domain.ID(req.Msg.ModelId), GeneralChat: req.Msg.GeneralChat, Granularity: domain.UsageTimeGranularity(req.Msg.Granularity), TimeZone: req.Msg.TimeZone, AccountingProfile: domain.AccountingProfile(req.Msg.AccountingProfile)}
+	f := domain.UsageSelection{From: time.UnixMilli(from), Until: time.UnixMilli(until), SessionID: domain.ID(req.Msg.SessionId), ProjectID: domain.ID(req.Msg.ProjectId), AccountID: domain.ID(req.Msg.AccountId), ProviderID: domain.ID(req.Msg.ProviderId), SubscriptionService: rpc.SubscriptionService(req.Msg.SubscriptionService), ModelID: domain.ID(req.Msg.ModelId), GeneralChat: req.Msg.GeneralChat, Granularity: domain.UsageTimeGranularity(req.Msg.Granularity), TimeZone: req.Msg.TimeZone, AccountingProfile: domain.AccountingProfile(req.Msg.AccountingProfile)}
 	if err := f.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
@@ -80,11 +80,17 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 		}
 		labels := map[usageLabelKey]string{}
 		usageLabel := func(kind domain.Kind, id domain.ID) (string, error) {
+			if id == "" {
+				return "", nil
+			}
 			key := usageLabelKey{kind: kind, id: id}
 			if label, known := labels[key]; known {
 				return label, nil
 			}
 			resource, err := tx.Get(kind, id)
+			if domain.SafeError(err).Code == domain.NotFound && (kind == domain.AccountKind || kind == domain.ModelKind || kind == domain.ProviderKind) {
+				resource, err = tx.RetiredConfiguration(kind, id)
+			}
 			if err != nil && domain.SafeError(err).Code != domain.NotFound {
 				return "", err
 			}
@@ -109,7 +115,7 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 			return label, nil
 		}
 		for _, group := range summary.Groups {
-			row := &pb.UsageGroup{SessionId: string(group.SessionID), ProjectId: string(group.ProjectID), AccountId: string(group.AccountID), ProviderId: string(group.ProviderID), ModelId: string(group.ModelID), Totals: usageTotals(group.Totals), Estimates: estimateTotals(group.Estimates)}
+			row := &pb.UsageGroup{SessionId: string(group.SessionID), ProjectId: string(group.ProjectID), AccountId: string(group.AccountID), ProviderId: string(group.ProviderID), SubscriptionService: rpc.WireSubscriptionService(group.SubscriptionService), ModelId: string(group.ModelID), Totals: usageTotals(group.Totals), Estimates: estimateTotals(group.Estimates)}
 			for _, part := range []struct {
 				kind   domain.Kind
 				id     domain.ID
@@ -140,7 +146,7 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 				if err != nil {
 					return err
 				}
-				wire.Models = append(wire.Models, &pb.UsageAnalyticsModel{ProviderId: string(model.ProviderID), ModelId: string(model.ModelID), ProviderName: provider, ModelName: name, Totals: usageTotals(model.Totals)})
+				wire.Models = append(wire.Models, &pb.UsageAnalyticsModel{ProviderId: string(model.ProviderID), SubscriptionService: rpc.WireSubscriptionService(model.SubscriptionService), ModelId: string(model.ModelID), ProviderName: provider, ModelName: name, Totals: usageTotals(model.Totals)})
 			}
 			if other := analytics.OtherModels; other != nil {
 				wire.OtherModels = &pb.UsageOtherModels{ModelCount: other.ModelCount, Totals: usageTotals(other.Totals)}

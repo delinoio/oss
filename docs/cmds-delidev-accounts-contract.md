@@ -8,7 +8,7 @@ Account aliases/provider associations and display/routing preferences remain con
 
 ## CLI and RPC
 
-`account list` uses the ordinary paginated `ResourceService.ListResources` path and may select `--account-type api|subscription` and `--provider-id UUID`. Both selectors are optional for compatibility. The server composes them before pagination and binds them to the cursor; clients must not filter a fetched page locally. Snapshots and event streams remain unfiltered and unchanged.
+`account list` uses the ordinary paginated `ResourceService.ListResources` path and may select `--account-type api|subscription` and `--provider-id UUID`. Both selectors are optional for compatibility; subscription lists reject any Provider selector. The server composes supported selectors before pagination and binds them to the cursor; clients must not filter a fetched page locally. Snapshots and event streams remain unfiltered and unchanged.
 
 | CLI | Connect RPC | Meaning |
 | --- | --- | --- |
@@ -76,3 +76,7 @@ API provider activation is independent of account enablement, connection, valida
 ## Desktop terminology
 
 AI API Keys includes keyed API entries and keyless local connections over the existing Account resource. API-only frontend copy uses entry nouns; connection, validation, health, discovery and cleanup remain independent. Keyless retry guidance refers to the local endpoint, never key reentry. Shared presentation retains subscription and mixed routing/selection terminology, original aliases and server diagnostics. Account RPC/CLI names, document fields, IDs, revisions, filters/cursors, exact retries and protected credential ownership stay unchanged. The [desktop contract](apps-delidev-desktop-contract.md) owns exact labels; record validation in issue #1135, its pull requests and CI runs.
+
+## Independent subscription identities
+
+Issue #1235 uses the closed service-native account/model contract in [managed subscriptions](cmds-delidev-subscription-contract.md). `SaveConfiguration` requires schema 2 for subscription accounts/native models and schema 1 for API configuration, rejects mixed identity families and preserves exact request/revision receipts. System capability `SUBSCRIPTION_SERVICE_ACCOUNTS_V1` (17) negotiates this independent support. Metadata-only saves remain disconnected. CLI JSON configuration infers the matching document schema; generated Go/TypeScript descriptors expose the same service enum for new usage, pricing and diagnostic attribution. The CLI result envelope itself remains version 1.

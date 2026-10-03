@@ -36,7 +36,8 @@ type RequestDiagnostic struct {
 	ExecutionID          ID                         `json:"execution_id"`
 	AccountID            ID                         `json:"account_id"`
 	ConnectionID         ID                         `json:"connection_id"`
-	ProviderID           ID                         `json:"provider_id"`
+	ProviderID           ID                         `json:"provider_id,omitempty"`
+	SubscriptionService  SubscriptionService        `json:"subscription_service,omitempty"`
 	ModelID              ID                         `json:"model_id"`
 	Source               RequestDiagnosticSource    `json:"source"`
 	Operation            RequestDiagnosticOperation `json:"operation"`
@@ -95,10 +96,17 @@ func SafeDiagnosticID(value string) bool {
 }
 
 func (d RequestDiagnostic) Validate() error {
-	for _, id := range []ID{d.ID, d.SessionID, d.ExecutionID, d.AccountID, d.ConnectionID, d.ProviderID, d.ModelID} {
+	for _, id := range []ID{d.ID, d.SessionID, d.ExecutionID, d.AccountID, d.ConnectionID, d.ModelID} {
 		if id.Validate() != nil {
 			return invalidObservation()
 		}
+	}
+	if d.SubscriptionService == "" {
+		if d.ProviderID.Validate() != nil {
+			return invalidObservation()
+		}
+	} else if !d.SubscriptionService.Valid() || d.ProviderID != "" || d.Source != DiagnosticNativeInput || d.Harness != d.SubscriptionService.Harness() {
+		return invalidObservation()
 	}
 	for _, id := range []ID{d.InputID, d.PublicationRequestID, d.CorrelationID} {
 		if id != "" && id.Validate() != nil {
