@@ -571,11 +571,22 @@ fn translate_lookup(
     else {
         return Ok(native(path.to_owned()));
     };
-    let resolved = match lookup.validate_parents(|parent| runtime.view.translate(parent))? {
-        pnport_core::native_path::Lookup::Resolved(path) => path,
+    let (resolved, requires_directory) = match lookup
+        .validate_parents(|parent| runtime.view.translate(parent))?
+    {
+        pnport_core::native_path::Lookup::Resolved {
+            path,
+            requires_directory,
+        } => (path, requires_directory),
         pnport_core::native_path::Lookup::NativeFailure { path, .. } => return Ok(native(path)),
     };
     let mut translation = runtime.view.translate(&resolved)?;
+    if requires_directory {
+        translation.virtual_link = false;
+        if translation.readonly {
+            translation.physical.push(".");
+        }
+    }
     if !translation.readonly {
         // Native lookup must keep the caller's symlink, '..', missing-parent
         // and trailing-separator semantics. Only managed backing is rewritten.

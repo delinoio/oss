@@ -6,6 +6,7 @@ use std::{
     collections::VecDeque,
     ffi::{OsStr, OsString},
     fs, io,
+    os::unix::ffi::OsStrExt,
     path::{Component, Path, PathBuf},
 };
 
@@ -21,8 +22,14 @@ const MAX_SYMLINKS: usize = 32;
 const MAX_SYMLINKS: usize = 40;
 
 pub enum Lookup {
-    Resolved(PathBuf),
-    NativeFailure { path: PathBuf, errno: i32 },
+    Resolved {
+        path: PathBuf,
+        requires_directory: bool,
+    },
+    NativeFailure {
+        path: PathBuf,
+        errno: i32,
+    },
 }
 
 struct ParentTraversal {
@@ -33,6 +40,7 @@ struct ParentTraversal {
 pub struct ResolvedLookup {
     path: PathBuf,
     parents: Vec<ParentTraversal>,
+    requires_directory: bool,
 }
 
 impl ResolvedLookup {
@@ -63,7 +71,33 @@ impl ResolvedLookup {
                 errno,
             });
         }
-        Ok(Lookup::Resolved(self.path))
+        if self.requires_directory {
+            let translation = match translate(&self.path) {
+                Ok(translation) => translation,
+                Err(error) if error.code == Code::PnportResolutionFailed => {
+                    return Ok(Lookup::NativeFailure {
+                        path: self.path.join("."),
+                        errno: libc::ENOENT,
+                    });
+                }
+                Err(error) => return Err(error),
+            };
+            let errno = match fs::metadata(&translation.physical) {
+                Ok(metadata) if metadata.is_dir() => None,
+                Ok(_) => Some(libc::ENOTDIR),
+                Err(error) => Some(error.raw_os_error().unwrap_or(libc::EIO)),
+            };
+            if let Some(errno) = errno {
+                return Ok(Lookup::NativeFailure {
+                    path: translation.physical.join("."),
+                    errno,
+                });
+            }
+        }
+        Ok(Lookup::Resolved {
+            path: self.path,
+            requires_directory: self.requires_directory,
+        })
     }
 }
 
@@ -75,6 +109,7 @@ pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<
     let mut resolved = PathBuf::new();
     let mut archive_root: Option<PathBuf> = None;
     let mut parents = Vec::new();
+    let mut requires_directory = terminal_directory(path);
     let mut followed = 0;
     while let Some(part) = remaining.pop_front() {
         match Path::new(&part).components().next()? {
@@ -101,13 +136,16 @@ pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<
                 match fs::symlink_metadata(&candidate) {
                     Ok(metadata)
                         if metadata.file_type().is_symlink()
-                            && (follow_last || !remaining.is_empty()) =>
+                            && (follow_last || !remaining.is_empty() || requires_directory) =>
                     {
                         followed += 1;
                         if followed > MAX_SYMLINKS {
                             return None;
                         }
                         let target = fs::read_link(&candidate).ok()?;
+                        if remaining.is_empty() {
+                            requires_directory |= terminal_directory(&target);
+                        }
                         let mut expanded: VecDeque<OsString> = target
                             .components()
                             .map(|part| part.as_os_str().to_os_string())
@@ -153,5 +191,11 @@ pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<
     Some(ResolvedLookup {
         path: resolved,
         parents,
+        requires_directory,
     })
+}
+
+fn terminal_directory(path: &Path) -> bool {
+    let bytes = path.as_os_str().as_bytes();
+    bytes.ends_with(b"/") || bytes.ends_with(b"/.")
 }

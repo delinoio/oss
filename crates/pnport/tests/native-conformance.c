@@ -148,6 +148,22 @@ static int native_aliases(void) {
         memcmp(link, "node_modules/dep", 16)) return 96;
     errno = 0;
     if (open("logical-alias", O_RDONLY | O_NOFOLLOW) != -1 || errno != ELOOP) return 97;
+    if (symlink("node_modules/dep/file.txt", "file-alias") ||
+        symlink("node_modules/dep/file.txt/", "slash-target") ||
+        symlink("node_modules/dep/file.txt/.", "dot-target")) return 128;
+    const char *directory_required[] = {"source.txt/", "source.txt/.",
+        "file-alias/", "file-alias/.", "slash-target", "dot-target"};
+    for (size_t i = 0; i < sizeof(directory_required) / sizeof(directory_required[0]); ++i) {
+        errno = 0;
+        if (open(directory_required[i], O_RDONLY) != -1 || errno != ENOTDIR) return 129;
+        errno = 0;
+        if (stat(directory_required[i], &info) != -1 || errno != ENOTDIR) return 130;
+    }
+    int directory_fd = open("logical-alias/", O_RDONLY | O_DIRECTORY);
+    if (directory_fd < 0 || fstat(directory_fd, &info) || !S_ISDIR(info.st_mode) ||
+        close(directory_fd) || lstat("logical-alias/.", &info) || !S_ISDIR(info.st_mode)) return 131;
+    errno = 0;
+    if (open("node_modules/missing/", O_RDONLY) != -1 || errno != ENOENT) return 132;
 #ifdef __APPLE__
     // Darwin O_SYMLINK opens the link inode, even when its target is virtual.
     int link_fd = open("logical-alias", O_RDONLY | O_SYMLINK);

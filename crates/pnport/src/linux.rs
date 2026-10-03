@@ -136,6 +136,15 @@ fn escapes_beneath(path: &Path) -> bool {
     false
 }
 
+fn preserve_terminal_directory(lookup: &Path, translation: &mut Translation, required: bool) {
+    if required {
+        translation.virtual_link = false;
+        if lookup != translation.physical {
+            translation.physical.push(".");
+        }
+    }
+}
+
 fn follows_final_component(
     call: i64,
     regs: &Registers,
@@ -2453,15 +2462,18 @@ impl Trace<'_> {
                         }
                     }
                     let source = self.source_path(pid, target_fd, target)?;
-                    let lookup = match self.resolved_lookup(&source, false)? {
-                        Some(NativeLookup::Resolved(path)) => path,
+                    let (lookup, requires_directory) = match self.resolved_lookup(&source, false)? {
+                        Some(NativeLookup::Resolved {
+                            path,
+                            requires_directory,
+                        }) => (path, requires_directory),
                         Some(NativeLookup::NativeFailure { errno, .. }) => {
                             self.force_error(pid, &mut regs, target_arg, errno)?;
                             return Ok(true);
                         }
                         None => return Ok(false),
                     };
-                    let translated = match self.translate(&lookup) {
+                    let mut translated = match self.translate(&lookup) {
                         Ok(value) => value,
                         Err(error) if error.code == Code::PnportResolutionFailed => {
                             self.force_error(pid, &mut regs, target_arg, libc::ENOENT)?;
@@ -2469,6 +2481,7 @@ impl Trace<'_> {
                         }
                         Err(error) => return Err(error),
                     };
+                    preserve_terminal_directory(&lookup, &mut translated, requires_directory);
                     if translated.readonly {
                         self.force_error(pid, &mut regs, target_arg, libc::EROFS)?;
                         return Ok(true);
@@ -2615,11 +2628,14 @@ impl Trace<'_> {
         } else {
             self.source_path(pid, dirfd, &original)?
         };
-        let lookup = match self.resolved_lookup(
+        let (lookup, requires_directory) = match self.resolved_lookup(
             &source,
             follows_final_component(call, &regs, path_arg, open_flags),
         )? {
-            Some(NativeLookup::Resolved(path)) => path,
+            Some(NativeLookup::Resolved {
+                path,
+                requires_directory,
+            }) => (path, requires_directory),
             Some(NativeLookup::NativeFailure { errno, .. }) => {
                 self.force_error(pid, &mut regs, path_arg, errno)?;
                 return Ok(true);
@@ -2630,7 +2646,7 @@ impl Trace<'_> {
             && call != libc::SYS_faccessat
             && call != libc::SYS_faccessat2
             && call != SYS_ACCESS;
-        let translation = match self.translate(&lookup) {
+        let mut translation = match self.translate(&lookup) {
             Ok(value) => value,
             Err(error) if error.code == Code::PnportResolutionFailed => {
                 let errno = self.missing_path_errno(&lookup, mutating)?;
@@ -2639,6 +2655,7 @@ impl Trace<'_> {
             }
             Err(error) => return Err(error),
         };
+        preserve_terminal_directory(&lookup, &mut translation, requires_directory);
         if call == libc::SYS_execve || call == libc::SYS_execveat {
             let argv_arg = if call == libc::SYS_execve { 1 } else { 2 };
             if self.prepare_script_exec(pid, &mut regs, &translation, path_arg, argv_arg, false)? {
@@ -2684,46 +2701,51 @@ impl Trace<'_> {
             self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
             return Ok(true);
         }
-        let second_translation =
-            if let Some(((other_arg, other_fd), other)) = second.zip(second_original) {
-                if !other.is_absolute() && other_fd != libc::AT_FDCWD {
-                    let descriptor = format!("/proc/{pid}/fd/{other_fd}");
-                    let error = match fs::metadata(descriptor) {
-                        Ok(metadata) if !metadata.is_dir() => Some(libc::ENOTDIR),
-                        Err(_) => Some(libc::EBADF),
-                        _ => None,
-                    };
-                    if let Some(error) = error {
-                        self.force_error(pid, &mut regs, path_arg, error)?;
-                        return Ok(true);
-                    }
-                }
-                let source = self.source_path(pid, other_fd, &other)?;
-                let other_lookup = match self.resolved_lookup(&source, false)? {
-                    Some(NativeLookup::Resolved(path)) => path,
-                    Some(NativeLookup::NativeFailure { errno, .. }) => {
-                        self.force_error(pid, &mut regs, other_arg, errno)?;
-                        return Ok(true);
-                    }
-                    None => return Ok(false),
+        let second_translation = if let Some(((other_arg, other_fd), other)) =
+            second.zip(second_original)
+        {
+            if !other.is_absolute() && other_fd != libc::AT_FDCWD {
+                let descriptor = format!("/proc/{pid}/fd/{other_fd}");
+                let error = match fs::metadata(descriptor) {
+                    Ok(metadata) if !metadata.is_dir() => Some(libc::ENOTDIR),
+                    Err(_) => Some(libc::EBADF),
+                    _ => None,
                 };
-                let translated = match self.translate(&other_lookup) {
-                    Ok(value) => value,
-                    Err(error) if error.code == Code::PnportResolutionFailed => {
-                        let errno = self.missing_path_errno(&other_lookup, true)?;
-                        self.force_error(pid, &mut regs, path_arg, errno)?;
-                        return Ok(true);
-                    }
-                    Err(error) => return Err(error),
-                };
-                if translated.readonly {
-                    self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
+                if let Some(error) = error {
+                    self.force_error(pid, &mut regs, path_arg, error)?;
                     return Ok(true);
                 }
-                Some((other_arg, other_lookup, translated))
-            } else {
-                None
+            }
+            let source = self.source_path(pid, other_fd, &other)?;
+            let (other_lookup, requires_directory) = match self.resolved_lookup(&source, false)? {
+                Some(NativeLookup::Resolved {
+                    path,
+                    requires_directory,
+                }) => (path, requires_directory),
+                Some(NativeLookup::NativeFailure { errno, .. }) => {
+                    self.force_error(pid, &mut regs, other_arg, errno)?;
+                    return Ok(true);
+                }
+                None => return Ok(false),
             };
+            let mut translated = match self.translate(&other_lookup) {
+                Ok(value) => value,
+                Err(error) if error.code == Code::PnportResolutionFailed => {
+                    let errno = self.missing_path_errno(&other_lookup, true)?;
+                    self.force_error(pid, &mut regs, path_arg, errno)?;
+                    return Ok(true);
+                }
+                Err(error) => return Err(error),
+            };
+            preserve_terminal_directory(&other_lookup, &mut translated, requires_directory);
+            if translated.readonly {
+                self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
+                return Ok(true);
+            }
+            Some((other_arg, other_lookup, translated))
+        } else {
+            None
+        };
         let changed = if openat2_resolve != 0 {
             // openat2's resolve flags apply to the path relative to its real
             // dirfd. Keep that spelling when it already names the translated
