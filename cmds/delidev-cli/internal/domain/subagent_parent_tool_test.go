@@ -31,3 +31,37 @@ func TestSubagentParentToolOwnershipIsUniqueAcrossBatchAndRetainedChildren(t *te
 		}
 	}
 }
+
+func TestSubagentToolsRequireVerifiedContentForNewAndRetainedEntries(t *testing.T) {
+	root := "original-root"
+	tool := SubagentTool{NativeID: "nested-agent-tool", Name: "Agent"}
+	child := SubagentObservation{
+		ID:           NewID(),
+		NativeID:     "child",
+		ParentID:     root,
+		ParentToolID: "original-agent-tool",
+		Source:       ClaudeContentSource,
+		SourceID:     "content-report",
+		Status:       SubagentRunning,
+		Tools:        []SubagentTool{tool},
+	}
+	state, err := ApplySubagents(nil, root, []SubagentObservation{child})
+	if err != nil {
+		t.Fatal("verified content could not introduce a nested tool", err)
+	}
+
+	repeated := child
+	repeated.Source, repeated.SourceID = ClaudeHistorySource, "history-report"
+	if _, err := ApplySubagents(state, root, []SubagentObservation{repeated}); err != nil {
+		t.Fatal("history could not repeat a retained nested tool", err)
+	}
+
+	for _, source := range []SubagentSource{ClaudeTaskSource, ClaudeHistorySource} {
+		bad := repeated
+		bad.Source, bad.SourceID = source, string(source)+"-new-tool"
+		bad.Tools = append(append([]SubagentTool(nil), tool), SubagentTool{NativeID: "invented-agent-tool", Name: "Agent"})
+		if _, err := ApplySubagents(state, root, []SubagentObservation{bad}); err == nil {
+			t.Fatalf("%s report introduced an unretained nested tool", source)
+		}
+	}
+}

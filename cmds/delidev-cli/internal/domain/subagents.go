@@ -133,6 +133,16 @@ func invalidSubagent() error {
 	return Fail(Conflict, "The child observation does not match its original ownership.", "Inspect the original native hierarchy without controlling or replaying child work.")
 }
 
+func sameSubagentTool(left, right SubagentTool) bool {
+	if left.NativeID != right.NativeID || left.Name != right.Name {
+		return false
+	}
+	if left.RequestedModel == nil || right.RequestedModel == nil {
+		return left.RequestedModel == nil && right.RequestedModel == nil
+	}
+	return *left.RequestedModel == *right.RequestedModel
+}
+
 func (o SubagentObservation) Validate() error {
 	// Validate the incoming source before retained last-available values are
 	// merged. A task/activity report cannot claim absent native telemetry.
@@ -251,6 +261,23 @@ func ApplySubagents(prior SubagentState, root string, batch []SubagentObservatio
 			}
 			if old.Tool != nil && o.Tool != nil && *old.Tool != *o.Tool {
 				return nil, invalidSubagent()
+			}
+		}
+		if o.Source != ClaudeContentSource {
+			// Only verified child content can introduce a new nested tool. Task
+			// and history reports may repeat tools already retained for this
+			// child, but cannot add a tool or fill its requested model later.
+			for _, tool := range o.Tools {
+				retained := false
+				for _, prior := range next[o.NativeID].Tools {
+					if sameSubagentTool(prior, tool) {
+						retained = true
+						break
+					}
+				}
+				if !retained {
+					return nil, invalidSubagent()
+				}
 			}
 		}
 		owner := SubagentOwner{ID: o.ID, ParentID: o.ParentID, ParentToolID: o.ParentToolID, Status: o.Status, Tool: o.Tool, Tools: slices.Clone(next[o.NativeID].Tools)}
