@@ -131,6 +131,7 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 			claimPath := filepath.Join(manager.Root, "storage-removal-claims", string(original.OperationID)+".json")
 			accepted := job
 			accepted.State = domain.JobUncertain
+			accepted.Problem = domain.Fail(domain.RecoveryRequired, "The accepted result is uncertain.", "Reconcile the original storage operation.")
 			ack := proto.Clone(resource).(*pb.Resource)
 			ack.Revision++
 			ack.DocumentJson, _ = json.Marshal(accepted)
@@ -143,7 +144,10 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 			if _, err := os.Stat(claimPath); err != nil {
 				t.Fatal("uncertain server report retired verified claim", err)
 			}
-			accepted.State, accepted.Output = domain.JobSucceeded, result.Output
+			if _, err := os.Stat(filepath.Join(manager.Root, "storage-removal-retirements", string(result.JobID)+".json")); !os.IsNotExist(err) {
+				t.Fatal("uncertain server report left a replay receipt", err)
+			}
+			accepted.State, accepted.Output, accepted.Problem = domain.JobSucceeded, result.Output, nil
 			ack.DocumentJson, _ = json.Marshal(accepted)
 			result.State = journalReported
 			if err := acknowledgeStorageRemoval(context.Background(), config, resource, job, result, ack); err == nil {
@@ -166,13 +170,13 @@ func TestStorageRemovalRetiresOnlyAfterDurableReport(t *testing.T) {
 			if err := retireStorageReports(context.Background(), config); err != nil {
 				t.Fatal("restart failed to complete acknowledged retirement", err)
 			}
+			entries, err := os.ReadDir(filepath.Join(manager.Root, "storage-removal-retirements"))
 			if _, err := os.Stat(intent); !os.IsNotExist(err) {
 				t.Fatal("acknowledged intent retained", err)
 			}
 			if _, err := os.Stat(claimPath); !os.IsNotExist(err) {
 				t.Fatal("acknowledged verified claim retained", err)
 			}
-			entries, err := os.ReadDir(filepath.Join(manager.Root, "storage-removal-retirements"))
 			if err != nil || len(entries) != 0 {
 				t.Fatal("retirement receipt retained", err)
 			}

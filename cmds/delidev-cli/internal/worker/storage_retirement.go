@@ -142,6 +142,14 @@ func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.
 		if result.Problem != nil || accepted.Problem != nil || !bytes.Equal(accepted.Output, result.Output) {
 			return workspace.ResultUncertain()
 		}
+	case domain.JobUncertain:
+		// ReportWork turns a malformed cleanup/delete result into an acknowledged
+		// uncertain job. The server has accepted the report attempt but has not
+		// accepted its output, so the pending receipt must not replay that same
+		// output. The removal intent remains protected for explicit recovery.
+		if accepted.Problem == nil || accepted.Problem.Code != domain.RecoveryRequired || len(accepted.Output) != 0 {
+			return workspace.ResultUncertain()
+		}
 	case domain.JobFailed, domain.JobCanceled:
 		if input.Action == workspace.StorageRecover {
 			return nil
@@ -162,6 +170,9 @@ func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.
 	if err != nil || domain.Decode(rawJournal, &original) != nil || !reflect.DeepEqual(original, result) {
 		return workspace.ResultUncertain()
 	}
+	if accepted.State == domain.JobUncertain {
+		return discardPendingStorageRetirement(config, job, result)
+	}
 	receipt, needed, err := storageRetirementFor(job, result, false)
 	if err != nil {
 		return err
@@ -174,6 +185,26 @@ func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.
 		return err
 	}
 	return retireStorageReport(ctx, config, path, receipt)
+}
+
+// An acknowledged uncertain report is terminal for the report attempt, but it
+// does not prove source removal. Drop only the replay receipt and retain the
+// removal intent/claim for explicit recovery.
+func discardPendingStorageRetirement(config Config, job domain.Job, result journal) error {
+	receipt, needed, err := storageRetirementFor(job, result, true)
+	if err != nil || !needed {
+		return err
+	}
+	path := filepath.Join(config.Root, "storage-removal-retirements", string(receipt.JobID)+".json")
+	raw, err := security.ReadPrivate(path, 4096)
+	var pending storageRetirement
+	if err != nil || domain.Decode(raw, &pending) != nil || !pending.PendingReport || !reflect.DeepEqual(pending, receipt) {
+		return workspace.ResultUncertain()
+	}
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	return security.SyncParent(path)
 }
 
 func retireStorageReport(ctx context.Context, config Config, path string, receipt storageRetirement) error {
