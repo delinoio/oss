@@ -93,12 +93,18 @@ func openOpenCodeClaimsWithResume(p *ExecutionPublisher, resume *opencode.Sessio
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, publication := p.input, p.state
-	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || i.Installation.Version != opencode.SupportedVersion || (i.Continuation != nil) != (resume != nil) || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution || publication.InstanceID != p.config.Instance || publication.ServerID != p.config.Credential.ServerID || publication.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
+	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || i.Installation.Version != opencode.SupportedVersion || (i.Continuation != nil || i.Fork != nil) != (resume != nil) || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution || publication.InstanceID != p.config.Instance || publication.ServerID != p.config.Credential.ServerID || publication.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
 		return nil, openCodeClaimUncertain()
 	}
 	ref := openCodeClaimReference{Version: 1, JobID: p.job, InstanceID: publication.InstanceID, ServerID: publication.ServerID, DeviceID: publication.DeviceID, MachineID: i.MachineID, ExecutionID: i.ExecutionID, SessionID: i.SessionID, InputID: i.InputID, AccountID: i.AccountID, ConnectionID: i.ConnectionID, ThreadRequestID: i.ThreadRequestID, InputRequestID: i.TurnRequestID, Revision: publication.Revision, AssignmentDigest: publication.AssignmentDigest, ConfigurationDigest: i.ConfigurationDigest}
 	if resume != nil {
-		if resume.Validate() != nil || resume.Kind != opencode.ResumeSessionMutation || resume.RequestID != i.ThreadRequestID || resume.SessionID != i.Continuation.Previous.NativeThreadID || resume.MessageID != i.Continuation.Previous.NativeTurnID {
+		var thread, turn string
+		if i.Continuation != nil {
+			thread, turn = i.Continuation.Previous.NativeThreadID, i.Continuation.Previous.NativeTurnID
+		} else if i.Fork != nil {
+			thread, turn = string(i.Fork.NativeThreadID), string(i.Fork.NativeTurnID)
+		}
+		if resume.Validate() != nil || resume.Kind != opencode.ResumeSessionMutation || resume.RequestID != i.ThreadRequestID || resume.SessionID != thread || resume.MessageID != turn {
 			return nil, openCodeClaimUncertain()
 		}
 		ref.Version = 2

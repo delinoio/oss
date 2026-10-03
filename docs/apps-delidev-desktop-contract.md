@@ -1472,3 +1472,5 @@ Show started/completed independently of current context tokens, which remain
 unavailable when unreported. Native summaries and continuation users do not
 replace the canonical conversation. The private OpenCode manual controller does
 not enable the desktop action before independently negotiated product support.
+
+OpenCode General Chat Fork additionally requires independent System 26/Worker 15 and a macOS/Linux Runner Device. Offer only completed Build plain-text root boundaries without children, context actions or native workspace activity; preserve exact mutation replay and the retained operation across navigation. Present inherited conversation/files and paused-child Resume in product terms; preparation cannot claim native model selection or new usage.

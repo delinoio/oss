@@ -24,6 +24,13 @@ import (
 )
 
 func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, logger *slog.Logger) (output json.RawMessage, returned error) {
+	phase := "selection"
+	defer func() {
+		if returned != nil && logger != nil {
+			logger.WarnContext(ctx, "opencode_execution_phase_failed", "phase", phase, "code", domain.SafeError(returned).Code)
+		}
+	}()
+
 	if input.Installation.Version != opencode.SupportedVersion {
 		return nil, domain.Fail(domain.Unsupported, "This OpenCode execution requires a separately verified continuation profile.", "Retain the original native history; do not start a replacement input.")
 	}
@@ -60,9 +67,19 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 			output, returned = nil, err
 		}
 	}()
+	phase = "workspace-root"
 	nativeRoot, err := openCodeWorkspaceRoot(manifest, lease.WorkingDirectory())
 	if err != nil {
 		return nil, err
+	}
+	phase = "private-predecessor"
+	var forkSeed *openCodeForkCheckpoint
+	if input.Fork != nil {
+		value, err := readOpenCodeForkCheckpoint(ctx, manager.Root, config.execution.Credential, input)
+		if err != nil {
+			return nil, err
+		}
+		forkSeed = &value
 	}
 	var checkpoint *openCodeExecutionCheckpoint
 	if input.Continuation != nil {
@@ -74,6 +91,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		checkpoint = &value
 		logger.InfoContext(ctx, "opencode_continuation_checkpoint_verified", "execution_id", input.ExecutionID, "previous_execution_id", input.Continuation.Previous.ExecutionID)
 	}
+	phase = "runtime"
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
 	if err := security.PrivateDir(runtimeRoot); err != nil {
 		return nil, domain.SafeError(err)
@@ -89,6 +107,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	connection := config.execution
 	publicationConfig := *connection
 	publicationConfig.Root = manager.Root
+	phase = "publication"
 	publisher, err := OpenExecutionPublisher(publicationConfig)
 	if err != nil {
 		return nil, err
@@ -118,6 +137,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		return nil, publicationUncertain()
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+	phase = "registration"
 	registered, err := connection.Client.RegisterExecution(bounded, authenticated(connection.Credential, &pb.RegisterExecutionRequest{Mutation: &pb.Mutation{RequestId: string(registration), Id: string(owner), ExpectedRevision: connection.Assignment.Revision}, MachineId: string(input.MachineID), InstanceId: string(connection.Instance), CredentialDigest: digest[:]}))
 	cancel()
 	if err != nil {
@@ -156,6 +176,13 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		checkpoint = &valueCheckpoint
 	}
 	var resumeClaim *opencode.SessionClaim
+	if forkSeed != nil {
+		claim, err := opencode.CheckpointResumeClaim(nativeConfig, forkSeed.NativeReference, input.ThreadRequestID)
+		if err != nil {
+			return nil, err
+		}
+		resumeClaim = &claim
+	}
 	if checkpoint != nil {
 		claim, err := opencode.CheckpointResumeClaim(nativeConfig, checkpoint.NativeReference, input.ThreadRequestID)
 		if err != nil {
@@ -163,7 +190,13 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		}
 		resumeClaim = &claim
 	}
-	binding, err := openOpenCodeBinding(publisher, checkpoint, resumeClaim)
+	phase = "binding"
+	var binding *OpenCodeBindingPublisher
+	if forkSeed != nil {
+		binding, err = openOpenCodeForkBinding(publisher, forkSeed, resumeClaim)
+	} else {
+		binding, err = openOpenCodeBinding(publisher, checkpoint, resumeClaim)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -173,8 +206,12 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		}
 	}()
 	nativeConfig.Claim = binding.Claim
+	phase = "native-restore"
 	var api *opencode.OwnedAPI
-	if checkpoint != nil {
+	if forkSeed != nil {
+		previousHome := filepath.Join(runtimeRoot, string(input.Fork.RuntimeID), "native")
+		api, err = opencode.OpenResumedAPI(nativeCtx, nativeConfig, previousHome, forkSeed.Native, forkSeed.NativeReference, input.ThreadRequestID, opencode.BuildAgent, false)
+	} else if checkpoint != nil {
 		previousHome := filepath.Join(runtimeRoot, string(checkpoint.Reference.Claim.ExecutionID))
 		if compacted != nil {
 			previousHome = filepath.Join(runtimeRoot, string(compacted.Input.ActionID))
@@ -197,12 +234,15 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 			output, returned = nil, err
 		}
 	}()
+	phase = "native-selection"
 	observed, err := api.InitialSettings(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var session string
-	if checkpoint != nil {
+	if forkSeed != nil {
+		session = forkSeed.NativeReference.SessionID
+	} else if checkpoint != nil {
 		session = checkpoint.NativeReference.SessionID
 	} else {
 		session, err = api.CreateSession(ctx, input.ThreadRequestID)
@@ -210,15 +250,24 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 			return nil, err
 		}
 	}
-	if err := binding.BindSession(ctx, input.ThreadRequestID, session, observed); err != nil {
+	if forkSeed != nil {
+		if err := binding.prepareForkInput(); err != nil {
+			return nil, err
+		}
+	} else if err := binding.BindSession(ctx, input.ThreadRequestID, session, observed); err != nil {
 		return nil, err
 	}
-	logger.InfoContext(ctx, "native_execution_thread_bound")
+	if forkSeed != nil {
+		logger.InfoContext(ctx, "native_execution_private_fork_ready")
+	} else {
+		logger.InfoContext(ctx, "native_execution_thread_bound")
+	}
 	// StartText's context owns the original subscription, so it cannot be the
 	// targeted job context that later wakes the event reader to request Stop.
 	if _, err := api.StartText(nativeCtx, input.TurnRequestID, input.Input.Prompt); err != nil {
 		return nil, err
 	}
+	phase = "first-input"
 	prefix, err := acceptOpenCodeInput(ctx, api, binding)
 	if err != nil {
 		return nil, err
@@ -363,6 +412,15 @@ func acceptOpenCodeInput(ctx context.Context, api *opencode.OwnedAPI, binding *O
 			receipt, err := api.InspectInput(ctx)
 			if err != nil {
 				return nil, err
+			}
+			if binding.fork != nil {
+				observed, err := api.VerifiedForkSettings(ctx)
+				if err != nil {
+					return nil, err
+				}
+				if err := binding.BindSession(ctx, binding.reference.ThreadRequestID, receipt.SessionID, observed); err != nil {
+					return nil, err
+				}
 			}
 			if err := binding.AcceptInput(ctx, receipt); err != nil {
 				return nil, err

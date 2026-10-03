@@ -243,10 +243,11 @@ RPC changes. Keep desktop contracts/AGENTS synchronized with presentation change
 - [Issue #1092](https://github.com/delinoio/oss/issues/1092)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 
-Workspace storage and fork ownership compose at the original source boundary. Fork
-acceptance, claim and publication require a present workspace, with no pending or
-uncertain storage operation. Storage admission waits for unresolved fork jobs to
-settle; a stored workspace must be explicitly restored before it can be forked.
+Workspace storage and fork ownership compose at the original source boundary. When
+workspace storage is supported, fork acceptance, claim and publication require a
+present workspace without a pending or uncertain storage operation. Storage
+admission waits for unresolved fork jobs to settle; a stored workspace must be
+explicitly restored before it can be forked.
 
 ## Bounded OpenCode General Chat fork (#1210)
 

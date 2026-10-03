@@ -18,6 +18,18 @@ import (
 
 const maxForkBytes = 256 << 20
 const maxForkEntries = 100000
+const maxOpenCodeForkEntries = 8192
+
+type ForkProfile string
+
+const OpenCodeGeneralChatForkV1 ForkProfile = "opencode-general-chat-v1"
+
+func (r PrepareRequest) forkEntryLimit() int {
+	if r.ForkProfile == OpenCodeGeneralChatForkV1 {
+		return maxOpenCodeForkEntries
+	}
+	return maxForkEntries
+}
 
 // ForkSnapshot is private read-only evidence held across workspace preparation
 // and the native fork. A filesystem edit during either operation invalidates it.
@@ -28,7 +40,7 @@ type ForkSnapshot struct {
 }
 
 func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, request PrepareRequest) (*ForkSnapshot, error) {
-	if source.SessionID != request.ForkSourceID || source.State != Ready || m.initialize() != nil {
+	if request.validateStructure() != nil || source.SessionID != request.ForkSourceID || source.State != Ready || m.initialize() != nil {
 		return nil, ResultUncertain()
 	}
 	git := m.Git
@@ -45,11 +57,11 @@ func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, requ
 		}
 	}
 	for i, path := range paths {
-		digest, err := scanForkTree(ctx, path, "", source.Type != domain.GeneralChat)
+		digest, err := scanForkTreeBounded(ctx, path, "", source.Type != domain.GeneralChat, request.forkEntryLimit())
 		if err != nil {
 			return nil, err
 		}
-		copy := forkCopy{source: path, tree: digest, git: source.Type != domain.GeneralChat}
+		copy := forkCopy{source: path, tree: digest, git: source.Type != domain.GeneralChat, entryLimit: request.forkEntryLimit()}
 		if copy.git {
 			head, err := git.run(ctx, path, "rev-parse", "--verify", "HEAD")
 			if err != nil {
@@ -121,6 +133,7 @@ type forkCopy struct {
 	tree           string
 	git            bool
 	head, index    string
+	entryLimit     int
 }
 
 func forkUnsupported() error {
@@ -211,6 +224,12 @@ func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child do
 // outside the initial copy profile, rather than followed or silently omitted.
 // Before/after identities and complete content digests reject changed sources.
 func scanForkTree(ctx context.Context, source, target string, gitTree bool) (string, error) {
+	return scanForkTreeBounded(ctx, source, target, gitTree, maxForkEntries)
+}
+func scanForkTreeBounded(ctx context.Context, source, target string, gitTree bool, entryLimit int) (string, error) {
+	if entryLimit != maxForkEntries && entryLimit != maxOpenCodeForkEntries {
+		return "", forkUnsupported()
+	}
 	canonical, err := filepath.EvalSymlinks(source)
 	if err != nil || canonical != source || !filepath.IsAbs(source) {
 		return "", forkUnsupported()
@@ -241,7 +260,7 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 			return domain.SafeError(err)
 		}
 		entries++
-		if entries > maxForkEntries {
+		if entries > entryLimit {
 			return domain.Fail(domain.ResourceExhausted, "The fork workspace exceeds its entry bound.", "Reduce the source workspace before forking.")
 		}
 		before, err := root.Lstat(name)
@@ -275,15 +294,15 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 					return domain.SafeError(err)
 				}
 			}
-			children, err := opened.ReadDir(maxForkEntries + 1)
+			children, err := opened.ReadDir(entryLimit + 1)
 			if err == io.EOF {
 				err = nil
 			}
 			if err != nil {
 				return forkUnsupported()
 			}
-			if len(children) > maxForkEntries {
-				return forkUnsupported()
+			if len(children) > entryLimit {
+				return domain.Fail(domain.ResourceExhausted, "The fork workspace exceeds its entry bound.", "Reduce the source workspace before forking.")
 			}
 			// File.ReadDir returns native order; sort to make the complete digest
 			// independent of directory insertion and enumeration order.
@@ -355,8 +374,11 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 }
 
 func copyForkTree(ctx context.Context, source, target string, gitTree bool) (forkCopy, error) {
-	digest, err := scanForkTree(ctx, source, target, gitTree)
-	return forkCopy{source: source, target: target, tree: digest, git: gitTree}, err
+	return copyForkTreeBounded(ctx, source, target, gitTree, maxForkEntries)
+}
+func copyForkTreeBounded(ctx context.Context, source, target string, gitTree bool, entryLimit int) (forkCopy, error) {
+	digest, err := scanForkTreeBounded(ctx, source, target, gitTree, entryLimit)
+	return forkCopy{source: source, target: target, tree: digest, git: gitTree, entryLimit: entryLimit}, err
 }
 
 func forkIndex(ctx context.Context, git Git, checkout string) (string, []byte, error) {
@@ -424,14 +446,18 @@ func copyForkRepository(ctx context.Context, git Git, source, target, commit str
 }
 
 func (c forkCopy) verify(ctx context.Context, git Git) error {
-	digest, err := scanForkTree(ctx, c.source, "", c.git)
+	entryLimit := c.entryLimit
+	if entryLimit == 0 {
+		entryLimit = maxForkEntries
+	}
+	digest, err := scanForkTreeBounded(ctx, c.source, "", c.git, entryLimit)
 	if err != nil {
 		return err
 	}
 	if digest != c.tree {
 		return forkSnapshotChanged()
 	}
-	childDigest, err := scanForkTree(ctx, c.target, "", c.git)
+	childDigest, err := scanForkTreeBounded(ctx, c.target, "", c.git, entryLimit)
 	if err != nil {
 		return err
 	}
