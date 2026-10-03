@@ -146,7 +146,7 @@ func TestCatalogContextLimitsCannotReflectNumericKeys(t *testing.T) {
 
 func TestProviderPresetsAreIndependentValidConfiguration(t *testing.T) {
 	items := Presets()
-	if len(items) != 9 {
+	if len(items) != 35 {
 		t.Fatal("missing required provider presets")
 	}
 	seen := map[domain.ProviderPresetID]bool{}

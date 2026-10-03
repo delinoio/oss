@@ -76,3 +76,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - OpenCode Fork independently negotiates System 26 / Worker 15 through the existing SessionQuery fork operations. Preserve exact native turn identities and inherited provenance; preparation grants no child control, effective settings or additive usage. Follow `docs/cmds-delidev-forks-contract.md`.
 
 - OAuth generated bindings retain independent capability 5, field 9 and the closed enums/RPCs under the OAuth contract. Keep code out of cached query/mutation variables and preserve exact original completion identity for code-free local recovery; never add automatic exchange retry.
+
+- Provider presentation identity/order comes from the closed 35-ID mapping in provider-presets.ts; keep the original six, added 26 and local three order consistent with server inventory. This mapping never replaces authenticated availability, account counts or capability negotiation.

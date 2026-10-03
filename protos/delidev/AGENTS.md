@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- Issue #1148 activates only its recorded `ProviderPresetId` 10–35 additions after real migration 30 and complete fixed inspection profiles. Preserve 0–9 and generated Go/TypeScript parity, provider inventory gates and service-native subscription separation; preset visibility grants no harness/protocol/account authority.
+
 - Issue #1146 reserves `ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1 = 5`, `ProviderInventoryEntry.connection_method = 9` and the exclusively owned `ProviderConnectionMethod` / `AccountOAuthState` enums in `allocations.json`. Wholly new messages and enums reserve declaration ownership with `newDeclaration: true`; preserve existing member provenance and each enum's zero UNSPECIFIED value; do not add planned declarations to the active baseline. Establish reservations on main before dependent implementation and keep them out of active schemas/advertisements until complete support exists. Follow `docs/cmds-delidev-account-oauth-contract.md`; OAuth remains independent of the four existing inventory gates and cannot be inferred from names or copied URLs.
 
 - Issue #1235 reserves `SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` under its owning issue identity. Establish this allocation and storage migration 28 on main before dependent implementation. The reservation does not change schemas, generated clients or advertised support; preserve the independent capability boundary from API provider inventory.

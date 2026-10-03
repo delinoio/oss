@@ -114,3 +114,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Active pricing retains the closed compaction HTTP source's nullable counters through immutable response estimates. Price only available components under the original selected basis; missing cache splits remain unavailable and ordinary native response validation remains unchanged.
 
 - OAuth attempt metadata uses closed states, unique original identities, exact revision/lifetime and keyed comparison commitments. Validate exact UTF-8 authorization-code bytes without trimming and only the canonical owned localhost callback. Keep this private domain outside resources, synchronization and portable configuration under the OAuth contract.
+
+- ProviderPresetID includes the 26 additions allocated in 10–35, preserving old IDs and fixed managed definitions. Preset guidance and advisory catalog metadata cannot grant connection, readiness or inference/harness authority. Follow the catalog/inspection contracts.

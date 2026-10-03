@@ -121,7 +121,7 @@ func TestConnectSnapshotReplayRestartAndBackupDeduplication(t *testing.T) {
 	defer cancel()
 	resources := delidevv1connect.NewResourceServiceClient(http.DefaultClient, endpoint.URL)
 	configuration := delidevv1connect.NewConfigurationServiceClient(http.DefaultClient, endpoint.URL)
-	snapshot, err := resources.GetSnapshot(ctx, ownerRequest(identity, &pb.GetSnapshotRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_PROVIDER, PageSize: 10}}))
+	snapshot, err := resources.GetSnapshot(ctx, ownerRequest(identity, &pb.GetSnapshotRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_PROVIDER, PageSize: 50}}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,11 +15,19 @@ import (
 // its identity and availability. The version boundary prevents a later user
 // deletion from being undone on every server restart.
 func seedHostedProviders(ctx context.Context, sqlTx *sql.Tx) error {
+	// Historical migrations retain exactly their original six identities even
+	// as the product registry grows. Never seed newly added presets here.
+	return seedProviderSet(ctx, sqlTx, []domain.ProviderPresetID{domain.PresetOpenAI, domain.PresetAnthropic, domain.PresetOpenRouter, domain.PresetVercel, domain.PresetXAI, domain.PresetDeepSeek})
+}
+
+func seedProviderSet(ctx context.Context, sqlTx *sql.Tx, ids []domain.ProviderPresetID) error {
 	transaction := &Tx{tx: sqlTx, ctx: ctx, now: time.Now().UTC().Truncate(time.Millisecond), touched: map[domain.ID]bool{}}
+	selected := make(map[domain.ProviderPresetID]bool, len(ids))
+	for _, id := range ids {
+		selected[id] = true
+	}
 	for _, preset := range providers.Presets() {
-		switch preset.ID {
-		case domain.PresetOpenAI, domain.PresetAnthropic, domain.PresetOpenRouter, domain.PresetVercel, domain.PresetXAI, domain.PresetDeepSeek:
-		default:
+		if !selected[preset.ID] {
 			continue
 		}
 		var existing domain.ID

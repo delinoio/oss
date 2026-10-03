@@ -1,3 +1,4 @@
+import { ProviderGuidance } from "./provider-guidance";
 import { OpenRouterOAuth, useOpenRouterOAuth, type OpenRouterOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -33,6 +34,8 @@ export interface AccountProviderSummary {
   provider: Resource;
   keyGuidance: string;
   documentationUrl: string;
+  presetId?: string;
+  keyCreationUrl?: string;
   oauthAvailable?: boolean;
 }
 
@@ -524,7 +527,7 @@ function AccountCreationWizard({
           {keyless ? <p>Connect to this local endpoint on the selected server.</p> : <>
             <label>API key<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} value={apiKey} aria-invalid={(attempted || apiKey.length > 0) && !apiKeyValid} onChange={(event) => setApiKey(event.target.value)} /></label>
             {!providerChecking && !create.busy && !create.uncertain && (attempted || apiKey.length > 0) && !apiKeyValid ? <p role="alert">Enter 1–8192 printable ASCII bytes without whitespace.</p> : null}
-            <details><summary>Where to get an API key</summary><p>{selectedProvider?.keyGuidance || "Use the provider's documented API key flow."}</p>{selectedProvider?.documentationUrl ? <p>Provider documentation: <code>{selectedProvider.documentationUrl}</code></p> : null}</details>
+            <details><summary>Where to get an API key</summary><p>{selectedProvider?.keyGuidance || "Use the provider's documented API key flow."}</p>{selectedProvider ? <ProviderGuidance preset={selectedProvider.presetId} documentation={selectedProvider.documentationUrl} keyCreation={selectedProvider.keyCreationUrl} /> : null}</details>
           </>}
           <p>Use a separate entry for each API key.</p><p>Stored securely on the selected server.</p>
           <details open={advanced} onToggle={(event) => setAdvanced(event.currentTarget.open)}><summary>Advanced preferences</summary>

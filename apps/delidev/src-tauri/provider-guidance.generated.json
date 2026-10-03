@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "openai",
+      "documentation": "https://developers.openai.com/api/reference/overview",
+      "key_creation_url": "https://platform.openai.com/api-keys"
+    },
+    {
+      "id": "anthropic",
+      "documentation": "https://platform.claude.com/docs/en/api/overview",
+      "key_creation_url": "https://platform.claude.com/settings/keys"
+    },
+    {
+      "id": "openrouter",
+      "documentation": "https://openrouter.ai/docs/api/reference/authentication",
+      "key_creation_url": "https://openrouter.ai/settings/keys"
+    },
+    {
+      "id": "vercel-ai-gateway",
+      "documentation": "https://vercel.com/docs/ai-gateway/authentication-and-byok",
+      "key_creation_url": "https://vercel.com/docs/ai-gateway/authentication-and-byok"
+    },
+    {
+      "id": "xai",
+      "documentation": "https://docs.x.ai/developers/rest-api-reference/inference",
+      "key_creation_url": "https://console.x.ai/"
+    },
+    {
+      "id": "deepseek",
+      "documentation": "https://api-docs.deepseek.com/",
+      "key_creation_url": "https://platform.deepseek.com/api_keys"
+    },
+    {
+      "id": "gemini",
+      "documentation": "https://ai.google.dev/gemini-api/docs/openai",
+      "key_creation_url": "https://aistudio.google.com/apikey"
+    },
+    {
+      "id": "groq",
+      "documentation": "https://console.groq.com/docs/models",
+      "key_creation_url": "https://console.groq.com/keys"
+    },
+    {
+      "id": "mistral",
+      "documentation": "https://docs.mistral.ai/api/endpoint/models",
+      "key_creation_url": "https://docs.mistral.ai/admin/identity-access/api-keys"
+    },
+    {
+      "id": "together-ai",
+      "documentation": "https://docs.together.ai/reference/models",
+      "key_creation_url": "https://api.together.ai/settings/projects/~current/api-keys"
+    },
+    {
+      "id": "fireworks-ai",
+      "documentation": "https://docs.fireworks.ai/api-reference/list-models",
+      "key_creation_url": "https://app.fireworks.ai/settings/users/api-keys"
+    },
+    {
+      "id": "perplexity",
+      "documentation": "https://docs.perplexity.ai/api-reference/gateway-models-get",
+      "key_creation_url": "https://console.perplexity.ai/project/keys"
+    },
+    {
+      "id": "cohere",
+      "documentation": "https://docs.cohere.com/docs/compatibility-api",
+      "key_creation_url": "https://dashboard.cohere.com/api-keys"
+    },
+    {
+      "id": "cerebras",
+      "documentation": "https://inference-docs.cerebras.ai/api-reference/models/list-models",
+      "key_creation_url": "https://inference-docs.cerebras.ai/console/api-keys"
+    },
+    {
+      "id": "nebius",
+      "documentation": "https://docs.tokenfactory.nebius.com/api-reference/models/list-models",
+      "key_creation_url": "https://docs.tokenfactory.nebius.com/quickstart"
+    },
+    {
+      "id": "novita",
+      "documentation": "https://docs.novita.ai/api-reference/model-apis-llm-list-models",
+      "key_creation_url": "https://docs.novita.ai/api-reference/basic-authentication"
+    },
+    {
+      "id": "deepinfra",
+      "documentation": "https://docs.deepinfra.com/api-reference/models/openai-models",
+      "key_creation_url": "https://deepinfra.com/dash/api_keys"
+    },
+    {
+      "id": "hugging-face",
+      "documentation": "https://huggingface.co/docs/inference-providers/en/tasks/chat-completion",
+      "key_creation_url": "https://huggingface.co/settings/tokens"
+    },
+    {
+      "id": "venice",
+      "documentation": "https://docs.venice.ai/api-reference/endpoint/api_keys/rate_limits",
+      "key_creation_url": "https://venice.ai/settings/api"
+    },
+    {
+      "id": "scaleway",
+      "documentation": "https://www.scaleway.com/en/developers/api/generative-apis/models",
+      "key_creation_url": "https://www.scaleway.com/en/docs/generative-apis/quickstart/"
+    },
+    {
+      "id": "baseten",
+      "documentation": "https://docs.baseten.co/reference/management-api/model-apis/gets-all-model-apis",
+      "key_creation_url": "https://app.baseten.co/settings/api_keys"
+    },
+    {
+      "id": "moonshot",
+      "documentation": "https://platform.kimi.ai/docs/api/list-models",
+      "key_creation_url": "https://platform.kimi.ai/console/api-keys"
+    },
+    {
+      "id": "moonshot-cn",
+      "documentation": "https://platform.kimi.com/docs/api/list-models",
+      "key_creation_url": "https://platform.kimi.com/console/api-keys"
+    },
+    {
+      "id": "minimax",
+      "documentation": "https://platform.minimax.io/docs/api-reference/models/openai/list-models",
+      "key_creation_url": "https://platform.minimax.io/user-center/basic-information/interface-key"
+    },
+    {
+      "id": "minimax-cn",
+      "documentation": "https://platform.minimax.cn/docs/api-reference/models/openai/list-models",
+      "key_creation_url": "https://platform.minimax.cn/user-center/basic-information/interface-key"
+    },
+    {
+      "id": "siliconflow",
+      "documentation": "https://docs.siliconflow.com/cn/api-reference/models/get-model-list",
+      "key_creation_url": "https://cloud.siliconflow.com/account/ak"
+    },
+    {
+      "id": "siliconflow-cn",
+      "documentation": "https://api-docs.siliconflow.cn/docs/api/models-get",
+      "key_creation_url": "https://cloud.siliconflow.cn/account/ak"
+    },
+    {
+      "id": "qianfan",
+      "documentation": "https://cloud.baidu.com/doc/qianfan-api/s/Dmba8k71y",
+      "key_creation_url": "https://cloud.baidu.com/doc/qianfan-api/s/ym9chdsy5"
+    },
+    {
+      "id": "tencent-tokenhub",
+      "documentation": "https://cloud.tencent.com/document/product/1823/130078",
+      "key_creation_url": "https://cloud.tencent.com/document/product/1823/130090"
+    },
+    {
+      "id": "tencent-tokenhub-international",
+      "documentation": "https://cloud.tencent.com/document/product/1823/130078",
+      "key_creation_url": "https://cloud.tencent.com/document/product/1823/130090"
+    },
+    {
+      "id": "alibaba-model-studio-international",
+      "documentation": "https://help.aliyun.com/en/model-studio/list-models",
+      "key_creation_url": "https://help.aliyun.com/en/model-studio/get-api-key"
+    },
+    {
+      "id": "alibaba-model-studio-hong-kong",
+      "documentation": "https://help.aliyun.com/en/model-studio/list-models",
+      "key_creation_url": "https://help.aliyun.com/en/model-studio/get-api-key"
+    },
+    {
+      "id": "ollama",
+      "documentation": "https://docs.ollama.com/api/openai-compatibility",
+      "key_creation_url": ""
+    },
+    {
+      "id": "lm-studio",
+      "documentation": "https://lmstudio.ai/docs/developer/openai-compat",
+      "key_creation_url": ""
+    },
+    {
+      "id": "vllm",
+      "documentation": "https://docs.vllm.ai/en/latest/serving/online_serving/",
+      "key_creation_url": ""
+    }
+  ]
+}

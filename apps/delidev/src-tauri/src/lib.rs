@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
 pub mod appearance;
+mod browser_opener;
 pub mod oauth;
+pub mod provider_guidance;
 
 // Covers 32 bounded profile records, including JSON-escaped display names.
 const OUTPUT_LIMIT: u64 = 128 << 10;
@@ -157,6 +159,20 @@ impl Connector {
         }
         canonical_id(&metadata.server_id)?;
         Ok(metadata.server_id)
+    }
+
+    pub fn open_provider_guidance(
+        &self,
+        preset: &str,
+        action: provider_guidance::GuidanceAction,
+    ) -> Result<()> {
+        let url = provider_guidance::destination(preset, action)?;
+        let result = browser_opener::dispatch(&url, &self.exiting);
+        match &result {
+            Ok(()) => tracing::info!(operation = "provider_guidance", phase = "dispatched"),
+            Err(code) => tracing::warn!(operation = "provider_guidance", phase = "failed", ?code),
+        }
+        result
     }
 
     pub fn open_github(&self, url: &str) -> Result<()> {

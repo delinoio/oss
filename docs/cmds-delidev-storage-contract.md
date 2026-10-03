@@ -918,3 +918,7 @@ Removal journals use newline-framed records. Validate the complete prefix before
 Storage results retain at least the surviving snapshot size in retained bytes and bind successful cleanup to its original canonical preview digest, including recovered cleanup. CLI snapshot inventory emits revision as a decimal JSON string.
 
 Atomic journal compaction represents each settled removal with one inventory-bound original-path proof; it does not repeat generated private paths. The original immutable inventory bounds all such proofs, including deep-directory generated-name expansion. Recovered successful cleanup emits and validates the original snapshot source/preview digest before server settlement; authenticated native-result fixtures also verify the final accepted job state.
+
+## Added hosted-provider defaults (migration 30)
+
+Real 30 follows implemented OAuth 29 and actual accounting/diagnostics/retirement 26–28. It stores the private `provider_presets_layout=hosted-additions-26-v1` marker and seeds only the 26 explicitly allocated hosted preset identities. Historical defaults migrations retain their original six-ID set. Existing managed UUIDs, Off state, custom providers/accounts/models and explicit deletion of original presets remain authoritative. No Account, credential or model is created. Upgrade synchronizes the original backup first and publishes all predecessor/layout/seed changes atomically; failure leaves the original version and image intact. A current-store reopen validates the exact layout marker and never seeds again.
