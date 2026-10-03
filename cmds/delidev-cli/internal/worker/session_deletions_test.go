@@ -47,6 +47,11 @@ func deletionWorkerFixture(t *testing.T, kind domain.WorkspaceType) (Config, dom
 				t.Fatal(e, string(b))
 			}
 		}
+		var err error
+		source, err = filepath.EvalSymlinks(source)
+		if err != nil {
+			t.Fatal(err)
+		}
 		id := domain.NewID()
 		p.Repositories = []workspace.RepositorySpec{{ID: id, Checkout: source, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}}
 		p.PrimaryRepository = id

@@ -33,6 +33,10 @@ func subscriptionAction(value pb.SubscriptionAction) domain.SubscriptionAction {
 		return domain.SubscriptionRefresh
 	case pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT:
 		return domain.SubscriptionLogout
+	case pb.SubscriptionAction_SUBSCRIPTION_ACTION_QUOTA:
+		return domain.SubscriptionQuota
+	case pb.SubscriptionAction_SUBSCRIPTION_ACTION_RESET_CREDIT:
+		return domain.SubscriptionResetCredit
 	case pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE:
 		return domain.SubscriptionExecute
 	default:
@@ -115,13 +119,8 @@ func subscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store.Rec
 	if a.Type != domain.SubscriptionAccount {
 		return r, a, domain.Fail(domain.Unsupported, "This operation requires a Codex subscription account.", "Preserve API accounts through their existing connection operations.")
 	}
-	p, err := tx.Get(domain.ProviderKind, a.ProviderID)
-	if err != nil {
-		return r, a, err
-	}
-	provider, err := store.Decode[domain.Provider](p)
-	if err != nil || (provider.SubscriptionHarness == nil || *provider.SubscriptionHarness != domain.Codex) || provider.Protocol != domain.NativeSubscription || provider.Authentication != domain.SubscriptionAuth {
-		return r, a, domain.Fail(domain.Unsupported, "This subscription provider is unsupported.", "Select the Codex native subscription provider; no alternative login is used.")
+	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionChatGPT || a.ProviderID != "" {
+		return r, a, domain.Fail(domain.Unsupported, "This service has no managed subscription profile.", "Select a ChatGPT service account for the verified Codex lifecycle.")
 	}
 	return r, a, nil
 }
@@ -133,7 +132,7 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 		return nil, rpc.Error(err, c)
 	}
 	action := subscriptionAction(req.Msg.Action)
-	if action == "" || action == domain.SubscriptionExecute || (req.Msg.DeviceCode && action != domain.SubscriptionLogin) || domain.ID(req.Msg.MachineId).Validate() != nil {
+	if action == "" || (action != domain.SubscriptionLogin && action != domain.SubscriptionRefresh && action != domain.SubscriptionLogout) || (req.Msg.DeviceCode && action != domain.SubscriptionLogin) || domain.ID(req.Msg.MachineId).Validate() != nil {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Choose a supported subscription operation and Runner Device.", "Use login, refresh or logout with an explicit machine."), c)
 	}
 	actor, ok := domain.PrincipalFrom(ctx)
@@ -159,7 +158,7 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 			a.Subscription = &domain.SubscriptionState{}
 		}
 		state := a.Subscription
-		if state.Pending != nil || state.RecoveryRequired || a.Removal != nil {
+		if state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
 			return nil, subscriptionDenied()
 		}
 		if action == domain.SubscriptionLogin && (a.Connection != nil || state.Generation != "" || state.Lease != nil) {
@@ -173,6 +172,10 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 			// Deny new executions at acceptance. Existing ownership remains leased
 			// until its original Worker reports native/file cleanup.
 			a.Health = domain.AccountRevoked
+			if state.Observation != nil && state.Observation.Phase == domain.SubscriptionObservationQueued {
+				state.Observation.Phase = domain.SubscriptionObservationFailed
+				state.Observation.ErrorCode = domain.Canceled
+			}
 			if err := cancelAccountExecutions(tx, r.ID); err != nil {
 				return nil, err
 			}
@@ -297,6 +300,13 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 					return err
 				}
 				state := a.Subscription
+				if state != nil && state.Observation != nil && state.Observation.Phase == domain.SubscriptionObservationQueued && state.Observation.MachineID == domain.ID(req.Msg.MachineId) && !state.RecoveryRequired && (state.Lease == nil || state.Lease.Action == domain.SubscriptionExecute && state.Lease.InstanceID == domain.ID(req.Msg.InstanceId)) {
+					records = append(records, r)
+					if len(records) == 4 {
+						break
+					}
+					continue
+				}
 				if state != nil && state.Pending != nil && state.Pending.MachineID == domain.ID(req.Msg.MachineId) && state.Pending.Phase == domain.SubscriptionQueued && state.Lease == nil && !state.RecoveryRequired {
 					records = append(records, r)
 					if len(records) == 4 {
@@ -408,6 +418,9 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			return nil, err
 		}
 		if action == domain.SubscriptionExecute {
+			if state.Observation != nil && state.Observation.Active() {
+				return nil, domain.Fail(domain.ResourceExhausted, "The selected account has a retained native observation.", "Wait for its original operation or explicitly reconcile the original reset-credit key.")
+			}
 			if state.Pending != nil && state.Pending.Action == domain.SubscriptionRefresh {
 				return nil, domain.Fail(domain.ResourceExhausted, "The selected account is refreshing under exclusive ownership.", "Wait on this account's original operation without failover.")
 			}
@@ -420,10 +433,43 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 			job, err := store.Decode[domain.Job](jr)
 			var execution domain.ExecutionJobInput
-			if err != nil || jr.Revision != input.Revision || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID || domain.Decode(job.Input, &execution) != nil || execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID || execution.Configuration.Harness != domain.Codex {
+			if err != nil || jr.Revision != input.Revision || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
+				return nil, subscriptionDenied()
+			}
+			switch job.Type {
+			case domain.ExecuteSessionJob:
+				if domain.Decode(job.Input, &execution) != nil || execution.Validate() != nil {
+					return nil, subscriptionDenied()
+				}
+			case domain.CompactSessionJob:
+				var compact domain.SessionCompactionInput
+				if domain.Decode(job.Input, &compact) != nil || compact.Validate() != nil || compact.Version != 2 {
+					return nil, subscriptionDenied()
+				}
+				sr, session, err := sessionRecord(tx, jr.SessionID)
+				_, machine, machineErr := activeMachine(tx, input.Machine)
+				if err != nil || machineErr != nil || !machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1) || session.CompactionJobID != jr.ID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || !session.OwnsExecution(compact.Assignment) {
+					return nil, subscriptionDenied()
+				}
+				if _, err := checkedExecutionAssignment(tx, sr, session, machine, compact.Assignment); err != nil {
+					return nil, err
+				}
+				if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
+					return nil, err
+				}
+				execution = compact.Assignment
+			default:
+				return nil, subscriptionDenied()
+			}
+			if execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID || !execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionChatGPT || execution.Configuration.Harness != domain.Codex {
 				return nil, subscriptionDenied()
 			}
 			if canceled, err := tx.JobCancellationRequested(jr.ID); err != nil || canceled {
+				return nil, subscriptionDenied()
+			}
+		} else if action == domain.SubscriptionQuota || action == domain.SubscriptionResetCredit {
+			op := state.Observation
+			if op == nil || op.ID != input.Operation || op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionObservationQueued || op.Generation != state.Generation || !quotaAccountReady(a) || state.Pending != nil || observationMachine(tx, input.Machine) != nil || subscriptionActorValid(tx, op.Actor) != nil {
 				return nil, subscriptionDenied()
 			}
 		} else {
@@ -495,6 +541,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				return subscriptionDenied()
 			}
 			if canceled, err := tx.JobCancellationRequested(input.Operation); err != nil || canceled {
+				return subscriptionDenied()
+			}
+		} else if action == domain.SubscriptionQuota || action == domain.SubscriptionResetCredit {
+			op := a.Subscription.Observation
+			if op == nil || op.Phase != domain.SubscriptionObservationQueued || op.Generation != generation || subscriptionActorValid(tx, op.Actor) != nil || !quotaAccountReady(a) {
 				return subscriptionDenied()
 			}
 		} else {
@@ -720,12 +771,21 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				// a process timeout establishes safe refresh-token redistribution.
 			} else {
 				state.Lease = nil
-				if lease.Action != domain.SubscriptionExecute {
+				if state.Pending != nil && state.Pending.ID == lease.OperationID {
 					state.Pending = nil
 				}
 				if usable && lease.Action != domain.SubscriptionLogout {
 					state.Generation = domain.ID(m.RequestId)
 					state.IdentityCommitment = identityCommitment
+					state.OwnerMachineID = lease.MachineID
+					if state.Observation != nil && state.Observation.Generation == input.Generation {
+						if state.Observation.Phase == domain.SubscriptionObservationQueued {
+							state.Observation.Phase = domain.SubscriptionObservationFailed
+							state.Observation.ErrorCode = domain.Conflict
+						} else if state.Observation.Phase == domain.SubscriptionObservationSending {
+							state.Observation.Phase = domain.SubscriptionObservationUncertain
+						}
+					}
 					if a.Connection == nil {
 						a.Connection = &domain.AccountConnection{ID: domain.ID(m.RequestId), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}
 						a.Health = domain.AccountReady
@@ -744,6 +804,14 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 					a.ConfirmedExhausted = false
 					state.Generation = ""
 					state.IdentityCommitment = ""
+					state.ResetCredits = nil
+					state.QuotaObservedAt = nil
+					state.QuotaState = domain.ObservationUnknown
+					state.SpendControlReached = nil
+					state.SpendControlObservedAt = nil
+					if state.Observation != nil && (state.Observation.Phase == domain.SubscriptionObservationSending || state.Observation.Phase == domain.SubscriptionObservationUncertain) {
+						state.Observation.Phase = domain.SubscriptionObservationRetiredUncertain
+					}
 				}
 			}
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {

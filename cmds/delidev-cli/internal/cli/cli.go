@@ -182,6 +182,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "storage":
+		if code, handled := dispatchStorage(ctx, c, o, rest, streams); handled {
+			return code
+		}
 	case "service-control":
 		if code, handled := dispatchServiceControl(ctx, c, o, rest, streams); handled {
 			return code
@@ -362,7 +366,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(nil, err)
 		}
 		ensureRequest(&o)
-		response, err := c.configuration.SaveConfiguration(ctx, request(c, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, Kind: rpc.WireKind(kind), SchemaVersion: 1, DocumentJson: body}))
+		response, err := c.configuration.SaveConfiguration(ctx, request(c, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, Kind: rpc.WireKind(kind), SchemaVersion: rpc.ResourceSchemaVersion(kind, body), DocumentJson: body}))
 		if err != nil {
 			return emit(nil, rpc.ClientError(err))
 		}

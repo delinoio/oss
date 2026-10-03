@@ -17,6 +17,7 @@ import (
 // Current utilization is unavailable in this profile. Compaction boundaries
 // remain timestamped historical measurements, independently of response usage.
 type sessionContextView struct {
+	SessionRevision   string                      `json:"session_revision"`
 	SessionID         domain.ID                   `json:"session_id"`
 	ExecutionID       domain.ID                   `json:"execution_id,omitempty"`
 	CurrentTokens     *domain.ClaudeProgressCount `json:"current_tokens"`
@@ -59,11 +60,19 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return err
 		}
-		if session.InitialExecution == nil || session.InitialExecution.Configuration.Harness != domain.ClaudeCode {
+		if session.InitialExecution == nil || (session.InitialExecution.Configuration.Harness != domain.ClaudeCode && session.InitialExecution.Configuration.Harness != domain.Codex && session.InitialExecution.Configuration.Harness != domain.OpenCode) {
 			return nil
 		}
+		view.SessionRevision = strconv.FormatUint(sr.Revision, 10)
 		view.ExecutionID = session.ExecutionSelection().ID
-		caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CLAUDE_NATIVE_OBSERVATIONS_V1)
+		h := session.InitialExecution.Configuration.Harness
+		if h == domain.OpenCode {
+			caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_OPENCODE_NATIVE_OBSERVATIONS_V1)
+		} else if h == domain.Codex {
+			caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CODEX_NATIVE_OBSERVATIONS_V1)
+		} else {
+			caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CLAUDE_NATIVE_OBSERVATIONS_V1)
+		}
 		p := session.Execution
 		if p != nil && p.ClaudeProgress != nil {
 			refs := []struct {
@@ -85,6 +94,17 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 				}
 				*ref.target = contextResource(r, r.Data)
 			}
+		}
+		if (h == domain.Codex || h == domain.OpenCode) && p != nil && p.LatestNativeCompactionID != "" {
+			r, err := tx.Get(domain.MessageKind, p.LatestNativeCompactionID)
+			if err != nil {
+				return err
+			}
+			v, err := store.Decode[domain.ExecutionMessage](r)
+			if err != nil || r.SessionID != id || v.ExecutionID != p.ExecutionID || v.Progress == nil || v.Progress.Compaction == nil || v.Progress.Compaction.Harness != h {
+				return domain.CompactionUncertain()
+			}
+			view.AutomaticBoundary = contextResource(r, r.Data)
 		}
 		jobID := session.LastCompactionJobID
 		if jobID == "" {
@@ -121,7 +141,13 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 			view.ManualAction = contextResource(r, document)
 		}
 		if _, err := compactionSource(tx, sr, session, domain.NewID()); err == nil {
-			caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CLAUDE_MANUAL_COMPACTION_V1)
+			if h == domain.OpenCode {
+				caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_OPENCODE_MANUAL_COMPACTION_V1)
+			} else if h == domain.Codex {
+				caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CODEX_MANUAL_COMPACTION_V1)
+			} else {
+				caps = append(caps, pb.SessionContextCapability_SESSION_CONTEXT_CAPABILITY_CLAUDE_MANUAL_COMPACTION_V1)
+			}
 		}
 		return nil
 	})

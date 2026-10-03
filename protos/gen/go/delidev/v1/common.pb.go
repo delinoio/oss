@@ -163,6 +163,8 @@ const (
 	UsageCoverage_USAGE_COVERAGE_UNSPECIFIED UsageCoverage = 0
 	// Exact known subtotals only. Missing/legacy/child telemetry is not zero.
 	UsageCoverage_USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES UsageCoverage = 1
+	// Distinct native input/step units; inherited history is excluded.
+	UsageCoverage_USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS UsageCoverage = 2
 )
 
 // Enum value maps for UsageCoverage.
@@ -170,10 +172,12 @@ var (
 	UsageCoverage_name = map[int32]string{
 		0: "USAGE_COVERAGE_UNSPECIFIED",
 		1: "USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES",
+		2: "USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS",
 	}
 	UsageCoverage_value = map[string]int32{
-		"USAGE_COVERAGE_UNSPECIFIED":             0,
-		"USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES": 1,
+		"USAGE_COVERAGE_UNSPECIFIED":                    0,
+		"USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES":        1,
+		"USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS": 2,
 	}
 )
 
@@ -252,6 +256,59 @@ func (x SessionDeletionState) Number() protoreflect.EnumNumber {
 // Deprecated: Use SessionDeletionState.Descriptor instead.
 func (SessionDeletionState) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_common_proto_rawDescGZIP(), []int{2}
+}
+
+// Native subscription identity is independent of API providers.
+type SubscriptionServiceIdentity int32
+
+const (
+	SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED SubscriptionServiceIdentity = 0
+	SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT     SubscriptionServiceIdentity = 1
+	SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE      SubscriptionServiceIdentity = 2
+	SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_GROK        SubscriptionServiceIdentity = 3
+)
+
+// Enum value maps for SubscriptionServiceIdentity.
+var (
+	SubscriptionServiceIdentity_name = map[int32]string{
+		0: "SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED",
+		1: "SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT",
+		2: "SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE",
+		3: "SUBSCRIPTION_SERVICE_IDENTITY_GROK",
+	}
+	SubscriptionServiceIdentity_value = map[string]int32{
+		"SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED": 0,
+		"SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT":     1,
+		"SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE":      2,
+		"SUBSCRIPTION_SERVICE_IDENTITY_GROK":        3,
+	}
+)
+
+func (x SubscriptionServiceIdentity) Enum() *SubscriptionServiceIdentity {
+	p := new(SubscriptionServiceIdentity)
+	*p = x
+	return p
+}
+
+func (x SubscriptionServiceIdentity) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SubscriptionServiceIdentity) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_common_proto_enumTypes[3].Descriptor()
+}
+
+func (SubscriptionServiceIdentity) Type() protoreflect.EnumType {
+	return &file_delidev_v1_common_proto_enumTypes[3]
+}
+
+func (x SubscriptionServiceIdentity) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SubscriptionServiceIdentity.Descriptor instead.
+func (SubscriptionServiceIdentity) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{3}
 }
 
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
@@ -672,14 +729,20 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x14ENTITY_KIND_TERMINAL\x10\x1f\x12\x1f\n" +
 	"\x1bENTITY_KIND_NETWORK_PROFILE\x10\x1c\x12\x1d\n" +
 	"\x19ENTITY_KIND_NETWORK_ROUTE\x10\x1d\x12\x18\n" +
-	"\x14ENTITY_KIND_SUBAGENT\x10\x1e*[\n" +
+	"\x14ENTITY_KIND_SUBAGENT\x10\x1e*\x8e\x01\n" +
 	"\rUsageCoverage\x12\x1e\n" +
 	"\x1aUSAGE_COVERAGE_UNSPECIFIED\x10\x00\x12*\n" +
-	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01*\x88\x01\n" +
+	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01\x121\n" +
+	"-USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS\x10\x02*\x88\x01\n" +
 	"\x14SessionDeletionState\x12&\n" +
 	"\"SESSION_DELETION_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eSESSION_DELETION_STATE_PENDING\x10\x01\x12$\n" +
-	" SESSION_DELETION_STATE_SUCCEEDED\x10\x02B<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	" SESSION_DELETION_STATE_SUCCEEDED\x10\x02*\xc9\x01\n" +
+	"\x1bSubscriptionServiceIdentity\x12-\n" +
+	")SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED\x10\x00\x12)\n" +
+	"%SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT\x10\x01\x12(\n" +
+	"$SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE\x10\x02\x12&\n" +
+	"\"SUBSCRIPTION_SERVICE_IDENTITY_GROK\x10\x03B<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_common_proto_rawDescOnce sync.Once
@@ -693,20 +756,21 @@ func file_delidev_v1_common_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_common_proto_rawDescData
 }
 
-var file_delidev_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_delidev_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_delidev_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_delidev_v1_common_proto_goTypes = []any{
-	(EntityKind)(0),            // 0: delidev.v1.EntityKind
-	(UsageCoverage)(0),         // 1: delidev.v1.UsageCoverage
-	(SessionDeletionState)(0),  // 2: delidev.v1.SessionDeletionState
-	(*Resource)(nil),           // 3: delidev.v1.Resource
-	(*Mutation)(nil),           // 4: delidev.v1.Mutation
-	(*ForwardChange)(nil),      // 5: delidev.v1.ForwardChange
-	(*SessionDeletionJob)(nil), // 6: delidev.v1.SessionDeletionJob
+	(EntityKind)(0),                  // 0: delidev.v1.EntityKind
+	(UsageCoverage)(0),               // 1: delidev.v1.UsageCoverage
+	(SessionDeletionState)(0),        // 2: delidev.v1.SessionDeletionState
+	(SubscriptionServiceIdentity)(0), // 3: delidev.v1.SubscriptionServiceIdentity
+	(*Resource)(nil),                 // 4: delidev.v1.Resource
+	(*Mutation)(nil),                 // 5: delidev.v1.Mutation
+	(*ForwardChange)(nil),            // 6: delidev.v1.ForwardChange
+	(*SessionDeletionJob)(nil),       // 7: delidev.v1.SessionDeletionJob
 }
 var file_delidev_v1_common_proto_depIdxs = []int32{
 	0, // 0: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
-	3, // 1: delidev.v1.ForwardChange.forward:type_name -> delidev.v1.Resource
+	4, // 1: delidev.v1.ForwardChange.forward:type_name -> delidev.v1.Resource
 	2, // 2: delidev.v1.SessionDeletionJob.state:type_name -> delidev.v1.SessionDeletionState
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
@@ -725,7 +789,7 @@ func file_delidev_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_common_proto_rawDesc), len(file_delidev_v1_common_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      4,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,

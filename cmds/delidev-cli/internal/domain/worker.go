@@ -78,6 +78,7 @@ const (
 	SaveRepositoryJob       JobType = "save-repository"
 	ImportConfigurationJob  JobType = "import-configuration"
 	PrepareWorkspaceJob     JobType = "prepare-workspace"
+	WorkspaceStorageJob     JobType = "workspace-storage"
 	RecoverExecutionJob     JobType = "recover-execution"
 	RecoverWorkspaceJob     JobType = "recover-workspace"
 	HarnessDiscoveryJob     JobType = "harness-discovery"
@@ -87,6 +88,8 @@ const (
 	GenerateSessionTitleJob JobType = "generate-session-title"
 )
 
+const CodexSubagentConfigurationV1 WorkerCapability = "codex-subagent-configuration-v1"
+
 type WorkerCapability string
 
 const (
@@ -95,6 +98,12 @@ const (
 	AutomaticTitlesCodexV1         WorkerCapability = "automatic-titles-codex-v1"
 	SessionForwardingV1            WorkerCapability = "session-forwarding-v1"
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
+	SubscriptionObservationsV1     WorkerCapability = "subscription-observations-v1"
+	NativeSessionCompactionV1      WorkerCapability = "native-session-compaction-v1"
+	CodexSessionCompactionV1       WorkerCapability = "codex-session-compaction-v1"
+	OpenCodeSessionCompactionV1    WorkerCapability = "opencode-session-compaction-v1"
+	NetworkBootstrapV1             WorkerCapability = "network-bootstrap-v1"
+	CodexAPIProxyV1                WorkerCapability = "codex-api-proxy-v1"
 )
 
 type JobState string
@@ -130,7 +139,7 @@ const (
 )
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{NativeModelsJob, CreateBackupJob, DeleteBackupJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
+	if !slices.Contains([]JobType{NativeModelsJob, CreateBackupJob, DeleteBackupJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {

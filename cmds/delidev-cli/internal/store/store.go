@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 25
+const SchemaVersion = 28
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -84,13 +84,16 @@ type Result struct {
 }
 
 type Tx struct {
-	tx           *sql.Tx
-	ctx          context.Context
-	requestID    domain.ID
-	now          time.Time
-	touched      map[domain.ID]bool
-	queueTouched map[domain.ID]bool
-	readOnly     bool
+	// Only migration 16 reads pre-service immutable pricing while rebuilding its
+	// original budget table. Normal transactions require the current layout.
+	historicalPricingV1 bool
+	tx                  *sql.Tx
+	ctx                 context.Context
+	requestID           domain.ID
+	now                 time.Time
+	touched             map[domain.ID]bool
+	queueTouched        map[domain.ID]bool
+	readOnly            bool
 }
 
 func Open(ctx context.Context, root string) (_ *Store, returned error) {
@@ -260,8 +263,21 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	// those files for explicit recovery instead of guessing a migration.
 	if version >= 25 {
 		var layout string
-		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='native_accounting_layout'").Scan(&layout); err != nil || layout != "grok-closed-input-v1" {
+		expectedLayout := "grok-closed-input-v1"
+		if version >= 26 {
+			expectedLayout = "priced-native-input-v2"
+		}
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='native_accounting_layout'").Scan(&layout); err != nil || layout != expectedLayout {
 			return domain.Fail(domain.RecoveryRequired, "The native accounting layout is unrecognized.", "Preserve the original database and use explicit recovery; never adopt an unmerged schema by version number.")
+		}
+	}
+	if version >= 28 {
+		var layout string
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='subscription_notification_layout'").Scan(&layout); err != nil || layout != "account-recovery-v1" {
+			return domain.Fail(domain.RecoveryRequired, "The subscription notification layout is unrecognized.", "Preserve the original database and use a matching composed server version.")
+		}
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='subscription_identity_layout'").Scan(&layout); err != nil || layout != "service-accounts-v2" {
+			return domain.Fail(domain.RecoveryRequired, "The subscription identity layout is unrecognized.", "Preserve the original database and use a matching server version.")
 		}
 	}
 	var check string
@@ -700,8 +716,10 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 		if err != nil {
 			return err
 		}
-		if _, err = t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO model_suppressions(provider_id,native_id) VALUES(?,?)", model.ProviderID, model.NativeID); err != nil {
-			return storageError(err)
+		if model.ProviderID != "" {
+			if _, err = t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO model_suppressions(provider_id,native_id) VALUES(?,?)", model.ProviderID, model.NativeID); err != nil {
+				return storageError(err)
+			}
 		}
 	}
 	if _, err = t.tx.ExecContext(t.ctx, "INSERT INTO tombstones(id,kind,created_at) VALUES(?,?,?)", id, kind, t.now.UnixMilli()); err != nil {
@@ -709,6 +727,11 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	}
 	if err := t.preserveDeletedProjectPolicy(r); err != nil {
 		return err
+	}
+	if kind == domain.JobKind {
+		if err := t.deleteWorkerNativeRoute(id); err != nil {
+			return err
+		}
 	}
 	if _, err = t.tx.ExecContext(t.ctx, "DELETE FROM entities WHERE id=?", id); err != nil {
 		return storageError(err)

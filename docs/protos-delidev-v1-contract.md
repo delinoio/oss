@@ -1,5 +1,10 @@
 # DeliDev v1 Connect contract
 
+## Metadata-only request diagnostics
+
+Issue #1103 adds owner/paired-client `SessionService.ListRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1`, with additive generated Go/TypeScript/Connect Query bindings. Typed source/state/operation enums distinguish native input publications from individual proxy HTTP send claims. Optional settings, latency, HTTP status/attempt and completion time preserve unavailable versus measured zero/false. Exact uint64 revisions/durations remain precise. Original opaque IDs are bounded validated projections, never arbitrary native JSON. Signed pages bind session, optional exact execution and page size (default 50, maximum 100). Worker credentials cannot read this product surface. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for immutable attribution, publication, secret filtering, retention and evidence limits; this is not another usage source.
+
+
 Source schemas are service-specific under `protos/delidev/v1`; shared types have
 one common owner. The historical `delidev.proto` forwards imports. Existing wire
 names and numbers remain unchanged. `protos/delidev/allocations.json` records main
@@ -420,6 +425,24 @@ and Connect Query bindings together.
 
 Provider activation adds an owner/client-only `ProviderService.ListProviderInventory`, closed capability/preset enums, account-list-only `ListResourcesRequest.provider_id`, and additive `SearchModels.enabled_providers_only`. Omitted model filtering preserves existing behavior. Provider enabled and preset provenance remain optional fields in the canonical provider JSON document for legacy compatibility. Inventory capabilities let clients detect older servers that ignore filters; Workers cannot read it. See [provider activation](cmds-delidev-provider-activation-contract.md), and regenerate Go messages/Connect handlers and TypeScript Connect Query bindings together.
 
+## Workspace storage service
+
+`WorkspaceStorageService` is owner/paired-client-only and provides
+`RequestWorkspaceStorage`, `GetWorkspaceStorageOperation` and
+`CancelWorkspaceStorageOperation`. The closed additive action enum selects
+preview/create/cleanup/inspect/restore/delete/recover. Acceptance binds Mutation
+to the current session; cancellation binds it to the original current job.
+Successful preview, exact snapshot and original recovery job references have
+separate fields. Responses expose current original Resource jobs with request
+UUID/replay status; polling never resends native side effects. GetStatus adds
+`WORKSPACE_STORAGE_V1` at its main-reserved enum value 11; the existing `SESSION_FORWARDING_V1`
+retains value 2 and `USER_SERVICES_V1` retains value 3. Capability values are
+distinct and never alias or reinterpret main's forwarding or user-service
+capabilities. Snapshot metadata stays in the existing Snapshot kind
+and generated Go/TypeScript/Connect Query bindings reproduce from the schema.
+The [storage contract](cmds-delidev-storage-contract.md) owns exact authorization,
+state publication, safe copying, cancellation and explicit recovery semantics.
+
 ### Managed database restore
 
 `SystemService.RestoreBackup` and `GetBackupRestore` are owner/paired-client-only
@@ -440,7 +463,7 @@ deletion enforcement, historical quarantine, bounds and recovery evidence limits
 
 `SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
-System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3`, `STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5` and `PERMANENT_SESSION_DELETION_V1 = 9`; managed restore adds reserved `MANAGED_BACKUP_RESTORE_V1 = 7`, native accounting adds reserved `NATIVE_ACCOUNTING_V1 = 4` and same-account Codex Fork adds reserved `CODEX_SESSION_FORK_V1 = 13`. `GetStatus` advertises each implemented capability independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3`, `NATIVE_ACCOUNTING_V1 = 4`, `STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5`, `SERVER_OUTBOUND_PROXY_V1 = 6`, `MANAGED_BACKUP_RESTORE_V1 = 7`, `PERMANENT_SESSION_DELETION_V1 = 9`, `WORKSPACE_STORAGE_V1 = 11` and `CODEX_SESSION_FORK_V1 = 13`. Managed restore, native accounting, workspace storage and same-account Codex Fork use their original reserved numbers. `GetStatus` advertises each implemented capability independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 
@@ -524,3 +547,35 @@ the original job and optional published child; an accepted job is not a child.
 remain excluded from these product methods and complete their original job via
 existing authenticated `WatchWork`/`ReportWork`. See the
 [fork contract](cmds-delidev-forks-contract.md). No destructive migration occurs.
+
+Native input accounting activates original capability 8, coverage 2, summary field
+13 and the reserved native budget coverage fields. AccountingUnitKind 3 and 4 are
+Claude main-loop input and OpenCode step, respectively. Negotiated native-units-v1
+returns their independent repeated summaries, retaining all existing response and
+Grok meanings. See the usage contract for source-specific counts and pricing.
+
+## Independent subscription service identity
+
+Activate the main-reserved `SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` only with real storage migration 28 after 26/27 and complete service-native configuration authority. The closed `SubscriptionServiceIdentity` enum preserves independent ChatGPT/Claude/Grok values; it is separate from the existing `SubscriptionService` RPC declaration. Reserved additive usage selection/group/model/pricing and request diagnostic fields retain the service without a fabricated provider. API-only documents remain schema 1; subscription Account/native Model and retired metadata projections use schema 2. Older clients receive explicit schema/support guidance. Bindings regenerate from the reconciled service-specific schemas.
+
+Issue #1208 activates the previously reserved `SystemCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1 = 23` and `WorkerCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1 = 12`. The existing ordered publication and session-owned resource/CLI/client boundary carries closed original task/child proof. Generated bindings come from the reconciled schema. The capability grants no child input/control, continuation or cleanup shortcut.
+
+## OpenCode native context profile
+
+The integrated #1203 implementation activates independent System capability 25,
+Worker capability 14 and SessionContext capabilities 5/6 using their original
+allocation-ledger reservations. Common compaction support does not imply an
+OpenCode installation or send authority. Existing CompactSession/GetSessionContext
+RPCs, exact mutation revisions and durable receipt identities carry closed
+version-3 OpenCode action/result JSON. Legacy Claude and Codex versions remain
+unchanged. Generated Go and TypeScript bindings come from the reconciled schema.
+The compaction contract owns original native/source/claim/report/cleanup proof.
+
+## OpenCode General Chat fork reservation (#1210)
+
+System capability 26 and Worker capability 15 are independently reserved for the
+Unix plain-text General Chat profile through existing authenticated `ForkSession`,
+CLI and desktop surfaces. Codex capability 13 cannot imply OpenCode support.
+Reservation alone grants no native mutation, child execution or inherited usage
+charge; activation requires the full original source, relocation, history,
+workspace and cleanup proof under the fork contract. No migration is allocated.

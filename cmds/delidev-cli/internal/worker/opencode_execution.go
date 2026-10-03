@@ -44,7 +44,11 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
 	if c := input.Continuation; c != nil {
-		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
+		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
+		if c.Compaction != nil {
+			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
+		}
+		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, previous, preparation, manifest)
 	} else {
 		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
 	}
@@ -134,6 +138,23 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		References: openCodeWorkspaceReferences(manifest),
 		Settings:   requested.Session, Instructions: requested.Instructions, Rejection: requested.Rejection,
 	}
+	if input.Configuration.OpenCodeContext != nil {
+		nativeConfig.ContextLimit = int64(input.Configuration.OpenCodeContext.Tokens)
+		nativeConfig.Prune = input.Configuration.OpenCodeContext.Policy == domain.OpenCodeNativeContextV1
+	}
+	var compacted *openCodeSessionCompactionCheckpoint
+	if checkpoint != nil && input.Continuation.Compaction != nil {
+		value, err := readOpenCodeSessionCompactionCheckpoint(ctx, manager.Root, connection.Credential, input, *input.Continuation.Compaction, *checkpoint, 0)
+		if err != nil {
+			return nil, err
+		}
+		compacted = &value
+		// Preserve the independent ordinary assignment/report reference while
+		// restoring only the separately accepted action's native snapshot.
+		valueCheckpoint := *checkpoint
+		valueCheckpoint.Native, valueCheckpoint.NativeReference = value.Native, value.NativeReference
+		checkpoint = &valueCheckpoint
+	}
 	var resumeClaim *opencode.SessionClaim
 	if checkpoint != nil {
 		claim, err := opencode.CheckpointResumeClaim(nativeConfig, checkpoint.NativeReference, input.ThreadRequestID)
@@ -155,6 +176,9 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	var api *opencode.OwnedAPI
 	if checkpoint != nil {
 		previousHome := filepath.Join(runtimeRoot, string(checkpoint.Reference.Claim.ExecutionID))
+		if compacted != nil {
+			previousHome = filepath.Join(runtimeRoot, string(compacted.Input.ActionID))
+		}
 		previousAgent, err := input.Configuration.OpenCodePrimaryForInput(input.Continuation.InputMode)
 		if err != nil {
 			return nil, err

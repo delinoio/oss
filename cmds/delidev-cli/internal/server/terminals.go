@@ -101,6 +101,9 @@ func (s *Service) CreateTerminal(ctx context.Context, req *connect.Request[pb.Cr
 		if sr.Revision != meta.ExpectedRevision || session.Archive != domain.NotArchived {
 			return nil, domain.Fail(domain.Conflict, "The session changed or is archiving.", "Reload the active session before creating a terminal.")
 		}
+		if !session.WorkspaceAvailable() {
+			return nil, domain.Fail(domain.Conflict, "The workspace is unavailable for a terminal.", "Restore or reconcile the original storage operation before creating a terminal.")
+		}
 		if _, _, err := workspaceReadScope(tx, sr.ID); err != nil {
 			return nil, err
 		}
@@ -202,7 +205,7 @@ func (s *Service) ControlTerminal(ctx context.Context, req *connect.Request[pb.C
 				value.CloseRequestID = domain.ID(meta.RequestId)
 			}
 		} else {
-			if value.State != domain.TerminalRunning || value.Pending != nil || value.CloseRequestID != "" || session.Archive != domain.NotArchived {
+			if value.State != domain.TerminalRunning || value.Pending != nil || value.CloseRequestID != "" || session.Archive != domain.NotArchived || !session.WorkspaceAvailable() {
 				return nil, domain.Fail(domain.Conflict, "The terminal cannot accept another operation.", "Wait for the original pending operation or inspect cleanup.")
 			}
 			if err := terminalMachine(tx, value.MachineID, value.InstanceID); err != nil {
@@ -234,6 +237,15 @@ func terminalAssignment(tx *store.Tx, r store.Record, value domain.Terminal) (te
 	}
 	if value.Pending == nil {
 		return assignment, domain.TerminalUnavailable()
+	}
+	// Recheck original non-close dispatch and exact claim receipts after storage
+	// changes. Close remains available above to reconcile retained native owners.
+	_, session, err := sessionRecord(tx, r.SessionID)
+	if err != nil {
+		return assignment, err
+	}
+	if !session.WorkspaceAvailable() {
+		return assignment, domain.Fail(domain.RecoveryRequired, "The workspace is unavailable for terminal execution.", "Restore or reconcile storage; close retains original cleanup authority.")
 	}
 	assignment.Operation = *value.Pending
 	if assignment.Operation.Action == domain.TerminalCreate {

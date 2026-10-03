@@ -4,6 +4,7 @@ import {
   type Resource, type WatchEventsResponse,
 } from "./gen/delidev/v1/delidev_pb.js";
 import { clientFailure, type ClientFailure } from "./errors.js";
+import { supportsResourceSchema } from "./configuration-identity.js";
 import { requireEntityId } from "./validation.js";
 
 export enum SyncKind {
@@ -55,7 +56,7 @@ function cursor(value: string): void {
 }
 function validateResource(value: Resource, kind: EntityKind): void {
   requireEntityId(value.id);
-  if (value.kind !== kind || value.revision <= 0n || value.schemaVersion !== 1 || value.documentJson.byteLength > 1 << 20) invalid();
+  if (value.kind !== kind || value.revision <= 0n || !supportsResourceSchema(value) || value.documentJson.byteLength > 1 << 20) invalid();
   if (value.sessionId) requireEntityId(value.sessionId);
   if (value.projectId) requireEntityId(value.projectId);
 }

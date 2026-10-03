@@ -35,22 +35,29 @@ const (
 // Scope is an immutable server-resolved dispatch binding, never client input.
 // Credential generation and revocation belong to the execution/account owner.
 type Scope struct {
-	ExecutionID  domain.ID
-	SessionID    domain.ID
-	AccountID    domain.ID
-	ConnectionID domain.ID
-	ProviderID   domain.ID
-	ModelID      domain.ID
-	NativeModel  string
-	Purpose      domain.UsagePurpose
-	TitlePrompt  string
-	Effort       string
-	ServiceTier  string
-	Provider     domain.Provider
-	Operations   []Operation
+	CompactionSourceTurn domain.NativeIdentity
+	SubscriptionService  domain.SubscriptionService
+	ExecutionID          domain.ID
+	SessionID            domain.ID
+	AccountID            domain.ID
+	ConnectionID         domain.ID
+	ProviderID           domain.ID
+	ModelID              domain.ID
+	NativeModel          string
+	ChildModel           *domain.ExecutionSubagentModel
+	Purpose              domain.UsagePurpose
+	TitlePrompt          string
+	Effort               string
+	ServiceTier          string
+	Harness              domain.Harness
+	Provider             domain.Provider
+	Operations           []Operation
 }
 
 func (s Scope) Validate() error {
+	if s.SubscriptionService != "" {
+		return domain.Fail(domain.PermissionDenied, "Native subscription identity grants no API relay authority.", "Use the protected native subscription lease.")
+	}
 	for _, id := range []domain.ID{s.ExecutionID, s.SessionID, s.AccountID, s.ConnectionID, s.ProviderID, s.ModelID} {
 		if err := id.Validate(); err != nil {
 			return err
@@ -58,6 +65,9 @@ func (s Scope) Validate() error {
 	}
 	if err := domain.Text(s.NativeModel, "proxy model", 256, true); err != nil {
 		return err
+	}
+	if s.ChildModel != nil && (s.Harness != domain.Codex || s.Provider.Protocol != domain.OpenAIResponses || s.Purpose == domain.SessionTitleUsage || s.ChildModel.ModelID.Validate() != nil || s.ChildModel.ModelRevision == 0 || domain.Text(s.ChildModel.NativeModel, "authorized child model", 256, true) != nil) {
+		return domain.Fail(domain.PermissionDenied, "Invalid child model relay scope.", "Retain only the canonical Codex child model from the original execution snapshot.")
 	}
 	if err := s.Provider.Validate(); err != nil {
 		return err
@@ -71,6 +81,9 @@ func (s Scope) Validate() error {
 		}
 	} else if s.Purpose != "" && s.Purpose != domain.ConversationUsage {
 		return domain.Fail(domain.Unsupported, "Unknown native usage purpose.", "Use the conversation or session-title authority profile.")
+	}
+	if s.CompactionSourceTurn != "" && (s.Harness != domain.Codex || s.Provider.Protocol != domain.OpenAIResponses || s.CompactionSourceTurn.Validate(domain.Codex, domain.NativeTurnIdentity) != nil || s.ChildModel != nil || s.Purpose == domain.SessionTitleUsage) {
+		return domain.CompactionUncertain()
 	}
 	seen := map[Operation]bool{}
 	for _, operation := range s.Operations {
@@ -120,13 +133,22 @@ func (s Scope) allows(operation Operation) bool {
 // Reference callbacks must enforce session/account/connection/model ownership;
 // absent callbacks refuse native state references instead of trusting an ID.
 type Lease struct {
-	Scope              Scope
+	Scope Scope
+	// BindModel narrows this request to a canonical model already authorized by
+	// the same original execution/account. It cannot acquire another credential
+	// or widen provider, cancellation, operation or native-reference ownership.
+	BindModel          func(context.Context, string, Operation) (*Lease, error)
 	Context            context.Context
 	Key                func(context.Context) ([]byte, error)
 	Release            func()
 	AuthorizeReference func(context.Context, ReferenceKind, string) error
 	ObserveReference   func(context.Context, ReferenceKind, string) error
 	BeforeSubmit       func(context.Context, Operation) error
+	PublishDiagnostic  func(context.Context, domain.RequestDiagnostic) error
+	// ObserveResponseUsage receives only a completed original HTTP response
+	// after reflection guards. It is enabled exclusively for manual Codex
+	// actions whose resumed native profile has no raw-response notifications.
+	ObserveResponseUsage func(context.Context, domain.ID, domain.NativeResponseUsage) error
 	// ObserveHistory records only full-history versus account-bound use before
 	// any provider side effect. It never retains request content or identifiers.
 	ObserveHistory func(context.Context, bool) error

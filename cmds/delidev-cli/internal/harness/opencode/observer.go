@@ -29,6 +29,11 @@ const (
 // notifications and step/message accounting keep their original event owners.
 // Recognized registry notifications do not establish effective configuration.
 type inputObservation struct {
+	ContextOverflow    bool
+	ContextOnly        bool
+	Compaction         *domain.NativeCompactionObservation `json:"-"`
+	Children           []domain.SubagentObservation        `json:"-"`
+	ChildPending       bool
 	frozen             *FrozenObservation
 	EventID            string
 	Kind               EventKind
@@ -99,33 +104,41 @@ type observedPart struct {
 // separately verified reads on a copy before replacing its state. This observer
 // grants no input, publication, persisted-history or cleanup authority.
 type inputObserver struct {
-	mu                 sync.Mutex
-	creation           sessionCreation
-	input              sessionInput
-	cwd, root          string
-	logger             *slog.Logger
-	owner              domain.ID
-	seen               map[string]bool
-	bytes              int
-	messages           map[string]*observedMessage
-	messageOrder       []string
-	parts              map[string]*observedPart
-	attachments        map[string]string
-	calls              map[string]string
-	progress           inputProgress
-	problem            *domain.Error
-	ctx                context.Context
-	cancel             context.CancelFunc
-	interactions       map[string]*observedInteraction
-	responseIDs        map[domain.ID]bool
-	alwaysOrder        []string
-	sessionPermissions []PermissionRule
-	rejectionPolicy    RejectionPolicy
-	stop               *inputStopAttempt
-	retries            []observedRetry
-	currentRetry       *observedRetry
-	todo               *TodoHistoryObservation
-	snapshotJoining    bool
+	mu                   sync.Mutex
+	creation             sessionCreation
+	input                sessionInput
+	cwd, root            string
+	logger               *slog.Logger
+	owner                domain.ID
+	seen                 map[string]bool
+	bytes                int
+	messages             map[string]*observedMessage
+	messageOrder         []string
+	parts                map[string]*observedPart
+	attachments          map[string]string
+	calls                map[string]string
+	progress             inputProgress
+	problem              *domain.Error
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	interactions         map[string]*observedInteraction
+	responseIDs          map[domain.ID]bool
+	alwaysOrder          []string
+	sessionPermissions   []PermissionRule
+	rejectionPolicy      RejectionPolicy
+	stop                 *inputStopAttempt
+	retries              []observedRetry
+	currentRetry         *observedRetry
+	todo                 *TodoHistoryObservation
+	contextOverflow      map[string]string
+	contextRecords       []NativeContextRecord
+	contextUsers         map[string]bool
+	contextPending       string
+	contextParent        string
+	contextManual        domain.ID
+	contextBaseInventory []HistoryMessage
+	contextPruned        []NativePrunedPart
+	snapshotJoining      bool
 }
 
 func observerProblem() *domain.Error {
@@ -165,7 +178,11 @@ func (s *sessionAPI) observeInput(ctx context.Context, root string) (*inputObser
 		ctx: observerContext, cancel: cancel, interactions: map[string]*observedInteraction{}, responseIDs: map[domain.ID]bool{},
 		rejectionPolicy: s.rejectionPolicy,
 		seen:            map[string]bool{}, messages: map[string]*observedMessage{}, parts: map[string]*observedPart{}, attachments: map[string]string{}, calls: map[string]string{},
+		contextUsers: map[string]bool{}, contextParent: input.receipt.MessageID,
 		progress: inputProgress{RequestID: input.receipt.RequestID, SessionID: input.receipt.SessionID, MessageID: input.receipt.MessageID, Status: NativeStatusUnknown},
+	}
+	if s.predecessor != nil {
+		s.observer.contextBaseInventory = checkpointInventory(*s.predecessor)
 	}
 	return s.observer, nil
 }
@@ -288,6 +305,14 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 		} else {
 			result.Delta, err = o.delta(fields)
 		}
+	case SessionCompactedEvent:
+		stage = "compaction"
+		if !session(nil, nil) {
+			err = observerProblem()
+		} else {
+			result.Compaction, err = o.compacted(event.ID)
+		}
+		result.ContextOnly = true
 	case SessionUpdatedEvent:
 		if !session([]string{"info"}, nil) {
 			err = observerProblem()
@@ -360,6 +385,15 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 			err = observerProblem()
 		} else {
 			result.Error, err = decodeNativeError(fields["error"])
+			if err == nil && result.Error.Kind == ContextErrorKind {
+				m := o.messages[o.progress.AssistantID]
+				if m != nil && m.value.Assistant != nil && m.value.Assistant.Summary == nil && !m.finalized {
+					if o.contextOverflow == nil {
+						o.contextOverflow = map[string]string{}
+					}
+					o.contextOverflow[m.value.ID] = event.ID
+				}
+			}
 		}
 	case ProjectDirectoriesUpdatedEvent:
 		// The pinned directory inventory is ancillary. It cannot supply roots or
@@ -391,6 +425,9 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 			o.logger.WarnContext(ctx, "opencode_original_event_rejected", "owner_id", o.owner, "request_id", o.input.receipt.RequestID, "event_kind", event.Kind, "code", domain.SafeError(err).Code)
 		}
 		return inputObservation{}, o.fail(ctx, stage, err)
+	}
+	if err = o.contextObservation(&result); err != nil {
+		return inputObservation{}, o.fail(ctx, "context", err)
 	}
 	o.bytes += len(event.Properties)
 	o.seen[event.ID] = true
@@ -436,7 +473,7 @@ func (o *inputObserver) refresh() {
 		a := message.value.Assistant
 		terminal = message.finalized && a.Completed != nil && (a.Error != nil || a.Finish != nil && !o.needsSuccessor(message.value.ID) || o.stoppedBackoffMessage(message.value))
 	}
-	o.progress.TerminalObserved = o.progress.UserSeen && o.progress.InputPartSeen && terminal
+	o.progress.TerminalObserved = o.progress.UserSeen && o.progress.InputPartSeen && terminal && o.contextClosed()
 	for _, interaction := range o.interactions {
 		if o.rejectedTool(interaction) {
 			o.progress.RejectedInteraction = true
@@ -477,13 +514,13 @@ func (o *inputObserver) message(raw []byte) (_ *NativeMessage, _ bool, problem e
 	if value.User != nil {
 		u := value.User
 		settings := o.creation.settings
-		if value.ID != o.input.receipt.MessageID || u.Agent != string(settings.Agent) || u.Model != settings.Model || u.Provider != settings.Provider || u.Variant != nil || u.System != nil || u.Tools != nil || u.Format != nil {
+		if !o.contextUserAllowed(value, old) || u.Agent != string(settings.Agent) || u.Model != settings.Model || u.Provider != settings.Provider || u.Variant != nil || u.System != nil || u.Tools != nil || u.Format != nil {
 			return nil, false, observerProblem()
 		}
 	} else {
 		a := value.Assistant
 		settings := o.creation.settings
-		if !o.progress.UserSeen || !o.progress.InputPartSeen || a.ParentID != o.input.receipt.MessageID || a.Agent != string(settings.Agent) || a.Mode != string(settings.Agent) || a.Provider != settings.Provider || a.Model != settings.Model || a.Cwd != o.cwd || a.Root != o.root || a.Variant != nil || a.Summary != nil || a.Structured != nil {
+		if !o.progress.UserSeen || !o.progress.InputPartSeen || !o.contextAssistantAllowed(value) || a.Provider != settings.Provider || a.Model != settings.Model || a.Cwd != o.cwd || a.Root != o.root || a.Variant != nil || a.Structured != nil {
 			return nil, false, observerProblem()
 		}
 		if old == nil {
@@ -491,7 +528,7 @@ func (o *inputObserver) message(raw []byte) (_ *NativeMessage, _ bool, problem e
 				return nil, false, observerProblem()
 			}
 			if prior := o.messages[o.progress.AssistantID]; prior != nil {
-				if !prior.finalized || !o.needsSuccessor(prior.value.ID) {
+				if !prior.finalized || !o.needsSuccessor(prior.value.ID) && !o.contextAssistantSuccessor(value, prior.value) {
 					return nil, false, observerProblem()
 				}
 			}
@@ -533,7 +570,7 @@ func (o *inputObserver) message(raw []byte) (_ *NativeMessage, _ bool, problem e
 	if existing && value.Assistant != nil && value.Assistant.Completed != nil {
 		old.finalized = true
 	}
-	if value.User != nil {
+	if value.User != nil && value.ID == o.input.receipt.MessageID {
 		o.progress.UserSeen = true
 	}
 	copy, _ := decodeNativeMessage(raw)
@@ -569,7 +606,7 @@ func (o *inputObserver) messageClosed(value NativeMessage, state *observedMessag
 			return false
 		}
 	}
-	if state.openStep != "" && value.Assistant.Error == nil && !o.stoppedBackoffCandidate(value) {
+	if state.openStep != "" && value.Assistant.Error == nil && !o.stoppedBackoffCandidate(value) && !(o.contextOverflow[value.ID] != "" && value.Assistant.Finish == nil && value.Assistant.Summary == nil) {
 		return false
 	}
 	for _, part := range o.parts {

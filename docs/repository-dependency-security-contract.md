@@ -63,3 +63,7 @@ The React Forge package suite passes 103 tests with Node 24.19.0, including inst
 Code scanning returned no analysis, and Secret scanning is disabled on the repository; neither is claimed as a successful security scan.
 
 The full Rust run exposed an existing concurrent-publication fixture assumption: Unix can safely reject a destination handle unlinked by another successful writer. A deterministic zero-link test preserves the production rejection, while the concurrent fixture accepts only that exact failure and still requires a complete successful result and cleaned staging. Production publication behavior is unchanged.
+
+## DeliDev Worker encryption dependency
+
+Issue #1085 pins `filippo.io/age` 1.3.2 for recipient-only X25519 transfer. The official release hardens header and recipient bounds; DeliDev additionally caps the entire ciphertext before parsing and uses no password, plugin, SSH-recipient or post-quantum API. Its required `filippo.io/hpke` 0.4.0 module remains in the resolved graph even though the DeliDev adapter selects only X25519. Keep upstream BSD license/notices in distributions and retain the existing Go 1.26.8, `x/crypto` 0.56.0 and `x/sys` 0.47.0 security baselines. Module availability or a runtime pin does not establish a clean vulnerability audit; record current scanner results and unresolved graph advisories in PR/CI artifacts.

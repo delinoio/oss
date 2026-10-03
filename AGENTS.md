@@ -2,6 +2,8 @@
 
 - DeliDev parallel-change ownership follows `docs/cmds-delidev-structure-contract.md`. Record implementation status and validation results in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. Include the source revision, commands, results and unresolved limits, distinguishing fixtures, builds and packaging from actual native/account/platform acceptance. Exclude secrets, user state and raw native content from validation records. Validation-only updates do not require project-index or AGENTS edits. Update those files when their ownership, policy or cross-domain invariants change. Establish shared protocol-number and migration-version reservations on main before dependent implementations; regenerate tool-owned outputs from reconciled sources.
 
+- An explicitly owner-approved single DeliDev integration PR may establish missing reservations and implement their complete dependency closure together under the coordinated single-PR exception in `docs/cmds-delidev-structure-contract.md`. Retain allocation provenance and real migration order; independent dependent branches still require reservations on main. Intermediate reservation commits do not establish runtime support or completion.
+
 - Issue #1146's planned OpenRouter OAuth follows `docs/cmds-delidev-account-oauth-contract.md`. Establish inventory capability 5, entry field 9, the two closed enum reservations and private migration 29 on main before dependent implementation. Activate 29 only after real migrations 26–28; preserve their existing order. Reservations grant no OAuth capability or exchange authority. Go owns once-only exchange and protected credentials; native callbacks retain trusted-window/server/lifetime authority. Keep #1146 open until the complete implementation and acceptance are satisfied.
 
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
@@ -126,9 +128,9 @@ enum ProjectId {
 
 - React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, `crates/forge-sfx`, `crates/forge-sprite`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 
-### DeliDev subscription identity prerequisite
+### DeliDev subscription identity
 
-- Issue #1235 requires a main-first reservation prerequisite for independent `SUBSCRIPTION_SERVICE_ACCOUNTS_V1` capability 17 and migration 28. Preserve the real 26/27 order before activating retirement; reservations do not advertise support. Follow the DeliDev structure, protocol and storage contracts, retaining historical attribution, configured-empty deny-all restrictions and native ownership/cleanup gates when composing the later identity split.
+- Issue #1235 uses independent service-native subscription Accounts and Models with capability 17 and real migration 28 after 26/27. Preserve the main-first rule for independent branches and the narrow approved single-PR exception. Follow the subscription, protocol and storage contracts: never infer services, expose retired configuration as live authority, loosen configured-empty deny-all or retire unsettled protected/native ownership. Preserve immutable historical attribution and require explicit affected Agent/Schedule reconfiguration.
 
 ### DeliDev desktop launch amendment
 

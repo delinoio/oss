@@ -1,3 +1,4 @@
+import { ManagedSubscriptionAccount, serviceAccount } from "./subscription-accounts";
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { AccountQuery, EntityKind, ProviderQuery, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -11,7 +12,11 @@ function Observation({ label, value }: { label: string; value: unknown }) {
   const observation = object(value), problem = object(observation.problem);
   return <div><p>{label}: {text(observation.state) || "Unknown"}{text(observation.observed_at) ? ` · ${text(observation.observed_at)}` : ""}</p>{text(problem.message) ? <p role="alert">{text(problem.message)} {text(problem.guidance)}</p> : null}</div>;
 }
-export function AccountConnection({ initial, active, close }: { initial: Resource; active: boolean; close: () => void }) {
+export function AccountConnection(props: { initial: Resource; active: boolean; close: () => void }) {
+  if (serviceAccount(props.initial)) return <ManagedSubscriptionAccount {...props} />;
+  return <ApiAccountConnection {...props} />;
+}
+function ApiAccountConnection({ initial, active, close }: { initial: Resource; active: boolean; close: () => void }) {
   const result = useQuery(AccountQuery.getAccountStatus, { id: initial.id }, { enabled: active, refetchInterval: active ? 5000 : false });
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const current = [initial, result.data?.account, acknowledged].filter((row): row is Resource => Boolean(row)).reduce((a, b) => a.revision >= b.revision ? a : b);

@@ -112,11 +112,11 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		counts = *p.Step.Usage
 	case o.Kind == opencode.MessageUpdatedEvent && o.MessageFinalized:
 		m := o.Message
-		if m == nil || !t.seen[publicationKey] || m.SessionID != b.thread || m.Assistant == nil || m.User != nil || m.Assistant.ParentID != b.turn || m.Assistant.Completed == nil {
+		if m == nil || !t.seen[publicationKey] || m.SessionID != b.thread || m.Assistant == nil || m.User != nil || m.Assistant.ParentID != b.turn && !t.contextUsers[m.Assistant.ParentID] || m.Assistant.Completed == nil {
 			return true, publicationUncertain()
 		}
 		owner := t.messages[m.ID]
-		if owner == nil || owner.role != domain.AssistantMessage || !owner.finalized || c.steps[m.ID] != "" && m.Assistant.Error == nil && !c.stoppedBackoff(o) {
+		if owner == nil || owner.role != domain.AssistantMessage || !owner.finalized || c.steps[m.ID] != "" && m.Assistant.Error == nil && !c.stoppedBackoff(o) && !o.ContextOverflow {
 			return true, publicationUncertain()
 		}
 		value = domain.OpenCodeUsageObservation{Source: domain.OpenCodeMessageUsage, NativeID: m.ID, NativeParentID: m.ID, NativeEstimate: string(m.Assistant.Cost)}
@@ -144,7 +144,7 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 	if value.Source == domain.OpenCodeStepUsage && (c.steps[value.NativeParentID] == "" || t.messages[value.NativeParentID].finalized || c.starts[value.NativeID] != "" || t.parts[value.NativeID] != nil || t.tools[value.NativeID] != nil) {
 		return true, publicationUncertain()
 	}
-	if value.Source == domain.OpenCodeMessageUsage && o.Message.Assistant.Error == nil && !c.stoppedBackoff(o) {
+	if value.Source == domain.OpenCodeMessageUsage && o.Message.Assistant.Error == nil && !c.stoppedBackoff(o) && !o.ContextOverflow {
 		last, ok := c.last[value.NativeParentID]
 		if !ok || !reflect.DeepEqual(last.Counts, value.Counts) {
 			return true, publicationUncertain()
@@ -154,7 +154,7 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		return true, err
 	}
 	c.values[value.NativeID] = value
-	if value.Source == domain.OpenCodeMessageUsage && (o.Message.Assistant.Error != nil || c.stoppedBackoff(o)) {
+	if value.Source == domain.OpenCodeMessageUsage && (o.Message.Assistant.Error != nil || c.stoppedBackoff(o) || o.ContextOverflow) {
 		delete(c.steps, value.NativeParentID)
 	}
 	if value.Source == domain.OpenCodeStepUsage {

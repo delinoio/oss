@@ -25,6 +25,7 @@ message GetUsageSummaryRequest {
   UsageTimeGranularity granularity = 9;
   string time_zone = 10;
   UsageAccountingProfile accounting_profile = 11;
+  SubscriptionServiceIdentity subscription_service = 12;
 }
 
 enum UsageTimeGranularity {
@@ -41,6 +42,8 @@ enum AccountingUnitKind {
   ACCOUNTING_UNIT_KIND_UNSPECIFIED = 0;
   ACCOUNTING_UNIT_KIND_CODEX_RESPONSE = 1;
   ACCOUNTING_UNIT_KIND_GROK_CLOSED_INPUT = 2;
+  ACCOUNTING_UNIT_KIND_CLAUDE_MAIN_LOOP_INPUT = 3;
+  ACCOUNTING_UNIT_KIND_OPENCODE_STEP = 4;
 }
 message AccountingTotals {
   AccountingUnitKind kind = 1;
@@ -85,6 +88,7 @@ message UsageAnalyticsModel {
   string provider_name = 3;
   string model_name = 4;
   UsageTotals totals = 5;
+  SubscriptionServiceIdentity subscription_service = 6;
 }
 
 message UsageOtherModels {
@@ -116,6 +120,7 @@ message UsageGroup {
   string provider_name = 10;
   string model_name = 11;
   EstimateTotals estimates = 12;
+  SubscriptionServiceIdentity subscription_service = 13;
 }
 
 enum UsageCostState {
@@ -139,6 +144,11 @@ message GetUsageSummaryResponse {
   repeated PricingUsage pricing = 10;
   UsageAnalytics analytics = 11;
   UsageAccountingProfile accounting_profile = 12;
+  // Independent summaries preserve each native accounting unit kind.
+  repeated NativeAccountingSummary native_accounting = 13;
+  // Accepted native context actions with no exact response retained in the range.
+  // Separate from ordinary executions; unavailable does not establish zero usage.
+  uint32 accepted_compactions_without_response = 14;
 }
 
 // User-declared token prices only. No rate or result establishes actual spend.
@@ -168,6 +178,7 @@ message PricingVersion {
   uint64 revision = 4;
   int64 created_at_unix_ms = 5;
   TokenPricing basis = 6;
+  SubscriptionServiceIdentity subscription_service = 7;
 }
 
 message GetModelPricingRequest {
@@ -233,4 +244,73 @@ message PricingUsage {
   EstimateMeasure input = 3;
   EstimateMeasure cached_input = 4;
   EstimateMeasure output = 5;
+}
+
+message NativeAccountingMeasure {
+  // Exact decimal integer; empty is unavailable and "0" is measured zero.
+  string known_total = 1;
+  uint32 measured_units = 2;
+  uint32 unavailable_units = 3;
+}
+message NativeCurrencyEstimate {
+  string currency = 1;
+  string known_amount = 2;
+  uint32 complete_units = 3;
+  uint32 partial_units = 4;
+  uint32 unavailable_units = 5;
+}
+message NativeAccountingTotals {
+  AccountingUnitKind kind = 1;
+  uint32 units = 2;
+  NativeAccountingMeasure input = 3;
+  NativeAccountingMeasure cache_read = 4;
+  NativeAccountingMeasure cache_write = 5;
+  NativeAccountingMeasure output = 6;
+  NativeAccountingMeasure thinking = 7;
+  // Claude does not report a main-loop total. Never derive it from categories.
+  NativeAccountingMeasure total = 8;
+  repeated NativeCurrencyEstimate currencies = 9;
+  uint32 unpriced_units = 10;
+}
+message NativeAccountingGroup {
+  string session_id = 1;
+  string project_id = 2;
+  string account_id = 3;
+  string provider_id = 4;
+  string model_id = 5;
+  NativeAccountingTotals totals = 6;
+  SubscriptionServiceIdentity subscription_service = 7;
+}
+message NativeAccountingDay {
+  int64 from_unix_ms = 1;
+  int64 until_unix_ms = 2;
+  NativeAccountingTotals totals = 3;
+}
+message NativeEstimateMeasure {
+  string known_amount = 1;
+  string known_tokens = 2;
+  uint32 priced_units = 3;
+  uint32 missing_usage_units = 4;
+  uint32 missing_price_units = 5;
+  uint32 not_applicable_units = 6;
+}
+message NativeAccountingPricing {
+  PricingVersion pricing = 1;
+  NativeAccountingTotals totals = 2;
+  NativeEstimateMeasure input = 3;
+  NativeEstimateMeasure cache_read = 4;
+  NativeEstimateMeasure cache_write = 5;
+  NativeEstimateMeasure output = 6;
+  NativeEstimateMeasure reasoning = 7;
+}
+message NativeAccountingSummary {
+  NativeAccountingTotals totals = 1;
+  repeated NativeAccountingGroup groups = 2;
+  // Same explicit timezone and half-open day boundaries as response analytics.
+  repeated NativeAccountingDay days = 3;
+  // Full bounded model inventory; original IDs, without inferred total ranking.
+  repeated NativeAccountingGroup models = 4;
+  repeated NativeAccountingPricing pricing = 5;
+  UsageCoverage coverage = 6;
+  UsageCostState actual_cost = 7;
 }

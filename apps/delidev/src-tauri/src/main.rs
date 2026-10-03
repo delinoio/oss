@@ -16,8 +16,8 @@ use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
     Connection, Connector, DesktopRegistration, LocalServerStatus, LocalWorkerAction,
     LocalWorkerProof, LocalWorkerStatus, NativeFailure, RemovedConnections, SavedConnection,
-    SavedConnectionState, Supervision, bundled_sidecar, canonical_id, connection_origin,
-    default_data_root,
+    SavedConnectionState, Supervision, WorkerNetworkAction, bundled_sidecar, canonical_id,
+    connection_origin, default_data_root,
 };
 use notification_host::{
     NotificationHost, begin_notifications, end_notifications, notification_permission,
@@ -685,6 +685,43 @@ async fn saved_worker_control(
     }
     Ok(result)
 }
+#[tauri::command]
+async fn worker_network_control(
+    window: WebviewWindow<Cef>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    machine: String,
+    action: WorkerNetworkAction,
+    ciphertext: Vec<u8>,
+    digest: String,
+) -> Result<serde_json::Value, NativeFailure> {
+    let binding = if window.label() == "main" {
+        trusted_main(&window)?;
+        None
+    } else {
+        Some(saved_binding(&window, &windows)?)
+    };
+    let expected = binding.as_ref().map(|value| value.profile.clone());
+    let connector = Arc::clone(connector.inner());
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        connector.worker_network(expected.as_ref(), &machine, action, ciphertext, &digest)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)??;
+    if let Some(binding) = binding {
+        let current = saved_binding(&window, &windows)?;
+        if current.closing
+            || current.instance != binding.instance
+            || !current.profile.same_authority(&binding.profile)
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    } else {
+        trusted_main(&window)?;
+    }
+    Ok(result)
+}
+
 fn show(window: &WebviewWindow<Cef>) -> Result<(), NativeFailure> {
     window
         .unminimize()
@@ -1135,6 +1172,7 @@ fn run() -> Result<(), NativeFailure> {
             local_server_status,
             local_worker_proof,
             local_worker_control,
+            worker_network_control,
             connection_context,
             saved_connections,
             removed_connections,

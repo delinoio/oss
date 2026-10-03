@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"log/slog"
 )
 
 type migrationDefinition struct {
@@ -39,6 +40,9 @@ var migrations = []migrationDefinition{
 	{23, migration023},
 	{24, migration024},
 	{25, migration025},
+	{26, migration026},
+	{27, migration027},
+	{28, migration028},
 }
 
 func validateMigrations(definitions []migrationDefinition) error {
@@ -95,5 +99,9 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 	if err := applyMigrations(ctx, tx, version); err != nil {
 		return err
 	}
-	return storageError(tx.Commit())
+	if err := tx.Commit(); err != nil {
+		return storageError(err)
+	}
+	slog.InfoContext(ctx, "database_migration_committed", "source_version", version, "schema_version", SchemaVersion)
+	return nil
 }

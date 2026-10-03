@@ -176,7 +176,7 @@ func (a *OwnedAPI) Next(ctx context.Context) (Observation, error) {
 		}
 		return Observation{}, err
 	}
-	return observer.observe(ctx, event)
+	return a.session.observeOwnedEvent(ctx, observer, event)
 }
 
 func (a *OwnedAPI) Progress(ctx context.Context) (Progress, error) {
@@ -311,7 +311,11 @@ func (a *OwnedAPI) Close(ctx context.Context) error {
 		return err
 	}
 	defer s.leave()
+	joined := s.joinCompactionHTTP(ctx, true)
 	err := s.closeOwned(ctx)
+	if joined != nil {
+		err = joined
+	}
 	if s.events != nil {
 		s.events.Close()
 	}

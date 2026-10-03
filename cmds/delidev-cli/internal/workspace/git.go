@@ -38,6 +38,7 @@ type Git struct {
 	Timeout       time.Duration
 	environment   []string
 	readOnly      bool
+	offline       bool
 	diffIndexFile string
 }
 
@@ -78,6 +79,15 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	bounded, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	commandArgs := []string{"-C", root, "-c", "core.quotePath=false", "-c", "color.ui=false"}
+	// Owned worktree and restored object paths can exceed Windows MAX_PATH even
+	// during preparation. Opt in per command before Git reads repository config;
+	// never rely on or rewrite the source checkout's core.longpaths setting.
+	if runtime.GOOS == "windows" {
+		commandArgs = append(commandArgs, "-c", "core.longpaths=true")
+	}
+	if g.offline {
+		commandArgs = append(commandArgs, "-c", "core.worktree="+root, "-c", "core.bare=false", "-c", "protocol.allow=never", "-c", "core.fsmonitor=false", "-c", "core.hooksPath="+g.HooksDir, "-c", "gc.auto=0", "-c", "maintenance.auto=false")
+	}
 	if g.readOnly {
 		// Even check-attr can open the index and invoke a configured fsmonitor.
 		// Read-only workspace observations never grant that command authority.
@@ -97,6 +107,13 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	if g.environment != nil {
 		environment = slices.Clone(g.environment)
 	}
+	if g.offline {
+		environment = slices.DeleteFunc(environment, func(value string) bool {
+			key, _, _ := strings.Cut(value, "=")
+			return strings.HasPrefix(strings.ToUpper(key), "GIT_") || strings.HasPrefix(strings.ToUpper(key), "SSH_")
+		})
+		environment = append(environment, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_NO_LAZY_FETCH=1", "GIT_NO_REPLACE_OBJECTS=1")
+	}
 	if g.readOnly {
 		// Git localizes binary/EOF patch markers. Read observations require a
 		// stable wire grammar independent of the execution machine's locale.
@@ -105,6 +122,13 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	}
 	if g.diffIndexFile != "" {
 		environment = append(environment, "GIT_INDEX_FILE="+g.diffIndexFile)
+	}
+	if runtime.GOOS == "windows" {
+		// Commands such as worktree add spawn internal Git operations while
+		// populating the private checkout. Propagate the bounded override through
+		// Git's config environment so those children receive the same long-path
+		// capability without changing the source repository configuration.
+		environment = append(environment, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.longpaths", "GIT_CONFIG_VALUE_0=true")
 	}
 	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: environment, Cwd: root, Stdout: &out, Stderr: io.Discard, Logger: g.Logger})
 	if err != nil {
@@ -119,7 +143,13 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		}
 		var exit interface{ ExitCode() int }
 		if errors.As(err, &exit) {
+			if g.Logger != nil {
+				g.Logger.WarnContext(ctx, "workspace_git_failed", "owner_id", g.OwnerID, "code", domain.Unavailable, "cause", "git_exit", "exit_code", exit.ExitCode(), "read_only", g.readOnly, "offline", g.offline)
+			}
 			return nil, exit.ExitCode(), &domain.Error{Code: domain.Unavailable, Message: "Git could not complete the operation on this Worker.", Guidance: "Check the selected repository, reference, remote access, and Worker Git authentication; no stale fallback was used.", Cause: "git_exit"}
+		}
+		if g.Logger != nil {
+			g.Logger.WarnContext(ctx, "workspace_git_failed", "owner_id", g.OwnerID, "code", domain.Unavailable, "cause", "git_launch", "read_only", g.readOnly, "offline", g.offline)
 		}
 		return nil, -1, &domain.Error{Code: domain.Unavailable, Message: "Git could not be launched on this Worker.", Guidance: "Check the configured executable and filesystem permissions.", Cause: "git_launch"}
 	}

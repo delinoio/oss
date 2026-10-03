@@ -20,7 +20,8 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	until := f.String("until", "", "exclusive RFC3339 timestamp (default: server now)")
 	granularity := f.String("granularity", "", "analytics granularity (day)")
 	timezone := f.String("timezone", "", "explicit IANA timezone for daily analytics")
-	profile := f.String("accounting-profile", "", "native-units-v1 for distinct Codex responses and verified Grok closed inputs")
+	service := f.String("subscription-service", "", "event-time native service: chatgpt, claude or grok")
+	profile := f.String("accounting-profile", "", "native-units-v1 for distinct Codex responses, Grok closed inputs, Claude main-loop inputs and OpenCode steps")
 	requestBody := &pb.GetUsageSummaryRequest{}
 	f.StringVar(&requestBody.SessionId, "session-id", "", "original session filter")
 	f.StringVar(&requestBody.ProjectId, "project-id", "", "original project filter")
@@ -30,6 +31,26 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	f.BoolVar(&requestBody.GeneralChat, "general-chat", false, "projectless General Chat only")
 	if err := parse(f, args[1:]); err != nil {
 		return nil, err
+	}
+	if *service != "" {
+		identity := domain.SubscriptionService(*service)
+		if !identity.Valid() || requestBody.ProviderId != "" {
+			return nil, domain.Fail(domain.InvalidArgument, "Invalid usage service filter.", "Select chatgpt, claude or grok without --provider-id.")
+		}
+		status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		capable := false
+		for _, capability := range status.Msg.Capabilities {
+			if capability == pb.SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 {
+				capable = true
+			}
+		}
+		if !capable {
+			return nil, domain.Fail(domain.Unsupported, "This server does not support independent subscription identity.", "Update the selected server before filtering subscription service usage.")
+		}
+		requestBody.SubscriptionService = rpc.WireSubscriptionService(identity)
 	}
 	if *profile != "" {
 		if *profile != "native-units-v1" {

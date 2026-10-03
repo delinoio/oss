@@ -41,7 +41,7 @@ func pricingVersion(value *store.PricingVersion) *pb.PricingVersion {
 	if p.InputMode == domain.CachedInputPrice {
 		mode = pb.InputPricingMode_INPUT_PRICING_MODE_CACHED_DISCOUNT
 	}
-	return &pb.PricingVersion{Id: string(value.ID), ModelId: string(value.ModelID), ProviderId: string(value.ProviderID), Revision: value.Revision, CreatedAtUnixMs: value.CreatedAt.UnixMilli(), Basis: &pb.TokenPricing{Currency: string(p.Currency), Source: p.Source, AsOf: p.AsOf, InputMode: mode, InputPerMillion: p.InputPerMillion, CachedInputPerMillion: p.CachedInputPerMillion, OutputPerMillion: p.OutputPerMillion, Exclusions: p.Exclusions}}
+	return &pb.PricingVersion{Id: string(value.ID), ModelId: string(value.ModelID), ProviderId: string(value.ProviderID), SubscriptionService: rpc.WireSubscriptionService(value.SubscriptionService), Revision: value.Revision, CreatedAtUnixMs: value.CreatedAt.UnixMilli(), Basis: &pb.TokenPricing{Currency: string(p.Currency), Source: p.Source, AsOf: p.AsOf, InputMode: mode, InputPerMillion: p.InputPerMillion, CachedInputPerMillion: p.CachedInputPerMillion, OutputPerMillion: p.OutputPerMillion, Exclusions: p.Exclusions}}
 }
 func (s *Service) readPricing(ctx context.Context, id domain.ID, active bool) (*pb.PricingVersion, uint64, error) {
 	bounded, cancel := context.WithTimeout(ctx, 2*time.Second)

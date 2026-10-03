@@ -17,6 +17,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 const maxSessionDeletions = 4096
@@ -332,6 +333,13 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 			}
 			copy.ExecutionID = input.ExecutionID
 		}
+		if j.Type == domain.WorkspaceStorageJob {
+			var input workspace.StorageRequest
+			if domain.Decode(original.Input, &input) != nil || input.OperationID != r.ID || input.Preparation.SessionID != session || input.Preparation.MachineID != original.MachineID || (input.SnapshotID != "" && input.SnapshotID.Validate() != nil) {
+				return v, false, domain.SessionDeletionPending()
+			}
+			copy.SnapshotID = input.SnapshotID
+		}
 		if j.Type == domain.CompactSessionJob {
 			var input domain.SessionCompactionInput
 			if domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != session {
@@ -575,6 +583,11 @@ func (t *Tx) purgeSession(v SessionDeletion) error {
 	return storageError(e)
 }
 func (t *Tx) deleteSessionRecord(r Record) error {
+	if r.Kind == domain.JobKind {
+		if err := t.deleteWorkerNativeRoute(r.ID); err != nil {
+			return err
+		}
+	}
 	if _, e := t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO tombstones(id,kind,created_at) VALUES(?,?,?)", r.ID, r.Kind, t.now.UnixMilli()); e != nil {
 		return storageError(e)
 	}

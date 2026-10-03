@@ -41,6 +41,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Preserve legacy generated-path reflection exports as well as declaration imports. Generate the aggregate descriptor view in the compatibility pass, retain original declaration order and canonical TypeScript object identity, and cover both direct enumeration and registry construction in compatibility tests.
 
 - Generated SessionQuery permanent-deletion acceptance/status and Worker cleanup queries preserve original UUIDs, BigInt revisions, pending removal and unknown reclaimed bytes. Generate through the canonical split schema and compatibility pass; no client-side ownership decisions or automatic mutation replay. Follow `docs/cmds-delidev-storage-contract.md`.
+- WorkspaceStorageQuery exposes generated owner/client storage request, inspection and cancellation operations. Preserve exact session/job revisions, original receipts and separate observed native outcomes without implicit mutation retry or cleanup inference.
+
 - TerminalQuery and WorkerQuery expose the generated session terminal operations. Preserve exact bigint cursors/revisions, original bytes, explicit output gaps and request identities without persistence or native side-effect retries; follow the terminal contract.
 
 - Export generated PullRequestFixQuery and its typed profile from the additive PR-fix service. Preserve original request bytes/revisions and facade declaration identity; native Git authority remains Worker-local.
@@ -64,3 +66,9 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Generated BrowserQuery bindings expose only the metadata/cleanup contract in `docs/cmds-delidev-browser-contract.md`. Keep browser URLs, tabs and native paths out of product RPCs and React Query server state; local native presentation is independently authorized and generation-bound.
 
 - Generated NativeModelQuery bindings retain exact bigint revisions, original mutation identities and immutable observation cursors under `docs/cmds-delidev-native-models-contract.md`. Keep canonical registration a separate explicit save and advisory metadata outside any client authorization/readiness engine.
+
+- Generated SessionQuery request diagnostics keeps optional metadata, original identity and exact bigint revision/latency under the diagnostics contract. Never infer requests from time proximity or resend a request from a diagnostic receipt.
+
+- `configuration-identity.ts` owns bounded schema-family read negotiation and closed JSON/wire service identity mappings. Preserve API-only v1, recognize only owning v2 families and keep retired original documents inert. It grants no mutation, native support or credential authority; synchronization preserves exact revisions and full snapshot/event atomicity under the client contract.
+
+- Worker network bootstrap/status uses canonical generated NetworkQuery/WorkerQuery declarations. Preserve exact uint64 generations and original request identity. Ciphertext export is a mutation result, never persistent query state; credentials/private keys/decrypted derivatives cannot enter query keys or read projections. Public desired/effective/native states remain independent and grant no execution or observed route use.

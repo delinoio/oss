@@ -92,7 +92,7 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.blocked || !c.finished || c.completion == nil {
+	if c.blocked || !c.finished || c.completion == nil || len(c.children) != 0 {
 		return "", executionCheckpointUncertain()
 	}
 	b := c.text.binding
@@ -227,6 +227,17 @@ func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openC
 // RetainCompletion binds only a newly retained eligible native checkpoint to
 // version 2. Historical version-1 server reports are never rewritten.
 func (c *OpenCodeEventPublisher) RetainCompletion(ctx context.Context) (domain.ExecutionCompletion, error) {
+	c.mu.Lock()
+	if len(c.children) != 0 {
+		if c.completion == nil || c.blocked || !c.children.Closed() {
+			c.mu.Unlock()
+			return domain.ExecutionCompletion{}, executionCheckpointUncertain()
+		}
+		completion := *c.completion
+		c.mu.Unlock()
+		return completion, nil
+	}
+	c.mu.Unlock()
 	if _, err := c.RetainCheckpoint(ctx); err != nil {
 		return domain.ExecutionCompletion{}, err
 	}

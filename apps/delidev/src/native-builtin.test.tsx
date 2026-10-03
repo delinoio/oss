@@ -31,6 +31,21 @@ it("preserves native failure without synthesizing a result", () => {
   expect(screen.queryByLabelText("Native tool result")).toBeNull();
 });
 
+it.each(["valid", "changed-title", "ordinary-tool", "missing-interruption"])("retains only the original interrupted task title: %s", mode => {
+  const tool = fixture("task");
+  const running = { ...tool.states[0]!.snapshot.builtin, title: "Original task title" };
+  const completed = { kind: "opencode-builtin", status: "failed", builtin: { ...running, time: { start: 100, end: 200 }, metadata_json: '{"interrupted":true}', error: "Tool execution aborted" } };
+  if (mode === "changed-title") completed.builtin.title = "Changed title";
+  if (mode === "ordinary-tool") { tool.started.builtin.name = "write"; running.name = "write"; completed.builtin.name = "write"; }
+  if (mode === "missing-interruption") completed.builtin.metadata_json = "{}";
+  render(<NativeBuiltin tool={{ ...tool, states: [{ sequence: 5, snapshot: { ...tool.states[0]!.snapshot, builtin: running } }], completed }} state="complete" />);
+  if (mode === "valid") {
+    expect(screen.getByText("Foreground task · failed")).toBeTruthy();
+    expect(screen.getByText("Original task title")).toBeTruthy();
+    expect(screen.queryByLabelText("Native tool result")).toBeNull();
+  } else expect(screen.getByText("Native tool · Unavailable")).toBeTruthy();
+});
+
 it.each([
   { name: "changed input", change: (t: ReturnType<typeof fixture>) => { t.completed.builtin.input_json = "{}"; } },
   { name: "changed tool", change: (t: ReturnType<typeof fixture>) => { t.completed.builtin.name = "edit"; } },

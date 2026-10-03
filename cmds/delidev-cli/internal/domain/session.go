@@ -239,6 +239,7 @@ type Session struct {
 	LastCompactionJobID ID                    `json:"last_compaction_job_id,omitempty"`
 	CompactionJobID     ID                    `json:"compaction_job_id,omitempty"`
 	Compaction          *SessionCompactionRef `json:"compaction,omitempty"`
+	Storage             *WorkspaceStorage     `json:"storage,omitempty"`
 	Fork                *ForkOrigin           `json:"fork,omitempty"`
 	EstimatedCostBudget *EstimatedCostBudget  `json:"estimated_cost_budget,omitempty"`
 	ScheduleOrigin      *ScheduleOrigin       `json:"schedule_origin,omitempty"`

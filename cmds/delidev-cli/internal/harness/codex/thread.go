@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -116,22 +117,22 @@ const (
 )
 
 type threadParams struct {
-	RawEvents                  bool              `json:"experimentalRawEvents,omitempty"`
-	ThreadID                   domain.ID         `json:"threadId,omitempty"`
-	Model                      string            `json:"model"`
-	ModelProvider              string            `json:"modelProvider"`
-	Cwd                        string            `json:"cwd"`
-	WorkspaceRoots             []string          `json:"runtimeWorkspaceRoots,omitempty"`
-	DeveloperInstructions      string            `json:"developerInstructions,omitempty"`
-	ApprovalPolicy             ApprovalPolicy    `json:"approvalPolicy,omitempty"`
-	ApprovalsReviewer          string            `json:"approvalsReviewer"`
-	Sandbox                    string            `json:"sandbox,omitempty"`
-	ServiceTier                string            `json:"serviceTier,omitempty"`
-	Config                     map[string]string `json:"config,omitempty"`
-	ExcludeTurns               *bool             `json:"excludeTurns,omitempty"`
-	HistoryMode                HistoryMode       `json:"historyMode,omitempty"`
-	Ephemeral                  *bool             `json:"ephemeral,omitempty"`
-	AllowProviderModelFallback *bool             `json:"allowProviderModelFallback,omitempty"`
+	RawEvents                  bool           `json:"experimentalRawEvents,omitempty"`
+	ThreadID                   domain.ID      `json:"threadId,omitempty"`
+	Model                      string         `json:"model"`
+	ModelProvider              string         `json:"modelProvider"`
+	Cwd                        string         `json:"cwd"`
+	WorkspaceRoots             []string       `json:"runtimeWorkspaceRoots,omitempty"`
+	DeveloperInstructions      string         `json:"developerInstructions,omitempty"`
+	ApprovalPolicy             ApprovalPolicy `json:"approvalPolicy,omitempty"`
+	ApprovalsReviewer          string         `json:"approvalsReviewer"`
+	Sandbox                    string         `json:"sandbox,omitempty"`
+	ServiceTier                string         `json:"serviceTier,omitempty"`
+	Config                     map[string]any `json:"config,omitempty"`
+	ExcludeTurns               *bool          `json:"excludeTurns,omitempty"`
+	HistoryMode                HistoryMode    `json:"historyMode,omitempty"`
+	Ephemeral                  *bool          `json:"ephemeral,omitempty"`
+	AllowProviderModelFallback *bool          `json:"allowProviderModelFallback,omitempty"`
 }
 
 func unsupportedSettings() *domain.Error {
@@ -223,7 +224,7 @@ func (s ThreadSettings) wireSettings() (threadParams, error) {
 		}
 		p.WorkspaceRoots = slices.Clone(s.WorkspaceRoots)
 	}
-	if s.Options.SubagentModel != "" || s.Options.SubagentEffort != "" || s.Options.MaxConcurrency != 0 || s.Options.ApprovalReviewModel != "" || s.Options.ClaudePermission != "" {
+	if s.Options.ApprovalReviewModel != "" || s.Options.ClaudePermission != "" || s.Options.MaxConcurrency > 64 || domain.ValidateCodexSubagentOptions(s.Options) != nil {
 		return p, unsupportedSettings()
 	}
 	switch s.Options.Permission {
@@ -242,8 +243,18 @@ func (s ThreadSettings) wireSettings() (threadParams, error) {
 	default:
 		return p, unsupportedSettings()
 	}
+	p.Config = map[string]any{}
 	if s.Effort != "" {
-		p.Config = map[string]string{"model_reasoning_effort": s.Effort}
+		p.Config["model_reasoning_effort"] = s.Effort
+	}
+	if s.Options.SubagentModel != "" {
+		p.Config["agents.default_subagent_model"] = s.Options.SubagentModel
+	}
+	if s.Options.SubagentEffort != "" {
+		p.Config["agents.default_subagent_reasoning_effort"] = s.Options.SubagentEffort
+	}
+	if s.Options.MaxConcurrency != 0 {
+		p.Config["agents.max_concurrent_threads_per_session"] = s.Options.MaxConcurrency
 	}
 	return p, nil
 }
@@ -315,6 +326,28 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		}
 		if err := c.verifyAPI(ctx, settings.Cwd); err != nil {
 			return result, err
+		}
+	}
+	if settings.Options.SubagentModel != "" || settings.Options.SubagentEffort != "" {
+		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		models, err := c.readModelList(bounded, true)
+		if err != nil {
+			return result, err
+		}
+		selected := settings.Options.SubagentModel
+		if selected == "" {
+			selected = settings.Model
+		}
+		matched := false
+		for _, model := range models {
+			if model.Model == selected && (settings.Options.SubagentEffort == "" || slices.Contains(model.Reasoning, domain.NativeReasoningEffort(settings.Options.SubagentEffort))) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return result, domain.Fail(domain.Unsupported, "Codex does not advertise the selected child model and reasoning effort.", "Choose a compatible native model under the original account before sending an input; no model fallback is used.")
 		}
 	}
 	params.ThreadID = threadID

@@ -34,7 +34,9 @@ mod desktop_recovery;
 pub use desktop_recovery::{DesktopRegistration, DesktopRegistrationState};
 
 mod local_worker;
+mod worker_network;
 pub use local_worker::{LocalWorkerAction, LocalWorkerState, LocalWorkerStatus};
+pub use worker_network::WorkerNetworkAction;
 
 mod supervision;
 pub use supervision::{LocalServerState, LocalServerStatus, Supervision};

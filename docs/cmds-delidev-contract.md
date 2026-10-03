@@ -194,7 +194,7 @@ The pinned Claude initial-assignment profile now composes authenticated Worker r
 ## Portable configuration
 The eight existing editable configuration kinds now share owner/client export, read-only signed previews and atomic imports through Connect, CLI and desktop settings. Explicit machine/checkout mappings, fresh disconnected accounts, unchanged reuse and revision-bound settings replacement prevent implicit authority transfer. New repositories pass every Worker inspection before any configuration commits. See [portable configuration](cmds-delidev-configuration-transfer-contract.md) for limits and remaining portable surfaces.
 
-Schema v23 adds durable managed-backup deletion indexing and external deletion obligations under the [storage contract](cmds-delidev-storage-contract.md). The explicit API, CLI and desktop operations share original inspection/revision checks and restart recovery. Permanent session deletion now uses the coordinated lifecycle below; workspace snapshots and database restoration remain incomplete.
+Schema v23 adds durable managed-backup deletion indexing and external deletion obligations under the [storage contract](cmds-delidev-storage-contract.md). The explicit API, CLI and desktop operations share original inspection/revision checks and restart recovery. Permanent session deletion now uses the coordinated lifecycle below; Worker-local workspace snapshots and recovery are implemented through the separate storage service, and their reserved copies participate in permanent deletion. Database restoration remains incomplete.
 
 
 ### Durable backup creation commands
@@ -236,7 +236,7 @@ reclaimed disk space. See the [storage contract](cmds-delidev-storage-contract.m
 
 ### Explicit outbound networking
 
-Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. See [the network contract](cmds-delidev-network-contract.md); Worker bootstrap/native proxy application remains separate.
+Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. Worker preparation/import and owner encrypted export/status add original protected recipient scope and separately supplied digest; authenticated synchronization admits only the current desired generation. A separately claimed immutable Codex API/title tunnel preserves original native bytes, destination TLS and cleanup. See [the network contract](cmds-delidev-network-contract.md); capability reservation and actual native/account/platform acceptance remain distinct.
 
 ### Managed database restore commands
 

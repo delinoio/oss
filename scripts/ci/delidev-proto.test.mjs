@@ -32,7 +32,7 @@ test('current wire numbers match immutable assignments and future reservations',
   const descriptor = JSON.parse(readFileSync(output, 'utf8'));
   const ledger = JSON.parse(readFileSync(join(root, 'protos/delidev/allocations.json'), 'utf8'));
   const expected = structuredClone(ledger.baseline);
-  const newEnums = new Map();
+  const newDeclarations = new Map();
   for (const item of ledger.reservations) {
     assert.notEqual(Object.hasOwn(item, 'pr'), Object.hasOwn(item, 'issue'), 'an allocation has one original PR or owning issue');
     assert.ok(Number.isSafeInteger(item.pr ?? item.issue) && (item.pr ?? item.issue) > 0, 'allocation provenance is a positive GitHub number');
@@ -41,17 +41,15 @@ test('current wire numbers match immutable assignments and future reservations',
       assert.equal(new Set(item.sharedIssues).size, item.sharedIssues.length, 'shared issue consumers are unique');
       for (const issue of item.sharedIssues) assert.ok(Number.isSafeInteger(issue) && issue > 0 && issue !== item.issue, 'shared consumers identify other issues');
     }
-    // A wholly new enum has no active baseline until its feature is implemented.
+    // A wholly new declaration has no active baseline until its feature is implemented.
     // Reserve its closed values first without declaring or advertising support.
     if (item.newDeclaration === true) {
-      assert.equal(item.kind, 'enum', 'only new enums need declaration reservations');
+      assert.ok(item.kind === 'enum' || item.kind === 'message', 'new declarations have a closed protocol kind');
       assert.ok(!Object.hasOwn(ledger.baseline, item.declaration), 'original declarations cannot become new');
       const owner = Object.hasOwn(item, 'pr') ? `pr:${item.pr}` : `issue:${item.issue}`;
-      if (newEnums.has(item.declaration)) assert.equal(newEnums.get(item.declaration), owner, 'a new enum has one owner');
-      newEnums.set(item.declaration, owner);
-      expected[item.declaration] ??= { kind: 'enum', members: {} };
-    } else {
-      assert.ok(!newEnums.has(item.declaration), 'every member of a new enum retains declaration provenance');
+      if (newDeclarations.has(item.declaration)) assert.equal(newDeclarations.get(item.declaration), owner, 'a new declaration has one original owner');
+      newDeclarations.set(item.declaration, owner);
+      expected[item.declaration] ??= { kind: item.kind, members: {} };
     }
     const declaration = expected[item.declaration];
     assert.ok(declaration, `${item.declaration} must have a baseline or explicit new-enum reservation`);
@@ -62,7 +60,8 @@ test('current wire numbers match immutable assignments and future reservations',
     if (Object.hasOwn(members, item.member)) assert.equal(members[item.member], item.number);
     members[item.member] = item.number;
   }
-  for (const name of newEnums.keys()) {
+  for (const name of newDeclarations.keys()) {
+    if (expected[name].kind !== 'enum') continue;
     assert.ok(Object.entries(expected[name].members).some(([member, number]) => number === 0 && member.endsWith('_UNSPECIFIED')), 'new enums reserve their zero unspecified value');
   }
   const found = new Map();

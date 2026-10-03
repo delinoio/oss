@@ -362,7 +362,7 @@ func TestUnmergedVersion25LayoutsRequireRecoveryWithoutModification(t *testing.T
 				t.Fatal(err)
 			}
 			if ddl != "" {
-				if _, err := s.db.Exec("DROP TABLE native_accounting; " + ddl + "; PRAGMA user_version=25"); err != nil {
+				if _, err := s.db.Exec("DROP TABLE native_accounting; DROP TABLE request_diagnostics; " + ddl + "; PRAGMA user_version=25"); err != nil {
 					t.Fatal(err)
 				}
 			}

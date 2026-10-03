@@ -35,6 +35,19 @@ Reservations do not advertise capability support or activate implementation.
 New allocations must be established on main before dependent feature branches use
 them. Existing shared message semantics still require explicit composition.
 
+### Coordinated single-PR exception
+
+An explicitly owner-approved single integration PR may establish missing numeric
+reservations and implement their complete dependency closure in that same PR.
+Record reservations before dependent source edits, retain the original allocation
+owners, and regenerate bindings from the composed schema. This exception does
+not authorize independent dependent branches before the reservations reach main.
+Executable migrations must still implement every real predecessor in order;
+the integration of 26 through 29 cannot use placeholders, reorder reservations,
+or reinterpret existing layouts. Reservation-only commits are intermediate work,
+not feature completion or capability evidence. Record final implementation and
+validation coverage in the integration PR and CI, not repository evidence files.
+
 Wholly new closed enums use explicit `newDeclaration: true` member reservations
 under one original owner, including their zero UNSPECIFIED member. Keep these
 planned declarations out of the immutable active baseline; the allocation check
@@ -76,8 +89,10 @@ which owns independent temporary directories and child lifetimes per file.
 `cmds/delidev-cli/internal/store/migration-reservations.json` reserves 25 for the
 replacement of #1108, 26 for #1115, and 27 for #1117. Each originally used 25.
 The Grok replacement for issue #1100 implements reserved version 25 with the
-independent `grok-closed-input-v1` layout marker. Versions 26 and 27 remain plans,
-not runtime support; the executable registry ends at 25. Unmarked historical
+independent `grok-closed-input-v1` layout marker. The integrated implementation activates real version 26 for original Claude/OpenCode
+accounting and version 27 for metadata-only request diagnostics, followed by real
+version 28 for service-native subscription identity and its account-scoped recovery notification constraint, preserving all original delivery claims with an independent layout marker. The executable registry ends
+at 28; reserved version 29 remains inactive until the OAuth implementation. Unmarked historical
 version-25 files still require recovery without modification.
 Claude accounting must compose with the Grok accounting schema and shared usage
 meaning established by the preceding change. Request diagnostics follows both
@@ -87,8 +102,10 @@ before branching; do not insert empty migrations to skip unfinished work.
 Issue #1235 reserves migration 28 for service-native subscription identity and
 legacy configuration retirement, after the real implementations of 26 and 27.
 Its independent `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1` allocation is
-17. Both reservations must land on main before dependent implementation; neither
-activates runtime support. Migration provenance uses one original PR or owning
+17. Independent changes must establish both reservations on main before dependent
+implementation. The approved single-PR composition exception above permits their
+reservation and complete implementation together; reservations alone never
+activate runtime support. Migration provenance uses one original PR or owning
 issue when no implementation PR exists yet, preserving that identity thereafter.
 The [storage contract](cmds-delidev-storage-contract.md#planned-subscription-retirement-issue-1235)
 owns the reset boundary. Compose later account/native ownership and restore
@@ -104,7 +121,7 @@ dependent implementation; no placeholder migration, active protobuf declaration,
 generated binding or OAuth capability is introduced by this prerequisite. Keep
 the existing sequence and issue open until full implementation is accepted.
 
-The storage suite covers every fixed schema from 1 through 24 and the recognized
+The storage suite covers every fixed schema from 1 through 28 and the recognized
 21/22 backup and 23 title variants. It compares upgraded DDL with a fresh database,
 retains existing seeded record/backfill/rollback tests, and verifies that three
 unidentified version-25 layouts return recovery-required without modifying bytes.
@@ -139,3 +156,24 @@ Both aggregate views therefore include `NetworkService` and `SubscriptionService
 without adding their declarations to the relocation map.
 Issue #1084 activates its already reserved wire allocations without changing
 that historical map. Generated service/query facades retain both services.
+
+Quota/reset-credit composition reserves System capabilities 18/19, Worker
+capability 8, native lease actions 5/6, and their independently owned observation
+messages before activation. New declaration reservations identify the original
+declaration owner once; later explicitly numbered members retain their own
+issue/PR provenance. The ledger baseline contains only declarations verified
+from the fixed main source, including its original accounting and subscription
+enums. New message fields are checked as strictly as new enum values.
+
+Issue #1208 reserves independent System capability 23 and Worker capability 12 for OpenCode foreground child observation before activation. The existing resource/ordered-publication boundary carries the closed native task/child proof under its separate supported profile; these reservations alone grant no child publication, control, continuation or cleanup authority.
+
+Issues #1202/#1203 reserve independent Codex/OpenCode compaction System capabilities 24/25, Worker capabilities 13/14 and SessionContext capabilities 3–6 before dependent activation. The shared existing capability 15/5 remains the common boundary, with each native profile independently negotiated. `SessionContextCapability` baseline values 0–2 are copied from verified main source `2fd96133`; their existing Claude meanings remain unchanged. These reservations grant no compaction send, checkpoint or cleanup authority and allocate no migration. The owner-approved single integrated PR exception applies; independent changes still establish reservations on main first.
+
+Issue #1202 additionally reserves `GetUsageSummaryResponse.accepted_compactions_without_response = 14`, shared with #1203. It counts accepted native context actions independently of ordinary executions, preserving unavailable response coverage without a fabricated charge or measured zero. The integrated prerequisite is recorded before generation; independent PRs retain the main-first rule.
+
+Issue #1210 reserves independent System capability 26 and Worker capability 15
+for bounded Unix plain-text OpenCode General Chat forks before dependent source
+implementation. Existing Codex Fork capability 13 grants no OpenCode authority.
+This profile introduces no migration; reservations grant no native creation,
+relocation, deletion or inference authority. The approved integrated-PR exception
+applies while independent PRs retain the main-first prerequisite.

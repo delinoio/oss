@@ -64,6 +64,8 @@ enum UsageCoverage {
   USAGE_COVERAGE_UNSPECIFIED = 0;
   // Exact known subtotals only. Missing/legacy/child telemetry is not zero.
   USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES = 1;
+  // Distinct native input/step units; inherited history is excluded.
+  USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS = 2;
 }
 
 message ForwardChange {
@@ -89,4 +91,12 @@ message SessionDeletionJob {
   bool backups_removed = 9;
   // Removal is proved separately from filesystem allocation; bytes are unknown.
   bool reclaimed_bytes_known = 10;
+}
+
+// Native subscription identity is independent of API providers.
+enum SubscriptionServiceIdentity {
+  SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED = 0;
+  SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT = 1;
+  SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE = 2;
+  SUBSCRIPTION_SERVICE_IDENTITY_GROK = 3;
 }

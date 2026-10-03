@@ -20,20 +20,24 @@ const (
 )
 
 type UsageSelection struct {
-	From              time.Time
-	Until             time.Time
-	SessionID         ID
-	ProjectID         ID
-	AccountID         ID
-	ProviderID        ID
-	ModelID           ID
-	GeneralChat       bool
-	Granularity       UsageTimeGranularity
-	TimeZone          string
-	AccountingProfile AccountingProfile
+	From                time.Time
+	Until               time.Time
+	SessionID           ID
+	ProjectID           ID
+	AccountID           ID
+	SubscriptionService SubscriptionService
+	ProviderID          ID
+	ModelID             ID
+	GeneralChat         bool
+	Granularity         UsageTimeGranularity
+	TimeZone            string
+	AccountingProfile   AccountingProfile
 }
 
 func (f UsageSelection) Validate() error {
+	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "") {
+		return Fail(InvalidArgument, "Invalid usage identity filter.", "Select an API provider or a subscription service.")
+	}
 	if f.AccountingProfile != ResponseOnlyAccounting && f.AccountingProfile != NativeUnitsV1Accounting {
 		return Fail(InvalidArgument, "Unsupported usage accounting profile.", "Choose a supported accounting profile.")
 	}
@@ -216,13 +220,14 @@ func (t *UsageTotals) Add(counts *NativeTokenCounts) {
 }
 
 type UsageGroup struct {
-	SessionID  ID             `json:"session_id"`
-	ProjectID  ID             `json:"project_id,omitempty"`
-	AccountID  ID             `json:"account_id"`
-	ProviderID ID             `json:"provider_id"`
-	ModelID    ID             `json:"model_id"`
-	Totals     UsageTotals    `json:"totals"`
-	Estimates  EstimateTotals `json:"estimates"`
+	SessionID           ID                  `json:"session_id"`
+	ProjectID           ID                  `json:"project_id,omitempty"`
+	AccountID           ID                  `json:"account_id"`
+	ProviderID          ID                  `json:"provider_id,omitempty"`
+	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
+	ModelID             ID                  `json:"model_id"`
+	Totals              UsageTotals         `json:"totals"`
+	Estimates           EstimateTotals      `json:"estimates"`
 }
 
 type UsageAnalyticsDay struct {
@@ -232,11 +237,12 @@ type UsageAnalyticsDay struct {
 }
 
 type UsageAnalyticsModel struct {
-	ProviderID ID          `json:"provider_id"`
-	ModelID    ID          `json:"model_id"`
-	Provider   string      `json:"provider_name,omitempty"`
-	Model      string      `json:"model_name,omitempty"`
-	Totals     UsageTotals `json:"totals"`
+	ProviderID          ID                  `json:"provider_id,omitempty"`
+	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
+	ModelID             ID                  `json:"model_id"`
+	Provider            string              `json:"provider_name,omitempty"`
+	Model               string              `json:"model_name,omitempty"`
+	Totals              UsageTotals         `json:"totals"`
 }
 
 type UsageOtherModels struct {
@@ -253,12 +259,14 @@ type UsageAnalytics struct {
 }
 
 type UsageSummary struct {
-	Estimates                         EstimateTotals  `json:"estimates"`
-	Pricing                           []PricingUsage  `json:"pricing"`
-	Totals                            UsageTotals     `json:"totals"`
-	Groups                            []UsageGroup    `json:"groups"`
-	Analytics                         *UsageAnalytics `json:"analytics,omitempty"`
-	AcceptedExecutionsWithoutResponse uint32          `json:"accepted_executions_without_response"`
+	NativeAccounting                   []NativeAccountingSummary `json:"native_accounting,omitempty"`
+	Estimates                          EstimateTotals            `json:"estimates"`
+	Pricing                            []PricingUsage            `json:"pricing"`
+	Totals                             UsageTotals               `json:"totals"`
+	Groups                             []UsageGroup              `json:"groups"`
+	Analytics                          *UsageAnalytics           `json:"analytics,omitempty"`
+	AcceptedCompactionsWithoutResponse uint32                    `json:"accepted_compactions_without_response"`
+	AcceptedExecutionsWithoutResponse  uint32                    `json:"accepted_executions_without_response"`
 }
 
 func SortUsageAnalyticsModels(models []UsageAnalyticsModel) {

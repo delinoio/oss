@@ -33,6 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SessionServiceListRequestDiagnosticsProcedure is the fully-qualified name of the SessionService's
+	// ListRequestDiagnostics RPC.
+	SessionServiceListRequestDiagnosticsProcedure = "/delidev.v1.SessionService/ListRequestDiagnostics"
 	// SessionServiceForkSessionProcedure is the fully-qualified name of the SessionService's
 	// ForkSession RPC.
 	SessionServiceForkSessionProcedure = "/delidev.v1.SessionService/ForkSession"
@@ -124,6 +127,7 @@ const (
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
 	ForkSession(context.Context, *connect.Request[v1.ForkSessionRequest]) (*connect.Response[v1.ForkSessionResponse], error)
 	GetSessionFork(context.Context, *connect.Request[v1.GetSessionForkRequest]) (*connect.Response[v1.GetSessionForkResponse], error)
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
@@ -166,6 +170,12 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		listRequestDiagnostics: connect.NewClient[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse](
+			httpClient,
+			baseURL+SessionServiceListRequestDiagnosticsProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ListRequestDiagnostics")),
+			connect.WithClientOptions(opts...),
+		),
 		forkSession: connect.NewClient[v1.ForkSessionRequest, v1.ForkSessionResponse](
 			httpClient,
 			baseURL+SessionServiceForkSessionProcedure,
@@ -345,6 +355,7 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	listRequestDiagnostics   *connect.Client[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse]
 	forkSession              *connect.Client[v1.ForkSessionRequest, v1.ForkSessionResponse]
 	getSessionFork           *connect.Client[v1.GetSessionForkRequest, v1.GetSessionForkResponse]
 	deleteSession            *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
@@ -374,6 +385,11 @@ type sessionServiceClient struct {
 	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
 	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
 	switchSessionAccount     *connect.Client[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse]
+}
+
+// ListRequestDiagnostics calls delidev.v1.SessionService.ListRequestDiagnostics.
+func (c *sessionServiceClient) ListRequestDiagnostics(ctx context.Context, req *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error) {
+	return c.listRequestDiagnostics.CallUnary(ctx, req)
 }
 
 // ForkSession calls delidev.v1.SessionService.ForkSession.
@@ -523,6 +539,7 @@ func (c *sessionServiceClient) SwitchSessionAccount(ctx context.Context, req *co
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
 	ForkSession(context.Context, *connect.Request[v1.ForkSessionRequest]) (*connect.Response[v1.ForkSessionResponse], error)
 	GetSessionFork(context.Context, *connect.Request[v1.GetSessionForkRequest]) (*connect.Response[v1.GetSessionForkResponse], error)
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
@@ -561,6 +578,12 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
+	sessionServiceListRequestDiagnosticsHandler := connect.NewUnaryHandler(
+		SessionServiceListRequestDiagnosticsProcedure,
+		svc.ListRequestDiagnostics,
+		connect.WithSchema(sessionServiceMethods.ByName("ListRequestDiagnostics")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceForkSessionHandler := connect.NewUnaryHandler(
 		SessionServiceForkSessionProcedure,
 		svc.ForkSession,
@@ -737,6 +760,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceListRequestDiagnosticsProcedure:
+			sessionServiceListRequestDiagnosticsHandler.ServeHTTP(w, r)
 		case SessionServiceForkSessionProcedure:
 			sessionServiceForkSessionHandler.ServeHTTP(w, r)
 		case SessionServiceGetSessionForkProcedure:
@@ -803,6 +828,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ListRequestDiagnostics is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) ForkSession(context.Context, *connect.Request[v1.ForkSessionRequest]) (*connect.Response[v1.ForkSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ForkSession is not implemented"))

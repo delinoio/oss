@@ -120,16 +120,20 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID {
 		return empty, executionDenied()
 	}
-	r, err := tx.Get(domain.ProviderKind, input.Configuration.ProviderID)
-	if err != nil {
-		return empty, executionDenied()
+	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService == domain.SubscriptionChatGPT && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && input.Configuration.Harness == domain.Codex
+	var provider domain.Provider
+	var operations []apiproxy.Operation
+	if !managed {
+		r, err := tx.Get(domain.ProviderKind, input.Configuration.ProviderID)
+		if err != nil {
+			return empty, executionDenied()
+		}
+		provider, err = store.Decode[domain.Provider](r)
+		if err != nil || provider.Authentication != account.Connection.Authentication {
+			return empty, executionDenied()
+		}
+		operations = executionAPIOperations(input, provider.Protocol)
 	}
-	provider, err := store.Decode[domain.Provider](r)
-	if err != nil || provider.Authentication != account.Connection.Authentication {
-		return empty, executionDenied()
-	}
-	operations := executionAPIOperations(input, provider.Protocol)
-	managed := input.Configuration.Subscription && account.Type == domain.SubscriptionAccount && provider.Protocol == domain.NativeSubscription && provider.SubscriptionHarness != nil && *provider.SubscriptionHarness == domain.Codex && input.Configuration.Harness == domain.Codex
 	if managed {
 		state := account.Subscription
 		if state == nil || state.RecoveryRequired || state.Lease == nil {
@@ -143,15 +147,18 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if (!managed && account.Type != domain.APIAccount) || (len(operations) == 0 && !managed) {
 		return empty, executionDenied()
 	}
-	r, err = tx.Get(domain.ModelKind, input.Configuration.ModelID)
+	r, err := tx.Get(domain.ModelKind, input.Configuration.ModelID)
 	if err != nil {
 		return empty, executionDenied()
 	}
 	model, err := store.Decode[domain.Model](r)
-	if err != nil || model.ProviderID != input.Configuration.ProviderID || !slices.Contains(model.Harnesses, input.Configuration.Harness) {
+	if err != nil || model.ProviderID != input.Configuration.ProviderID || model.SubscriptionService != input.Configuration.SubscriptionService || !model.MatchesAccount(account, input.Configuration.Harness) || !slices.Contains(model.Harnesses, input.Configuration.Harness) {
 		return empty, executionDenied()
 	}
-	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, Provider: provider, Operations: operations}
+	if err := tx.RequireCodexSubagentModel(input.Configuration, account); err != nil {
+		return empty, executionDenied()
+	}
+	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, ChildModel: input.Configuration.SubagentModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
 	if !managed {
 		if err := scope.Validate(); err != nil {
 			return empty, executionDenied()
@@ -225,7 +232,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	}
 	// Managed subscription registrations bind publication only. They never
 	// authorize the API relay or expose a subscription bundle through it.
-	if scope.Provider.Protocol == domain.NativeSubscription {
+	if scope.SubscriptionService != "" {
 		return nil, executionDenied()
 	}
 	leaseContext, cancel := context.WithCancel(ctx)
@@ -261,6 +268,69 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	}()
 	var once sync.Once
 	lease := &apiproxy.Lease{Scope: scope, Context: leaseContext}
+	// Begin/HTTP-send claims require live authority. Completion only updates an
+	// existing exact original observation, even after Stop or account revocation.
+	// It grants no inference and is joined before lease/storage closure.
+	lease.PublishDiagnostic = func(ctx context.Context, value domain.RequestDiagnostic) error {
+		if value.SessionID != scope.SessionID || value.ExecutionID != scope.ExecutionID || value.AccountID != scope.AccountID || value.ConnectionID != scope.ConnectionID || value.ProviderID != scope.ProviderID || (value.ModelID != scope.ModelID && (scope.ChildModel == nil || value.ModelID != scope.ChildModel.ModelID)) || value.Source != domain.DiagnosticProxyHTTP {
+			return executionDenied()
+		}
+		publication := domain.NewID()
+		value.PublicationRequestID = publication
+		_, err := a.service.Store.Mutate(ctx, publication, "request-diagnostic.publish", value, func(tx *store.Tx) (any, error) {
+			if value.State == domain.DiagnosticInProgress {
+				if leaseContext.Err() != nil {
+					return nil, executionDenied()
+				}
+				if _, err := a.scope(tx, grant); err != nil {
+					return nil, err
+				}
+			} else if value.Revision == 0 {
+				return nil, executionDenied()
+			}
+			if err := tx.PutRequestDiagnostic(value, value.Revision); err != nil {
+				return nil, err
+			}
+			return struct {
+				ID       domain.ID
+				Revision uint64
+			}{value.ID, value.Revision + 1}, nil
+		})
+		return err
+	}
+
+	if scope.CompactionSourceTurn != "" {
+		lease.ObserveResponseUsage = func(ctx context.Context, request domain.ID, usage domain.NativeResponseUsage) error {
+			if request.Validate() != nil || usage.Validate() != nil {
+				return executionDenied()
+			}
+			_, err := a.service.Store.Mutate(ctx, domain.NewID(), "compaction.response-usage", struct {
+				Request domain.ID
+				Usage   domain.NativeResponseUsage
+			}{request, usage}, func(tx *store.Tx) (any, error) {
+				original, err := tx.RequestDiagnostic(request)
+				if err != nil || original.Source != domain.DiagnosticProxyHTTP || original.ExecutionID != scope.ExecutionID || original.SessionID != scope.SessionID || original.AccountID != scope.AccountID || original.ConnectionID != scope.ConnectionID || original.ModelID != scope.ModelID || original.HTTPAttempted == nil || !*original.HTTPAttempted {
+					return nil, executionDenied()
+				}
+				jr, err := tx.Get(domain.JobKind, grant.JobID)
+				if err != nil {
+					return nil, err
+				}
+				job, err := store.Decode[domain.Job](jr)
+				var input domain.SessionCompactionInput
+				if err != nil || job.Type != domain.CompactSessionJob || job.InstanceID != grant.InstanceID || job.AssignedDeviceID != grant.DeviceID || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ActionID != scope.ExecutionID || input.Completion.NativeTurnID != scope.CompactionSourceTurn {
+					return nil, executionDenied()
+				}
+				record := domain.ResponseUsageRecord{SessionID: scope.SessionID, ProjectID: jr.ProjectID, ExecutionID: scope.ExecutionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ProviderID: scope.ProviderID, ModelID: scope.ModelID, Harness: domain.Codex, Version: domain.CodexProtocolVersion, ThreadID: string(input.Completion.NativeThreadID), CompactionSourceTurn: scope.CompactionSourceTurn, Sequence: 1, Usage: usage}
+				id, replayed, err := tx.PutResponseUsage(request, record)
+				return struct {
+					ID       domain.ID
+					Replayed bool
+				}{id, replayed}, err
+			})
+			return err
+		}
+	}
 	if scope.Purpose == domain.SessionTitleUsage {
 		lease.BeforeSubmit = func(ctx context.Context, operation apiproxy.Operation) error {
 			if leaseContext.Err() != nil {
@@ -300,34 +370,6 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			return nil, err
 		}
 		return vault.Get(ctx, credentials.Ref{Owner: scope.AccountID, ID: scope.ConnectionID, Purpose: credentials.AccountAPI})
-	}
-	reference := func(kind apiproxy.ReferenceKind, nativeID string) store.ExecutionReference {
-		return store.ExecutionReference{SessionID: scope.SessionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ModelID: scope.ModelID, Kind: kind, NativeID: nativeID}
-	}
-	lease.AuthorizeReference = func(ctx context.Context, kind apiproxy.ReferenceKind, nativeID string) error {
-		if leaseContext.Err() != nil {
-			return executionDenied()
-		}
-		return a.service.Store.Read(ctx, func(tx *store.Tx) error {
-			if _, err := a.scope(tx, grant); err != nil {
-				return err
-			}
-			_, session, err := sessionRecord(tx, scope.SessionID)
-			if err != nil {
-				return err
-			}
-			if len(session.AccountChanges) != 0 {
-				return domain.Fail(domain.PermissionDenied, "Account-switched execution requires full native history.", "Provider conversation and previous-response references cannot cross account selections.")
-			}
-			exists, err := tx.HasExecutionReference(reference(kind, nativeID))
-			if err != nil {
-				return err
-			}
-			if !exists {
-				return executionDenied()
-			}
-			return nil
-		})
 	}
 	if scope.Purpose != domain.SessionTitleUsage && scope.Provider.Protocol == domain.OpenAIResponses {
 		lease.ObserveHistory = func(ctx context.Context, accountBound bool) error {
@@ -371,17 +413,67 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			return err
 		}
 	}
-	lease.ObserveReference = func(ctx context.Context, kind apiproxy.ReferenceKind, nativeID string) error {
-		if leaseContext.Err() != nil {
-			return executionDenied()
+	bindReferences := func(target *apiproxy.Lease, modelID domain.ID) {
+		reference := func(kind apiproxy.ReferenceKind, nativeID string) store.ExecutionReference {
+			return store.ExecutionReference{SessionID: scope.SessionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ModelID: modelID, Kind: kind, NativeID: nativeID}
 		}
-		_, err := a.service.Store.Mutate(ctx, domain.NewID(), "execution.observe-reference", reference(kind, nativeID), func(tx *store.Tx) (any, error) {
-			if _, err := a.scope(tx, grant); err != nil {
-				return nil, err
+		target.AuthorizeReference = func(ctx context.Context, kind apiproxy.ReferenceKind, nativeID string) error {
+			if leaseContext.Err() != nil {
+				return executionDenied()
 			}
-			return struct{}{}, tx.ObserveExecutionReference(reference(kind, nativeID))
-		})
-		return err
+			return a.service.Store.Read(ctx, func(tx *store.Tx) error {
+				if _, err := a.scope(tx, grant); err != nil {
+					return err
+				}
+				_, session, err := sessionRecord(tx, scope.SessionID)
+				if err != nil {
+					return err
+				}
+				if len(session.AccountChanges) != 0 {
+					return domain.Fail(domain.PermissionDenied, "Account-switched execution requires full native history.", "Provider conversation and previous-response references cannot cross account selections.")
+				}
+				exists, err := tx.HasExecutionReference(reference(kind, nativeID))
+				if err != nil {
+					return err
+				}
+				if !exists {
+					return executionDenied()
+				}
+				return nil
+			})
+		}
+		target.ObserveReference = func(ctx context.Context, kind apiproxy.ReferenceKind, nativeID string) error {
+			if leaseContext.Err() != nil {
+				return executionDenied()
+			}
+			_, err := a.service.Store.Mutate(ctx, domain.NewID(), "execution.observe-reference", reference(kind, nativeID), func(tx *store.Tx) (any, error) {
+				if _, err := a.scope(tx, grant); err != nil {
+					return nil, err
+				}
+				return struct{}{}, tx.ObserveExecutionReference(reference(kind, nativeID))
+			})
+			return err
+		}
+	}
+	bindReferences(lease, scope.ModelID)
+	if scope.ChildModel != nil {
+		lease.BindModel = func(ctx context.Context, model string, operation apiproxy.Operation) (*apiproxy.Lease, error) {
+			if model == scope.NativeModel {
+				return lease, nil
+			}
+			if model != scope.ChildModel.NativeModel || (operation != apiproxy.ResponseCreate && operation != apiproxy.ResponseCompact) || leaseContext.Err() != nil {
+				return nil, executionDenied()
+			}
+			current, err := a.resolve(ctx, grant)
+			if err != nil || current.ChildModel == nil || *current.ChildModel != *scope.ChildModel {
+				return nil, executionDenied()
+			}
+			request := *lease
+			request.Scope.ModelID, request.Scope.NativeModel = scope.ChildModel.ModelID, scope.ChildModel.NativeModel
+			request.Scope.ChildModel, request.BindModel = nil, nil
+			bindReferences(&request, request.Scope.ModelID)
+			return &request, nil
+		}
 	}
 	// Recheck after registering cancellation. Revocation between the initial
 	// read and watcher startup cannot authorize a new native request.
@@ -406,7 +498,23 @@ func (a *executionAuthority) historyObservation(tx *store.Tx, grant store.Execut
 	if err != nil {
 		return store.Record{}, domain.Session{}, "", err
 	}
-	if session.Execution != nil && session.Execution.ExecutionID != scope.ExecutionID {
+	expected := scope.ExecutionID
+	jr, jobErr := tx.Get(domain.JobKind, grant.JobID)
+	if jobErr != nil {
+		return store.Record{}, domain.Session{}, "", jobErr
+	}
+	job, jobErr := store.Decode[domain.Job](jr)
+	if jobErr != nil {
+		return store.Record{}, domain.Session{}, "", jobErr
+	}
+	if job.Type == domain.CompactSessionJob {
+		var action domain.SessionCompactionInput
+		if domain.Decode(job.Input, &action) != nil || action.Validate() != nil {
+			return store.Record{}, domain.Session{}, "", executionDenied()
+		}
+		expected = action.Assignment.ExecutionID
+	}
+	if session.Execution != nil && session.Execution.ExecutionID != expected {
 		return store.Record{}, domain.Session{}, "", executionDenied()
 	}
 	mode := domain.FullNativeHistory
@@ -481,6 +589,9 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 	}{domain.ID(meta.Id), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision, req.Msg.CredentialDigest}
 	grant := store.ExecutionGrant{JobID: identity.Job, MachineID: identity.Machine, InstanceID: identity.Instance, DeviceID: identity.Device, ServerEpoch: s.executionAuthority.epoch, Digest: identity.Digest}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "execution.register", identity, func(tx *store.Tx) (any, error) {
+		if err := workerNetworkReady(tx, identity.Machine); err != nil {
+			return nil, err
+		}
 		r, err := tx.Get(domain.JobKind, identity.Job)
 		if err != nil {
 			return nil, err
@@ -522,6 +633,30 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return nil, err
 		}
+		if routeRecord, routeErr := tx.NetworkRoute(identity.Machine); routeErr == nil {
+			route, decodeErr := store.Decode[domain.NetworkRoute](routeRecord)
+			if decodeErr != nil {
+				return nil, decodeErr
+			}
+			if route.Profile.Mode != domain.ProxyDirect {
+				var supported bool
+				if job.Type == domain.ExecuteSessionJob {
+					var input domain.ExecutionJobInput
+					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && input.Installation.Version == domain.CodexProtocolVersion
+				} else if job.Type == domain.CompactSessionJob {
+					var input domain.SessionCompactionInput
+					supported = domain.Decode(job.Input, &input) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription && input.Assignment.Configuration.Harness == domain.Codex
+				} else if job.Type == domain.GenerateSessionTitleJob {
+					var input domain.AuxiliaryTitleInput
+					supported = domain.Decode(job.Input, &input) == nil && input.Harness == domain.Codex && input.NativeVersion == domain.CodexProtocolVersion
+				}
+				if !supported {
+					return nil, domain.Fail(domain.Unsupported, "The selected Worker proxy has no native adapter for this execution profile.", "Use the pinned Codex API profile or explicitly select Direct; native traffic never silently falls back.")
+				}
+			}
+		} else if !store.MissingNetworkRoute(routeErr) {
+			return nil, routeErr
+		}
 		if !scope.Provider.EnabledValue() {
 			return nil, providerDisabled()
 		}
@@ -544,9 +679,9 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		}
 		return nil, rpc.Error(err, correlation)
 	}
-	s.logger.Info("execution_credential_registered", "job_id", identity.Job, "machine_id", identity.Machine, "instance_id", identity.Instance, "request_id", meta.RequestId, "api_protocol", registeredScope.Provider.Protocol, "replayed", result.Replayed)
+	s.logger.Info("execution_credential_registered", "job_id", identity.Job, "machine_id", identity.Machine, "instance_id", identity.Instance, "request_id", meta.RequestId, "api_protocol", registeredScope.Provider.Protocol, "subscription_service", registeredScope.SubscriptionService, "replayed", result.Replayed)
 	proxyPath := apiproxy.Prefix
-	if registeredScope.Provider.Protocol == domain.NativeSubscription {
+	if registeredScope.SubscriptionService != "" {
 		proxyPath = ""
 	}
 	response := connect.NewResponse(&pb.RegisterExecutionResponse{ProxyPath: proxyPath, Replayed: result.Replayed})

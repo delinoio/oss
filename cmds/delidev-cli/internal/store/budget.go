@@ -83,6 +83,19 @@ func (t *Tx) backfillSessionEstimates() error {
 		}
 	}
 }
+func (t *Tx) SessionBudgetEstimate(session domain.ID, currency domain.Currency) (domain.BudgetEvidence, error) {
+	total, err := t.SessionEstimate(session, currency)
+	if err != nil {
+		return total, err
+	}
+	native, err := t.NativeSessionEstimate(session, currency)
+	if err != nil {
+		return total, err
+	}
+	err = total.MergeNative(native)
+	return total, err
+}
+
 func (t *Tx) RequireSessionBudget(session domain.ID, budget *domain.EstimatedCostBudget) error {
 	if budget == nil {
 		return nil
@@ -90,7 +103,7 @@ func (t *Tx) RequireSessionBudget(session domain.ID, budget *domain.EstimatedCos
 	if budget.Validate() != nil {
 		return corrupt()
 	}
-	total, err := t.SessionEstimate(session, budget.Currency)
+	total, err := t.SessionBudgetEstimate(session, budget.Currency)
 	if err != nil {
 		return err
 	}

@@ -1,5 +1,10 @@
 # DeliDev TypeScript client
 
+## Request diagnostic client
+
+Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the issue #1103 metadata read. Preserve native-input versus proxy-HTTP enum provenance, optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.
+
+
 Buf generates service-specific modules. The normal protocol generation command
 also runs `scripts/delidev/proto-compat.mjs` to reproduce historical module and
 Connect Query import paths. Package-root exports and existing `./gen/*` consumers
@@ -146,6 +151,17 @@ and Connect Query bindings together.
 
 Generated `ProviderQuery` exposes bounded provider inventory and the client maps typed `provider_disabled` failures. Desktop provider/model consumers require provider activation, active-provider model filtering and account-provider filtering capabilities; split account views and their wizard additionally require `ACCOUNT_TYPE_FILTER`. Use generated inventory/model queries; do not infer availability from generic resource pages or query unfiltered providers as fallback. Preserve exact mutation requests across uncertain outcomes. See [provider activation](cmds-delidev-provider-activation-contract.md).
 
+## Worker workspace snapshots
+
+`WorkspaceStorageQuery` exports generated owner/client acceptance, operation-read
+and cancellation descriptors. Preserve action/session/snapshot/preview/recovery
+identities, exact expected revisions and original request UUIDs. Acceptance is a
+job, not verified snapshot/cleanup success; reconnect can only query it or retry
+its exact receipt. Explicit recovery is separate from native replay. Generated
+`WORKSPACE_STORAGE_V1` permits clients to discover this boundary; no desktop
+storage workflow or automatic retention is implied. Decimal byte/revision values
+remain precise. See the [storage contract](cmds-delidev-storage-contract.md).
+
 ### Managed database restore
 
 `SystemService.RestoreBackup` and `GetBackupRestore` are owner/paired-client-only
@@ -166,7 +182,7 @@ deletion enforcement, historical quarantine, bounds and recovery evidence limits
 
 Generated `SessionQuery.switchSessionAccount` and the typed System stopped-Codex-account-switch capability expose explicit future selection. Preserve exact request/account/session revision after acknowledgement loss; replay is explicit and current-state-only. The server validates stopped ownership, portable history and compatibility. No client-side eligibility/routing, implicit Resume or credential access is introduced.
 
-### Current-user service metadata
+## Current-user service metadata
 
 Generated SystemQuery exports `getUserService` and `controlUserService` with the additive `USER_SERVICES_V1` capability and closed service enums. Keep exact bigint revisions and original request identity; pending/uncertain control cannot be retried as a fresh native write. Returned metadata excludes private paths, executable/process identity and authentication. Read capability and absent state through the existing real Go Connect fixture, without native registrations. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
@@ -205,3 +221,9 @@ Generated messages, the `ForkWorkspace`/server capability enums and the existing
 logic in Go. Preserve exact uncertain requests; observe accepted operations by
 job ID instead of issuing another mutation. Desktop connection memory retains
 its controller through navigation and separates acceptance from child publication.
+
+## Service-native schema families
+
+`configuration-identity.ts` owns bounded schema-v2 read negotiation for closed service-native Account/native Model, reconfiguration-required Agent and inert retired wrappers. It preserves API-only v1 reads, refuses mixed Provider/service identity and maps generated closed service enums independently from JSON service strings. The helper grants no mutation/native authority and never unwraps a retired document into a live configuration. Synchronization accepts those owning families without changing exact revisions or snapshot/event atomicity. Portable UI preserves original v2 or API-only v1 document/preview bytes; service-native v1 graphs are unsupported.
+
+Worker bootstrap export uses generated mutation results with bounded ciphertext and its separately displayed authenticated digest. Status retains exact desired/effective/native generation strings and closed route states; current control readiness cannot manufacture native route use or provider success. Ciphertext is not persistent query state, and private recipient keys/decrypted derivatives never cross the client boundary.

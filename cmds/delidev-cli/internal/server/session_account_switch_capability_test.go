@@ -34,6 +34,8 @@ func TestStoppedAccountSwitchStatusPreservesExistingCapabilities(t *testing.T) {
 		pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1,
 		pb.SystemCapability_SYSTEM_CAPABILITY_MANAGED_BACKUP_RESTORE_V1,
 		pb.SystemCapability_SYSTEM_CAPABILITY_STOPPED_CODEX_ACCOUNT_SWITCH_V1,
+		pb.SystemCapability_SYSTEM_CAPABILITY_WORKSPACE_STORAGE_V1,
+		pb.SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1,
 	} {
 		if !slices.Contains(response.Msg.Capabilities, capability) {
 			t.Fatalf("missing capability %v", capability)

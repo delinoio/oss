@@ -242,3 +242,8 @@ RPC changes. Keep desktop contracts/AGENTS synchronized with presentation change
 - [Harness contract](cmds-delidev-harness-contract.md)
 - [Issue #1092](https://github.com/delinoio/oss/issues/1092)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
+
+Workspace storage and fork ownership compose at the original source boundary. Fork
+acceptance, claim and publication require a present workspace, with no pending or
+uncertain storage operation. Storage admission waits for unresolved fork jobs to
+settle; a stored workspace must be explicitly restored before it can be forked.

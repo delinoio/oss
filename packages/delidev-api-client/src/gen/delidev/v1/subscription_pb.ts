@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/subscription.proto.
  */
 export const file_delidev_v1_subscription: GenFile = /*@__PURE__*/
-  fileDesc("Ch1kZWxpZGV2L3YxL3N1YnNjcmlwdGlvbi5wcm90bxIKZGVsaWRldi52MSKdAQoaUmVxdWVzdFN1YnNjcmlwdGlvblJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhIKCm1hY2hpbmVfaWQYAiABKAkSLgoGYWN0aW9uGAMgASgOMh4uZGVsaWRldi52MS5TdWJzY3JpcHRpb25BY3Rpb24SEwoLZGV2aWNlX2NvZGUYBCABKAgibAobUmVxdWVzdFN1YnNjcmlwdGlvblJlc3BvbnNlEiUKB2FjY291bnQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhQKDG9wZXJhdGlvbl9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCJDChlDYW5jZWxTdWJzY3JpcHRpb25SZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbiJVChpDYW5jZWxTdWJzY3JpcHRpb25SZXNwb25zZRIlCgdhY2NvdW50GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIQCghyZXBsYXllZBgCIAEoCCJKCh5HZXRTdWJzY3JpcHRpb25Qcm9ncmVzc1JlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCRIUCgxvcGVyYXRpb25faWQYAiABKAkiUwofR2V0U3Vic2NyaXB0aW9uUHJvZ3Jlc3NSZXNwb25zZRILCgN1cmwYASABKAkSEQoJdXNlcl9jb2RlGAIgASgJEhAKCGNhbmNlbGVkGAMgASgIIkMKGFdhdGNoU3Vic2NyaXB0aW9uUmVxdWVzdBISCgptYWNoaW5lX2lkGAEgASgJEhMKC2luc3RhbmNlX2lkGAIgASgJIkIKGVdhdGNoU3Vic2NyaXB0aW9uUmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UisAEKF1Rha2VTdWJzY3JpcHRpb25SZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhISCgptYWNoaW5lX2lkGAIgASgJEhMKC2luc3RhbmNlX2lkGAMgASgJEhQKDG9wZXJhdGlvbl9pZBgEIAEoCRIuCgZhY3Rpb24YBSABKA4yHi5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvbkFjdGlvbiKGAQoYVGFrZVN1YnNjcmlwdGlvblJlc3BvbnNlEhAKCGxlYXNlX2lkGAEgASgJEhUKDWdlbmVyYXRpb25faWQYAiABKAkSDgoGYnVuZGxlGAMgASgMEhYKDmxlYXNlX3JldmlzaW9uGAQgASgEEhkKEWluc3RhbGxhdGlvbl9qc29uGAUgASgMIpMBCiJQdWJsaXNoU3Vic2NyaXB0aW9uUHJvZ3Jlc3NSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSEAoIbGVhc2VfaWQYAiABKAkSEgoKbWFjaGluZV9pZBgDIAEoCRITCgtpbnN0YW5jZV9pZBgEIAEoCRILCgN1cmwYBSABKAkSEQoJdXNlcl9jb2RlGAYgASgJIjcKI1B1Ymxpc2hTdWJzY3JpcHRpb25Qcm9ncmVzc1Jlc3BvbnNlEhAKCGNhbmNlbGVkGAEgASgIIu4BChlGaW5pc2hTdWJzY3JpcHRpb25SZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIQCghsZWFzZV9pZBgCIAEoCRISCgptYWNoaW5lX2lkGAMgASgJEhMKC2luc3RhbmNlX2lkGAQgASgJEhUKDWdlbmVyYXRpb25faWQYBSABKAkSDgoGYnVuZGxlGAYgASgMEhkKEWNsZWFudXBfY29uZmlybWVkGAcgASgIEhkKEXJlZnJlc2hfY29uZmlybWVkGAggASgIEhEKCXN1Y2NlZWRlZBgJIAEoCCJVChpGaW5pc2hTdWJzY3JpcHRpb25SZXNwb25zZRIlCgdhY2NvdW50GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIQCghyZXBsYXllZBgCIAEoCCq6AQoSU3Vic2NyaXB0aW9uQWN0aW9uEiMKH1NVQlNDUklQVElPTl9BQ1RJT05fVU5TUEVDSUZJRUQQABIdChlTVUJTQ1JJUFRJT05fQUNUSU9OX0xPR0lOEAESHwobU1VCU0NSSVBUSU9OX0FDVElPTl9SRUZSRVNIEAISHgoaU1VCU0NSSVBUSU9OX0FDVElPTl9MT0dPVVQQAxIfChtTVUJTQ1JJUFRJT05fQUNUSU9OX0VYRUNVVEUQBDL+BQoTU3Vic2NyaXB0aW9uU2VydmljZRJmChNSZXF1ZXN0U3Vic2NyaXB0aW9uEiYuZGVsaWRldi52MS5SZXF1ZXN0U3Vic2NyaXB0aW9uUmVxdWVzdBonLmRlbGlkZXYudjEuUmVxdWVzdFN1YnNjcmlwdGlvblJlc3BvbnNlEmMKEkNhbmNlbFN1YnNjcmlwdGlvbhIlLmRlbGlkZXYudjEuQ2FuY2VsU3Vic2NyaXB0aW9uUmVxdWVzdBomLmRlbGlkZXYudjEuQ2FuY2VsU3Vic2NyaXB0aW9uUmVzcG9uc2UScgoXR2V0U3Vic2NyaXB0aW9uUHJvZ3Jlc3MSKi5kZWxpZGV2LnYxLkdldFN1YnNjcmlwdGlvblByb2dyZXNzUmVxdWVzdBorLmRlbGlkZXYudjEuR2V0U3Vic2NyaXB0aW9uUHJvZ3Jlc3NSZXNwb25zZRJiChFXYXRjaFN1YnNjcmlwdGlvbhIkLmRlbGlkZXYudjEuV2F0Y2hTdWJzY3JpcHRpb25SZXF1ZXN0GiUuZGVsaWRldi52MS5XYXRjaFN1YnNjcmlwdGlvblJlc3BvbnNlMAESXQoQVGFrZVN1YnNjcmlwdGlvbhIjLmRlbGlkZXYudjEuVGFrZVN1YnNjcmlwdGlvblJlcXVlc3QaJC5kZWxpZGV2LnYxLlRha2VTdWJzY3JpcHRpb25SZXNwb25zZRJ+ChtQdWJsaXNoU3Vic2NyaXB0aW9uUHJvZ3Jlc3MSLi5kZWxpZGV2LnYxLlB1Ymxpc2hTdWJzY3JpcHRpb25Qcm9ncmVzc1JlcXVlc3QaLy5kZWxpZGV2LnYxLlB1Ymxpc2hTdWJzY3JpcHRpb25Qcm9ncmVzc1Jlc3BvbnNlEmMKEkZpbmlzaFN1YnNjcmlwdGlvbhIlLmRlbGlkZXYudjEuRmluaXNoU3Vic2NyaXB0aW9uUmVxdWVzdBomLmRlbGlkZXYudjEuRmluaXNoU3Vic2NyaXB0aW9uUmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z", [file_delidev_v1_common]);
+  fileDesc("Ch1kZWxpZGV2L3YxL3N1YnNjcmlwdGlvbi5wcm90bxIKZGVsaWRldi52MSKdAQoaUmVxdWVzdFN1YnNjcmlwdGlvblJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhIKCm1hY2hpbmVfaWQYAiABKAkSLgoGYWN0aW9uGAMgASgOMh4uZGVsaWRldi52MS5TdWJzY3JpcHRpb25BY3Rpb24SEwoLZGV2aWNlX2NvZGUYBCABKAgibAobUmVxdWVzdFN1YnNjcmlwdGlvblJlc3BvbnNlEiUKB2FjY291bnQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhQKDG9wZXJhdGlvbl9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCJDChlDYW5jZWxTdWJzY3JpcHRpb25SZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbiJVChpDYW5jZWxTdWJzY3JpcHRpb25SZXNwb25zZRIlCgdhY2NvdW50GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIQCghyZXBsYXllZBgCIAEoCCJKCh5HZXRTdWJzY3JpcHRpb25Qcm9ncmVzc1JlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCRIUCgxvcGVyYXRpb25faWQYAiABKAkiUwofR2V0U3Vic2NyaXB0aW9uUHJvZ3Jlc3NSZXNwb25zZRILCgN1cmwYASABKAkSEQoJdXNlcl9jb2RlGAIgASgJEhAKCGNhbmNlbGVkGAMgASgIIkMKGFdhdGNoU3Vic2NyaXB0aW9uUmVxdWVzdBISCgptYWNoaW5lX2lkGAEgASgJEhMKC2luc3RhbmNlX2lkGAIgASgJIkIKGVdhdGNoU3Vic2NyaXB0aW9uUmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UisAEKF1Rha2VTdWJzY3JpcHRpb25SZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhISCgptYWNoaW5lX2lkGAIgASgJEhMKC2luc3RhbmNlX2lkGAMgASgJEhQKDG9wZXJhdGlvbl9pZBgEIAEoCRIuCgZhY3Rpb24YBSABKA4yHi5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvbkFjdGlvbiKGAQoYVGFrZVN1YnNjcmlwdGlvblJlc3BvbnNlEhAKCGxlYXNlX2lkGAEgASgJEhUKDWdlbmVyYXRpb25faWQYAiABKAkSDgoGYnVuZGxlGAMgASgMEhYKDmxlYXNlX3JldmlzaW9uGAQgASgEEhkKEWluc3RhbGxhdGlvbl9qc29uGAUgASgMIpMBCiJQdWJsaXNoU3Vic2NyaXB0aW9uUHJvZ3Jlc3NSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSEAoIbGVhc2VfaWQYAiABKAkSEgoKbWFjaGluZV9pZBgDIAEoCRITCgtpbnN0YW5jZV9pZBgEIAEoCRILCgN1cmwYBSABKAkSEQoJdXNlcl9jb2RlGAYgASgJIjcKI1B1Ymxpc2hTdWJzY3JpcHRpb25Qcm9ncmVzc1Jlc3BvbnNlEhAKCGNhbmNlbGVkGAEgASgIIu4BChlGaW5pc2hTdWJzY3JpcHRpb25SZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIQCghsZWFzZV9pZBgCIAEoCRISCgptYWNoaW5lX2lkGAMgASgJEhMKC2luc3RhbmNlX2lkGAQgASgJEhUKDWdlbmVyYXRpb25faWQYBSABKAkSDgoGYnVuZGxlGAYgASgMEhkKEWNsZWFudXBfY29uZmlybWVkGAcgASgIEhkKEXJlZnJlc2hfY29uZmlybWVkGAggASgIEhEKCXN1Y2NlZWRlZBgJIAEoCCJVChpGaW5pc2hTdWJzY3JpcHRpb25SZXNwb25zZRIlCgdhY2NvdW50GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIQCghyZXBsYXllZBgCIAEoCCKnAgolUmVxdWVzdFN1YnNjcmlwdGlvbk9ic2VydmF0aW9uUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SEgoKbWFjaGluZV9pZBgCIAEoCRI5CgZhY3Rpb24YAyABKA4yKS5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvbk9ic2VydmF0aW9uQWN0aW9uEhUKDWNvbm5lY3Rpb25faWQYBCABKAkSFQoNZ2VuZXJhdGlvbl9pZBgFIAEoCRIRCgljcmVkaXRfaWQYBiABKAkSEwoLbmV4dF9jcmVkaXQYByABKAgSHgoWY3JlZGl0c19vYnNlcnZhdGlvbl9pZBgIIAEoCRIRCgljb25maXJtZWQYCSABKAgidwomUmVxdWVzdFN1YnNjcmlwdGlvbk9ic2VydmF0aW9uUmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USFAoMb3BlcmF0aW9uX2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIjkKI1JlZnJlc2hBbGxTdWJzY3JpcHRpb25RdW90YXNSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkiXgokUmVmcmVzaEFsbFN1YnNjcmlwdGlvblF1b3Rhc1Jlc3BvbnNlEhAKCGFjY291bnRzGAEgAygJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgikAEKIlJlY29uY2lsZVN1YnNjcmlwdGlvbkNyZWRpdFJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhQKDG9wZXJhdGlvbl9pZBgCIAEoCRIVCg1jb25uZWN0aW9uX2lkGAMgASgJEhUKDWdlbmVyYXRpb25faWQYBCABKAkiXgojUmVjb25jaWxlU3Vic2NyaXB0aW9uQ3JlZGl0UmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEAoIcmVwbGF5ZWQYAiABKAgitQEKI0NsYWltU3Vic2NyaXB0aW9uT2JzZXJ2YXRpb25SZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIQCghsZWFzZV9pZBgCIAEoCRISCgptYWNoaW5lX2lkGAMgASgJEhMKC2luc3RhbmNlX2lkGAQgASgJEhQKDG9wZXJhdGlvbl9pZBgFIAEoCRIVCg1nZW5lcmF0aW9uX2lkGAYgASgJIj4KJENsYWltU3Vic2NyaXB0aW9uT2JzZXJ2YXRpb25SZXNwb25zZRIWCg5vcGVyYXRpb25fanNvbhgBIAEoDCLRAQolUHVibGlzaFN1YnNjcmlwdGlvbk9ic2VydmF0aW9uUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SEAoIbGVhc2VfaWQYAiABKAkSEgoKbWFjaGluZV9pZBgDIAEoCRITCgtpbnN0YW5jZV9pZBgEIAEoCRIUCgxvcGVyYXRpb25faWQYBSABKAkSFQoNZ2VuZXJhdGlvbl9pZBgGIAEoCRIYChBvYnNlcnZhdGlvbl9qc29uGAcgASgMImEKJlB1Ymxpc2hTdWJzY3JpcHRpb25PYnNlcnZhdGlvblJlc3BvbnNlEiUKB2FjY291bnQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhAKCHJlcGxheWVkGAIgASgIKv8BChJTdWJzY3JpcHRpb25BY3Rpb24SIwofU1VCU0NSSVBUSU9OX0FDVElPTl9VTlNQRUNJRklFRBAAEh0KGVNVQlNDUklQVElPTl9BQ1RJT05fTE9HSU4QARIfChtTVUJTQ1JJUFRJT05fQUNUSU9OX1JFRlJFU0gQAhIeChpTVUJTQ1JJUFRJT05fQUNUSU9OX0xPR09VVBADEh8KG1NVQlNDUklQVElPTl9BQ1RJT05fRVhFQ1VURRAEEh0KGVNVQlNDUklQVElPTl9BQ1RJT05fUVVPVEEQBRIkCiBTVUJTQ1JJUFRJT05fQUNUSU9OX1JFU0VUX0NSRURJVBAGKq0BCh1TdWJzY3JpcHRpb25PYnNlcnZhdGlvbkFjdGlvbhIvCitTVUJTQ1JJUFRJT05fT0JTRVJWQVRJT05fQUNUSU9OX1VOU1BFQ0lGSUVEEAASKQolU1VCU0NSSVBUSU9OX09CU0VSVkFUSU9OX0FDVElPTl9RVU9UQRABEjAKLFNVQlNDUklQVElPTl9PQlNFUlZBVElPTl9BQ1RJT05fUkVTRVRfQ1JFRElUEAIq+AEKGFN1YnNjcmlwdGlvblJlc2V0T3V0Y29tZRIqCiZTVUJTQ1JJUFRJT05fUkVTRVRfT1VUQ09NRV9VTlNQRUNJRklFRBAAEiQKIFNVQlNDUklQVElPTl9SRVNFVF9PVVRDT01FX1JFU0VUEAESLworU1VCU0NSSVBUSU9OX1JFU0VUX09VVENPTUVfQUxSRUFEWV9SRURFRU1FRBACEi8KK1NVQlNDUklQVElPTl9SRVNFVF9PVVRDT01FX05PVEhJTkdfVE9fUkVTRVQQAxIoCiRTVUJTQ1JJUFRJT05fUkVTRVRfT1VUQ09NRV9OT19DUkVESVQQBDKaCwoTU3Vic2NyaXB0aW9uU2VydmljZRKHAQoeUmVxdWVzdFN1YnNjcmlwdGlvbk9ic2VydmF0aW9uEjEuZGVsaWRldi52MS5SZXF1ZXN0U3Vic2NyaXB0aW9uT2JzZXJ2YXRpb25SZXF1ZXN0GjIuZGVsaWRldi52MS5SZXF1ZXN0U3Vic2NyaXB0aW9uT2JzZXJ2YXRpb25SZXNwb25zZRKBAQocUmVmcmVzaEFsbFN1YnNjcmlwdGlvblF1b3RhcxIvLmRlbGlkZXYudjEuUmVmcmVzaEFsbFN1YnNjcmlwdGlvblF1b3Rhc1JlcXVlc3QaMC5kZWxpZGV2LnYxLlJlZnJlc2hBbGxTdWJzY3JpcHRpb25RdW90YXNSZXNwb25zZRJ+ChtSZWNvbmNpbGVTdWJzY3JpcHRpb25DcmVkaXQSLi5kZWxpZGV2LnYxLlJlY29uY2lsZVN1YnNjcmlwdGlvbkNyZWRpdFJlcXVlc3QaLy5kZWxpZGV2LnYxLlJlY29uY2lsZVN1YnNjcmlwdGlvbkNyZWRpdFJlc3BvbnNlEoEBChxDbGFpbVN1YnNjcmlwdGlvbk9ic2VydmF0aW9uEi8uZGVsaWRldi52MS5DbGFpbVN1YnNjcmlwdGlvbk9ic2VydmF0aW9uUmVxdWVzdBowLmRlbGlkZXYudjEuQ2xhaW1TdWJzY3JpcHRpb25PYnNlcnZhdGlvblJlc3BvbnNlEocBCh5QdWJsaXNoU3Vic2NyaXB0aW9uT2JzZXJ2YXRpb24SMS5kZWxpZGV2LnYxLlB1Ymxpc2hTdWJzY3JpcHRpb25PYnNlcnZhdGlvblJlcXVlc3QaMi5kZWxpZGV2LnYxLlB1Ymxpc2hTdWJzY3JpcHRpb25PYnNlcnZhdGlvblJlc3BvbnNlEmYKE1JlcXVlc3RTdWJzY3JpcHRpb24SJi5kZWxpZGV2LnYxLlJlcXVlc3RTdWJzY3JpcHRpb25SZXF1ZXN0GicuZGVsaWRldi52MS5SZXF1ZXN0U3Vic2NyaXB0aW9uUmVzcG9uc2USYwoSQ2FuY2VsU3Vic2NyaXB0aW9uEiUuZGVsaWRldi52MS5DYW5jZWxTdWJzY3JpcHRpb25SZXF1ZXN0GiYuZGVsaWRldi52MS5DYW5jZWxTdWJzY3JpcHRpb25SZXNwb25zZRJyChdHZXRTdWJzY3JpcHRpb25Qcm9ncmVzcxIqLmRlbGlkZXYudjEuR2V0U3Vic2NyaXB0aW9uUHJvZ3Jlc3NSZXF1ZXN0GisuZGVsaWRldi52MS5HZXRTdWJzY3JpcHRpb25Qcm9ncmVzc1Jlc3BvbnNlEmIKEVdhdGNoU3Vic2NyaXB0aW9uEiQuZGVsaWRldi52MS5XYXRjaFN1YnNjcmlwdGlvblJlcXVlc3QaJS5kZWxpZGV2LnYxLldhdGNoU3Vic2NyaXB0aW9uUmVzcG9uc2UwARJdChBUYWtlU3Vic2NyaXB0aW9uEiMuZGVsaWRldi52MS5UYWtlU3Vic2NyaXB0aW9uUmVxdWVzdBokLmRlbGlkZXYudjEuVGFrZVN1YnNjcmlwdGlvblJlc3BvbnNlEn4KG1B1Ymxpc2hTdWJzY3JpcHRpb25Qcm9ncmVzcxIuLmRlbGlkZXYudjEuUHVibGlzaFN1YnNjcmlwdGlvblByb2dyZXNzUmVxdWVzdBovLmRlbGlkZXYudjEuUHVibGlzaFN1YnNjcmlwdGlvblByb2dyZXNzUmVzcG9uc2USYwoSRmluaXNoU3Vic2NyaXB0aW9uEiUuZGVsaWRldi52MS5GaW5pc2hTdWJzY3JpcHRpb25SZXF1ZXN0GiYuZGVsaWRldi52MS5GaW5pc2hTdWJzY3JpcHRpb25SZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
 
 /**
  * @generated from message delidev.v1.RequestSubscriptionRequest
@@ -417,6 +417,320 @@ export const FinishSubscriptionResponseSchema: GenMessage<FinishSubscriptionResp
   messageDesc(file_delidev_v1_subscription, 13);
 
 /**
+ * @generated from message delidev.v1.RequestSubscriptionObservationRequest
+ */
+export type RequestSubscriptionObservationRequest = Message<"delidev.v1.RequestSubscriptionObservationRequest"> & {
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 1;
+   */
+  mutation?: Mutation | undefined;
+
+  /**
+   * @generated from field: string machine_id = 2;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: delidev.v1.SubscriptionObservationAction action = 3;
+   */
+  action: SubscriptionObservationAction;
+
+  /**
+   * @generated from field: string connection_id = 4;
+   */
+  connectionId: string;
+
+  /**
+   * @generated from field: string generation_id = 5;
+   */
+  generationId: string;
+
+  /**
+   * @generated from field: string credit_id = 6;
+   */
+  creditId: string;
+
+  /**
+   * @generated from field: bool next_credit = 7;
+   */
+  nextCredit: boolean;
+
+  /**
+   * @generated from field: string credits_observation_id = 8;
+   */
+  creditsObservationId: string;
+
+  /**
+   * @generated from field: bool confirmed = 9;
+   */
+  confirmed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.RequestSubscriptionObservationRequest.
+ * Use `create(RequestSubscriptionObservationRequestSchema)` to create a new message.
+ */
+export const RequestSubscriptionObservationRequestSchema: GenMessage<RequestSubscriptionObservationRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_subscription, 14);
+
+/**
+ * @generated from message delidev.v1.RequestSubscriptionObservationResponse
+ */
+export type RequestSubscriptionObservationResponse = Message<"delidev.v1.RequestSubscriptionObservationResponse"> & {
+  /**
+   * @generated from field: delidev.v1.Resource account = 1;
+   */
+  account?: Resource | undefined;
+
+  /**
+   * @generated from field: string operation_id = 2;
+   */
+  operationId: string;
+
+  /**
+   * @generated from field: bool replayed = 3;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.RequestSubscriptionObservationResponse.
+ * Use `create(RequestSubscriptionObservationResponseSchema)` to create a new message.
+ */
+export const RequestSubscriptionObservationResponseSchema: GenMessage<RequestSubscriptionObservationResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_subscription, 15);
+
+/**
+ * @generated from message delidev.v1.RefreshAllSubscriptionQuotasRequest
+ */
+export type RefreshAllSubscriptionQuotasRequest = Message<"delidev.v1.RefreshAllSubscriptionQuotasRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+};
+
+/**
+ * Describes the message delidev.v1.RefreshAllSubscriptionQuotasRequest.
+ * Use `create(RefreshAllSubscriptionQuotasRequestSchema)` to create a new message.
+ */
+export const RefreshAllSubscriptionQuotasRequestSchema: GenMessage<RefreshAllSubscriptionQuotasRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_subscription, 16);
+
+/**
+ * @generated from message delidev.v1.RefreshAllSubscriptionQuotasResponse
+ */
+export type RefreshAllSubscriptionQuotasResponse = Message<"delidev.v1.RefreshAllSubscriptionQuotasResponse"> & {
+  /**
+   * Complete server-side accepted account IDs; no frontend page drives work.
+   *
+   * @generated from field: repeated string accounts = 1;
+   */
+  accounts: string[];
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 3;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.RefreshAllSubscriptionQuotasResponse.
+ * Use `create(RefreshAllSubscriptionQuotasResponseSchema)` to create a new message.
+ */
+export const RefreshAllSubscriptionQuotasResponseSchema: GenMessage<RefreshAllSubscriptionQuotasResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_subscription, 17);
+
+/**
+ * @generated from message delidev.v1.ReconcileSubscriptionCreditRequest
+ */
+export type ReconcileSubscriptionCreditRequest = Message<"delidev.v1.ReconcileSubscriptionCreditRequest"> & {
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 1;
+   */
+  mutation?: Mutation | undefined;
+
+  /**
+   * @generated from field: string operation_id = 2;
+   */
+  operationId: string;
+
+  /**
+   * @generated from field: string connection_id = 3;
+   */
+  connectionId: string;
+
+  /**
+   * @generated from field: string generation_id = 4;
+   */
+  generationId: string;
+};
+
+/**
+ * Describes the message delidev.v1.ReconcileSubscriptionCreditRequest.
+ * Use `create(ReconcileSubscriptionCreditRequestSchema)` to create a new message.
+ */
+export const ReconcileSubscriptionCreditRequestSchema: GenMessage<ReconcileSubscriptionCreditRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_subscription, 18);
+
+/**
+ * @generated from message delidev.v1.ReconcileSubscriptionCreditResponse
+ */
+export type ReconcileSubscriptionCreditResponse = Message<"delidev.v1.ReconcileSubscriptionCreditResponse"> & {
+  /**
+   * @generated from field: delidev.v1.Resource account = 1;
+   */
+  account?: Resource | undefined;
+
+  /**
+   * @generated from field: bool replayed = 2;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.ReconcileSubscriptionCreditResponse.
+ * Use `create(ReconcileSubscriptionCreditResponseSchema)` to create a new message.
+ */
+export const ReconcileSubscriptionCreditResponseSchema: GenMessage<ReconcileSubscriptionCreditResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_subscription, 19);
+
+/**
+ * @generated from message delidev.v1.ClaimSubscriptionObservationRequest
+ */
+export type ClaimSubscriptionObservationRequest = Message<"delidev.v1.ClaimSubscriptionObservationRequest"> & {
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 1;
+   */
+  mutation?: Mutation | undefined;
+
+  /**
+   * @generated from field: string lease_id = 2;
+   */
+  leaseId: string;
+
+  /**
+   * @generated from field: string machine_id = 3;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: string instance_id = 4;
+   */
+  instanceId: string;
+
+  /**
+   * @generated from field: string operation_id = 5;
+   */
+  operationId: string;
+
+  /**
+   * @generated from field: string generation_id = 6;
+   */
+  generationId: string;
+};
+
+/**
+ * Describes the message delidev.v1.ClaimSubscriptionObservationRequest.
+ * Use `create(ClaimSubscriptionObservationRequestSchema)` to create a new message.
+ */
+export const ClaimSubscriptionObservationRequestSchema: GenMessage<ClaimSubscriptionObservationRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_subscription, 20);
+
+/**
+ * @generated from message delidev.v1.ClaimSubscriptionObservationResponse
+ */
+export type ClaimSubscriptionObservationResponse = Message<"delidev.v1.ClaimSubscriptionObservationResponse"> & {
+  /**
+   * @generated from field: bytes operation_json = 1;
+   */
+  operationJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.ClaimSubscriptionObservationResponse.
+ * Use `create(ClaimSubscriptionObservationResponseSchema)` to create a new message.
+ */
+export const ClaimSubscriptionObservationResponseSchema: GenMessage<ClaimSubscriptionObservationResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_subscription, 21);
+
+/**
+ * @generated from message delidev.v1.PublishSubscriptionObservationRequest
+ */
+export type PublishSubscriptionObservationRequest = Message<"delidev.v1.PublishSubscriptionObservationRequest"> & {
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 1;
+   */
+  mutation?: Mutation | undefined;
+
+  /**
+   * @generated from field: string lease_id = 2;
+   */
+  leaseId: string;
+
+  /**
+   * @generated from field: string machine_id = 3;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: string instance_id = 4;
+   */
+  instanceId: string;
+
+  /**
+   * @generated from field: string operation_id = 5;
+   */
+  operationId: string;
+
+  /**
+   * @generated from field: string generation_id = 6;
+   */
+  generationId: string;
+
+  /**
+   * Metadata-only closed Go projection, bounded to 32 KiB.
+   *
+   * @generated from field: bytes observation_json = 7;
+   */
+  observationJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.PublishSubscriptionObservationRequest.
+ * Use `create(PublishSubscriptionObservationRequestSchema)` to create a new message.
+ */
+export const PublishSubscriptionObservationRequestSchema: GenMessage<PublishSubscriptionObservationRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_subscription, 22);
+
+/**
+ * @generated from message delidev.v1.PublishSubscriptionObservationResponse
+ */
+export type PublishSubscriptionObservationResponse = Message<"delidev.v1.PublishSubscriptionObservationResponse"> & {
+  /**
+   * @generated from field: delidev.v1.Resource account = 1;
+   */
+  account?: Resource | undefined;
+
+  /**
+   * @generated from field: bool replayed = 2;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.PublishSubscriptionObservationResponse.
+ * Use `create(PublishSubscriptionObservationResponseSchema)` to create a new message.
+ */
+export const PublishSubscriptionObservationResponseSchema: GenMessage<PublishSubscriptionObservationResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_subscription, 23);
+
+/**
  * @generated from enum delidev.v1.SubscriptionAction
  */
 export enum SubscriptionAction {
@@ -444,6 +758,16 @@ export enum SubscriptionAction {
    * @generated from enum value: SUBSCRIPTION_ACTION_EXECUTE = 4;
    */
   EXECUTE = 4,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_ACTION_QUOTA = 5;
+   */
+  QUOTA = 5,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_ACTION_RESET_CREDIT = 6;
+   */
+  RESET_CREDIT = 6,
 }
 
 /**
@@ -453,12 +777,116 @@ export const SubscriptionActionSchema: GenEnum<SubscriptionAction> = /*@__PURE__
   enumDesc(file_delidev_v1_subscription, 0);
 
 /**
+ * Quota reads and explicit credit consumption share the original native owner.
+ *
+ * @generated from enum delidev.v1.SubscriptionObservationAction
+ */
+export enum SubscriptionObservationAction {
+  /**
+   * @generated from enum value: SUBSCRIPTION_OBSERVATION_ACTION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_OBSERVATION_ACTION_QUOTA = 1;
+   */
+  QUOTA = 1,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_OBSERVATION_ACTION_RESET_CREDIT = 2;
+   */
+  RESET_CREDIT = 2,
+}
+
+/**
+ * Describes the enum delidev.v1.SubscriptionObservationAction.
+ */
+export const SubscriptionObservationActionSchema: GenEnum<SubscriptionObservationAction> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_subscription, 1);
+
+/**
+ * @generated from enum delidev.v1.SubscriptionResetOutcome
+ */
+export enum SubscriptionResetOutcome {
+  /**
+   * @generated from enum value: SUBSCRIPTION_RESET_OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_RESET_OUTCOME_RESET = 1;
+   */
+  RESET = 1,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_RESET_OUTCOME_ALREADY_REDEEMED = 2;
+   */
+  ALREADY_REDEEMED = 2,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_RESET_OUTCOME_NOTHING_TO_RESET = 3;
+   */
+  NOTHING_TO_RESET = 3,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_RESET_OUTCOME_NO_CREDIT = 4;
+   */
+  NO_CREDIT = 4,
+}
+
+/**
+ * Describes the enum delidev.v1.SubscriptionResetOutcome.
+ */
+export const SubscriptionResetOutcomeSchema: GenEnum<SubscriptionResetOutcome> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_subscription, 2);
+
+/**
  * Public lifecycle operations and an independently authorized protected Worker
  * lane. Bundles never enter Resource, Job, events, receipts, or execution output.
  *
  * @generated from service delidev.v1.SubscriptionService
  */
 export const SubscriptionService: GenService<{
+  /**
+   * @generated from rpc delidev.v1.SubscriptionService.RequestSubscriptionObservation
+   */
+  requestSubscriptionObservation: {
+    methodKind: "unary";
+    input: typeof RequestSubscriptionObservationRequestSchema;
+    output: typeof RequestSubscriptionObservationResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas
+   */
+  refreshAllSubscriptionQuotas: {
+    methodKind: "unary";
+    input: typeof RefreshAllSubscriptionQuotasRequestSchema;
+    output: typeof RefreshAllSubscriptionQuotasResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SubscriptionService.ReconcileSubscriptionCredit
+   */
+  reconcileSubscriptionCredit: {
+    methodKind: "unary";
+    input: typeof ReconcileSubscriptionCreditRequestSchema;
+    output: typeof ReconcileSubscriptionCreditResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SubscriptionService.ClaimSubscriptionObservation
+   */
+  claimSubscriptionObservation: {
+    methodKind: "unary";
+    input: typeof ClaimSubscriptionObservationRequestSchema;
+    output: typeof ClaimSubscriptionObservationResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SubscriptionService.PublishSubscriptionObservation
+   */
+  publishSubscriptionObservation: {
+    methodKind: "unary";
+    input: typeof PublishSubscriptionObservationRequestSchema;
+    output: typeof PublishSubscriptionObservationResponseSchema;
+  },
   /**
    * @generated from rpc delidev.v1.SubscriptionService.RequestSubscription
    */

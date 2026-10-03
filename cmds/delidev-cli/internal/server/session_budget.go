@@ -23,7 +23,7 @@ func sessionBudgetView(tx *store.Tx, id domain.ID) (*pb.SessionBudgetView, error
 	if err != nil {
 		return nil, err
 	}
-	view := &pb.SessionBudgetView{Session: rpc.Resource(row), State: pb.BudgetState_BUDGET_STATE_DISABLED, Coverage: pb.UsageCoverage_USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES}
+	view := &pb.SessionBudgetView{Session: rpc.Resource(row), State: pb.BudgetState_BUDGET_STATE_DISABLED, Coverage: pb.UsageCoverage_USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS}
 	if value.EstimatedCostBudget == nil {
 		return view, nil
 	}
@@ -32,7 +32,7 @@ func sessionBudgetView(tx *store.Tx, id domain.ID) (*pb.SessionBudgetView, error
 		return nil, domain.Fail(domain.RecoveryRequired, "The retained budget is invalid.", "Preserve its original configuration; remove or replace it explicitly.")
 	}
 	view.Budget = &pb.EstimatedCostBudget{Currency: string(b.Currency), Threshold: b.Threshold}
-	selected, err := tx.SessionEstimate(id, b.Currency)
+	selected, err := tx.SessionBudgetEstimate(id, b.Currency)
 	if err != nil {
 		return nil, err
 	}
@@ -41,11 +41,20 @@ func sessionBudgetView(tx *store.Tx, id domain.ID) (*pb.SessionBudgetView, error
 		return nil, err
 	}
 	view.UnpricedResponses = unpriced.UnavailableResponses
+	nativeUnpriced, err := tx.NativeSessionEstimate(id, "")
+	if err != nil {
+		return nil, err
+	}
+	view.UnpricedNativeUnits = nativeUnpriced.UnavailableResponses
+	view.OtherCurrencyNativeUnits, err = tx.OtherNativeBudgetCurrencies(id, b.Currency)
+	if err != nil {
+		return nil, err
+	}
 	view.OtherCurrencyResponses, err = tx.OtherBudgetCurrencies(id, b.Currency)
 	if err != nil {
 		return nil, err
 	}
-	view.SelectedCurrency = &pb.BudgetEvidence{Currency: string(selected.Currency), KnownAmount: selected.KnownAmount, CompleteResponses: selected.CompleteResponses, PartialResponses: selected.PartialResponses, UnavailableResponses: selected.UnavailableResponses}
+	view.SelectedCurrency = &pb.BudgetEvidence{Currency: string(selected.Currency), KnownAmount: selected.KnownAmount, CompleteResponses: selected.CompleteResponses, PartialResponses: selected.PartialResponses, UnavailableResponses: selected.UnavailableResponses, CompleteNativeUnits: selected.CompleteNativeUnits, PartialNativeUnits: selected.PartialNativeUnits, UnavailableNativeUnits: selected.UnavailableNativeUnits}
 	view.State = pb.BudgetState_BUDGET_STATE_ALLOW_INCOMPLETE
 	reached, err := b.Reached(selected)
 	if err != nil {

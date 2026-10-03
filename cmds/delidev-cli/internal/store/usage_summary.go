@@ -2,6 +2,7 @@ package store
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -44,10 +45,14 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 			args = append(args, part.value)
 		}
 	}
+	if f.SubscriptionService != "" {
+		where += " AND json_extract(r.body,'$.subscription_service')=?"
+		args = append(args, f.SubscriptionService)
+	}
 	if f.GeneralChat {
 		where += " AND r.project_id=''"
 	}
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT r.body,r.created_at,e.body,COALESCE(e.pricing_id,''),COALESCE(p.model_id,''),COALESCE(p.provider_id,''),COALESCE(p.revision,0),COALESCE(p.body,''),COALESCE(p.created_at,0) FROM response_usage r LEFT JOIN response_estimates e ON e.usage_id=r.id LEFT JOIN pricing_versions p ON p.id=e.pricing_id WHERE `+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT r.body,r.created_at,e.body,COALESCE(e.pricing_id,''),COALESCE(p.model_id,''),COALESCE(p.provider_id,''),COALESCE(p.subscription_service,''),COALESCE(p.revision,0),COALESCE(p.body,''),COALESCE(p.created_at,0) FROM response_usage r LEFT JOIN response_estimates e ON e.usage_id=r.id LEFT JOIN pricing_versions p ON p.id=e.pricing_id WHERE `+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
 	if err != nil {
 		return result, storageError(err)
 	}
@@ -65,7 +70,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 			var body, estimateBody, priceBody []byte
 			var price PricingVersion
 			var responseCreated, pricingCreated int64
-			if err := rows.Scan(&body, &responseCreated, &estimateBody, &price.ID, &price.ModelID, &price.ProviderID, &price.Revision, &priceBody, &pricingCreated); err != nil {
+			if err := rows.Scan(&body, &responseCreated, &estimateBody, &price.ID, &price.ModelID, &price.ProviderID, &price.SubscriptionService, &price.Revision, &priceBody, &pricingCreated); err != nil {
 				return storageError(err)
 			}
 			var record domain.ResponseUsageRecord
@@ -83,7 +88,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					if len(prices) >= maxUsageGroups {
 						return usageReadLimit()
 					}
-					if price.ID.Validate() != nil || price.ModelID.Validate() != nil || price.ProviderID.Validate() != nil || price.Revision == 0 || len(priceBody) > 16<<10 || domain.Decode(priceBody, &price.Basis) != nil || price.Basis.Validate() != nil {
+					if price.ID.Validate() != nil || price.ModelID.Validate() != nil || !price.ValidIdentity() || price.Revision == 0 || len(priceBody) > 16<<10 || domain.Decode(priceBody, &price.Basis) != nil || price.Basis.Validate() != nil {
 						return corrupt()
 					}
 					price.CreatedAt = time.UnixMilli(pricingCreated).UTC()
@@ -106,7 +111,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 				if len(groups) >= maxUsageGroups {
 					return usageReadLimit()
 				}
-				group = &domain.UsageGroup{SessionID: record.SessionID, ProjectID: record.ProjectID, AccountID: record.AccountID, ProviderID: record.ProviderID, ModelID: record.ModelID}
+				group = &domain.UsageGroup{SessionID: record.SessionID, ProjectID: record.ProjectID, AccountID: record.AccountID, ProviderID: record.ProviderID, SubscriptionService: record.SubscriptionService, ModelID: record.ModelID}
 				groups[key] = group
 			}
 			if group.ProjectID != record.ProjectID {
@@ -137,7 +142,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					if len(modelGroups) >= maxUsageGroups || len(modelGroups) >= domain.UsageModelGroupLimit {
 						return usageReadLimit()
 					}
-					model = &domain.UsageAnalyticsModel{ProviderID: record.ProviderID, ModelID: record.ModelID}
+					model = &domain.UsageAnalyticsModel{ProviderID: record.ProviderID, SubscriptionService: record.SubscriptionService, ModelID: record.ModelID}
 					modelGroups[key] = model
 				}
 				model.Totals.Add(record.Usage.Counts)
@@ -195,9 +200,34 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	for _, id := range priceIDs {
 		result.Pricing = append(result.Pricing, *prices[id])
 	}
-	result.AcceptedExecutionsWithoutResponse, err = t.usageMissingExecutions(f, observed)
+	result.AcceptedExecutionsWithoutResponse, err = t.usageMissingActions(f, observed, false)
 	if err != nil {
 		return domain.UsageSummary{}, err
+	}
+	result.AcceptedCompactionsWithoutResponse, err = t.usageMissingActions(f, observed, true)
+	if err != nil {
+		return domain.UsageSummary{}, err
+	}
+	if f.AccountingProfile == domain.NativeUnitsV1Accounting {
+		units := result.Totals.Responses
+		for _, accounting := range result.Totals.Accounting {
+			if accounting.Kind == domain.GrokClosedInput {
+				units += accounting.Units
+			}
+		}
+		groupCount := len(result.Groups)
+		for _, kind := range []domain.AccountingUnitKind{domain.ClaudeMainLoopInput, domain.OpenCodeStep} {
+			summary, err := t.nativeAccountingSummary(f, kind)
+			if err != nil {
+				return domain.UsageSummary{}, err
+			}
+			units += summary.Totals.Units
+			groupCount += len(summary.Groups)
+			if units > maxUsageResponses || groupCount > maxUsageGroups {
+				return domain.UsageSummary{}, usageReadLimit()
+			}
+			result.NativeAccounting = append(result.NativeAccounting, summary)
+		}
 	}
 	return result, nil
 }
@@ -209,17 +239,35 @@ type usageModelKey struct {
 
 // This is an explicit coverage indicator for executions accepted in the same
 // server-time window, not proof of zero calls or complete child telemetry.
-func (t *Tx) usageMissingExecutions(f domain.UsageSelection, observed map[domain.ID]bool) (uint32, error) {
+func (t *Tx) usageMissingActions(f domain.UsageSelection, observed map[domain.ID]bool, compaction bool) (uint32, error) {
 	query := `SELECT json_extract(e.body,'$.input.execution_id'),json_extract(e.body,'$.input.session_id'),json_extract(e.body,'$.input.account_id') FROM entities e WHERE e.kind='job' AND json_extract(e.body,'$.type')='execute-session' AND e.created_at>=? AND e.created_at<? AND EXISTS(SELECT 1 FROM entities s WHERE s.kind='session' AND s.id=e.session_id)`
+	if compaction {
+		query = strings.ReplaceAll(query, "'execute-session'", "'compact-session'")
+		query = strings.ReplaceAll(query, "$.input.execution_id", "$.input.action_id")
+		query = strings.ReplaceAll(query, "$.input.session_id", "$.input.assignment.session_id")
+		query = strings.ReplaceAll(query, "$.input.account_id", "$.input.assignment.account_id")
+	}
 	args := []any{f.From.UnixMilli(), f.Until.UnixMilli()}
 	for _, part := range []struct {
 		column string
 		value  domain.ID
 	}{{"e.session_id", f.SessionID}, {"e.project_id", f.ProjectID}, {"json_extract(e.body,'$.input.account_id')", f.AccountID}, {"json_extract(e.body,'$.input.configuration.provider_id')", f.ProviderID}, {"json_extract(e.body,'$.input.configuration.model_id')", f.ModelID}} {
 		if part.value != "" {
-			query += " AND " + part.column + "=?"
+			column := part.column
+			if compaction {
+				column = strings.ReplaceAll(column, "$.input.", "$.input.assignment.")
+			}
+			query += " AND " + column + "=?"
 			args = append(args, part.value)
 		}
+	}
+	if f.SubscriptionService != "" {
+		path := "$.input.configuration.subscription_service"
+		if compaction {
+			path = "$.input.assignment.configuration.subscription_service"
+		}
+		query += " AND json_extract(e.body,'" + path + "')=?"
+		args = append(args, f.SubscriptionService)
 	}
 	if f.GeneralChat {
 		query += " AND e.project_id=''"

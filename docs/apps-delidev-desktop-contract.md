@@ -1,5 +1,10 @@
 # DeliDev desktop client
 
+## Model request Diagnostics panel
+
+Issue #1103 adds an explicit Diagnostics panel beside the retained session conversation. It uses generated owner/client Connect Query after `REQUEST_DIAGNOSTICS_V1` capability validation, with an optional exact execution UUID filter, explicit refresh and 50-record pages. Validate the entire page's original session/execution, closed source/operation/state/error/settings, identity spelling, timestamps and precise counters before rendering. Keep native input selection/effective settings separate from proxy request/provider observations, and unavailable fields separate from zero/false. A send claim cannot prove provider acceptance; native terminal metadata cannot confirm native cleanup. Historical absence cannot be reconstructed. Escape/Close returns focus to Diagnostics and preserves the composer; inactive diagnostic queries are canceled/disposed. No mutation intent, automatic retry, payload display, usage reconstruction or public opener is introduced. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) and validation records in the integration PR.
+
+
 ## Scope
 `apps/delidev` owns the React desktop presentation and native Tauri host for DeliDev. The full desktop requirements in issue #964 remain normative; record implemented surfaces and remaining native/product work in pull requests, issues and CI logs/artifacts.
 
@@ -409,7 +414,7 @@ Every body shares one left anchor, `width: 100%` and `max-width: 1040px`, white/
 
 Successful empty regions have at least 160px height, a 32px decorative vector at the left and left-aligned title/help at the right, growing with text. Backup-table empties and singleton notices stay compact semantic rows. Loading uses exactly two static decorative skeleton rows where a list is expected. Successful-empty predicates remain with each controller; initial errors/loading, unsupported/denied states, retained refresh failures and scoped later/continuation empty pages stay distinct. No duplicate empty-state create action is added; pagination hides only on a successful final empty first page.
 
-Forms share the category anchor and a 720px maximum, using two columns only at available form widths >=640px. Remove enclosing/nested form cards in favor of flat semantic groups and thin rules. Keep complete documents, every field/help/default/unknown value, mounted independent disclosures, invalid-field reveal/focus and Save/Cancel/original retry in ordinary flow. Planned subscription providers become flat ChatGPT/Claude/Grok rows, retaining Coming soon and unsupported lifecycle guidance. Appearance alone retains autosave, with native System/Light/Dark radios, decorative CSS miniatures and choices stacked below 640px available width. Integrations keeps its single New GitHub profile action in the category header even when empty; profile storage/identity/access distinctions remain visible.
+Forms share the category anchor and a 720px maximum, using two columns only at available form widths >=640px. Remove enclosing/nested form cards in favor of flat semantic groups and thin rules. Keep complete documents, every field/help/default/unknown value, mounted independent disclosures, invalid-field reveal/focus and Save/Cancel/original retry in ordinary flow. Subscription services use flat ChatGPT/Claude/Grok rows with negotiated service-only account creation and explicit unsupported lifecycle guidance. Managed Codex authentication follows the independent subscription-settings contract; authentication refresh never implies quota refresh. Appearance alone retains autosave, with native System/Light/Dark radios, decorative CSS miniatures and choices stacked below 640px available width. Integrations keeps its single New GitHub profile action in the category header even when empty; profile storage/identity/access distinctions remain visible.
 
 Notifications renders saved Enabled/Disabled values as noninteractive label/value rows. Explicit Edit focuses the first checkbox; Save/Cancel return once to the enabled Edit action within the same active visit. A delayed refetch may postpone return, but deliberate focus transfer, another dialog/drawer, inactivity, window loss or departure discards that intent. Native status and server/client preferences remain independent, with visible Inbox/no-implicit-approval guidance and the full supplementary About notification delivery disclosure. Appearance/device controller and persistent Connection controls remain outside visit disposal. Backups retains semantic inventory, independently observed accepted jobs and manual history tabs, with short Refresh/Dismiss tracking text and full identity-specific accessible names. Diagnostics keeps its original 1100px/1200px viewport breakpoints, exact canonical BigInt values and independent caveats.
 
@@ -1434,3 +1439,34 @@ polling on terminal/uncertain state and offer explicit refresh. Open the child
 only after verified publication. The [fork contract](cmds-delidev-forks-contract.md)
 keeps Go ownership and current eligibility authoritative. Component tests do not
 establish native desktop or other-platform acceptance.
+
+## Independent subscription identity composition
+
+AI Subscription uses System capability 17 and schema-v2 service-native accounts without searches or Provider-dependent requests. `subscription-accounts.tsx` owns explicit service-only creation, default-off recovery notifications and existing managed Codex login/cancel/authentication-refresh/logout; original request/revision, native owner and Settings lifetime remain authoritative. Native Models retain a closed service/matching harness independently of API Providers. Reconfiguration-required Agents need explicit current-model/account reset before routing; retired original documents are read-only historical attribution. Portable UI accepts v2 and API-only v1 without reserializing original bytes. Price, usage and request diagnostics preserve independent service attribution. Follow [AI Subscription settings](apps-delidev-subscription-settings-contract.md) and [managed subscriptions](cmds-delidev-subscription-contract.md); these interfaces do not establish real-account or platform acceptance.
+
+### Network routing settings
+
+Server preferences and each Runner Device inspection provide a collapsed Network settings workspace under the existing categories. Use authenticated generated Network/Resource queries, exact revision selection and explicit uncertainty controls for profile writes/deletion. Preserve write-only proxy credentials, profile pagination and the distinct desired/effective/native route states from the [network contract](cmds-delidev-network-contract.md). A current control generation never implies native use, inference or account readiness.
+
+Encrypted Worker export starts from its bounded original public recipient and separately displays authenticated ciphertext digest. Ciphertext is transient presentation, not persistent query state. Prepare/Import/Status on this computer reaches a closed trusted-window bridge for only its already registered matching Worker; Go performs protected storage and cryptography. Other Runner Devices use their equivalent CLI. Preparation/import does not register, start, stop or replace a Worker. All asynchronous file/native/RPC results belong to the current Settings opening; leaving disposes local presentation without replay or implicit native cancellation.
+
+### Codex child configuration
+
+Native harness options capability-gate Codex child configuration with System capability 22 and original Runner Device capability 11. Preserve omitted model/effort/concurrency defaults and disabled saved values on older servers. Explicit settings use the exact registered native model under the parent's selected account and are frozen before execution; native compatibility is checked before input. Display the saved canonical child identity/revision separately from native observations and requested settings. The existing configuration RPC, CLI and generated client remain the product write boundary; reading or editing these fields never launches or controls a child.
+
+OpenCode 1.18.32 foreground children use the shared read-only Subagents disclosure under independent capability 23. Validate its complete original task/child graph and closed exact response counters before rendering a bounded page; native task content remains inert. No child controls are added. Follow the subagent contract.
+
+Session Context uses authenticated Connect queries for native observations and
+current per-profile compaction eligibility. Bind the observed exact session
+revision before accepting the action, retain the original mutation across
+navigation/response loss, and poll context resources without replaying a native
+command. Show unavailable counters explicitly, preserve uncertain action guidance
+and require independent server/Worker capabilities. The control remains outside
+Settings and does not alter ordinary conversation outcomes or queued input.
+
+Original OpenCode automatic compaction progress uses the same bounded inert
+context disclosure as Codex, retaining its own harness and native part reference.
+Show started/completed independently of current context tokens, which remain
+unavailable when unreported. Native summaries and continuation users do not
+replace the canonical conversation. The private OpenCode manual controller does
+not enable the desktop action before independently negotiated product support.

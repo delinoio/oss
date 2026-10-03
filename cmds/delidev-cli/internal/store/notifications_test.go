@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -245,5 +246,69 @@ func TestNotificationBatchesHaveExplicitOverflow(t *testing.T) {
 	}
 	for _, ctx := range []context.Context{context.Background(), domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice})} {
 		assertCode(t, s.Read(ctx, func(tx *Tx) error { _, _, err := tx.NotificationCandidates(20); return err }), domain.PermissionDenied)
+	}
+}
+
+func TestSubscriptionRecoveryInboxAndNotificationDeduplicateWithoutSessionAuthority(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := notificationOwner()
+	account, connection, source := domain.NewID(), domain.NewID(), domain.NewID()
+	now := time.Now().UTC()
+	var first Record
+	_, err := s.Mutate(ctx, domain.NewID(), "fixture.subscription.recovery", nil, func(tx *Tx) (any, error) {
+		a := domain.Account{Alias: "private account alias", Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionChatGPT, Enabled: true, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: connection, Authentication: domain.SubscriptionAuth, ConnectedAt: now}, RecoveryNotifications: true}
+		if _, err := tx.Put(domain.AccountKind, account, 0, "", "", a); err != nil {
+			return nil, err
+		}
+		var err error
+		first, err = tx.CreateSubscriptionRecoveryInbox(account, source, connection, now)
+		if err != nil {
+			return nil, err
+		}
+		duplicate, err := tx.CreateSubscriptionRecoveryInbox(account, source, connection, now)
+		if err != nil || duplicate.ID != first.ID {
+			return nil, domain.InvalidSubscriptionObservation()
+		}
+		return struct{}{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.SessionID != "" || first.ProjectID != "" {
+		t.Fatal("account recovery acquired session authority")
+	}
+	err = s.Read(ctx, func(tx *Tx) error {
+		values, more, err := tx.NotificationCandidates(50)
+		if err != nil {
+			return err
+		}
+		if more || len(values) != 1 || values[0].Kind != domain.SubscriptionRecoveryNotification || values[0].AccountID != account || values[0].SessionID != "" {
+			t.Fatal("account-scoped native candidate lost ownership", values)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := domain.NewID()
+	_, err = s.Mutate(ctx, domain.NewID(), "fixture.subscription.notification.claim", nil, func(tx *Tx) (any, error) {
+		delivery, created, err := tx.ClaimNotification(first.ID, claim)
+		if err != nil {
+			return nil, err
+		}
+		if !created || delivery.AccountID != account || delivery.SessionID != "" {
+			t.Fatal("native claim changed account scope")
+		}
+		duplicate, created, err := tx.ClaimNotification(first.ID, domain.NewID())
+		if err != nil {
+			return nil, err
+		}
+		if created || duplicate.ClaimID != claim {
+			t.Fatal("duplicate native presentation granted")
+		}
+		return struct{}{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

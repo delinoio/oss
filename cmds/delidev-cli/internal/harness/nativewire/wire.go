@@ -12,6 +12,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 const MaxFrame = 1 << 20
@@ -68,6 +69,7 @@ type incoming struct {
 }
 
 type Connection struct {
+	protected  security.ProtectedJSON
 	jsonrpc    string
 	process    *process.Handle
 	cancel     context.CancelFunc
@@ -106,6 +108,7 @@ func StartJSONRPC(ctx context.Context, config process.Config) (*Connection, erro
 func start(ctx context.Context, config process.Config, version string) (*Connection, error) {
 	life, cancel := context.WithCancel(ctx)
 	c := &Connection{jsonrpc: version, cancel: cancel, done: make(chan struct{}), writeGate: make(chan struct{}, 1), events: make(chan Event, maxEvents), pending: map[string]*pending{}, seen: map[domain.ID]bool{}, incoming: map[string]incoming{}}
+	c.protected = security.NewProtectedJSON(config.ProtectedValues)
 	config.Stdout = &frameWriter{connection: c}
 	config.Stderr = io.Discard
 	if version != "" {
@@ -335,14 +338,18 @@ func marshal(message envelope, params any) ([]byte, error) {
 	if err := domain.Text(message.Method, "native method", 256, true); err != nil {
 		return nil, err
 	}
-	raw, err := json.Marshal(params)
-	if err != nil {
-		return nil, domain.Fail(domain.InvalidArgument, "Invalid native request parameters.", "Use the adapter's typed request schema.")
+	var raw []byte
+	var err error
+	if _, omitted := params.(OmittedParams); !omitted {
+		raw, err = json.Marshal(params)
+		if err != nil {
+			return nil, domain.Fail(domain.InvalidArgument, "Invalid native request parameters.", "Use the adapter's typed request schema.")
+		}
+		if len(raw) == 0 || (raw[0] != '{' && raw[0] != '[') {
+			return nil, domain.Fail(domain.InvalidArgument, "Native parameters must be a structured object or array.", "Use the adapter's typed parameter schema.")
+		}
+		message.Params = raw
 	}
-	if len(raw) == 0 || (raw[0] != '{' && raw[0] != '[') {
-		return nil, domain.Fail(domain.InvalidArgument, "Native parameters must be a structured object or array.", "Use the adapter's typed parameter schema.")
-	}
-	message.Params = raw
 	raw, err = json.Marshal(message)
 	if err != nil || len(raw) > MaxFrame {
 		return nil, domain.Fail(domain.ResourceExhausted, "Native request exceeds its bound.", "Reduce the request size.")
@@ -412,6 +419,9 @@ func idKey(raw json.RawMessage) (string, error) {
 	return "", protocolFailure()
 }
 func (c *Connection) receive(raw []byte) error {
+	if !c.protected.Safe(raw) {
+		return domain.Fail(domain.PermissionDenied, "The native protocol reflected protected runtime authority.", "Stop and reconcile the original runtime without publishing its private output.")
+	}
 	var message envelope
 	if err := domain.Decode(raw, &message); err != nil {
 		return protocolFailure()
@@ -552,3 +562,7 @@ func (w *frameWriter) Write(data []byte) (int, error) {
 	// Continue draining until native ownership cleanup confirms termination.
 	return length, nil
 }
+
+// OmittedParams is an explicit adapter-owned no-parameter protocol profile.
+// Ordinary nil/scalar parameters remain invalid; this never changes inbound validation.
+type OmittedParams struct{}

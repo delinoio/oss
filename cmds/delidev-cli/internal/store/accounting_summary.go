@@ -9,7 +9,7 @@ import (
 )
 
 func (t *Tx) grokAccountingSummary(f domain.UsageSelection, result *domain.UsageSummary, groups map[string]*domain.UsageGroup, models map[usageModelKey]*domain.UsageAnalyticsModel, days []domain.UsageAnalyticsDay) error {
-	where := "r.created_at>=? AND r.created_at<?"
+	where := "r.kind=2 AND r.created_at>=? AND r.created_at<?"
 	args := []any{f.From.UnixMilli(), f.Until.UnixMilli()}
 	for _, part := range []struct {
 		column string
@@ -19,6 +19,9 @@ func (t *Tx) grokAccountingSummary(f domain.UsageSelection, result *domain.Usage
 			where += " AND r." + part.column + "=?"
 			args = append(args, part.value)
 		}
+	}
+	if f.SubscriptionService != "" {
+		where += " AND 0"
 	}
 	if f.GeneralChat {
 		where += " AND r.project_id=''"

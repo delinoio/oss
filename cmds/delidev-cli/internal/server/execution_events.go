@@ -88,6 +88,9 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if err := applyExecutionEvent(tx, jobRecord, input, actor.DeviceID, sr, &session, ir, &queued, event); err != nil {
 			return nil, err
 		}
+		if err := projectNativeDiagnostic(tx, input, event, domain.ID(meta.RequestId)); err != nil {
+			return nil, err
+		}
 		if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
 			return nil, err
 		}
@@ -125,7 +128,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 	case domain.GrokBuild:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionGrokTextObserved || kind == domain.ExecutionGrokUsageObserved || kind == domain.ExecutionGrokToolObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	case domain.OpenCode:
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionQuestionAccepted || kind == domain.ExecutionApprovalAccepted || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
+		return (kind == domain.ExecutionSubagentObserved || kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionQuestionAccepted || kind == domain.ExecutionApprovalAccepted || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
 	return false
 }
@@ -160,7 +163,10 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 	if u := event.Interaction; u != nil && event.Kind == domain.ExecutionInteractionClosed && (input.Configuration.Harness == domain.ClaudeCode) != (u.ClaudeCancellation != nil) {
 		return executionEventConflict()
 	}
-	if event.Progress != nil && (input.Configuration.Harness == domain.OpenCode) != (event.Progress.Progress.Kind == domain.OpenCodeTodoProgressKind || event.Progress.Progress.Kind == domain.OpenCodeChangesProgressKind || event.Progress.Progress.Kind == domain.OpenCodeWorkspaceProgressKind) {
+	if event.Progress != nil && event.Progress.Progress.Compaction != nil && event.Progress.Progress.Compaction.Harness != input.Configuration.Harness {
+		return executionEventConflict()
+	}
+	if event.Progress != nil && event.Progress.Progress.Kind != domain.NativeCompactionProgress && (input.Configuration.Harness == domain.OpenCode) != (event.Progress.Progress.Kind == domain.OpenCodeTodoProgressKind || event.Progress.Progress.Kind == domain.OpenCodeChangesProgressKind || event.Progress.Progress.Kind == domain.OpenCodeWorkspaceProgressKind) {
 		return executionEventConflict()
 	}
 	if event.Progress != nil && event.Progress.Progress.Changes != nil && event.Progress.Progress.Changes.Source == domain.OpenCodeInputSummary && event.Progress.Progress.Changes.NativeMessageID != event.NativeTurnID {
@@ -305,6 +311,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 			if event.Kind == domain.ExecutionTurnFinished {
+				if !progress.NativeCompactions.Closed() {
+					return domain.CompactionUncertain()
+				}
 				if input.Configuration.Harness == domain.GrokBuild {
 					publish := publishGrokTerminal
 					if event.GrokToolsTerminal != nil {
@@ -487,7 +496,10 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				}
 				progress.Waiting = *event.Waiting
 			} else if event.Kind == domain.ExecutionResponseUsageObserved {
-				observation := domain.ResponseUsageRecord{SessionID: sr.ID, ProjectID: sr.ProjectID, ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.ResponseUsage}
+				if event.ResponseUsage.Source != "" {
+					return domain.CompactionUncertain()
+				}
+				observation := domain.ResponseUsageRecord{SessionID: sr.ID, ProjectID: sr.ProjectID, ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.ResponseUsage}
 				id, _, err := tx.PutResponseUsage(event.ObservationID, observation)
 				if err != nil {
 					return err
@@ -501,13 +513,16 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				}
 				progress.LatestUsageID = event.ObservationID
 			} else if event.Kind == domain.ExecutionOpenCodeUsageObserved {
-				observation := domain.OpenCodeUsageRecord{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.OpenCodeUsage}
+				observation := domain.OpenCodeUsageRecord{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.OpenCodeUsage}
 				if err := tx.PutOpenCodeUsage(event.ObservationID, sr.ID, sr.ProjectID, observation); err != nil {
+					return err
+				}
+				if err := tx.PutOpenCodeAccounting(event.ObservationID, input.InputID, sr.ID, sr.ProjectID, observation); err != nil {
 					return err
 				}
 				progress.LatestUsageID = event.ObservationID
 			} else if event.Kind == domain.ExecutionUsageObserved {
-				observation := domain.ExecutionUsageObservation{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.Usage}
+				observation := domain.ExecutionUsageObservation{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.Usage}
 				if _, err := tx.Put(domain.UsageKind, event.ObservationID, 0, sr.ID, sr.ProjectID, observation); err != nil {
 					return err
 				}

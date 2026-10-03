@@ -102,6 +102,9 @@ func (s *sessionAPI) inspectCheckpointHistory(ctx context.Context, checkpoint na
 // or following native Link URLs. No historical payload leaves this comparison.
 func (s *sessionAPI) readCheckpointMessages(ctx context.Context, checkpoint nativeCheckpoint, cursor string, size int, seen map[string]bool) error {
 	if s.historyRead != nil || !validCheckpointLineage(checkpoint) || s.creation == nil || checkpoint.Reference.SessionID != s.creation.identity.id {
+		if s.logger != nil {
+			s.logger.WarnContext(ctx, "opencode_predecessor_lineage_rejected", "owner_id", s.owner, "lineage_valid", validCheckpointLineage(checkpoint), "message_count", len(checkpointInventory(checkpoint)))
+		}
 		return sessionUncertain()
 	}
 	defer func() { s.historyRead = nil }()
@@ -116,10 +119,7 @@ func (s *sessionAPI) readCheckpointMessages(ctx context.Context, checkpoint nati
 	if seen == nil {
 		seen = map[string]bool{}
 	}
-	var messages []HistoryMessage
-	for _, history := range checkpointHistories(checkpoint) {
-		messages = append(messages, history.Messages...)
-	}
+	messages := checkpointInventory(checkpoint)
 	for index := len(messages) - 1; index >= 0; index-- {
 		s.historyRead = &historyPageRead{path: path}
 		raw, _, err := s.request(ctx, http.MethodGet, path, nil, http.StatusOK)
@@ -131,7 +131,10 @@ func (s *sessionAPI) readCheckpointMessages(ctx context.Context, checkpoint nati
 			return sessionUncertain()
 		}
 		var page []json.RawMessage
-		if domain.Decode(raw, &page) != nil || len(page) != 1 || !checkpointMessageMatches(page[0], messages[index]) {
+		if domain.Decode(raw, &page) != nil || len(page) != 1 || !s.checkpointNativeMessageMatches(page[0], messages[index]) {
+			if s.logger != nil {
+				s.logger.WarnContext(ctx, "opencode_predecessor_history_rejected", "owner_id", s.owner, "position", index, "page_count", len(page))
+			}
 			return sessionUncertain()
 		}
 		cursor := s.historyRead.cursor
@@ -164,5 +167,43 @@ func checkpointMessageMatches(raw []byte, expected HistoryMessage) bool {
 			return false
 		}
 	}
+	return true
+}
+
+// Native pruning may finish after the idle arrival. This independent read may
+// retain only a completed tool's original timestamp-only pruning change. It
+// grants no input, event, settlement or output authority. The caller already
+// holds the original observer lock during final history comparison.
+func (s *sessionAPI) checkpointNativeMessageMatches(raw []byte, expected HistoryMessage) bool {
+	if checkpointMessageMatches(raw, expected) {
+		return true
+	}
+	if s.observer == nil || s.input == nil || !s.observer.progress.SettledObserved || s.observer.problem != nil {
+		return false
+	}
+	fields, err := shape(raw, []string{"info", "parts"}, nil)
+	if err != nil || mutationDigest(canonicalNative(fields["info"])) != expected.Digest {
+		return false
+	}
+	var parts []json.RawMessage
+	if domain.Decode(fields["parts"], &parts) != nil || parts == nil || len(parts) != len(expected.Parts) {
+		return false
+	}
+	candidate := s.observer.reconciliationCopy()
+	for index, rawPart := range parts {
+		original := expected.Parts[index]
+		if mutationDigest(canonicalNative(rawPart)) == original.Digest {
+			continue
+		}
+		part, err := decodeNativePart(rawPart)
+		if err != nil || original.Kind != ToolPartKind || part.ID != original.ID || part.MessageID != expected.ID || part.SessionID != s.input.receipt.SessionID || part.Tool == nil || part.Tool.Timing == nil || part.Tool.Timing.Compacted == nil || mutationDigest(unprunedPart(rawPart)) != original.Digest {
+			return false
+		}
+		if _, _, err := candidate.compactedToolPart(part, rawPart); err != nil {
+			return false
+		}
+	}
+	s.observer.contextPruned = candidate.contextPruned
+	s.observer.parts = candidate.parts
 	return true
 }

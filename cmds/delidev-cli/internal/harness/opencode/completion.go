@@ -50,8 +50,14 @@ func (a *OwnedAPI) CloseCompleted(ctx context.Context) (HistoryObservation, erro
 	if s.closeOwned == nil || s.observer == nil || s.events == nil {
 		return HistoryObservation{}, sessionUncertain()
 	}
+	if err := s.joinCompactionHTTP(ctx, false); err != nil {
+		return HistoryObservation{}, err
+	}
 	history, err := s.readHistory(ctx, s.observer)
 	if err != nil {
+		return HistoryObservation{}, err
+	}
+	if err := s.verifyForegroundChildren(ctx); err != nil {
 		return HistoryObservation{}, err
 	}
 	a.completionAttempted = true

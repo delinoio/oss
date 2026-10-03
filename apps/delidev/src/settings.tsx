@@ -1,3 +1,4 @@
+import { SubscriptionAccounts } from "./subscription-accounts";
 import { Backups } from "./backups";
 import { RepositoryGitHubAccess } from "./integration-access";
 import { RepositoryGitHubItems } from "./github-items";
@@ -8,13 +9,14 @@ import { NotificationSettings } from "./notification-settings";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { ConfigurationQuery, EntityKind, ProviderInventoryCapability, ProviderPresetId, ProviderQuery, ResourceQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, EntityKind, ProviderInventoryCapability, ProviderPresetId, ProviderQuery, ResourceQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { ConfigurationFields, editableKinds, kindNames, newConfiguration } from "./configuration-fields";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { JobState, TrackedJob } from "./jobs";
 import { LocalWorkerControls, LocalWorkerPresentation, type ControlLocalWorker } from "./local-worker-controls";
 import { MachineSettings } from "./machine-settings";
+import { NetworkSettings } from "./network-settings";
 import { DeviceAction, DeviceRow, DeviceRevocation, DeviceRevocationExit, Doctor } from "./device-settings";
 import { DoctorTitle } from "./doctor";
 import { AccountConnection } from "./account-connection";
@@ -61,14 +63,14 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const kindLabel = isApiEntry ? "AI API key entry" : kindNames[kind];
   if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{isApiEntry ? <header className="api-entry-heading"><h1>{kindLabel} save accepted</h1><p className="api-entry-scope">Saved on the selected server.</p></header> : <h3>{kindLabel} save accepted</h3>}{job === "unknown" ? <p role="alert">The server acknowledged this request without a readable result. Inspect its receipt before starting another save.</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>Configuration saved after Worker validation.</p><button onClick={saved}>Done</button></> : state === JobState.Failed || state === JobState.Canceled ? <button onClick={() => setJob(undefined)}>Return to retained draft</button> : null}</TrackedJob>}</section>;
   const validSubscriptionProvider = !subscriptionOnly || (kind === EntityKind.PROVIDER && data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "");
-  return <form ref={form} className={kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); if (blocked || childPending || stale || !validSubscriptionProvider || (initial && current.error)) return; void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: 1, documentJson: encode(data) }); }}>
+  return <form ref={form} className={kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); if (blocked || childPending || stale || data.reconfiguration_required === true || !validSubscriptionProvider || (initial && current.error)) return; void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: configurationSchemaVersion(kind, data), documentJson: encode(data) }); }}>
     {isApiEntry ? <header className="api-entry-heading"><h1>{initial ? "Edit preferences" : "New AI API key entry"}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">Saved on the selected server.</p></header> : <h3>{initial ? "Edit" : "New"} {kindLabel}</h3>}
     {kind === EntityKind.AGENT && !initial ? <p className="agent-subtitle">Configure the essentials, then customize only what you need.</p> : null}
     <fieldset disabled={blocked}><ConfigurationFields kind={kind} data={data} change={change} active={active} existing={Boolean(initial)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} /></fieldset>
     {stale ? <p role="alert">This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving.</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error || mutation.error} />
     {subscriptionOnly && !validSubscriptionProvider ? <p role="alert">Subscription providers must use native-subscription protocol, subscription authentication and an empty endpoint.</p> : null}
-    {kind === EntityKind.AGENT || kind === EntityKind.SETTINGS ? <div className={kind === EntityKind.AGENT ? "actions agent-footer" : "actions server-preferences-actions"}><button type="button" disabled={blocked || childPending} onClick={cancel}>Cancel edit</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button className="primary" disabled={blocked || childPending || stale || !validSubscriptionProvider || Boolean(initial && current.error)}>Save {kindLabel}</button></div>
-      : <div className="actions"><button className="primary" disabled={blocked || childPending || stale || !validSubscriptionProvider || Boolean(initial && current.error)}>Save {kindLabel}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button type="button" disabled={blocked || childPending} onClick={cancel}>Cancel edit</button></div>}
+    {kind === EntityKind.AGENT || kind === EntityKind.SETTINGS ? <div className={kind === EntityKind.AGENT ? "actions agent-footer" : "actions server-preferences-actions"}><button type="button" disabled={blocked || childPending} onClick={cancel}>Cancel edit</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button className="primary" disabled={blocked || childPending || stale || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(initial && current.error)}>Save {kindLabel}</button></div>
+      : <div className="actions"><button className="primary" disabled={blocked || childPending || stale || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(initial && current.error)}>Save {kindLabel}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button type="button" disabled={blocked || childPending} onClick={cancel}>Cancel edit</button></div>}
 
   </form>;
 }
@@ -141,7 +143,7 @@ function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: (
   // projected within the Agent name's 256-byte UTF-8 limit for identifying the
   // row; it never enters an editor or request.
   // Remove this projection once the shared document parser supports that schema.
-  if (row.schemaVersion !== 1 && row.documentJson.byteLength <= 1 << 20) {
+  if (!supportsResourceSchema(row) && row.documentJson.byteLength <= 1 << 20) {
     try {
       const display = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(row.documentJson)));
       const projectedName = text(display.name) || text(display.alias);
@@ -155,12 +157,13 @@ function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: (
       <h3>{name}</h3>
       {text(data.health) ? <p>Status: {text(data.health)}</p> : null}
       {text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}
+      {data.reconfiguration_required === true ? <p role="status">Reconfiguration required</p> : null}
       <small>{row.id}</small>
     </div>
     <div className="actions settings-agent-actions">
-      <button type="button" disabled={row.schemaVersion !== 1} aria-label={`Edit ${name}`} onClick={edit}>Edit</button>
-      <button type="button" disabled={row.schemaVersion !== 1} aria-label={`Preview routing for ${name}`} onClick={preview}>Preview routing</button>
-      <button type="button" disabled={row.schemaVersion !== 1} aria-label={`Delete ${name}`} onClick={remove}>Delete</button>
+      <button type="button" disabled={!supportsResourceSchema(row)} aria-label={`Edit ${name}`} onClick={edit}>Edit</button>
+      <button type="button" disabled={!supportsResourceSchema(row) || data.reconfiguration_required === true} aria-label={`Preview routing for ${name}`} onClick={preview}>Preview routing</button>
+      <button type="button" disabled={!supportsResourceSchema(row)} aria-label={`Delete ${name}`} onClick={remove}>Delete</button>
     </div>
   </article>;
 }
@@ -186,15 +189,10 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
   const [routing, setRouting] = useState<Resource>();
   const [account, setAccount] = useState<Resource>();
   const [pricing, setPricing] = useState<Resource>();
-  const [accountProviderID, setAccountProviderID] = useState("");
-  const [providerSearch, setProviderSearch] = useState("");
   const [providerList, setProviderList] = useState<ProviderListState>({ query: "", page: "" });
   const [modelList, setModelList] = useState<ModelListState>({ query: "", page: "" });
-  const [providerFilterPage, setProviderFilterPage] = useState("");
   const [providerChoicePage, setProviderChoicePage] = useState("");
-  const [subscriptionProviderPage, setSubscriptionProviderPage] = useState("");
   const [startApiWizard, setStartApiWizard] = useState<{ key: string; providerId: string; provider?: AccountProviderSummary }>();
-  const [accountProviderHint, setAccountProviderHint] = useState<AccountProviderSummary>();
   const [apiProviderID, setApiProviderID] = useState("");
   const [apiProviderHint, setApiProviderHint] = useState<AccountProviderSummary>();
   const [apiProviderPage, setApiProviderPage] = useState("");
@@ -251,15 +249,10 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
     if (isPairedDevices) setExpandedDevices(new Set());
     setPage(token);
   };
-  const accountInventory = useQuery(ProviderQuery.listProviderInventory, { query: providerSearch, enabledOnly: false, pageSize: 50, pageToken: providerFilterPage }, { enabled: visible && area === SettingsArea.Configuration && isSubscriptionAccounts });
   const apiInventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: false, pageSize: 50, pageToken: apiProviderPage }, { enabled: visible && isApiAccounts });
-  // API inventory deliberately omits native subscription metadata. Read its
-  // existing bounded resource pages separately; this grants no lifecycle support.
-  const subscriptionProviderInventory = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.PROVIDER, pageSize: 50, pageToken: subscriptionProviderPage } }, { enabled: visible && isSubscriptionAccounts && !hasOverlay });
   const eligibleInventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 50, pageToken: providerChoicePage }, { enabled: visible && area === SettingsArea.Configuration && isApiAccounts });
   const providerPicker: AccountProviderPicker = { ready: Boolean(eligibleInventory.data && providerInventoryReady(eligibleInventory.data.capabilities) && eligibleInventory.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER)), loaded: Boolean(eligibleInventory.data), fetching: eligibleInventory.isFetching, error: eligibleInventory.error, pageToken: providerChoicePage, nextPageToken: eligibleInventory.data?.nextPageToken ?? "", retry: () => { void eligibleInventory.refetch(); }, next: () => setProviderChoicePage(eligibleInventory.data?.nextPageToken ?? ""), first: () => setProviderChoicePage("") };
-  const providerPresets = useQuery(ProviderQuery.listProviderPresets, {}, { enabled: visible && area === SettingsArea.Configuration && isAccountCategory });
-  const accountTypeFilteringReady = Boolean(accountInventory.data && providerInventoryReady(accountInventory.data.capabilities) && accountInventory.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER));
+  const providerPresets = useQuery(ProviderQuery.listProviderPresets, {}, { enabled: visible && area === SettingsArea.Configuration && isApiAccounts });
   const apiAccountTypeFilteringReady = Boolean(apiInventory.data && providerInventoryReady(apiInventory.data.capabilities) && apiInventory.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER));
   const presets = new Map<string, Document>();
   try {
@@ -282,12 +275,8 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
     keyGuidance: text(presets.get(presetNames.get(entry.presetId) ?? "")?.key_guidance) || "Use the provider's documented API key flow.",
     documentationUrl: text(presets.get(presetNames.get(entry.presetId) ?? "")?.documentation),
   } : undefined;
-  const accountProviders = (accountInventory.data?.entries ?? []).map(providerSummary).filter((value): value is AccountProviderSummary => value !== undefined);
   const apiProviders = (apiInventory.data?.entries ?? []).map(providerSummary).filter((value): value is AccountProviderSummary => value !== undefined);
   const eligibleProviders = (eligibleInventory.data?.entries ?? []).map(providerSummary).filter((value): value is AccountProviderSummary => value !== undefined && value.enabled);
-  useEffect(() => {
-    setProviderFilterPage("");
-  }, [providerSearch]);
   const reportChildWorkflow = useCallback((workflow: SettingsWorkflow, active: boolean) => setChildWorkflows((current) => {
     if (current.has(workflow) === active) return current;
     const next = new Set(current);
@@ -341,23 +330,6 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
   };
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
   const providerEntrySummary = (entry?: ProviderInventoryEntry) => entry ? providerSummary(entry) : undefined;
-  const subscriptionProviders = (subscriptionProviderInventory.data?.resources ?? []).filter((resource): resource is Resource => {
-    if (!resource) return false;
-    const data = document(resource);
-    return data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "";
-  });
-  const subscriptionProviderSummaries: AccountProviderSummary[] = subscriptionProviders.map((provider) => ({ providerId: provider.id, provider, displayName: resourceName(provider), enabled: document(provider).enabled !== false, keyGuidance: "", documentationUrl: "" }));
-  const subscriptionAccountProviders = [...new Map([...accountProviders, ...subscriptionProviderSummaries.filter((provider) => provider.displayName.toLowerCase().includes(providerSearch.toLowerCase()))].map((provider) => [provider.providerId, provider])).values()];
-  const subscriptionProviderManagement = <section className="subscription-provider-management">
-    <p>Only native subscription providers with subscription authentication and an empty endpoint are available for subscription account metadata.</p>
-    <button type="button" onClick={() => setEditing({ kind: EntityKind.PROVIDER, initialData: { ...newConfiguration(EntityKind.PROVIDER), protocol: "native-subscription", authentication: "subscription", endpoint: "", discovery: false }, key: newRequestId(), subscriptionOnly: true })}>Add native subscription provider</button>
-    <Problem error={subscriptionProviderInventory.error} />
-    {subscriptionProviderInventory.error ? <button type="button" onClick={() => void subscriptionProviderInventory.refetch()}>Retry subscription providers</button> : null}
-    {subscriptionProviders.map((provider) => <article className="result" key={provider.id}><h4>{resourceName(provider)}</h4><p>Native subscription · no endpoint · subscription login unavailable</p><div className="actions"><button type="button" disabled={provider.schemaVersion !== 1} onClick={() => setEditing({ kind: EntityKind.PROVIDER, initial: provider, key: newRequestId(), subscriptionOnly: true })}>Edit subscription provider</button><button type="button" disabled={provider.schemaVersion !== 1} onClick={() => setDeleting(provider)}>Delete subscription provider</button></div></article>)}
-    {subscriptionProviderInventory.isLoading ? <p role="status">Loading subscription providers…</p> : null}
-    {subscriptionProviderInventory.data && !subscriptionProviderInventory.error && subscriptionProviders.length === 0 ? <p>No eligible subscription providers on this page.</p> : null}
-    {subscriptionProviderPage || subscriptionProviderInventory.data?.nextPageToken ? <nav className="settings-pages" aria-label="Subscription provider pages"><button type="button" disabled={categoryLocked || !subscriptionProviderPage || subscriptionProviderInventory.isFetching} onClick={() => setSubscriptionProviderPage("")}>First subscription provider page</button><button type="button" disabled={categoryLocked || !subscriptionProviderInventory.data?.nextPageToken || subscriptionProviderInventory.isFetching} onClick={() => setSubscriptionProviderPage(subscriptionProviderInventory.data!.nextPageToken)}>Next subscription provider page</button></nav> : null}
-  </section>;
   return <>
       <SidebarSurface active title="Settings" className="settings-navigation">
         <nav aria-label="Settings categories">
@@ -394,14 +366,15 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
             {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority ? <div hidden={kind !== EntityKind.DEVICE || Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
             <div hidden={!isApiAccounts || hasOverlay}>
-              <AccountSettings section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={subscriptionProviderManagement} openApiProviders={() => { setSelectedCategory(SettingsCategory.Providers); setPage(""); }} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
+              <AccountSettings section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => { setSelectedCategory(SettingsCategory.Providers); setPage(""); }} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
             </div>
             <div hidden={!isSubscriptionAccounts || hasOverlay}>
-              <AccountSettings section={AccountSettingsSection.Subscription} active={visible && isSubscriptionAccounts && !hasOverlay} accountTypeFilteringReady={accountTypeFilteringReady} accountTypeFilteringProblem={accountInventory.error} accountTypeFilteringLoading={accountInventory.isLoading} retryAccountCapabilities={() => { void accountInventory.refetch(); }} providerIdFilter={accountProviderID} clearProviderFilter={() => { setAccountProviderID(""); setAccountProviderHint(undefined); }} setProviderFilter={(providerId, provider) => { setAccountProviderID(providerId); setAccountProviderHint(provider); setPage(""); }} providers={subscriptionAccountProviders} eligibleProviders={eligibleProviders} providerSearch={providerSearch} setProviderSearch={setProviderSearch} providerSearchLoading={accountInventory.isFetching} providerSearchError={accountInventory.error} providerPicker={providerPicker} providerFilterHasMore={Boolean(accountInventory.data?.nextPageToken)} loadMoreProviderFilters={() => setProviderFilterPage(accountInventory.data?.nextPageToken ?? "")} subscriptionProviderResources={subscriptionProviders} subscriptionProviderManagement={subscriptionProviderManagement} openApiProviders={() => { setSelectedCategory(SettingsCategory.Providers); setPage(""); }} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} providerHint={accountProviderHint} />
+              <SubscriptionAccounts active={visible && isSubscriptionAccounts && !hasOverlay} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} />
             </div>
 
-            {pricing ? <ModelPricing model={pricing} active={visible} close={() => { setPricing(undefined); void client.invalidateQueries({ refetchType: "active" }); }} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={(exit) => { deviceReturnFocus.current = { id: device.id, exit }; setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing && (editing.kind ?? kind) === EntityKind.REPOSITORY && !editing.initial ? <RepositoryRegistration key={editing.key} active={visible} readLocalWorker={readLocalWorker} controlLocalWorker={controlLocalWorker} chooseFolder={chooseRepositoryFolder} saved={done} cancel={() => setEditing(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={editing.kind ?? kind} initial={editing.initial} initialData={editing.initialData} subscriptionOnly={editing.subscriptionOnly} active={visible} saved={done} cancel={() => setEditing(undefined)} focusName={focusNewProjectName} nameFocused={projectNameFocused} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} state={providerList} changeState={setProviderList} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setApiProviderID(providerID); setApiProviderHint(provider); setApiProviderPage(""); setPage(""); }} addAccount={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setApiProviderID(providerID); setApiProviderHint(provider); setApiProviderPage(""); setStartApiWizard({ key: newRequestId(), providerId: providerID, provider }); setPage(""); }} deleteCustom={setDeleting} /> : isModels ? <ActiveModelSettings state={modelList} changeState={setModelList} active={visible && isModels} createModel={(initialData) => setEditing({ kind: EntityKind.MODEL, initialData, key: newRequestId() })} editModel={(initial) => setEditing({ kind: EntityKind.MODEL, initial, key: newRequestId() })} priceModel={setPricing} /> : isRunnerDevices ? <RunnerDeviceInventory resources={result.data?.resources} error={result.error} loading={result.isPending && !result.data} fetching={result.isFetching} page={page} nextPage={result.data?.nextPageToken ?? ""} hidePagination={hidePagination} first={() => setPage("")} next={() => setPage(result.data!.nextPageToken)} inspect={setMachine} /> : hasSpecializedPanel ? null : <>
+            {pricing ? <ModelPricing model={pricing} active={visible} close={() => { setPricing(undefined); void client.invalidateQueries({ refetchType: "active" }); }} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={(exit) => { deviceReturnFocus.current = { id: device.id, exit }; setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} authority={pairingAuthority} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing && (editing.kind ?? kind) === EntityKind.REPOSITORY && !editing.initial ? <RepositoryRegistration key={editing.key} active={visible} readLocalWorker={readLocalWorker} controlLocalWorker={controlLocalWorker} chooseFolder={chooseRepositoryFolder} saved={done} cancel={() => setEditing(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={editing.kind ?? kind} initial={editing.initial} initialData={editing.initialData} subscriptionOnly={editing.subscriptionOnly} active={visible} saved={done} cancel={() => setEditing(undefined)} focusName={focusNewProjectName} nameFocused={projectNameFocused} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} state={providerList} changeState={setProviderList} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setApiProviderID(providerID); setApiProviderHint(provider); setApiProviderPage(""); setPage(""); }} addAccount={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setApiProviderID(providerID); setApiProviderHint(provider); setApiProviderPage(""); setStartApiWizard({ key: newRequestId(), providerId: providerID, provider }); setPage(""); }} deleteCustom={setDeleting} /> : isModels ? <ActiveModelSettings state={modelList} changeState={setModelList} active={visible && isModels} createModel={(initialData) => setEditing({ kind: EntityKind.MODEL, initialData, key: newRequestId() })} editModel={(initial) => setEditing({ kind: EntityKind.MODEL, initial, key: newRequestId() })} priceModel={setPricing} /> : isRunnerDevices ? <RunnerDeviceInventory resources={result.data?.resources} error={result.error} loading={result.isPending && !result.data} fetching={result.isFetching} page={page} nextPage={result.data?.nextPageToken ?? ""} hidePagination={hidePagination} first={() => setPage("")} next={() => setPage(result.data!.nextPageToken)} inspect={setMachine} /> : hasSpecializedPanel ? null : <>
               {result.isPending && !result.data ? <SettingsLoading label={`Loading ${selected.label.toLowerCase()}…`} /> : null}
+              {isServerPreferences ? <NetworkSettings active={visible && isServerPreferences} authority={pairingAuthority} /> : null}
               {isServerPreferences && result.isFetching && result.data ? <p role="status">Refreshing server preferences…</p> : null}
               <Problem error={result.error} />
               {result.error && result.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded results.</p> : null}
@@ -439,7 +412,7 @@ function ProjectList({ resources, edit, remove }: { resources: Resource[]; edit:
     const name = resourceName(row);
     return <article className="project-row" key={row.id}>
       <div className="project-identity"><h3>{name}</h3><small>{row.id}</small></div>
-      <div className="actions"><button type="button" disabled={row.schemaVersion !== 1} aria-label={`Edit ${name}`} onClick={() => edit(row)}>Edit</button><button type="button" disabled={row.schemaVersion !== 1} aria-label={`Delete ${name}`} onClick={() => remove(row)}>Delete</button></div>
+      <div className="actions"><button type="button" disabled={!supportsResourceSchema(row)} aria-label={`Edit ${name}`} onClick={() => edit(row)}>Edit</button><button type="button" disabled={!supportsResourceSchema(row)} aria-label={`Delete ${name}`} onClick={() => remove(row)}>Delete</button></div>
     </article>;
   })}</section>;
 }

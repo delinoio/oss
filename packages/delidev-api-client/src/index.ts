@@ -16,6 +16,7 @@ export * as InboxQuery from "./gen/delidev/v1/delidev-InboxService_connectquery.
 export * as ScheduleQuery from "./gen/delidev/v1/delidev-ScheduleService_connectquery.js";
 export * as SearchQuery from "./gen/delidev/v1/delidev-SearchService_connectquery.js";
 export * as ActivityQuery from "./gen/delidev/v1/delidev-ActivityService_connectquery.js";
+export * as WorkspaceStorageQuery from "./gen/delidev/v1/workspace_storage-WorkspaceStorageService_connectquery.js";
 export * from "./transport.js";
 export * from "./synchronization.js";
 export * from "./errors.js";
@@ -27,3 +28,5 @@ export * as TerminalQuery from "./gen/delidev/v1/delidev-TerminalService_connect
 export * as NetworkQuery from "./gen/delidev/v1/network-NetworkService_connectquery.js";
 export * as ForwardQuery from "./gen/delidev/v1/delidev-ForwardService_connectquery.js";
 export * as PullRequestFixQuery from "./gen/delidev/v1/pr_fix-PullRequestFixService_connectquery.js";
+
+export * from "./configuration-identity.js";

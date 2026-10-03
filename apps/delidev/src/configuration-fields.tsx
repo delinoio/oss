@@ -3,12 +3,13 @@ import { useContext, useEffect, useState } from "react";
 import { AgentConfiguration, AgentReadProblem } from "./agent-configuration";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, NativeModelSourceKind, SubscriptionServiceId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text, type Document } from "./documents";
 import { Problem } from "./ui";
 import { useRetainedMutation } from "./mutation";
 import { JobState, TrackedJob } from "./jobs";
 import { providerInventoryReady } from "./provider-model-settings";
+import { CodexSubagentConfiguration } from "./codex-subagent-configuration";
 
 export enum Harness { Codex = "codex", Claude = "claude-code", OpenCode = "opencode", Grok = "grok-build" }
 export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Anthropic = "anthropic-messages", Subscription = "native-subscription" }
@@ -68,19 +69,17 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const reportRead = useContext(AgentReadProblem);
   const agentPresentation = Boolean(reportRead) || markRequired;
   const [page, setPage] = useState("");
-  const [subscriptionPage, setSubscriptionPage] = useState("");
   const needsProviderCapability = activeApiOnly && (kind === EntityKind.PROVIDER || kind === EntityKind.MODEL);
   const inventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 200, pageToken: kind === EntityKind.PROVIDER ? page : "" }, { enabled: active && needsProviderCapability });
   const ready = providerInventoryReady(inventory.data?.capabilities);
-  const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: kind === EntityKind.PROVIDER && needsProviderCapability ? subscriptionPage : page } }, { enabled: active && (!needsProviderCapability || kind === EntityKind.PROVIDER) });
+  const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: active && !needsProviderCapability });
   const modelSearch = useQuery(ProviderQuery.searchModels, { query: "", providerId: "", includeHidden: true, pageSize: 50, pageToken: page, enabledProvidersOnly: true }, { enabled: active && kind === EntityKind.MODEL && needsProviderCapability && ready });
   const selected = useQuery(ResourceQuery.getResource, { kind, id: value }, { enabled: active && Boolean(value) && needsProviderCapability });
   const selectedData = document(selected.data?.resource);
   const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: kind === EntityKind.MODEL ? text(selectedData.provider_id) : value }, { enabled: active && kind === EntityKind.MODEL && Boolean(text(selectedData.provider_id)) });
   const selectedProviderOff = kind === EntityKind.PROVIDER ? selectedData.protocol !== Protocol.Subscription && selectedData.enabled === false : selectedProvider.data?.resource ? document(selectedProvider.data.resource).enabled === false : false;
   const activeProviders = (inventory.data?.entries ?? []).flatMap((entry) => entry.provider ? [entry.provider] : []);
-  const subscriptionProviders = kind === EntityKind.PROVIDER && needsProviderCapability ? (result.data?.resources ?? []).filter((row) => document(row).protocol === Protocol.Subscription) : [];
-  let rows = kind === EntityKind.MODEL && needsProviderCapability ? (modelSearch.data?.models ?? []) : kind === EntityKind.PROVIDER && needsProviderCapability ? [...activeProviders, ...subscriptionProviders] : (result.data?.resources ?? []);
+  let rows = kind === EntityKind.MODEL && needsProviderCapability ? (modelSearch.data?.models ?? []) : kind === EntityKind.PROVIDER && needsProviderCapability ? activeProviders : (result.data?.resources ?? []);
   rows = rows.filter((row) => !allowed || allowed.includes(row.id));
   const pageRows = rows;
   const selectedOffPage = Boolean(selected.data?.resource && !pageRows.some((row) => row.id === selected.data!.resource!.id));
@@ -123,7 +122,6 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
     {needsProviderCapability && active && !ready && (!agentPresentation || (!inventory.isFetching && !failure)) ? <p role="status">Provider and model choices require a server that reports the provider inventory capabilities.</p> : null}
     {kind === EntityKind.PROVIDER && needsProviderCapability ? <>
       {page || nextPage ? <nav className="actions" aria-label="Active API provider choices"><button type="button" disabled={!page || fetching || disabled} onClick={() => setPage("")}>First API providers</button><button type="button" disabled={!nextPage || fetching || disabled || !ready} onClick={() => setPage(nextPage ?? "")}>More API providers</button></nav> : null}
-      {subscriptionPage || result.data?.nextPageToken ? <nav className="actions" aria-label="Native subscription provider choices"><button type="button" disabled={!subscriptionPage || result.isFetching || disabled} onClick={() => setSubscriptionPage("")}>First subscription providers</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching || disabled} onClick={() => setSubscriptionPage(result.data!.nextPageToken)}>More subscription providers</button></nav> : null}
     </> : page || nextPage ? <div className="actions"><button type="button" disabled={!page || fetching || disabled} onClick={() => setPage("")}>First choices</button><button type="button" disabled={!nextPage || fetching || disabled || (needsProviderCapability && !ready)} onClick={() => setPage(nextPage ?? "")}>More choices</button></div> : null}<Problem error={result.error || inventory.error || modelSearch.error || selected.error || selectedProvider.error} />
   </div>;
 }
@@ -159,19 +157,19 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
   if (kind === EntityKind.TEMPLATE) return <><TextField label="Name" value={data.name} change={field("name")} required /><label>Instructions<textarea rows={12} required maxLength={131072} value={text(data.contents)} onChange={(event) => field("contents")(event.target.value)} /></label><p>Appended to the selected harness's base instructions; the base instructions are preserved.</p></>;
   if (kind === EntityKind.ACCOUNT) {
     const isApi = data.type === "api";
-    return <><TextField label={isApi ? "Entry name" : "Account alias"} value={data.alias} change={field("alias")} required /><ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={text(data.provider_id)} activeApiOnly active={active} disabled={existing} required change={(provider_id, provider) => change({ ...data, provider_id, type: provider?.protocol === Protocol.Subscription ? "subscription" : "api" })} /><Check label={isApi ? "Enable this entry" : "Enable this account"} value={data.enabled} change={field("enabled")} /><Check label={isApi ? "Exclude from automatic entry selection" : "Exclude from automatic account selection"} value={data.exclude_automatic} change={field("exclude_automatic")} /><Check label={isApi ? "Notify when entry quota recovers" : "Notify when account quota recovers"} value={data.recovery_notifications} change={field("recovery_notifications")} /><p>Connection, health and quota are managed separately. Saving preferences never marks the {isApi ? "entry" : "account"} ready.</p></>;
+    return <><TextField label={isApi ? "Entry name" : "Account alias"} value={data.alias} change={field("alias")} required />{isApi ? <ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={text(data.provider_id)} activeApiOnly active={active} disabled={existing} required change={(provider_id) => change({ ...data, provider_id })} /> : <p>Subscription service: {subscriptionServiceNames[subscriptionService(data.subscription_service)!] ?? "Unsupported service"}</p>}<Check label={isApi ? "Enable this entry" : "Enable this account"} value={data.enabled} change={field("enabled")} /><Check label={isApi ? "Exclude from automatic entry selection" : "Exclude from automatic account selection"} value={data.exclude_automatic} change={field("exclude_automatic")} /><Check label={isApi ? "Notify when entry quota recovers" : "Notify when account quota recovers"} value={data.recovery_notifications} change={field("recovery_notifications")} /><p>Connection, health and quota are managed separately. Saving preferences never marks the {isApi ? "entry" : "account"} ready.</p></>;
   }
-  if (kind === EntityKind.MODEL) return <><ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={text(data.provider_id)} change={field("provider_id")} activeApiOnly active={active} disabled={existing} required /><TextField label="Native model ID" value={data.native_id} change={field("native_id")} disabled={existing} required /><TextField label="Display name" value={data.name} change={field("name")} required /><TextField label="CLI alias" value={data.alias} change={field("alias")} max={128} /><fieldset><legend>Configured harness compatibility</legend>{Object.values(Harness).map((harness) => <Check key={harness} label={harness} value={items(data.harnesses).includes(harness)} change={(selected) => field("harnesses")(selected ? [...items(data.harnesses), harness] : items(data.harnesses).filter((value) => value !== harness))} />)}<p>Configured compatibility is checked against the installed harness before execution. It does not prove execution support.</p></fieldset><Check label="Hide from default model lists" value={data.hidden} change={field("hidden")} /><label>Display order<input type="number" min={-2147483648} max={2147483647} value={Number(data.order)} onChange={(event) => field("order")(Number(event.target.value))} /></label>{data.new === true ? <Check label="Keep NEW marker until reviewed" value={data.new} change={field("new")} /> : null}<p>Metadata: {text(data.metadata_source)} · context limit: {data.context_limit == null ? "Unknown" : String(data.context_limit)}</p></>;
+  if (kind === EntityKind.MODEL) return <ModelFields {...props} />;
   if (kind === EntityKind.AGENT) {
     const options = object(data.options);
     const option = (name: string) => (value: unknown) => change({ ...data, options: { ...options, [name]: value } });
     return <AgentConfiguration data={data} routingProblem={data.routing !== undefined && data.routing !== "" && !Object.values(Routing).includes(data.routing as Routing)}
-      core={<><TextField label="Name" value={data.name} change={field("name")} required markRequired placeholder="e.g. Code reviewer" /><div className="agent-core-columns"><Choice label="Harness" value={data.harness} choices={Object.values(Harness)} change={field("harness")} /><ResourceChoice label="Model" kind={EntityKind.MODEL} value={text(data.model_id)} change={field("model_id")} activeApiOnly active={active} required markRequired /></div></>}
+      core={<><AgentReconfiguration data={data} change={change} active={active} /><TextField label="Name" value={data.name} change={field("name")} required markRequired placeholder="e.g. Code reviewer" /><div className="agent-core-columns"><Choice label="Harness" value={data.harness} choices={Object.values(Harness)} change={field("harness")} /><ResourceChoice label="Model" kind={EntityKind.MODEL} value={text(data.model_id)} change={field("model_id")} activeApiOnly active={active} required markRequired /></div></>}
       permissions={<AgentPermissions harness={data.harness} options={options} change={field("options")} />}
       reasoning={<TextField label="Reasoning effort" value={data.effort} change={field("effort")} />}
       accounts={<><Choice label="Account routing" value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label="Accounts" kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
       instructions={<OrderedLinks label="Instruction templates" kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} />}
-      native={<><TextField label="Subagent model" value={options.subagent_model} change={option("subagent_model")} /><TextField label="Subagent effort" value={options.subagent_effort} change={option("subagent_effort")} /><label>Maximum concurrency (0 uses native default)<input type="number" min={0} max={64} value={Number(options.max_concurrency ?? 0)} onChange={(event) => option("max_concurrency")(Number(event.target.value))} /></label>{data.harness !== Harness.Claude ? <TextField label="Approval policy" value={options.approval_policy} change={option("approval_policy")} /> : null}<TextField label="Approval review model" value={options.approval_review_model} change={option("approval_review_model")} /><TextField label="Service tier" value={options.service_tier} change={option("service_tier")} /><p>Unsupported native options produce a server error; no fallback harness or account is selected.</p></>}
+      native={<>{data.harness === Harness.Codex ? <CodexSubagentConfiguration options={options} active={active} change={(key, value) => option(key)(value)} /> : <><TextField label="Subagent model" value={options.subagent_model} change={option("subagent_model")} /><TextField label="Subagent effort" value={options.subagent_effort} change={option("subagent_effort")} /><label>Maximum concurrency (0 uses native default)<input type="number" min={0} max={64} value={Number(options.max_concurrency ?? 0)} onChange={(event) => option("max_concurrency")(Number(event.target.value))} /></label></>}{data.harness !== Harness.Claude ? <TextField label="Approval policy" value={options.approval_policy} change={option("approval_policy")} /> : null}<TextField label="Approval review model" value={options.approval_review_model} change={option("approval_review_model")} /><TextField label="Service tier" value={options.service_tier} change={option("service_tier")} /><p>Unsupported native options produce a server error; no fallback harness or account is selected.</p></>}
     />;
   }
   return null;
@@ -225,4 +223,37 @@ export function RepositoryFields({ data, change, active, pendingOperation, requi
       {data.remediation == null ? <><p>This repository inherits the complete server remediation policy, including future changes.</p><button type="button" onClick={() => change({ ...data, remediation: defaultRemediationPolicy() })}>Set repository policy with automation off</button></> : <><p>This complete repository policy replaces the server policy. Empty reviewer or execution selections remain empty.</p><RemediationFields value={object(data.remediation)} active={active} change={remediation => change({ ...data, remediation })} /><button type="button" onClick={() => { const next = { ...data }; delete next.remediation; change(next); }}>Use server remediation policy</button></>}
     </fieldset>
   </>;
+}
+
+function ModelFields({ data, change, active, existing }: FieldsProps) {
+  const native = data.source_kind === NativeModelSourceKind.Subscription;
+  const service = subscriptionService(data.subscription_service);
+  const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
+  const chooseSource = (source: string) => {
+    const next = { ...data };
+    if (source === NativeModelSourceKind.Subscription) {
+      delete next.provider_id;
+      next.source_kind = NativeModelSourceKind.Subscription;
+      next.subscription_service = SubscriptionServiceId.ChatGPT;
+      next.harnesses = [subscriptionServiceHarnesses[SubscriptionServiceId.ChatGPT]];
+    } else {
+      delete next.source_kind; delete next.subscription_service;
+      next.provider_id = ""; next.harnesses = [];
+    }
+    change(next);
+  };
+  return <>
+    <label>Model source<select disabled={existing} value={native ? NativeModelSourceKind.Subscription : "api"} onChange={(event) => chooseSource(event.target.value)}><option value="api">API provider</option><option value={NativeModelSourceKind.Subscription}>Subscription service</option></select></label>
+    {native ? <label>Subscription service<select required disabled={existing} value={service ?? ""} onChange={(event) => { const service = subscriptionService(event.target.value); if (service) change({ ...data, subscription_service: service, harnesses: [subscriptionServiceHarnesses[service]] }); }}><option value="" disabled>Select service</option>{Object.values(SubscriptionServiceId).map((service) => <option key={service} value={service}>{subscriptionServiceNames[service]}</option>)}</select></label> : <ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={text(data.provider_id)} change={field("provider_id")} activeApiOnly active={active} disabled={existing} required />}
+    <TextField label="Native model ID" value={data.native_id} change={field("native_id")} disabled={existing} required /><TextField label="Display name" value={data.name} change={field("name")} required /><TextField label="CLI alias" value={data.alias} change={field("alias")} max={128} />
+    <fieldset><legend>Configured harness compatibility</legend>{native ? <p>{service ? subscriptionServiceHarnesses[service] : "Unsupported service"}</p> : Object.values(Harness).map((harness) => <Check key={harness} label={harness} value={items(data.harnesses).includes(harness)} change={(selected) => field("harnesses")(selected ? [...items(data.harnesses), harness] : items(data.harnesses).filter((value) => value !== harness))} />)}<p>Configured compatibility is checked against the installed harness before execution. It does not prove execution support.</p></fieldset>
+    <Check label="Hide from default model lists" value={data.hidden} change={field("hidden")} /><label>Display order<input type="number" min={-2147483648} max={2147483647} value={Number(data.order)} onChange={(event) => field("order")(Number(event.target.value))} /></label>{data.new === true ? <Check label="Keep NEW marker until reviewed" value={data.new} change={field("new")} /> : null}<p>Metadata: {text(data.metadata_source)} · context limit: {data.context_limit == null ? "Unknown" : String(data.context_limit)}</p>
+  </>;
+}
+
+function AgentReconfiguration({ data, change, active }: { data: Document; change: (value: Document) => void; active: boolean }) {
+  const model = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: text(data.model_id) }, { enabled: active && data.reconfiguration_required === true && Boolean(text(data.model_id)), retry: false });
+  if (data.reconfiguration_required !== true) return null;
+  const valid = model.data?.resource && supportsResourceSchema(model.data.resource) && document(model.data.resource).retired !== true && model.data.resource.id === data.model_id;
+  return <section role="status"><p>Legacy subscription configuration was retired. Choose the current model and accounts explicitly. Project restrictions that became empty continue to deny all accounts.</p><Problem error={model.error} /><button type="button" disabled={!valid || Boolean(model.error || model.isFetching)} onClick={() => change({ ...data, reconfiguration_required: false })}>Confirm reconfigured model and accounts</button></section>;
 }

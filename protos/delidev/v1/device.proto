@@ -39,6 +39,8 @@ message PairDeviceRequest {
   bytes credential_digest = 5;
   string machine_id = 6;
   bytes machine_json = 7;
+  string network_recipient = 8;
+  string network_key_id = 9;
 }
 
 message PairDeviceResponse {
