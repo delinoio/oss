@@ -33,6 +33,19 @@ func TestManualNativeRepeatedCompactionAndRestoration(t *testing.T) {
 			t.Error("fresh native continuation lost compacted context or repeated input")
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
+		if n == 1 {
+			arguments, _ := json.Marshal(map[string]any{"cmd": "echo compaction-tool-fixture", "max_output_tokens": 128})
+			for _, event := range []any{
+				map[string]any{"type": "response.created", "response": map[string]any{"id": "resp_compaction_tool", "status": "in_progress"}},
+				map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "function_call", "name": "exec_command", "call_id": "call_compaction_tool", "arguments": string(arguments)}},
+				map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_compaction_tool", "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
+			} {
+				raw, _ := json.Marshal(event)
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
+			}
+			return
+		}
+
 		for _, e := range []any{
 			map[string]any{"type": "response.created", "response": map[string]any{"id": fmt.Sprintf("resp_compact_%d", n), "status": "in_progress"}},
 			map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "message", "id": fmt.Sprintf("msg_compact_%d", n), "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "Private compaction fixture summary."}}}},
@@ -163,20 +176,46 @@ func TestManualNativeRepeatedCompactionAndRestoration(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer c.Close()
-	if _, e = c.ResumeThread(ctx, domain.NewID(), source.ThreadID, settings); e != nil {
+	if bound, e = c.ResumeThread(ctx, domain.NewID(), source.ThreadID, settings); e != nil {
 		t.Fatal(e)
 	}
 	if _, e = c.VerifyCompactedContinuation(ctx, domain.NewID(), *previous); e != nil {
 		t.Fatal("final fresh native checkpoint verification", e)
 	}
 	attemptsBeforeSuccessor := requests.Load()
-	if _, e = c.StartTurn(ctx, domain.NewID(), domain.NewID(), domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Successor private input"}); e != nil {
+	successorInput := domain.NewID()
+	successor, e := c.StartTurn(ctx, domain.NewID(), successorInput, domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Successor private input"})
+	if e != nil {
 		t.Fatal(e)
 	}
 	finishNativeForkTurn(t, ctx, c)
-	if requests.Load() != attemptsBeforeSuccessor+1 || requests.Load() < 3 || requests.Load() > 4 {
+	if requests.Load() != attemptsBeforeSuccessor+1 || requests.Load() < 4 || requests.Load() > 5 {
 		t.Fatal("native compaction repeated a side effect or inferred during preparation")
 	}
+	successorCheckpoint := ContinuationCheckpoint{ThreadID: source.ThreadID, SessionID: source.SessionID, TurnID: successor.TurnID, Status: TurnCompleted, Mode: domain.ExecuteMode, Effective: *bound.Effective, Inputs: []HistoricalInput{{ID: successorInput, PromptDigest: sha256.Sum256([]byte("Successor private input"))}}}
+	successorCheckpoint.Context, e = c.RetainContinuationContext(ctx, successorCheckpoint)
+	if e != nil || successorCheckpoint.Context == nil || len(successorCheckpoint.Context.Records) != 2 {
+		t.Fatal("ordinary successor lost prior manual compaction lineage", e)
+	}
+	if e = c.Close(); e != nil {
+		t.Fatal(e)
+	}
+	if e = VerifyContinuationContextRollout(ctx, cfg.Home, successorCheckpoint); e != nil {
+		t.Fatal("ordinary successor rollout was not pinned", e)
+	}
+	cfg.Process.OwnerID = domain.NewID()
+	c, e = Open(ctx, cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer c.Close()
+	if _, e = c.ResumeThread(ctx, domain.NewID(), source.ThreadID, settings); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = c.VerifyContinuation(ctx, domain.NewID(), successorCheckpoint, ContinueAfterSuccess); e != nil {
+		t.Fatal("ordinary successor could not restore complete compaction lineage", e)
+	}
+
 	t.Log("Original native provider attempts", requests.Load())
-	t.Log("Pinned native conversation, two once-only manual compactions, complete original input/history lineage and fresh-process continuation passed against a scripted loopback provider; no real account acceptance")
+	t.Log("Pinned native conversation with a completed original command tool, two once-only manual compactions, complete original input/history lineage and fresh-process continuation passed against a scripted loopback provider; no real account acceptance")
 }

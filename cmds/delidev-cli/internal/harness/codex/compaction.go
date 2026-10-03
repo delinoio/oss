@@ -92,6 +92,9 @@ func (c *Client) StartCompaction(ctx context.Context, action domain.ID, source C
 		return err
 	}
 	if previous == nil {
+		if source.Context != nil && contextMatchesHistory(*source.Context, before) != nil {
+			return compactionUncertain()
+		}
 		turn, inputs, e := decodeLatestTurnInputs(marshalForkPage(before[len(before)-1:]))
 		if e != nil || turn.ID != source.TurnID || turn.Status != TurnCompleted || !slices.Equal(inputs, source.Inputs) {
 			return compactionUncertain()
@@ -124,6 +127,7 @@ func (c *Client) StartCompaction(ctx context.Context, action domain.ID, source C
 }
 
 func cloneCompactionSource(p ContinuationCheckpoint) ContinuationCheckpoint {
+	p.Context = cloneContinuationContext(p.Context)
 	p.Inputs = slices.Clone(p.Inputs)
 	p.Effective.WorkspaceRoots = slices.Clone(p.Effective.WorkspaceRoots)
 	p.Effective.Sandbox.WritableRoots = slices.Clone(p.Effective.Sandbox.WritableRoots)
@@ -176,6 +180,7 @@ func (c *Client) observeCompactionLocked(native nativewire.Event, turn domain.ID
 				return Event{}, compactionUncertain()
 			}
 			c.execution.compactionItems[key] = compactionItem{observation: observation, startedAt: *startedAt}
+			c.execution.contextOrder = append(c.execution.contextOrder, ContextRecord{Trigger: observation.Trigger, ActionID: observation.ActionID, TurnID: turn, LiveItemID: item.ID})
 		}
 	} else {
 		observation.Stage = CompactionCompleted
@@ -311,6 +316,18 @@ func (c *Client) VerifyCompactedContinuation(ctx context.Context, request domain
 		s.turns[r.TurnID] = trackedTurn{Turn: Turn{ID: r.TurnID, Status: TurnCompleted}, Mode: p.Source.Mode}
 	}
 	s.continuationPending, s.paused = false, false
+	base := &ContinuationContextCheckpoint{Version: 1, TurnsCount: p.TurnsCount, HistoryDigest: p.HistoryDigest, RolloutPath: p.RolloutPath, RolloutDigest: p.RolloutDigest, Records: []ContextRecord{}}
+	if p.Source.Context != nil {
+		base.Records = slices.Clone(p.Source.Context.Records)
+	}
+	for _, record := range p.Records {
+		base.Records = append(base.Records, ContextRecord{Trigger: ManualCompaction, ActionID: record.ActionID, TurnID: record.TurnID, LiveItemID: record.ItemID, HistoryItemID: record.HistoryItemID})
+	}
+	if contextMatchesHistory(*base, turns) != nil {
+		c.problem, s.paused = compactionUncertain(), true
+		return Turn{}, c.problem
+	}
+	s.contextBase = base
 	return turn, nil
 }
 
@@ -335,6 +352,11 @@ func verifyCompactionTurn(raw json.RawMessage, r CompactionRecord) error {
 }
 func (c *Client) verifyCompactedHistoryLocked(source ContinuationCheckpoint, p CompactedCheckpoint, turns []json.RawMessage) error {
 	a, b := source, p.Source
+	ac, _ := json.Marshal(a.Context)
+	bc, _ := json.Marshal(b.Context)
+	if string(ac) != string(bc) {
+		return compactionUncertain()
+	}
 	if p.Version != 1 || a.ThreadID != b.ThreadID || a.SessionID != b.SessionID || a.TurnID != b.TurnID || a.Status != b.Status || a.Mode != b.Mode || !slices.Equal(a.Inputs, b.Inputs) || !sameEffectiveSettings(a.Effective, b.Effective) || b.ThreadID != c.thread || b.SessionID != c.execution.thread.SessionID || !sameEffectiveSettings(b.Effective, c.execution.settings) || len(p.Records) == 0 || len(p.Records) > maxForkTurns || uint32(len(turns)) != p.TurnsCount || p.TurnsCount <= uint32(len(p.Records)) || historyDigest(turns) != p.HistoryDigest {
 		return compactionUncertain()
 	}
@@ -377,7 +399,7 @@ func (c *Client) compactionTurnsLocked(ctx context.Context) ([]json.RawMessage, 
 		for _, raw := range page.Data {
 			turn, err := decodeTurn(raw)
 			var wire turnWire
-			if err != nil || turn.Status != TurnCompleted || domain.Decode(raw, &wire) != nil || wire.ItemsView != "full" || len(wire.Items) == 0 || seen[string(turn.ID)] {
+			if err != nil || !turn.Status.terminal() || domain.Decode(raw, &wire) != nil || wire.ItemsView != "full" || len(wire.Items) == 0 || seen[string(turn.ID)] {
 				return nil, compactionUncertain()
 			}
 			seen[string(turn.ID)] = true

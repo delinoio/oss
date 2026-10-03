@@ -151,6 +151,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if replaced != 1 {
 			return nil, executionCheckpointUncertain()
 		}
+		if c.Compaction == nil {
+			if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, checkpoint.Native); err != nil {
+				return nil, err
+			}
+		}
 		logger.InfoContext(ctx, "native_execution_predecessor_verified", "previous_execution_id", c.Previous.ExecutionID)
 	}
 	if f := input.Fork; f != nil {
@@ -496,6 +501,27 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		// the workspace lease's process index, then form a completion result.
 		// Read native identity and final credentials while its wire is still
 		// open; the defer only reads on earlier exits and never retries this read.
+		var contextProof *codex.ContinuationContextCheckpoint
+		if !hasChildren {
+			bindings, err := mapper.completionInputs()
+			if err != nil {
+				return nil, err
+			}
+			nativeInputs := make([]codex.HistoricalInput, len(bindings))
+			for n, binding := range bindings {
+				nativeInputs[n].ID = binding.InputID
+				bytes, err := hex.DecodeString(binding.PromptDigest)
+				if err != nil || len(bytes) != 32 {
+					return nil, executionCheckpointUncertain()
+				}
+				copy(nativeInputs[n].PromptDigest[:], bytes)
+			}
+			original := codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
+			contextProof, err = client.RetainContinuationContext(ctx, original)
+			if err != nil {
+				return nil, err
+			}
+		}
 		captureManagedBundle()
 		if err := client.Close(); err != nil {
 			return nil, err
@@ -548,7 +574,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err != nil {
 			return nil, err
 		}
-		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion, acceptedInputs)
+		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion, acceptedInputs, contextProof)
 		if err != nil {
 			return nil, err
 		}

@@ -177,3 +177,35 @@ compaction response usage therefore remains unavailable when the native profile
 provides no live response observation. Never copy overlapping token snapshots or
 historical response usage into a new charge, substitute a requested setting for
 an observed setting, or add an unsupported raw-events resume parameter.
+
+
+## Codex continuation context lineage
+
+An ordinary settled Codex execution that observed compaction, or inherited a
+verified compaction boundary, retains a Worker-private optional context proof
+inside its original continuation checkpoint. Legacy checkpoints without context
+keep their original omitted-field encoding. The context proof pins complete
+native history, every original automatic/manual context turn and both item IDs,
+the original protected rollout path/digest and exact ordered input provenance.
+Context proof is not a public resource, a substitute for independent cleanup,
+or permission to adopt another native endpoint or private home.
+
+Before a replacement starts, compare the original rollout bytes in the derived
+protected home. After Resume, compare complete history and every context marker
+before the original latest input verification. Retain all inherited context
+records across subsequent ordinary inputs, preserving the complete prior history
+prefix rather than carrying only the last manual action. A known failed or
+interrupted ordinary turn retains its own original terminal facts and explicit
+Resume requirement; closed historical turns are not rewritten as successes.
+Open context items, native uncertainty, pending interactions, child history,
+missing records or changed complete history cannot yield this proof.
+
+The domain's version-2 manual action/result union is independently closed to the
+Codex profile; version-1 Claude results retain their original required lifecycle
+fields. Codex success requires original action/checkpoint identity, distinct
+source/new native turns, live/durable context IDs, acknowledged lifecycle,
+complete history digest and independent cleanup. Missing live response usage is
+an empty unavailable inventory, never a fabricated measured zero. A Codex failed
+or uncertain action cannot borrow Claude's failed-command Resume checkpoint.
+This domain union alone does not advertise the reserved product capability or
+establish durable native command authority.
