@@ -38,11 +38,15 @@ int main(int argc, char **argv) {
             if (dup2(input[0], 0) < 0) _exit(86);
             close(input[0]);
         }
-        if (setpgid(0, 0)) _exit(73);
-        // Wait for shell placement without leaving a pre-exec stop event.
+        // The shell parent alone places this child in its group before
+        // releasing launch. The duplicate parent/child setpgid path had
+        // intermittent pre-exec failures on Darwin (child exit 73), which
+        // were previously indistinguishable from pnport startup failure.
+        // Keep this barrier instead of restoring the duplicate group change.
         char ready;
         if (read(launch[0], &ready, 1) != 1) _exit(84);
         close(launch[0]);
+        if (getpgrp() != getpid()) _exit(90);
         // Optional test-only diagnostics retain real tty stdin/stdout while
         // avoiding an unread PTY buffer blocking explicit supervisor logs.
         // Default conformance still inherits all three terminal streams.
@@ -75,7 +79,9 @@ int main(int argc, char **argv) {
     if (write(launch[1], "1", 1) != 1) return 77;
     close(launch[1]);
     marker("terminal.running");
-    if (strcmp(argv[3], "interrupt") != 0 && !redirected) {
+    if (strcmp(argv[3], "interrupt") != 0 &&
+        strcmp(argv[3], "missing-image") != 0 &&
+        strcmp(argv[3], "invalid-image") != 0 && !redirected) {
         pid_t waited = waitpid(child, &status, WUNTRACED);
         if (waited != child || !WIFSTOPPED(status)) {
             int wait_error = waited < 0 ? errno : 0;

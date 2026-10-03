@@ -141,6 +141,22 @@ fn cache_path(cli: &Cli, cwd: &Path) -> Result<PathBuf> {
 fn load_graph(cli: &Cli, cwd: &Path) -> Result<Graph> {
     Graph::load(&graph::select(cli.project.as_deref(), cwd)?)
 }
+#[derive(Debug)]
+enum RunStage {
+    Starting,
+    ProjectLoaded,
+    ProjectValidated,
+    PlatformValidated,
+    CompanionValidated,
+    CacheOpened,
+    SessionPrepared,
+    CommandResolved,
+}
+
+fn run_stage(stage: RunStage) {
+    tracing::debug!(action = "execution_stage", stage = ?stage, "Preparing owned execution");
+}
+
 fn execute(cli: &Cli) -> Result<i32> {
     let cwd = std::env::current_dir().map_err(|_| {
         Error::new(
@@ -236,11 +252,17 @@ fn execute(cli: &Cli) -> Result<i32> {
             Ok(if ready { 0 } else { 125 })
         }
         Action::Run { command } => {
+            run_stage(RunStage::Starting);
             let graph = load_graph(cli, &cwd)?;
+            run_stage(RunStage::ProjectLoaded);
             graph.check_conflicts()?;
+            run_stage(RunStage::ProjectValidated);
             supervisor::platform()?;
+            run_stage(RunStage::PlatformValidated);
             let artifact = supervisor::artifact()?;
+            run_stage(RunStage::CompanionValidated);
             let cache = Cache::open(cache_path(cli, &cwd)?)?;
+            run_stage(RunStage::CacheOpened);
             let session = tempfile::Builder::new()
                 .prefix(&format!("pnport-{}-", uuid::Uuid::now_v7()))
                 .tempdir()
@@ -254,8 +276,10 @@ fn execute(cli: &Cli) -> Result<i32> {
             cache::private_dir(session.path())?;
             let bytes = serde_json::to_vec(&graph.snapshot).map_err(|_| cache_error())?;
             fs::write(session.path().join("graph.json"), bytes).map_err(|_| cache_error())?;
+            run_stage(RunStage::SessionPrepared);
             let mut view = View::new(graph, cache, session.path().to_owned());
             let executable = resolve_command(&mut view, &cwd, &command[0])?;
+            run_stage(RunStage::CommandResolved);
             supervisor::run(&mut view, &artifact, &executable, &command[1..])
         }
     }
