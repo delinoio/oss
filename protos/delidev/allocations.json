@@ -2968,6 +2968,20 @@
       "newDeclaration": true,
       "member": "ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED",
       "number": 9
+    },
+    {
+      "pr": 1115,
+      "kind": "enum",
+      "declaration": "AccountingUnitKind",
+      "member": "ACCOUNTING_UNIT_KIND_CLAUDE_MAIN_LOOP_INPUT",
+      "number": 3
+    },
+    {
+      "issue": 1099,
+      "kind": "enum",
+      "declaration": "AccountingUnitKind",
+      "member": "ACCOUNTING_UNIT_KIND_OPENCODE_STEP",
+      "number": 4
     }
   ]
 }
