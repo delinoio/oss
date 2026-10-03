@@ -67,12 +67,27 @@ test("preview launcher and native tarballs retain exact version and immutable id
     const preload = path.join(output, "preload-fixture");
     writeFileSync(binary, `#!/bin/sh\nprintf 'pnport ${version}\\n'\n`);
     chmodSync(binary, 0o755);
-    writeFileSync(preload, "PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
+    writeFileSync(preload, target.os === "darwin" ? "PNPORT_PRELOAD_0.1.0_FORMAT_2_READY" : "PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
     const native = buildPackage({ target, binary, preload, output, sourceRevision: revision, read });
     assert.equal(native.version, version);
     assert.equal(inspectTarball(path.join(output, "tarballs", native.filename), version, revision).integrity, native.integrity);
   }
   assert.throws(() => buildPackage({ output, sourceRevision: revision, read: (file) => read(file).replaceAll(version, "0.1.0-next.01") }), /Unsupported/u);
+});
+
+test("macOS native package inspection rejects companions without constructor leases", (t) => {
+  if (process.platform === "win32") {
+    t.skip("This macOS packaging fixture uses a POSIX version stub");
+    return;
+  }
+  const output = fixture(t);
+  const target = targets.find(({ suffix }) => suffix === "darwin-arm64");
+  const binary = path.join(output, "native-fixture");
+  const preload = path.join(output, "preload-fixture");
+  writeFileSync(binary, `#!/bin/sh\nprintf 'pnport ${metadata().version}\\n'\n`);
+  chmodSync(binary, 0o755);
+  writeFileSync(preload, "PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
+  assert.throws(() => buildPackage({ target, binary, preload, output, sourceRevision: revision }), /companion ABI mismatch/u);
 });
 
 test("native release archives contain one matched pair and exact license notices", () => {

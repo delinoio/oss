@@ -99,10 +99,12 @@ pub fn artifact() -> Result<PathBuf> {
             return Err(injection_error());
         }
     }
-    if !bytes
-        .windows(35)
-        .any(|window| window == b"PNPORT_PRELOAD_0.1.0_FORMAT_1_READY")
-    {
+    let marker = if cfg!(target_os = "macos") {
+        b"PNPORT_PRELOAD_0.1.0_FORMAT_2_READY"
+    } else {
+        b"PNPORT_PRELOAD_0.1.0_FORMAT_1_READY"
+    };
+    if !bytes.windows(35).any(|window| window == marker) {
         return Err(injection_error());
     }
     Ok(artifact)
@@ -220,11 +222,19 @@ impl PendingLaunches {
                 *observed = (identity, Instant::now());
             }
             present.insert(path.clone());
-            let entered = fs::symlink_metadata(session.join("launch-starting").join(token))
-                .is_ok_and(|entry| {
-                    entry.is_file() && identity.is_some() && marker_identity(&entry) == identity
-                });
-            if !entered && observed.1.elapsed() > Duration::from_secs(5) {
+            #[cfg(unix)]
+            let state = pnport::launch::entry_state(
+                &session.join("launch-starting").join(token),
+                &metadata,
+            )
+            .map_err(|_| injection_error())?;
+            #[cfg(not(unix))]
+            let state = pnport::launch::EntryState::Missing;
+            let abandoned = state == pnport::launch::EntryState::Abandoned;
+            if abandoned
+                || state == pnport::launch::EntryState::Missing
+                    && observed.1.elapsed() > Duration::from_secs(5)
+            {
                 // Completion can remove the pending inode during this scan.
                 // Recheck it before rejecting a launch already acknowledged.
                 match fs::symlink_metadata(&path) {
@@ -238,13 +248,19 @@ impl PendingLaunches {
                 }
                 tracing::debug!(
                     action = "descendant_injection_deadline",
-                    constructor_entered = false,
-                    "A pending native image did not enter its constructor"
+                    constructor_entered = abandoned,
+                    initializer_lease_released = abandoned,
+                    "A pending native image did not complete initialization"
                 );
                 return Err(Error::new(
                     Code::PnportInjectionFailed,
-                    "A child executable did not acknowledge native injection; execution was \
-                     stopped.",
+                    if abandoned {
+                        "A child executable exited during native initialization; execution was \
+                         stopped."
+                    } else {
+                        "A child executable did not acknowledge native injection; execution was \
+                         stopped."
+                    },
                 ));
             }
         }
@@ -557,6 +573,8 @@ mod pending_launch_tests {
         let entered = starting.join("pnport-test");
         fs::write(&marker, b"").unwrap();
         fs::hard_link(&marker, &entered).unwrap();
+        let lease = fs::File::open(&marker).unwrap();
+        fs2::FileExt::try_lock_exclusive(&lease).unwrap();
         let mut launches = PendingLaunches::default();
         launches.observed.insert(
             marker.clone(),
@@ -602,6 +620,7 @@ mod tests {
         UnacknowledgedDescendant,
         LiveUnacknowledgedDescendant,
         DescendantCacheContention,
+        AbandonedDescendantInitialization,
     }
 
     impl Scenario {
@@ -621,6 +640,9 @@ mod tests {
                 }
                 Self::DescendantCacheContention => {
                     "descendant_constructor_entry_permits_prolonged_cache_wait"
+                }
+                Self::AbandonedDescendantInitialization => {
+                    "killed_descendant_initializer_stops_a_running_root"
                 }
             }
         }
@@ -864,27 +886,60 @@ __attribute__((constructor)) static void start(void) {
         if run_in_fresh_process(Scenario::DescendantCacheContention) {
             return;
         }
+        descendant_initialization(DescendantOutcome::Ready);
+    }
+
+    #[test]
+    fn killed_descendant_initializer_stops_a_running_root() {
+        if run_in_fresh_process(Scenario::AbandonedDescendantInitialization) {
+            return;
+        }
+        descendant_initialization(DescendantOutcome::Killed);
+    }
+
+    #[derive(Clone, Copy)]
+    enum DescendantOutcome {
+        Ready,
+        Killed,
+    }
+
+    fn descendant_initialization(outcome: DescendantOutcome) {
         let (root, mut view, executable) = fixture();
         fs::write(
             root.path().join("probe.c"),
             r#"
 #include <fcntl.h>
 #include <spawn.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 extern char **environ;
 int main(int argc, char **argv) {
     alarm(20);
     if (argc == 2) return 0;
-    if (argc != 3) return 1;
+    if (argc != 6) return 1;
     int fd = open(argv[1], O_CREAT | O_WRONLY, 0600);
     if (fd < 0 || close(fd)) return 2;
     while (access(argv[2], F_OK)) usleep(10000);
     char *child_argv[] = {argv[0], "child", 0};
     pid_t child;
     if (posix_spawn(&child, argv[0], 0, 0, child_argv, environ)) return 3;
+    if (argv[3][0]) {
+        while (access(argv[3], F_OK)) usleep(10000);
+        fd = open(argv[5], O_CREAT | O_WRONLY, 0600);
+        if (fd < 0 || close(fd)) return 6;
+        // The native parent retains its direct child unreaped through kill.
+        if (kill(child, SIGKILL)) return 7;
+    }
     int status;
     if (waitpid(child, &status, 0) != child) return 4;
+    if (argv[3][0]) {
+        if (!WIFSIGNALED(status) || WTERMSIG(status) != SIGKILL) return 8;
+        sleep(8);
+    }
+    fd = open(argv[4], O_CREAT | O_WRONLY, 0600);
+    if (fd < 0 || close(fd)) return 9;
+    if (argv[3][0]) return 0;
     return WIFEXITED(status) ? WEXITSTATUS(status) : 5;
 }
 "#,
@@ -899,6 +954,9 @@ int main(int argc, char **argv) {
             .success());
         let root_started = root.path().join("root-started");
         let allow_child = root.path().join("allow-child");
+        let allow_kill = root.path().join("allow-kill");
+        let killed = root.path().join("child-killed");
+        let root_finished = root.path().join("root-finished");
         let lock = fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -909,6 +967,7 @@ int main(int argc, char **argv) {
         let finished = Arc::clone(&supervisor_finished);
         let started = root_started.clone();
         let allow = allow_child.clone();
+        let kill = allow_kill.clone();
         let release = std::thread::spawn(move || {
             let deadline = Instant::now() + Duration::from_secs(15);
             while !started.is_file() {
@@ -930,10 +989,24 @@ int main(int argc, char **argv) {
                 }
                 std::thread::sleep(Duration::from_millis(10));
             }
-            std::thread::sleep(Duration::from_secs(6));
-            assert!(!finished.load(Ordering::SeqCst));
             assert_eq!(fs::read_dir(session.join("ready")).unwrap().count(), 1);
             assert_eq!(fs::read_dir(session.join("pending")).unwrap().count(), 1);
+            match outcome {
+                DescendantOutcome::Ready => {
+                    std::thread::sleep(Duration::from_secs(6));
+                    assert!(!finished.load(Ordering::SeqCst));
+                    assert_eq!(fs::read_dir(session.join("ready")).unwrap().count(), 1);
+                }
+                DescendantOutcome::Killed => {
+                    fs::write(kill, b"").unwrap();
+                    while !finished.load(Ordering::SeqCst) {
+                        if Instant::now() >= deadline {
+                            return Err("The abandoned constructor lease did not stop supervision.");
+                        }
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                }
+            }
             drop(lock);
             Ok(())
         });
@@ -941,16 +1014,44 @@ int main(int argc, char **argv) {
             &mut view,
             &artifact().unwrap(),
             &executable,
-            &[root_started.into_os_string(), allow_child.into_os_string()],
+            &[
+                root_started.into_os_string(),
+                allow_child.into_os_string(),
+                match outcome {
+                    DescendantOutcome::Ready => OsString::new(),
+                    DescendantOutcome::Killed => allow_kill.into_os_string(),
+                },
+                root_finished.clone().into_os_string(),
+                killed.clone().into_os_string(),
+            ],
         );
-        record_outcome(Scenario::DescendantCacheContention, &result);
+        record_outcome(
+            match outcome {
+                DescendantOutcome::Ready => Scenario::DescendantCacheContention,
+                DescendantOutcome::Killed => Scenario::AbandonedDescendantInitialization,
+            },
+            &result,
+        );
         supervisor_finished.store(true, Ordering::SeqCst);
         release.join().unwrap().unwrap();
-        assert_eq!(result.unwrap(), 0);
-        assert_eq!(fs::read_dir(view.session.join("ready")).unwrap().count(), 2);
-        assert_eq!(
-            fs::read_dir(view.session.join("pending")).unwrap().count(),
-            0
-        );
+        match outcome {
+            DescendantOutcome::Ready => {
+                assert_eq!(result.unwrap(), 0);
+                assert_eq!(fs::read_dir(view.session.join("ready")).unwrap().count(), 2);
+                assert_eq!(
+                    fs::read_dir(view.session.join("pending")).unwrap().count(),
+                    0
+                );
+            }
+            DescendantOutcome::Killed => {
+                let error = result.unwrap_err();
+                assert_eq!(error.code, Code::PnportInjectionFailed);
+                assert!(error
+                    .message
+                    .contains("exited during native initialization"));
+                assert!(killed.is_file());
+                assert!(!root_finished.exists());
+            }
+        }
     }
 }

@@ -4539,6 +4539,62 @@ fn linux_doctor_rejects_an_incompatible_companion_architecture() {
     assert_eq!(injection["code"], "PNPORT_INJECTION_FAILED");
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_rejects_a_companion_without_constructor_leases_before_user_launch() {
+    use std::process::Command;
+    let root = fixture();
+    let native = Path::new(env!("CARGO_BIN_EXE_pnport"));
+    let executable = root.path().join("pnport");
+    fs::copy(native, &executable).unwrap();
+    let mut bytes = fs::read(native.parent().unwrap().join("libfspy_preload_unix.dylib")).unwrap();
+    let current = b"PNPORT_PRELOAD_0.1.0_FORMAT_2_READY";
+    let offset = bytes
+        .windows(current.len())
+        .position(|window| window == current)
+        .unwrap();
+    bytes[offset..offset + current.len()].copy_from_slice(b"PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
+    fs::write(root.path().join("libpnport_preload.dylib"), bytes).unwrap();
+    let result = Command::new(&executable)
+        .current_dir(root.path())
+        .args(["doctor", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(125));
+    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["schemaVersion"], 1);
+    let injection = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == "injection")
+        .unwrap();
+    assert_eq!(injection["code"], "PNPORT_INJECTION_FAILED");
+    let source = root.path().join("launch.c");
+    let probe = root.path().join("launch");
+    fs::write(
+        &source,
+        "#include <stdio.h>\nint main(void) { FILE *f=fopen(\"launched\",\"w\"); if (!f) return \
+         1; fclose(f); return 0; }\n",
+    )
+    .unwrap();
+    assert!(Command::new("cc")
+        .arg(&source)
+        .arg("-o")
+        .arg(&probe)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(&executable)
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(probe)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(125));
+    assert!(!root.path().join("launched").exists());
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn linux_cache_lock_wait_observes_signal_and_graph_change() {

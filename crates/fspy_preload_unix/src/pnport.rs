@@ -828,15 +828,13 @@ unsafe extern "C" fn initialize() {
             if !pnport_core::launch::valid_token(token) {
                 return Err(Stage::LaunchToken);
             }
-            let pending = session.join("pending").join(token);
-            let entered = session.join("launch-starting").join(token);
-            fs::create_dir_all(session.join("launch-starting"))
-                .map_err(|_| Stage::AcknowledgeLaunch)?;
             // Link this exact pending inode before graph/cache coordination.
             // A stale acknowledgement with a reused filename cannot exempt a
             // different image from the missing-injection deadline.
-            fs::hard_link(&pending, &entered).map_err(|_| Stage::AcknowledgeLaunch)?;
-            Some((pending, entered))
+            Some(
+                pnport_core::launch::Entry::begin(&session, token)
+                    .map_err(|_| Stage::AcknowledgeLaunch)?,
+            )
         } else {
             None
         };
@@ -869,9 +867,8 @@ unsafe extern "C" fn initialize() {
         fs::create_dir_all(session.join("ready")).map_err(|_| Stage::PublishReadiness)?;
         fs::write(session.join("ready").join(getpid().to_string()), b"1")
             .map_err(|_| Stage::PublishReadiness)?;
-        if let Some((pending, entered)) = launch {
-            fs::remove_file(pending).map_err(|_| Stage::AcknowledgeLaunch)?;
-            fs::remove_file(entered).map_err(|_| Stage::AcknowledgeLaunch)?;
+        if let Some(launch) = launch {
+            launch.acknowledge().map_err(|_| Stage::AcknowledgeLaunch)?;
         }
         Ok(())
     })();
