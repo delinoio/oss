@@ -48,6 +48,10 @@ type SessionSettings struct {
 type SessionMutation string
 
 const (
+	ForkSessionMutation           SessionMutation = "fork-session"
+	MoveForkMutation              SessionMutation = "move-fork"
+	MarkForkMutation              SessionMutation = "mark-fork"
+	DeleteForkSourceMutation      SessionMutation = "delete-fork-source"
 	CompactSessionMutation        SessionMutation = "compact-session"
 	CreateSessionMutation         SessionMutation = "create-session"
 	ResumeSessionMutation         SessionMutation = "resume-session"
@@ -100,6 +104,9 @@ type SessionReceipt struct {
 // providers/context and original server ownership. Discovery cannot create one
 // or expose session mutations. Durable Worker/account integration is separate.
 type sessionAPI struct {
+	forkAttempt            *nativeForkAttempt
+	forkOrigin             *nativeCheckpointFork
+	forkSelectionPending   bool
 	compactionAttempt      *nativeCompactionAttempt
 	children               map[string]*foregroundChild
 	earlyChildren          map[string][]NativeEvent
@@ -349,7 +356,7 @@ func (s *sessionAPI) readSession(ctx context.Context) (string, error) {
 		return "", err
 	}
 	creation := s.sessionMetadataCreation()
-	identity, err := validateSession(raw, s.cwd, &creation, false)
+	identity, err := s.validateOriginalSession(raw, &creation)
 	if err != nil && s.input != nil && creation.settings.Agent != s.creation.settings.Agent {
 		// Native createUserMessage updates session metadata before storing the
 		// new user message. Permit that one original-input-owned transition,
@@ -504,6 +511,11 @@ func (s *sessionAPI) readStoredInput(ctx context.Context) (InputReceipt, error) 
 		s.sessionAgent = s.creation.settings.Agent
 		if _, err := s.readSession(ctx); err != nil {
 			return receipt, err
+		}
+	}
+	if s.forkSelectionPending {
+		if _, err := s.readSession(ctx); err != nil || s.forkSelectionPending {
+			return receipt, sessionUncertain()
 		}
 	}
 	s.input.receipt.Recorded = true

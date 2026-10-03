@@ -66,7 +66,7 @@ func (s *sessionAPI) inspectCheckpointHistory(ctx context.Context, checkpoint na
 		return sessionUncertain()
 	}
 	creation := s.sessionMetadataCreation()
-	identity, err := validateSession(sessions[0], s.cwd, &creation, false)
+	identity, err := s.validateOriginalSession(sessions[0], &creation)
 	if err != nil || identity != s.creation.identity {
 		return sessionUncertain()
 	}

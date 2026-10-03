@@ -34,7 +34,7 @@ func (c SessionClaim) Validate() error {
 		return sessionInvalid()
 	}
 	switch c.Kind {
-	case ResumeSessionMutation, CompactSessionMutation:
+	case ResumeSessionMutation, CompactSessionMutation, ForkSessionMutation, MoveForkMutation, MarkForkMutation, DeleteForkSourceMutation:
 		if c.StopRequestID != "" || c.InteractionID != "" || c.ArrivalID != "" || c.CallID != "" {
 			return sessionInvalid()
 		}

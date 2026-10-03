@@ -56,7 +56,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Explicit outbound networking](cmds-delidev-network-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Claude native context and manual compaction](cmds-delidev-claude-compaction-contract.md)
-- [Same-account Codex session forks](cmds-delidev-forks-contract.md)
+- [Same-account native session forks](cmds-delidev-forks-contract.md)
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
@@ -160,3 +160,5 @@ terminal reads or expose cached terminal errors; see the
 Codex subagent settings require independent server/Worker capabilities, immutable canonical child model identity and same-account relay narrowing under `cmds-delidev-subagents-contract.md`; requested defaults never establish an observed child model or independent child control.
 
 Issue #1208 extends native subagent observation to OpenCode 1.18.32 foreground tasks under the existing subagent contract and independent System/Worker capabilities. Preserve the one-level dual task/child ownership proof, same account/model, separate usage, original Stop/cleanup and paused child-bearing completion; implementation and native/account/platform acceptance remain separately recorded in the integration PR.
+
+- Bounded Unix plain-text OpenCode General Chat Fork uses independent System 26 / Worker 15, native ID-clone/history proof, explicit no-change relocation, preparation without inference and independent copied files. The [fork contract](cmds-delidev-forks-contract.md) owns this profile; Codex support does not imply OpenCode or Sidechat authority.

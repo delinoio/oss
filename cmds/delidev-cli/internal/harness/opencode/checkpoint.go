@@ -52,6 +52,7 @@ type nativeCheckpoint struct {
 	Tools             *checkpointToolHistory     `json:"tool_restoration,omitempty"`
 	Stop              *StopReceipt               `json:"stop,omitempty"`
 	Context           *nativeCheckpointContext   `json:"context,omitempty"`
+	Fork              *nativeCheckpointFork      `json:"fork,omitempty"`
 	Files             []checkpointFile           `json:"files"`
 }
 
@@ -148,6 +149,10 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 		value.Version, value.FilesystemRoot = 2, scope.boundary
 	}
 	value.References = slices.Clone(s.apiProfile.References)
+	value.Fork = cloneForkProof(s.forkOrigin)
+	if value.Fork != nil {
+		value.Fork.SelectionPending = s.forkSelectionPending
+	}
 	if s.predecessor != nil && !manual {
 		value.PredecessorSHA256 = s.predecessorDigest
 		for _, prior := range checkpointHistories(*s.predecessor) {
@@ -277,7 +282,7 @@ func checkpointHistories(value nativeCheckpoint) []HistoryObservation {
 }
 
 func validCheckpointLineage(value nativeCheckpoint) bool {
-	if !validCheckpointContext(value) {
+	if !validCheckpointFork(value) || !validCheckpointContext(value) {
 		return false
 	}
 	if len(value.Previous) >= maxObservedMessages/2 || (len(value.Previous) == 0) != (value.PredecessorSHA256 == "") || len(value.Previous) > 0 && !checkpointDigest(value.PredecessorSHA256) || !validCheckpointTools(value) {

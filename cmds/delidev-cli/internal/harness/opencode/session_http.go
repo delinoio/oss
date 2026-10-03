@@ -27,6 +27,10 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 			valid = valid || path == base || path == base+"/message?limit=1" || path == "/session/status"
 		}
 	}
+	if f := s.forkAttempt; f != nil {
+		valid = valid || method == http.MethodGet && path == f.readPath && len(body) == 0
+		valid = valid || f.mutation != nil && method == f.mutation.method && path == f.mutation.path && mutationDigest(body) == f.mutation.digest
+	}
 	if s.compactionAttempt != nil {
 		valid = valid || s.compactionAttempt.attempted && method == http.MethodPost && path == s.compactionAttempt.path && mutationDigest(body) == s.compactionAttempt.digest
 	}
@@ -77,7 +81,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("x-opencode-directory", s.cwd)
 	request.SetBasicAuth("delidev", s.password)
-	if method == http.MethodPost || method == http.MethodPatch {
+	if method == http.MethodPost || method == http.MethodPatch || method == http.MethodDelete {
 		request.Header.Set("Content-Type", "application/json")
 		// Prevent automatic transport replay, including for a body that net/http
 		// could otherwise reconstruct. The transport also disables keep-alives.
@@ -91,7 +95,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	if len(response.Header.Values("Content-Encoding")) != 0 || response.ContentLength > maxHTTPBody {
 		return nil, response.StatusCode, sessionProblem()
 	}
-	missingInput := method == http.MethodGet && s.input != nil && path == "/session/"+s.input.receipt.SessionID+"/message/"+s.input.receipt.MessageID && response.StatusCode == http.StatusNotFound
+	missingInput := s.forkAttempt != nil && method == http.MethodGet && path == "/session/"+s.forkAttempt.source && response.StatusCode == http.StatusNotFound && expected == http.StatusNotFound || method == http.MethodGet && s.input != nil && path == "/session/"+s.input.receipt.SessionID+"/message/"+s.input.receipt.MessageID && response.StatusCode == http.StatusNotFound
 	if response.StatusCode != expected && !missingInput {
 		return nil, response.StatusCode, sessionProblem()
 	}
