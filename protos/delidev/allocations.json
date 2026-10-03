@@ -3675,6 +3675,80 @@
       "declaration": "ListRequestDiagnosticsResponse",
       "member": "next_page_token",
       "number": 2
+    },
+    {
+      "issue": 1235,
+      "kind": "enum",
+      "declaration": "SubscriptionServiceIdentity",
+      "member": "SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1235,
+      "kind": "enum",
+      "declaration": "SubscriptionServiceIdentity",
+      "member": "SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1235,
+      "kind": "enum",
+      "declaration": "SubscriptionServiceIdentity",
+      "member": "SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1235,
+      "kind": "enum",
+      "declaration": "SubscriptionServiceIdentity",
+      "member": "SUBSCRIPTION_SERVICE_IDENTITY_GROK",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1235,
+      "kind": "message",
+      "declaration": "GetUsageSummaryRequest",
+      "member": "subscription_service",
+      "number": 12
+    },
+    {
+      "issue": 1235,
+      "kind": "message",
+      "declaration": "UsageGroup",
+      "member": "subscription_service",
+      "number": 13
+    },
+    {
+      "issue": 1235,
+      "kind": "message",
+      "declaration": "UsageAnalyticsModel",
+      "member": "subscription_service",
+      "number": 6
+    },
+    {
+      "issue": 1235,
+      "kind": "message",
+      "declaration": "NativeAccountingGroup",
+      "member": "subscription_service",
+      "number": 7
+    },
+    {
+      "issue": 1235,
+      "kind": "message",
+      "declaration": "PricingVersion",
+      "member": "subscription_service",
+      "number": 7
+    },
+    {
+      "issue": 1235,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "subscription_service",
+      "number": 32
     }
   ]
 }
