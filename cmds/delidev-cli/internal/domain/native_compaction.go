@@ -23,7 +23,10 @@ type NativeCompactionObservation struct {
 }
 
 func (v NativeCompactionObservation) Validate() error {
-	if v.Harness != Codex || v.Trigger != NativeAutomaticCompaction || !slices.Contains([]NativeCompactionStage{NativeCompactionStarted, NativeCompactionCompleted}, v.Stage) || Text(v.NativeItemID, "native compaction item", 1024, true) != nil {
+	if (v.Harness != Codex && v.Harness != OpenCode) || v.Trigger != NativeAutomaticCompaction || !slices.Contains([]NativeCompactionStage{NativeCompactionStarted, NativeCompactionCompleted}, v.Stage) || Text(v.NativeItemID, "native compaction item", 1024, true) != nil {
+		return CompactionUncertain()
+	}
+	if v.Harness == OpenCode && NativeIdentity(v.NativeItemID).Validate(OpenCode, NativePartIdentity) != nil {
 		return CompactionUncertain()
 	}
 	return nil

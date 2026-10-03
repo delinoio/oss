@@ -211,6 +211,10 @@ func checkpointReplacementProfile(value nativeCheckpoint) error {
 			for _, part := range message.Parts {
 				switch part.Kind {
 				case TextPartKind, ReasoningPartKind, StepStartPartKind, StepFinishPartKind:
+				case CompactionPartKind:
+					if value.Context == nil {
+						return incompatible()
+					}
 				case SnapshotPartKind, PatchPartKind:
 					if value.Snapshot == nil {
 						return incompatible()

@@ -163,7 +163,10 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 	if u := event.Interaction; u != nil && event.Kind == domain.ExecutionInteractionClosed && (input.Configuration.Harness == domain.ClaudeCode) != (u.ClaudeCancellation != nil) {
 		return executionEventConflict()
 	}
-	if event.Progress != nil && (input.Configuration.Harness == domain.OpenCode) != (event.Progress.Progress.Kind == domain.OpenCodeTodoProgressKind || event.Progress.Progress.Kind == domain.OpenCodeChangesProgressKind || event.Progress.Progress.Kind == domain.OpenCodeWorkspaceProgressKind) {
+	if event.Progress != nil && event.Progress.Progress.Compaction != nil && event.Progress.Progress.Compaction.Harness != input.Configuration.Harness {
+		return executionEventConflict()
+	}
+	if event.Progress != nil && event.Progress.Progress.Kind != domain.NativeCompactionProgress && (input.Configuration.Harness == domain.OpenCode) != (event.Progress.Progress.Kind == domain.OpenCodeTodoProgressKind || event.Progress.Progress.Kind == domain.OpenCodeChangesProgressKind || event.Progress.Progress.Kind == domain.OpenCodeWorkspaceProgressKind) {
 		return executionEventConflict()
 	}
 	if event.Progress != nil && event.Progress.Progress.Changes != nil && event.Progress.Progress.Changes.Source == domain.OpenCodeInputSummary && event.Progress.Progress.Changes.NativeMessageID != event.NativeTurnID {

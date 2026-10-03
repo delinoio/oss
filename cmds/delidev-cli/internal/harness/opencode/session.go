@@ -48,6 +48,7 @@ type SessionSettings struct {
 type SessionMutation string
 
 const (
+	CompactSessionMutation        SessionMutation = "compact-session"
 	CreateSessionMutation         SessionMutation = "create-session"
 	ResumeSessionMutation         SessionMutation = "resume-session"
 	SubmitInputMutation           SessionMutation = "submit-input"
@@ -99,6 +100,7 @@ type SessionReceipt struct {
 // providers/context and original server ownership. Discovery cannot create one
 // or expose session mutations. Durable Worker/account integration is separate.
 type sessionAPI struct {
+	compactionAttempt      *nativeCompactionAttempt
 	children               map[string]*foregroundChild
 	earlyChildren          map[string][]NativeEvent
 	earlyChildBytes        int

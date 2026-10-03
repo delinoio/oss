@@ -36,6 +36,7 @@ type ExecutionConfiguration struct {
 	Routing             RoutingPolicy           `json:"routing"`
 	Templates           []AppliedTemplate       `json:"templates"`
 	Instructions        string                  `json:"instructions"`
+	OpenCodeContext     *OpenCodeModelContext   `json:"opencode_context,omitempty"`
 	GrokContext         *GrokModelContext       `json:"grok_context,omitempty"`
 	Subscription        bool                    `json:"subscription,omitempty"`
 }
@@ -95,6 +96,12 @@ func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent
 			return ExecutionConfiguration{}, err
 		}
 	}
+	if agent.Harness == OpenCode && model.ContextLimit != nil {
+		result.OpenCodeContext = &OpenCodeModelContext{Tokens: *model.ContextLimit, Source: model.MetadataSource}
+		if err := result.OpenCodeContext.Validate(); err != nil {
+			return ExecutionConfiguration{}, err
+		}
+	}
 	return result, nil
 }
 
@@ -122,6 +129,9 @@ func (c ExecutionConfiguration) Validate() error {
 	}
 	if c.Subscription && c.Options.Permission != PermissionReadOnly && c.Options.Permission != PermissionWorkspaceWrite {
 		return Fail(Unsupported, "Managed subscription execution requires an explicit bounded native sandbox.", "Choose read-only or workspace-write permissions; default and full-access execution cannot protect the managed authentication file from native tools.")
+	}
+	if c.OpenCodeContext != nil && (c.Harness != OpenCode || c.OpenCodeContext.Validate() != nil) {
+		return Fail(RecoveryRequired, "The retained OpenCode context metadata is invalid.", "Preserve the original model selection and metadata provenance.")
 	}
 	if c.GrokContext != nil && (c.Harness != GrokBuild || c.GrokContext.Validate() != nil) {
 		return Fail(RecoveryRequired, "The retained Grok model context is invalid.", "Preserve the original model selection and its metadata provenance.")

@@ -117,7 +117,7 @@ func (s *sessionAPI) reconcileEvents(ctx context.Context, old *eventStream, o *i
 	eligible := old.problem != nil && old.failure == streamTransport && !old.closing && old.parent != nil && old.parent.Err() == nil
 	deadline, seen := old.failedAt.Add(eventIdleLimit), maps.Clone(old.seen)
 	old.mu.Unlock()
-	if !eligible || s.reconciliation != ReconciliationOriginal || s.problem != nil || s.observer != o || s.events != old || s.verifyStreamOwner == nil || !s.apiVerified || s.apiProfile == nil || len(s.children) != 0 || len(s.earlyChildren) != 0 {
+	if !eligible || s.reconciliation != ReconciliationOriginal || s.problem != nil || s.observer != o || s.events != old || s.verifyStreamOwner == nil || !s.apiVerified || s.apiProfile == nil || o.contextManual != "" || len(o.contextRecords) > 0 || len(o.contextPruned) > 0 || len(s.children) != 0 || len(s.earlyChildren) != 0 {
 		return o.interruption(ctx)
 	}
 	o.mu.Lock()
@@ -413,7 +413,7 @@ func (s *sessionAPI) readReconciliationSnapshot(ctx context.Context) (reconcilia
 func (o *inputObserver) reconciliationCopy() *inputObserver {
 	// Called with o.mu held. Copy every mutable comparison owner; failed joining
 	// must not change a published prefix, response receipt, or usage observation.
-	c := &inputObserver{creation: o.creation, input: o.input, cwd: o.cwd, root: o.root, logger: o.logger, owner: o.owner,
+	c := &inputObserver{contextOverflow: maps.Clone(o.contextOverflow), contextRecords: cloneContextRecords(o.contextRecords), contextUsers: maps.Clone(o.contextUsers), contextPending: o.contextPending, contextParent: o.contextParent, contextManual: o.contextManual, contextPruned: slices.Clone(o.contextPruned), contextBaseInventory: cloneHistoryInventory(o.contextBaseInventory), creation: o.creation, input: o.input, cwd: o.cwd, root: o.root, logger: o.logger, owner: o.owner,
 		seen: maps.Clone(o.seen), bytes: o.bytes, messages: map[string]*observedMessage{}, messageOrder: slices.Clone(o.messageOrder),
 		parts: map[string]*observedPart{}, attachments: maps.Clone(o.attachments), calls: maps.Clone(o.calls), progress: o.progress,
 		ctx: o.ctx, cancel: o.cancel, interactions: map[string]*observedInteraction{}, responseIDs: maps.Clone(o.responseIDs),
