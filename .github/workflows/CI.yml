@@ -1761,7 +1761,7 @@ jobs:
     env:
       PNPORT_TARGET: ${{ matrix.target }}
       PNPORT_SUFFIX: ${{ matrix.suffix }}
-      MACOSX_DEPLOYMENT_TARGET: "13.0"
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -1796,6 +1796,7 @@ jobs:
           node packages/pnport/scripts/package.mjs binary --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
           node packages/pnport/scripts/install-smoke.mjs --target "$PNPORT_TARGET"
           PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test process_lifecycle --target "$PNPORT_TARGET"
+          PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test native_conformance --target "$PNPORT_TARGET"
       - name: Measure identical cold and warm workloads on this native host
         shell: bash
         run: |

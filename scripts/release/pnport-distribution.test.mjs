@@ -24,6 +24,20 @@ function fixture(t) {
   return directory;
 }
 
+test("Homebrew pnport formula declares the macOS 15 floor and version test", () => {
+  let formula = readFileSync(path.join(root, "packaging/homebrew/templates/pnport.rb.tmpl"), "utf8");
+  const replacements = { __VERSION__: "0.1.0" };
+  for (const platform of ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"]) {
+    const key = platform.replace("-", "_").toUpperCase();
+    replacements[`__${key}_URL__`] = `https://example.invalid/pnport-${platform}.tar.gz`;
+    replacements[`__${key}_SHA256__`] = "a".repeat(64);
+  }
+  for (const [placeholder, value] of Object.entries(replacements)) formula = formula.replaceAll(placeholder, value);
+  assert.doesNotMatch(formula, /__[A-Z0-9_]+__/u);
+  assert.match(formula, /on_macos do\n    depends_on macos: :sequoia/u);
+  assert.match(formula, /test do\n    assert_match version\.to_s, shell_output\("#\{bin\}\/pnport --version"\)/u);
+});
+
 test("launcher tarball has exact source text, version and executable mode", (t) => {
   const output = fixture(t);
   const artifact = buildPackage({ output, sourceRevision: revision });
@@ -87,6 +101,29 @@ test("native install smoke executes the activated POSIX launcher", { skip: proce
   const result = spawnSync("node", ["packages/pnport/scripts/install-smoke.mjs", "--target", target.rust, "--directory", output], { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /"event":"pnport_install_smoke"/u);
+});
+
+test("POSIX installation rejects old macOS before discovery or filesystem mutation", { skip: process.platform === "win32" }, (t) => {
+  const output = fixture(t);
+  const tools = path.join(output, "tools");
+  mkdirSync(tools);
+  const sentinel = path.join(output, "unexpected-side-effect");
+  for (const command of ["curl", "mktemp", "mkdir", "cp", "tar"]) {
+    writeFileSync(path.join(tools, command), `#!/bin/sh\n: > '${sentinel}'\nexit 99\n`);
+    chmodSync(path.join(tools, command), 0o755);
+  }
+  const install = path.join(output, "install");
+  for (const kernel of ["22.6.0", "23.6.0", "unknown"]) {
+    writeFileSync(path.join(tools, "uname"), `#!/bin/sh\ncase "$1" in -s) echo Darwin;; -r) echo '${kernel}';; -m) echo arm64;; esac\n`);
+    chmodSync(path.join(tools, "uname"), 0o755);
+    for (const version of ["latest", "0.1.0"]) {
+      const result = spawnSync("/bin/bash", [path.join(root, "scripts/install/pnport.sh"), "--version", version, "--install-dir", install], { env: { ...process.env, PATH: tools }, encoding: "utf8" });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /macOS 15 or newer is required/u);
+      assert.throws(() => readFileSync(sentinel), { code: "ENOENT" });
+      assert.throws(() => readFileSync(install), { code: "ENOENT" });
+    }
+  }
 });
 
 test("npm publication confirms four native dependencies before launcher and fails before writing on conflict", async () => {

@@ -112,27 +112,59 @@ func verifyCLIForward(t *testing.T, ctx context.Context, root, machine string, s
 		}
 		fixtureDone <- err
 	}()
-	id := string(domain.NewID())
 	sessionID := session["id"].(string)
-	args := []string{"session", "forward", "start", "--session-id", sessionID, "--machine-id", machine, "--revision", strconv.FormatUint(uint64(session["revision"].(float64)), 10), "--worker-port", strconv.Itoa(listener.Addr().(*net.TCPAddr).Port), "--request-id", id}
-	out, writer := io.Pipe()
-	defer out.Close()
-	command, stop := context.WithCancel(ctx)
-	defer stop()
-	done := make(chan int, 1)
-	go func() {
-		done <- Run(command, append([]string{"--data-dir", root}, args...), IO{In: bytes.NewReader(nil), Out: writer, Err: io.Discard})
-		_ = writer.Close()
-	}()
-	decoder := json.NewDecoder(out)
-	readiness := make(chan map[string]any, 1)
-	go func() { var v map[string]any; _ = decoder.Decode(&v); readiness <- v }()
+	id := string(domain.NewID())
+	var args []string
+	var out *io.PipeReader
+	var decoder *json.Decoder
+	var done chan int
+	var stop context.CancelFunc
 	var first map[string]any
-	select {
-	case first = <-readiness:
-	case <-time.After(15 * time.Second):
-		t.Fatal("CLI forward readiness timeout")
+	// Background workspace publication may advance the accepted session revision
+	// after session creation and before this foreground command starts. Refresh
+	// only this expected conflict so the fixture still exercises the production
+	// revision guard without making the test timing-sensitive.
+	for attempt := 0; attempt < 4; attempt++ {
+		code, current := cliRun(t, root, []string{"session", "get", "--id", sessionID}, "")
+		if code != 0 {
+			t.Fatal(current)
+		}
+		latest := current["result"].(map[string]any)
+		args = []string{"session", "forward", "start", "--session-id", sessionID, "--machine-id", machine, "--revision", strconv.FormatUint(uint64(latest["revision"].(float64)), 10), "--worker-port", strconv.Itoa(listener.Addr().(*net.TCPAddr).Port), "--request-id", id}
+		var writer *io.PipeWriter
+		out, writer = io.Pipe()
+		command, cancel := context.WithCancel(ctx)
+		stop = cancel
+		done = make(chan int, 1)
+		go func() {
+			done <- Run(command, append([]string{"--data-dir", root}, args...), IO{In: bytes.NewReader(nil), Out: writer, Err: io.Discard})
+			_ = writer.Close()
+		}()
+		decoder = json.NewDecoder(out)
+		readiness := make(chan map[string]any, 1)
+		go func() { var v map[string]any; _ = decoder.Decode(&v); readiness <- v }()
+		select {
+		case first = <-readiness:
+		case <-time.After(15 * time.Second):
+			t.Fatal("CLI forward readiness timeout")
+		}
+		problem, isProblem := first["error"].(map[string]any)
+		if !isProblem || problem["code"] != "conflict" || problem["message"] != "The session revision changed." {
+			break
+		}
+		stop()
+		select {
+		case <-done:
+		case <-time.After(15 * time.Second):
+			t.Fatal("CLI stale forward attempt did not stop")
+		}
+		_ = out.Close()
 	}
+	if stop == nil {
+		t.Fatal("CLI forward did not start")
+	}
+	defer out.Close()
+	defer stop()
 	if first == nil || first["error"] != nil {
 		t.Fatal("CLI start failed", first)
 	}

@@ -26,6 +26,24 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+case "$(uname -s)" in
+  Darwin)
+    platform=darwin; library=libpnport_preload.dylib
+    kernel=$(uname -r)
+    [[ "$kernel" =~ ^[0-9]{1,3}\.[0-9]+\.[0-9]+$ ]] || { echo '[install.pnport] macOS 15 or newer is required' >&2; exit 1; }
+    major="${kernel%%.*}"
+    (( 10#$major >= 24 )) || { echo '[install.pnport] macOS 15 or newer is required' >&2; exit 1; } ;;
+  Linux)
+    platform=linux; library=libpnport_preload.so
+    getconf GNU_LIBC_VERSION >/dev/null 2>&1 || { echo '[install.pnport] GNU libc is required' >&2; exit 1; } ;;
+  *) echo '[install.pnport] unsupported operating system' >&2; exit 1 ;;
+esac
+case "$(uname -m)" in
+  x86_64|amd64) architecture=x64 ;;
+  arm64|aarch64) architecture=arm64 ;;
+  *) echo '[install.pnport] unsupported architecture' >&2; exit 1 ;;
+esac
+
 if [ "$version" = latest ]; then
   [ -z "$source_dir" ] || { echo '[install.pnport] --source-dir requires an exact version' >&2; exit 2; }
   versions=""
@@ -44,18 +62,6 @@ fi
 [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || "$version" =~ ^0\.1\.0-next\.[1-9][0-9]*$ ]] || { echo '[install.pnport] exact stable or pnport next version required' >&2; exit 2; }
 [ -n "$install_dir" ] || { echo '[install.pnport] install directory required' >&2; exit 2; }
 
-case "$(uname -s)" in
-  Darwin) platform=darwin; library=libpnport_preload.dylib ;;
-  Linux)
-    platform=linux; library=libpnport_preload.so
-    getconf GNU_LIBC_VERSION >/dev/null 2>&1 || { echo '[install.pnport] GNU libc is required' >&2; exit 1; } ;;
-  *) echo '[install.pnport] unsupported operating system' >&2; exit 1 ;;
-esac
-case "$(uname -m)" in
-  x86_64|amd64) architecture=x64 ;;
-  arm64|aarch64) architecture=arm64 ;;
-  *) echo '[install.pnport] unsupported architecture' >&2; exit 1 ;;
-esac
 if [ "$platform" = linux ]; then suffix="${platform}-${architecture}-gnu"; else suffix="${platform}-${architecture}"; fi
 asset="pnport-${suffix}.tar.gz"
 temporary=$(mktemp -d)

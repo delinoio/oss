@@ -4,6 +4,8 @@ Use the published pnport preview to test Turbopack and TypeScript 7 against a Ya
 
 **pnport 0.1.0 is unreleased.** The experimental `0.1.0-next.1` preview is available on macOS and glibc Linux, each on x64 and arm64. Windows, musl hosts such as Alpine Linux, and mixed architectures are unsupported. Full feature, minimum-OS and benchmark acceptance remain unfinished; intermittent native initialization failures with exit status 125 remain under investigation. These workflows are for testing and do not certify compatibility with every project or tool.
 
+On macOS, keep preview commands in the foreground with daemonization disabled: detached descendants can remain running after pnport stops. See [filesystem and process limits](/pnport/filesystem-and-processes).
+
 ## Install the preview
 
 Use Node.js 22 or newer; Node.js 24 is recommended for this walkthrough. Check the exact published version before installing it globally:

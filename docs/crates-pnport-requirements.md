@@ -1,6 +1,6 @@
 # pnport 0.1 requirements
 
-Normative source: [issue #958](https://github.com/delinoio/oss/issues/958). The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation. The owner-approved 2026-10-01 amendment stages full macOS/glibc Linux x64/arm64 acceptance in 0.1.0 and defers the original Windows x64/arm64 requirements to 0.2.0. #958 stays open until both stages are complete.
+Normative source: [issue #958](https://github.com/delinoio/oss/issues/958). The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation. The owner-approved 2026-10-01 amendment stages full macOS/glibc Linux x64/arm64 acceptance in 0.1.0 and defers the original Windows x64/arm64 requirements to 0.2.0. #958 stays open until both stages are complete. The owner-approved 2026-10-03 amendment raises the macOS support floor to 15; both native CI architectures must execute on that supported floor.
 
 ## Summary
 
@@ -39,7 +39,7 @@ Support x64 and arm64 on:
 
 | Platform | Minimum supported environment |
 |---|---|
-| macOS | macOS 13+ |
+| macOS | macOS 15+ |
 | Windows (planned for 0.2.0) | Windows 10 22H2+, native MSVC targets |
 | Linux | Ubuntu 22.04-equivalent glibc and kernel capabilities |
 

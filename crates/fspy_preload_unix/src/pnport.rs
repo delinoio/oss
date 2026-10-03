@@ -36,7 +36,7 @@ use libc::{
 };
 use pnport_core::{
     cache::Cache,
-    diagnostic::{Code, Error, ExecFailureKind},
+    diagnostic::{Code, Error, ExecFailureKind, InitializationStage, ProcessGroupOperation},
     executable::LaunchAdmission,
     graph::{Graph, Snapshot},
     view::{Translation, View},
@@ -181,6 +181,7 @@ fn directory_entry(stream: &mut DirectoryStream) -> *mut dirent {
 }
 static RUNTIME: OnceLock<Box<ForkMutex<Runtime>>> = OnceLock::new();
 static SESSION: OnceLock<PathBuf> = OnceLock::new();
+static OWNED_GROUP: OnceLock<pid_t> = OnceLock::new();
 
 unsafe extern "C" fn before_fork() {
     // Wait for all runtime operations to finish before libSystem copies the
@@ -219,11 +220,33 @@ fn record_failure(session: &Path, code: Code) {
     // The supervisor may read concurrently with any injected process. Publish
     // complete bytes once; truncation or collateral failures must not replace
     // the first diagnostic with an empty or different failure code.
-    if let Ok(mut stage) = tempfile::NamedTempFile::new_in(session)
-        && stage.write_all(code.as_str().as_bytes()).is_ok()
+    record_bytes(session, "failure", code.as_str().as_bytes());
+}
+
+fn record_bytes(session: &Path, name: &'static str, bytes: &[u8]) {
+    if let Ok(mut file) = tempfile::NamedTempFile::new_in(session)
+        && file.write_all(bytes).is_ok()
     {
-        let _ = stage.persist_noclobber(session.join("failure"));
+        let _ = file.persist_noclobber(session.join(name));
     }
+}
+
+fn record_initialization_failure(session: &Path, stage: InitializationStage) {
+    // The constructor cannot initialize a process-wide tracing subscriber in
+    // the user's executable. Publish only a closed enum for supervisor logs.
+    // Preserve the first observed stage atomically, like the failure code.
+    if let Ok(bytes) = serde_json::to_vec(&stage) {
+        record_bytes(session, "initialization-failure", &bytes);
+    }
+}
+
+fn reject_group_change(operation: ProcessGroupOperation) -> c_int {
+    if let Some(session) = SESSION.get()
+        && let Ok(bytes) = serde_json::to_vec(&operation)
+    {
+        record_bytes(session, "process-group-failure", &bytes);
+    }
+    fail(Code::PnportUnsupportedOperation)
 }
 
 #[cfg(test)]
@@ -378,6 +401,68 @@ unsafe fn live_directory_path(dirfd: c_int) -> std::result::Result<PathBuf, c_in
 unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c_int {
     let original = libc::fcntl as unsafe extern "C" fn(c_int, c_int, ...) -> c_int;
     let guard = Guard::enter();
+    let duplicate = matches!(command, libc::F_DUPFD | libc::F_DUPFD_CLOEXEC);
+    // F_TRANSFEREXTENTS takes the destination descriptor as an integer
+    // variadic argument, unlike the pointer-valued fcntl commands below.
+    // Decode it once so the secondary backing is admitted before native fcntl.
+    let transfer_descriptor = (command == libc::F_TRANSFEREXTENTS).then(|| args.arg::<c_int>());
+    let mutation = matches!(
+        command,
+        libc::F_PREALLOCATE
+            | libc::F_PUNCHHOLE
+            | libc::F_TRIM_ACTIVE_FILE
+            | libc::F_TRANSFEREXTENTS
+    );
+    // Rejected/reentrant hooks still use the exact native ABI below without
+    // taking a runtime lock. Admitted duplication and metadata mutation share
+    // the descriptor lock through the kernel call and provenance publication.
+    let mut runtime = if guard.is_some() && (duplicate || mutation) {
+        let Ok(runtime) = RUNTIME.get().map(|runtime| runtime.lock()).transpose() else {
+            errno(fail(Code::PnportInjectionFailed));
+            return -1;
+        };
+        runtime
+    } else {
+        None
+    };
+    if mutation && let Some(runtime) = runtime.as_mut() {
+        // F_GETPATH is a backing-path probe, not a descriptor-validity check:
+        // it fails for pipes and invalid descriptors alike. Validate every
+        // operand with the native descriptor query first so an invalid
+        // descriptor keeps the kernel's EBADF result instead of being masked
+        // by a managed-backing EROFS rejection.
+        if let Err(code) = descriptor_valid(fd, original) {
+            errno(code);
+            return -1;
+        }
+        if let Some(transfer_fd) = transfer_descriptor
+            && let Err(code) = descriptor_valid(transfer_fd, original)
+        {
+            errno(code);
+            return -1;
+        }
+        let primary_readonly = match descriptor_readonly(fd, runtime) {
+            Ok(readonly) => readonly,
+            Err(code) => {
+                errno(code);
+                return -1;
+            }
+        };
+        let transfer_readonly = match transfer_descriptor {
+            Some(transfer_fd) => match descriptor_readonly(transfer_fd, runtime) {
+                Ok(readonly) => readonly,
+                Err(code) => {
+                    errno(code);
+                    return -1;
+                }
+            },
+            None => false,
+        };
+        if primary_readonly || transfer_readonly {
+            errno(EROFS);
+            return -1;
+        }
+    }
 
     // Only duplication carries logical directory provenance. An inode lookup
     // cannot distinguish an fcntl duplicate from an independent open of shared
@@ -396,6 +481,7 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
             let argument = args.arg::<c_int>();
             original(fd, command, argument)
         }
+        libc::F_TRANSFEREXTENTS => original(fd, command, transfer_descriptor.unwrap_or_default()),
         libc::F_GETLK
         | libc::F_SETLK
         | libc::F_SETLKW
@@ -407,8 +493,7 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         | libc::F_GETPATH_NOFIRMLINK
         | libc::F_PUNCHHOLE
         | libc::F_TRIM_ACTIVE_FILE
-        | libc::F_SPECULATIVE_READ
-        | libc::F_TRANSFEREXTENTS => {
+        | libc::F_SPECULATIVE_READ => {
             let argument = args.arg::<*mut c_void>();
             original(fd, command, argument)
         }
@@ -426,14 +511,30 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         return result;
     };
     if result >= 0
-        && matches!(command, libc::F_DUPFD | libc::F_DUPFD_CLOEXEC)
-        && let Some(runtime) = RUNTIME.get()
-        && let Ok(mut runtime) = runtime.lock()
-        && let Some(translation) = runtime.descriptors.get(&fd).cloned()
+        && duplicate
+        && let Some(runtime) = runtime.as_mut()
     {
-        runtime.descriptors.insert(result, translation);
+        let translation = runtime.descriptors.get(&fd).cloned();
+        runtime.descriptors.remove(&result);
+        if let Some(translation) = translation {
+            runtime.descriptors.insert(result, translation);
+        }
     }
     result
+}
+
+unsafe fn descriptor_valid(
+    fd: c_int,
+    original: unsafe extern "C" fn(c_int, c_int, ...) -> c_int,
+) -> std::result::Result<(), c_int> {
+    let saved_errno = *__error();
+    if original(fd, libc::F_GETFD) == -1 {
+        let error = *__error();
+        errno(saved_errno);
+        return Err(error);
+    }
+    errno(saved_errno);
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -473,6 +574,63 @@ unsafe fn track(fd: c_int, translation: Translation) {
         && let Ok(mut runtime) = runtime.lock()
     {
         runtime.descriptors.insert(fd, translation);
+    }
+}
+
+unsafe fn descriptor_readonly(
+    fd: c_int,
+    runtime: &mut Runtime,
+) -> std::result::Result<bool, c_int> {
+    let saved_errno = *__error();
+    // Check live kernel backing as well as remembered provenance. This also
+    // covers an inherited read descriptor and the small open-to-track window;
+    // physical managed backing cannot become writable by omitting a mapping.
+    let mut path = [0u8; PATH_MAX as usize];
+    if libc::fcntl(fd, F_GETPATH, path.as_mut_ptr()) != 0 {
+        // Pipes, sockets and invalid descriptors retain the native operation's
+        // result. A closed descriptor must not inherit a stale EROFS denial.
+        errno(saved_errno);
+        return Ok(false);
+    }
+    let path = Path::new(OsStr::from_bytes(
+        CStr::from_ptr(path.as_ptr().cast()).to_bytes(),
+    ));
+    let readonly = if let Some(translation) = runtime.descriptors.get(&fd)
+        && translation.physical == path
+    {
+        translation.readonly
+    } else {
+        runtime
+            .view
+            .translate(path)
+            .map_err(|error| fail(error.code))?
+            .readonly
+    };
+    errno(saved_errno);
+    Ok(readonly)
+}
+
+unsafe fn mutate_descriptor(fd: c_int, native: impl FnOnce() -> c_int) -> c_int {
+    let Some(_guard) = Guard::enter() else {
+        return native();
+    };
+    let Some(runtime) = RUNTIME.get() else {
+        return native();
+    };
+    let Ok(mut runtime) = runtime.lock() else {
+        errno(fail(Code::PnportInjectionFailed));
+        return -1;
+    };
+    match descriptor_readonly(fd, &mut runtime) {
+        Ok(true) => {
+            errno(EROFS);
+            -1
+        }
+        Ok(false) => native(),
+        Err(code) => {
+            errno(code);
+            -1
+        }
     }
 }
 
@@ -541,6 +699,7 @@ unsafe extern "C" fn initialize() {
     for name in [
         "PNPORT_SESSION",
         "PNPORT_CACHE",
+        "PNPORT_MACOS_GROUP",
         "DYLD_INSERT_LIBRARIES",
         "LD_PRELOAD",
     ] {
@@ -554,15 +713,24 @@ unsafe extern "C" fn initialize() {
         }
     }
     INJECTION_ENV.set(injection_env).ok();
-    let result = (|| {
+    let result: std::result::Result<(), InitializationStage> = (|| {
+        use InitializationStage as Stage;
         // Acknowledge entry before graph/cache work that may legitimately wait
         // on another materializer. Only the later ready marker confirms setup.
-        fs::create_dir_all(session.join("starting")).ok()?;
-        fs::write(session.join("starting").join(getpid().to_string()), b"1").ok()?;
-        let snapshot: Snapshot =
-            serde_json::from_slice(&fs::read(session.join("graph.json")).ok()?).ok()?;
-        let graph = Graph::from_snapshot(snapshot).ok()?;
-        let cache = Cache::open(PathBuf::from(std::env::var_os("PNPORT_CACHE")?)).ok()?;
+        fs::create_dir_all(session.join("starting")).map_err(|_| Stage::AcknowledgeEntry)?;
+        fs::write(session.join("starting").join(getpid().to_string()), b"1")
+            .map_err(|_| Stage::AcknowledgeEntry)?;
+        let bytes = fs::read(session.join("graph.json")).map_err(|_| Stage::ReadGraph)?;
+        let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|_| Stage::DecodeGraph)?;
+        let graph = Graph::from_snapshot(snapshot).map_err(|_| Stage::HydrateGraph)?;
+        let group = std::env::var("PNPORT_MACOS_GROUP")
+            .ok()
+            .and_then(|group| group.parse::<pid_t>().ok())
+            .filter(|group| *group > 0 && *group == libc::getpgrp())
+            .ok_or(Stage::OwnedGroup)?;
+        OWNED_GROUP.set(group).map_err(|_| Stage::OwnedGroup)?;
+        let cache_path = std::env::var_os("PNPORT_CACHE").ok_or(Stage::CacheLocation)?;
+        let cache = Cache::open(PathBuf::from(cache_path)).map_err(|_| Stage::OpenCache)?;
         let view = View::new(graph, cache, session.clone());
         RUNTIME
             .set(
@@ -572,30 +740,81 @@ unsafe extern "C" fn initialize() {
                     cwd: None,
                     directories: HashMap::new(),
                 })
-                .ok()?,
+                .map_err(|_| Stage::RuntimeMutex)?,
             )
-            .ok()?;
+            .map_err(|_| Stage::InstallRuntime)?;
         if libc::pthread_atfork(Some(before_fork), Some(after_fork), Some(in_fork_child)) != 0 {
-            return None;
+            return Err(Stage::RegisterForkHandlers);
         }
-        fs::create_dir_all(session.join("ready")).ok()?;
-        fs::write(session.join("ready").join(getpid().to_string()), b"1").ok()?;
+        fs::create_dir_all(session.join("ready")).map_err(|_| Stage::PublishReadiness)?;
+        fs::write(session.join("ready").join(getpid().to_string()), b"1")
+            .map_err(|_| Stage::PublishReadiness)?;
         if let Some(token) = std::env::var_os("PNPORT_LAUNCH_TOKEN") {
-            let token = token.to_str()?;
+            let token = token.to_str().ok_or(Stage::LaunchToken)?;
             if !token.starts_with("pnport-")
                 || !token
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
             {
-                return None;
+                return Err(Stage::LaunchToken);
             }
-            fs::remove_file(session.join("pending").join(token)).ok()?;
+            fs::remove_file(session.join("pending").join(token))
+                .map_err(|_| Stage::AcknowledgeLaunch)?;
         }
-        Some(())
+        Ok(())
     })();
-    if result.is_none() {
+    if let Err(stage) = result {
+        record_initialization_failure(&session, stage);
         record_failure(&session, Code::PnportInjectionFailed);
         _exit(125);
+    }
+}
+
+#[cfg(test)]
+mod initialization_tests {
+    use super::*;
+
+    #[test]
+    fn initializer_process() {
+        // Reached only if the native initializer did not reject the child.
+    }
+
+    #[test]
+    fn failed_native_initializers_record_the_stage_without_input_contents() {
+        for (bytes, expected) in [
+            (None, InitializationStage::ReadGraph),
+            (
+                Some(b"private-input-canary".as_slice()),
+                InitializationStage::DecodeGraph,
+            ),
+        ] {
+            let session = tempfile::tempdir().unwrap();
+            if let Some(bytes) = bytes {
+                fs::write(session.path().join("graph.json"), bytes).unwrap();
+            }
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "pnport::initialization_tests::initializer_process",
+                    "--exact",
+                ])
+                .env("PNPORT_SESSION", session.path())
+                .env_remove("PNPORT_CACHE")
+                .status()
+                .unwrap();
+            assert_eq!(status.code(), Some(125));
+            let record = fs::read(session.path().join("initialization-failure")).unwrap();
+            assert_eq!(
+                serde_json::from_slice::<InitializationStage>(&record).unwrap(),
+                expected
+            );
+            assert_eq!(
+                fs::read(session.path().join("failure")).unwrap(),
+                Code::PnportInjectionFailed.as_str().as_bytes()
+            );
+            assert!(record.len() < 64);
+            assert!(session.path().join("starting").is_dir());
+            assert!(!session.path().join("ready").exists());
+        }
     }
 }
 #[used]
@@ -724,13 +943,33 @@ path_hook!(rmdir, pnport_rmdir, (path:*const c_char) -> c_int, true, -1);
 path_hook!(mkdir, pnport_mkdir, (path:*const c_char, mode:mode_t) -> c_int, true, -1);
 path_hook!(chmod, pnport_chmod, (path:*const c_char, mode:mode_t) -> c_int, true, -1);
 path_hook!(truncate, pnport_truncate, (path:*const c_char, length:off_t) -> c_int, true, -1);
+hook!(fchmod, pnport_fchmod, (fd:c_int,mode:mode_t) -> c_int, {
+    mutate_descriptor(fd, || libc::fchmod(fd, mode))
+});
+hook!(fchown, pnport_fchown, (fd:c_int,owner:libc::uid_t,group:libc::gid_t) -> c_int, {
+    mutate_descriptor(fd, || libc::fchown(fd, owner, group))
+});
+hook!(ftruncate, pnport_ftruncate, (fd:c_int,length:off_t) -> c_int, {
+    mutate_descriptor(fd, || libc::ftruncate(fd, length))
+});
+hook!(futimes, pnport_futimes, (fd:c_int,times:*const libc::timeval) -> c_int, {
+    mutate_descriptor(fd, || libc::futimes(fd, times))
+});
+hook!(fchflags, pnport_fchflags, (fd:c_int,flags:libc::c_uint) -> c_int, {
+    mutate_descriptor(fd, || libc::fchflags(fd, flags))
+});
 hook!(dlopen, pnport_dlopen, (path:*const c_char,flags:c_int) -> *mut c_void, {
     let original = original!(dlopen, unsafe extern "C" fn(*const c_char,c_int)->*mut c_void);
     // NULL requests the process/global symbol namespace, not a filesystem path.
     if path.is_null() { return original(path,flags); }
-    let Some(_guard) = Guard::enter() else { return original(path,flags); };
+    let Some(guard) = Guard::enter() else { return original(path,flags); };
     if RUNTIME.get().is_none() { return original(path,flags); }
     let (path,_) = translated!(path,AT_FDCWD,false,ptr::null_mut());
+    // Translation has released the runtime lock. dyld now invokes arbitrary
+    // library constructors, including nested loads and fork callbacks. Keep
+    // their filesystem accesses virtualized instead of treating them as our
+    // backing I/O. Inner hooks still guard their own native/runtime operations.
+    drop(guard);
     original(path.as_ptr(),flags)
 });
 
@@ -899,12 +1138,69 @@ hook!(getcwd, pnport_getcwd, (buffer:*mut c_char,size:size_t) -> *mut c_char, {
     if buffer.is_null() {errno(ENOMEM);return buffer;}
     ptr::copy_nonoverlapping(bytes.as_ptr(),buffer.cast(),bytes.len());*buffer.add(bytes.len())=0;buffer
 });
-hook!(close, pnport_close, (fd:c_int) -> c_int, {
-    let original=original!(close,unsafe extern "C" fn(c_int)->c_int);
-    let Some(_guard)=Guard::enter() else {return original(fd);};
-    if let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {runtime.descriptors.remove(&fd);}
-    original(fd)
-});
+unsafe fn close_descriptor(fd: c_int, native: unsafe extern "C" fn(c_int) -> c_int) -> c_int {
+    let Some(guard) = Guard::enter() else {
+        return native(fd);
+    };
+    let Some(runtime) = RUNTIME.get() else {
+        return native(fd);
+    };
+    let Ok(mut runtime) = runtime.lock() else {
+        errno(fail(Code::PnportInjectionFailed));
+        return -1;
+    };
+
+    // Deferred pthread cancellation treats ordinary `close` as a cancellation
+    // point on macOS. Keep a pending cancellation from terminating this thread
+    // while it owns the runtime mutex; otherwise the process-wide lock would
+    // remain permanently held. The cancellation state is restored only after
+    // both the provenance update and the Rust guards have been released.
+    let mut previous_cancel_state = 0;
+    if set_cancel_state(libc::PTHREAD_CANCEL_DISABLE, &mut previous_cancel_state) != 0 {
+        errno(EIO);
+        return -1;
+    }
+    let result = native(fd);
+    if result == 0 {
+        runtime.descriptors.remove(&fd);
+    }
+    drop(runtime);
+    drop(guard);
+    // SAFETY: The state was disabled above on this thread. No runtime or
+    // recursion guard is held when a pending cancellation may be delivered.
+    if set_cancel_state(previous_cancel_state, ptr::null_mut()) != 0 {
+        errno(EIO);
+    }
+    result
+}
+unsafe extern "C" {
+    #[link_name = "pthread_setcancelstate"]
+    fn set_cancel_state(state: c_int, old_state: *mut c_int) -> c_int;
+    #[link_name = "close"]
+    fn native_close(fd: c_int) -> c_int;
+    #[link_name = "close$NOCANCEL"]
+    fn native_close_nocancel(fd: c_int) -> c_int;
+}
+unsafe extern "C" fn pnport_close(fd: c_int) -> c_int {
+    close_descriptor(fd, native_close)
+}
+unsafe extern "C" fn pnport_close_nocancel(fd: c_int) -> c_int {
+    close_descriptor(fd, native_close_nocancel)
+}
+const _: () = {
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut CLOSE: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_close as _,
+        _old: native_close as _,
+    };
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut NOCANCEL: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_close_nocancel as _,
+        _old: native_close_nocancel as _,
+    };
+};
 
 hook!(opendir, pnport_opendir, (path:*const c_char) -> *mut DIR, {
     let original=original!(opendir,unsafe extern "C" fn(*const c_char)->*mut DIR);
@@ -1174,15 +1470,59 @@ hook!(fchdir, pnport_fchdir, (fd:c_int) -> c_int, {
 hook!(dup, pnport_dup, (fd:c_int) -> c_int, {
     let original=original!(dup,unsafe extern "C" fn(c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd);};
+    let Some(runtime)=RUNTIME.get() else { return original(fd); };
+    let Ok(mut runtime)=runtime.lock() else {errno(fail(Code::PnportInjectionFailed));return -1;};
     let result=original(fd);
-    if result>=0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() && let Some(t)=runtime.descriptors.get(&fd).cloned() {runtime.descriptors.insert(result,t);} result
+    if result>=0 {let t=runtime.descriptors.get(&fd).cloned();runtime.descriptors.remove(&result);if let Some(t)=t {runtime.descriptors.insert(result,t);}} result
 });
 hook!(dup2, pnport_dup2, (fd:c_int,newfd:c_int) -> c_int, {
     let original=original!(dup2,unsafe extern "C" fn(c_int,c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd,newfd);};
+    let Some(runtime)=RUNTIME.get() else {return original(fd,newfd);};
+    let Ok(mut runtime)=runtime.lock() else {errno(fail(Code::PnportInjectionFailed));return -1;};
     let result=original(fd,newfd);
-    if result>=0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {let t=runtime.descriptors.get(&fd).cloned();runtime.descriptors.remove(&newfd);if let Some(t)=t {runtime.descriptors.insert(newfd,t);}} result
+    if result>=0 {let t=runtime.descriptors.get(&fd).cloned();runtime.descriptors.remove(&newfd);if let Some(t)=t {runtime.descriptors.insert(newfd,t);}} result
 });
+
+// Until every additional group has a pinned native owner, permit only
+// operations that keep children in the existing owned group. Do not emulate
+// successful detachment or signal an unreserved group found by PID polling.
+// Remove this containment boundary only with complete multi-group ownership,
+// abrupt-supervisor recovery and native terminal/job-control acceptance.
+hook!(setsid, pnport_setsid, () -> pid_t, {
+    let original = original!(setsid, unsafe extern "C" fn()->pid_t);
+    let Some(_guard) = Guard::enter() else { return original(); };
+    if RUNTIME.get().is_none() || libc::getpid() == libc::getpgrp() { return original(); }
+    errno(reject_group_change(ProcessGroupOperation::Session));
+    -1
+});
+hook!(setpgid, pnport_setpgid, (pid:pid_t,group:pid_t) -> c_int, {
+    let original = original!(setpgid, unsafe extern "C" fn(pid_t,pid_t)->c_int);
+    let Some(_guard) = Guard::enter() else { return original(pid,group); };
+    if RUNTIME.get().is_none() || pid < 0 || group < 0 { return original(pid,group); }
+    let target = if pid == 0 { libc::getpid() } else { pid };
+    let destination = if group == 0 { target } else { group };
+    if OWNED_GROUP.get().is_some_and(|owned| *owned == destination) {
+        return original(pid,group);
+    }
+    errno(reject_group_change(ProcessGroupOperation::Group));
+    -1
+});
+unsafe extern "C" {
+    #[link_name = "setpgrp"]
+    fn native_setpgrp() -> pid_t;
+}
+unsafe extern "C" fn pnport_setpgrp() -> pid_t {
+    pnport_setpgid(0, 0)
+}
+const _: () = {
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut ENTRY: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_setpgrp as _,
+        _old: native_setpgrp as _,
+    };
+};
 
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
 fn child_exec_error(error: &Error) -> c_int {
@@ -1309,6 +1649,7 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
         if ![
             b"PNPORT_SESSION=".as_slice(),
             b"PNPORT_CACHE=",
+            b"PNPORT_MACOS_GROUP=",
             b"PNPORT_LAUNCH_TOKEN=",
             b"DYLD_INSERT_LIBRARIES=",
             b"LD_PRELOAD=",
@@ -1352,6 +1693,11 @@ unsafe fn spawn_admitted(
     argv: *const *mut c_char,
     envp: *const *mut c_char,
 ) -> c_int {
+    // libc exposes the common POSIX spawn flags on macOS but not this
+    // Darwin-specific session flag. Keep the SDK-defined value local so a
+    // request for a new session is rejected before native spawn can detach
+    // the child from the supervisor's process group.
+    const MACOS_POSIX_SPAWN_SETSID: c_int = 0x0400;
     let original = original!(
         posix_spawn,
         unsafe extern "C" fn(
@@ -1363,6 +1709,30 @@ unsafe fn spawn_admitted(
             *const *mut c_char,
         ) -> c_int
     );
+    if !attributes.is_null() {
+        let mut flags = 0;
+        let result = libc::posix_spawnattr_getflags(attributes, &raw mut flags);
+        if result != 0 {
+            return result;
+        }
+        let flags = i32::from(flags);
+        if flags & MACOS_POSIX_SPAWN_SETSID != 0 {
+            return reject_group_change(ProcessGroupOperation::Session);
+        }
+        if flags & libc::POSIX_SPAWN_SETPGROUP != 0 {
+            let mut group = 0;
+            let result = libc::posix_spawnattr_getpgroup(attributes, &raw mut group);
+            if result != 0 {
+                return result;
+            }
+            if group < 0 {
+                return EINVAL;
+            }
+            if OWNED_GROUP.get().is_none_or(|owned| *owned != group) {
+                return reject_group_change(ProcessGroupOperation::SpawnGroup);
+            }
+        }
+    }
     // Opaque file actions can change the child's cwd before resolving a
     // relative image. Until the actions can be inspected, reject this shape
     // instead of resolving and launching a different image in the parent cwd.

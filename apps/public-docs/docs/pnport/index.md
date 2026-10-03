@@ -10,7 +10,7 @@ To try the published preview with Turbopack or TypeScript 7, follow [preview tes
 
 ## Release targets
 
-The 0.1.0 release targets macOS 13+ and Ubuntu 22.04-equivalent glibc Linux, each on x64 and arm64. All four targets must pass native execution and installation checks before release. Windows 10 22H2+ with MSVC on x64 and arm64 is planned for 0.2.0, with the same complete validation requirements. Linux static child executables are part of the first release gate. Musl hosts and mixed-architecture execution are outside the target set.
+The 0.1.0 release targets macOS 15+ and Ubuntu 22.04-equivalent glibc Linux, each on x64 and arm64. All four targets must pass native execution and installation checks before release. Windows 10 22H2+ with MSVC on x64 and arm64 is planned for 0.2.0, with the same complete validation requirements. Linux static child executables are part of the first release gate. Musl hosts and mixed-architecture execution are outside the target set.
 
 The preview passed native candidate execution and installation fixtures on all four macOS and glibc Linux targets, including Linux dynamic and static children. These fixtures do not establish support for every executable. Full feature, minimum-OS and benchmark acceptance remain unfinished; intermittent native initialization failures remain under investigation. Windows execution remains unavailable. See [installation and availability](/pnport/installation) for the current status.
 

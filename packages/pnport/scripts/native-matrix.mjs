@@ -4,7 +4,7 @@ const require = createRequire(import.meta.url);
 const { targets } = require("../src/platforms.cjs");
 const runners = Object.freeze({
   "darwin-x64": "macos-15-intel",
-  "darwin-arm64": "macos-14",
+  "darwin-arm64": "macos-15",
   "linux-x64-gnu": "ubuntu-22.04",
   "linux-arm64-gnu": "ubuntu-22.04-arm",
 });
