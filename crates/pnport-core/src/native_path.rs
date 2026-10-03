@@ -21,6 +21,12 @@ const MAX_SYMLINKS: usize = 32;
 #[cfg(not(target_os = "macos"))]
 const MAX_SYMLINKS: usize = 40;
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum SymlinkPolicy {
+    Allow,
+    Reject,
+}
+
 pub enum Lookup {
     Resolved {
         path: PathBuf,
@@ -41,6 +47,7 @@ pub struct ResolvedLookup {
     path: PathBuf,
     parents: Vec<ParentTraversal>,
     requires_directory: bool,
+    native_failure: Option<Lookup>,
 }
 
 impl ResolvedLookup {
@@ -70,6 +77,9 @@ impl ResolvedLookup {
                 path: physical.join("..").join(parent.remaining),
                 errno,
             });
+        }
+        if let Some(failure) = self.native_failure {
+            return Ok(failure);
         }
         if self.requires_directory {
             let translation = match translate(&self.path) {
@@ -102,6 +112,15 @@ impl ResolvedLookup {
 }
 
 pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<ResolvedLookup> {
+    resolved_lookup_with_policy(path, follow_last, graph, SymlinkPolicy::Allow)
+}
+
+pub fn resolved_lookup_with_policy(
+    path: &Path,
+    follow_last: bool,
+    graph: &Graph,
+    policy: SymlinkPolicy,
+) -> Option<ResolvedLookup> {
     let mut remaining: VecDeque<OsString> = path
         .components()
         .map(|part| part.as_os_str().to_os_string())
@@ -134,10 +153,22 @@ pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<
             Component::Normal(name) => {
                 let candidate = resolved.join(name);
                 match fs::symlink_metadata(&candidate) {
-                    Ok(metadata)
-                        if metadata.file_type().is_symlink()
-                            && (follow_last || !remaining.is_empty() || requires_directory) =>
-                    {
+                    Ok(metadata) if metadata.file_type().is_symlink() => {
+                        if policy == SymlinkPolicy::Reject {
+                            return Some(ResolvedLookup {
+                                path: candidate.clone(),
+                                parents,
+                                requires_directory,
+                                native_failure: Some(Lookup::NativeFailure {
+                                    path: candidate,
+                                    errno: libc::ELOOP,
+                                }),
+                            });
+                        }
+                        if !follow_last && remaining.is_empty() && !requires_directory {
+                            resolved = candidate;
+                            continue;
+                        }
                         followed += 1;
                         if followed > MAX_SYMLINKS {
                             return None;
@@ -192,6 +223,7 @@ pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<
         path: resolved,
         parents,
         requires_directory,
+        native_failure: None,
     })
 }
 

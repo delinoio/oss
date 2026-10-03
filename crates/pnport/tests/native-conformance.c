@@ -165,6 +165,29 @@ static int native_aliases(void) {
     errno = 0;
     if (open("node_modules/missing/", O_RDONLY) != -1 || errno != ENOENT) return 132;
 #ifdef __APPLE__
+    errno = 0;
+    if (open("logical-alias/file.txt", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP) return 133;
+    int any_root = open(".", O_RDONLY | O_DIRECTORY);
+    if (any_root < 0) return 134;
+    errno = 0;
+    if (openat(any_root, "logical-alias/file.txt", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP) return 135;
+    errno = 0;
+    if (open("node_modules/dep/file.txt", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP) return 136;
+    errno = 0;
+    if (open("logical-alias/file.txt", O_WRONLY | O_NOFOLLOW_ANY | O_NOFOLLOW) != -1 || errno != EINVAL) return 137;
+    errno = 0;
+    if (open("missing-native/../logical-alias/file.txt", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ENOENT) return 138;
+    errno = 0;
+    if (open("node_modules/dep/../dep/file.txt", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP) return 142;
+    if (symlink("missing-native/../source.txt", "any-dangling")) return 143;
+    errno = 0;
+    if (open("any-dangling", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP || unlink("any-dangling")) return 144;
+    errno = 0;
+    if (openat(any_root, "source.txt", O_RDONLY | O_NOFOLLOW_ANY | O_NOFOLLOW) != -1 || errno != EINVAL) return 145;
+    int any_fd = openat(any_root, "source.txt", O_RDONLY | O_NOFOLLOW_ANY);
+    if (any_fd < 0 || read(any_fd, bytes, 6) != 6 || memcmp(bytes, "source", 6) || close(any_fd)) return 139;
+    any_fd = open("node_modules", O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY);
+    if (any_fd < 0 || fstat(any_fd, &info) || !S_ISDIR(info.st_mode) || close(any_fd) || close(any_root)) return 140;
     // Darwin O_SYMLINK opens the link inode, even when its target is virtual.
     int link_fd = open("logical-alias", O_RDONLY | O_SYMLINK);
     if (link_fd < 0 || fstat(link_fd, &info) || !S_ISLNK(info.st_mode) || close(link_fd)) return 113;
@@ -175,6 +198,8 @@ static int native_aliases(void) {
         close(link_fd) || close(root_fd)) return 115;
     char backing[4096];
     if (fcntl(fd, F_GETPATH, backing) || symlink(backing, "backing-alias")) return 98;
+    errno = 0;
+    if (open("backing-alias", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP) return 141;
     errno = 0;
     if (chmod("backing-alias", 0600) != -1 || errno != EROFS) return 99;
     errno = 0;

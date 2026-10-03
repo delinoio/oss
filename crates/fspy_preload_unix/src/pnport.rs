@@ -39,6 +39,7 @@ use pnport_core::{
     diagnostic::{Code, Error, ExecFailureKind, InitializationStage, ProcessGroupOperation},
     executable::LaunchAdmission,
     graph::{Graph, Snapshot},
+    native_path::{Lookup as NativeLookup, SymlinkPolicy},
     view::{Translation, View},
 };
 
@@ -552,7 +553,16 @@ unsafe fn translate(
     dirfd: c_int,
     write: bool,
 ) -> std::result::Result<(CString, Translation), c_int> {
-    translate_following(path, dirfd, write, true)
+    translate_following(path, dirfd, write, true, SymlinkPolicy::Allow)
+}
+
+fn native_translation(logical: &Path, physical: PathBuf) -> Translation {
+    Translation {
+        logical: logical.to_owned(),
+        physical,
+        readonly: false,
+        virtual_link: false,
+    }
 }
 
 fn translate_lookup(
@@ -560,25 +570,28 @@ fn translate_lookup(
     path: &Path,
     follow_last: bool,
 ) -> pnport_core::diagnostic::Result<Translation> {
-    let native = |physical| Translation {
-        logical: path.to_owned(),
-        physical,
-        readonly: false,
-        virtual_link: false,
-    };
     let Some(lookup) =
         pnport_core::native_path::resolved_lookup(path, follow_last, &runtime.view.graph)
     else {
-        return Ok(native(path.to_owned()));
+        return Ok(native_translation(path, path.to_owned()));
     };
-    let (resolved, requires_directory) = match lookup
-        .validate_parents(|parent| runtime.view.translate(parent))?
-    {
+    let checked = lookup.validate_parents(|parent| runtime.view.translate(parent))?;
+    translate_checked_lookup(runtime, path, checked)
+}
+
+fn translate_checked_lookup(
+    runtime: &mut Runtime,
+    path: &Path,
+    lookup: NativeLookup,
+) -> pnport_core::diagnostic::Result<Translation> {
+    let (resolved, requires_directory) = match lookup {
         pnport_core::native_path::Lookup::Resolved {
             path,
             requires_directory,
         } => (path, requires_directory),
-        pnport_core::native_path::Lookup::NativeFailure { path, .. } => return Ok(native(path)),
+        NativeLookup::NativeFailure { path: physical, .. } => {
+            return Ok(native_translation(path, physical));
+        }
     };
     let mut translation = runtime.view.translate(&resolved)?;
     if requires_directory {
@@ -600,14 +613,51 @@ unsafe fn translate_following(
     dirfd: c_int,
     write: bool,
     follow_last: bool,
+    policy: SymlinkPolicy,
 ) -> std::result::Result<(CString, Translation), c_int> {
     let Some(runtime) = RUNTIME.get() else {
         return Err(EIO);
     };
     let mut runtime = runtime.lock().map_err(|_| EIO)?;
     let path = path_from(path, dirfd, &runtime)?;
-    let translation =
-        translate_lookup(&mut runtime, &path, follow_last).map_err(|error| fail(error.code))?;
+    let translation = if policy == SymlinkPolicy::Reject {
+        match pnport_core::native_path::resolved_lookup_with_policy(
+            &path,
+            follow_last,
+            &runtime.view.graph,
+            policy,
+        ) {
+            Some(lookup) => {
+                let mut virtual_alias = false;
+                let checked = lookup
+                    .validate_parents(|parent| {
+                        virtual_alias |= runtime.view.contains_dependency_alias(parent)?;
+                        runtime.view.translate(parent)
+                    })
+                    .map_err(|error| fail(error.code))?;
+                if virtual_alias {
+                    return Err(libc::ELOOP);
+                }
+                match &checked {
+                    NativeLookup::NativeFailure { errno, .. } => return Err(*errno),
+                    NativeLookup::Resolved { path, .. } => {
+                        if runtime
+                            .view
+                            .contains_dependency_alias(path)
+                            .map_err(|error| fail(error.code))?
+                        {
+                            return Err(libc::ELOOP);
+                        }
+                    }
+                }
+                translate_checked_lookup(&mut runtime, &path, checked)
+                    .map_err(|error| fail(error.code))?
+            }
+            None => native_translation(&path, path.clone()),
+        }
+    } else {
+        translate_lookup(&mut runtime, &path, follow_last).map_err(|error| fail(error.code))?
+    };
     if write && translation.readonly {
         return Err(EROFS);
     }
@@ -725,7 +775,10 @@ macro_rules! translated {
         translated!($path, $dir, $write, true, $failure)
     };
     ($path:ident, $dir:expr, $write:expr, $follow:expr, $failure:expr) => {
-        match translate_following($path, $dir, $write, $follow) {
+        translated!($path, $dir, $write, $follow, SymlinkPolicy::Allow, $failure)
+    };
+    ($path:ident, $dir:expr, $write:expr, $follow:expr, $policy:expr, $failure:expr) => {
+        match translate_following($path, $dir, $write, $follow, $policy) {
             Ok(value) => value,
             Err(error) => {
                 errno(error);
@@ -880,6 +933,28 @@ const fn open_follows_final_component(flags: c_int) -> bool {
     flags & nofollow == 0 && flags & (O_CREAT | libc::O_EXCL) != (O_CREAT | libc::O_EXCL)
 }
 
+const fn open_symlink_policy(flags: c_int) -> SymlinkPolicy {
+    #[cfg(target_os = "macos")]
+    if flags & libc::O_NOFOLLOW_ANY != 0 {
+        return SymlinkPolicy::Reject;
+    }
+    let _ = flags;
+    SymlinkPolicy::Allow
+}
+
+const fn conflicting_open_flags(flags: c_int) -> bool {
+    // XNU rejects this pair before vnode lookup, so native forwarding cannot
+    // mutate managed backing and preserves the kernel's argument-error order.
+    #[cfg(target_os = "macos")]
+    return flags & (libc::O_NOFOLLOW_ANY | libc::O_NOFOLLOW)
+        == (libc::O_NOFOLLOW_ANY | libc::O_NOFOLLOW);
+    #[cfg(target_os = "linux")]
+    {
+        let _ = flags;
+        false
+    }
+}
+
 unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
         args.arg::<c_int>()
@@ -890,6 +965,9 @@ unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ..
         open,
         unsafe extern "C" fn(*const c_char, c_int, ...) -> c_int
     );
+    if conflicting_open_flags(flags) {
+        return original(path, flags, mode);
+    }
     let Some(_guard) = Guard::enter() else {
         return original(path, flags, mode);
     };
@@ -901,6 +979,7 @@ unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ..
         AT_FDCWD,
         flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND) != 0,
         open_follows_final_component(flags),
+        open_symlink_policy(flags),
         -1
     );
     let fd = original(path.as_ptr(), flags, mode);
@@ -941,6 +1020,9 @@ unsafe extern "C" fn pnport_openat(
         openat,
         unsafe extern "C" fn(c_int, *const c_char, c_int, ...) -> c_int
     );
+    if conflicting_open_flags(flags) {
+        return original(dirfd, path, flags, mode);
+    }
     let Some(_guard) = Guard::enter() else {
         return original(dirfd, path, flags, mode);
     };
@@ -952,6 +1034,7 @@ unsafe extern "C" fn pnport_openat(
         dirfd,
         flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND) != 0,
         open_follows_final_component(flags),
+        open_symlink_policy(flags),
         -1
     );
     let fd = original(AT_FDCWD, path.as_ptr(), flags, mode);
