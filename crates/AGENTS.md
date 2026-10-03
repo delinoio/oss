@@ -231,6 +231,8 @@
 
 ### pnport Rules
 
+- pnport 0.1.0 supports macOS 15+ and Ubuntu 22.04-equivalent glibc on x64/arm64. Reject older macOS hosts before native command launch, preserve the doctor v1 schema, and validate the supported floor on native CI rather than treating a deployment target as execution evidence.
+
 - pnport macOS `dlopen` must release its translation lock and recursion guard before calling the native loader. Library constructors, nested loads and fork callbacks retain virtual dependency access; inner filesystem hooks still guard their own backing operations. Keep ZIP library/package-bin, mmap, read-only and actual source-file/directory watch conformance in both PnP data formats, with a static Linux watch control.
 
 - pnport virtual dependency directories belong only to registered package-location roots, including workspace roots and peer-specific logical aliases. Ordinary source/output descendants keep native lookup and enumeration; native resolvers ascend to the package root. Parent listings must use the core's non-materializing eligibility query and match direct virtual-directory lookup. Keep native ordering, one virtual entry, native EOF/errors, rewind/seek and per-stream or shared-open-file offset lifetimes; release overlay state on close and descriptor reuse. Preserve recursive native output cleanup, package read-only enforcement and real package-root conflicts. Interception guards must remain active around backing operations performed under native/runtime locks.

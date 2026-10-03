@@ -26,7 +26,7 @@ The release targets are:
 
 | Host | Architectures | Planned first release |
 | --- | --- | --- |
-| macOS 13 or newer | x64, arm64 | 0.1.0 |
+| macOS 15 or newer | x64, arm64 | 0.1.0 |
 | Ubuntu 22.04-equivalent glibc Linux | x64, arm64 | 0.1.0 |
 | Windows 10 22H2 or newer, MSVC | x64, arm64 | 0.2.0 |
 

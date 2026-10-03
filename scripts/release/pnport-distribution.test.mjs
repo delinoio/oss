@@ -89,6 +89,29 @@ test("native install smoke executes the activated POSIX launcher", { skip: proce
   assert.match(result.stdout, /"event":"pnport_install_smoke"/u);
 });
 
+test("POSIX installation rejects old macOS before discovery or filesystem mutation", { skip: process.platform === "win32" }, (t) => {
+  const output = fixture(t);
+  const tools = path.join(output, "tools");
+  mkdirSync(tools);
+  const sentinel = path.join(output, "unexpected-side-effect");
+  for (const command of ["curl", "mktemp", "mkdir", "cp", "tar"]) {
+    writeFileSync(path.join(tools, command), `#!/bin/sh\n: > '${sentinel}'\nexit 99\n`);
+    chmodSync(path.join(tools, command), 0o755);
+  }
+  const install = path.join(output, "install");
+  for (const kernel of ["22.6.0", "23.6.0", "unknown"]) {
+    writeFileSync(path.join(tools, "uname"), `#!/bin/sh\ncase "$1" in -s) echo Darwin;; -r) echo '${kernel}';; -m) echo arm64;; esac\n`);
+    chmodSync(path.join(tools, "uname"), 0o755);
+    for (const version of ["latest", "0.1.0"]) {
+      const result = spawnSync("/bin/bash", [path.join(root, "scripts/install/pnport.sh"), "--version", version, "--install-dir", install], { env: { ...process.env, PATH: tools }, encoding: "utf8" });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /macOS 15 or newer is required/u);
+      assert.throws(() => readFileSync(sentinel), { code: "ENOENT" });
+      assert.throws(() => readFileSync(install), { code: "ENOENT" });
+    }
+  }
+});
+
 test("npm publication confirms four native dependencies before launcher and fails before writing on conflict", async () => {
   assert.deepEqual(packageNames("0.1.0"), [...targets.map(({ name }) => `delino-${name.split("/")[1]}-0.1.0.tgz`), "delino-pnport-0.1.0.tgz"]);
   const artifacts = [...targets.map(({ name }) => ({ name, version: "0.1.0", integrity: name })), { name: "@delino/pnport", version: "0.1.0", integrity: "main" }];

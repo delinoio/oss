@@ -1761,7 +1761,7 @@ jobs:
     env:
       PNPORT_TARGET: ${{ matrix.target }}
       PNPORT_SUFFIX: ${{ matrix.suffix }}
-      MACOSX_DEPLOYMENT_TARGET: "13.0"
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@v6
         with:

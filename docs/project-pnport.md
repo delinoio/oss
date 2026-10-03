@@ -19,7 +19,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 - [Public documentation](apps-pnport-docs-foundation.md)
 
 ## Cross-Domain Invariants
-- Version 0.1.0 targets macOS 13+ and Ubuntu 22.04-equivalent glibc on x64/arm64. Version 0.2.0 adds Windows 10 22H2+ MSVC on x64/arm64 after its full native acceptance. Linux static children are a release gate. Musl hosts and mixed architectures are excluded.
+- Version 0.1.0 targets macOS 15+ and Ubuntu 22.04-equivalent glibc on x64/arm64. Version 0.2.0 adds Windows 10 22H2+ MSVC on x64/arm64 after its full native acceptance. Linux static children are a release gate. Musl hosts and mixed architectures are excluded.
 - Use Rust, as explicitly required by #958, instead of the default Go. Retain nightly-2026-01-01 and protected Tauri dependencies. All owned Cargo packages are private.
 - Use pnp exactly 0.12.12 and fork the required local fspy crates from 3aac49e31fba6905bb0b3d0e29d7755493241e9c with retained provenance and licensing. No upstream release is required.
 - Private local content-addressed cache storage replaces the default remote R2 storage because native filesystem backing must remain offline and user-local. SHA-256 identities, rather than UUIDs, identify immutable content; execution identities use UUID v7.

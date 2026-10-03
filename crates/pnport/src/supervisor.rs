@@ -27,11 +27,40 @@ pub fn platform() -> Result<()> {
     )) {
         return Err(Error::new(
             Code::PnportUnsupportedOperation,
-            "This release supports macOS and glibc Linux on x64/arm64. Windows support is planned \
-             for pnport 0.2.0.",
+            "This release supports macOS 15+ and glibc Linux on x64/arm64. Windows support is \
+             planned for pnport 0.2.0.",
         ));
     }
+    #[cfg(target_os = "macos")]
+    {
+        let mut host = std::mem::MaybeUninit::<libc::utsname>::zeroed();
+        let supported = unsafe {
+            libc::uname(host.as_mut_ptr()) == 0
+                && std::ffi::CStr::from_ptr(host.assume_init_ref().release.as_ptr())
+                    .to_str()
+                    .is_ok_and(macos_kernel_supported)
+        };
+        if !supported {
+            return Err(Error::new(
+                Code::PnportUnsupportedOperation,
+                "macOS 15 or newer is required by this release.",
+            ));
+        }
+    }
     Ok(())
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn macos_kernel_supported(release: &str) -> bool {
+    // Darwin 24 is the macOS 15 kernel. Use the native kernel identity without
+    // launching an external command or reading inherited environment values.
+    let parts: Vec<_> = release.split('.').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        && parts[0].len() <= 3
+        && parts[0].parse::<u16>().is_ok_and(|major| major >= 24)
 }
 pub fn artifact() -> Result<PathBuf> {
     platform()?;
@@ -382,6 +411,16 @@ fn exit_code(status: ExitStatus) -> i32 {
 #[cfg(test)]
 mod failure_tests {
     use super::*;
+
+    #[test]
+    fn macos_floor_rejects_older_and_unknown_kernel_versions() {
+        for release in ["22.6.0", "23.6.0", "", "unknown", "24", "24.0.0extra"] {
+            assert!(!macos_kernel_supported(release));
+        }
+        for release in ["24.0.0", "25.1.0"] {
+            assert!(macos_kernel_supported(release));
+        }
+    }
 
     #[test]
     fn recorded_runtime_code_is_reported_and_invalid_marker_fails_closed() {
