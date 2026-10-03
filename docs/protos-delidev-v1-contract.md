@@ -425,6 +425,24 @@ and Connect Query bindings together.
 
 Provider activation adds an owner/client-only `ProviderService.ListProviderInventory`, closed capability/preset enums, account-list-only `ListResourcesRequest.provider_id`, and additive `SearchModels.enabled_providers_only`. Omitted model filtering preserves existing behavior. Provider enabled and preset provenance remain optional fields in the canonical provider JSON document for legacy compatibility. Inventory capabilities let clients detect older servers that ignore filters; Workers cannot read it. See [provider activation](cmds-delidev-provider-activation-contract.md), and regenerate Go messages/Connect handlers and TypeScript Connect Query bindings together.
 
+## Workspace storage service
+
+`WorkspaceStorageService` is owner/paired-client-only and provides
+`RequestWorkspaceStorage`, `GetWorkspaceStorageOperation` and
+`CancelWorkspaceStorageOperation`. The closed additive action enum selects
+preview/create/cleanup/inspect/restore/delete/recover. Acceptance binds Mutation
+to the current session; cancellation binds it to the original current job.
+Successful preview, exact snapshot and original recovery job references have
+separate fields. Responses expose current original Resource jobs with request
+UUID/replay status; polling never resends native side effects. GetStatus adds
+`WORKSPACE_STORAGE_V1` at its main-reserved enum value 11; the existing `SESSION_FORWARDING_V1`
+retains value 2 and `USER_SERVICES_V1` retains value 3. Capability values are
+distinct and never alias or reinterpret main's forwarding or user-service
+capabilities. Snapshot metadata stays in the existing Snapshot kind
+and generated Go/TypeScript/Connect Query bindings reproduce from the schema.
+The [storage contract](cmds-delidev-storage-contract.md) owns exact authorization,
+state publication, safe copying, cancellation and explicit recovery semantics.
+
 ### Managed database restore
 
 `SystemService.RestoreBackup` and `GetBackupRestore` are owner/paired-client-only
@@ -445,7 +463,7 @@ deletion enforcement, historical quarantine, bounds and recovery evidence limits
 
 `SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
-System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3`, `STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5` and `PERMANENT_SESSION_DELETION_V1 = 9`; managed restore adds reserved `MANAGED_BACKUP_RESTORE_V1 = 7`, native accounting adds reserved `NATIVE_ACCOUNTING_V1 = 4` and same-account Codex Fork adds reserved `CODEX_SESSION_FORK_V1 = 13`. `GetStatus` advertises each implemented capability independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3`, `NATIVE_ACCOUNTING_V1 = 4`, `STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5`, `SERVER_OUTBOUND_PROXY_V1 = 6`, `MANAGED_BACKUP_RESTORE_V1 = 7`, `PERMANENT_SESSION_DELETION_V1 = 9`, `WORKSPACE_STORAGE_V1 = 11` and `CODEX_SESSION_FORK_V1 = 13`. Managed restore, native accounting, workspace storage and same-account Codex Fork use their original reserved numbers. `GetStatus` advertises each implemented capability independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 ## Authenticated development-server forwarding
 

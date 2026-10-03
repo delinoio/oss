@@ -85,6 +85,19 @@ func DecodeWithLimit(data []byte, target any, maxBytes int) error {
 	if maxBytes < 1 || len(data) > maxBytes || !utf8.Valid(data) {
 		return Fail(InvalidArgument, "JSON input exceeds its limit or is not UTF-8.", "Use a bounded JSON document.")
 	}
+	return decodeJSON(data, target)
+}
+
+// DecodeBounded is for private artifacts with an explicit owning contract.
+// Public command documents retain Decode's fixed 1 MiB limit.
+func DecodeBounded(data []byte, target any, maxBytes int) error {
+	if maxBytes <= 0 || len(data) > maxBytes || !utf8.Valid(data) {
+		return Fail(InvalidArgument, "JSON input exceeds its owning document limit or is not UTF-8.", "Preserve the original artifact and its declared byte bound.")
+	}
+	return decodeJSON(data, target)
+}
+
+func decodeJSON(data []byte, target any) error {
 	if err := uniqueJSON(data); err != nil {
 		return err
 	}

@@ -36,6 +36,31 @@ func openNoFollow(path string) (*os.File, error) {
 	return os.NewFile(uintptr(fd), path), nil
 }
 
+func openPrivateAppend(path string) (*os.File, bool, error) {
+	_, statErr := os.Lstat(path)
+	created := errors.Is(statErr, os.ErrNotExist)
+	if statErr != nil && !created {
+		return nil, false, statErr
+	}
+	fd, err := unix.Open(path, unix.O_WRONLY|unix.O_APPEND|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_CREAT, 0600)
+	if err != nil {
+		return nil, false, err
+	}
+	f := os.NewFile(uintptr(fd), path)
+	info, err := f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = domain.Fail(domain.PermissionDenied, "Invalid private journal.", "Inspect the data scope.")
+	}
+	if err == nil {
+		err = checkPrivate(path, info)
+	}
+	if err != nil {
+		f.Close()
+		return nil, false, err
+	}
+	return f, created, nil
+}
+
 type Lock struct{ f *os.File }
 
 func TryLock(path string) (*Lock, error)         { return tryLock(path, true) }

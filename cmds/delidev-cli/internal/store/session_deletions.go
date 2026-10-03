@@ -17,6 +17,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 const maxSessionDeletions = 4096
@@ -331,6 +332,13 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 				return v, false, domain.SessionDeletionPending()
 			}
 			copy.ExecutionID = input.ExecutionID
+		}
+		if j.Type == domain.WorkspaceStorageJob {
+			var input workspace.StorageRequest
+			if domain.Decode(original.Input, &input) != nil || input.OperationID != r.ID || input.Preparation.SessionID != session || input.Preparation.MachineID != original.MachineID || (input.SnapshotID != "" && input.SnapshotID.Validate() != nil) {
+				return v, false, domain.SessionDeletionPending()
+			}
+			copy.SnapshotID = input.SnapshotID
 		}
 		if j.Type == domain.CompactSessionJob {
 			var input domain.SessionCompactionInput

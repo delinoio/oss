@@ -127,6 +127,14 @@ func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, rep
 			m.Logger.WarnContext(ctx, "workspace_read_failed", "read_id", request.ID, "session_id", request.Preparation.SessionID, "operation", request.Query.Operation, "pr_candidate", request.PRCandidate != nil, "comparison", request.Query.Comparison, "code", domain.SafeError(returned).Code)
 		}
 	}()
+	observationLock, err := m.lockWorkspaceObservations(ctx, request.Preparation.SessionID)
+	if err != nil {
+		return err
+	}
+	defer observationLock.Close()
+	if _, err := os.Lstat(filepath.Join(m.Root, "session-deletions", string(request.Preparation.SessionID)+".json")); !errors.Is(err, os.ErrNotExist) {
+		return domain.SessionDeletionPending()
+	}
 	retained, err := m.Read(request.Preparation.SessionID)
 	actual, _ := json.Marshal(retained)
 	expected, _ := json.Marshal(request.Manifest)
@@ -160,12 +168,14 @@ func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, rep
 	}
 	// Continuation identity allows commits and dirty files without requiring a
 	// closed native claim. This observation grants no execution/recovery rights.
-	inspection := &Manager{Root: m.Root, Git: m.Git}
+	inspection := &Manager{Root: m.Root, Git: m.Git, Logger: m.Logger}
 	inspection.Git.readOnly = true
-	inspection.Git.ProcessRoot = filepath.Join(m.Root, "workspace-read-processes")
+	inspection.Git.ProcessRoot = m.readProcessRoot(request.Preparation.SessionID)
 	if len(retained.Repositories) > 0 {
-		if err := security.PrivateDir(inspection.Git.ProcessRoot); err != nil {
-			return ResultUncertain()
+		for _, directory := range []string{filepath.Join(m.Root, "workspace-read-processes"), filepath.Join(m.Root, "workspace-read-processes-v2"), inspection.Git.ProcessRoot} {
+			if err := security.PrivateDir(directory); err != nil {
+				return ResultUncertain()
+			}
 		}
 		owner := filepath.Join(inspection.Git.ProcessRoot, string(request.ID))
 		if err := os.Mkdir(owner, 0700); err != nil {
@@ -176,11 +186,22 @@ func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, rep
 			defer stop()
 			// Delete only an empty, fully reconciled read-only process index.
 			// Unknown children retain their private journals for recovery.
-			if process.ReconcileOwnerContext(cleanup, inspection.Git.ProcessRoot, request.ID) != nil || os.Remove(owner) != nil {
+			if process.ReconcileOwnerContext(cleanup, inspection.Git.ProcessRoot, request.ID) != nil {
 				returned = ResultUncertain()
 				return
 			}
 			if err := os.Remove(owner + ".recovery.lock"); err != nil {
+				returned = ResultUncertain()
+				return
+			}
+			// Keep the owner index until the adjacent recovery lock has been
+			// retired. This ordering leaves a recoverable owner directory if the
+			// Worker stops between the two durable namespace changes.
+			if err := os.Remove(owner); err != nil {
+				returned = ResultUncertain()
+				return
+			}
+			if err := os.Remove(inspection.Git.ProcessRoot); err != nil || security.SyncParent(inspection.Git.ProcessRoot) != nil {
 				returned = ResultUncertain()
 			}
 		}()
