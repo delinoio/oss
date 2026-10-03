@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -83,11 +84,21 @@ type Manifest struct {
 	CreatedAt    time.Time            `json:"created_at"`
 }
 type Manager struct {
-	mu          sync.Mutex
-	initialized bool
-	Root        string
-	Git         Git
-	Logger      *slog.Logger
+	mu                           sync.Mutex
+	initialized                  bool
+	storageCopyFault             func(string) error
+	storageScratchCleanupFault   func(string) error
+	storageRestoreCopyFault      func(string) error
+	storageBeforeRestorePublish  func(string)
+	storageBeforeSnapshotPublish func(string)
+	storageAfterRootValidation   func()
+	storageBeforeRemovalClaim    func()
+	storageBeforeRemovalUnlink   func(string)
+	storageAfterRemovalClaim     func(string)
+	storageAfterSnapshot         func()
+	Root                         string
+	Git                          Git
+	Logger                       *slog.Logger
 }
 
 func (m *Manager) initialize() error {
@@ -218,6 +229,11 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 		return uncertain(err)
 	}
 	defer lock.Close()
+	observationLock, err := m.lockWorkspaceObservations(ctx, request.SessionID)
+	if err != nil {
+		return uncertain(err)
+	}
+	defer observationLock.Close()
 	if _, e := os.Lstat(filepath.Join(m.Root, "session-deletions", string(request.SessionID)+".json")); !errors.Is(e, os.ErrNotExist) {
 		return Manifest{}, domain.SessionDeletionPending()
 	}
@@ -382,13 +398,25 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 				if err := write(); err != nil {
 					return failed(domain.SafeError(err))
 				}
+				// Git for Windows performs the initial checkout through an internal
+				// reset whose repository environment does not reliably retain the
+				// command-level long-path override. Keep that child checkout out of
+				// worktree add and run it through the Worker-owned Git boundary below.
+				// Remove this split when the minimum supported Git for Windows
+				// guarantees propagation for worktree add's internal reset.
+				checkoutSeparately := runtime.GOOS == "windows" && request.ForkSourceID == ""
 				args := []string{"worktree", "add", "--detach"}
-				if request.ForkSourceID != "" {
+				if request.ForkSourceID != "" || checkoutSeparately {
 					args = append(args, "--no-checkout")
 				}
 				args = append(args, "--", prepared.Path, prepared.StartingCommit)
 				if _, err = git.run(ctx, inspection.Root, args...); err != nil {
 					return failed(err)
+				}
+				if checkoutSeparately {
+					if _, err = git.run(ctx, prepared.Path, "reset", "--hard", "--no-recurse-submodules"); err != nil {
+						return failed(err)
+					}
 				}
 				if request.ForkSourceID != "" {
 					copy, err := copyForkRepository(ctx, git, inspection.Root, prepared.Path, prepared.StartingCommit)

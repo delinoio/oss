@@ -33,6 +33,13 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Pinned required workflows follow `docs/cmds-delidev-integrations-contract.md`: require explicit source SHA, original numeric repository/path identity, the current ordered-parent test merge, complete suite/current-attempt job inventories and native PR requiredness. Preserve Unknown for missing, competing, stale or unsupported evidence and retain historical status-check proof/version compatibility. Observation cannot authorize execution.
 
 - Permanent session deletion validates UUID uniqueness against its own 4,096-copy capacity; do not reuse the 1,000-link helper for that ownership plan.
+- Private artifact decoding may use only its explicit owning byte bound with the same strict UTF-8, duplicate-key, unknown-field and single-document validation; public command JSON retains the fixed 1 MiB bound.
+
+- Session terminal records and closed action/state enums follow `docs/cmds-delidev-terminals-contract.md`; keep native cleanup independent of observed exit and retain exact original operation identities. Pending input bytes belong only to accepted private dispatch; public resources retain operation/state metadata while omitting those bytes.
+
+- Remediation defaults use merge; rebase requires explicit effective server/repository policy and an exact expected-head lease. Manual requests bind exact decimal set/problem revisions and immutable source/content identities. Closed typed push proofs distinguish verified, unchanged and uncertain state; native success alone never means handled.
+
+- Every immutable manual-fix execution assignment independently requires Codex Execute mode and explicit workspace-write or full-access permission. Initial request acceptance cannot preserve write authority after the selected Agent becomes read-only or returns to default permission before dispatch.
 
 - Explicit stopped Codex API account selection follows the sessions/proxy contracts. Require exact terminal/cleanup/checkpoint evidence and current eligibility from the original candidate snapshot; retain revisioned selection history, pause until explicit Resume and never reroute automatically. Preserve original usage/assignments and read the predecessor checkpoint under its complete original account/connection pair while creating a fresh successor grant. Explicitly switching away and back after reconnection must retain the original checkpoint connection independently of the fresh selected connection. Missing or account-bound history cannot switch; every switched relay request independently rejects remote history references.
 
@@ -40,6 +47,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Claude continuation candidates require a correlated non-aborted successful or failed root outcome, unchanged permission and settled original input/callback/task/compaction facts. A `background_requested` terminal is ineligible even without a tracked background-task event. Failed predecessors require explicit Resume intent; a candidate never substitutes for independently verified native history and cleanup.
 
+- Permanent deletion accepts original workspace-storage jobs with optional reserved snapshot UUIDs. Preserve omitted legacy fields and bind each nonempty snapshot ID only to its storage copy.
 - Native subagent observations follow `docs/cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Supplied child output must explicitly declare partial=true; reject omitted or false markers before any batch publication. Live/unavailable children retain independent cleanup obligations after parent completion. Codex descendant inventory uses state-DB-only reads without native metadata repair. Native shutdown may refine terminal status without reopening lifecycle. Observation never grants child control or unproved continuation.
 - Permanent-deletion copies for manual compaction retain a distinct original action UUID, never a replacement conversation execution ID. Reject missing, malformed or mixed action ownership; existing deletion plans retain their exact bytes and digest. Follow `docs/cmds-delidev-claude-compaction-contract.md`.
 

@@ -136,6 +136,9 @@ func (s *Service) StartForward(ctx context.Context, req *connect.Request[pb.Star
 		if sr.Revision != m.ExpectedSessionRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload the session before starting a forward.")
 		}
+		if !session.WorkspaceAvailable() {
+			return nil, domain.Fail(domain.Conflict, "Workspace storage retains this session.", "Settle the original storage operation and restore the workspace before starting a forward.")
+		}
 		if session.MachineID != domain.ID(m.MachineId) || session.Archive != domain.NotArchived {
 			return nil, forwardDenied()
 		}
@@ -305,7 +308,7 @@ func (s *Service) peerForward(tx *store.Tx, actor domain.Principal, peer *pb.For
 		return r, v, side, forwardUnavailable()
 	}
 	_, session, err := sessionRecord(tx, r.SessionID)
-	if err != nil || session.Archive != domain.NotArchived || session.MachineID != v.MachineID {
+	if err != nil || session.Archive != domain.NotArchived || !session.WorkspaceAvailable() || session.MachineID != v.MachineID {
 		return r, v, side, forwardUnavailable()
 	}
 	reader := &workspaceReader{machine: v.MachineID, instance: v.WorkerInstanceID, device: v.WorkerDeviceID}

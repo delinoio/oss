@@ -1,7 +1,7 @@
 # DeliDev Worker workspace contract
 
 ## Scope
-`cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. The Worker first Codex runner now uses the execution lease below; public first dispatch uses that lease; snapshots and additional fork profiles remain separate pending boundaries; the bounded same-account Codex profile follows [the fork contract](cmds-delidev-forks-contract.md).
+`cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. The Worker first Codex runner now uses the execution lease below; public first dispatch uses that lease; the bounded same-account Codex profile follows [the fork contract](cmds-delidev-forks-contract.md), while additional fork profiles remain separate pending boundaries; managed whole-workspace snapshots follow the storage contract. Record implementation status and validation in pull requests, issues and CI logs/artifacts under the repository validation policy.
 
 ## Runtime and Language
 Go and the execution machine's installed Git. No harness or Git installation is performed automatically.
@@ -128,7 +128,7 @@ After complete original workspace validation and lease acquisition, Claude recei
 
 ### Read-only session observations
 
-The [file explorer contract](cmds-delidev-files-contract.md) adds bounded reads under the original accepted manifest without acquiring or changing the execution lease. Read-only Git validation uses a separate `workspace-read-processes` namespace and UUID owner; completed empty indexes are retired, and uncertain child ownership remains private recovery evidence. No read can reconcile, delete or replace preparation/execution process journals. `os.Root` anchors entry metadata and content independently of mutable absolute paths.
+The [file explorer contract](cmds-delidev-files-contract.md) adds bounded reads under the original accepted manifest without acquiring or changing the execution lease. Read-only Git validation uses session-bound `workspace-read-processes-v2/<session-id>/<read-id>` indexes; completed empty indexes are retired, and uncertain child ownership remains private recovery evidence. A separate cross-process per-session observation gate fences preparation/recovery/storage/permanent deletion through the entire anchored read and independently joined native-child cleanup. Execution retains its own lifetime lock, so views remain usable during a run. Busy admission returns conflict without workspace effects. Before destructive work, reconcile original session-bound read owners; unknown indexes remain recovery-required. Legacy flat read indexes have no session assignment and cannot be adopted or erased from current paths; their retention blocks new observation/storage pending recovery. Include the session-bound read namespace in permanent deletion absence checks, and reject new reads behind the original deletion tombstone. No read can reconcile, delete or replace preparation/execution process journals. `os.Root` anchors entry metadata and content independently of mutable absolute paths.
 
 Grok first-text Stop, including after acknowledged input acceptance but before any output, follows the same independent execution-lease completion barrier. Original native interruption or completion racing Stop, joined native cleanup and an acknowledged terminal do not repair or replace a missing/changed workspace claim. The ordinary runner closes and verifies its original lease before retaining version-1 report output; failure preserves the original native terminal and recovery ownership. Neither stopped text nor a raced success supplies a continuation checkpoint or additional filesystem authority.
 
@@ -184,6 +184,12 @@ Explicit startup recovery reuses `ReadPRStartupRejection` under the original ses
 
 ## Bounded Git metadata observations
 
+Worker-owned Git commands enable Windows long paths through a command-local
+`core.longpaths=true` override during preparation and later observations, without
+modifying source repository configuration. Native failures expose only stable
+launch/exit classifications, exit status, owning IDs and read-only/offline flags;
+argv, paths and native output remain excluded from logs.
+
 Compatible administrative path and object-format queries share one owned
 `git rev-parse` invocation. The parser requires the exact record count and
 terminators, rejects ambiguous embedded delimiters and retains path spaces.
@@ -201,6 +207,19 @@ First-execution configuration, initial account selection, input claim and per-Ag
 
 An internal completed-execution inspection now correlates the original Worker operation/outbox/native checkpoint with current closed workspace/process ownership, preserving results without relaunch or report replay. The dedicated public execution-recovery RPC/CLI and Worker job now reconcile a retained completed execution atomically after Worker replacement, preserving outcome and pause until explicit Resume. Missing historical interaction evidence and safe surviving-process reattachment remain separate requirements.
 
+## Managed storage ownership
+
+Issue #1079 adds private Worker-local whole-workspace snapshots, preview-bound
+manual cleanup and atomic restoration under the existing session/process locks.
+Follow [storage operations](cmds-delidev-storage-contract.md) for the complete
+job/receipt, bounds, independent Git stores, retained bytes, removal-intent and
+explicit recovery contract. Original Local checkouts are ineligible. No source
+removal precedes verified publication of every repository. Restore keeps the
+canonical owned cwd and original logical identity through a private comparison
+binding, with standalone Git administration replacing the removed linked store.
+Active claims, unknown dependent resources and conflicting destinations remain
+protected. This storage comparison grants no new native checkpoint/history
+support; all existing execution and continuation evidence gates still apply.
 
 Manual Fix now retains the ordinary execution lease through native closure and independent push verification. Its closed private Git bridge binds original source transport/executable/auth context and exact ref/base/head, exposes exact non-secret operands, claims one push synchronously before launch, joins native children and emits only original verified/unchanged/uncertain proof. Rebase conflict publication requires an original-head lease. Preserve original files and uncertainty after interruption; no bridge or Go controller automatically commits/pushes. See the manual-fix section of the integration contract.
 

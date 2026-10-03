@@ -182,6 +182,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "storage":
+		if code, handled := dispatchStorage(ctx, c, o, rest, streams); handled {
+			return code
+		}
 	case "service-control":
 		if code, handled := dispatchServiceControl(ctx, c, o, rest, streams); handled {
 			return code

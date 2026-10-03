@@ -112,6 +112,12 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session context --id ID
   session switch-account --id ID --revision N --account-id ID
   session rename --id ID --revision N --name NAME
+  storage preview|create --session-id ID --expected-revision N
+  storage cleanup --session-id ID --expected-revision N --preview-job-id JOB --confirm
+  storage inspect|restore|delete --session-id ID --expected-revision N --snapshot-id ID [--confirm]
+  storage recover --session-id ID --expected-revision N --recovery-job-id JOB
+  storage operation --id JOB
+  storage cancel --id JOB --expected-revision N
   schedule create --input FILE|- [--local-worker-dir PATH]
   schedule edit --id ID --revision N --input FILE|- [--local-worker-dir PATH]
   schedule list [--project-id ID] [--enabled all|true|false] [--limit N] [--page-token TOKEN]

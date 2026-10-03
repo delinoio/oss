@@ -186,7 +186,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				}
 			} else if !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
-			} else if j.State == journalStarted || j.Problem != nil && j.Problem.Code == domain.RecoveryRequired {
+			} else if copy.Type != domain.WorkspaceStorageJob && (j.State == journalStarted || j.Problem != nil && j.Problem.Code == domain.RecoveryRequired) {
 				return proof, domain.SessionDeletionPending()
 			}
 		}
@@ -211,7 +211,29 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		if e != nil {
 			return e
 		}
+		for _, copy := range w.Copies {
+			if copy.Type != domain.WorkspaceStorageJob {
+				continue
+			}
+			removal := filepath.Join(root, "workspace-removals", string(copy.JobID))
+			if _, e := os.Lstat(removal); errors.Is(e, os.ErrNotExist) {
+				continue
+			} else if e != nil {
+				return domain.SessionDeletionPending()
+			}
+			if e := manager.RemoveClaimedStorageRemoval(ctx, copy.JobID, w.SessionID, copy.SnapshotID); e != nil {
+				return e
+			}
+		}
 		for _, path := range paths {
+			if filepath.Dir(path) == filepath.Join(root, "snapshot-staging") {
+				// Workspace cleanup already checked the original native staging
+				// identity. A later replacement must remain protected here.
+				if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
+					return domain.SessionDeletionPending()
+				}
+				continue
+			}
 			if e := removeSessionTree(ctx, root, path); e != nil {
 				return e
 			}
@@ -237,6 +259,7 @@ func removeSessionTree(ctx context.Context, root, path string) error {
 // never gains permission to delete it merely from the earlier completed proof.
 func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
 	paths := []string{filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock")}
+	paths = append(paths, workspace.SessionStorageCopyPaths(root, w)...)
 	if w.Fork != nil {
 		// The source job journal may be shared with a live parent or already gone.
 		// Only the child-bound immutable checkpoint grants ownership of this runtime.

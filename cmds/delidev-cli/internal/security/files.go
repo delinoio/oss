@@ -79,6 +79,41 @@ func WriteAtomic(path string, contents []byte) error {
 	return syncDirectory(filepath.Dir(path))
 }
 
+// AppendPrivate appends to an owner-only regular file and makes the new bytes
+// durable. Callers use this for bounded journals whose records must be
+// published without rewriting the complete journal on every transition.
+func AppendPrivate(path string, contents []byte) error {
+	if len(contents) == 0 {
+		return nil
+	}
+	if err := PrivateDir(filepath.Dir(path)); err != nil {
+		return err
+	}
+	f, created, err := openPrivateAppend(path)
+	if err != nil {
+		return err
+	}
+	_, writeErr := f.Write(contents)
+	syncErr := error(nil)
+	if writeErr == nil {
+		syncErr = f.Sync()
+	}
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if syncErr != nil {
+		return syncErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if created {
+		return syncDirectory(filepath.Dir(path))
+	}
+	return nil
+}
+
 func ReadPrivate(path string, max int64) ([]byte, error) {
 	if err := RegularPrivate(path); err != nil {
 		return nil, err
