@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, UsageAccountingProfile, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
+import { subscriptionServiceLabel, SubscriptionServiceIdentity, SystemCapability, SystemQuery, EntityKind, UsageAccountingProfile, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
 import { EstimateAmounts, EstimateCosts } from "./estimate-costs";
 import { ResourceChoice } from "./configuration-fields";
 import { Problem } from "./ui";
@@ -10,8 +10,8 @@ import { UsageCharts } from "./usage-chart";
 import { GrokAccounting } from "./grok-accounting";
 import { NativeAccounting } from "./native-accounting";
 
-interface Filters { from: string; until: string; sessionId: string; projectId: string; accountId: string; providerId: string; modelId: string; generalChat: boolean }
-const emptyFilters: Filters = { from: "", until: "", sessionId: "", projectId: "", accountId: "", providerId: "", modelId: "", generalChat: false };
+interface Filters { from: string; until: string; sessionId: string; projectId: string; accountId: string; providerId: string; subscriptionService: SubscriptionServiceIdentity; modelId: string; generalChat: boolean }
+const emptyFilters: Filters = { from: "", until: "", sessionId: "", projectId: "", accountId: "", providerId: "", subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED, modelId: "", generalChat: false };
 
 function request(filters: Filters, timeZone: string) {
   const { from, until, ...selection } = filters;
@@ -19,7 +19,7 @@ function request(filters: Filters, timeZone: string) {
 }
 
 function sameFilters(left: Filters, right: Filters): boolean {
-  return left.from === right.from && left.until === right.until && left.sessionId === right.sessionId && left.projectId === right.projectId && left.accountId === right.accountId && left.providerId === right.providerId && left.modelId === right.modelId && left.generalChat === right.generalChat;
+  return left.from === right.from && left.until === right.until && left.sessionId === right.sessionId && left.projectId === right.projectId && left.accountId === right.accountId && left.providerId === right.providerId && left.subscriptionService === right.subscriptionService && left.modelId === right.modelId && left.generalChat === right.generalChat;
 }
 
 function measure(value?: UsageMeasure): string {
@@ -57,6 +57,7 @@ function appliedFilters(selection: ReturnType<typeof request>): string[] {
   if (selection.generalChat) values.push("General Chat");
   if (selection.accountId) values.push(`Account ${selection.accountId}`);
   if (selection.providerId) values.push(`API ${selection.providerId}`);
+  if (selection.subscriptionService) values.push(`Subscription service ${SubscriptionServiceIdentity[selection.subscriptionService].toLowerCase()}`);
   if (selection.modelId) values.push(`Model ${selection.modelId}`);
   return values;
 }
@@ -66,6 +67,8 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
   const [appliedDraft, setAppliedDraft] = useState<Filters>(emptyFilters);
   const [selection, setSelection] = useState(() => request(emptyFilters, detectDeviceTimeZone()));
   const [invalid, setInvalid] = useState("");
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
+  const nativeFilters = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
   const result = useQuery(UsageQuery.getUsageSummary, selection, { enabled: active });
   const closeDrawer = useCloseSidebarDrawer();
   const detectedTimeZone = detectDeviceTimeZone();
@@ -109,7 +112,8 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
         <ResourceChoice label="Session" kind={EntityKind.SESSION} value={draft.sessionId} change={(id) => change("sessionId", id)} active={active} />
         <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={draft.projectId} change={(id) => change("projectId", id)} active={active} disabled={draft.generalChat} />
         <ResourceChoice label="Account" kind={EntityKind.ACCOUNT} value={draft.accountId} change={(id) => change("accountId", id)} active={active} />
-        <ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={draft.providerId} change={(id) => change("providerId", id)} active={active} />
+        <ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={draft.providerId} change={(id) => setDraft((current) => ({ ...current, providerId: id, subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED }))} active={active} />
+        <label>Subscription service<select disabled={!nativeFilters} value={draft.subscriptionService} onChange={(event) => setDraft((current) => ({ ...current, providerId: "", subscriptionService: Number(event.target.value) as SubscriptionServiceIdentity }))}><option value={SubscriptionServiceIdentity.UNSPECIFIED}>All services</option><option value={SubscriptionServiceIdentity.CHATGPT}>ChatGPT</option><option value={SubscriptionServiceIdentity.CLAUDE}>Claude</option><option value={SubscriptionServiceIdentity.GROK}>Grok</option></select></label>
         <ResourceChoice label="Model" kind={EntityKind.MODEL} value={draft.modelId} change={(id) => change("modelId", id)} active={active} />
         <label className="checkbox"><input type="checkbox" checked={draft.generalChat} onChange={(event) => setDraft((current) => ({ ...current, generalChat: event.target.checked, projectId: event.target.checked ? "" : current.projectId }))} />General Chat only</label>
         {invalid ? <p role="alert">{invalid}</p> : null}
@@ -133,10 +137,10 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
       {result.error ? <p className="usage-stale-indicator" role="status">Stale values from the last successful read</p> : null}
       {responseAnalytics?.granularity === UsageTimeGranularity.DAY ? <UsageCharts analytics={responseAnalytics} timeZone={appliedZone} /> : <p className="usage-charts-unavailable" role="status">Daily and model charts are unavailable from this server version. Update the DeliDev server to view analytics; the current summary and detail data remain available.</p>}
       <section className="usage-detail" aria-labelledby="usage-detail-title"><h2 id="usage-detail-title">Session, model and account details</h2>
-        {responseGroups.length ? <div className="usage-table" role="region" aria-label="Session, model and account usage table; scroll horizontally to inspect all details" tabIndex={0}><table><caption>Known response subtotals with original session, project, account, API and model identities</caption><thead><tr><th scope="col">Session / project</th><th scope="col">Account</th><th scope="col">Model / API</th><th scope="col">Tokens</th><th scope="col">Token-price estimate</th></tr></thead><tbody>{responseGroups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${group.modelId}`}>
+        {responseGroups.length ? <div className="usage-table" role="region" aria-label="Session, model and account usage table; scroll horizontally to inspect all details" tabIndex={0}><table><caption>Known response subtotals with original session, project, account, API and model identities</caption><thead><tr><th scope="col">Session / project</th><th scope="col">Account</th><th scope="col">Model / API</th><th scope="col">Tokens</th><th scope="col">Token-price estimate</th></tr></thead><tbody>{responseGroups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${subscriptionServiceLabel(group.subscriptionService)}:${group.modelId}`}>
           <td><button type="button" onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><small>{group.sessionId}</small><p>{group.projectId ? group.projectName || `Project ${group.projectId}` : "General Chat"}</p>{group.projectId ? <small>{group.projectId}</small> : null}</td>
           <td><span>{group.accountName || "Retained account"}</span><small>{group.accountId}</small></td>
-          <td><span>{group.modelName || "Retained model"}</span><small>{group.modelId}</small><p>{group.providerName || `API ${group.providerId}`}</p><small>{group.providerId}</small></td>
+          <td><span>{group.modelName || "Retained model"}</span><small>{group.modelId}</small><p>{group.subscriptionService ? `Subscription service ${subscriptionServiceLabel(group.subscriptionService)}` : group.providerName || `API ${group.providerId}`}</p><small>{group.providerId}</small></td>
           <td><strong>{measure(group.totals?.total)}</strong><p>{group.totals?.responses.toLocaleString()} responses{group.totals?.total?.unavailableResponses ? ` · ${group.totals.total.unavailableResponses} unavailable` : ""}</p><details><summary>Token breakdown</summary><Measures value={group.totals} /></details></td><td><EstimateAmounts value={group.estimates} /></td>
         </tr>)}</tbody></table></div> : <p>No exact response usage is recorded for these filters. This does not mean zero usage or zero cost.</p>}
       </section>

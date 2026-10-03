@@ -4,14 +4,14 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
 import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 
-function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision, documentJson: encode(value) }); }
+function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
 function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
@@ -21,6 +21,7 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
   const disconnect = vi.fn(async (_request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT) }));
   const list = vi.fn((request: ListResourcesRequest) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }));
   const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] }) });
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
     router.service(ResourceService, { listResources: list, getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
@@ -241,20 +242,14 @@ it("retains exact Agent save bytes and navigation locks through reflow and recon
   expect(JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson))).toEqual({ name: "Retained draft", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } });
 });
 
-it("pages native subscription providers independently of active API providers", async () => {
-  const subscriptions = Array.from({ length: 51 }, (_, index) => resource(EntityKind.PROVIDER, { name: `Subscription ${String(index + 1).padStart(2, "0")}`, protocol: "native-subscription", authentication: "subscription" }));
-  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
-  const value = fixture(subscriptions, {
-    readResources: (_kind, pageToken) => pageToken ? { resources: [subscriptions[50]] } : { resources: subscriptions.slice(0, 50), nextPageToken: "subscription-page-2" },
-    readProviderInventory: (pageToken) => ({ entries: [], capabilities, ...(pageToken ? {} : { nextPageToken: "active-api-page-2" }) }),
-  });
-  render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} active saved={() => {}} cancel={() => {}} />));
-  await screen.findByRole("option", { name: "Subscription 50" });
-  expect(screen.queryByRole("option", { name: "Subscription 51" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "More subscription providers" }));
-  await screen.findByRole("option", { name: "Subscription 51" });
-  expect((screen.getByRole("button", { name: "More API providers" }) as HTMLButtonElement).disabled).toBe(false);
+it("uses service identity without Provider reads when editing native account preferences", async () => {
+  const account = resource(EntityKind.ACCOUNT, { alias: "Native account", type: "subscription", subscription_service: "chatgpt" });
+  const value = fixture([account]); render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} initial={account} active saved={() => {}} cancel={() => {}} />));
+  expect(screen.getByText("Subscription service: ChatGPT")).toBeTruthy(); expect(screen.queryByLabelText("Provider")).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "Native subscription provider choices" })).toBeNull();
+  expect(value.list.mock.calls.every(([request]) => request.filter?.kind !== EntityKind.PROVIDER)).toBe(true);
 });
+
 
 it("keeps model-search cursors out of provider inventory requests", async () => {
   const provider = resource(EntityKind.PROVIDER, { name: "API provider", enabled: true });
@@ -378,7 +373,9 @@ it("uses server-owned preset key guidance and inert documentation in the API acc
   });
   render(value.view(<Settings visible />));
   fireEvent.click(await screen.findByRole("button", { name: "AI API Keys" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Add AI API key" }));
+  const add = await screen.findByRole("button", { name: "Add AI API key" });
+  await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(add);
   fireEvent.click(await screen.findByRole("button", { name: "OpenAI API key" }));
   fireEvent.click(screen.getByText("Where to get an API key"));
   expect(screen.getByText("Create a project key for the selected workspace.")).toBeTruthy();
@@ -787,7 +784,7 @@ it.each([
 
 it("scopes shared preference and deletion terminology to API documents and preserves subscription aliases", async () => {
   for (const type of ["api", "subscription"] as const) {
-    const account = resource(EntityKind.ACCOUNT, { alias: "Original API account alias", type, provider_id: newRequestId(), enabled: true, health: "disconnected" }, 7n);
+    const account = resource(EntityKind.ACCOUNT, { alias: "Original API account alias", type, ...(type === "api" ? { provider_id: newRequestId() } : { subscription_service: "chatgpt" }), enabled: true, health: "disconnected" }, 7n);
     const value = fixture([account]);
     const view = render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} initial={account} active saved={() => {}} cancel={() => {}} />));
     expect(screen.getByRole("heading", { name: type === "api" ? "Edit preferences" : "Edit AI account" })).toBeTruthy();
@@ -820,15 +817,15 @@ it("keeps API connection actions separate from validation and preserves server-o
   expect(value.disconnect.mock.calls[0][0]).toMatchObject({ mutation: { id: account.id, expectedRevision: 5n } });
   view.unmount();
   value.client.clear();
-  const subscription = resource(EntityKind.ACCOUNT, { alias: "Subscription alias", provider_id: provider.id, type: "subscription", health: "disconnected" });
+  const subscription = resource(EntityKind.ACCOUNT, { alias: "Subscription alias", subscription_service: "claude", type: "subscription", health: "disconnected" });
   render(value.view(<AccountConnection initial={subscription} active close={() => {}} />));
-  expect(screen.getByRole("button", { name: "Back to accounts" })).toBeTruthy();
-  expect(screen.getByText(/Subscription login is not implemented yet/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Back to subscriptions" })).toBeTruthy();
+  expect(screen.getByText(/Native login for this service is unavailable/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Connect API key" })).toBeNull();
   expect(screen.queryByLabelText("API key")).toBeNull();
 });
 
-it("keeps Subscription and API Providers searches independent of unsearched API inventory and exact scope", async () => {
+it("keeps Subscription free of Provider requests while API inventory preserves exact search scope", async () => {
   const provider = resource(EntityKind.PROVIDER, { name: "Exact provider", endpoint: "https://api.example.test/v1", protocol: "openai-responses", authentication: "bearer", enabled: true });
   const entry = create(ProviderInventoryEntrySchema, { providerId: provider.id, displayName: "Exact provider", enabled: true, provider, totalAccounts: 1n, accountCountsAvailable: true });
   const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
@@ -837,9 +834,8 @@ it("keeps Subscription and API Providers searches independent of unsearched API 
   render(value.view(<Settings />));
   const advanced = screen.getByText("Advanced settings").closest("details")!;
   advanced.open = true;
-  fireEvent.change(screen.getByLabelText("Search providers"), { target: { value: "Anthropic" } });
-  await waitFor(() => expect(requests.some((request) => request.query === "Anthropic")).toBe(true));
-  fireEvent.change(screen.getByLabelText("Filter accounts by provider"), { target: { value: provider.id } });
+  await screen.findByRole("heading", { name: "No subscriptions yet" });
+  expect(requests).toHaveLength(0); expect(screen.queryByLabelText("Search providers")).toBeNull();
   const apiStart = requests.length;
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
   await screen.findByText("No entries on this page.");
@@ -864,8 +860,8 @@ it("keeps Subscription and API Providers searches independent of unsearched API 
   await waitFor(() => expect(accountRead()).toMatchObject({ providerId: "", filter: { pageToken: "" } }));
   expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "AI Subscription" }));
-  expect((screen.getByLabelText("Search providers") as HTMLInputElement).value).toBe("Anthropic");
-  expect((screen.getByLabelText("Filter accounts by provider") as HTMLSelectElement).value).toBe(provider.id);
+  expect(screen.queryByLabelText("Search providers")).toBeNull();
+  expect(screen.queryByLabelText("Filter accounts by provider")).toBeNull();
   expect(advanced.open).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   expect((screen.getByLabelText("Search API providers") as HTMLInputElement).value).toBe("Exact");
