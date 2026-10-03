@@ -5006,6 +5006,590 @@
       "declaration": "EntityKind",
       "member": "ENTITY_KIND_SSH_SETUP",
       "number": 34
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectSSHHostRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectSSHHostRequest",
+      "member": "host",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectSSHHostRequest",
+      "member": "port",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectSSHHostRequest",
+      "member": "user",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectSSHHostResponse",
+      "member": "setup",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectSSHHostResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectSSHHostResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartSSHSetupRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartSSHSetupRequest",
+      "member": "credential",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartSSHSetupRequest",
+      "member": "name",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartSSHSetupRequest",
+      "member": "confirmed_fingerprint",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartSSHSetupResponse",
+      "member": "setup",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartSSHSetupResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartSSHSetupResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetSSHSetupRequest",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetSSHSetupResponse",
+      "member": "setup",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReconcileSSHSetupRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReconcileSSHSetupResponse",
+      "member": "setup",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReconcileSSHSetupResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReconcileSSHSetupResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CancelSSHSetupRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CancelSSHSetupResponse",
+      "member": "setup",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CancelSSHSetupResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CancelSSHSetupResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "UpdateComponent",
+      "member": "UPDATE_COMPONENT_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "UpdateComponent",
+      "member": "UPDATE_COMPONENT_DESKTOP",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "UpdateComponent",
+      "member": "UPDATE_COMPONENT_WORKER",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "UpdateTarget",
+      "member": "UPDATE_TARGET_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "UpdateTarget",
+      "member": "UPDATE_TARGET_DARWIN_AMD64",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "UpdateTarget",
+      "member": "UPDATE_TARGET_DARWIN_ARM64",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "UpdateTarget",
+      "member": "UPDATE_TARGET_WINDOWS_AMD64",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "UpdateTarget",
+      "member": "UPDATE_TARGET_WINDOWS_ARM64",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "UpdateTarget",
+      "member": "UPDATE_TARGET_LINUX_AMD64",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "UpdateTarget",
+      "member": "UPDATE_TARGET_LINUX_ARM64",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerUpdateOutcome",
+      "member": "WORKER_UPDATE_OUTCOME_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerUpdateOutcome",
+      "member": "WORKER_UPDATE_OUTCOME_SUCCEEDED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerUpdateOutcome",
+      "member": "WORKER_UPDATE_OUTCOME_FAILED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerUpdateOutcome",
+      "member": "WORKER_UPDATE_OUTCOME_UNCERTAIN",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CheckUpdateRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CheckUpdateRequest",
+      "member": "component",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CheckUpdateRequest",
+      "member": "target",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CheckUpdateRequest",
+      "member": "current_version",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CheckUpdateRequest",
+      "member": "machine_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CheckUpdateRequest",
+      "member": "expected_machine_revision",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CheckUpdateResponse",
+      "member": "update",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CheckUpdateResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CheckUpdateResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetUpdateRequest",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetUpdateResponse",
+      "member": "update",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetUpdateResponse",
+      "member": "production_root_ready",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RequestWorkerUpdateRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RequestWorkerUpdateResponse",
+      "member": "update",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RequestWorkerUpdateResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RequestWorkerUpdateResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CancelUpdateRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CancelUpdateResponse",
+      "member": "update",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CancelUpdateResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CancelUpdateResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PollWorkerUpdateRequest",
+      "member": "instance_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PollWorkerUpdateResponse",
+      "member": "update",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PollWorkerUpdateResponse",
+      "member": "idle",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ClaimWorkerUpdateRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ClaimWorkerUpdateRequest",
+      "member": "instance_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ClaimWorkerUpdateResponse",
+      "member": "update",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ClaimWorkerUpdateResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ClaimWorkerUpdateResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportWorkerUpdateRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportWorkerUpdateRequest",
+      "member": "instance_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportWorkerUpdateRequest",
+      "member": "outcome",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportWorkerUpdateRequest",
+      "member": "installed_version",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportWorkerUpdateResponse",
+      "member": "update",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportWorkerUpdateResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportWorkerUpdateResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
     }
   ]
 }
