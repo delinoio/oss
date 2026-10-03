@@ -2,6 +2,7 @@
 package server
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 
@@ -93,6 +94,40 @@ func mergeSubagentTask(prior, incoming *domain.SubagentTask, source domain.Subag
 	return merged, nil
 }
 
+func sameSubagentModel(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func claudeToolRequestedModel(tx *store.Tx, ref domain.ClaudeToolReference) (*string, error) {
+	record, err := tx.Get(domain.MessageKind, ref.ID)
+	if err != nil {
+		return nil, err
+	}
+	message, err := store.Decode[domain.ExecutionMessage](record)
+	if err != nil || message.ClaudeTool == nil || message.ClaudeTool.Reference != ref {
+		return nil, executionEventConflict()
+	}
+	if message.ClaudeTool.Proposal == nil {
+		return nil, nil
+	}
+	var applied map[string]json.RawMessage
+	if domain.Decode([]byte(message.ClaudeTool.Proposal.Applied), &applied) != nil {
+		return nil, executionEventConflict()
+	}
+	raw, ok := applied["model"]
+	if !ok {
+		return nil, nil
+	}
+	var model *string
+	if json.Unmarshal(raw, &model) != nil {
+		return nil, executionEventConflict()
+	}
+	return model, nil
+}
+
 func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, p *domain.ExecutionProgress, event domain.ExecutionEvent) error {
 	if input.Configuration.Harness != domain.Codex && input.Configuration.Harness != domain.ClaudeCode {
 		return executionEventConflict()
@@ -118,14 +153,20 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 			return executionEventConflict()
 		}
 		if !codex {
-			if _, exists := p.Subagents[child.NativeID]; !exists && (child.Source != domain.ClaudeTaskSource || child.Task == nil) {
+			_, retained := p.Subagents[child.NativeID]
+			if !retained && (child.Source != domain.ClaudeTaskSource || child.Task == nil) {
 				// Content/history can refine only an original local_agent task.
 				// Parent-tool ownership alone does not establish a native child.
 				return executionEventConflict()
 			}
+			var originalRequestedModel *string
 			if child.ParentID == p.NativeThreadID {
 				if child.Tool == nil || validateClaudeProgressTool(tx, input, session, event, *child.Tool, false) != nil {
 					return executionEventConflict()
+				}
+				originalRequestedModel, err = claudeToolRequestedModel(tx, *child.Tool)
+				if err != nil {
+					return err
 				}
 			} else {
 				parent, ok := p.Subagents[child.ParentID]
@@ -136,11 +177,15 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 				for _, tool := range parent.Tools {
 					if tool.NativeID == child.ParentToolID && (tool.Name == "Agent" || tool.Name == "Task") {
 						matched = true
+						originalRequestedModel = tool.RequestedModel
 					}
 				}
 				if !matched {
 					return executionEventConflict()
 				}
+			}
+			if child.RequestedModel != nil && !sameSubagentModel(child.RequestedModel, originalRequestedModel) || !retained && child.Source == domain.ClaudeTaskSource && !sameSubagentModel(child.RequestedModel, originalRequestedModel) {
+				return executionEventConflict()
 			}
 		}
 		first, revision := event.Sequence, uint64(0)

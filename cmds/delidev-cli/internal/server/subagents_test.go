@@ -258,6 +258,39 @@ func TestSubagentRequestedModelCannotBeReplaced(t *testing.T) {
 	}
 }
 
+func TestClaudeSubagentRequestedModelMatchesOriginalProposal(t *testing.T) {
+	f, children, sequence := claudeSubagentPublicationFixtureWithProposal(t, "{}", `{"model":"original-model"}`)
+	child := children[0]
+	forged := "forged-model"
+	child.RequestedModel = &forged
+	event := f.event(domain.ExecutionSubagentObserved, sequence+1)
+	event.Subagents = []domain.SubagentObservation{child}
+	if _, err := f.call(f.requestEvent(t, event)); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("Claude task accepted a model not present in its original proposal", err)
+	}
+
+	f, children, sequence = claudeSubagentPublicationFixture(t)
+	child = children[0]
+	event = f.event(domain.ExecutionSubagentObserved, sequence+1)
+	event.Subagents = []domain.SubagentObservation{child}
+	f.publish(t, event)
+	child.Source, child.SourceID, child.Task = domain.ClaudeContentSource, "content-forged-model", nil
+	child.RequestedModel = &forged
+	event = f.event(domain.ExecutionSubagentObserved, sequence+2)
+	event.Subagents = []domain.SubagentObservation{child}
+	if _, err := f.call(f.requestEvent(t, event)); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("Claude content populated an originally unavailable requested model", err)
+	}
+	row, err := f.service.Store.Get(context.Background(), domain.SubagentKind, child.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained, err := store.Decode[domain.SubagentRecord](row)
+	if err != nil || retained.Observation.RequestedModel != nil {
+		t.Fatal("rejected model changed the retained unavailable value", err)
+	}
+}
+
 func TestSubagentCodexRejectsClaudeMetadataAtomically(t *testing.T) {
 	for _, name := range []string{"task", "tool", "tools"} {
 		t.Run(name, func(t *testing.T) {

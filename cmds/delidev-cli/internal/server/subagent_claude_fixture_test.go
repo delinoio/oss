@@ -8,6 +8,10 @@ import (
 )
 
 func claudeSubagentPublicationFixture(t *testing.T) (*publicationFixture, []domain.SubagentObservation, uint64) {
+	return claudeSubagentPublicationFixtureWithProposal(t, "{}", "{}")
+}
+
+func claudeSubagentPublicationFixtureWithProposal(t *testing.T, proposed, applied string) (*publicationFixture, []domain.SubagentObservation, uint64) {
 	t.Helper()
 	f := newClaudePublicationFixture(t, domain.ExecuteMode)
 	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
@@ -29,7 +33,7 @@ func claudeSubagentPublicationFixture(t *testing.T) (*publicationFixture, []doma
 		tool := domain.ClaudeToolUpdate{Reference: ref, MessageID: u.ID, NativeMessageID: u.NativeID, Index: index, Mutation: domain.ClaudeToolStart, InitialInput: &initial}
 		u.Mutation, u.Index, u.Block, u.Tool = domain.ClaudeBlockStart, &index, &domain.ClaudeTextBlock{Kind: domain.ClaudeToolUse, Tool: &ref}, &tool
 		publish()
-		tool.Mutation, tool.InitialInput, tool.Proposal = domain.ClaudeToolProposalComplete, nil, &domain.ClaudeToolProposal{Proposed: "{}", Applied: "{}"}
+		tool.Mutation, tool.InitialInput, tool.Proposal = domain.ClaudeToolProposalComplete, nil, &domain.ClaudeToolProposal{Proposed: proposed, Applied: applied}
 		u.Mutation = domain.ClaudeBlockComplete
 		publish()
 		u.Mutation, u.Block, u.Tool = domain.ClaudeBlockStop, nil, nil
