@@ -425,43 +425,12 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
     } else {
         None
     };
-    if mutation && let Some(runtime) = runtime.as_mut() {
-        // F_GETPATH is a backing-path probe, not a descriptor-validity check:
-        // it fails for pipes and invalid descriptors alike. Validate every
-        // operand with the native descriptor query first so an invalid
-        // descriptor keeps the kernel's EBADF result instead of being masked
-        // by a managed-backing EROFS rejection.
-        if let Err(code) = descriptor_valid(fd, original) {
-            errno(code);
-            return -1;
-        }
-        if let Some(transfer_fd) = transfer_descriptor
-            && let Err(code) = descriptor_valid(transfer_fd, original)
-        {
-            errno(code);
-            return -1;
-        }
-        let primary_readonly = match descriptor_readonly(fd, runtime) {
-            Ok(readonly) => readonly,
-            Err(code) => {
-                errno(code);
-                return -1;
-            }
-        };
-        let transfer_readonly = match transfer_descriptor {
-            Some(transfer_fd) => match descriptor_readonly(transfer_fd, runtime) {
-                Ok(readonly) => readonly,
-                Err(code) => {
-                    errno(code);
-                    return -1;
-                }
-            },
-            None => false,
-        };
-        if primary_readonly || transfer_readonly {
-            errno(EROFS);
-            return -1;
-        }
+    if mutation
+        && let Some(runtime) = runtime.as_mut()
+        && let Err(code) = validate_descriptor_mutation(fd, transfer_descriptor, runtime, original)
+    {
+        errno(code);
+        return -1;
     }
 
     // Only duplication carries logical directory provenance. An inode lookup
@@ -521,6 +490,31 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         }
     }
     result
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn validate_descriptor_mutation(
+    fd: c_int,
+    transfer_descriptor: Option<c_int>,
+    runtime: &mut Runtime,
+    original: unsafe extern "C" fn(c_int, c_int, ...) -> c_int,
+) -> std::result::Result<(), c_int> {
+    // F_GETPATH is a backing-path probe, not a descriptor-validity check:
+    // it fails for pipes and invalid descriptors alike. Validate every
+    // operand first so native EBADF takes precedence over managed EROFS.
+    descriptor_valid(fd, original)?;
+    if let Some(transfer_fd) = transfer_descriptor {
+        descriptor_valid(transfer_fd, original)?;
+    }
+    let primary_readonly = descriptor_readonly(fd, runtime)?;
+    let transfer_readonly = match transfer_descriptor {
+        Some(transfer_fd) => descriptor_readonly(transfer_fd, runtime)?,
+        None => false,
+    };
+    if primary_readonly || transfer_readonly {
+        return Err(EROFS);
+    }
+    Ok(())
 }
 
 unsafe fn descriptor_valid(
@@ -1156,7 +1150,7 @@ unsafe fn close_descriptor(fd: c_int, native: unsafe extern "C" fn(c_int) -> c_i
     // remain permanently held. The cancellation state is restored only after
     // both the provenance update and the Rust guards have been released.
     let mut previous_cancel_state = 0;
-    if set_cancel_state(libc::PTHREAD_CANCEL_DISABLE, &mut previous_cancel_state) != 0 {
+    if set_cancel_state(libc::PTHREAD_CANCEL_DISABLE, &raw mut previous_cancel_state) != 0 {
         errno(EIO);
         return -1;
     }

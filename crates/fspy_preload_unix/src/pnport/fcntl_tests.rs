@@ -309,7 +309,7 @@ fn transfer_extents_rejects_managed_secondary_descriptor() {
                     runtime.descriptors.insert(
                         primary.as_raw_fd(),
                         Translation {
-                            logical: primary_path.clone(),
+                            logical: primary_path,
                             physical: primary_physical,
                             readonly: false,
                             virtual_link: false,
@@ -318,7 +318,7 @@ fn transfer_extents_rejects_managed_secondary_descriptor() {
                     runtime.descriptors.insert(
                         secondary.as_raw_fd(),
                         Translation {
-                            logical: secondary_path.clone(),
+                            logical: secondary_path,
                             physical: secondary_physical,
                             readonly: true,
                             virtual_link: false,
