@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![cfg(any(target_os = "macos", target_os = "linux"))]
 
-use std::{fs, io::Write, path::PathBuf, process::Command};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use serde_json::json;
 
@@ -146,11 +151,15 @@ impl Fixture {
     }
 
     fn run(&self, executable: &std::ffi::OsStr, mode: &str) {
+        self.run_with_cache(executable, mode, &self.root.path().join("native-cache"));
+    }
+
+    fn run_with_cache(&self, executable: &std::ffi::OsStr, mode: &str, cache: &Path) {
         use std::os::unix::process::CommandExt;
         let result = Command::new(pnport_binary())
             .current_dir(self.root.path())
             .arg("--cache-dir")
-            .arg(self.root.path().join("native-cache"))
+            .arg(cache)
             .args(["--color", "never", "run", "--"])
             .arg(executable)
             .arg(mode)
@@ -228,6 +237,30 @@ fn dependency_descriptor_mutations_fail_and_output_descriptor_reuse_remains_nati
     for split in [false, true] {
         let fixture = Fixture::new(split, false);
         fixture.run(fixture.binary.as_os_str(), "mutations");
+        assert_eq!(
+            fs::metadata(fixture.root.path().join("output/mutations.txt"))
+                .unwrap()
+                .len(),
+            7
+        );
+    }
+}
+
+#[test]
+fn dependency_descriptor_mutations_remain_readonly_with_a_symlinked_cache_ancestor() {
+    for split in [false, true] {
+        let fixture = Fixture::new(split, false);
+        let real = fixture.root.path().join("cache-storage");
+        let alias = fixture.root.path().join("cache-storage-alias");
+        fs::create_dir(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+        // Reproduce Darwin's /var versus /private/var spelling without depending
+        // on TMPDIR. The cache leaf is private storage, not a symlink itself.
+        fixture.run_with_cache(
+            fixture.binary.as_os_str(),
+            "mutations",
+            &alias.join("native-cache"),
+        );
         assert_eq!(
             fs::metadata(fixture.root.path().join("output/mutations.txt"))
                 .unwrap()

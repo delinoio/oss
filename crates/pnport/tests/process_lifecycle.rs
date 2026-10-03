@@ -392,7 +392,7 @@ fn group_boundary(modes: &[&str], rejected: bool) {
         if rejected {
             assert!(root
                 .path()
-                .join(if *mode == "spawn-new" {
+                .join(if mode.starts_with("spawn-") {
                     "spawn-created"
                 } else {
                     "group-escaped"
@@ -458,6 +458,12 @@ fn group_boundary(modes: &[&str], rejected: bool) {
 #[test]
 fn session_and_group_creation_fail_before_a_descendant_escapes() {
     group_boundary(&["setsid", "setpgid", "setpgrp", "spawn-new"], true);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn spawn_session_creation_fails_before_a_descendant_starts() {
+    group_boundary(&["spawn-session"], true);
 }
 
 #[cfg(target_os = "macos")]

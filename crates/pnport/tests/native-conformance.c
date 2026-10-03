@@ -77,6 +77,10 @@ static int descriptor_mutations(void) {
     int duplicate = fcntl(fd, F_DUPFD_CLOEXEC, 64);
     if (duplicate < 0) return 71;
     struct timeval times[2] = {{0, 0}, {0, 0}};
+#ifdef __APPLE__
+    int extent_output = open("output/extents.txt", O_RDWR | O_CREAT | O_EXCL, 0600);
+    if (extent_output < 0) return 84;
+#endif
     for (int index = 0; index < 2; index++) {
         int dependency_fd = index ? duplicate : fd;
         errno = 0;
@@ -94,8 +98,21 @@ static int descriptor_mutations(void) {
                               .fst_offset = 0, .fst_length = 4096};
         errno = 0;
         if (fcntl(dependency_fd, F_PREALLOCATE, &allocation) != -1 || errno != EROFS) return 83;
+        // F_TRANSFEREXTENTS has two integer descriptors. Either managed
+        // operand is read-only, while an invalid operand retains native EBADF.
+        errno = 0;
+        if (fcntl(dependency_fd, F_TRANSFEREXTENTS, extent_output) != -1 || errno != EROFS) return 85;
+        errno = 0;
+        if (fcntl(extent_output, F_TRANSFEREXTENTS, dependency_fd) != -1 || errno != EROFS) return 86;
+        errno = 0;
+        if (fcntl(dependency_fd, F_TRANSFEREXTENTS, -1) != -1 || errno != EBADF) return 87;
+        errno = 0;
+        if (fcntl(-1, F_TRANSFEREXTENTS, dependency_fd) != -1 || errno != EBADF) return 88;
 #endif
     }
+#ifdef __APPLE__
+    if (close(extent_output)) return 89;
+#endif
     if (close(fd) || close(duplicate)) return 77;
     // Reuse a tracked descriptor number for a normal output file. Clearing
     // dependency provenance must preserve ordinary output mutations.

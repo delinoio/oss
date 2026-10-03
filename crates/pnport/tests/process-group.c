@@ -51,10 +51,12 @@ int main(int argc, char **argv) {
         puts("owned group control");
         return 0;
     }
-    if (!strcmp(argv[1], "spawn-new") || !strcmp(argv[1], "spawn-same")) {
+    if (!strcmp(argv[1], "spawn-new") || !strcmp(argv[1], "spawn-same") ||
+        !strcmp(argv[1], "spawn-session")) {
         posix_spawnattr_t attributes;
-        if (posix_spawnattr_init(&attributes) ||
-            posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP) ||
+        short flags = !strcmp(argv[1], "spawn-session") ? POSIX_SPAWN_SETSID : POSIX_SPAWN_SETPGROUP;
+        if (posix_spawnattr_init(&attributes) || posix_spawnattr_setflags(&attributes, flags)) return 85;
+        if (flags == POSIX_SPAWN_SETPGROUP &&
             posix_spawnattr_setpgroup(&attributes, !strcmp(argv[1], "spawn-new") ? 0 : getpgrp())) return 85;
         char *args[] = {argv[0], "child", argv[2], NULL};
         // Replacement must preserve the caller field while replacing this
