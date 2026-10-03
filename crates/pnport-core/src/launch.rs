@@ -38,7 +38,7 @@ impl Entry {
         })
     }
 
-    pub fn acknowledge(self) -> io::Result<()> {
+    pub fn acknowledge(&self) -> io::Result<()> {
         // Readiness removes the pending marker before releasing the lease.
         // An observer that finds an unlocked, still-pending inode must fail.
         fs::remove_file(&self.pending)?;

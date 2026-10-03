@@ -816,6 +816,9 @@ unsafe extern "C" fn initialize() {
         }
     }
     INJECTION_ENV.set(injection_env).ok();
+    // Keep the lease outside the fallible setup closure. A failed constructor
+    // must publish its stage/code before process exit releases the lease.
+    let mut launch = None;
     let result: std::result::Result<(), InitializationStage> = (|| {
         use InitializationStage as Stage;
         // Acknowledge entry before graph/cache work that may legitimately wait
@@ -823,7 +826,7 @@ unsafe extern "C" fn initialize() {
         fs::create_dir_all(session.join("starting")).map_err(|_| Stage::AcknowledgeEntry)?;
         fs::write(session.join("starting").join(getpid().to_string()), b"1")
             .map_err(|_| Stage::AcknowledgeEntry)?;
-        let launch = if let Some(token) = std::env::var_os("PNPORT_LAUNCH_TOKEN") {
+        launch = if let Some(token) = std::env::var_os("PNPORT_LAUNCH_TOKEN") {
             let token = token.to_str().ok_or(Stage::LaunchToken)?;
             if !pnport_core::launch::valid_token(token) {
                 return Err(Stage::LaunchToken);
@@ -867,12 +870,27 @@ unsafe extern "C" fn initialize() {
         fs::create_dir_all(session.join("ready")).map_err(|_| Stage::PublishReadiness)?;
         fs::write(session.join("ready").join(getpid().to_string()), b"1")
             .map_err(|_| Stage::PublishReadiness)?;
-        if let Some(launch) = launch {
+        if let Some(launch) = &launch {
             launch.acknowledge().map_err(|_| Stage::AcknowledgeLaunch)?;
         }
         Ok(())
     })();
     if let Err(stage) = result {
+        #[cfg(test)]
+        if launch.is_some() {
+            // The isolated native failure control reaches this exact ordering
+            // boundary, before publishing either diagnostic record.
+            let token = std::env::var_os("PNPORT_LAUNCH_TOKEN").unwrap();
+            let pending = fs::metadata(session.join("pending").join(&token)).unwrap();
+            assert!(
+                pnport_core::launch::entry_state(
+                    &session.join("launch-starting").join(token),
+                    &pending,
+                )
+                .unwrap()
+                    == pnport_core::launch::EntryState::Initializing
+            );
+        }
         record_initialization_failure(&session, stage);
         record_failure(&session, Code::PnportInjectionFailed);
         _exit(125);
