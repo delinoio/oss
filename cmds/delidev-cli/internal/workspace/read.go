@@ -186,11 +186,18 @@ func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, rep
 			defer stop()
 			// Delete only an empty, fully reconciled read-only process index.
 			// Unknown children retain their private journals for recovery.
-			if process.ReconcileOwnerContext(cleanup, inspection.Git.ProcessRoot, request.ID) != nil || os.Remove(owner) != nil {
+			if process.ReconcileOwnerContext(cleanup, inspection.Git.ProcessRoot, request.ID) != nil {
 				returned = ResultUncertain()
 				return
 			}
 			if err := os.Remove(owner + ".recovery.lock"); err != nil {
+				returned = ResultUncertain()
+				return
+			}
+			// Keep the owner index until the adjacent recovery lock has been
+			// retired. This ordering leaves a recoverable owner directory if the
+			// Worker stops between the two durable namespace changes.
+			if err := os.Remove(owner); err != nil {
 				returned = ResultUncertain()
 				return
 			}

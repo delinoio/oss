@@ -77,11 +77,18 @@ func (m *Manager) quiesceWorkspaceReads(ctx context.Context, session domain.ID) 
 			return err
 		}
 		owner := filepath.Join(root, string(id))
-		if process.ReconcileOwnerContext(ctx, root, id) != nil || os.Remove(owner) != nil {
+		if process.ReconcileOwnerContext(ctx, root, id) != nil {
 			return ResultUncertain()
 		}
 		maintenance := owner + ".recovery.lock"
 		if security.RegularPrivate(maintenance) != nil || os.Remove(maintenance) != nil {
+			return ResultUncertain()
+		}
+		// Retire the maintenance lock before its owner index. If a Worker exits
+		// between these removals, the next reconciliation still has the owner
+		// directory required by ReconcileOwnerContext; removing the owner first
+		// would strand an unrecoverable lock-only record.
+		if os.Remove(owner) != nil {
 			return ResultUncertain()
 		}
 	}
