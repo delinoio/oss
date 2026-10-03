@@ -1139,7 +1139,7 @@ hook!(getcwd, pnport_getcwd, (buffer:*mut c_char,size:size_t) -> *mut c_char, {
     ptr::copy_nonoverlapping(bytes.as_ptr(),buffer.cast(),bytes.len());*buffer.add(bytes.len())=0;buffer
 });
 unsafe fn close_descriptor(fd: c_int, native: unsafe extern "C" fn(c_int) -> c_int) -> c_int {
-    let Some(_guard) = Guard::enter() else {
+    let Some(guard) = Guard::enter() else {
         return native(fd);
     };
     let Some(runtime) = RUNTIME.get() else {
@@ -1149,13 +1149,33 @@ unsafe fn close_descriptor(fd: c_int, native: unsafe extern "C" fn(c_int) -> c_i
         errno(fail(Code::PnportInjectionFailed));
         return -1;
     };
+
+    // Deferred pthread cancellation treats ordinary `close` as a cancellation
+    // point on macOS. Keep a pending cancellation from terminating this thread
+    // while it owns the runtime mutex; otherwise the process-wide lock would
+    // remain permanently held. The cancellation state is restored only after
+    // both the provenance update and the Rust guards have been released.
+    let mut previous_cancel_state = 0;
+    if set_cancel_state(libc::PTHREAD_CANCEL_DISABLE, &mut previous_cancel_state) != 0 {
+        errno(EIO);
+        return -1;
+    }
     let result = native(fd);
     if result == 0 {
         runtime.descriptors.remove(&fd);
     }
+    drop(runtime);
+    drop(guard);
+    // SAFETY: The state was disabled above on this thread. No runtime or
+    // recursion guard is held when a pending cancellation may be delivered.
+    if set_cancel_state(previous_cancel_state, ptr::null_mut()) != 0 {
+        errno(EIO);
+    }
     result
 }
 unsafe extern "C" {
+    #[link_name = "pthread_setcancelstate"]
+    fn set_cancel_state(state: c_int, old_state: *mut c_int) -> c_int;
     #[link_name = "close"]
     fn native_close(fd: c_int) -> c_int;
     #[link_name = "close$NOCANCEL"]
