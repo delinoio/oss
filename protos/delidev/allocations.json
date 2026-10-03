@@ -4500,6 +4500,56 @@
       "declaration": "PairDeviceRequest",
       "member": "network_key_id",
       "number": 9
+    },
+    {
+      "issue": 1209,
+      "kind": "enum",
+      "declaration": "WorkerNativeRouteState",
+      "member": "WORKER_NATIVE_ROUTE_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1209,
+      "kind": "enum",
+      "declaration": "WorkerNativeRouteState",
+      "member": "WORKER_NATIVE_ROUTE_STATE_UNSUPPORTED",
+      "number": 1
+    },
+    {
+      "issue": 1209,
+      "kind": "enum",
+      "declaration": "WorkerNativeRouteState",
+      "member": "WORKER_NATIVE_ROUTE_STATE_NOT_APPLIED",
+      "number": 2
+    },
+    {
+      "issue": 1209,
+      "kind": "enum",
+      "declaration": "WorkerNativeRouteState",
+      "member": "WORKER_NATIVE_ROUTE_STATE_UNVERIFIED",
+      "number": 3
+    },
+    {
+      "issue": 1209,
+      "kind": "enum",
+      "declaration": "WorkerNativeRouteState",
+      "member": "WORKER_NATIVE_ROUTE_STATE_OBSERVED",
+      "number": 4
+    },
+    {
+      "issue": 1209,
+      "kind": "enum",
+      "declaration": "WorkerNativeRouteState",
+      "member": "WORKER_NATIVE_ROUTE_STATE_FAILED",
+      "number": 5
+    },
+    {
+      "issue": 1209,
+      "kind": "enum",
+      "declaration": "WorkerNativeRouteState",
+      "member": "WORKER_NATIVE_ROUTE_STATE_STALE",
+      "number": 6
     }
   ]
 }
