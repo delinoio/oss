@@ -74,6 +74,7 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 			result.Pricing = append(result.Pricing, pricingUsage(value))
 		}
 		result.AcceptedExecutionsWithoutResponse = summary.AcceptedExecutionsWithoutResponse
+		result.AcceptedCompactionsWithoutResponse = summary.AcceptedCompactionsWithoutResponse
 		type usageLabelKey struct {
 			kind domain.Kind
 			id   domain.ID

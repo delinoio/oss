@@ -235,3 +235,15 @@ unavailable, unpriced and other-currency unit counts. Response writes never abso
 native subtotals. Budget gates use this combined immutable evidence and retain
 all existing queue, accepted-work and explicit Resume behavior. Reads and complete
 price categories still cannot establish actual billing or full native telemetry.
+
+Manual Codex context actions retain Go-relay `compaction-http` response provenance
+under the original action ID and immutable account/model. The native source turn
+is explicit; an unobserved action turn is absent. Nullable HTTP response counters
+and hashed original response identity are independent of cumulative native usage.
+Ordinary Worker response publications reject this relay-only source. Existing
+response deduplication and immutable pricing apply before native action completion;
+an uncertain/failed compaction cannot erase an already observed response. A
+separate `accepted_compactions_without_response` coverage count exposes missing
+telemetry independently of ordinary accepted executions and never asserts zero
+usage. Existing conversation SQL purpose and historical rows remain unchanged;
+this adds no migration or fabricated native input.

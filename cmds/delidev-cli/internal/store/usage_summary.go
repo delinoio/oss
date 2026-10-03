@@ -2,6 +2,7 @@ package store
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -199,7 +200,11 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	for _, id := range priceIDs {
 		result.Pricing = append(result.Pricing, *prices[id])
 	}
-	result.AcceptedExecutionsWithoutResponse, err = t.usageMissingExecutions(f, observed)
+	result.AcceptedExecutionsWithoutResponse, err = t.usageMissingActions(f, observed, false)
+	if err != nil {
+		return domain.UsageSummary{}, err
+	}
+	result.AcceptedCompactionsWithoutResponse, err = t.usageMissingActions(f, observed, true)
 	if err != nil {
 		return domain.UsageSummary{}, err
 	}
@@ -243,20 +248,34 @@ type usageModelKey struct {
 
 // This is an explicit coverage indicator for executions accepted in the same
 // server-time window, not proof of zero calls or complete child telemetry.
-func (t *Tx) usageMissingExecutions(f domain.UsageSelection, observed map[domain.ID]bool) (uint32, error) {
+func (t *Tx) usageMissingActions(f domain.UsageSelection, observed map[domain.ID]bool, compaction bool) (uint32, error) {
 	query := `SELECT json_extract(e.body,'$.input.execution_id'),json_extract(e.body,'$.input.session_id'),json_extract(e.body,'$.input.account_id') FROM entities e WHERE e.kind='job' AND json_extract(e.body,'$.type')='execute-session' AND e.created_at>=? AND e.created_at<? AND EXISTS(SELECT 1 FROM entities s WHERE s.kind='session' AND s.id=e.session_id)`
+	if compaction {
+		query = strings.ReplaceAll(query, "'execute-session'", "'compact-session'")
+		query = strings.ReplaceAll(query, "$.input.execution_id", "$.input.action_id")
+		query = strings.ReplaceAll(query, "$.input.session_id", "$.input.assignment.session_id")
+		query = strings.ReplaceAll(query, "$.input.account_id", "$.input.assignment.account_id")
+	}
 	args := []any{f.From.UnixMilli(), f.Until.UnixMilli()}
 	for _, part := range []struct {
 		column string
 		value  domain.ID
 	}{{"e.session_id", f.SessionID}, {"e.project_id", f.ProjectID}, {"json_extract(e.body,'$.input.account_id')", f.AccountID}, {"json_extract(e.body,'$.input.configuration.provider_id')", f.ProviderID}, {"json_extract(e.body,'$.input.configuration.model_id')", f.ModelID}} {
 		if part.value != "" {
-			query += " AND " + part.column + "=?"
+			column := part.column
+			if compaction {
+				column = strings.ReplaceAll(column, "$.input.", "$.input.assignment.")
+			}
+			query += " AND " + column + "=?"
 			args = append(args, part.value)
 		}
 	}
 	if f.SubscriptionService != "" {
-		query += " AND json_extract(e.body,'$.input.configuration.subscription_service')=?"
+		path := "$.input.configuration.subscription_service"
+		if compaction {
+			path = "$.input.assignment.configuration.subscription_service"
+		}
+		query += " AND json_extract(e.body,'" + path + "')=?"
 		args = append(args, f.SubscriptionService)
 	}
 	if f.GeneralChat {

@@ -1457,3 +1457,11 @@ Encrypted Worker export starts from its bounded original public recipient and se
 Native harness options capability-gate Codex child configuration with System capability 22 and original Runner Device capability 11. Preserve omitted model/effort/concurrency defaults and disabled saved values on older servers. Explicit settings use the exact registered native model under the parent's selected account and are frozen before execution; native compatibility is checked before input. Display the saved canonical child identity/revision separately from native observations and requested settings. The existing configuration RPC, CLI and generated client remain the product write boundary; reading or editing these fields never launches or controls a child.
 
 OpenCode 1.18.32 foreground children use the shared read-only Subagents disclosure under independent capability 23. Validate its complete original task/child graph and closed exact response counters before rendering a bounded page; native task content remains inert. No child controls are added. Follow the subagent contract.
+
+Session Context uses authenticated Connect queries for native observations and
+current per-profile compaction eligibility. Bind the observed exact session
+revision before accepting the action, retain the original mutation across
+navigation/response loss, and poll context resources without replaying a native
+command. Show unavailable counters explicitly, preserve uncertain action guidance
+and require independent server/Worker capabilities. The control remains outside
+Settings and does not alter ordinary conversation outcomes or queued input.

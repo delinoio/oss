@@ -1091,8 +1091,11 @@ type GetUsageSummaryResponse struct {
 	AccountingProfile                 UsageAccountingProfile `protobuf:"varint,12,opt,name=accounting_profile,json=accountingProfile,proto3,enum=delidev.v1.UsageAccountingProfile" json:"accounting_profile,omitempty"`
 	// Independent summaries preserve each native accounting unit kind.
 	NativeAccounting []*NativeAccountingSummary `protobuf:"bytes,13,rep,name=native_accounting,json=nativeAccounting,proto3" json:"native_accounting,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Accepted native context actions with no exact response retained in the range.
+	// Separate from ordinary executions; unavailable does not establish zero usage.
+	AcceptedCompactionsWithoutResponse uint32 `protobuf:"varint,14,opt,name=accepted_compactions_without_response,json=acceptedCompactionsWithoutResponse,proto3" json:"accepted_compactions_without_response,omitempty"`
+	unknownFields                      protoimpl.UnknownFields
+	sizeCache                          protoimpl.SizeCache
 }
 
 func (x *GetUsageSummaryResponse) Reset() {
@@ -1214,6 +1217,13 @@ func (x *GetUsageSummaryResponse) GetNativeAccounting() []*NativeAccountingSumma
 		return x.NativeAccounting
 	}
 	return nil
+}
+
+func (x *GetUsageSummaryResponse) GetAcceptedCompactionsWithoutResponse() uint32 {
+	if x != nil {
+		return x.AcceptedCompactionsWithoutResponse
+	}
+	return 0
 }
 
 type TokenPricing struct {
@@ -2786,7 +2796,7 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"model_name\x18\v \x01(\tR\tmodelName\x128\n" +
 	"\testimates\x18\f \x01(\v2\x1a.delidev.v1.EstimateTotalsR\testimates\x12Z\n" +
-	"\x14subscription_service\x18\r \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"\x95\x06\n" +
+	"\x14subscription_service\x18\r \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"\xe8\x06\n" +
 	"\x17GetUsageSummaryResponse\x12 \n" +
 	"\ffrom_unix_ms\x18\x01 \x01(\x03R\n" +
 	"fromUnixMs\x12\"\n" +
@@ -2803,7 +2813,8 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	" \x03(\v2\x18.delidev.v1.PricingUsageR\apricing\x128\n" +
 	"\tanalytics\x18\v \x01(\v2\x1a.delidev.v1.UsageAnalyticsR\tanalytics\x12Q\n" +
 	"\x12accounting_profile\x18\f \x01(\x0e2\".delidev.v1.UsageAccountingProfileR\x11accountingProfile\x12P\n" +
-	"\x11native_accounting\x18\r \x03(\v2#.delidev.v1.NativeAccountingSummaryR\x10nativeAccounting\"\xa0\x03\n" +
+	"\x11native_accounting\x18\r \x03(\v2#.delidev.v1.NativeAccountingSummaryR\x10nativeAccounting\x12Q\n" +
+	"%accepted_compactions_without_response\x18\x0e \x01(\rR\"acceptedCompactionsWithoutResponse\"\xa0\x03\n" +
 	"\fTokenPricing\x12\x1a\n" +
 	"\bcurrency\x18\x01 \x01(\tR\bcurrency\x12\x16\n" +
 	"\x06source\x18\x02 \x01(\tR\x06source\x12\x13\n" +
