@@ -4564,6 +4564,20 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1",
       "number": 11
+    },
+    {
+      "issue": 1208,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1",
+      "number": 23
+    },
+    {
+      "issue": 1208,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1",
+      "number": 12
     }
   ]
 }

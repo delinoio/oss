@@ -164,3 +164,5 @@ declaration owner once; later explicitly numbered members retain their own
 issue/PR provenance. The ledger baseline contains only declarations verified
 from the fixed main source, including its original accounting and subscription
 enums. New message fields are checked as strictly as new enum values.
+
+Issue #1208 reserves independent System capability 23 and Worker capability 12 for OpenCode foreground child observation before activation. The existing resource/ordered-publication boundary carries the closed native task/child proof under its separate supported profile; these reservations alone grant no child publication, control, continuation or cleanup authority.
