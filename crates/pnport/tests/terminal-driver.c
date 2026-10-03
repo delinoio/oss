@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // A test-only shell boundary on an isolated controlling terminal.
 #include <signal.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,11 +42,26 @@ int main(int argc, char **argv) {
         char ready;
         if (read(launch[0], &ready, 1) != 1) _exit(84);
         close(launch[0]);
+        // Optional test-only diagnostics retain real tty stdin/stdout while
+        // avoiding an unread PTY buffer blocking explicit supervisor logs.
+        // Default conformance still inherits all three terminal streams.
+        if (getenv("PNPORT_TEST_TERMINAL_DIAGNOSTICS")) {
+            int log = open("terminal.diagnostics", O_CREAT | O_WRONLY | O_TRUNC, 0600);
+            if (log < 0 || dup2(log, STDERR_FILENO) < 0) _exit(88);
+            close(log);
+            execl(argv[1], argv[1], "--log-level", "debug", "--cache-dir", "store", "run", "--", argv[2],
+                  "root", redirected ? "terminal-pipe" : strcmp(argv[3], "self-stop") == 0 ? "terminal-stop" : "terminal", (char *)NULL);
+            _exit(74);
+        }
         execl(argv[1], argv[1], "--cache-dir", "store", "run", "--", argv[2],
               "root", redirected ? "terminal-pipe" : strcmp(argv[3], "self-stop") == 0 ? "terminal-stop" : "terminal", (char *)NULL);
         _exit(74);
     }
     int status;
+    FILE *supervisor = fopen("terminal.supervisor", "w");
+    if (!supervisor) return 89;
+    fprintf(supervisor, "%d", child);
+    fclose(supervisor);
     if (redirected) {
         close(input[0]);
         if (write(input[1], "first\nsecond\n", 13) != 13) return 87;
