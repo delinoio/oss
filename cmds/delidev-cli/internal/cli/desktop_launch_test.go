@@ -154,7 +154,12 @@ func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ownership.Close()
+	ownershipClosed := false
+	defer func() {
+		if !ownershipClosed {
+			_ = ownership.Close()
+		}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	o := options{dataDir: root}
@@ -197,6 +202,7 @@ func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 	if err := ownership.Close(); err != nil {
 		t.Fatal(err)
 	}
+	ownershipClosed = true
 	if err := <-done; err != nil {
 		t.Fatal("fresh launch did not resume after cleanup", err)
 	}
@@ -204,8 +210,31 @@ func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.transport.CloseIdleConnections()
-	defer c.system.StopServer(context.Background(), request(c, &pb.StopServerRequest{RequestId: string(domain.NewID())}))
+	// StopServer acknowledges the durable stop intent before the native process
+	// releases server.lock. Join that real lifecycle boundary before TempDir
+	// cleanup so Windows cannot report a live server handle as test residue.
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer stopCancel()
+		if _, err := c.system.StopServer(stopCtx, request(c, &pb.StopServerRequest{RequestId: string(domain.NewID())})); err != nil {
+			t.Error("replacement server stop was not accepted", err)
+		}
+		for {
+			lock, err := security.TryLock(filepath.Join(root, "server.lock"))
+			if err == nil {
+				if err := lock.Close(); err != nil {
+					t.Error("replacement server lock did not close", err)
+				}
+				break
+			}
+			if stopCtx.Err() != nil {
+				t.Error("replacement server did not release ownership", stopCtx.Err())
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		c.transport.CloseIdleConnections()
+	})
 	next, err := server.ReadLifecycle(root)
 	if err != nil || next.State != server.DesiredRunning || next.Generation == original.Generation {
 		t.Fatal("fresh launch did not publish a replacement generation", next, err)
